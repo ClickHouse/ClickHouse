@@ -242,12 +242,13 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
                 insert_settings.applyChanges(settings_changes);
 
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-                auto result = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-                connection = std::move(result.front().entry);
-                compression_expected = connection->getCompression() == Protocol::Compression::Enable;
+                auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
+                auto result = results.front();
+                if (parent.pool->isTryResultInvalid(result, insert_settings.distributed_insert_skip_read_only_replicas))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Got an invalid connection result");
 
-                if (connection.isNull())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty connection");
+                connection = std::move(result.entry);
+                compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
                 LOG_DEBUG(parent.log, "Sending a batch of {} files to {} ({} rows, {} bytes).",
                     files.size(),
@@ -303,12 +304,13 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
                 parent.storage.getContext()->getOpenTelemetrySpanLog());
 
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-            auto result = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-            auto connection = std::move(result.front().entry);
-            bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
+            auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
+            auto result = results.front();
+            if (parent.pool->isTryResultInvalid(result, insert_settings.distributed_insert_skip_read_only_replicas))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got an invalid connection result");
 
-            if (connection.isNull())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty connection");
+            auto connection = std::move(result.entry);
+            bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
             RemoteInserter remote(*connection, timeouts,
                 distributed_header.insert_query,
