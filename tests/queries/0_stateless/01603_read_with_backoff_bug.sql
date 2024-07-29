@@ -1,4 +1,4 @@
--- Tags: no-tsan
+-- Tags: no-tsan, no-distributed-cache
 -- Tag no-tsan: Too long for TSan
 
 set enable_filesystem_cache=0;
