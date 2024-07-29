@@ -39,11 +39,16 @@ String StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, Con
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
     query_settings.throw_on_zero_files_match = false;
+
+    bool local_distributed_processing = distributed_processing;
+    if (context->getSettingsRef().use_hive_partitioning)
+        local_distributed_processing = false;
+
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         query_settings,
         object_storage,
-        distributed_processing,
+        local_distributed_processing,
         context,
         {}, // predicate
         metadata.getColumns().getAll(), // virtual_columns
