@@ -75,7 +75,7 @@ def test_stripper(started_cluster):
             ) ENGINE=MergeTree()
             ORDER BY id
             SETTINGS
-                storage_policy='ceph', min_bytes_for_wide_part=32
+                storage_policy='ceph', min_bytes_for_wide_part=32, index_granularity = 16
             """
         )
 
@@ -83,7 +83,8 @@ def test_stripper(started_cluster):
             "INSERT INTO ceph_big_table SELECT number, randomPrintableASCII(2048) FROM numbers(8192)"
         )
         node.query("OPTIMIZE TABLE ceph_big_table FINAL")
-        assert node.query("SELECT count() FROM ceph_big_table") == "8192\n"
+        # Adding WHERE ignore(*) to reproduce the bug when reading with async buffer from cache
+        assert node.query("SELECT count() FROM ceph_big_table WHERE NOT ignore(*)") == "8192\n"
         assert (
             node.query("SELECT id, length(data) FROM ceph_big_table WHERE id = 1")
             == "1\t2048\n"
