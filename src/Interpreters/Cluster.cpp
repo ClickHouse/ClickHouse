@@ -688,8 +688,8 @@ void Cluster::initMisc()
         if (shard_info.pool)
         {
             auto connection = shard_info.pool->get(timeouts);
-            connection->setSocketTimeouts(timeouts.receive_timeout, timeouts.send_timeout);
-            connection->enableKeepAlive(tcp_keep_alive_timeout);
+            shard_info.pool->setSocketTimeouts(connection, receive_timeout, send_timeout);
+            shard_info.pool->enableKeepAlive(connection, tcp_keep_alive_timeout);
         }
     }
 }
