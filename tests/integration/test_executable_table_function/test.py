@@ -139,6 +139,7 @@ def test_executable_function_input_signalled_python(started_cluster):
     assert node.query(query.format(source="(SELECT id FROM test_data_table)")) == ""
 
 
+@pytest.mark.repeat(50)
 def test_executable_function_input_slow_python(started_cluster):
     skip_test_msan(node)
 
