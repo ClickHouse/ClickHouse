@@ -677,13 +677,6 @@ void Cluster::initMisc()
     Poco::Timespan sync_request_timeout(0, 0); // Example value, adjust as needed
     Poco::Timespan tcp_keep_alive_timeout(10, 0); // 10 seconds
 
-    ConnectionTimeouts timeouts;
-    timeouts.withConnectionTimeout(connection_timeout)
-            .withSendTimeout(send_timeout)
-            .withReceiveTimeout(receive_timeout)
-            .withSyncRequestTimeout(sync_request_timeout)
-            .withTCPKeepAliveTimeout(tcp_keep_alive_timeout);
-
     for (auto & shard_info : shards_info)
     {
         if (shard_info.pool)
