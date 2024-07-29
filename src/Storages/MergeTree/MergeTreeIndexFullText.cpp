@@ -186,7 +186,7 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
 }
 
 MergeTreeConditionFullText::MergeTreeConditionFullText(
-    const ActionsDAGPtr & filter_actions_dag,
+    const ActionsDAG * filter_actions_dag,
     ContextPtr context_,
     const Block & index_sample_block,
     const GinFilterParameters & params_,
@@ -768,7 +768,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregatorForPart
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
-        const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
+        const ActionsDAG * filter_actions_dag, ContextPtr context) const
 {
     return std::make_shared<MergeTreeConditionFullText>(filter_actions_dag, context, index.sample_block, params, token_extractor.get());
 };
