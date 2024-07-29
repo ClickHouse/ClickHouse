@@ -390,6 +390,8 @@ IsValid
 JBOD
 JOINed
 JOINs
+JSONAllPaths
+JSONAllPathsWithTypes
 JSONArrayLength
 JSONAsObject
 JSONAsString
@@ -404,8 +406,11 @@ JSONCompactStrings
 JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
+JSONDynamicPaths
+JSONDynamicPathsWithTypes
 JSONEachRow
 JSONEachRowWithProgress
+JSONEmpty
 JSONExtract
 JSONExtractArrayRaw
 JSONExtractBool
@@ -423,6 +428,8 @@ JSONObjectEachRow
 JSONStrings
 JSONStringsEachRow
 JSONStringsEachRowWithProgress
+JSONSharedDataPaths
+JSONSharedDataPathsWithTypes
 JSONType
 JSONs
 Jaeger
@@ -2112,6 +2119,7 @@ natively
 nats
 nestjs
 netloc
+newjson
 ngram
 ngramDistance
 ngramDistanceCaseInsensitive

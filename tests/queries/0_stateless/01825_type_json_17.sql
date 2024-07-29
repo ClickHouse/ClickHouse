@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS t_json_17;
 SET allow_experimental_object_type = 1;
 SET output_format_json_named_tuples_as_objects = 1;
 
-CREATE TABLE t_json_17(obj JSON)
+CREATE TABLE t_json_17(obj Object('json'))
 ENGINE = MergeTree ORDER BY tuple();
 
 DROP FUNCTION IF EXISTS hasValidSizes17;

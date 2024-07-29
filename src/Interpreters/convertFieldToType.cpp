@@ -459,7 +459,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         return src;
     }
-    else if (isObject(type))
+    else if (isObjectDeprecated(type))
     {
         if (src.getType() == Field::Types::Object)
             return src;  /// Already in needed type.
@@ -518,6 +518,13 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         /// We can insert any field to Dynamic column.
         return src;
+    }
+    else if (isObject(type))
+    {
+        if (src.getType() == Field::Types::Object)
+            return src;  /// Already in needed type.
+
+        /// TODO: add conversion from Map/Tuple to Object.
     }
 
     /// Conversion from string by parsing.

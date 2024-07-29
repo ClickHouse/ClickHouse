@@ -249,6 +249,11 @@ void ColumnMap::reserve(size_t n)
     nested->reserve(n);
 }
 
+size_t ColumnMap::capacity() const
+{
+    return nested->capacity();
+}
+
 void ColumnMap::shrinkToFit()
 {
     nested->shrinkToFit();

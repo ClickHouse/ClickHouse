@@ -475,6 +475,9 @@ public:
     /// It affects performance only (not correctness).
     virtual void reserve(size_t /*n*/) {}
 
+    /// Returns the number of elements allocated in reserve.
+    virtual size_t capacity() const { return size(); }
+
     /// Requests the removal of unused capacity.
     /// It is a non-binding request to reduce the capacity of the underlying container to its size.
     virtual void shrinkToFit() {}

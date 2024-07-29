@@ -175,6 +175,11 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 hash_func.update(options["seed"].as<std::string>());
             }
 
+            SharedContextHolder shared_context = Context::createShared();
+            auto context = Context::createGlobal(shared_context.get());
+            auto context_const = WithContext(context).getContext();
+            context->makeGlobalContext();
+
             registerInterpreters();
             registerFunctions();
             registerAggregateFunctions();

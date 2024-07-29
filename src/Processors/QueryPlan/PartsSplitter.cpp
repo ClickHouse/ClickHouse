@@ -49,7 +49,7 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
         case TypeIndex::Float32:
         case TypeIndex::Float64:
         case TypeIndex::Nullable:
-        case TypeIndex::Object:
+        case TypeIndex::ObjectDeprecated:
             return false;
         case TypeIndex::Array:
         {
