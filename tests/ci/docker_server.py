@@ -130,7 +130,7 @@ def retry_popen(cmd: str, log_file: Path) -> int:
     max_retries = 2
     sleep_seconds = 10
     retcode = -1
-    for retry in range(max_retries):
+    for _retry in range(max_retries):
         with TeePopen(
             cmd,
             log_file=log_file,
