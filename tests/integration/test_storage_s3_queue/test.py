@@ -858,17 +858,12 @@ def test_max_set_age(started_cluster):
     def get_count():
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
-    import os
-
     def wait_for_condition(check_function, max_wait_time=1.5 * max_age):
-        logging.debug(f"{os.getenv('PYTEST_XDIST_WORKER')} - PMO: Waiting for condition")
         before = time.time()
         while time.time() - before < max_wait_time:
             if check_function():
-                logging.debug(f"{os.getenv('PYTEST_XDIST_WORKER')} - PMO: Condition verified")
                 return
             time.sleep(0.25)
-        logging.debug(f"{os.getenv('PYTEST_XDIST_WORKER')} - PMO: Oh oh... Condition not verified")
         assert False
 
     wait_for_condition(lambda: get_count() == expected_rows)
@@ -889,12 +884,8 @@ def test_max_set_age(started_cluster):
         ).splitlines()
     ]
     assert files_to_generate == len(paths_count)
-    try:
-        for path_count in paths_count:
-            assert 2 == path_count
-    finally:
-        logging.debug(f"{os.getenv('PYTEST_XDIST_WORKER')} - PMO: Got path count {path_count} for paths_count {paths_count}")
-        logging.debug(f"{os.getenv('PYTEST_XDIST_WORKER')} - PMO: Got paths: {node.query('SELECT *, _path from ' + dst_table_name + ' FORMAT JSONEachRow')}")
+    for path_count in paths_count:
+        assert 2 == path_count
 
     def get_object_storage_failures():
         return int(
@@ -904,7 +895,6 @@ def test_max_set_age(started_cluster):
         )
 
     failed_count = get_object_storage_failures()
-    logging.debug(f"{os.getenv('PYTEST_XDIST_WORKER')} - PMO: Got failed count {failed_count}")
 
     values = [
         ["failed", 1, 1],
