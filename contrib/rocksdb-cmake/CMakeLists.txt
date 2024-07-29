@@ -7,8 +7,6 @@ endif ()
 
 set (ROCKSDB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/rocksdb")
 
-## Platform specific compiler flags - no need to do, see cpu_features.cmake
-
 include_directories (${ROCKSDB_SOURCE_DIR})
 include_directories ("${ROCKSDB_SOURCE_DIR}/include")
 
@@ -360,11 +358,20 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64")
     "${ROCKSDB_SOURCE_DIR}/util/crc32c_ppc_asm.S")
 endif ()
 
-if (NOT NO_ARMV81_OR_HIGHER)
-  list (APPEND SOURCES "${ROCKSDB_SOURCE_DIR}/util/crc32c_arm64.cc")
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|AARCH64")
+    list (APPEND SOURCES "${ROCKSDB_SOURCE_DIR}/util/crc32c_arm64.cc")
 endif ()
 
 add_library (_rocksdb ${SOURCES})
+
+## Platform specific compiler flags for PowerPC, only HAS_ALTIVEC and HAVE_POWER8 are needed
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64")
+    if (POWER9) # in cpu_features.cmake
+        target_compile_definitions (_rocksdb PRIVATE HAS_ALTIVEC)
+    else ()
+    target_compile_definitions (_rocksdb PRIVATE HAVE_POWER8 HAS_ALTIVEC)
+    endif ()
+endif ()
 
 if (CMAKE_SYSTEM_NAME MATCHES "FreeBSD" AND NOT CMAKE_SYSTEM_NAME MATCHES "kFreeBSD")
   # FreeBSD has jemalloc as default malloc
