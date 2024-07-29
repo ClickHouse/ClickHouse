@@ -366,7 +366,10 @@ void TCPHandler::runImpl()
         try
         {
             /// If a user passed query-local timeouts, reset socket to initial state at the end of the query
-            SCOPE_EXIT({state.timeout_setter.reset();});
+            SCOPE_EXIT({
+                std::scoped_lock lock(in_mutex, out_mutex);
+                state.timeout_setter.reset();
+            });
 
             /** If Query - process it. If Ping or Cancel - go back to the beginning.
              *  There may come settings for a separate query that modify `query_context`.
@@ -779,6 +782,8 @@ void TCPHandler::extractConnectionSettingsFromContext(const ContextPtr & context
 
 bool TCPHandler::readDataNext()
 {
+    std::scoped_lock lock(in_mutex);
+
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
     /// Poll interval should not be greater than receive_timeout
