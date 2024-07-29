@@ -1031,13 +1031,6 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
                 setDefaultTableEngine(*to_engine, getContext()->getSettingsRef().default_table_engine.value);
             }
-            /// For external tables with restore_replace_external_engine_to_null setting we replace external engines to
-            /// Null table engine.
-            else if (getContext()->getSettingsRef().restore_replace_external_engines_to_null)
-            {
-                if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type != AccessType::NONE)
-                    setNullTableEngine(*create.storage);
-            }
             return;
         }
     }
@@ -1049,6 +1042,13 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         {
             /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
             setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
+        }
+        /// For external tables with restore_replace_external_engine_to_null setting we replace external engines to
+        /// Null table engine.
+        else if (getContext()->getSettingsRef().restore_replace_external_engines_to_null)
+        {
+            if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type != AccessType::NONE)
+                setNullTableEngine(*create.storage);
         }
         return;
     }
