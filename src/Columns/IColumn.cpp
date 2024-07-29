@@ -642,6 +642,11 @@ std::string_view IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull
 
         memory = arena.allocContinue(1, begin);
         *memory = 0;
+        // const auto * next_pos = self.serializeValueIntoMemory(n, memory + 1);
+        // size_t used_bytes = static_cast<size_t>(next_pos - memory);
+        // if (used_bytes < sz)
+        //     arena.rollback(sz - used_bytes);
+        // return {memory, used_bytes};
         auto res = self.serializeValueIntoArena(n, arena, begin, settings);
         return std::string_view(res.data() - 1, res.size() + 1);
     }
