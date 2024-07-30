@@ -88,7 +88,7 @@ Block filterColumnsPresentInSampleBlock(const Block & block, const Block & sampl
     return filtered_block;
 }
 
-Block materializeColumnsFromRightBlock(Block block, const Block & sample_block, const Names & right_key_names)
+Block materializeColumnsFromRightBlock(Block block, const Block & sample_block, const Names &)
 {
     for (const auto & sample_column : sample_block.getColumnsWithTypeAndName())
     {
@@ -107,11 +107,11 @@ Block materializeColumnsFromRightBlock(Block block, const Block & sample_block, 
             JoinCommon::convertColumnToNullable(column);
     }
 
-    for (const auto & column_name : right_key_names)
-    {
-        auto & column = block.getByName(column_name).column;
-        column = recursiveRemoveSparse(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
-    }
+    // for (const auto & column_name : right_key_names)
+    // {
+    //     auto & column = block.getByName(column_name).column;
+    //     column = recursiveRemoveSparse(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
+    // }
 
     return block;
 }
@@ -467,7 +467,8 @@ Block HashJoin::prepareRightBlock(const Block & block) const
 
 bool HashJoin::addBlockToJoin(const Block & source_block, bool check_limits)
 {
-    auto scattered_block = ScatteredBlock{source_block};
+    auto materialized = materializeColumnsFromRightBlock(source_block);
+    auto scattered_block = ScatteredBlock{materialized};
     return addBlockToJoin(scattered_block, check_limits);
 }
 
@@ -529,7 +530,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
         all_key_columns[column_name] = recursiveRemoveSparse(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
     }
 
-    Block block_to_save = prepareRightBlock(source_block.getSourceBlock());
+    Block block_to_save = filterColumnsPresentInSampleBlock(source_block.getSourceBlock(), savedBlockSample());
     if (shrink_blocks)
         block_to_save = block_to_save.shrinkToFit();
 
