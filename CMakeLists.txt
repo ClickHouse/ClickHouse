@@ -373,8 +373,8 @@ if (NOT (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE)
     #
     # The choice of the threshold is rather intuitive. Searching across the github
     # shows different choices from few thousands to million.
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mllvm -inlinehint-threshold=10000")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mllvm -inlinehint-threshold=10000")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mllvm -inlinehint-threshold=1234")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mllvm -inlinehint-threshold=1234")
 endif()
 
 # We cannot afford to use LTO when compiling unit tests, and it's not enough
