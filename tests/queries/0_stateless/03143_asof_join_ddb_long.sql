@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-distributed-cache
 
 DROP TABLE IF EXISTS build;
 DROP TABLE IF EXISTS skewed_probe;
