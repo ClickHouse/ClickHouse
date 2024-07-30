@@ -58,7 +58,7 @@ public:
 
     virtual String getName() const = 0;
 
-    /// Return the index of the lastest added log element. That index no less than the flashed index.
+    /// Return the index of the latest added log element. That index no less than the flashed index.
     /// The flashed index is the index of the last log element which has been flushed successfully.
     /// Thereby all the records whose index is less than the flashed index are flushed already.
     virtual Index getLastLogIndex() = 0;
