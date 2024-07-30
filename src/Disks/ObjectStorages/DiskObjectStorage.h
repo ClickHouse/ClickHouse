@@ -246,6 +246,8 @@ private:
     String write_resource_name;
 
     std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
+
+    UInt64 remove_shared_recursive_file_limit;
 };
 
 using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;

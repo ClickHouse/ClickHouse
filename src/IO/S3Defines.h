@@ -34,7 +34,6 @@ inline static constexpr uint64_t DEFAULT_MAX_SINGLE_READ_TRIES = 4;
 inline static constexpr uint64_t DEFAULT_MAX_UNEXPECTED_WRITE_ERROR_RETRIES = 4;
 inline static constexpr uint64_t DEFAULT_MAX_REDIRECTS = 10;
 inline static constexpr uint64_t DEFAULT_RETRY_ATTEMPTS = 100;
-inline static constexpr uint64_t DEFAULT_REMOVE_SHARED_RECURSIVE_BATCH_SIZE = 1000;
 
 inline static constexpr bool DEFAULT_ALLOW_NATIVE_COPY = true;
 inline static constexpr bool DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD = false;

@@ -42,7 +42,7 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
         *object_storage,
         *metadata_storage,
         send_metadata ? metadata_helper.get() : nullptr,
-        remove_shared_recursive_batch_size);
+        remove_shared_recursive_file_limit);
 }
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk)
@@ -52,7 +52,8 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDis
         *metadata_storage,
         *to_disk.getObjectStorage(),
         *to_disk.getMetadataStorage(),
-        send_metadata ? metadata_helper.get() : nullptr);
+        send_metadata ? metadata_helper.get() : nullptr,
+        remove_shared_recursive_file_limit);
 }
 
 
@@ -72,6 +73,7 @@ DiskObjectStorage::DiskObjectStorage(
     , read_resource_name(config.getString(config_prefix + ".read_resource", ""))
     , write_resource_name(config.getString(config_prefix + ".write_resource", ""))
     , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}, WriteSettings{}))
+    , remove_shared_recursive_file_limit(config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT))
 {
     data_source_description = DataSourceDescription{
         .type = DataSourceType::ObjectStorage,
@@ -374,6 +376,8 @@ void DiskObjectStorage::removeSharedFileIfExists(const String & path, bool delet
 void DiskObjectStorage::removeSharedRecursive(
     const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
+    /// At most remove_shared_recursive_file_limit files are removed in one transaction
+    /// Retry until all of them are removed
     while (exists(path))
     {
         auto transaction = createObjectStorageTransaction();
@@ -557,6 +561,8 @@ void DiskObjectStorage::applyNewSettings(
         if (String new_write_resource_name = config.getString(config_prefix + ".write_resource", ""); new_write_resource_name != write_resource_name)
             write_resource_name = new_write_resource_name;
     }
+
+    remove_shared_recursive_file_limit = config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT);
 
     IDisk::applyNewSettings(config, context_, config_prefix, disk_map);
 }

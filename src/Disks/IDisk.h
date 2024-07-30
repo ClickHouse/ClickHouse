@@ -8,7 +8,6 @@
 #include <Common/Exception.h>
 #include <Disks/DiskType.h>
 #include <IO/ReadSettings.h>
-#include <IO/S3Defines.h>
 #include <IO/WriteSettings.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/WriteMode.h>
@@ -116,7 +115,6 @@ public:
     /// Default constructor.
     IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
         : name(name_)
-        , remove_shared_recursive_batch_size(config.getUInt64(config_prefix + ".remove_shared_recursive_batch_size", S3::DEFAULT_REMOVE_SHARED_RECURSIVE_BATCH_SIZE))
         , copying_thread_pool(
               CurrentMetrics::IDiskCopierThreads,
               CurrentMetrics::IDiskCopierThreadsActive,
@@ -127,7 +125,6 @@ public:
 
     explicit IDisk(const String & name_)
         : name(name_)
-        , remove_shared_recursive_batch_size(S3::DEFAULT_REMOVE_SHARED_RECURSIVE_BATCH_SIZE)
         , copying_thread_pool(
               CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, 16)
     {
@@ -504,8 +501,6 @@ protected:
         const std::function<void()> & cancellation_hook);
 
     virtual void checkAccessImpl(const String & path);
-
-    UInt64 remove_shared_recursive_batch_size;
 
 private:
     ThreadPool copying_thread_pool;
