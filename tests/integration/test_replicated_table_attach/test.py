@@ -27,7 +27,20 @@ def started_cluster():
         cluster.shutdown()
 
 
+def start_clean_clickhouse():
+    # remove fault injection if present
+    if "fault_injection.xml" in node.exec_in_container(
+        ["bash", "-c", "ls /etc/clickhouse-server/config.d"]
+    ):
+        print("Removing fault injection")
+        node.exec_in_container(
+            ["bash", "-c", "rm /etc/clickhouse-server/config.d/fault_injection.xml"]
+        )
+        node.restart_clickhouse()
+
+
 def test_startup_with_small_bg_pool(started_cluster):
+    start_clean_clickhouse()
     node.query(
         "CREATE TABLE replicated_table (k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree('/clickhouse/replicated_table', 'r1') ORDER BY k"
     )
@@ -45,6 +58,7 @@ def test_startup_with_small_bg_pool(started_cluster):
 
 
 def test_startup_with_small_bg_pool_partitioned(started_cluster):
+    start_clean_clickhouse()
     node.query(
         "CREATE TABLE replicated_table_partitioned (k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree('/clickhouse/replicated_table_partitioned', 'r1') ORDER BY k"
     )
