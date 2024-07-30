@@ -384,12 +384,12 @@ TEST(Processors, BenchmarkReadNullableString)
     auto col1 = string_type->createColumn();
     auto col2 = string_type->createColumn();
     auto col3 = string_type->createColumn();
-    int rows = 500000;
+    int rows = 5000000;
     for (int i = 0; i < rows; ++i)
     {
         if (i % 9 != 0)
         {
-            col1->insert(std::to_string(i % 1000));
+            col1->insert(std::to_string(i % 100));
             col2->insert(std::to_string(std::rand()));
         }
         else
