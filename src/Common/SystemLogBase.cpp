@@ -27,7 +27,6 @@
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 
-#define LOGICAL_IF_THEN(A, B) (!(A) || !!(B))
 
 namespace DB
 {
@@ -287,5 +286,3 @@ SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_QUEUE)
 
 }
-
-#undef LOGICAL_IF_THEN
