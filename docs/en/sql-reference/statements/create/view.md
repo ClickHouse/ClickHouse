@@ -157,13 +157,14 @@ For your convenience, the old documentation is located [here](https://pastila.nl
 ## Refreshable Materialized View [Experimental] {#refreshable-materialized-view}
 
 ```sql
-CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 REFRESH EVERY|AFTER interval [OFFSET interval]
-RANDOMIZE FOR interval
-DEPENDS ON [db.]name [, [db.]name [, ...]]
-SETTINGS name = value [, name = value [, ...]]
+[RANDOMIZE FOR interval]
+[DEPENDS ON [db.]name [, [db.]name [, ...]]]
+[SETTINGS name = value [, name = value [, ...]]]
 [APPEND]
-[TO[db.]name] [(columns)] [ENGINE = engine] [EMPTY]
+[TO[db.]name] [(columns)] [ENGINE = engine] 
+[EMPTY]
 AS SELECT ...
 [COMMENT 'comment']
 ```
