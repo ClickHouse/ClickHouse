@@ -766,7 +766,9 @@ def _upload_build_artifacts(
         int(job_report.duration),
         GITHUB_JOB_API_URL(),
         head_ref=pr_info.head_ref,
-        pr_number=pr_info.number,
+        # PRInfo fetches pr number for release branches as well - set pr_number to 0 for release
+        #   so that build results are not mistakenly treated as feature branch builds
+        pr_number=pr_info.number if pr_info.is_pr else 0,
     )
     report_url = ci_cache.upload_build_report(build_result)
     print(f"Report file has been uploaded to [{report_url}]")
