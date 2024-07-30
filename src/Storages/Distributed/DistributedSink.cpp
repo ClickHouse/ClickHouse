@@ -326,7 +326,6 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 
         const auto & shard_info = cluster->getShardsInfo()[job.shard_index];
         auto & shard_job = per_shard_jobs[job.shard_index];
-        const auto & addresses = cluster->getShardsAddresses();
 
         if (num_shards > 1)
         {
@@ -366,7 +365,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         {
             if (!job.is_local_job || !settings.prefer_localhost_replica)
             {
-                auto query_context = QualifiedTableName(storage.getRemoteDatabaseName(), storage.getRemoteTableName());
+                QualifiedTableName query_context{storage.getRemoteDatabaseName(), storage.getRemoteTableName()};
 
                 if (!job.executor)
                 {
@@ -432,11 +431,10 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 bool DistributedSink::reconnectAndResend(JobReplica & job, const Block & shard_block)
 {
     const auto & settings = context->getSettingsRef();
-    const size_t max_retries = settings.max_retries;
 
     try
     {
-        job.connection_entry = cluster->getConnectionWithRetries(job.shard_index, job.replica_index, settings, max_retries);
+        job.connection_entry = cluster->getConnectionWithRetries(job.shard_index, job.replica_index, settings, settings.max_retries);
 
         if (throttler)
             job.connection_entry->setThrottler(throttler);

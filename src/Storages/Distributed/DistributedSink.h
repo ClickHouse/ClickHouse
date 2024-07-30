@@ -13,6 +13,7 @@
 #include <chrono>
 #include <optional>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/Settings.h>
 
 namespace Poco
 {
@@ -113,7 +114,6 @@ private:
     std::optional<ThreadPool> pool;
     ThrottlerPtr throttler;
 
-    size_t max_retries;
     std::mutex execution_mutex;
 
     struct JobReplica
