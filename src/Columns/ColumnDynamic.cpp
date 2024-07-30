@@ -215,7 +215,7 @@ bool ColumnDynamic::tryInsert(const DB::Field & x)
 }
 
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnDynamic::insertFrom(const DB::IColumn & src_, size_t n)
 #else
 void ColumnDynamic::doInsertFrom(const DB::IColumn & src_, size_t n)
@@ -269,7 +269,7 @@ void ColumnDynamic::doInsertFrom(const DB::IColumn & src_, size_t n)
     variant_col.insertIntoVariantFrom(string_variant_discr, *tmp_string_column, 0);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnDynamic::insertRangeFrom(const DB::IColumn & src_, size_t start, size_t length)
 #else
 void ColumnDynamic::doInsertRangeFrom(const DB::IColumn & src_, size_t start, size_t length)
@@ -439,7 +439,7 @@ void ColumnDynamic::doInsertRangeFrom(const DB::IColumn & src_, size_t start, si
     }
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnDynamic::insertManyFrom(const DB::IColumn & src_, size_t position, size_t length)
 #else
 void ColumnDynamic::doInsertManyFrom(const DB::IColumn & src_, size_t position, size_t length)
@@ -603,7 +603,7 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
     variant_col.getVariantByGlobalDiscriminator(discr).updateHashWithValue(variant_col.offsetAt(n), hash);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnDynamic::compareAt(size_t n, size_t m, const DB::IColumn & rhs, int nan_direction_hint) const
 #else
 int ColumnDynamic::doCompareAt(size_t n, size_t m, const DB::IColumn & rhs, int nan_direction_hint) const

@@ -254,11 +254,14 @@ def main():
         statuses = get_commit_filtered_statuses(commit)
 
         has_failed_statuses = False
+        has_native_failed_status = False
         for status in statuses:
             print(f"Check status [{status.context}], [{status.state}]")
             if CI.is_required(status.context) and status.state != SUCCESS:
                 print(f"WARNING: Failed status [{status.context}], [{status.state}]")
                 has_failed_statuses = True
+                if status.context != CI.StatusNames.SYNC:
+                    has_native_failed_status = True
 
         if args.wf_status == SUCCESS or has_failed_statuses:
             # set Mergeable check if workflow is successful (green)
@@ -280,7 +283,7 @@ def main():
             print(
                 "Workflow failed but no failed statuses found (died runner?) - cannot set Mergeable Check status"
             )
-        if args.wf_status == SUCCESS and not has_failed_statuses:
+        if args.wf_status == SUCCESS and not has_native_failed_status:
             sys.exit(0)
         else:
             sys.exit(1)
