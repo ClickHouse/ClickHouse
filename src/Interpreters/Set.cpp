@@ -290,6 +290,8 @@ ColumnPtr returnColumnOrFilter(const ColumnPtr & first, const ColumnPtr & second
         return first;
 
     FilterDescription filter_descr(*second);
+    if (!filter_descr.data)
+        return nullptr;
     return first->filter(*filter_descr.data, 0);
 }
 
