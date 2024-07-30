@@ -2726,18 +2726,18 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         {
             return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
                 parameters);
-        }, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, properties});
 
-    factory.registerAlias("dense_rank", "denseRank", AggregateFunctionFactory::Case::Sensitive);
+    factory.registerAlias("dense_rank", "denseRank", AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("percentRank", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionPercentRank>(name, argument_types,
                 parameters);
-        }, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, properties});
 
-    factory.registerAlias("percent_rank", "percentRank", AggregateFunctionFactory::Case::Sensitive);
+    factory.registerAlias("percent_rank", "percentRank", AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("row_number", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
