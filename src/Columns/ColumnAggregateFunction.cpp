@@ -332,9 +332,36 @@ void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
 {
     ensureOwnership();
     Arena & arena = createOrGetArena();
-    char * default_ptr = arena.alignedAlloc(func->sizeOfData(), func->alignOfData());
-    func->create(default_ptr);
-    expandDataByMask<char *>(data, mask, inverted, default_ptr);
+
+    if (mask.size() < data.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
+
+    ssize_t from = data.size() - 1;
+    ssize_t index = mask.size() - 1;
+    data.resize(mask.size());
+    while (index >= 0)
+    {
+        if (!!mask[index] ^ inverted)
+        {
+            if (from < 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
+
+            /// Copy only if it makes sense.
+            if (index != from)
+                data[index] = data[from];
+            --from;
+        }
+        else
+        {
+            data[index] = arena.alignedAlloc(func->sizeOfData(), func->alignOfData());
+            func->create(data[index]);
+        }
+
+        --index;
+    }
+
+    if (from != -1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
 }
 
 ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
