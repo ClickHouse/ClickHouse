@@ -35,7 +35,6 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
-#include "Common/ZooKeeper/ZooKeeperRetries.h"
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -44,6 +43,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackupCoordination.h>
@@ -205,12 +205,12 @@ public:
             for (const auto & [key, _] : new_values)
                 key_paths.push_back(storage.fullPathForKey(key));
 
-            zkutil::ZooKeeper::MultiTryGetResponse results;
+            zkutil::ZooKeeper::MultiExistsResponse results;
 
             if constexpr (!for_update)
             {
                 if (!strict)
-                    results = zookeeper->tryGet(key_paths);
+                    results = zookeeper->exists(key_paths);
             }
 
             Coordination::Requests requests;
@@ -231,8 +231,7 @@ public:
                 {
                     if (!strict && results[i].error == Coordination::Error::ZOK)
                     {
-                        if (results[i].data != new_values[key])
-                            requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], -1));
+                        requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], -1));
                     }
                     else
                     {
@@ -241,9 +240,6 @@ public:
                     }
                 }
             }
-
-            if (requests.empty())
-                return;
 
             if (new_keys_num != 0)
             {
