@@ -125,7 +125,7 @@ html {{ min-height: 100%; font-family: "DejaVu Sans", "Noto Sans", Arial, sans-s
 h1 {{ margin-left: 10px; }}
 th, td {{ padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; border: 1px solid var(--table-border-color); }}
 td {{ background: var(--td-background); }}
-th {{ background: var(--th-background); }}
+th {{ background: var(--th-background); white-space: nowrap; }}
 a {{ color: var(--link-color); text-decoration: none; }}
 a:hover, a:active {{ color: var(--link-hover-color); text-decoration: none; }}
 table {{ box-shadow: 0 8px 25px -5px rgba(0, 0, 0, var(--shadow-intensity)); border-collapse: collapse; border-spacing: 0; }}
@@ -135,6 +135,7 @@ th {{ cursor: pointer; }}
 tr:hover {{ filter: var(--tr-hover-filter); }}
 .expandable {{ cursor: pointer; }}
 .expandable-content {{ display: none; }}
+pre {{ white-space: pre-wrap; }}
 #fish {{ display: none; float: right; position: relative; top: -20em; right: 2vw; margin-bottom: -20em; width: 30vw; filter: brightness(7%); z-index: -1; }}
 
 .themes {{

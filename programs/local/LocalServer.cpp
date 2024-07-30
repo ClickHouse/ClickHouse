@@ -569,9 +569,6 @@ void LocalServer::processConfig()
     if (!queries.empty() && getClientConfiguration().has("queries-file"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
-    if (getClientConfiguration().has("multiquery"))
-        is_multiquery = true;
-
     pager = getClientConfiguration().getString("pager", "");
 
     delayed_interactive = getClientConfiguration().has("interactive") && (!queries.empty() || getClientConfiguration().has("queries-file"));
@@ -935,13 +932,6 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
                 /// param_name=value
                 query_parameters.emplace(param_continuation.substr(0, equal_pos), param_continuation.substr(equal_pos + 1));
             }
-        }
-        else if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
-        {
-            /// Transform the abbreviated syntax '--multiquery <SQL>' into the full syntax '--multiquery -q <SQL>'
-            ++arg_num;
-            arg = argv[arg_num];
-            addMultiquery(arg, common_arguments);
         }
         else
         {
