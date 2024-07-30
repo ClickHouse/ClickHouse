@@ -41,6 +41,7 @@ def start_clean_clickhouse():
 
 def test_startup_with_small_bg_pool(started_cluster):
     start_clean_clickhouse()
+    node.query("DROP TABLE IF EXISTS replicated_table SYNC")
     node.query(
         "CREATE TABLE replicated_table (k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree('/clickhouse/replicated_table', 'r1') ORDER BY k"
     )
@@ -54,11 +55,10 @@ def test_startup_with_small_bg_pool(started_cluster):
     node.restart_clickhouse(stop_start_wait_sec=10)
     assert_values()
 
-    node.query("DROP TABLE replicated_table SYNC")
-
 
 def test_startup_with_small_bg_pool_partitioned(started_cluster):
     start_clean_clickhouse()
+    node.query("DROP TABLE IF EXISTS replicated_table_partitioned SYNC")
     node.query(
         "CREATE TABLE replicated_table_partitioned (k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree('/clickhouse/replicated_table_partitioned', 'r1') ORDER BY k"
     )
@@ -81,5 +81,3 @@ def test_startup_with_small_bg_pool_partitioned(started_cluster):
 
     # check that we activate it in the end
     node.query_with_retry("INSERT INTO replicated_table_partitioned VALUES(20, 30)")
-
-    node.query("DROP TABLE replicated_table_partitioned SYNC")
