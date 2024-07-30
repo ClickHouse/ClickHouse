@@ -1048,14 +1048,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// In case when the client had to retry some mini-INSERTs then they will be properly deduplicated
             /// by the source tables. This functionality is controlled by a setting `async_insert_deduplicate`.
             /// But then they will be glued together into a block and pushed through a chain of Materialized Views if any.
-            /// The process of forming such blocks is not deteministic so each time we retry mini-INSERTs the resulting
+            /// The process of forming such blocks is not deterministic so each time we retry mini-INSERTs the resulting
             /// block may be concatenated differently.
             /// That's why deduplication in dependent Materialized Views doesn't make sense in presence of async INSERTs.
             if (settings.throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert &&
                 settings.deduplicate_blocks_in_dependent_materialized_views)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Deduplication is dependent materialized view cannot work together with async inserts. "\
-                        "Please disable eiher `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
+                        "Deduplication in dependent materialized view cannot work together with async inserts. "\
+                        "Please disable either `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
 
             quota = context->getQuota();
             if (quota)

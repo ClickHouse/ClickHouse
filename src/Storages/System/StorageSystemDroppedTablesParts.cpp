@@ -11,7 +11,7 @@ namespace DB
 {
 
 
-StoragesDroppedInfoStream::StoragesDroppedInfoStream(const ActionsDAGPtr & filter, ContextPtr context)
+StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> filter, ContextPtr context)
         : StoragesInfoStreamBase(context)
 {
     /// Will apply WHERE to subset of columns and then add more columns.
@@ -75,7 +75,7 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(const ActionsDAGPtr & filte
     {
         /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
         if (filter)
-            VirtualColumnUtils::filterBlockWithDAG(filter, block_to_filter, context);
+            VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*filter), context), block_to_filter);
         rows = block_to_filter.rows();
     }
 

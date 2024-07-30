@@ -1301,6 +1301,7 @@ void PartMergerWriter::prepare()
 bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 {
     Block cur_block;
+    Block projection_header;
     if (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor->pull(cur_block))
     {
         if (ctx->minmax_idx)
@@ -1318,14 +1319,12 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
             Block block_to_squash = projection.calculate(cur_block, ctx->context);
-            projection_squashes[i].header = block_to_squash;
-            Chunk planned_chunk = projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()});
+            projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
 
-            if (planned_chunk.hasChunkInfo())
+            Chunk squashed_chunk = Squashing::squash(projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}));
+            if (squashed_chunk)
             {
-                Chunk projection_chunk = DB::Squashing::squash(std::move(planned_chunk));
-
-                auto result = block_to_squash.cloneWithColumns(projection_chunk.getColumns());
+                auto result = projection_squashes[i].getHeader().cloneWithColumns(squashed_chunk.detachColumns());
                 auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
                     *ctx->data, ctx->log, result, projection, ctx->new_data_part.get(), ++block_num);
                 tmp_part.finalize();
@@ -1346,12 +1345,10 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     {
         const auto & projection = *ctx->projections_to_build[i];
         auto & projection_squash_plan = projection_squashes[i];
-        auto planned_chunk = projection_squash_plan.flush();
-        if (planned_chunk.hasChunkInfo())
+        auto squashed_chunk = Squashing::squash(projection_squash_plan.flush());
+        if (squashed_chunk)
         {
-            Chunk projection_chunk = DB::Squashing::squash(std::move(planned_chunk));
-
-            auto result = projection_squash_plan.header.cloneWithColumns(projection_chunk.getColumns());
+            auto result = projection_squash_plan.getHeader().cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
                 *ctx->data, ctx->log, result, projection, ctx->new_data_part.get(), ++block_num);
             temp_part.finalize();

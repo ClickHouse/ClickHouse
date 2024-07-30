@@ -8,7 +8,6 @@
 namespace DB
 {
 
-
 /// Alter conversions which should be applied on-fly for part.
 /// Built from of the most recent mutation commands for part.
 /// Now only ALTER RENAME COLUMN is applied.
