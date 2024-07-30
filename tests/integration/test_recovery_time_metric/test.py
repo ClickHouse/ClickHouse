@@ -37,9 +37,7 @@ def test_recovery_time_metric(start_cluster):
         """
     )
 
-    node.exec_in_container(
-        ["bash", "-c", "rm /var/lib/clickhouse/metadata/rdb/t.sql"]
-    )
+    node.exec_in_container(["bash", "-c", "rm /var/lib/clickhouse/metadata/rdb/t.sql"])
 
     node.restart_clickhouse()
 
