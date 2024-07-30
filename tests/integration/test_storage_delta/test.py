@@ -452,6 +452,18 @@ def test_restart_broken(started_cluster):
         f"SELECT count() FROM {TABLE_NAME}"
     )
 
+    s3_disk_no_key_errors_metric_value = int(
+        instance.query(
+            """
+            SELECT value
+            FROM system.metrics
+            WHERE metric = 'S3DiskNoKeyErrors'
+            """
+        ).strip()
+    )
+
+    assert s3_disk_no_key_errors_metric_value == 0
+
     minio_client.make_bucket(bucket)
 
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")

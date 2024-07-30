@@ -385,10 +385,9 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
     request.overrideURI(std::move(*bucket_uri));
 
-    if (isClientForDisk() && error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
-        CurrentMetrics::add(CurrentMetrics::S3DiskNoKeyErrors);
-
-    return enrichErrorMessage(
+    /// The next call is NOT a recurcive call
+    /// This is a virtuall call Aws::S3::S3Client::HeadObject(const Model::HeadObjectRequest&)
+    return processRequestResult(
         HeadObject(static_cast<const Model::HeadObjectRequest&>(request)));
 }
 
@@ -409,11 +408,8 @@ Model::ListObjectsOutcome Client::ListObjects(ListObjectsRequest & request) cons
 
 Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
 {
-    auto resp = doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); });
-    if (!resp.IsSuccess() && isClientForDisk() && resp.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
-        CurrentMetrics::add(CurrentMetrics::S3DiskNoKeyErrors);
-
-    return enrichErrorMessage(std::move(resp));
+    return processRequestResult(
+        doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); }));
 }
 
 Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(AbortMultipartUploadRequest & request) const
@@ -699,10 +695,13 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 }
 
 template <typename RequestResult>
-RequestResult Client::enrichErrorMessage(RequestResult && outcome) const
+RequestResult Client::processRequestResult(RequestResult && outcome) const
 {
     if (outcome.IsSuccess() || !isClientForDisk())
         return std::forward<RequestResult>(outcome);
+
+    if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+        CurrentMetrics::add(CurrentMetrics::S3DiskNoKeyErrors);
 
     String enriched_message = fmt::format(
         "{} {}",

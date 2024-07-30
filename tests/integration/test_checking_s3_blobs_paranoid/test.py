@@ -689,3 +689,15 @@ def test_no_key_found_disk(cluster, broken_s3):
         "DB::Exception: The specified key does not exist. This error happened for S3 disk."
         in error
     )
+
+    s3_disk_no_key_errors_metric_value = int(
+        node.query(
+            """
+            SELECT value
+            FROM system.metrics
+            WHERE metric = 'S3DiskNoKeyErrors'
+            """
+        ).strip()
+    )
+
+    assert s3_disk_no_key_errors_metric_value > 0
