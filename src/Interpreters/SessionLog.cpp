@@ -86,6 +86,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SHA256_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::DOUBLE_SHA1_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::LDAP),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::JWT),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSH_KEY),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSL_CERTIFICATE),
@@ -93,7 +94,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::HTTP),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 10);
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 11);
 
     auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -214,7 +215,7 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
                                  const ClientInfo & client_info,
                                  const UserPtr & login_user)
 {
-    DB::SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
+    SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
     log_entry.client_info = client_info;
 
     if (login_user)

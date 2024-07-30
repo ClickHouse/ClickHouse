@@ -67,7 +67,6 @@ static FillColumnDescription::StepFunction getStepFunction(
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
     }
-    UNREACHABLE();
 }
 
 static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & type)
@@ -204,7 +203,7 @@ FillingTransform::FillingTransform(
     , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
 {
     if (interpolate_description)
-        interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions);
+        interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions.clone());
 
     std::vector<bool> is_fill_column(header_.columns());
     for (size_t i = 0, size = fill_description.size(); i < size; ++i)
@@ -545,8 +544,7 @@ size_t getRangeEnd(size_t begin, size_t end, Predicate pred)
 
     const size_t linear_probe_threadhold = 16;
     size_t linear_probe_end = begin + linear_probe_threadhold;
-    if (linear_probe_end > end)
-        linear_probe_end = end;
+    linear_probe_end = std::min(linear_probe_end, end);
 
     for (size_t pos = begin; pos < linear_probe_end; ++pos)
     {

@@ -4,9 +4,10 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
+
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import TestResults
@@ -40,6 +41,7 @@ class ClickHouseHelper:
         query: str,
         file: Path,
         additional_options: Optional[Dict[str, str]] = None,
+        **kwargs: Any,
     ) -> None:
         params = {
             "query": query,
@@ -52,7 +54,7 @@ class ClickHouseHelper:
 
         with open(file, "rb") as data_fd:
             ClickHouseHelper._insert_post(
-                url, params=params, data=data_fd, headers=auth
+                url, params=params, data=data_fd, headers=auth, **kwargs
             )
 
     @staticmethod
@@ -195,6 +197,10 @@ def get_instance_id():
     return _query_imds("latest/meta-data/instance-id")
 
 
+def get_instance_lifecycle():
+    return _query_imds("latest/meta-data/instance-life-cycle")
+
+
 def prepare_tests_results_for_clickhouse(
     pr_info: PRInfo,
     test_results: TestResults,
@@ -231,7 +237,7 @@ def prepare_tests_results_for_clickhouse(
         "head_ref": head_ref,
         "head_repo": head_repo,
         "task_url": pr_info.task_url,
-        "instance_type": get_instance_type(),
+        "instance_type": ",".join([get_instance_type(), get_instance_lifecycle()]),
         "instance_id": get_instance_id(),
     }
 

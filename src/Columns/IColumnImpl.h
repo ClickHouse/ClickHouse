@@ -139,7 +139,7 @@ void IColumn::updatePermutationImpl(
     if (equal_ranges.empty())
         return;
 
-    if (limit >= size() || limit > equal_ranges.back().second)
+    if (limit >= size() || limit > equal_ranges.back().to)
         limit = 0;
 
     EqualRanges new_ranges;

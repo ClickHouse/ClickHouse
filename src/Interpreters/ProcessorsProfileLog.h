@@ -27,11 +27,11 @@ struct ProcessorProfileLogElement
     String step_uniq_id;
 
     /// Milliseconds spend in IProcessor::work()
-    UInt32 elapsed_us{};
+    UInt64 elapsed_us{};
     /// IProcessor::NeedData
-    UInt32 input_wait_elapsed_us{};
+    UInt64 input_wait_elapsed_us{};
     /// IProcessor::PortFull
-    UInt32 output_wait_elapsed_us{};
+    UInt64 output_wait_elapsed_us{};
 
     size_t input_rows{};
     size_t input_bytes{};

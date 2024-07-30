@@ -17,7 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 class FunctionGenerateULID : public IFunction
@@ -45,7 +45,7 @@ public:
     {
         if (arguments.size() > 1)
             throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
                 "Number of arguments for function {} doesn't match: passed {}, should be 0 or 1.",
                 getName(), arguments.size());
 
@@ -85,8 +85,7 @@ The function returns a value of type FixedString(26).
             {"ulid", "SELECT generateULID()", ""},
             {"multiple", "SELECT generateULID(1), generateULID(2)", ""}},
         .categories{"ULID"}
-    },
-    FunctionFactory::CaseSensitive);
+    });
 }
 
 }

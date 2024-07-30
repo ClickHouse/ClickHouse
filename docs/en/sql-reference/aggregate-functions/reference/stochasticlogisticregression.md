@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/stochasticlogisticregression
-sidebar_position: 222
+sidebar_position: 193
 ---
 
 # stochasticLogisticRegression
@@ -11,7 +11,7 @@ This function implements stochastic logistic regression. It can be used for bina
 
 Parameters are exactly the same as in stochasticLinearRegression:
 `learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
-For more information see [parameters](#agg_functions-stochasticlinearregression-parameters).
+For more information see [parameters](../reference/stochasticlinearregression.md/#parameters).
 
 ``` text
 stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')

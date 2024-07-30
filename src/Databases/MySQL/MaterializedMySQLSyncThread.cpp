@@ -29,6 +29,7 @@
 #include <Common/randomNumber.h>
 #include <Common/setThreadName.h>
 #include <base/sleep.h>
+#include <base/scope_guard.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Parsers/CommonParsers.h>
@@ -532,13 +533,17 @@ static inline void dumpDataForTables(
 bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & metadata)
 {
     bool opened_transaction = false;
-    mysqlxx::PoolWithFailover::Entry connection;
 
     while (!isCancelled())
     {
         try
         {
-            connection = pool.tryGet();
+            mysqlxx::PoolWithFailover::Entry connection = pool.tryGet();
+            SCOPE_EXIT({
+                if (opened_transaction)
+                    connection->query("ROLLBACK").execute();
+            });
+
             if (connection.isNull())
             {
                 if (settings->max_wait_time_when_mysql_unavailable < 0)
@@ -601,9 +606,6 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
         catch (...)
         {
             tryLogCurrentException(log);
-
-            if (opened_transaction)
-                connection->query("ROLLBACK").execute();
 
             if (settings->max_wait_time_when_mysql_unavailable < 0)
                 throw;
@@ -716,6 +718,16 @@ static void writeFieldsToColumn(
 
                 null_map_column->insertValue(0);
             }
+            else
+            {
+                // Column is not null but field is null. It's possible due to overrides
+                if (field.isNull())
+                {
+                    column_to.insertDefault();
+                    return false;
+                }
+            }
+
 
             return true;
         };
@@ -791,7 +803,7 @@ static void writeFieldsToColumn(
 
                 if (write_data_to_null_map(value, index))
                 {
-                    const String & data = value.get<const String &>();
+                    const String & data = value.safeGet<const String &>();
                     casted_string_column->insertData(data.data(), data.size());
                 }
             }

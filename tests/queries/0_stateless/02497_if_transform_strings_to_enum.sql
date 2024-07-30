@@ -37,9 +37,9 @@ SELECT transform(number, [NULL], ['google', 'censor.net', 'yahoo'], 'other') FRO
 EXPLAIN SYNTAX SELECT transform(number, [NULL], ['google', 'censor.net', 'yahoo'], 'other') FROM (SELECT NULL as number FROM system.numbers LIMIT 10);
 EXPLAIN QUERY TREE run_passes = 1 SELECT transform(number, [NULL], ['google', 'censor.net', 'yahoo'], 'other') FROM (SELECT NULL as number FROM system.numbers LIMIT 10);
 
-SELECT transform(number, NULL, ['google', 'censor.net', 'yahoo'], 'other') FROM system.numbers LIMIT 10; -- { serverError 43 }
-EXPLAIN SYNTAX SELECT transform(number, NULL, ['google', 'censor.net', 'yahoo'], 'other') FROM system.numbers LIMIT 10; -- { serverError 43 }
-EXPLAIN QUERY TREE run_passes = 1 SELECT transform(number, NULL, ['google', 'censor.net', 'yahoo'], 'other') FROM system.numbers LIMIT 10; -- { serverError 43 }
+SELECT transform(number, NULL, ['google', 'censor.net', 'yahoo'], 'other') FROM system.numbers LIMIT 10; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+EXPLAIN SYNTAX SELECT transform(number, NULL, ['google', 'censor.net', 'yahoo'], 'other') FROM system.numbers LIMIT 10; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+EXPLAIN QUERY TREE run_passes = 1 SELECT transform(number, NULL, ['google', 'censor.net', 'yahoo'], 'other') FROM system.numbers LIMIT 10; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SET optimize_if_transform_strings_to_enum = 0;
 

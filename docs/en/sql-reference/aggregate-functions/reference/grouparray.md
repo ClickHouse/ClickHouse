@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/grouparray
-sidebar_position: 110
+sidebar_position: 139
 ---
 
 # groupArray

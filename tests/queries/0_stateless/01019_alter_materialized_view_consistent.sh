@@ -54,10 +54,10 @@ function alter_thread() {
     for i in {0..5}; do
         ALTER[$i]="ALTER TABLE mv MODIFY QUERY SELECT v == 1 as test, v as case FROM src_a;"
     done
-    # Insert 3 ALTERs to src_b, one in the first half of the array and two in arbitrary positions.
-    ALTER[$RANDOM % 3]="ALTER TABLE mv MODIFY QUERY SELECT v == 2 as test, v as case FROM src_b;"
-    ALTER[$RANDOM % 6]="ALTER TABLE mv MODIFY QUERY SELECT v == 2 as test, v as case FROM src_b;"
-    ALTER[$RANDOM % 6]="ALTER TABLE mv MODIFY QUERY SELECT v == 2 as test, v as case FROM src_b;"
+    # Insert 3 ALTERs to src_b randomly in each third of array.
+    ALTER[$RANDOM % 2]="ALTER TABLE mv MODIFY QUERY SELECT v == 2 as test, v as case FROM src_b;"
+    ALTER[$RANDOM % 2 + 2]="ALTER TABLE mv MODIFY QUERY SELECT v == 2 as test, v as case FROM src_b;"
+    ALTER[$RANDOM % 2 + 4]="ALTER TABLE mv MODIFY QUERY SELECT v == 2 as test, v as case FROM src_b;"
 
     i=0
     while true; do

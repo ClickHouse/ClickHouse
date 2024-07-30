@@ -52,6 +52,7 @@ from helpers.client import QueryRuntimeException
 import docker
 
 from .client import Client
+from .retry_decorator import retry
 
 from .config_cluster import *
 
@@ -73,7 +74,7 @@ CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.lo
 # Minimum version we use in integration tests to check compatibility with old releases
 # Keep in mind that we only support upgrading between releases that are at most 1 year different.
 # This means that this minimum need to be, at least, 1 year older than the current release
-CLICKHOUSE_CI_MIN_TESTED_VERSION = "22.8"
+CLICKHOUSE_CI_MIN_TESTED_VERSION = "23.3"
 
 
 # to create docker-compose env file
@@ -513,6 +514,7 @@ class ClickHouseCluster:
         self.minio_redirect_host = "proxy1"
         self.minio_redirect_ip = None
         self.minio_redirect_port = 8080
+        self.minio_docker_id = self.get_instance_docker_id(self.minio_host)
 
         self.spark_session = None
 
@@ -1453,9 +1455,9 @@ class ClickHouseCluster:
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_azurite = True
         env_variables["AZURITE_PORT"] = str(self.azurite_port)
-        env_variables[
-            "AZURITE_STORAGE_ACCOUNT_URL"
-        ] = f"http://azurite1:{env_variables['AZURITE_PORT']}/devstoreaccount1"
+        env_variables["AZURITE_STORAGE_ACCOUNT_URL"] = (
+            f"http://azurite1:{env_variables['AZURITE_PORT']}/devstoreaccount1"
+        )
         env_variables["AZURITE_CONNECTION_STRING"] = (
             f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
             f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
@@ -1652,9 +1654,9 @@ class ClickHouseCluster:
 
         # Code coverage files will be placed in database directory
         # (affect only WITH_COVERAGE=1 build)
-        env_variables[
-            "LLVM_PROFILE_FILE"
-        ] = "/var/lib/clickhouse/server_%h_%p_%m.profraw"
+        env_variables["LLVM_PROFILE_FILE"] = (
+            "/var/lib/clickhouse/server_%h_%p_%m.profraw"
+        )
 
         clickhouse_start_command = CLICKHOUSE_START_COMMAND
         if clickhouse_log_file:
@@ -1667,9 +1669,9 @@ class ClickHouseCluster:
             cluster=self,
             base_path=self.base_dir,
             name=name,
-            base_config_dir=base_config_dir
-            if base_config_dir
-            else self.base_config_dir,
+            base_config_dir=(
+                base_config_dir if base_config_dir else self.base_config_dir
+            ),
             custom_main_configs=main_configs or [],
             custom_user_configs=user_configs or [],
             custom_dictionaries=dictionaries or [],
@@ -2639,7 +2641,9 @@ class ClickHouseCluster:
                     [
                         "bash",
                         "-c",
-                        f"/opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_host}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org",
+                        f"/opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_host}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org"
+                        f'| grep -c -E "member: cn=j(ohn|ane)doe"'
+                        f"| grep 2 >> /dev/null",
                     ],
                     user="root",
                 )
@@ -2687,15 +2691,12 @@ class ClickHouseCluster:
 
             images_pull_cmd = self.base_cmd + ["pull"]
             # sometimes dockerhub/proxy can be flaky
-            for i in range(5):
-                try:
-                    run_and_check(images_pull_cmd)
-                    break
-                except Exception as ex:
-                    if i == 4:
-                        raise ex
-                    logging.info("Got exception pulling images: %s", ex)
-                    time.sleep(i * 3)
+
+            retry(
+                log_function=lambda exception: logging.info(
+                    "Got exception pulling images: %s", exception
+                ),
+            )(run_and_check)(images_pull_cmd)
 
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")
@@ -2968,7 +2969,11 @@ class ClickHouseCluster:
                     "Trying to create Azurite instance by command %s",
                     " ".join(map(str, azurite_start_cmd)),
                 )
-                run_and_check(azurite_start_cmd)
+                retry(
+                    log_function=lambda exception: logging.info(
+                        f"Azurite initialization failed with error: {exception}"
+                    ),
+                )(run_and_check)(azurite_start_cmd)
                 self.up_called = True
                 logging.info("Trying to connect to Azurite")
                 self.wait_azurite_to_start()
@@ -4294,6 +4299,9 @@ class ClickHouseInstance:
         )
         return xml_str
 
+    def get_machine_name(self):
+        return platform.machine()
+
     @property
     def odbc_drivers(self):
         if self.odbc_ini_path:
@@ -4301,12 +4309,12 @@ class ClickHouseInstance:
                 "SQLite3": {
                     "DSN": "sqlite3_odbc",
                     "Database": "/tmp/sqliteodbc",
-                    "Driver": "/usr/lib/x86_64-linux-gnu/odbc/libsqlite3odbc.so",
-                    "Setup": "/usr/lib/x86_64-linux-gnu/odbc/libsqlite3odbc.so",
+                    "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libsqlite3odbc.so",
+                    "Setup": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libsqlite3odbc.so",
                 },
                 "MySQL": {
                     "DSN": "mysql_odbc",
-                    "Driver": "/usr/lib/x86_64-linux-gnu/odbc/libmyodbc.so",
+                    "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libmyodbc.so",
                     "Database": odbc_mysql_db,
                     "Uid": odbc_mysql_uid,
                     "Pwd": odbc_mysql_pass,
@@ -4323,8 +4331,8 @@ class ClickHouseInstance:
                     "ReadOnly": "No",
                     "RowVersioning": "No",
                     "ShowSystemTables": "No",
-                    "Driver": "/usr/lib/x86_64-linux-gnu/odbc/psqlodbca.so",
-                    "Setup": "/usr/lib/x86_64-linux-gnu/odbc/libodbcpsqlS.so",
+                    "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/psqlodbca.so",
+                    "Setup": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libodbcpsqlS.so",
                     "ConnSettings": "",
                 },
             }

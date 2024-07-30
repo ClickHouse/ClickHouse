@@ -9,5 +9,5 @@ SELECT translateUTF8(toString(number), '1234567890', 'ዩय𐑿𐐏নՅðй¿�
 SELECT translate('abc', '', '');
 SELECT translateUTF8('abc', '', '');
 
-SELECT translate('abc', 'Ááéíóúôè', 'aaeiouoe'); -- { serverError 36 }
-SELECT translateUTF8('abc', 'efg', ''); -- { serverError 36 }
+SELECT translate('abc', 'Ááéíóúôè', 'aaeiouoe'); -- { serverError BAD_ARGUMENTS }
+SELECT translateUTF8('abc', 'efg', ''); -- { serverError BAD_ARGUMENTS }

@@ -201,7 +201,7 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
 }
 
 MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
-    const ActionsDAGPtr & filter_actions_dag, ContextPtr context_, const Block & header_, size_t hash_functions_)
+    const ActionsDAG * filter_actions_dag, ContextPtr context_, const Block & header_, size_t hash_functions_)
     : WithContext(context_), header(header_), hash_functions(hash_functions_)
 {
     if (!filter_actions_dag)
@@ -490,11 +490,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         if (key_node_function_name == "arrayElement")
         {
             /** Try to parse arrayElement for mapKeys index.
-              * It is important to ignore keys like column_map['Key'] IN ('') because if key does not exists in map
-              * we return default value for arrayElement.
+              * It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
+              * we return the default value for arrayElement.
               *
               * We cannot skip keys that does not exist in map if comparison is with default type value because
-              * that way we skip necessary granules where map key does not exists.
+              * that way we skip necessary granules where the map key does not exist.
               */
             if (!prepared_set)
                 return false;
@@ -781,11 +781,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (key_node_function_name == "arrayElement" && (function_name == "equals" || function_name == "notEquals"))
         {
             /** Try to parse arrayElement for mapKeys index.
-              * It is important to ignore keys like column_map['Key'] = '' because if key does not exists in map
-              * we return default value for arrayElement.
+              * It is important to ignore keys like column_map['Key'] = '' because if key does not exist in the map
+              * we return default the value for arrayElement.
               *
               * We cannot skip keys that does not exist in map if comparison is with default type value because
-              * that way we skip necessary granules where map key does not exists.
+              * that way we skip necessary granules where map key does not exist.
               */
             if (value_field == value_type->getDefault())
                 return false;
@@ -865,8 +865,8 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
         const auto & column_and_type = block.getByName(index_columns_name[column]);
         auto index_column = BloomFilterHash::hashWithColumn(column_and_type.type, column_and_type.column, *pos, max_read_rows);
 
-        const auto & index_col = checkAndGetColumn<ColumnUInt64>(index_column.get());
-        const auto & index_data = index_col->getData();
+        const auto & index_col = checkAndGetColumn<ColumnUInt64>(*index_column);
+        const auto & index_data = index_col.getData();
         for (const auto & hash: index_data)
             column_hashes[column].insert(hash);
     }
@@ -897,7 +897,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator(con
     return std::make_shared<MergeTreeIndexAggregatorBloomFilter>(bits_per_row, hash_functions, index.column_names);
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
+MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG * filter_actions_dag, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(filter_actions_dag, context, index.sample_block, hash_functions);
 }

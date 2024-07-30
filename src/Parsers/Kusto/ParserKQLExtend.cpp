@@ -22,7 +22,7 @@ bool ParserKQLExtend ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     String except_str;
     String new_extend_str;
-    Tokens ntokens(extend_expr.c_str(), extend_expr.c_str() + extend_expr.size());
+    Tokens ntokens(extend_expr.data(), extend_expr.data() + extend_expr.size(), 0, true);
     IParser::Pos npos(ntokens, pos.max_depth, pos.max_backtracks);
 
     String alias;
@@ -76,7 +76,7 @@ bool ParserKQLExtend ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     apply_alias();
 
     String expr = std::format("SELECT * {}, {} from prev", except_str, new_extend_str);
-    Tokens tokens(expr.c_str(), expr.c_str() + expr.size());
+    Tokens tokens(expr.data(), expr.data() + expr.size(), 0, true);
     IParser::Pos new_pos(tokens, pos.max_depth, pos.max_backtracks);
 
     if (!ParserSelectQuery().parse(new_pos, select_query, expected))

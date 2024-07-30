@@ -1,0 +1,5 @@
+CREATE TABLE x (`key` String) ENGINE = MergeTree PRIMARY KEY key ORDER BY key SETTINGS index_granularity = 8192
+CREATE TABLE x (`key` String) ENGINE = MergeTree PRIMARY KEY tuple(key) ORDER BY tuple(key) SETTINGS index_granularity = 8192
+CREATE TABLE x (`key` String) ENGINE = Null
+CREATE TABLE x (`key` String, INDEX idx key TYPE bloom_filter GRANULARITY 1) ENGINE = MergeTree ORDER BY key SETTINGS index_granularity = 8192
+CREATE TABLE x (`key` String, PROJECTION p (SELECT uniqCombined(key))) ENGINE = MergeTree ORDER BY key SETTINGS index_granularity = 8192

@@ -20,6 +20,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/DateLUT.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <base/errnoToString.h>
 #include <Core/ServerSettings.h>
 
@@ -233,7 +234,8 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 {
     /// Attach or init current thread to thread group and copy useful information from it
     thread_group = thread_group_;
-    thread_group->linkThread(thread_id);
+    if (!internal_thread)
+        thread_group->linkThread(thread_id);
 
     performance_counters.setParent(&thread_group->performance_counters);
     memory_tracker.setParent(&thread_group->memory_tracker);
@@ -269,7 +271,8 @@ void ThreadStatus::detachFromGroup()
     /// Extract MemoryTracker out from query and user context
     memory_tracker.setParent(&total_memory_tracker);
 
-    thread_group->unlinkThread();
+    if (!internal_thread)
+        thread_group->unlinkThread();
 
     thread_group.reset();
 
@@ -456,6 +459,31 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
     *last_rusage = RUsageCounters::current();
     if (taskstats)
         taskstats->reset();
+}
+
+void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
+{
+#if !defined(SANITIZER) && !defined(__APPLE__)
+    /// profilers are useless without trace collector
+    auto context = Context::getGlobalContextInstance();
+    if (!context->hasTraceCollector())
+        return;
+
+    try
+    {
+        if (global_profiler_real_time_period > 0)
+            query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
+                /* period= */ static_cast<UInt32>(global_profiler_real_time_period));
+
+        if (global_profiler_cpu_time_period > 0)
+            query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
+                /* period= */ static_cast<UInt32>(global_profiler_cpu_time_period));
+    }
+    catch (...)
+    {
+        tryLogCurrentException("ThreadStatus", "Cannot initialize GlobalProfiler");
+    }
+#endif
 }
 
 void ThreadStatus::initQueryProfiler()

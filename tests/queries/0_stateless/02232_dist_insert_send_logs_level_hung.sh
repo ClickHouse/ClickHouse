@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel
-# Tag: no-parallel - to heavy
-# Tag: long        - to heavy
+# Tags: long, no-parallel, disabled
+# Tag: no-parallel - too heavy
+# Tag: long        - too heavy
+# Tag: disabled    - Always takes 4+ minutes, in serial mode, which is too much to be always run in CI
 
 # This is the regression test when remote peer send some logs for INSERT,
 # it is easy to archive using materialized views, with small block size.
@@ -49,10 +50,10 @@ insert_client_opts=(
 timeout 250s $CLICKHOUSE_CLIENT "${client_opts[@]}" "${insert_client_opts[@]}" -q "insert into function remote('127.2', currentDatabase(), in_02232) select * from numbers(1e6)"
 
 # Kill underlying query of remote() to make KILL faster
-# This test is reproducing very interesting bahaviour.
+# This test is reproducing very interesting behaviour.
 # The block size is 1, so the secondary query creates InterpreterSelectQuery for each row due to pushing to the MV.
 # It works extremely slow, and the initial query produces new blocks and writes them to the socket much faster
-# then the secondary query can read and process them. Therefore, it fills network buffers in the kernel.
+# than the secondary query can read and process them. Therefore, it fills network buffers in the kernel.
 # Once a buffer in the kernel is full, send(...) blocks until the secondary query will finish processing data
 # that it already has in ReadBufferFromPocoSocket and call recv.
 # Or until the kernel will decide to resize the buffer (seems like it has non-trivial rules for that).

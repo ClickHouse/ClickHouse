@@ -185,7 +185,7 @@ public:
 
     String getName() const override { return name; }
 
-    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override
+    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override
     {
         setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
     }
@@ -251,14 +251,16 @@ public:
         const String & method = Poco::Net::HTTPRequest::HTTP_POST);
 
     std::string getName() const override { return "StorageURLSink"; }
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     void onCancel() override;
     void onException(std::exception_ptr exception) override;
     void onFinish() override;
 
 private:
-    void finalize();
-    void release();
+    void finalizeBuffers();
+    void releaseBuffers();
+    void cancelBuffers();
+
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
     std::mutex cancel_mutex;
@@ -294,6 +296,9 @@ public:
     }
 
     bool supportsSubcolumns() const override { return true; }
+    bool supportsOptimizationToSubcolumns() const override { return false; }
+
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 

@@ -67,7 +67,7 @@ namespace ErrorCodes
     return true;
 }
 
-enum class SystemQueryTargetType
+enum class SystemQueryTargetType : uint8_t
 {
     Model,
     Function,

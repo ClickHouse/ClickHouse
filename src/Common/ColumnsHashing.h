@@ -44,8 +44,8 @@ struct HashMethodOneNumber
     {
         if constexpr (nullable)
         {
-            const auto * null_column = checkAndGetColumn<ColumnNullable>(key_columns[0]);
-            vec = null_column->getNestedColumnPtr()->getRawData().data();
+            const auto & null_column = checkAndGetColumn<ColumnNullable>(*key_columns[0]);
+            vec = null_column.getNestedColumnPtr()->getRawData().data();
         }
         else
         {
@@ -57,8 +57,8 @@ struct HashMethodOneNumber
     {
         if constexpr (nullable)
         {
-            const auto * null_column = checkAndGetColumn<ColumnNullable>(column);
-            vec = null_column->getNestedColumnPtr()->getRawData().data();
+            const auto & null_column = checkAndGetColumn<ColumnNullable>(*column);
+            vec = null_column.getNestedColumnPtr()->getRawData().data();
         }
         else
         {
@@ -105,7 +105,7 @@ struct HashMethodString
         const IColumn * column;
         if constexpr (nullable)
         {
-            column = checkAndGetColumn<ColumnNullable>(key_columns[0])->getNestedColumnPtr().get();
+            column = checkAndGetColumn<ColumnNullable>(*key_columns[0]).getNestedColumnPtr().get();
         }
         else
         {
@@ -153,7 +153,7 @@ struct HashMethodFixedString
         const IColumn * column;
         if constexpr (nullable)
         {
-            column = checkAndGetColumn<ColumnNullable>(key_columns[0])->getNestedColumnPtr().get();
+            column = checkAndGetColumn<ColumnNullable>(*key_columns[0]).getNestedColumnPtr().get();
         }
         else
         {
@@ -235,7 +235,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 {
     using Base = SingleColumnMethod;
 
-    enum class VisitValue
+    enum class VisitValue : uint8_t
     {
         Empty = 0,
         Found = 1,

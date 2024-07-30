@@ -57,7 +57,8 @@ PrettyCompactBlockOutputFormat::PrettyCompactBlockOutputFormat(WriteBuffer & out
 void PrettyCompactBlockOutputFormat::writeHeader(
     const Block & block,
     const Widths & max_widths,
-    const Widths & name_widths)
+    const Widths & name_widths,
+    const bool write_footer)
 {
     if (format_settings.pretty.output_format_pretty_row_numbers)
     {
@@ -70,14 +71,20 @@ void PrettyCompactBlockOutputFormat::writeHeader(
                                        ascii_grid_symbols;
 
     /// Names
-    writeCString(grid_symbols.left_top_corner, out);
+    if (write_footer)
+        writeCString(grid_symbols.left_bottom_corner, out);
+    else
+        writeCString(grid_symbols.left_top_corner, out);
     writeCString(grid_symbols.dash, out);
     for (size_t i = 0; i < max_widths.size(); ++i)
     {
         if (i != 0)
         {
             writeCString(grid_symbols.dash, out);
-            writeCString(grid_symbols.top_separator, out);
+            if (write_footer)
+                writeCString(grid_symbols.bottom_separator, out);
+            else
+                writeCString(grid_symbols.top_separator, out);
             writeCString(grid_symbols.dash, out);
         }
 
@@ -107,7 +114,10 @@ void PrettyCompactBlockOutputFormat::writeHeader(
         }
     }
     writeCString(grid_symbols.dash, out);
-    writeCString(grid_symbols.right_top_corner, out);
+    if (write_footer)
+        writeCString(grid_symbols.right_bottom_corner, out);
+    else
+        writeCString(grid_symbols.right_top_corner, out);
     writeCString("\n", out);
 }
 
@@ -168,34 +178,19 @@ void PrettyCompactBlockOutputFormat::writeRow(
 
     writeCString(grid_symbols.bar, out);
 
-    std::vector<String> transferred_row(num_columns);
-    bool has_transferred_row = false;
     for (size_t j = 0; j < num_columns; ++j)
     {
         if (j != 0)
             writeCString(grid_symbols.bar, out);
 
         const auto & type = *header.getByPosition(j).type;
-        size_t cur_width = widths[j].empty() ? max_widths[j] : widths[j][row_num];
-        String serialized_value;
-        {
-            WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
-            serializations[j]->serializeText(*columns[j], row_num, out_serialize, format_settings);
-        }
-        if (cut_to_width)
-            splitValueAtBreakLine(serialized_value, transferred_row[j], cur_width);
-        has_transferred_row |= !transferred_row[j].empty() && cur_width <= cut_to_width;
-
-        writeValueWithPadding(serialized_value, cur_width, max_widths[j], cut_to_width,
-            type.shouldAlignRightInPrettyFormats(), isNumber(type), !transferred_row[j].empty(), false);
+        const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][row_num];
+        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
     }
 
     writeCString(grid_symbols.bar, out);
     writeReadableNumberTip(chunk);
     writeCString("\n", out);
-
-    if (has_transferred_row)
-        writeTransferredRow(max_widths, header, transferred_row, cut_to_width, false);
 }
 
 void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind)
@@ -210,13 +205,19 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
     Widths name_widths;
     calculateWidths(header, chunk, widths, max_widths, name_widths);
 
-    writeHeader(header, max_widths, name_widths);
+    writeHeader(header, max_widths, name_widths, false);
 
     for (size_t i = 0; i < num_rows && total_rows + i < max_rows; ++i)
         writeRow(i, header, chunk, widths, max_widths);
 
-
-    writeBottom(max_widths);
+    if ((num_rows >= format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows) && format_settings.pretty.output_format_pretty_display_footer_column_names)
+    {
+        writeHeader(header, max_widths, name_widths, true);
+    }
+    else
+    {
+        writeBottom(max_widths);
+    }
 
     total_rows += num_rows;
 }

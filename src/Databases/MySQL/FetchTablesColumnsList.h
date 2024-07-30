@@ -12,10 +12,11 @@
 
 #include <map>
 #include <vector>
-#include <Core/Settings.h>
 
 namespace DB
 {
+
+struct Settings;
 
 std::map<String, ColumnsDescription> fetchTablesColumnsList(
         mysqlxx::PoolWithFailover & pool,

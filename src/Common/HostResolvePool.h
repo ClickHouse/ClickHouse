@@ -39,9 +39,11 @@ struct HostResolverMetrics
     const ProfileEvents::Event failed = ProfileEvents::end();
 
     const CurrentMetrics::Metric active_count = CurrentMetrics::end();
+    const CurrentMetrics::Metric banned_count = CurrentMetrics::end();
 };
 
 constexpr size_t DEFAULT_RESOLVE_TIME_HISTORY_SECONDS = 2*60;
+constexpr size_t RECORD_CONSECTIVE_FAIL_COUNT_LIMIT = 6;
 
 
 class HostResolver : public std::enable_shared_from_this<HostResolver>
@@ -141,12 +143,18 @@ protected:
         size_t usage = 0;
         bool failed = false;
         Poco::Timestamp fail_time = 0;
+        size_t consecutive_fail_count = 0;
 
         size_t weight_prefix_sum;
 
         bool operator <(const Record & r) const
         {
             return address < r.address;
+        }
+
+        bool operator ==(const Record & r) const
+        {
+            return address == r.address;
         }
 
         size_t getWeight() const
@@ -166,6 +174,28 @@ protected:
                 return 8;
             return 10;
         }
+
+        bool setFail(const Poco::Timestamp & now)
+        {
+            bool was_ok = !failed;
+
+            failed = true;
+            fail_time = now;
+
+            if (was_ok)
+            {
+                if (consecutive_fail_count < RECORD_CONSECTIVE_FAIL_COUNT_LIMIT)
+                    ++consecutive_fail_count;
+            }
+
+            return was_ok;
+        }
+
+        void setSuccess()
+        {
+            consecutive_fail_count = 0;
+            ++usage;
+        }
     };
 
     using Records = std::vector<Record>;
@@ -178,6 +208,7 @@ protected:
     void updateWeights() TSA_REQUIRES(mutex);
     void updateWeightsImpl() TSA_REQUIRES(mutex);
     size_t getTotalWeight() const TSA_REQUIRES(mutex);
+    Poco::Timespan getRecordHistoryTime(const Record&) const;
 
     const String host;
     const Poco::Timespan history;
@@ -188,7 +219,7 @@ protected:
 
     std::mutex mutex;
 
-    Poco::Timestamp last_resolve_time TSA_GUARDED_BY(mutex);
+    Poco::Timestamp last_resolve_time TSA_GUARDED_BY(mutex) = Poco::Timestamp::TIMEVAL_MIN;
     Records records TSA_GUARDED_BY(mutex);
 
     Poco::Logger * log = &Poco::Logger::get("ConnectionPool");

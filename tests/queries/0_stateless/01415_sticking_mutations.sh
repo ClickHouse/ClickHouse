@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel
+# Tags: no-replicated-database
 
 set -e
 

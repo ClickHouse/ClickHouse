@@ -1,11 +1,16 @@
 #pragma once
+
+
 #include <boost/noncopyable.hpp>
+#include <base/isSharedPtrUnique.h>
 #include <Interpreters/Cache/Guards.h>
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Common/ThreadPool.h>
+
+#include <memory>
 #include <shared_mutex>
 
 namespace DB
@@ -30,7 +35,7 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     explicit FileSegmentMetadata(FileSegmentPtr && file_segment_);
 
-    bool releasable() const { return file_segment.unique(); }
+    bool releasable() const { return isSharedPtrUnique(file_segment); }
 
     size_t size() const;
 
@@ -99,7 +104,7 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
         const CacheMetadata * cache_metadata_,
         bool created_base_directory_ = false);
 
-    enum class KeyState
+    enum class KeyState : uint8_t
     {
         ACTIVE,
         REMOVING,
@@ -178,7 +183,7 @@ public:
 
     void iterate(IterateFunc && func, const UserID & user_id);
 
-    enum class KeyNotFoundPolicy
+    enum class KeyNotFoundPolicy : uint8_t
     {
         THROW,
         THROW_LOGICAL,

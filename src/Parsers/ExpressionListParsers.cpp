@@ -20,7 +20,7 @@
 #include <Parsers/ParserUnionQueryElement.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Common/assert_cast.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 #include <Parsers/ParserSelectWithUnionQuery.h>
 
@@ -146,7 +146,7 @@ static bool parseOperator(IParser::Pos & pos, std::string_view op, Expected & ex
     return false;
 }
 
-enum class SubqueryFunctionType
+enum class SubqueryFunctionType : uint8_t
 {
     NONE,
     ANY,
@@ -457,7 +457,7 @@ namespace
 }
 
 
-enum class Action
+enum class Action : uint8_t
 {
     NONE,
     OPERAND,
@@ -468,7 +468,7 @@ enum class Action
   * Operators can be grouped into some type if they have similar behaviour.
   * Certain operators are unique in terms of their behaviour, so they are assigned a separate type.
   */
-enum class OperatorType
+enum class OperatorType : uint8_t
 {
     None,
     Comparison,
@@ -521,7 +521,7 @@ static std::shared_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&... ar
     return ast_function;
 }
 
-enum class Checkpoint
+enum class Checkpoint : uint8_t
 {
     None,
     Interval,
@@ -2179,7 +2179,7 @@ public:
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
     {
-        /// kql(table|project ...)
+        /// kql('table|project ...')
         /// 0. Parse the kql query
         /// 1. Parse closing token
         if (state == 0)
@@ -2386,6 +2386,24 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         return false;
     }
+}
+
+bool ParserExpressionWithOptionalArguments::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier id_p;
+    ParserFunction func_p;
+
+    if (ParserFunction(false, false).parse(pos, node, expected))
+        return true;
+
+    if (ParserIdentifier().parse(pos, node, expected))
+    {
+        node = makeASTFunction(node->as<ASTIdentifier>()->name());
+        node->as<ASTFunction &>().no_empty_args = true;
+        return true;
+    }
+
+    return false;
 }
 
 const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table
@@ -2743,7 +2761,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     /// 'AND' can be both boolean function and part of the '... BETWEEN ... AND ...' operator
     if (op.function_name == "and" && layers.back()->between_counter)
     {
-        layers.back()->between_counter--;
+        --layers.back()->between_counter;
         op = finish_between_operator;
     }
 

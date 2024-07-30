@@ -34,7 +34,7 @@ Alias: `replace`.
 
 Replaces the first occurrence of the substring matching the regular expression `pattern` (in [re2 syntax](https://github.com/google/re2/wiki/Syntax)) in `haystack` by the `replacement` string.
 
-`replacement` can containing substitutions `\0-\9`.
+`replacement` can contain substitutions `\0-\9`.
 Substitutions `\1-\9` correspond to the 1st to 9th capturing group (submatch), substitution `\0` corresponds to the entire match.
 
 To use a verbatim `\` character in the `pattern` or `replacement` strings, escape it using `\`.
@@ -139,7 +139,7 @@ Format the `pattern` string with the values (strings, integers, etc.) listed in 
 **Syntax**
 
 ```sql
-format(pattern, s0, s1, …)
+format(pattern, s0, s1, ...)
 ```
 
 **Example**
@@ -202,13 +202,13 @@ translateUTF8(s, from, to)
 
 **Parameters**
 
-- `s`: A string type [String](/docs/en/sql-reference/data-types/string.md).
-- `from`: A string type [String](/docs/en/sql-reference/data-types/string.md).
-- `to`: A string type [String](/docs/en/sql-reference/data-types/string.md).
+- `s`: A string type [String](../data-types/string.md).
+- `from`: A string type [String](../data-types/string.md).
+- `to`: A string type [String](../data-types/string.md).
 
 **Returned value**
 
-- A [String](/docs/en/sql-reference/data-types/string.md) data type value.
+- A [String](../data-types/string.md) data type value.
 
 **Examples**
 

@@ -20,7 +20,7 @@
                 </max_execution_time>
 
                 <max_memory_usage>
-                    <max>10G</max>
+                    <max>5G</max>
                 </max_memory_usage>
 
                 <table_function_remote_max_addresses>
@@ -36,6 +36,11 @@
                 <allow_experimental_object_type>
                     <readonly/>
                 </allow_experimental_object_type>
+
+                <!-- Prevent stack overflow -->
+                <max_ast_depth>
+                    <readonly/>
+                </max_ast_depth>
             </constraints>
         </default>
     </profiles>

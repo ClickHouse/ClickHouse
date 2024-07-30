@@ -21,7 +21,7 @@ class IBackupCoordination;
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 struct StorageID;
-enum class AccessEntityType;
+enum class AccessEntityType : uint8_t;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 

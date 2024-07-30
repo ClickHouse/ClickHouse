@@ -1,3 +1,5 @@
+// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
+
 #include "PartitionedSink.h"
 
 #include <Common/ArenaUtils.h>
@@ -49,7 +51,7 @@ SinkPtr PartitionedSink::getSinkForPartitionKey(StringRef partition_key)
     return it->second;
 }
 
-void PartitionedSink::consume(Chunk chunk)
+void PartitionedSink::consume(Chunk & chunk)
 {
     const auto & columns = chunk.getColumns();
 
@@ -102,7 +104,7 @@ void PartitionedSink::consume(Chunk chunk)
     for (const auto & [partition_key, partition_index] : partition_id_to_chunk_index)
     {
         auto sink = getSinkForPartitionKey(partition_key);
-        sink->consume(std::move(partition_index_to_chunk[partition_index]));
+        sink->consume(partition_index_to_chunk[partition_index]);
     }
 }
 
@@ -145,3 +147,5 @@ String PartitionedSink::replaceWildcards(const String & haystack, const String &
 }
 
 }
+
+// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

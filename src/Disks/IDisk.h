@@ -12,10 +12,8 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/WriteMode.h>
 #include <Disks/DirectoryIterator.h>
-#include <Disks/IDiskTransaction.h>
 
 #include <memory>
-#include <mutex>
 #include <utility>
 #include <boost/noncopyable.hpp>
 #include <Poco/Timestamp.h>
@@ -55,7 +53,6 @@ using DisksMap = std::map<String, DiskPtr>;
 
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
-using Reservations = std::vector<ReservationPtr>;
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
@@ -118,13 +115,18 @@ public:
     /// Default constructor.
     IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
         : name(name_)
-        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, config.getUInt(config_prefix + ".thread_pool_size", 16))
+        , copying_thread_pool(
+              CurrentMetrics::IDiskCopierThreads,
+              CurrentMetrics::IDiskCopierThreadsActive,
+              CurrentMetrics::IDiskCopierThreadsScheduled,
+              config.getUInt(config_prefix + ".thread_pool_size", 16))
     {
     }
 
     explicit IDisk(const String & name_)
         : name(name_)
-        , copying_thread_pool(CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, 16)
+        , copying_thread_pool(
+              CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, 16)
     {
     }
 
@@ -425,7 +427,7 @@ public:
     ///  Device: 10301h/66305d   Inode: 3109907     Links: 1
     /// Why we have always zero by default? Because normal filesystem
     /// manages hardlinks by itself. So you can always remove hardlink and all
-    /// other alive harlinks will not be removed.
+    /// other alive hardlinks will not be removed.
     virtual UInt32 getRefCount(const String &) const { return 0; }
 
     /// Revision is an incremental counter of disk operation.
@@ -467,6 +469,19 @@ public:
     void markDiskAsCustom() { is_custom_disk = true; }
 
     virtual DiskPtr getDelegateDiskIfExists() const { return nullptr; }
+
+#if USE_AWS_S3
+    virtual std::shared_ptr<const S3::Client> getS3StorageClient() const
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method getS3StorageClient() is not implemented for disk type: {}",
+            getDataSourceDescription().toString());
+    }
+
+    virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() const { return nullptr; }
+#endif
+
 
 protected:
     friend class DiskDecorator;

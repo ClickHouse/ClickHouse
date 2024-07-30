@@ -291,7 +291,7 @@ public:
           *  the compiler can not guess about this, and generates the `load`, `increment`, `store` code.
           */
         if (inserted)
-            new (&it->getMapped()) typename Cell::Mapped();
+            new (reinterpret_cast<void*>(&it->getMapped())) typename Cell::Mapped();
 
         return it->getMapped();
     }

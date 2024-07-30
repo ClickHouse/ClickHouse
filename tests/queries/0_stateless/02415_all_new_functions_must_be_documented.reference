@@ -201,6 +201,7 @@ cbrt
 ceil
 char
 cityHash64
+clamp
 coalesce
 concat
 concatAssumeInjective
@@ -875,7 +876,6 @@ tryBase58Decode
 tumble
 tumbleEnd
 tumbleStart
-tuple
 tupleConcat
 tupleDivide
 tupleDivideByNumber

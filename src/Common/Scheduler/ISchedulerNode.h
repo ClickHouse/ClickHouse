@@ -11,10 +11,10 @@
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <boost/noncopyable.hpp>
+#include <boost/intrusive/list.hpp>
 
 #include <chrono>
 #include <deque>
-#include <queue>
 #include <algorithm>
 #include <functional>
 #include <memory>
@@ -30,6 +30,8 @@ namespace ErrorCodes
 }
 
 class ISchedulerNode;
+class EventQueue;
+using EventId = UInt64;
 
 inline const Poco::Util::AbstractConfiguration & emptyConfig()
 {
@@ -82,205 +84,6 @@ struct SchedulerNodeInfo
     }
 };
 
-/*
- * Simple waitable thread-safe FIFO task queue.
- * Intended to hold postponed events for later handling (usually by scheduler thread).
- */
-class EventQueue
-{
-public:
-    using Event = std::function<void()>;
-    using TimePoint = std::chrono::system_clock::time_point;
-    using Duration = std::chrono::system_clock::duration;
-    static constexpr UInt64 not_postponed = 0;
-
-    struct Postponed
-    {
-        TimePoint key;
-        UInt64 id; // for canceling
-        std::unique_ptr<Event> event;
-
-        Postponed(TimePoint key_, UInt64 id_, Event && event_)
-            : key(key_)
-            , id(id_)
-            , event(std::make_unique<Event>(std::move(event_)))
-        {}
-
-        bool operator<(const Postponed & rhs) const
-        {
-            return std::tie(key, id) > std::tie(rhs.key, rhs.id); // reversed for min-heap
-        }
-    };
-
-    /// Add an `event` to be processed after `until` time point.
-    /// Returns a unique id for canceling.
-    [[nodiscard]] UInt64 postpone(TimePoint until, Event && event)
-    {
-        std::unique_lock lock{mutex};
-        if (postponed.empty() || until < postponed.front().key)
-            pending.notify_one();
-        auto id = ++last_id;
-        postponed.emplace_back(until, id, std::move(event));
-        std::push_heap(postponed.begin(), postponed.end());
-        return id;
-    }
-
-    /// Cancel a postponed event using its unique id.
-    /// NOTE: Only postponed events can be canceled.
-    /// NOTE: If you need to cancel enqueued event, consider doing your actions inside another enqueued
-    /// NOTE: event instead. This ensures that all previous events are processed.
-    bool cancelPostponed(UInt64 postponed_id)
-    {
-        if (postponed_id == not_postponed)
-            return false;
-        std::unique_lock lock{mutex};
-        for (auto i = postponed.begin(), e = postponed.end(); i != e; ++i)
-        {
-            if (i->id == postponed_id)
-            {
-                postponed.erase(i);
-                // It is O(n), but we do not expect either big heaps or frequent cancels. So it is fine.
-                std::make_heap(postponed.begin(), postponed.end());
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /// Add an `event` for immediate processing
-    void enqueue(Event && event)
-    {
-        std::unique_lock lock{mutex};
-        bool was_empty = queue.empty();
-        queue.emplace_back(event);
-        if (was_empty)
-            pending.notify_one();
-    }
-
-    /// Process single event if it exists
-    /// Note that postponing constraint are ignored, use it to empty the queue including postponed events on shutdown
-    /// Returns `true` iff event has been processed
-    bool forceProcess()
-    {
-        std::unique_lock lock{mutex};
-        if (!queue.empty())
-        {
-            processQueue(std::move(lock));
-            return true;
-        }
-        if (!postponed.empty())
-        {
-            processPostponed(std::move(lock));
-            return true;
-        }
-        return false;
-    }
-
-    /// Process single event if it exists and meets postponing constraint
-    /// Returns `true` iff event has been processed
-    bool tryProcess()
-    {
-        std::unique_lock lock{mutex};
-        if (!queue.empty())
-        {
-            processQueue(std::move(lock));
-            return true;
-        }
-        if (postponed.empty())
-            return false;
-        else
-        {
-            if (postponed.front().key <= now())
-            {
-                processPostponed(std::move(lock));
-                return true;
-            }
-            return false;
-        }
-    }
-
-    /// Wait for single event (if not available) and process it
-    void process()
-    {
-        std::unique_lock lock{mutex};
-        while (true)
-        {
-            if (!queue.empty())
-                return processQueue(std::move(lock));
-            if (postponed.empty())
-                wait(lock);
-            else
-            {
-                if (postponed.front().key <= now())
-                    return processPostponed(std::move(lock));
-                waitUntil(lock, postponed.front().key);
-            }
-        }
-    }
-
-    TimePoint now()
-    {
-        if (auto result = manual_time.load(); likely(result == TimePoint()))
-            return std::chrono::system_clock::now();
-        else
-            return result;
-    }
-
-    /// For testing only
-    void setManualTime(TimePoint value)
-    {
-        std::unique_lock lock{mutex};
-        manual_time.store(value);
-        pending.notify_one();
-    }
-
-    /// For testing only
-    void advanceManualTime(Duration elapsed)
-    {
-        std::unique_lock lock{mutex};
-        manual_time.store(manual_time.load() + elapsed);
-        pending.notify_one();
-    }
-
-private:
-    void wait(std::unique_lock<std::mutex> & lock)
-    {
-        pending.wait(lock);
-    }
-
-    void waitUntil(std::unique_lock<std::mutex> & lock, TimePoint t)
-    {
-        if (likely(manual_time.load() == TimePoint()))
-            pending.wait_until(lock, t);
-        else
-            pending.wait(lock);
-    }
-
-    void processQueue(std::unique_lock<std::mutex> && lock)
-    {
-        Event event = std::move(queue.front());
-        queue.pop_front();
-        lock.unlock(); // do not hold queue mutex while processing events
-        event();
-    }
-
-    void processPostponed(std::unique_lock<std::mutex> && lock)
-    {
-        Event event = std::move(*postponed.front().event);
-        std::pop_heap(postponed.begin(), postponed.end());
-        postponed.pop_back();
-        lock.unlock(); // do not hold queue mutex while processing events
-        event();
-    }
-
-    std::mutex mutex;
-    std::condition_variable pending;
-    std::deque<Event> queue;
-    std::vector<Postponed> postponed;
-    UInt64 last_id = 0;
-
-    std::atomic<TimePoint> manual_time{TimePoint()}; // for tests only
-};
 
 /*
  * Node of hierarchy for scheduling requests for resource. Base class for all
@@ -310,7 +113,7 @@ private:
  *
  * All methods must be called only from scheduler thread for thread-safety.
  */
-class ISchedulerNode : private boost::noncopyable
+class ISchedulerNode : public boost::intrusive::list_base_hook<>, private boost::noncopyable
 {
 public:
     explicit ISchedulerNode(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
@@ -371,19 +174,14 @@ public:
 protected:
     /// Notify parents about the first pending request or constraint becoming satisfied.
     /// Postponed to be handled in scheduler thread, so it is intended to be called from outside.
-    void scheduleActivation()
-    {
-        if (likely(parent))
-        {
-            event_queue->enqueue([this] { parent->activateChild(this); });
-        }
-    }
+    void scheduleActivation();
 
 public:
     EventQueue * const event_queue;
     String basename;
     SchedulerNodeInfo info;
     ISchedulerNode * parent = nullptr;
+    EventId activation_event_id = 0; // Valid for `ISchedulerNode` placed in EventQueue::activations
 
     /// Introspection
     std::atomic<UInt64> dequeued_requests{0};
@@ -394,5 +192,282 @@ public:
 };
 
 using SchedulerNodePtr = std::shared_ptr<ISchedulerNode>;
+
+/*
+ * Simple waitable thread-safe FIFO task queue.
+ * Intended to hold postponed events for later handling (usually by scheduler thread).
+ */
+class EventQueue
+{
+public:
+    using Task = std::function<void()>;
+
+    static constexpr EventId not_postponed = 0;
+
+    using TimePoint = std::chrono::system_clock::time_point;
+    using Duration = std::chrono::system_clock::duration;
+
+    struct Event
+    {
+        const EventId event_id;
+        Task task;
+
+        Event(EventId event_id_, Task && task_)
+            : event_id(event_id_)
+            , task(std::move(task_))
+        {}
+    };
+
+    struct Postponed
+    {
+        TimePoint key;
+        EventId event_id; // for canceling
+        std::unique_ptr<Task> task;
+
+        Postponed(TimePoint key_, EventId event_id_, Task && task_)
+            : key(key_)
+            , event_id(event_id_)
+            , task(std::make_unique<Task>(std::move(task_)))
+        {}
+
+        bool operator<(const Postponed & rhs) const
+        {
+            return std::tie(key, event_id) > std::tie(rhs.key, rhs.event_id); // reversed for min-heap
+        }
+    };
+
+    /// Add an `event` to be processed after `until` time point.
+    /// Returns a unique event id for canceling.
+    [[nodiscard]] EventId postpone(TimePoint until, Task && task)
+    {
+        std::unique_lock lock{mutex};
+        if (postponed.empty() || until < postponed.front().key)
+            pending.notify_one();
+        auto event_id = ++last_event_id;
+        postponed.emplace_back(until, event_id, std::move(task));
+        std::push_heap(postponed.begin(), postponed.end());
+        return event_id;
+    }
+
+    /// Cancel a postponed event using its unique id.
+    /// NOTE: Only postponed events can be canceled.
+    /// NOTE: If you need to cancel enqueued event, consider doing your actions inside another enqueued
+    /// NOTE: event instead. This ensures that all previous events are processed.
+    bool cancelPostponed(EventId postponed_event_id)
+    {
+        if (postponed_event_id == not_postponed)
+            return false;
+        std::unique_lock lock{mutex};
+        for (auto i = postponed.begin(), e = postponed.end(); i != e; ++i)
+        {
+            if (i->event_id == postponed_event_id)
+            {
+                postponed.erase(i);
+                // It is O(n), but we do not expect neither big heaps nor frequent cancels. So it is fine.
+                std::make_heap(postponed.begin(), postponed.end());
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Add an `event` for immediate processing
+    void enqueue(Task && task)
+    {
+        std::unique_lock lock{mutex};
+        bool was_empty = events.empty() && activations.empty();
+        auto event_id = ++last_event_id;
+        events.emplace_back(event_id, std::move(task));
+        if (was_empty)
+            pending.notify_one();
+    }
+
+    /// Add an activation `event` for immediate processing. Activations use a separate queue for performance reasons.
+    void enqueueActivation(ISchedulerNode * node)
+    {
+        std::unique_lock lock{mutex};
+        bool was_empty = events.empty() && activations.empty();
+        node->activation_event_id = ++last_event_id;
+        activations.push_back(*node);
+        if (was_empty)
+            pending.notify_one();
+    }
+
+    /// Process single event if it exists
+    /// Note that postponing constraint are ignored, use it to empty the queue including postponed events on shutdown
+    /// Returns `true` iff event has been processed
+    bool forceProcess()
+    {
+        std::unique_lock lock{mutex};
+        if (!events.empty() || !activations.empty())
+        {
+            processQueue(std::move(lock));
+            return true;
+        }
+        if (!postponed.empty())
+        {
+            processPostponed(std::move(lock));
+            return true;
+        }
+        return false;
+    }
+
+    /// Process single event if it exists and meets postponing constraint
+    /// Returns `true` iff event has been processed
+    bool tryProcess()
+    {
+        std::unique_lock lock{mutex};
+        if (!events.empty() || !activations.empty())
+        {
+            processQueue(std::move(lock));
+            return true;
+        }
+        if (postponed.empty())
+            return false;
+        else
+        {
+            if (postponed.front().key <= now())
+            {
+                processPostponed(std::move(lock));
+                return true;
+            }
+            return false;
+        }
+    }
+
+    /// Wait for single event (if not available) and process it
+    void process()
+    {
+        std::unique_lock lock{mutex};
+        while (true)
+        {
+            if (!events.empty() || !activations.empty())
+            {
+                processQueue(std::move(lock));
+                return;
+            }
+            else if (postponed.empty())
+            {
+                wait(lock);
+            }
+            else
+            {
+                if (postponed.front().key <= now())
+                {
+                    processPostponed(std::move(lock));
+                    return;
+                }
+                else
+                {
+                    waitUntil(lock, postponed.front().key);
+                }
+            }
+        }
+    }
+
+    TimePoint now()
+    {
+        if (auto result = manual_time.load(); likely(result == TimePoint()))
+            return std::chrono::system_clock::now();
+        else
+            return result;
+    }
+
+    /// For testing only
+    void setManualTime(TimePoint value)
+    {
+        std::unique_lock lock{mutex};
+        manual_time.store(value);
+        pending.notify_one();
+    }
+
+    /// For testing only
+    void advanceManualTime(Duration elapsed)
+    {
+        std::unique_lock lock{mutex};
+        manual_time.store(manual_time.load() + elapsed);
+        pending.notify_one();
+    }
+
+private:
+    void wait(std::unique_lock<std::mutex> & lock)
+    {
+        pending.wait(lock);
+    }
+
+    void waitUntil(std::unique_lock<std::mutex> & lock, TimePoint t)
+    {
+        if (likely(manual_time.load() == TimePoint()))
+            pending.wait_until(lock, t);
+        else
+            pending.wait(lock);
+    }
+
+    void processQueue(std::unique_lock<std::mutex> && lock)
+    {
+        if (events.empty())
+        {
+            processActivation(std::move(lock));
+            return;
+        }
+        if (activations.empty())
+        {
+            processEvent(std::move(lock));
+            return;
+        }
+        if (activations.front().activation_event_id < events.front().event_id)
+            processActivation(std::move(lock));
+        else
+            processEvent(std::move(lock));
+    }
+
+    void processActivation(std::unique_lock<std::mutex> && lock)
+    {
+        ISchedulerNode * node = &activations.front();
+        activations.pop_front();
+        node->activation_event_id = 0;
+        lock.unlock(); // do not hold queue mutex while processing events
+        node->parent->activateChild(node);
+    }
+
+    void processEvent(std::unique_lock<std::mutex> && lock)
+    {
+        Task task = std::move(events.front().task);
+        events.pop_front();
+        lock.unlock(); // do not hold queue mutex while processing events
+        task();
+    }
+
+    void processPostponed(std::unique_lock<std::mutex> && lock)
+    {
+        Task task = std::move(*postponed.front().task);
+        std::pop_heap(postponed.begin(), postponed.end());
+        postponed.pop_back();
+        lock.unlock(); // do not hold queue mutex while processing events
+        task();
+    }
+
+    std::mutex mutex;
+    std::condition_variable pending;
+
+    // `events` and `activations` logically represent one ordered queue. To preserve the common order we use `EventId`
+    // Activations are stored in a separate queue for performance reasons (mostly to avoid any allocations)
+    std::deque<Event> events;
+    boost::intrusive::list<ISchedulerNode> activations;
+
+    std::vector<Postponed> postponed;
+    EventId last_event_id = 0;
+
+    std::atomic<TimePoint> manual_time{TimePoint()}; // for tests only
+};
+
+inline void ISchedulerNode::scheduleActivation()
+{
+    if (likely(parent))
+    {
+        // The same as `enqueue([this] { parent->activateChild(this); });` but faster
+        event_queue->enqueueActivation(this);
+    }
+}
 
 }

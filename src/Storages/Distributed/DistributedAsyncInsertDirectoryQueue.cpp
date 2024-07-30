@@ -13,7 +13,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Disks/IDisk.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
@@ -554,7 +554,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
         {
             if (!fs::exists(file_path))
             {
-                LOG_WARNING(log, "File {} does not exists, likely due to current_batch.txt processing", file_path);
+                LOG_WARNING(log, "File {} does not exist, likely due to current_batch.txt processing", file_path);
                 continue;
             }
 

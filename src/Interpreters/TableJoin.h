@@ -2,13 +2,13 @@
 
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/SettingsEnums.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/IKeyValueEntity.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Common/Exception.h>
 #include <Parsers/IAST_fwd.h>
@@ -188,6 +188,8 @@ private:
 
     VolumePtr tmp_volume;
 
+    TemporaryDataOnDiskScopePtr tmp_data;
+
     std::shared_ptr<StorageJoin> right_storage_join;
 
     std::shared_ptr<const IKeyValueEntity> right_kv_storage;
@@ -199,19 +201,19 @@ private:
     Names requiredJoinedNames() const;
 
     /// Create converting actions and change key column names if required
-    ActionsDAGPtr applyKeyConvertToTable(
+    std::optional<ActionsDAG> applyKeyConvertToTable(
         const ColumnsWithTypeAndName & cols_src,
         const NameToTypeMap & type_mapping,
         JoinTableSide table_side,
         NameToNameMap & key_column_rename);
 
-    ActionsDAGPtr applyNullsafeWrapper(
+    std::optional<ActionsDAG> applyNullsafeWrapper(
         const ColumnsWithTypeAndName & cols_src,
         const NameSet & columns_for_nullsafe_comparison,
         JoinTableSide table_side,
         NameToNameMap & key_column_rename);
 
-    ActionsDAGPtr applyJoinUseNullsConversion(
+    std::optional<ActionsDAG> applyJoinUseNullsConversion(
         const ColumnsWithTypeAndName & cols_src,
         const NameToNameMap & key_column_rename);
 
@@ -233,7 +235,7 @@ private:
 public:
     TableJoin() = default;
 
-    TableJoin(const Settings & settings, VolumePtr tmp_volume_);
+    TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness,
@@ -259,7 +261,9 @@ public:
 
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
-    ActionsDAGPtr createJoinedBlockActions(ContextPtr context) const;
+    TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data; }
+
+    ActionsDAG createJoinedBlockActions(ContextPtr context) const;
 
     const std::vector<JoinAlgorithm> & getEnabledJoinAlgorithms() const { return join_algorithm; }
 
@@ -374,7 +378,7 @@ public:
     /// Calculate converting actions, rename key columns in required
     /// For `USING` join we will convert key columns inplace and affect into types in the result table
     /// For `JOIN ON` we will create new columns with converted keys to join by.
-    std::pair<ActionsDAGPtr, ActionsDAGPtr>
+    std::pair<std::optional<ActionsDAG>, std::optional<ActionsDAG>>
     createConvertingActions(
         const ColumnsWithTypeAndName & left_sample_columns,
         const ColumnsWithTypeAndName & right_sample_columns);

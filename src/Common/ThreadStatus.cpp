@@ -23,6 +23,9 @@ thread_local ThreadStatus constinit * current_thread = nullptr;
 namespace
 {
 
+/// For aarch64 16K is not enough (likely due to tons of registers)
+constexpr size_t UNWIND_MINSIGSTKSZ = 32 << 10;
+
 /// Alternative stack for signal handling.
 ///
 /// This stack should not be located in the TLS (thread local storage), since:
@@ -50,7 +53,7 @@ struct ThreadStack
         free(data);
     }
 
-    static size_t getSize() { return std::max<size_t>(16 << 10, MINSIGSTKSZ); }
+    static size_t getSize() { return std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ); }
     void * getData() const { return data; }
 
 private:
@@ -120,26 +123,6 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
                 }
             }
         }
-    }
-#endif
-}
-
-void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
-{
-#if !defined(SANITIZER) && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD) && !defined(__APPLE__)
-    try
-    {
-        if (global_profiler_real_time_period > 0)
-            query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
-                /* period= */ static_cast<UInt32>(global_profiler_real_time_period));
-
-        if (global_profiler_cpu_time_period > 0)
-            query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
-                /* period= */ static_cast<UInt32>(global_profiler_cpu_time_period));
-    }
-    catch (...)
-    {
-        tryLogCurrentException("ThreadStatus", "Cannot initialize GlobalProfiler");
     }
 #endif
 }

@@ -185,7 +185,7 @@ struct MultiMatchAllIndicesImpl
         size_t prev_haystack_offset = 0;
         size_t prev_needles_offset = 0;
 
-        const ColumnString * needles_data_string = checkAndGetColumn<ColumnString>(&needles_data);
+        const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
 
         std::vector<std::string_view> needles;
 
@@ -195,7 +195,7 @@ struct MultiMatchAllIndicesImpl
 
             for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
             {
-                needles.emplace_back(needles_data_string->getDataAt(j).toView());
+                needles.emplace_back(needles_data_string.getDataAt(j).toView());
             }
 
             if (needles.empty())

@@ -26,6 +26,7 @@ public:
             const StorageID & table_id_,
             ContextPtr context_,
             const ColumnsDescription & columns_,
+            const String & comment,
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
             LoadingStrictnessLevel mode);
 
@@ -183,7 +184,6 @@ private:
     void initRabbitMQ();
     void cleanupRabbitMQ() const;
 
-    void initExchange(AMQP::TcpChannel & rabbit_channel);
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
