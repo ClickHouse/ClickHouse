@@ -30,7 +30,7 @@ drop table order_by_const;
 select count() over (rows between 1 + 1 preceding and 1 + 1 following) from numbers(10);
 
 -- signed and unsigned in offset do not cause logical error
-select count() over (rows between 2 following and 1 + -1 following) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
+select count() over (rows between 2 following and 1 + -1 following) FROM numbers(10); -- { serverError 36 }
 
 -- default arguments of lagInFrame can be a subtype of the argument
 select number,

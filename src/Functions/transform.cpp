@@ -138,7 +138,8 @@ namespace
             }
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+        ColumnPtr executeImpl(
+            const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
         {
             std::call_once(once, [&] { initialize(arguments, result_type); });
 

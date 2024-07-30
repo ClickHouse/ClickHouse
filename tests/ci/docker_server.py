@@ -11,6 +11,7 @@ from os import path as p
 from pathlib import Path
 from typing import Dict, List
 
+from build_check import get_release_or_pr
 from build_download_helper import read_build_urls
 from docker_images_helper import DockerImageData, docker_login
 from env_helper import (
@@ -61,12 +62,6 @@ def parse_args() -> argparse.Namespace:
         default=get_version_from_repo(git=git).string,
         help="a version to build, automaticaly got from version_helper, accepts either "
         "tag ('refs/tags/' is removed automatically) or a normal 22.2.2.2 format",
-    )
-    parser.add_argument(
-        "--sha",
-        type=str,
-        default="",
-        help="sha of the commit to use packages from",
     )
     parser.add_argument(
         "--release-type",
@@ -127,7 +122,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def retry_popen(cmd: str, log_file: Path) -> int:
-    max_retries = 2
+    max_retries = 5
     for retry in range(max_retries):
         # From time to time docker build may failed. Curl issues, or even push
         # It will sleep progressively 5, 15, 30 and 50 seconds between retries
@@ -375,23 +370,16 @@ def main():
     tags = gen_tags(args.version, args.release_type)
     repo_urls = {}
     direct_urls: Dict[str, List[str]] = {}
+    release_or_pr, _ = get_release_or_pr(pr_info, args.version)
 
     for arch, build_name in zip(ARCH, ("package_release", "package_aarch64")):
-        if args.bucket_prefix:
-            assert not args.allow_build_reuse
-            repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
-        elif args.sha:
-            # CreateRelease workflow only. TODO
-            version = args.version
+        if not args.bucket_prefix:
             repo_urls[arch] = (
                 f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/"
-                f"{version.major}.{version.minor}/{args.sha}/{build_name}"
+                f"{release_or_pr}/{pr_info.sha}/{build_name}"
             )
         else:
-            # In all other cases urls must be fetched from build reports. TODO: script needs refactoring
-            repo_urls[arch] = ""
-            assert args.allow_build_reuse
-
+            repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
         if args.allow_build_reuse:
             # read s3 urls from pre-downloaded build reports
             if "clickhouse-server" in image_repo:
@@ -429,6 +417,7 @@ def main():
             )
             if test_results[-1].status != "OK":
                 status = FAILURE
+    pr_info = pr_info or PRInfo()
 
     description = f"Processed tags: {', '.join(tags)}"
     JobReport(

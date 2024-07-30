@@ -5,12 +5,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 ClusterUpdateActions joiningToClusterUpdates(const ClusterConfigPtr & cfg, std::string_view joining)
 {
     ClusterUpdateActions out;
@@ -85,7 +79,7 @@ String serializeClusterConfig(const ClusterConfigPtr & cfg, const ClusterUpdateA
             new_config.emplace_back(RaftServerConfig{*cfg->get_server(priority->id)});
         }
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected update");
+            UNREACHABLE();
     }
 
     for (const auto & item : cfg->get_servers())

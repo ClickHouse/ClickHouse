@@ -9,9 +9,6 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/Utils.h>
-
-#include <Core/Settings.h>
 
 namespace DB
 {
@@ -80,9 +77,11 @@ public:
 
         /// Replace `countDistinct` of initial query into `count`
         auto result_type = function_node->getResultType();
-
+        AggregateFunctionProperties properties;
+        auto action = NullsAction::EMPTY;
+        auto aggregate_function = AggregateFunctionFactory::instance().get("count", action, {}, {}, properties);
+        function_node->resolveAsAggregateFunction(std::move(aggregate_function));
         function_node->getArguments().getNodes().clear();
-        resolveAggregateFunctionNodeByName(*function_node, "count");
     }
 };
 

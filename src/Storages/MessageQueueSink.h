@@ -35,7 +35,7 @@ public:
 
     String getName() const override { return storage_name + "Sink"; }
 
-    void consume(Chunk & chunk) override;
+    void consume(Chunk chunk) override;
 
     void onStart() override;
     void onFinish() override;

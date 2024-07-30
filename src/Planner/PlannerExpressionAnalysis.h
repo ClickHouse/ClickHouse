@@ -17,22 +17,22 @@ namespace DB
 
 struct ProjectionAnalysisResult
 {
-    ActionsAndProjectInputsFlagPtr projection_actions;
+    ActionsDAGPtr projection_actions;
     Names projection_column_names;
     NamesWithAliases projection_column_names_with_display_aliases;
-    ActionsAndProjectInputsFlagPtr project_names_actions;
+    ActionsDAGPtr project_names_actions;
 };
 
 struct FilterAnalysisResult
 {
-    ActionsAndProjectInputsFlagPtr filter_actions;
+    ActionsDAGPtr filter_actions;
     std::string filter_column_name;
     bool remove_filter_column = false;
 };
 
 struct AggregationAnalysisResult
 {
-    ActionsAndProjectInputsFlagPtr before_aggregation_actions;
+    ActionsDAGPtr before_aggregation_actions;
     Names aggregation_keys;
     AggregateDescriptions aggregate_descriptions;
     GroupingSetsParamsList grouping_sets_parameters_list;
@@ -41,19 +41,19 @@ struct AggregationAnalysisResult
 
 struct WindowAnalysisResult
 {
-    ActionsAndProjectInputsFlagPtr before_window_actions;
+    ActionsDAGPtr before_window_actions;
     std::vector<WindowDescription> window_descriptions;
 };
 
 struct SortAnalysisResult
 {
-    ActionsAndProjectInputsFlagPtr before_order_by_actions;
+    ActionsDAGPtr before_order_by_actions;
     bool has_with_fill = false;
 };
 
 struct LimitByAnalysisResult
 {
-    ActionsAndProjectInputsFlagPtr before_limit_by_actions;
+    ActionsDAGPtr before_limit_by_actions;
     Names limit_by_column_names;
 };
 

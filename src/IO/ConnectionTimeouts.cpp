@@ -1,9 +1,6 @@
-#include <Core/ServerSettings.h>
-#include <Core/Settings.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Interpreters/Context.h>
-
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

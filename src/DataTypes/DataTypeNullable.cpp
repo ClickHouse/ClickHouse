@@ -177,7 +177,7 @@ DataTypePtr removeNullableOrLowCardinalityNullable(const DataTypePtr & type)
 
 bool canContainNull(const IDataType & type)
 {
-    return type.isNullable() || type.isLowCardinalityNullable() || isDynamic(type) || isVariant(type);
+    return type.isNullable() || type.isLowCardinalityNullable() || isVariant(type);
 }
 
 }

@@ -18,7 +18,7 @@ namespace DB
 REGISTER_FUNCTION(ExtractAllGroupsVertical)
 {
     factory.registerFunction<FunctionExtractAllGroups<VerticalImpl>>();
-    factory.registerAlias("extractAllGroups", VerticalImpl::Name);
+    factory.registerAlias("extractAllGroups", VerticalImpl::Name, FunctionFactory::CaseSensitive);
 }
 
 }

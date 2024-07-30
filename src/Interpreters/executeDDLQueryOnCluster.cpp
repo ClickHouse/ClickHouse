@@ -11,7 +11,6 @@
 #include <Parsers/queryToString.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
-#include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Databases/DatabaseReplicated.h>
@@ -66,7 +65,7 @@ bool isSupportedAlterTypeForOnClusterDDLQuery(int type)
 
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, const DDLQueryOnClusterParams & params)
 {
-    OpenTelemetry::SpanHolder span(__FUNCTION__, OpenTelemetry::SpanKind::PRODUCER);
+    OpenTelemetry::SpanHolder span(__FUNCTION__, OpenTelemetry::PRODUCER);
 
     if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ON CLUSTER queries inside transactions are not supported");
@@ -538,7 +537,7 @@ Chunk DDLQueryStatusSource::generate()
             ExecutionStatus status(-1, "Cannot obtain error message");
 
             /// Replicated database retries in case of error, it should not write error status.
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifdef ABORT_ON_LOGICAL_ERROR
             bool need_check_status = true;
 #else
             bool need_check_status = !is_replicated_database;

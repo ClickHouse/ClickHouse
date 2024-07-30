@@ -1,12 +1,11 @@
 #include <Columns/ColumnString.h>
 #include <Core/Block.h>
-#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/TableLockHolder.h>
 

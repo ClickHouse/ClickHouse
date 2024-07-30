@@ -3,7 +3,6 @@
 #include <Interpreters/DDLTask.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
-#include <Core/Settings.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -18,8 +17,6 @@ namespace ErrorCodes
     extern const int NOT_A_LEADER;
     extern const int UNFINISHED;
 }
-
-static constexpr const char * FORCE_AUTO_RECOVERY_DIGEST = "42";
 
 DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_)
     : DDLWorker(/* pool_size */ 1, db->zookeeper_path + "/log", context_, nullptr, {}, fmt::format("DDLWorker({})", db->getDatabaseName()))
@@ -47,26 +44,6 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
                 /// NOTE It will not stop cleanup thread until DDLWorker::shutdown() call (cleanup thread will just do nothing)
                 break;
             }
-
-            if (database->db_settings.max_retries_before_automatic_recovery &&
-                database->db_settings.max_retries_before_automatic_recovery <= subsequent_errors_count)
-            {
-                String current_task_name;
-                {
-                    std::unique_lock lock{mutex};
-                    current_task_name = current_task;
-                }
-                LOG_WARNING(log, "Database got stuck at processing task {}: it failed {} times in a row with the same error. "
-                                 "Will reset digest to mark our replica as lost, and trigger recovery from the most up-to-date metadata "
-                                 "from ZooKeeper. See max_retries_before_automatic_recovery setting. The error: {}",
-                            current_task, subsequent_errors_count, last_unexpected_error);
-
-                String digest_str;
-                zookeeper->tryGet(database->replica_path + "/digest", digest_str);
-                LOG_WARNING(log, "Resetting digest from {} to {}", digest_str, FORCE_AUTO_RECOVERY_DIGEST);
-                zookeeper->trySet(database->replica_path + "/digest", FORCE_AUTO_RECOVERY_DIGEST);
-            }
-
             initializeReplication();
             initialized = true;
             return true;
@@ -422,8 +399,6 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     {
         /// Some replica is added or removed, let's update cached cluster
         database->setCluster(database->getClusterImpl());
-        if (!database->replica_group_name.empty())
-            database->setCluster(database->getClusterImpl(/*all_groups*/ true), /*all_groups*/ true);
         out_reason = fmt::format("Entry {} is a dummy task", entry_name);
         return {};
     }

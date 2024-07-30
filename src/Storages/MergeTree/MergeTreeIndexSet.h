@@ -22,8 +22,7 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
         const String & index_name_,
         const Block & index_sample_block_,
         size_t max_rows_,
-        MutableColumns && columns_,
-        std::vector<Range> && set_hyperrectangle_);
+        MutableColumns && columns_);
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
@@ -35,9 +34,9 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
 
     const String index_name;
     const size_t max_rows;
+    const Block index_sample_block;
 
     Block block;
-    std::vector<Range> set_hyperrectangle;
 };
 
 
@@ -75,7 +74,6 @@ private:
     ClearableSetVariants data;
     Sizes key_sizes;
     MutableColumns columns;
-    std::vector<Range> set_hyperrectangle;
 };
 
 
@@ -83,10 +81,11 @@ class MergeTreeIndexConditionSet final : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeIndexConditionSet(
+        const String & index_name_,
+        const Block & index_sample_block,
         size_t max_rows_,
         const ActionsDAGPtr & filter_dag,
-        ContextPtr context,
-        const IndexDescription & index_description);
+        ContextPtr context);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -108,7 +107,15 @@ private:
         const ContextPtr & context,
         std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const;
 
-    bool checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic = false) const;
+    bool checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, bool atomic = false) const;
+
+    void traverseAST(ASTPtr & node) const;
+
+    bool atomFromAST(ASTPtr & node) const;
+
+    static bool operatorFromAST(ASTPtr & node);
+
+    bool checkASTUseless(const ASTPtr & node, bool atomic = false) const;
 
     String index_name;
     size_t max_rows;
@@ -120,10 +127,6 @@ private:
 
     std::unordered_set<String> key_columns;
     ExpressionActionsPtr actions;
-    String actions_output_column_name;
-
-    DataTypes index_data_types;
-    KeyCondition condition;
 };
 
 
