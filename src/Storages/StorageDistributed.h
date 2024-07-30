@@ -13,8 +13,6 @@
 #include <Interpreters/Cluster.h>
 
 #include <pcg_random.hpp>
-#include <unordered_map>
-#include <mutex>
 
 namespace DB
 {
@@ -33,21 +31,6 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
-
-struct ReplicaState
-{
-    Connection *connection = nullptr;
-    ConnectionPool::Entry pool_entry;
-    bool is_connected = false;
-    bool has_error = false;
-    std::string last_error_message;
-    uint64_t replication_lag = 0;
-    uint64_t last_updated_timestamp = 0;
-    uint64_t query_count = 0;
-    uint64_t bytes_sent = 0;
-    uint64_t bytes_received = 0;
-};
-
 
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
@@ -159,13 +142,6 @@ public:
     void shutdown(bool is_drop) override;
     void flushAndPrepareForShutdown() override;
     void drop() override;
-
-    // Replica management methods
-    void addReplica(const String & replica_name);
-    void removeReplica(const String & replica_name);
-    void updateReplicaState(const String & replica_name, const ReplicaState & state);
-    void handleReplicaFailover(const String & replica_name);
-    bool isReplicaAvailable(const String & replica_name) const;
 
     bool storesDataOnDisk() const override { return data_volume != nullptr; }
     Strings getDataPaths() const override;
@@ -311,14 +287,6 @@ private:
     // For random shard index generation
     mutable std::mutex rng_mutex;
     pcg64 rng;
-
-
-    std::unordered_map<String, ReplicaState> replica_states;
-    mutable std::mutex replica_states_mutex;
-
-    // Private helper methods
-    void initializeReplicaStates();
-    void manageFailover(const String & replica_name);
 };
 
 }

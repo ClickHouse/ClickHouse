@@ -22,7 +22,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Columns/ColumnConst.h>
-#include <Common/logger_useful.h>
+
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
@@ -43,6 +43,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 
+#include <Analyzer/Utils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
@@ -60,20 +61,26 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/JoinedTables.h>
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 
+#include <Functions/IFunction.h>
+#include <Functions/FunctionFactory.h>
 #include <TableFunctions/TableFunctionView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -83,6 +90,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -370,7 +378,6 @@ StorageDistributed::StorageDistributed(
     }
 
     initializeFromDisk();
-    initializeReplicaStates();
 }
 
 
@@ -404,7 +411,6 @@ StorageDistributed::StorageDistributed(
         std::move(owned_cluster_),
         remote_table_function_ptr_)
 {
-    initializeReplicaStates();
 }
 
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
@@ -490,7 +496,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     }
 
     std::optional<QueryProcessingStage::Enum> optimized_stage;
-    if (query_info.query_tree)
+    if (settings.allow_experimental_analyzer)
         optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings);
     else
         optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
@@ -854,28 +860,31 @@ void StorageDistributed::read(
         modified_query_info.query = queryNodeToDistributedSelectQuery(query_tree_distributed);
 
         modified_query_info.query_tree = std::move(query_tree_distributed);
-
-        /// Return directly (with correct header) if no shard to query.
-        if (modified_query_info.getCluster()->getShardsInfo().empty())
-            return;
     }
     else
     {
         header = InterpreterSelectQuery(modified_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+    }
 
+    if (!settings.allow_experimental_analyzer)
+    {
         modified_query_info.query = ClusterProxy::rewriteSelectQuery(
             local_context, modified_query_info.query,
             remote_database, remote_table, remote_table_function_ptr);
+    }
 
-        if (modified_query_info.getCluster()->getShardsInfo().empty())
-        {
-            Pipe pipe(std::make_shared<NullSource>(header));
-            auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-            read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
-            query_plan.addStep(std::move(read_from_pipe));
-
+    /// Return directly (with correct header) if no shard to query.
+    if (modified_query_info.getCluster()->getShardsInfo().empty())
+    {
+        if (settings.allow_experimental_analyzer)
             return;
-        }
+
+        Pipe pipe(std::make_shared<NullSource>(header));
+        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
+        query_plan.addStep(std::move(read_from_pipe));
+
+        return;
     }
 
     const auto & snapshot_data = assert_cast<const SnapshotData &>(*storage_snapshot->data);
@@ -1990,75 +1999,4 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
 
     return true;
 }
-
-void StorageDistributed::initializeReplicaStates()
-{
-    std::lock_guard lock(replica_states_mutex);
-    for (const auto & address : getCluster()->getShardsAddresses())
-    {
-        for (const auto & replica : address)
-        {
-            ReplicaState state;
-            state.is_connected = true; // Initialize all replicas as connected
-            replica_states[replica.readableString()] = state;
-        }
-    }
-}
-
-void StorageDistributed::addReplica(const String & replica_name)
-{
-    std::lock_guard lock(replica_states_mutex);
-    ReplicaState state;
-    state.is_connected = true; // Mark new replica as connected
-    replica_states[replica_name] = state;
-}
-
-void StorageDistributed::removeReplica(const String & replica_name)
-{
-    std::lock_guard lock(replica_states_mutex);
-    replica_states.erase(replica_name); // Remove the replica from the list
-}
-
-void StorageDistributed::updateReplicaState(const String & replica_name, const ReplicaState & state)
-{
-    std::lock_guard lock(replica_states_mutex);
-    if (replica_states.find(replica_name) != replica_states.end())
-    {
-        replica_states[replica_name] = state;
-    }
-    else
-    {
-        LOG_WARNING(log, "Trying to update state of unknown replica: {}", replica_name);
-    }
-}
-
-bool StorageDistributed::isReplicaAvailable(const String & replica_name) const
-{
-    std::lock_guard lock(replica_states_mutex);
-    auto it = replica_states.find(replica_name);
-    return it != replica_states.end() && it->second.is_connected;
-}
-
-void StorageDistributed::handleReplicaFailover(const String & replica_name)
-{
-    // Implement failover logic as needed
-    std::lock_guard lock(replica_states_mutex);
-    auto it = replica_states.find(replica_name);
-    if (it != replica_states.end())
-    {
-        // Simulate failover by marking the replica as disconnected
-        it->second.is_connected = false;
-        it->second.has_error = true;
-        it->second.last_error_message = "Simulated failover";
-        LOG_INFO(log, "Replica {} marked as disconnected for failover handling", replica_name);
-    }
-}
-
-void StorageDistributed::manageFailover(const String & replica_name)
-{
-    // Implement additional failover handling logic here
-    LOG_INFO(log, "Managing failover for replica {}", replica_name);
-    handleReplicaFailover(replica_name);
-}
-
 }
