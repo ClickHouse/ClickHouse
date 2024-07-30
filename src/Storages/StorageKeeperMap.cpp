@@ -183,7 +183,7 @@ public:
                 settings.insert_keeper_retry_max_backoff_ms},
             context->getProcessListElement()};
 
-        retries_ctl.retryLoop([&]()
+        zk_retry.retryLoop([&]()
         {
             auto zookeeper = storage.getClient();
             auto keys_limit = storage.keysLimit();
@@ -205,12 +205,12 @@ public:
             for (const auto & [key, _] : new_values)
                 key_paths.push_back(storage.fullPathForKey(key));
 
-            zkutil::ZooKeeper::MultiExistsResponse results;
+            zkutil::ZooKeeper::MultiTryGetResponse results;
 
             if constexpr (!for_update)
             {
                 if (!strict)
-                    results = zookeeper->exists(key_paths);
+                    results = zookeeper->tryGet(key_paths);
             }
 
             Coordination::Requests requests;
@@ -231,7 +231,8 @@ public:
                 {
                     if (!strict && results[i].error == Coordination::Error::ZOK)
                     {
-                        requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], -1));
+                        if (results[i].data != new_values[key])
+                            requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], -1));
                     }
                     else
                     {
@@ -240,6 +241,9 @@ public:
                     }
                 }
             }
+
+            if (requests.empty())
+                return;
 
             if (new_keys_num != 0)
             {
@@ -259,7 +263,7 @@ public:
 };
 
 template <typename KeyContainer>
-class StorageKeeperMapSource : public ISource
+class StorageKeeperMapSource : public ISource, WithContext
 {
     const StorageKeeperMap & storage;
     size_t max_block_size;
@@ -290,8 +294,15 @@ public:
         KeyContainerPtr container_,
         KeyContainerIter begin_,
         KeyContainerIter end_,
-        bool with_version_column_)
-        : ISource(getHeader(header, with_version_column_)), storage(storage_), max_block_size(max_block_size_), container(std::move(container_)), it(begin_), end(end_)
+        bool with_version_column_,
+        ContextPtr context_)
+        : ISource(getHeader(header, with_version_column_))
+        , WithContext(std::move(context_))
+        , storage(storage_)
+        , max_block_size(max_block_size_)
+        , container(std::move(container_))
+        , it(begin_)
+        , end(end_)
         , with_version_column(with_version_column_)
     {
     }
@@ -316,12 +327,12 @@ public:
             for (auto & raw_key : raw_keys)
                 raw_key = base64Encode(raw_key, /* url_encoding */ true);
 
-            return storage.getBySerializedKeys(raw_keys, nullptr, with_version_column);
+            return storage.getBySerializedKeys(raw_keys, nullptr, with_version_column, getContext());
         }
         else
         {
             size_t elem_num = std::min(max_block_size, static_cast<size_t>(end - it));
-            auto chunk = storage.getBySerializedKeys(std::span{it, it + elem_num}, nullptr, with_version_column);
+            auto chunk = storage.getBySerializedKeys(std::span{it, it + elem_num}, nullptr, with_version_column, getContext());
             it += elem_num;
             return chunk;
         }
@@ -553,14 +564,31 @@ Pipe StorageKeeperMap::read(
 
             using KeyContainer = typename KeyContainerPtr::element_type;
             pipes.emplace_back(std::make_shared<StorageKeeperMapSource<KeyContainer>>(
-                *this, sample_block, max_block_size, keys, keys->begin() + begin, keys->begin() + end, with_version_column));
+                *this, sample_block, max_block_size, keys, keys->begin() + begin, keys->begin() + end, with_version_column, context_));
         }
         return Pipe::unitePipes(std::move(pipes));
     };
 
-    auto client = getClient();
     if (all_scan)
-        return process_keys(std::make_shared<std::vector<std::string>>(client->getChildren(zk_data_path)));
+    {
+        const auto & settings = context_->getSettingsRef();
+        ZooKeeperRetriesControl zk_retry{
+            getName(),
+            getLogger(getName()),
+            ZooKeeperRetriesInfo{
+                settings.keeper_max_retries,
+                settings.keeper_retry_initial_backoff_ms,
+                settings.keeper_retry_max_backoff_ms},
+            context_->getProcessListElement()};
+
+        std::vector<std::string> children;
+        zk_retry.retryLoop([&]
+        {
+            auto client = getClient();
+            children = client->getChildren(zk_data_path);
+        });
+        return process_keys(std::make_shared<std::vector<std::string>>(std::move(children)));
+    }
 
     return process_keys(std::move(filtered_keys));
 }
@@ -571,11 +599,24 @@ SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const Storage
     return std::make_shared<StorageKeeperMapSink>(*this, metadata_snapshot->getSampleBlock(), local_context);
 }
 
-void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
+void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
     checkTable<true>();
-    auto client = getClient();
-    client->tryRemoveChildrenRecursive(zk_data_path, true);
+    const auto & settings = local_context->getSettingsRef();
+    ZooKeeperRetriesControl zk_retry{
+        getName(),
+        getLogger(getName()),
+        ZooKeeperRetriesInfo{
+            settings.keeper_max_retries,
+            settings.keeper_retry_initial_backoff_ms,
+            settings.keeper_retry_max_backoff_ms},
+        local_context->getProcessListElement()};
+
+    zk_retry.retryLoop([&]
+    {
+        auto client = getClient();
+        client->tryRemoveChildrenRecursive(zk_data_path, true);
+    });
 }
 
 bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock)
@@ -1064,10 +1105,11 @@ Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPOD
     if (raw_keys.size() != keys[0].column->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", raw_keys.size(), keys[0].column->size());
 
-    return getBySerializedKeys(raw_keys, &null_map, /* version_column */ false);
+    return getBySerializedKeys(raw_keys, &null_map, /* version_column */ false, getContext());
 }
 
-Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version) const
+Chunk StorageKeeperMap::getBySerializedKeys(
+    const std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version, const ContextPtr & local_context) const
 {
     Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
     MutableColumns columns = sample_block.cloneEmptyColumns();
@@ -1084,17 +1126,27 @@ Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> k
         null_map->resize_fill(keys.size(), 1);
     }
 
-    auto client = getClient();
-
     Strings full_key_paths;
     full_key_paths.reserve(keys.size());
 
     for (const auto & key : keys)
-    {
         full_key_paths.emplace_back(fullPathForKey(key));
-    }
 
-    auto values = client->tryGet(full_key_paths);
+    const auto & settings = local_context->getSettingsRef();
+    ZooKeeperRetriesControl zk_retry{
+        getName(),
+        getLogger(getName()),
+        ZooKeeperRetriesInfo{
+            settings.keeper_max_retries,
+            settings.keeper_retry_initial_backoff_ms,
+            settings.keeper_retry_max_backoff_ms},
+        local_context->getProcessListElement()};
+
+    zkutil::ZooKeeper::MultiTryGetResponse values;
+    zk_retry.retryLoop([&]{
+        auto client = getClient();
+        values = client->tryGet(full_key_paths);
+    });
 
     for (size_t i = 0; i < keys.size(); ++i)
     {
@@ -1182,16 +1234,16 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
     if (commands.front().type == MutationCommand::Type::DELETE)
     {
-        MutationsInterpreter::Settings settings(true);
-        settings.return_all_columns = true;
-        settings.return_mutated_rows = true;
+        MutationsInterpreter::Settings mutation_settings(true);
+        mutation_settings.return_all_columns = true;
+        mutation_settings.return_mutated_rows = true;
 
         auto interpreter = std::make_unique<MutationsInterpreter>(
             storage_ptr,
             metadata_snapshot,
             commands,
             local_context,
-            settings);
+            mutation_settings);
 
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
@@ -1199,8 +1251,6 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
         auto header = interpreter->getUpdatedHeader();
         auto primary_key_pos = header.getPositionByName(primary_key);
         auto version_position = header.getPositionByName(std::string{version_column_name});
-
-        auto client = getClient();
 
         Block block;
         while (executor.pull(block))
@@ -1229,7 +1279,23 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             }
 
             Coordination::Responses responses;
-            auto status = client->tryMulti(delete_requests, responses, /* check_session_valid */ true);
+
+            const auto & settings = local_context->getSettingsRef();
+            ZooKeeperRetriesControl zk_retry{
+                getName(),
+                getLogger(getName()),
+                ZooKeeperRetriesInfo{
+                    settings.keeper_max_retries,
+                    settings.keeper_retry_initial_backoff_ms,
+                    settings.keeper_retry_max_backoff_ms},
+                local_context->getProcessListElement()};
+
+            Coordination::Error status;
+            zk_retry.retryLoop([&]
+            {
+                auto client = getClient();
+                status = client->tryMulti(delete_requests, responses, /* check_session_valid */ true);
+            });
 
             if (status == Coordination::Error::ZOK)
                 return;
@@ -1241,9 +1307,14 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
             for (const auto & delete_request : delete_requests)
             {
-                auto code = client->tryRemove(delete_request->getPath());
-                if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-                    throw zkutil::KeeperException::fromPath(code, delete_request->getPath());
+                zk_retry.retryLoop([&]
+                {
+                    auto client = getClient();
+                    status = client->tryRemove(delete_request->getPath());
+                });
+
+                if (status != Coordination::Error::ZOK && status != Coordination::Error::ZNONODE)
+                    throw zkutil::KeeperException::fromPath(status, delete_request->getPath());
             }
         }
 

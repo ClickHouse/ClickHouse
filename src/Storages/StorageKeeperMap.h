@@ -54,7 +54,8 @@ public:
     Names getPrimaryKey() const override { return {primary_key}; }
 
     Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const override;
-    Chunk getBySerializedKeys(std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version) const;
+    Chunk getBySerializedKeys(
+        std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version, const ContextPtr & local_context) const;
 
     Block getSampleBlock(const Names &) const override;
 
