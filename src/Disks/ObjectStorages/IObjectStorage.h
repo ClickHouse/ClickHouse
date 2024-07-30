@@ -1,10 +1,10 @@
 #pragma once
 
-#include <filesystem>
 #include <string>
 #include <map>
 #include <mutex>
 #include <optional>
+#include <filesystem>
 
 #include <Poco/Timestamp.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -29,6 +29,10 @@
 #if USE_AZURE_BLOB_STORAGE
 #include <Common/MultiVersion.h>
 #include <azure/storage/blobs.hpp>
+#endif
+
+#if USE_AWS_S3
+#include <IO/S3/Client.h>
 #endif
 
 namespace DB
@@ -230,6 +234,13 @@ public:
     virtual std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
+    }
+#endif
+
+#if USE_AWS_S3
+    virtual std::shared_ptr<const S3::Client> getS3StorageClient()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for S3ObjectStorage");
     }
 #endif
 

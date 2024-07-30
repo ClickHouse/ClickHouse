@@ -191,6 +191,12 @@ PostgreSQLSource<T>::~PostgreSQLSource()
     {
         try
         {
+            if (stream)
+            {
+                tx->conn().cancel_query();
+                stream->close();
+            }
+
             stream.reset();
             tx.reset();
         }

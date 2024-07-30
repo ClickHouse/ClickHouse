@@ -126,6 +126,13 @@ public:
     }
 #endif
 
+#if USE_AWS_S3
+    std::shared_ptr<const S3::Client> getS3StorageClient() override
+    {
+        return object_storage->getS3StorageClient();
+    }
+#endif
+
 private:
     FileCacheKey getCacheKey(const std::string & path) const;
 

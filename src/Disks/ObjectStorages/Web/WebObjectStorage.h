@@ -3,6 +3,8 @@
 #include "config.h"
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
+
+#include <filesystem>
 #include <shared_mutex>
 
 namespace Poco

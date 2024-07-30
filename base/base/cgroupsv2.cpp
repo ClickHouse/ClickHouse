@@ -3,7 +3,7 @@
 #include <base/defines.h>
 
 #include <fstream>
-#include <sstream>
+#include <string>
 
 
 bool cgroupsV2Enabled()
@@ -40,7 +40,7 @@ bool cgroupsV2MemoryControllerEnabled()
 #endif
 }
 
-std::string cgroupV2OfProcess()
+std::filesystem::path cgroupV2PathOfProcess()
 {
 #if defined(OS_LINUX)
     chassert(cgroupsV2Enabled());
@@ -48,17 +48,18 @@ std::string cgroupV2OfProcess()
     /// A simpler way to get the membership is:
     std::ifstream cgroup_name_file("/proc/self/cgroup");
     if (!cgroup_name_file.is_open())
-        return "";
+        return {};
     /// With cgroups v2, there will be a *single* line with prefix "0::/"
     /// (see https://docs.kernel.org/admin-guide/cgroup-v2.html)
     std::string cgroup;
     std::getline(cgroup_name_file, cgroup);
     static const std::string v2_prefix = "0::/";
     if (!cgroup.starts_with(v2_prefix))
-        return "";
+        return {};
     cgroup = cgroup.substr(v2_prefix.length());
-    return cgroup;
+    /// Note: The 'root' cgroup can have an empty cgroup name, this is valid
+    return default_cgroups_mount / cgroup;
 #else
-    return "";
+    return {};
 #endif
 }
