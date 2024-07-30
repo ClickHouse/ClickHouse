@@ -366,8 +366,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         {
             if (!job.is_local_job || !settings.prefer_localhost_replica)
             {
-                // Prepare the query context string, such as the table name or other identifiers
-                std::string query_context = storage.getRemoteDatabaseName() + "." + storage.getRemoteTableName();
+                auto query_context = QualifiedTableName(storage.getRemoteDatabaseName(), storage.getRemoteTableName());
 
                 if (!job.executor)
                 {

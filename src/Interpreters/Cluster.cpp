@@ -898,7 +898,7 @@ ConnectionPoolWithFailover::Entry Cluster::getConnectionWithRetries(
     size_t replica_index,
     const Settings & settings,
     size_t max_retries,
-    const std::string & query_context) // New parameter
+    const QualifiedTableName & query_context)
 {
     const auto & shard_info = getShardsInfo()[shard_index];
     const auto & addresses = getShardsAddresses();
