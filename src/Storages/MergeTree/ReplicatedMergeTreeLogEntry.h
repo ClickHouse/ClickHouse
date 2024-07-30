@@ -107,6 +107,10 @@ struct ReplicatedMergeTreeLogEntryData
     /// For DROP_RANGE, true means that the parts need not be deleted, but moved to the `detached` directory.
     bool detach = false;
 
+    /// For MOVE_PART operation, task that initiated this action
+    String task_name;
+    String task_entry_zk_path;
+
     /// REPLACE PARTITION FROM command
     struct ReplaceRangeEntry
     {

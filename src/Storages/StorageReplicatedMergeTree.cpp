@@ -553,7 +553,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     createNewZooKeeperNodes();
-    syncPinnedPartUUIDs();
+    syncPinnedPartUUIDs(true);
 
     if (!has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper)
         createTableSharedID();
@@ -1769,7 +1769,7 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
 }
 
 
-void StorageReplicatedMergeTree::syncPinnedPartUUIDs()
+void StorageReplicatedMergeTree::syncPinnedPartUUIDs(bool startup)
 {
     auto zookeeper = getZooKeeper();
 
@@ -1784,6 +1784,18 @@ void StorageReplicatedMergeTree::syncPinnedPartUUIDs()
         auto new_pinned_part_uuids = std::make_shared<PinnedPartUUIDs>();
         new_pinned_part_uuids->fromString(s);
         new_pinned_part_uuids->stat = stat;
+        
+        /// No queries could be run in parallel with pinned_part_uuids
+        /// updating, otherwise that query could be started without
+        /// pinned_part_uuids, then it will receive some UUIds from remote
+        /// shard, and only then pinned_part_uuids will be set, and this will
+        /// lead to duplicated data.
+        TableExclusiveLockHolder exclusive_lock;
+        /// On startup we cannot take exclusive lock since some already held on
+        /// this storage (and it is not required, since this table is not
+        /// visible yet, though there is one exception - switching from readonly)
+        if (!startup)
+            exclusive_lock = lockExclusively(RWLockImpl::NO_QUERY, getContext()->getSettingsRef().lock_acquire_timeout);
 
         pinned_part_uuids = new_pinned_part_uuids;
     }
@@ -2137,7 +2149,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         case LogEntry::ALTER_METADATA:
             return executeMetadataAlter(entry);
         case LogEntry::SYNC_PINNED_PART_UUIDS:
-            syncPinnedPartUUIDs();
+            syncPinnedPartUUIDs(false);
             return true;
         case LogEntry::CLONE_PART_FROM_SHARD:
             executeClonePartFromShard(entry);
@@ -3633,6 +3645,46 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr StorageReplicatedMergeTree::selectQue
     return selected;
 }
 
+void StorageReplicatedMergeTree::updateMovePartTask( const LogEntry & logEntry, bool result)
+{
+    auto zookeeper = getZooKeeper();
+    if(result){
+        String value;
+        Coordination::Stat stat;
+        while (zookeeper->tryGet(fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name , value, &stat)){
+            PartMovesBetweenShardsOrchestrator::Entry entry;
+            entry.fromString(value);
+            entry.replicas.insert(replica_name);
+
+            Coordination::Requests ops;
+            Coordination::Responses responses;
+
+            ops.emplace_back(zkutil::makeSetRequest(fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name, entry.toString(), stat.version));
+
+            if(entry.replicas.size() >= entry.required_number_of_replicas){
+                ops.emplace_back(zkutil::makeCreateRequest(fs::path(logEntry.task_entry_zk_path) / "task_queue" / logEntry.task_name, "", zkutil::CreateMode::Persistent));
+            }
+            auto code = zookeeper->tryMulti(ops, responses);
+
+            if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
+            {
+                break;
+            }
+            else if (code == Coordination::Error::ZBADVERSION)
+            {
+                /// Node was updated meanwhile. We must re-read it and repeat all the actions.
+                continue;
+            } else {
+               throw Coordination::Exception::fromPath(code, fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name);
+            }
+
+       }
+    } else{
+        zookeeper->createIfNotExists(fs::path(logEntry.task_entry_zk_path) / "task_queue" / logEntry.task_name, replica_name);
+    }
+}
+
+
 
 bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry)
 {
@@ -3641,7 +3693,11 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
     {
         try
         {
-            return executeLogEntry(*entry_to_process);
+            bool result =  executeLogEntry(*entry_to_process);
+            if(!entry_to_process->task_name.empty()){
+                updateMovePartTask(*entry_to_process, result);
+            }
+            return result;
         }
         catch (const Exception & e)
         {
@@ -8643,26 +8699,44 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     if (src_pins.part_uuids.contains(part->uuid) || dst_pins.part_uuids.contains(part->uuid))
         throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part {} has it's uuid ({}) already pinned.", part_name, part->uuid);
 
+    /// check if all the replicas of the shard are active
+    Strings replicas = zookeeper->getChildren( fs::path(zookeeper_path) / "replicas");
+    Strings exists_paths;
+    exists_paths.reserve(replicas.size());
+    for (const auto & replica : replicas)
+        if (replica != replica_name)
+            exists_paths.emplace_back(fs::path(zookeeper_path) / "replicas" / replica / "/is_active");
+
+    auto exists_result = zookeeper->exists(exists_paths);
+
+    for (size_t i = 0; i < exists_paths.size(); ++i)
+    {
+        auto error = exists_result[i].error;
+        if (error != Coordination::Error::ZOK)
+            throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "replica {} is inactive", replicas[i]);
+    }
+
     src_pins.part_uuids.insert(part->uuid);
     dst_pins.part_uuids.insert(part->uuid);
 
     PartMovesBetweenShardsOrchestrator::Entry part_move_entry;
-    part_move_entry.state = PartMovesBetweenShardsOrchestrator::EntryState::SYNC_SOURCE;
+    part_move_entry.state = PartMovesBetweenShardsOrchestrator::EntryState::TODO;
     part_move_entry.create_time = std::time(nullptr);
     part_move_entry.update_time = part_move_entry.create_time;
     part_move_entry.task_uuid = UUIDHelpers::generateV4();
     part_move_entry.part_name = part->name;
     part_move_entry.part_uuid = part->uuid;
     part_move_entry.to_shard = to;
+    part_move_entry.required_number_of_replicas = replicas.size();
+
+    String task_name = "task-"+ toString(part_move_entry.task_uuid);
 
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/log", merge_pred.getVersion())); /// Make sure no new events were added to the log.
     ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/pinned_part_uuids", src_pins.toString(), src_pins.stat.version));
     ops.emplace_back(zkutil::makeSetRequest(to + "/pinned_part_uuids", dst_pins.toString(), dst_pins.stat.version));
-    ops.emplace_back(zkutil::makeCreateRequest(
-        part_moves_between_shards_orchestrator.entries_znode_path + "/task-",
-        part_move_entry.toString(),
-        zkutil::CreateMode::PersistentSequential));
+    ops.emplace_back(zkutil::makeCreateRequest( fs::path(part_moves_between_shards_orchestrator.entries_znode_path) / "tasks" / task_name, part_move_entry.toString(), zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest( fs::path(part_moves_between_shards_orchestrator.entries_znode_path) / "task_queue" / task_name, "", zkutil::CreateMode::Persistent));
 
     Coordination::Responses responses;
     Coordination::Error rc = zookeeper->tryMulti(ops, responses);

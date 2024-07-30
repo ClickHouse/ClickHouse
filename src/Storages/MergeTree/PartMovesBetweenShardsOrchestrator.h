@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <unordered_set>
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/UUID.h>
@@ -54,9 +55,7 @@ public:
             SYNC_DESTINATION,
             DESTINATION_FETCH,
             DESTINATION_ATTACH,
-            SOURCE_DROP_PRE_DELAY,
             SOURCE_DROP,
-            SOURCE_DROP_POST_DELAY,
             REMOVE_UUID_PIN,
             DONE,
         };
@@ -75,9 +74,7 @@ public:
                 case SYNC_DESTINATION: return "SYNC_DESTINATION";
                 case DESTINATION_FETCH: return "DESTINATION_FETCH";
                 case DESTINATION_ATTACH: return "DESTINATION_ATTACH";
-                case SOURCE_DROP_PRE_DELAY: return "SOURCE_DROP_PRE_DELAY";
                 case SOURCE_DROP: return "SOURCE_DROP";
-                case SOURCE_DROP_POST_DELAY: return "SOURCE_DROP_POST_DELAY";
                 case REMOVE_UUID_PIN: return "REMOVE_UUID_PIN";
                 case DONE: return "DONE";
                 case CANCELLED: return "CANCELLED";
@@ -93,13 +90,28 @@ public:
             else if (in == "SYNC_DESTINATION") return SYNC_DESTINATION;
             else if (in == "DESTINATION_FETCH") return DESTINATION_FETCH;
             else if (in == "DESTINATION_ATTACH") return DESTINATION_ATTACH;
-            else if (in == "SOURCE_DROP_PRE_DELAY") return SOURCE_DROP_PRE_DELAY;
             else if (in == "SOURCE_DROP") return SOURCE_DROP;
-            else if (in == "SOURCE_DROP_POST_DELAY") return SOURCE_DROP_POST_DELAY;
             else if (in == "REMOVE_UUID_PIN") return REMOVE_UUID_PIN;
             else if (in == "DONE") return DONE;
             else if (in == "CANCELLED") return CANCELLED;
             else throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown state: {}", in);
+        }
+
+        static EntryState::Value nextState(EntryState::Value state)
+        {
+            switch (state)
+            {
+                case TODO: return SYNC_SOURCE;
+                case SYNC_SOURCE: return SYNC_DESTINATION;
+                case SYNC_DESTINATION: return DESTINATION_FETCH;
+                case DESTINATION_FETCH: return DESTINATION_ATTACH;
+                case DESTINATION_ATTACH: return SOURCE_DROP;
+                case SOURCE_DROP: return REMOVE_UUID_PIN;
+                case REMOVE_UUID_PIN: return DONE;
+                case DONE: return DONE;
+                case CANCELLED: return CANCELLED;
+            }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown EntryState: {}", DB::toString<int>(state));
         }
     };
 
@@ -118,6 +130,9 @@ public:
         UUID part_uuid;
         String to_shard;
         String dst_part_name;
+
+        size_t required_number_of_replicas{};
+        std::set<String> replicas;
 
         EntryState state;
         bool rollback = false;
@@ -171,6 +186,7 @@ private:
     Entry getEntryByUUID(const UUID & task_uuid);
     void removePins(const Entry & entry, zkutil::ZooKeeperPtr zk);
     void syncStateFromZK();
+    EntryState getNextState(Entry entry);
 
     StorageReplicatedMergeTree & storage;
 
@@ -183,6 +199,7 @@ private:
 
     mutable std::mutex state_mutex;
     std::vector<Entry> entries;
+    std::unordered_set<String> signaled_entries;
 
 public:
     String entries_znode_path;
