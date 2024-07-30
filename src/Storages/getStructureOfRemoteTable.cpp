@@ -1,5 +1,4 @@
 #include "getStructureOfRemoteTable.h"
-#include <Core/Settings.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>

@@ -2179,7 +2179,7 @@ public:
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
     {
-        /// kql('table|project ...')
+        /// kql(table|project ...)
         /// 0. Parse the kql query
         /// 1. Parse closing token
         if (state == 0)
@@ -2743,7 +2743,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     /// 'AND' can be both boolean function and part of the '... BETWEEN ... AND ...' operator
     if (op.function_name == "and" && layers.back()->between_counter)
     {
-        --layers.back()->between_counter;
+        layers.back()->between_counter--;
         op = finish_between_operator;
     }
 

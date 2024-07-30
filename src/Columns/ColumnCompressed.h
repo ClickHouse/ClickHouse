@@ -86,11 +86,7 @@ public:
     bool isDefaultAt(size_t) const override { throwMustBeDecompressed(); }
     void insert(const Field &) override { throwMustBeDecompressed(); }
     bool tryInsert(const Field &) override { throwMustBeDecompressed(); }
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn &, size_t, size_t) override { throwMustBeDecompressed(); }
-#else
-    void doInsertRangeFrom(const IColumn &, size_t, size_t) override { throwMustBeDecompressed(); }
-#endif
     void insertData(const char *, size_t) override { throwMustBeDecompressed(); }
     void insertDefault() override { throwMustBeDecompressed(); }
     void popBack(size_t) override { throwMustBeDecompressed(); }
@@ -105,11 +101,7 @@ public:
     void expand(const Filter &, bool) override { throwMustBeDecompressed(); }
     ColumnPtr permute(const Permutation &, size_t) const override { throwMustBeDecompressed(); }
     ColumnPtr index(const IColumn &, size_t) const override { throwMustBeDecompressed(); }
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override { throwMustBeDecompressed(); }
-#else
-    int doCompareAt(size_t, size_t, const IColumn &, int) const override { throwMustBeDecompressed(); }
-#endif
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
         throwMustBeDecompressed();

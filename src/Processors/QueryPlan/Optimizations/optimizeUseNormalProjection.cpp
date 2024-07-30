@@ -7,11 +7,9 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-
 #include <algorithm>
 
 namespace DB::QueryPlanOptimizations
@@ -112,10 +110,10 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         return {};
 
     ContextPtr context = reading->getContext();
-    auto it = std::find_if(
-        normal_projections.begin(),
-        normal_projections.end(),
-        [&](const auto * projection) { return projection->name == context->getSettingsRef().preferred_optimize_projection_name.value; });
+    auto it = std::find_if(normal_projections.begin(), normal_projections.end(), [&](const auto * projection)
+    {
+        return projection->name == context->getSettings().preferred_optimize_projection_name.value;
+    });
 
     if (it != normal_projections.end())
     {
@@ -141,9 +139,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     const auto & query_info = reading->getQueryInfo();
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
 
-    auto ordinary_reading_select_result = reading->getAnalyzedResult();
-    if (!ordinary_reading_select_result)
-        ordinary_reading_select_result = reading->selectRangesToRead();
+    auto ordinary_reading_select_result = reading->selectRangesToRead();
     size_t ordinary_reading_marks = ordinary_reading_select_result->selected_marks;
 
     /// Nothing to read. Ignore projections.

@@ -406,7 +406,7 @@ struct fmt::formatter<DB::Identifier>
     }
 
     template <typename FormatContext>
-    auto format(const DB::Identifier & identifier, FormatContext & ctx) const
+    auto format(const DB::Identifier & identifier, FormatContext & ctx)
     {
         return fmt::format_to(ctx.out(), "{}", identifier.getFullName());
     }
@@ -428,7 +428,7 @@ struct fmt::formatter<DB::IdentifierView>
     }
 
     template <typename FormatContext>
-    auto format(const DB::IdentifierView & identifier_view, FormatContext & ctx) const
+    auto format(const DB::IdentifierView & identifier_view, FormatContext & ctx)
     {
         return fmt::format_to(ctx.out(), "{}", identifier_view.getFullName());
     }

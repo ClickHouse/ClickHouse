@@ -545,7 +545,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         catch (Exception & e)
         {
             if (e.code() == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string '{}' to type {}", src.get<String>(), type.getName());
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string {} to type {}", src.get<String>(), type.getName());
 
             e.addMessage(fmt::format("while converting '{}' to {}", src.get<String>(), type.getName()));
             throw;
@@ -615,9 +615,9 @@ static bool decimalEqualsFloat(Field field, Float64 float_value)
     return decimal_to_float == float_value;
 }
 
-std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & from_type, const IDataType & to_type)
+std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & to_type)
 {
-    Field result_value = convertFieldToType(from_value, to_type, &from_type);
+    Field result_value = convertFieldToType(from_value, to_type);
 
     if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
     {
