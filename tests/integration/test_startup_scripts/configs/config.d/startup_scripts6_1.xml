@@ -1,0 +1,20 @@
+<clickhouse>
+    <startup_scripts>
+        <scripts>
+            <query>CREATE TABLE TestTable_1 (id UInt64) ENGINE=TinyLog</query>
+        </scripts>
+        <scripts>
+            <query>CREATE TABLE TestTable_2 (id UInt64) ENGINE=TinyLog</query>
+            <condition>SELECT 1;</condition>
+        </scripts>
+    </startup_scripts>
+    <startup_scripts>
+        <scripts>
+            <query>CREATE TABLE TestTable_3 (id UInt64) ENGINE=TinyLog</query>
+        </scripts>
+        <scripts>
+            <query>CREATE TABLE TestTable_4 (id UInt64) ENGINE=TinyLog</query>
+            <condition>SELECT 1;</condition>
+        </scripts>
+    </startup_scripts>
+</clickhouse>
