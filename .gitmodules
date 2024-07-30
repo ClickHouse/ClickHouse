@@ -378,3 +378,6 @@
 [submodule "contrib/mongo-cxx-driver"]
 	path = contrib/mongo-cxx-driver
 	url = https://github.com/mongodb/mongo-cxx-driver.git
+[submodule "contrib/numactl"]
+	path = contrib/numactl
+	url = https://github.com/ClickHouse/numactl.git

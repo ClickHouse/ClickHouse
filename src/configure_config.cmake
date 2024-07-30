@@ -175,6 +175,8 @@ if (TARGET ch_contrib::prometheus_protobufs)
 endif()
 if (ch_contrib::mongo-cxx-driver)
     set(USE_MONGODB 1)
+if (TARGET ch_contrib::numactl)
+    set(USE_NUMACTL 1)
 endif()
 
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR})

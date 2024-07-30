@@ -5616,3 +5616,15 @@ If enabled, MongoDB tables will return an error when a MongoDB query can't be bu
 Not applied for the legacy implementation, or when 'allow_experimental_analyzer=0`.
 
 Default value: `true`.
+
+## restore_replace_external_engines_to_null
+
+For testing purposes. Replaces all external engines to Null to not initiate external connections.
+
+Default value: `False`
+
+## restore_replace_external_table_functions_to_null
+
+For testing purposes. Replaces all external table functions to Null to not initiate external connections.
+
+Default value: `False`
