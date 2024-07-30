@@ -11,7 +11,6 @@
 #include <map>
 #include <string>
 #include <unordered_set>
-#include <memory>
 
 namespace Poco
 {
@@ -275,11 +274,8 @@ public:
 
     const String & getName() const { return name; }
 
-    /// Handle connection loss and attempt reconnection
-    void handleConnectionLoss(ShardInfo & shard_info, const Settings & settings);
-
-    /// Execute query with failover mechanism
-    Block executeQueryWithFailover(const String & query, const Settings & settings);
+    // New method to get a connection with retries
+    ConnectionPoolWithFailover::Entry getConnectionWithRetries(size_t shard_index, size_t replica_index, const Settings & settings, size_t max_retries = 3);
 
 private:
     SlotToShard slot_to_shard;
@@ -290,10 +286,8 @@ public:
 private:
     void initMisc();
 
-    /// Create a failover connection pool
-    ConnectionPoolWithFailoverPtr createFailoverPool(const Addresses & addresses, const Settings & settings);
-
-    using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;
+    // Add a logger instance
+    LoggerPtr log = &Poco::Logger::get("Cluster");
 
     /// For getClusterWithMultipleShards implementation.
     struct SubclusterTag {};

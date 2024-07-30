@@ -328,7 +328,6 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         auto & shard_job = per_shard_jobs[job.shard_index];
         const auto & addresses = cluster->getShardsAddresses();
 
-        /// Generate current shard block
         if (num_shards > 1)
         {
             auto & shard_permutation = shard_job.shard_current_block_permutation;
@@ -363,89 +362,100 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         if (rows == 0)
             return;
 
-        if (!job.is_local_job || !settings.prefer_localhost_replica)
+        try
         {
-            if (!job.executor)
+            if (!job.is_local_job || !settings.prefer_localhost_replica)
             {
-                auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
-                if (shard_info.hasInternalReplication())
+                if (!job.executor)
                 {
-                    /// Skip replica_index in case of internal replication
-                    if (shard_job.replicas_jobs.size() != 1)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "There are several writing job for an automatically replicated shard");
+                    job.connection_entry = cluster->getConnectionWithRetries(job.shard_index, job.replica_index, settings);
+                    if (throttler)
+                        job.connection_entry->setThrottler(throttler);
 
-                    /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
-                    /// NOTE: INSERT will also take into account max_replica_delay_for_distributed_queries
-                    /// (anyway fallback_to_stale_replicas_for_distributed_queries=true by default)
-                    auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-                    auto result = results.front();
-                    if (shard_info.pool->isTryResultInvalid(result, settings.distributed_insert_skip_read_only_replicas))
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got an invalid connection result");
+                    job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(*job.connection_entry, ConnectionTimeouts::getTCPTimeoutsWithFailover(settings), query_string, settings, context->getClientInfo()));
+                    job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
+                    job.executor->start();
+                }
 
-                    job.connection_entry = std::move(result.entry);
+                CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
+                Block adopted_shard_block = adoptBlock(job.executor->getHeader(), shard_block, log);
+                job.executor->push(adopted_shard_block);
+            }
+            else
+            {
+                if (!job.executor)
+                {
+                    job.local_context = Context::createCopy(context);
+                    auto copy_query_ast = query_ast->clone();
+
+                    InterpreterInsertQuery interp(copy_query_ast, job.local_context, allow_materialized, false, false, false);
+                    auto block_io = interp.execute();
+
+                    job.pipeline = std::move(block_io.pipeline);
+                    job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
+                    job.executor->start();
+                }
+
+                writeBlockConvert(*job.executor, shard_block, shard_info.getLocalNodeCount(), log);
+            }
+
+            job.blocks_written += 1;
+            job.rows_written += rows;
+        }
+        catch (const Exception & ex)
+        {
+            if (ex.code() == ErrorCodes::NETWORK_ERROR || ex.code() == ErrorCodes::SOCKET_TIMEOUT)
+            {
+                LOG_WARNING(log, "Network error or socket timeout detected. Attempting to reconnect and resend the query.");
+                if (reconnectAndResend(job, shard_block))
+                {
+                    LOG_INFO(log, "Reconnection and resend successful.");
+                    return;
                 }
                 else
                 {
-                    const auto & replica = addresses.at(job.shard_index).at(job.replica_index);
-
-                    const ConnectionPoolPtr & connection_pool = shard_info.per_replica_pools.at(job.replica_index);
-                    if (!connection_pool)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection pool for replica {} does not exist", replica.readableString());
-
-                    job.connection_entry = connection_pool->get(timeouts, settings);
-                    if (job.connection_entry.isNull())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty connection for replica{}", replica.readableString());
+                    LOG_ERROR(log, "Reconnection and resend failed. Throwing exception.");
+                    throw;
                 }
-
-                if (throttler)
-                    job.connection_entry->setThrottler(throttler);
-
-                job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(
-                    *job.connection_entry, timeouts, query_string, settings, context->getClientInfo()));
-                job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
-                job.executor->start();
             }
-
-            CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
-
-            Block adopted_shard_block = adoptBlock(job.executor->getHeader(), shard_block, log);
-            job.executor->push(adopted_shard_block);
-        }
-        else // local
-        {
-            if (!job.executor)
+            else
             {
-                /// Forward user settings
-                job.local_context = Context::createCopy(context);
-
-                /// Copying of the query AST is required to avoid race,
-                /// in case of INSERT into multiple local shards.
-                ///
-                /// Since INSERT into local node uses AST,
-                /// and InterpreterInsertQuery::execute() is modifying it,
-                /// to resolve tables (in InterpreterInsertQuery::getTable())
-                auto copy_query_ast = query_ast->clone();
-
-                InterpreterInsertQuery interp(
-                    copy_query_ast,
-                    job.local_context,
-                    allow_materialized,
-                    /* no_squash */ false,
-                    /* no_destination */ false,
-                    /* async_isnert */ false);
-                auto block_io = interp.execute();
-
-                job.pipeline = std::move(block_io.pipeline);
-                job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
-                job.executor->start();
+                throw;
             }
-
-            writeBlockConvert(*job.executor, shard_block, shard_info.getLocalNodeCount(), log);
         }
+    };
+}
+
+
+bool DistributedSink::reconnectAndResend(JobReplica & job, const Block & shard_block)
+{
+    const auto & settings = context->getSettingsRef();
+    const size_t max_retries = settings.max_retries;
+
+    try
+    {
+        job.connection_entry = cluster->getConnectionWithRetries(job.shard_index, job.replica_index, settings, max_retries);
+
+        if (throttler)
+            job.connection_entry->setThrottler(throttler);
+
+        job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(*job.connection_entry, ConnectionTimeouts::getTCPTimeoutsWithFailover(settings), query_string, settings, context->getClientInfo()));
+        job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
+        job.executor->start();
+
+        CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
+        Block adopted_shard_block = adoptBlock(job.executor->getHeader(), shard_block, log);
+        job.executor->push(adopted_shard_block);
 
         job.blocks_written += 1;
-        job.rows_written += rows;
-    };
+        job.rows_written += shard_block.rows();
+        return true;
+    }
+    catch (const Exception & ex)
+    {
+        LOG_ERROR(log, "Reconnection attempt failed with error: {}", ex.message());
+        return false;
+    }
 }
 
 void DistributedSink::writeSync(const Block & block)

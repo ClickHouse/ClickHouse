@@ -53,6 +53,11 @@ public:
     void onFinish() override;
 
 private:
+
+    // Helper methods for reconnection logic
+    bool reconnectAndResend(JobReplica & job, const Block & shard_block);
+
+
     void onCancel() override;
 
     IColumn::Selector createSelector(const Block & source_block) const;
