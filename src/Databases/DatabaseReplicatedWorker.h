@@ -59,8 +59,8 @@ private:
     /// It will remove "active" node when database is detached
     zkutil::EphemeralNodeHolderPtr active_node_holder;
 
-    Stopwatch initialization_duration_timer;
-    std::atomic<bool> initializing = false;
+    std::optional<Stopwatch> initialization_duration_timer;
+    mutable std::mutex initialization_duration_timer_mutex;
 };
 
 }

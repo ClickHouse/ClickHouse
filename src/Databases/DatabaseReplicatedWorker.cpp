@@ -32,8 +32,11 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
 
 bool DatabaseReplicatedDDLWorker::initializeMainThread()
 {
-    initialization_duration_timer.restart();
-    initializing.store(true, std::memory_order_release);
+    {
+        std::lock_guard lock(initialization_duration_timer_mutex);
+        initialization_duration_timer.emplace();
+        initialization_duration_timer->start();
+    }
 
     while (!stop_flag)
     {
@@ -72,7 +75,10 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
 
             initializeReplication();
             initialized = true;
-            initializing.store(false, std::memory_order_relaxed);
+            {
+                std::lock_guard lock(initialization_duration_timer_mutex);
+                initialization_duration_timer.reset();
+            }
             return true;
         }
         catch (...)
@@ -82,7 +88,11 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
         }
     }
 
-    initializing.store(false, std::memory_order_relaxed);
+    {
+        std::lock_guard lock(initialization_duration_timer_mutex);
+        initialization_duration_timer.reset();
+    }
+
     return false;
 }
 
@@ -466,7 +476,8 @@ UInt32 DatabaseReplicatedDDLWorker::getLogPointer() const
 
 UInt64 DatabaseReplicatedDDLWorker::getCurrentInitializationDurationMs() const
 {
-    return initializing.load(std::memory_order_acquire) ? initialization_duration_timer.elapsedMilliseconds() : 0;
+    std::lock_guard lock(initialization_duration_timer_mutex);
+    return initialization_duration_timer ? initialization_duration_timer->elapsedMilliseconds() : 0;
 }
 
 }

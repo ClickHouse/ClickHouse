@@ -71,7 +71,7 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const Nam
     const auto & shards_info = cluster->getShardsInfo();
     const auto & addresses_with_failover = cluster->getShardsAddresses();
 
-    size_t replica_idx = 0;
+    size_t global_replica_idx = 0;
     for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
     {
         const auto & shard_info = shards_info[shard_index];
@@ -108,7 +108,7 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const Nam
             }
             else
             {
-                const auto & replica_info = replicas_info[replica_idx++];
+                const auto & replica_info = replicas_info[global_replica_idx];
                 res_columns[i++]->insert(replica_info.is_active);
                 res_columns[i++]->insert(replica_info.replication_lag);
                 if (replica_info.recovery_time != 0)
@@ -116,6 +116,8 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const Nam
                 else
                     res_columns[i++]->insertDefault();
             }
+            
+            ++global_replica_idx;
         }
     }
 }

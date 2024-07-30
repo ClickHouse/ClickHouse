@@ -5,7 +5,6 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/config.xml"],
-    with_zookeeper=True,
     stay_alive=True,
 )
 
@@ -21,9 +20,36 @@ def start_cluster():
 
 def test_recovery_time_metric(start_cluster):
     node.query(
-        "CREATE DATABASE rdb ENGINE = Replicated('/test/test_recovery_time_metric', 'shard1', 'replica1');"
+        """
+        CREATE DATABASE rdb
+        ENGINE = Replicated('/test/test_recovery_time_metric', 'shard1', 'replica1')
+        """
     )
-    node.query("CREATE TABLE rdb.t (x UInt32) ENGINE = MergeTree ORDER BY x;")
-    node.exec_in_container(["bash", "-c", "rm /var/lib/clickhouse/metadata/rdb/t.sql"])
+
+    node.query(
+        """
+        CREATE TABLE rdb.t
+        (
+            `x` UInt32
+        )
+        ENGINE = MergeTree
+        ORDER BY x
+        """
+    )
+
+    node.exec_in_container(
+        ["bash", "-c", "rm /var/lib/clickhouse/metadata/rdb/t.sql"]
+    )
+
     node.restart_clickhouse()
-    assert node.query("SELECT any(recovery_time) FROM system.clusters;") != "0\n"
+
+    ret = int(
+        node.query(
+            """
+            SELECT recovery_time
+            FROM system.clusters
+            WHERE cluster = 'rdb'
+            """
+        ).strip()
+    )
+    assert ret > 0

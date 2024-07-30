@@ -12,6 +12,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/PoolId.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -340,31 +341,63 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
 
 ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_) const
 {
-    ReplicasInfo res;
+    Strings paths_get, paths_exists;
 
-    auto zookeeper = getZooKeeper();
+    paths_get.emplace_back(fs::path(zookeeper_path) / "max_log_ptr");
+
     const auto & addresses_with_failover = cluster_->getShardsAddresses();
     const auto & shards_info = cluster_->getShardsInfo();
-
+    for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
+    {
+        for (const auto & replica : addresses_with_failover[shard_index])
+        {
+            String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name);
+            paths_exists.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "active");
+            paths_get.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "log_ptr");
+        }
+    }
+    
     try
     {
-        UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr"));
+        auto current_zookeeper = getZooKeeper();
+        auto get_res = current_zookeeper->get(paths_get);
+        auto exist_res = current_zookeeper->exists(paths_exists);
+        chassert(get_res.size() == exist_res.size() + 1);
 
+        auto max_log_ptr_zk = get_res[0];
+        if (max_log_ptr_zk.error != Coordination::Error::ZOK)
+            throw Coordination::Exception(max_log_ptr_zk.error);
+
+        UInt32 max_log_ptr = parse<UInt32>(max_log_ptr_zk.data);
+
+        ReplicasInfo replicas_info;
+        replicas_info.resize(exist_res.size());
+
+        size_t global_replica_index = 0;
         for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
         {
             for (const auto & replica : addresses_with_failover[shard_index])
             {
-                String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name);
-                UInt32 log_ptr = parse<UInt32>(zookeeper->get(fs::path(zookeeper_path) / "replicas" / full_name / "log_ptr"));
-                bool is_active = zookeeper->exists(fs::path(zookeeper_path) / "replicas" / full_name / "active");
-                res.push_back(ReplicaInfo{
-                    .is_active = is_active,
-                    .replication_lag = max_log_ptr - log_ptr,
+                auto replica_active = exist_res[global_replica_index];
+                auto replica_log_ptr = get_res[global_replica_index + 1];
+
+                if (replica_active.error != Coordination::Error::ZOK && replica_active.error != Coordination::Error::ZNONODE)
+                    throw Coordination::Exception(replica_active.error);
+
+                if (replica_log_ptr.error != Coordination::Error::ZOK)
+                    throw Coordination::Exception(replica_log_ptr.error);
+
+                replicas_info[global_replica_index] = ReplicaInfo{
+                    .is_active = replica_active.error == Coordination::Error::ZOK,
+                    .replication_lag = max_log_ptr - parse<UInt32>(replica_log_ptr.data),
                     .recovery_time = replica.is_local ? ddl_worker->getCurrentInitializationDurationMs() : 0,
-                });
+                };
+
+                ++global_replica_index;
             }
         }
-        return res;
+    
+        return replicas_info;
     } catch (...)
     {
         tryLogCurrentException(log);
