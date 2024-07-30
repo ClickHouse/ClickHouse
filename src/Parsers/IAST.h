@@ -66,7 +66,7 @@ public:
     /** Set the alias. */
     virtual void setAlias(const String & /*to*/)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set alias of {}", getColumnName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set alias of {} of {}", getColumnName(), getID());
     }
 
     /** Get the text that identifies this element. */
@@ -271,16 +271,15 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
     }
 
-    // Secrets are displayed regarding show_secrets, then SensitiveDataMasker is applied.
-    // You can use Interpreters/formatWithPossiblyHidingSecrets.h for convenience.
+    /// Secrets are displayed regarding show_secrets, then SensitiveDataMasker is applied.
+    /// You can use Interpreters/formatWithPossiblyHidingSecrets.h for convenience.
     String formatWithPossiblyHidingSensitiveData(size_t max_length, bool one_line, bool show_secrets) const;
 
-    /*
-     * formatForLogging and formatForErrorMessage always hide secrets. This inconsistent
-     * behaviour is due to the fact such functions are called from Client which knows nothing about
-     * access rights and settings. Moreover, the only use case for displaying secrets are backups,
-     * and backup tools use only direct input and ignore logs and error messages.
-     */
+    /** formatForLogging and formatForErrorMessage always hide secrets. This inconsistent
+      * behaviour is due to the fact such functions are called from Client which knows nothing about
+      * access rights and settings. Moreover, the only use case for displaying secrets are backups,
+      * and backup tools use only direct input and ignore logs and error messages.
+      */
     String formatForLogging(size_t max_length = 0) const
     {
         return formatWithPossiblyHidingSensitiveData(max_length, true, false);

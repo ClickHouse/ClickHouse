@@ -23,25 +23,25 @@ namespace
   */
 struct ReverseUTF8Impl
 {
-    static void vector(const ColumnString::Chars & data,
+    static void vector(
+        const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         bool all_ascii = isAllASCII(data.data(), data.size());
         if (all_ascii)
         {
-            ReverseImpl::vector(data, offsets, res_data, res_offsets);
+            ReverseImpl::vector(data, offsets, res_data, res_offsets, input_rows_count);
             return;
         }
 
         res_data.resize(data.size());
         res_offsets.assign(offsets);
-        size_t size = offsets.size();
-
 
         ColumnString::Offset prev_offset = 0;
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             ColumnString::Offset j = prev_offset;
             while (j < offsets[i] - 1)
@@ -73,7 +73,7 @@ struct ReverseUTF8Impl
         }
     }
 
-    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot apply function reverseUTF8 to fixed string.");
     }
