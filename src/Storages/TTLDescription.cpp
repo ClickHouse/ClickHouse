@@ -177,14 +177,14 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
     ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context_copy);
     auto dag = analyzer.getActionsDAG(false);
 
-    const auto * col = &dag->findInOutputs(ast->getColumnName());
+    const auto * col = &dag.findInOutputs(ast->getColumnName());
     if (col->result_name != ttl_string)
-        col = &dag->addAlias(*col, ttl_string);
+        col = &dag.addAlias(*col, ttl_string);
 
-    dag->getOutputs() = {col};
-    dag->removeUnusedActions();
+    dag.getOutputs() = {col};
+    dag.removeUnusedActions();
 
-    result.expression = std::make_shared<ExpressionActions>(dag, ExpressionActionsSettings::fromContext(context_copy));
+    result.expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context_copy));
     result.sets = analyzer.getPreparedSets();
 
     return result;
