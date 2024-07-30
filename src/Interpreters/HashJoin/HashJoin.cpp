@@ -1389,10 +1389,10 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
 
 void HashJoin::tryRerangeRightTableData()
 {
-    if ((kind != JoinKind::Inner && kind != JoinKind::Left) || strictness != JoinStrictness::All || table_join->getMixedJoinExpression())
+    if ((kind != JoinKind::Inner && kind != JoinKind::Left) || strictness != JoinStrictness::All)
         return;
 
-    if (!data || data->blocks.empty() || data->maps.size() > 1)
+    if (!data || data->sorted || data->blocks.empty() || data->maps.size() > 1)
         return;
 
     if (data->keys_to_join == 0)
