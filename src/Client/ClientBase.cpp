@@ -16,6 +16,7 @@
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/typeid_cast.h>
+#include <Common/KeystrokeInterceptor.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/StringUtils.h>
@@ -502,6 +503,8 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
     if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
         progress_indication.clearProgressOutput(*tty_buf);
+    if (need_render_progress_table && tty_buf && (!select_into_file || select_into_file_and_stdout))
+        progress_table.clearTableOutput(*tty_buf);
 
     try
     {
@@ -517,12 +520,18 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     /// Received data block is immediately displayed to the user.
     output_format->flush();
 
-    /// Restore progress bar after data block.
+    /// Restore progress bar and progress table after data block.
     if (need_render_progress && tty_buf)
     {
         if (select_into_file && !select_into_file_and_stdout)
             error_stream << "\r";
         progress_indication.writeProgress(*tty_buf);
+    }
+    if (need_render_progress_table && tty_buf)
+    {
+        if (!need_render_progress && select_into_file && !select_into_file_and_stdout)
+            error_stream << "\r";
+        progress_table.writeTable(*tty_buf, show_progress_table.load());
     }
 }
 
@@ -532,6 +541,8 @@ void ClientBase::onLogData(Block & block)
     initLogsOutputStream();
     if (need_render_progress && tty_buf)
         progress_indication.clearProgressOutput(*tty_buf);
+    if (need_render_progress_table)
+        progress_table.clearTableOutput(*tty_buf);
     logs_out_stream->writeLogs(block);
     logs_out_stream->flush();
 }
@@ -859,16 +870,23 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
     }
 }
 
-void ClientBase::initTTYBuffer(ProgressOption progress)
+void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option)
 {
     if (tty_buf)
         return;
 
-    if (progress == ProgressOption::OFF || (!is_interactive && progress == ProgressOption::DEFAULT))
-    {
-         need_render_progress = false;
-         return;
-    }
+    if (progress_option == ProgressOption::OFF || (!is_interactive && progress_option == ProgressOption::DEFAULT))
+        need_render_progress = false;
+
+    if (progress_table_option == ProgressOption::OFF || (!is_interactive && progress_table_option == ProgressOption::DEFAULT))
+        need_render_progress_table = false;
+
+    if (!need_render_progress && !need_render_progress_table)
+        return;
+
+    /// If need_render_progress and need_render_progress_table are enabled,
+    /// use ProgressOption that was set for the progress bar for progress table as well.
+    ProgressOption progress = progress_option ? progress_option : progress_table_option;
 
     static constexpr auto tty_file_name = "/dev/tty";
 
@@ -914,7 +932,20 @@ void ClientBase::initTTYBuffer(ProgressOption progress)
         tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO, buf_size);
     }
     else
+    {
         need_render_progress = false;
+        need_render_progress_table = false;
+    }
+}
+
+void ClientBase::initKeystrokeInterceptor()
+{
+    if (is_interactive && need_render_progress_table)
+    {
+        keystroke_interceptor = std::make_unique<KeystrokeInterceptor>(in_fd);
+        keystroke_interceptor->registerCallback(' ', [this]() { show_progress_table = !show_progress_table; });
+
+    }
 }
 
 void ClientBase::updateSuggest(const ASTPtr & ast)
@@ -1167,6 +1198,9 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
 
     std::exception_ptr local_format_error;
 
+    if (keystroke_interceptor)
+        keystroke_interceptor->startIntercept();
+
     while (true)
     {
         Stopwatch receive_watch(CLOCK_MONOTONIC_COARSE);
@@ -1221,7 +1255,16 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
                 local_format_error = std::current_exception();
             connection->sendCancel();
         }
+        catch (...)
+        {
+            if (keystroke_interceptor)
+                keystroke_interceptor->stopIntercept();
+            throw;
+        }
     }
+
+    if (keystroke_interceptor)
+        keystroke_interceptor->stopIntercept();
 
     if (local_format_error)
         std::rethrow_exception(local_format_error);
@@ -1318,6 +1361,8 @@ void ClientBase::onEndOfStream()
 {
     if (need_render_progress && tty_buf)
         progress_indication.clearProgressOutput(*tty_buf);
+    if (need_render_progress_table && tty_buf)
+        progress_table.clearTableOutput(*tty_buf);
 
     if (output_format)
     {
@@ -1396,9 +1441,12 @@ void ClientBase::onProfileEvents(Block & block)
                 thread_times[host_name].peak_memory_usage = value;
         }
         progress_indication.updateThreadEventData(thread_times);
+        progress_table.updateTable(block);
 
         if (need_render_progress && tty_buf)
             progress_indication.writeProgress(*tty_buf);
+        if (need_render_progress_table && tty_buf)
+            progress_table.writeTable(*tty_buf, show_progress_table.load());
 
         if (profile_events.print)
         {
@@ -1409,6 +1457,8 @@ void ClientBase::onProfileEvents(Block & block)
                 initLogsOutputStream();
                 if (need_render_progress && tty_buf)
                     progress_indication.clearProgressOutput(*tty_buf);
+                if (need_render_progress_table && tty_buf)
+                    progress_table.clearTableOutput(*tty_buf);
                 logs_out_stream->writeProfileEvents(block);
                 logs_out_stream->flush();
 
@@ -1890,6 +1940,8 @@ void ClientBase::cancelQuery()
     connection->sendCancel();
     if (need_render_progress && tty_buf)
         progress_indication.clearProgressOutput(*tty_buf);
+    if (need_render_progress_table && tty_buf)
+        progress_table.clearTableOutput(*tty_buf);
 
     if (is_interactive)
         output_stream << "Cancelling query." << std::endl;
@@ -1956,6 +2008,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     processed_rows = 0;
     written_first_block = false;
     progress_indication.resetProgress();
+    progress_table.resetTable();
     profile_events.watch.restart();
 
     {
@@ -2067,6 +2120,8 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         initLogsOutputStream();
         if (need_render_progress && tty_buf)
             progress_indication.clearProgressOutput(*tty_buf);
+        if (need_render_progress_table && tty_buf)
+            progress_table.clearTableOutput(*tty_buf);
         logs_out_stream->writeProfileEvents(profile_events.last_block);
         logs_out_stream->flush();
 
@@ -2080,6 +2135,8 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             output_stream << processed_rows << " row" << (processed_rows == 1 ? "" : "s") << " in set. ";
         output_stream << "Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
         progress_indication.writeFinalProgress();
+        if (need_render_progress_table)
+            progress_table.writeFinalTable();
         output_stream << std::endl << std::endl;
     }
     else
@@ -2930,6 +2987,7 @@ void ClientBase::init(int argc, char ** argv)
 
         ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
         ("progress", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print progress of queries execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off")
+        ("progress-table", po::value<ProgressOption>()->implicit_value(ProgressOption::TTY, "tty")->default_value(ProgressOption::DEFAULT, "default"), "Print progress table with main metrics of queries execution - to TTY: tty|on|1|true|yes; to STDERR non-interactive mode: err; OFF: off|0|false|no; DEFAULT - interactive to TTY, non-interactive is off")
 
         ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
         ("wait_for_suggestions_to_load", "Load suggestion data synchonously.")
@@ -3074,6 +3132,24 @@ void ClientBase::init(int argc, char ** argv)
                 break;
             case ERR:
                 getClientConfiguration().setString("progress", "err");
+                break;
+        }
+    }
+    if (options.count("progress-table"))
+    {
+        switch (options["progress-table"].as<ProgressOption>())
+        {
+            case DEFAULT:
+                config().setString("progress-table", "default");
+                break;
+            case OFF:
+                config().setString("progress-table", "off");
+                break;
+            case TTY:
+                config().setString("progress-table", "tty");
+                break;
+            case ERR:
+                config().setString("progress-table", "err");
                 break;
         }
     }

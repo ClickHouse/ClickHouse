@@ -149,6 +149,15 @@ namespace ProfileEvents
         static const Event num_counters;
     };
 
+    enum class ValueType : uint8_t
+    {
+        Number,
+        Bytes,
+        Milliseconds,
+        Microseconds,
+        Nanoseconds,
+    };
+
     /// Increment a counter for event. Thread-safe.
     void increment(Event event, Count amount = 1);
 
@@ -164,6 +173,9 @@ namespace ProfileEvents
 
     /// Get description of event by identifier. Returns statically allocated string.
     const char * getDocumentation(Event event);
+
+    /// Get value type of event by identifier. Returns enum value.
+    ValueType getValueType(Event event);
 
     /// Get index just after last event identifier.
     Event end();

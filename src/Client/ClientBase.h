@@ -4,6 +4,7 @@
 #include "Common/NamePrompter.h"
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/ProgressIndication.h>
+#include <Common/ProgressTable.h>
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
 #include <Common/Stopwatch.h>
@@ -62,6 +63,7 @@ ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
 class InternalTextLogs;
+class KeystrokeInterceptor;
 class WriteBufferFromFileDescriptor;
 
 class ClientBase : public Poco::Util::Application, public IHints<2>
@@ -209,7 +211,8 @@ protected:
 
     void setDefaultFormatsAndCompressionFromConfiguration();
 
-    void initTTYBuffer(ProgressOption progress);
+    void initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option);
+    void initKeystrokeInterceptor();
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -225,6 +228,8 @@ protected:
     Poco::AutoPtr<Poco::Channel> fatal_file_channel_ptr;
     Poco::Thread signal_listener_thread;
     std::unique_ptr<Poco::Runnable> signal_listener;
+
+    std::unique_ptr<KeystrokeInterceptor> keystroke_interceptor;
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool delayed_interactive = false;
@@ -304,7 +309,10 @@ protected:
     String server_display_name;
 
     ProgressIndication progress_indication;
+    ProgressTable progress_table;
     bool need_render_progress = true;
+    bool need_render_progress_table = true;
+    std::atomic_bool show_progress_table = true;
     bool need_render_profile_events = true;
     bool written_first_block = false;
     size_t processed_rows = 0; /// How many rows have been read or written.
