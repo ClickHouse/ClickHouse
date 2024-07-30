@@ -1,7 +1,11 @@
+#include <memory>
 #include <utility>
+#include <config.h>
+
+#if USE_CEPH
 #include <Disks/ObjectStorages/ObjectStorageFactory.h>
-#include "Disks/DiskType.h"
-#include "config.h"
+#include <Disks/ObjectStorages/Ceph/RadosObjectStorage.h>
+#endif
 #if USE_AWS_S3
 #include <Disks/ObjectStorages/S3/DiskS3Utils.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
@@ -339,6 +343,36 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
 }
 #endif
 
+#if USE_CEPH
+void registerCephObjectStorage(ObjectStorageFactory & factory)
+{
+    auto creator = [](
+        const String & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        const ContextPtr & /*context*/,
+        bool /* skip_access_check */) -> ObjectStoragePtr
+    {
+        auto settings = std::make_unique<RadosObjectStorageSettings>();
+        settings->loadFromConfig(config, config_prefix);
+        auto rados = std::make_shared<librados::Rados>();
+        rados->init(settings->global_options.user.c_str());
+        for (const auto & [key, value] : settings->global_options)
+        {
+            if (auto ec = rados->conf_set(key.c_str(), value.c_str()); ec < 0)
+                throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Failed to set Ceph option: {}. Error: {}", key, strerror(-ec));
+        }
+        RadosEndpoint endpoint;
+        endpoint.mon_hosts = settings->global_options["mon_host"]; /// Redundant
+        endpoint.pool = config.getString(config_prefix + ".pool");
+        endpoint.nspace = config.getString(config_prefix + ".namespace");
+        return createObjectStorage<RadosObjectStorage>(ObjectStorageType::Ceph, config, config_prefix, std::move(rados), std::move(settings), endpoint, name);
+    };
+    factory.registerObjectStorageType("ceph", creator);
+    factory.registerObjectStorageType("rados", creator);
+}
+#endif
+
 void registerWebObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType("web", [](
@@ -403,6 +437,10 @@ void registerObjectStorages()
 
 #if USE_AZURE_BLOB_STORAGE
     registerAzureObjectStorage(factory);
+#endif
+
+#if USE_CEPH
+    registerCephObjectStorage(factory);
 #endif
 
     registerWebObjectStorage(factory);

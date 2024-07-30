@@ -24,6 +24,7 @@ struct WriteSettings
 
     bool s3_allow_parallel_part_upload = true;
     bool azure_allow_parallel_part_upload = true;
+    bool rados_allow_parallel_part_write = true;
 
     bool operator==(const WriteSettings & other) const = default;
 };

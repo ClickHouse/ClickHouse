@@ -1,0 +1,14 @@
+version: '2.3'
+services:
+  ceph1:
+    # build from https://github.com/canhld94/clickhouse-ceph-docker, based on ceph/ceph:v18
+    image: canhld/ceph_ch_test:v3
+    hostname: ceph1
+    environment:
+      - ADMIN_SECRET=AQBbAI1miwfiCRAAySWvPQPgLjjA3EsRJEcBSw==
+      - OSD_MAX_OBJECT_SIZE=6291456 # 6MB
+      - OSD_MAX_WRITE_SIZE=4 # 4MB
+    ulimits:
+      nofile:
+        soft: "65536"
+        hard: "65536"

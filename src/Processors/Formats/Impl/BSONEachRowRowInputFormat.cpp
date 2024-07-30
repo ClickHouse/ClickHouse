@@ -421,7 +421,7 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
                                 "Cannot parse tuple column with type {} from BSON array/embedded document field: "
                                 "tuple doesn't have element with name \"{}\"",
                                 data_type->getName(),
-                                name);
+                                name.toView());
             index = *try_get_index;
         }
 
@@ -806,7 +806,7 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         else
         {
             if (seen_columns[index])
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name.toView());
 
             seen_columns[index] = true;
             read_columns[index] = readField(*columns[index], types[index], BSONType(type));

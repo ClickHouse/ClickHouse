@@ -228,6 +228,8 @@ add_contrib (ulid-c-cmake ulid-c)
 
 add_contrib (libssh-cmake libssh)
 
+add_contrib (ceph-cmake ceph)
+
 add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.

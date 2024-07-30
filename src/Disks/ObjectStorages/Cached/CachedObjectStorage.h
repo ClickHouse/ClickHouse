@@ -145,6 +145,13 @@ public:
     }
 #endif
 
+#if USE_CEPH
+    std::shared_ptr<librados::Rados> tryGetRadosClient() const override
+    {
+        return object_storage->tryGetRadosClient();
+    }
+#endif
+
 private:
     FileCacheKey getCacheKey(const std::string & path) const;
 
