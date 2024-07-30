@@ -70,7 +70,7 @@ public:
     using NameToInputMap = std::unordered_map<std::string_view, std::list<size_t>>;
 
 private:
-    ActionsDAGPtr actions_dag;
+    ActionsDAG actions_dag;
     Actions actions;
     size_t num_columns = 0;
 
@@ -84,14 +84,13 @@ private:
     ExpressionActionsSettings settings;
 
 public:
-    ExpressionActions() = delete;
-    explicit ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
-    ExpressionActions(const ExpressionActions &) = default;
-    ExpressionActions & operator=(const ExpressionActions &) = default;
+    explicit ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
+    ExpressionActions(ExpressionActions &&) = default;
+    ExpressionActions & operator=(ExpressionActions &&) = default;
 
     const Actions & getActions() const { return actions; }
-    const std::list<Node> & getNodes() const { return actions_dag->getNodes(); }
-    const ActionsDAG & getActionsDAG() const { return *actions_dag; }
+    const std::list<Node> & getNodes() const { return actions_dag.getNodes(); }
+    const ActionsDAG & getActionsDAG() const { return actions_dag; }
     const ColumnNumbers & getResultPositions() const { return result_positions; }
     const ExpressionActionsSettings & getSettings() const { return settings; }
 
@@ -131,6 +130,7 @@ public:
     ExpressionActionsPtr clone() const;
 
 private:
+    ExpressionActions() = default;
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
     void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);

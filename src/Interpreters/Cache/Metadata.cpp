@@ -963,7 +963,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
         }
         else if (!can_be_broken)
         {
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected path {} to exist", path);
 #else
             LOG_WARNING(key_metadata->logger(), "Expected path {} to exist, while removing {}:{}",
