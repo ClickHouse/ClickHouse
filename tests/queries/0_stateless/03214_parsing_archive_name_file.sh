@@ -11,7 +11,7 @@ function try_to_read_file()
     settings=$3
 
     echo $file_argument $settings
-    $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file_argument') $settings" 2>&1 | rg -c "Cannot stat file.*$file_to_read"
+    $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$file_argument') $settings" 2>&1 | grep -c "Cannot stat file.*$file_to_read"
 }
 
 # if archive extension is not detected for part before '::', path is taken as is
