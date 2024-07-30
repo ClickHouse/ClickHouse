@@ -545,8 +545,7 @@ struct ZooKeeperRequestFromLogReader
         file_read_buf = DB::wrapReadBufferWithCompressionMethod(std::move(file_read_buf), compression_method);
 
         DB::SingleReadBufferIterator read_buffer_iterator(std::move(file_read_buf));
-        std::string sample_path;
-        auto [columns_description, format] = DB::detectFormatAndReadSchema(format_settings, read_buffer_iterator, sample_path, context);
+        auto [columns_description, format] = DB::detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
 
         DB::ColumnsWithTypeAndName columns;
         columns.reserve(columns_description.size());
