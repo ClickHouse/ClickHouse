@@ -1094,7 +1094,8 @@ bool Dwarf::findLocation(
     });
 
     /// Check if the address falls inside this unit's address ranges.
-    if (!assume_in_cu_range && ((low_pc && high_pc) || range_offset)) {
+    if (!assume_in_cu_range && ((low_pc && high_pc) || range_offset))
+    {
         bool pc_match = low_pc && high_pc && is_high_pc_addr && address >= *low_pc
             && (address < (*is_high_pc_addr ? *high_pc : *low_pc + *high_pc));
         bool range_match = range_offset && isAddrInRangeList(cu, address, base_addr_cu, range_offset.value(), cu.addr_size);
