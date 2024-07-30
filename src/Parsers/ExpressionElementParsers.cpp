@@ -9,8 +9,8 @@
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
-#include "Parsers/CommonParsers.h"
 
+#include <Parsers/CommonParsers.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTCollation.h>
@@ -725,7 +725,6 @@ bool ParserStatisticsType::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     function_node->name = "STATISTICS";
     function_node->arguments = stat_type;
     function_node->children.push_back(function_node->arguments);
-
     node = function_node;
     return true;
 }
