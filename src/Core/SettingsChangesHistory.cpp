@@ -500,6 +500,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"enable_optimize_predicate_expression", 0, 1, "Optimize predicates to subqueries by default"}
         }
     },
+    {"24.8", {{"enable_analyzer", false, true, "Move analyzer to the Beta stage."},
+              }},
     {"24.7", {{"output_format_parquet_write_page_index", false, true, "Add a possibility to write page index into parquet files."},
               {"output_format_binary_encode_types_in_binary_format", false, false, "Added new setting to allow to write type names in binary format in RowBinaryWithNamesAndTypes output format"},
               {"input_format_binary_decode_types_in_binary_format", false, false, "Added new setting to allow to read type names in binary format in RowBinaryWithNamesAndTypes input format"},
@@ -526,7 +528,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
               {"postgresql_connection_pool_retries", 2, 2, "Allow to control the number of retries in PostgreSQL connection pool."}
               {"postgresql_connection_pool_retries", 2, 2, "Allow to control the number of retries in PostgreSQL connection pool."},
               {"restore_replace_external_table_functions_to_null", false, false, "New setting."},
-              {"restore_replace_external_engines_to_null", false, false, "New setting."}
+              {"restore_replace_external_engines_to_null", false, false, "New setting."},
               {"enable_analyzer", false, true, "Move analyzer to the Beta stage."},
               {"allow_experimental_analyzer", false, true, "Move analyzer to the Beta stage."},
               }},
