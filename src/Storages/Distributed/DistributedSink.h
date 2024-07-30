@@ -13,7 +13,7 @@
 #include <chrono>
 #include <optional>
 #include <Interpreters/Cluster.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 
 namespace Poco
 {
