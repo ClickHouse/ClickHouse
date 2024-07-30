@@ -1126,7 +1126,7 @@ private:
 
             auto [_, inserted] = aliases.alias_name_to_lambda_node.insert(std::make_pair(alias, node));
             if (!inserted)
-                scope.nodes_with_duplicated_aliases.insert(node);
+                nodes_with_duplicated_aliases.insert(node);
 
             return;
         }
