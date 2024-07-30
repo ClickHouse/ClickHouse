@@ -67,10 +67,10 @@ class WorkflowStages(metaclass=WithIter):
     BUILDS_2 = "Builds_2"
     # all tests required for merge
     TESTS_1 = "Tests_1"
-    # not used atm
-    TESTS_2 = "Tests_2"
+    # used in woolenwolfdog mode
+    TESTS_2_WW = "Tests_2_ww"
     # all tests not required for merge
-    TESTS_3 = "Tests_3"
+    TESTS_2 = "Tests_2"
 
 
 class Runners(metaclass=WithIter):
@@ -104,6 +104,14 @@ class Tags(metaclass=WithIter):
     CI_SET_BUILDS = "ci_set_builds"
 
     libFuzzer = "libFuzzer"
+
+
+class WorkFlowNames(metaclass=WithIter):
+    """
+    CI WorkFlow Names for custom CI runs
+    """
+
+    JEPSEN = "JepsenWorkflow"
 
 
 class BuildNames(metaclass=WithIter):

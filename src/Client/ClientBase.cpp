@@ -70,7 +70,6 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
-#include <boost/algorithm/string/split.hpp>
 #include <iostream>
 #include <filesystem>
 #include <limits>
@@ -80,6 +79,8 @@
 
 #include <Common/config_version.h>
 #include "config.h"
+#include <IO/ReadHelpers.h>
+#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 
 #if USE_GWP_ASAN
 #    include <Common/GWPAsan.h>
@@ -108,7 +109,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
-    extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_ALREADY_EXISTS;
@@ -309,9 +309,16 @@ public:
 
 ClientBase::~ClientBase()
 {
-    writeSignalIDtoSignalPipe(SignalListener::StopThread);
-    signal_listener_thread.join();
-    HandledSignals::instance().reset();
+    try
+    {
+        writeSignalIDtoSignalPipe(SignalListener::StopThread);
+        signal_listener_thread.join();
+        HandledSignals::instance().reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 ClientBase::ClientBase(
@@ -471,7 +478,7 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
 
     std::vector<ExternalTableDataPtr> data;
     for (auto & table : external_tables)
-        data.emplace_back(table.getData(global_context));
+        data.emplace_back(table.getData(client_context));
 
     connection->sendExternalTablesData(data);
 }
@@ -684,10 +691,10 @@ try
         /// intermixed with data with parallel formatting.
         /// It may increase code complexity significantly.
         if (!extras_into_stdout || select_only_into_file)
-            output_format = global_context->getOutputFormatParallelIfPossible(
+            output_format = client_context->getOutputFormatParallelIfPossible(
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block);
         else
-            output_format = global_context->getOutputFormat(
+            output_format = client_context->getOutputFormat(
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
         output_format->setAutoFlush();
@@ -739,14 +746,6 @@ void ClientBase::adjustSettings()
 
     /// NOTE: Do not forget to set changed=false to avoid sending it to the server (to avoid breakage read only profiles)
 
-    /// In case of multi-query we allow data after semicolon since it will be
-    /// parsed by the client and interpreted as new query
-    if (is_multiquery && !global_context->getSettingsRef().input_format_values_allow_data_after_semicolon.changed)
-    {
-        settings.input_format_values_allow_data_after_semicolon = true;
-        settings.input_format_values_allow_data_after_semicolon.changed = false;
-    }
-
     /// Do not limit pretty format output in case of --pager specified or in case of stdout is not a tty.
     if (!pager.empty() || !stdout_is_a_tty)
     {
@@ -764,6 +763,15 @@ void ClientBase::adjustSettings()
     }
 
     global_context->setSettings(settings);
+}
+
+void ClientBase::initClientContext()
+{
+    client_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
+    client_context->setQuotaClientKey(getClientConfiguration().getString("quota_key", ""));
+    client_context->setQueryKindInitial();
+    client_context->setQueryKind(query_kind);
+    client_context->setQueryParameters(query_parameters);
 }
 
 bool ClientBase::isRegularFile(int fd)
@@ -956,7 +964,7 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     /// client-side. Thus we need to parse the query.
     const char * begin = full_query.data();
     auto parsed_query = parseQuery(begin, begin + full_query.size(),
-        global_context->getSettingsRef(),
+        client_context->getSettingsRef(),
         /*allow_multi_statements=*/ false);
 
     if (!parsed_query)
@@ -979,7 +987,7 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     /// But for asynchronous inserts we don't extract data, because it's needed
     /// to be done on server side in that case (for coalescing the data from multiple inserts on server side).
     const auto * insert = parsed_query->as<ASTInsertQuery>();
-    if (insert && isSyncInsertWithData(*insert, global_context))
+    if (insert && isSyncInsertWithData(*insert, client_context))
         query_to_execute = full_query.substr(0, insert->data - full_query.data());
     else
         query_to_execute = full_query;
@@ -1097,7 +1105,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
         }
     }
 
-    const auto & settings = global_context->getSettingsRef();
+    const auto & settings = client_context->getSettingsRef();
     const Int32 signals_before_stop = settings.partial_result_on_first_cancel ? 2 : 1;
 
     int retries_left = 10;
@@ -1112,10 +1120,10 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
                 connection_parameters.timeouts,
                 query,
                 query_parameters,
-                global_context->getCurrentQueryId(),
+                client_context->getCurrentQueryId(),
                 query_processing_stage,
-                &global_context->getSettingsRef(),
-                &global_context->getClientInfo(),
+                &client_context->getSettingsRef(),
+                &client_context->getClientInfo(),
                 true,
                 [&](const Progress & progress) { onProgress(progress); });
 
@@ -1302,7 +1310,7 @@ void ClientBase::onProgress(const Progress & value)
 
 void ClientBase::onTimezoneUpdate(const String & tz)
 {
-    global_context->setSetting("session_timezone", tz);
+    client_context->setSetting("session_timezone", tz);
 }
 
 
@@ -1498,24 +1506,17 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
 
 void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
 {
-    if (!global_context->hasInsertionTable() && insert_query.table)
+    if (!client_context->hasInsertionTable() && insert_query.table)
     {
         String table = insert_query.table->as<ASTIdentifier &>().shortName();
         if (!table.empty())
         {
             String database = insert_query.database ? insert_query.database->as<ASTIdentifier &>().shortName() : "";
-            global_context->setInsertionTable(StorageID(database, table));
+            client_context->setInsertionTable(StorageID(database, table));
         }
     }
 }
 
-
-void ClientBase::addMultiquery(std::string_view query, Arguments & common_arguments) const
-{
-    common_arguments.emplace_back("--multiquery");
-    common_arguments.emplace_back("-q");
-    common_arguments.emplace_back(query);
-}
 
 namespace
 {
@@ -1555,7 +1556,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     const auto & parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
     if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && !isStdinNotEmptyAndValid(std_in))))
     {
-        const auto & settings = global_context->getSettingsRef();
+        const auto & settings = client_context->getSettingsRef();
         if (settings.throw_if_no_data_to_insert)
             throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
         else
@@ -1569,10 +1570,10 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         connection_parameters.timeouts,
         query,
         query_parameters,
-        global_context->getCurrentQueryId(),
+        client_context->getCurrentQueryId(),
         query_processing_stage,
-        &global_context->getSettingsRef(),
-        &global_context->getClientInfo(),
+        &client_context->getSettingsRef(),
+        &client_context->getClientInfo(),
         true,
         [&](const Progress & progress) { onProgress(progress); });
 
@@ -1620,7 +1621,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
         /// Set callback to be called on file progress.
         if (tty_buf)
-            progress_indication.setFileProgressCallback(global_context, *tty_buf);
+            progress_indication.setFileProgressCallback(client_context, *tty_buf);
     }
 
     /// If data fetched from file (maybe compressed file)
@@ -1654,10 +1655,10 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         }
 
         StorageFile::CommonArguments args{
-            WithContext(global_context),
+            WithContext(client_context),
             parsed_insert_query->table_id,
             current_format,
-            getFormatSettings(global_context),
+            getFormatSettings(client_context),
             compression_method,
             columns_for_storage_file,
             ConstraintsDescription{},
@@ -1665,7 +1666,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             {},
             String{},
         };
-        StoragePtr storage = std::make_shared<StorageFile>(in_file, global_context->getUserFilesPath(), args);
+        StoragePtr storage = std::make_shared<StorageFile>(in_file, client_context->getUserFilesPath(), args);
         storage->startup();
         SelectQueryInfo query_info;
 
@@ -1676,16 +1677,16 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             storage->read(
                     plan,
                     sample.getNames(),
-                    storage->getStorageSnapshot(metadata, global_context),
+                    storage->getStorageSnapshot(metadata, client_context),
                     query_info,
-                    global_context,
+                    client_context,
                     {},
-                    global_context->getSettingsRef().max_block_size,
+                    client_context->getSettingsRef().max_block_size,
                     getNumberOfPhysicalCPUCores());
 
             auto builder = plan.buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(global_context),
-                BuildQueryPipelineSettings::fromContext(global_context));
+                QueryPlanOptimizationSettings::fromContext(client_context),
+                BuildQueryPipelineSettings::fromContext(client_context));
 
             QueryPlanResourceHolder resources;
             auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
@@ -1746,14 +1747,14 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             current_format = insert->format;
     }
 
-    auto source = global_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
+    auto source = client_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
     Pipe pipe(source);
 
     if (columns_description.hasDefaults())
     {
         pipe.addSimpleTransform([&](const Block & header)
         {
-            return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, global_context);
+            return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, client_context);
         });
     }
 
@@ -1915,12 +1916,12 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (is_interactive)
     {
-        global_context->setCurrentQueryId("");
+        client_context->setCurrentQueryId("");
         // Generate a new query_id
         for (const auto & query_id_format : query_id_formats)
         {
             writeString(query_id_format.first, std_out);
-            writeString(fmt::format(fmt::runtime(query_id_format.second), fmt::arg("query_id", global_context->getCurrentQueryId())), std_out);
+            writeString(fmt::format(fmt::runtime(query_id_format.second), fmt::arg("query_id", client_context->getCurrentQueryId())), std_out);
             writeChar('\n', std_out);
             std_out.next();
         }
@@ -1947,7 +1948,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                 auto password = auth_data->getPassword();
 
                 if (password)
-                    global_context->getAccessControl().checkPasswordComplexityRules(*password);
+                    client_context->getAccessControl().checkPasswordComplexityRules(*password);
             }
         }
     }
@@ -1962,15 +1963,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         std::optional<Settings> old_settings;
         SCOPE_EXIT_SAFE({
             if (old_settings)
-                global_context->setSettings(*old_settings);
+                client_context->setSettings(*old_settings);
         });
 
         auto apply_query_settings = [&](const IAST & settings_ast)
         {
             if (!old_settings)
-                old_settings.emplace(global_context->getSettingsRef());
-            global_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
-            global_context->resetSettingsToDefaultValue(settings_ast.as<ASTSetQuery>()->default_settings);
+                old_settings.emplace(client_context->getSettingsRef());
+            client_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
+            client_context->resetSettingsToDefaultValue(settings_ast.as<ASTSetQuery>()->default_settings);
         };
 
         const auto * insert = parsed_query->as<ASTInsertQuery>();
@@ -2003,7 +2004,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
-        bool is_async_insert_with_inlined_data = global_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
+        bool is_async_insert_with_inlined_data = client_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
 
         if (is_async_insert_with_inlined_data)
         {
@@ -2038,9 +2039,9 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                 if (change.name == "profile")
                     current_profile = change.value.safeGet<String>();
                 else
-                    global_context->applySettingChange(change);
+                    client_context->applySettingChange(change);
             }
-            global_context->resetSettingsToDefaultValue(set_query->default_settings);
+            client_context->resetSettingsToDefaultValue(set_query->default_settings);
 
             /// Query parameters inside SET queries should be also saved on the client side
             ///  to override their previous definitions set with --param_* arguments
@@ -2048,7 +2049,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             for (const auto & [name, value] : set_query->query_parameters)
                 query_parameters.insert_or_assign(name, value);
 
-            global_context->addQueryParameters(NameToNameMap{set_query->query_parameters.begin(), set_query->query_parameters.end()});
+            client_context->addQueryParameters(NameToNameMap{set_query->query_parameters.begin(), set_query->query_parameters.end()});
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {
@@ -2125,8 +2126,8 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     if (this_query_begin >= all_queries_end)
         return MultiQueryProcessingStage::QUERIES_END;
 
-    unsigned max_parser_depth = static_cast<unsigned>(global_context->getSettingsRef().max_parser_depth);
-    unsigned max_parser_backtracks = static_cast<unsigned>(global_context->getSettingsRef().max_parser_backtracks);
+    unsigned max_parser_depth = static_cast<unsigned>(client_context->getSettingsRef().max_parser_depth);
+    unsigned max_parser_backtracks = static_cast<unsigned>(client_context->getSettingsRef().max_parser_backtracks);
 
     // If there are only comments left until the end of file, we just
     // stop. The parser can't handle this situation because it always
@@ -2146,7 +2147,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     try
     {
         parsed_query = parseQuery(this_query_end, all_queries_end,
-            global_context->getSettingsRef(),
+            client_context->getSettingsRef(),
             /*allow_multi_statements=*/ true);
     }
     catch (const Exception & e)
@@ -2171,25 +2172,50 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
         return MultiQueryProcessingStage::PARSING_FAILED;
     }
 
-    // INSERT queries may have the inserted data in the query text
-    // that follow the query itself, e.g. "insert into t format CSV 1;2".
-    // They need special handling. First of all, here we find where the
-    // inserted data ends. In multi-query mode, it is delimited by a
-    // newline.
-    // The VALUES format needs even more handling - we also allow the
-    // data to be delimited by semicolon. This case is handled later by
-    // the format parser itself.
-    // We can't do multiline INSERTs with inline data, because most
-    // row input formats (e.g. TSV) can't tell when the input stops,
-    // unlike VALUES.
+    // INSERT queries may have the inserted data in the query text that follow the query itself, e.g. "insert into t format CSV 1,2". They
+    // need special handling.
+    // - If the INSERT statement FORMAT is VALUES, we use the VALUES format parser to skip the inserted data until we reach the trailing single semicolon.
+    // - Other formats (e.g. FORMAT CSV) are arbitrarily more complex and tricky to parse. For example, we may be unable to distinguish if the semicolon
+    //   is part of the data or ends the statement. In this case, we simply assume that the end of the INSERT statement is determined by \n\n (two newlines).
     auto * insert_ast = parsed_query->as<ASTInsertQuery>();
     const char * query_to_execute_end = this_query_end;
-
     if (insert_ast && insert_ast->data)
     {
-        this_query_end = find_first_symbols<'\n'>(insert_ast->data, all_queries_end);
+        if (insert_ast->format == "Values")
+        {
+            // Invoke the VALUES format parser to skip the inserted data
+            ReadBufferFromMemory data_in(insert_ast->data, all_queries_end - insert_ast->data);
+            skipBOMIfExists(data_in);
+            do
+            {
+                skipWhitespaceIfAny(data_in);
+                if (data_in.eof() || *data_in.position() == ';')
+                    break;
+            }
+            while (ValuesBlockInputFormat::skipToNextRow(&data_in, 1, 0));
+            // Handle the case of a comment followed by a semicolon
+            //   Example: INSERT INTO tab VALUES xx; -- {serverError xx}
+            // If we use this error hint, the next query should not be placed on the same line
+            this_query_end = insert_ast->data + data_in.count();
+            const auto * pos_newline = find_first_symbols<'\n'>(this_query_end, all_queries_end);
+            if (pos_newline != this_query_end)
+            {
+                TestHint hint(String(this_query_end, pos_newline - this_query_end));
+                if (hint.hasClientErrors() || hint.hasServerErrors())
+                    this_query_end = pos_newline;
+            }
+        }
+        else
+        {
+            // Handling of generic formats
+            auto pos_newline = String(insert_ast->data, all_queries_end).find("\n\n");
+            if (pos_newline != std::string::npos)
+                this_query_end = insert_ast->data + pos_newline;
+            else
+                this_query_end = all_queries_end;
+        }
         insert_ast->end = this_query_end;
-        query_to_execute_end = isSyncInsertWithData(*insert_ast, global_context) ? insert_ast->data : this_query_end;
+        query_to_execute_end = isSyncInsertWithData(*insert_ast, client_context) ? insert_ast->data : this_query_end;
     }
 
     query_to_execute = all_queries_text.substr(this_query_begin - all_queries_text.data(), query_to_execute_end - this_query_begin);
@@ -2222,7 +2248,10 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     size_t test_tags_length = getTestTagsLength(all_queries_text);
 
     /// Several queries separated by ';'.
-    /// INSERT data is ended by the end of line, not ';'.
+    /// INSERT data is ended by the empty line (\n\n), not ';'.
+    /// Unnecessary semicolons may cause data to be parsed containing ';'
+    /// e.g. 'insert into xx format csv val;' will insert "val;" instead of "val"
+    ///      'insert into xx format csv val\n;' will insert "val" and ";"
     /// An exception is VALUES format where we also support semicolon in
     /// addition to end of line.
     const char * this_query_begin = all_queries_text.data() + test_tags_length;
@@ -2233,6 +2262,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     String query_to_execute;
     ASTPtr parsed_query;
     std::unique_ptr<Exception> current_exception;
+    size_t retries_count = 0;
+    bool is_first = true;
 
     while (true)
     {
@@ -2241,16 +2272,24 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
         switch (stage)
         {
             case MultiQueryProcessingStage::QUERIES_END:
+            {
+                /// Compatible with old version when run interactive, e.g. "", "\ld"
+                if (is_first && is_interactive)
+                    processTextAsSingleQuery(all_queries_text);
+                return true;
+            }
             case MultiQueryProcessingStage::PARSING_FAILED:
             {
                 return true;
             }
             case MultiQueryProcessingStage::CONTINUE_PARSING:
             {
+                is_first = false;
                 continue;
             }
             case MultiQueryProcessingStage::PARSING_EXCEPTION:
             {
+                is_first = false;
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
@@ -2280,6 +2319,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             }
             case MultiQueryProcessingStage::EXECUTE_QUERY:
             {
+                is_first = false;
                 full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
                 if (query_fuzzer_runs)
                 {
@@ -2289,6 +2329,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     this_query_begin = this_query_end;
                     continue;
                 }
+                if (suggest)
+                    updateSuggest(parsed_query);
 
                 // Now we know for sure where the query ends.
                 // Look for the hint in the text of query + insert data + trailing
@@ -2314,7 +2356,12 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // Check whether the error (or its absence) matches the test hints
                 // (or their absence).
                 bool error_matches_hint = true;
-                if (have_error)
+                bool need_retry = test_hint.needRetry(server_exception, &retries_count);
+                if (need_retry)
+                {
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                }
+                else if (have_error)
                 {
                     if (test_hint.hasServerErrors())
                     {
@@ -2391,13 +2438,13 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // , where the inline data is delimited by semicolon and not by a
                 // newline.
                 auto * insert_ast = parsed_query->as<ASTInsertQuery>();
-                if (insert_ast && isSyncInsertWithData(*insert_ast, global_context))
+                if (insert_ast && isSyncInsertWithData(*insert_ast, client_context))
                 {
                     this_query_end = insert_ast->end;
                     adjustQueryEnd(
                         this_query_end, all_queries_end,
-                        static_cast<unsigned>(global_context->getSettingsRef().max_parser_depth),
-                        static_cast<unsigned>(global_context->getSettingsRef().max_parser_backtracks));
+                        static_cast<unsigned>(client_context->getSettingsRef().max_parser_depth),
+                        static_cast<unsigned>(client_context->getSettingsRef().max_parser_backtracks));
                 }
 
                 // Report error.
@@ -2408,7 +2455,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 if (have_error && !ignore_error)
                     return is_interactive;
 
-                this_query_begin = this_query_end;
+                if (!need_retry)
+                    this_query_begin = this_query_end;
                 break;
             }
         }
@@ -2431,14 +2479,6 @@ bool ClientBase::processQueryText(const String & text)
             [](char c) { return isWhitespaceASCII(c); });
 
         return processMultiQueryFromFile(file_name);
-    }
-
-    if (!is_multiquery)
-    {
-        assert(!query_fuzzer_runs);
-        processTextAsSingleQuery(text);
-
-        return true;
     }
 
     if (query_fuzzer_runs)
@@ -2527,10 +2567,10 @@ void ClientBase::runInteractive()
     if (load_suggestions)
     {
         /// Load suggestion data from the server.
-        if (global_context->getApplicationType() == Context::ApplicationType::CLIENT)
-            suggest->load<Connection>(global_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
-        else if (global_context->getApplicationType() == Context::ApplicationType::LOCAL)
-            suggest->load<LocalConnection>(global_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
+        if (client_context->getApplicationType() == Context::ApplicationType::CLIENT)
+            suggest->load<Connection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
+        else if (client_context->getApplicationType() == Context::ApplicationType::LOCAL)
+            suggest->load<LocalConnection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
     }
 
     if (home_path.empty())
@@ -2668,7 +2708,7 @@ void ClientBase::runInteractive()
         {
             // If a separate connection loading suggestions failed to open a new session,
             // use the main session to receive them.
-            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit"), global_context->getClientInfo());
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit"), client_context->getClientInfo());
         }
 
         try
@@ -2717,10 +2757,10 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
 
     if (!getClientConfiguration().has("log_comment"))
     {
-        Settings settings = global_context->getSettings();
+        Settings settings = client_context->getSettings();
         /// NOTE: cannot use even weakly_canonical() since it fails for /dev/stdin due to resolving of "pipe:[X]"
         settings.log_comment = fs::absolute(fs::path(file_name));
-        global_context->setSettings(settings);
+        client_context->setSettings(settings);
     }
 
     return executeMultiQuery(queries_from_file);
@@ -2833,168 +2873,6 @@ void ClientBase::showClientVersion()
     output_stream << VERSION_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
 }
 
-namespace
-{
-
-/// Define transparent hash to we can use
-/// std::string_view with the containers
-struct TransparentStringHash
-{
-    using is_transparent = void;
-    size_t operator()(std::string_view txt) const
-    {
-        return std::hash<std::string_view>{}(txt);
-    }
-};
-
-/*
- * This functor is used to parse command line arguments and replace dashes with underscores,
- * allowing options to be specified using either dashes or underscores.
- */
-class OptionsAliasParser
-{
-public:
-    explicit OptionsAliasParser(const boost::program_options::options_description& options)
-    {
-        options_names.reserve(options.options().size());
-        for (const auto& option : options.options())
-            options_names.insert(option->long_name());
-    }
-
-    /*
-     * Parses arguments by replacing dashes with underscores, and matches the resulting name with known options
-     * Implements boost::program_options::ext_parser logic
-     */
-    std::pair<std::string, std::string> operator()(const std::string & token) const
-    {
-        if (!token.starts_with("--"))
-            return {};
-        std::string arg = token.substr(2);
-
-        // divide token by '=' to separate key and value if options style=long_allow_adjacent
-        auto pos_eq = arg.find('=');
-        std::string key = arg.substr(0, pos_eq);
-
-        if (options_names.contains(key))
-            // option does not require any changes, because it is already correct
-            return {};
-
-        std::replace(key.begin(), key.end(), '-', '_');
-        if (!options_names.contains(key))
-            // after replacing '-' with '_' argument is still unknown
-            return {};
-
-        std::string value;
-        if (pos_eq != std::string::npos && pos_eq < arg.size())
-            value = arg.substr(pos_eq + 1);
-
-        return {key, value};
-    }
-
-private:
-    std::unordered_set<std::string> options_names;
-};
-
-}
-
-/// Enable optimizations even in debug builds because otherwise options parsing becomes extremely slow affecting .sh tests
-#if defined(__clang__)
-#pragma clang optimize on
-#endif
-void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
-{
-    if (allow_repeated_settings)
-        addProgramOptionsAsMultitokens(cmd_settings, options_description.main_description.value());
-    else
-        addProgramOptions(cmd_settings, options_description.main_description.value());
-
-    if (allow_merge_tree_settings)
-    {
-        /// Add merge tree settings manually, because names of some settings
-        /// may clash. Query settings have higher priority and we just
-        /// skip ambiguous merge tree settings.
-        auto & main_options = options_description.main_description.value();
-
-        std::unordered_set<std::string, TransparentStringHash, std::equal_to<>> main_option_names;
-        for (const auto & option : main_options.options())
-            main_option_names.insert(option->long_name());
-
-        for (const auto & setting : cmd_merge_tree_settings.all())
-        {
-            const auto add_setting = [&](const std::string_view name)
-            {
-                if (auto it = main_option_names.find(name); it != main_option_names.end())
-                    return;
-
-                if (allow_repeated_settings)
-                    addProgramOptionAsMultitoken(cmd_merge_tree_settings, main_options, name, setting);
-                else
-                    addProgramOption(cmd_merge_tree_settings, main_options, name, setting);
-            };
-
-            const auto & setting_name = setting.getName();
-
-            add_setting(setting_name);
-
-            const auto & settings_to_aliases = MergeTreeSettings::Traits::settingsToAliases();
-            if (auto it = settings_to_aliases.find(setting_name); it != settings_to_aliases.end())
-            {
-                for (const auto alias : it->second)
-                {
-                    add_setting(alias);
-                }
-            }
-        }
-    }
-
-    /// Parse main commandline options.
-    auto parser = po::command_line_parser(arguments)
-                      .options(options_description.main_description.value())
-                      .extra_parser(OptionsAliasParser(options_description.main_description.value()))
-                      .allow_unregistered();
-    po::parsed_options parsed = parser.run();
-
-    /// Check unrecognized options without positional options.
-    auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::exclude_positional);
-    if (!unrecognized_options.empty())
-    {
-        auto hints = this->getHints(unrecognized_options[0]);
-        if (!hints.empty())
-            throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'. Maybe you meant {}",
-                            unrecognized_options[0], toString(hints));
-
-        throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
-    }
-
-    /// Check positional options.
-    for (const auto & op : parsed.options)
-    {
-        if (!op.unregistered && op.string_key.empty() && !op.original_tokens[0].starts_with("--")
-            && !op.original_tokens[0].empty() && !op.value.empty())
-        {
-            /// Two special cases for better usability:
-            /// - if the option contains a whitespace, it might be a query: clickhouse "SELECT 1"
-            /// These are relevant for interactive usage - user-friendly, but questionable in general.
-            /// In case of ambiguity or for scripts, prefer using proper options.
-
-            const auto & token = op.original_tokens[0];
-            po::variable_value value(boost::any(op.value), false);
-
-            const char * option;
-            if (token.contains(' '))
-                option = "query";
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option `{}` is not supported.", token);
-
-            if (!options.emplace(option, value).second)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option `{}` is not supported.", token);
-        }
-    }
-
-    po::store(parsed, options);
-}
-
-
 void ClientBase::init(int argc, char ** argv)
 {
     namespace po = boost::program_options;
@@ -3040,9 +2918,9 @@ void ClientBase::init(int argc, char ** argv)
 
         ("config-file,C", po::value<std::string>(), "config-file path")
 
-        ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(query; can be specified multiple times (--query "SELECT 1" --query "SELECT 2"...))")
+        ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(Query. Can be specified multiple times (--query "SELECT 1" --query "SELECT 2") or once with multiple comma-separated queries (--query "SELECT 1; SELECT 2;"). In the latter case, INSERT queries with non-VALUE format must be separated by empty lines.)")
         ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
-        ("multiquery,n", "If specified, multiple queries separated by semicolons can be listed after --query. For convenience, it is also possible to omit --query and pass the queries directly after --multiquery.")
+        ("multiquery,n", "Obsolete, does nothing")
         ("multiline,m", "If specified, allow multiline queries (do not send the query on Enter)")
         ("database,d", po::value<std::string>(), "database")
         ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
@@ -3071,7 +2949,7 @@ void ClientBase::init(int argc, char ** argv)
         ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
         ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
 
-        ("ignore-error", "do not stop processing in multiquery mode")
+        ("ignore-error", "do not stop processing when an error occurs")
         ("stacktrace", "print stack traces of exceptions")
         ("hardware-utilization", "print hardware utilization information in progress bar")
         ("print-profile-events", po::value(&profile_events.print)->zero_tokens(), "Printing ProfileEvents packets")
@@ -3164,8 +3042,6 @@ void ClientBase::init(int argc, char ** argv)
         queries_files = options["queries-file"].as<std::vector<std::string>>();
     if (options.count("multiline"))
         getClientConfiguration().setBool("multiline", true);
-    if (options.count("multiquery"))
-        getClientConfiguration().setBool("multiquery", true);
     if (options.count("ignore-error"))
         getClientConfiguration().setBool("ignore-error", true);
     if (options.count("format"))

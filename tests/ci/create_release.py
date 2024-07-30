@@ -43,6 +43,7 @@ class ReleaseProgress:
     TEST_TGZ = "test TGZ packages"
     TEST_RPM = "test RPM packages"
     TEST_DEB = "test DEB packages"
+    COMPLETED = "completed"
 
 
 class ReleaseProgressDescription:
@@ -108,6 +109,12 @@ class ReleaseInfo:
     release_progress: str = ""
     progress_description: str = ""
 
+    def is_patch(self):
+        return self.release_branch != "master"
+
+    def is_new_release_branch(self):
+        return self.release_branch == "master"
+
     @staticmethod
     def from_file() -> "ReleaseInfo":
         with open(RELEASE_INFO_FILE, "r", encoding="utf-8") as json_file:
@@ -126,12 +133,12 @@ class ReleaseInfo:
         release_tag = None
         previous_release_tag = None
         previous_release_sha = None
-        codename = None
+        codename = ""
         assert release_type in ("patch", "new")
         if release_type == "new":
             # check commit_ref is right and on a right branch
             Shell.run(
-                f"git merge-base --is-ancestor origin/{commit_ref} origin/master",
+                f"git merge-base --is-ancestor {commit_ref} origin/master",
                 check=True,
             )
             with checkout(commit_ref):
@@ -146,9 +153,6 @@ class ReleaseInfo:
                     git.latest_tag == expected_prev_tag
                 ), f"BUG: latest tag [{git.latest_tag}], expected [{expected_prev_tag}]"
                 release_tag = version.describe
-                codename = (
-                    VersionType.STABLE
-                )  # dummy value (artifactory won't be updated for new release)
                 previous_release_tag = expected_prev_tag
                 previous_release_sha = Shell.run_strict(
                     f"git rev-parse {previous_release_tag}"
@@ -205,7 +209,7 @@ class ReleaseInfo:
             and commit_sha
             and release_tag
             and version
-            and codename in ("lts", "stable")
+            and (codename in ("lts", "stable") or release_type == "new")
         )
 
         self.release_branch = release_branch
@@ -320,24 +324,27 @@ class ReleaseInfo:
                     Shell.run(
                         f"{GIT_PREFIX} checkout '{CMAKE_PATH}' '{CONTRIBUTORS_PATH}'"
                     )
-                self.version_bump_pr = GHActions.get_pr_url_by_branch(
-                    repo=GITHUB_REPOSITORY, branch=branch_upd_version_contributors
-                )
+                    self.version_bump_pr = "dry-run"
+                else:
+                    self.version_bump_pr = GHActions.get_pr_url_by_branch(
+                        repo=GITHUB_REPOSITORY, branch=branch_upd_version_contributors
+                    )
 
     def update_release_info(self, dry_run: bool) -> "ReleaseInfo":
-        branch = f"auto/{release_info.release_tag}"
-        if not dry_run:
-            url = GHActions.get_pr_url_by_branch(repo=GITHUB_REPOSITORY, branch=branch)
-        else:
-            url = "dry-run"
-
-        print(f"ChangeLog PR url [{url}]")
-        self.changelog_pr = url
-        print(f"Release url [{url}]")
-        self.release_url = (
-            f"https://github.com/{GITHUB_REPOSITORY}/releases/tag/{self.release_tag}"
-        )
-        self.docker_command = f"docker run --rm clickhouse/clickhouse:{self.release_branch} clickhouse --version"
+        if self.release_branch != "master":
+            branch = f"auto/{release_info.release_tag}"
+            if not dry_run:
+                url = GHActions.get_pr_url_by_branch(
+                    repo=GITHUB_REPOSITORY, branch=branch
+                )
+            else:
+                url = "dry-run"
+            print(f"ChangeLog PR url [{url}]")
+            self.changelog_pr = url
+            print(f"Release url [{url}]")
+            self.release_url = f"https://github.com/{GITHUB_REPOSITORY}/releases/tag/{self.release_tag}"
+            if self.release_progress == ReleaseProgress.COMPLETED:
+                self.docker_command = f"docker run --rm clickhouse/clickhouse:{self.version} clickhouse --version"
         self.dump()
         return self
 
@@ -712,13 +719,22 @@ if __name__ == "__main__":
     if args.post_status:
         release_info = ReleaseInfo.from_file()
         release_info.update_release_info(dry_run=args.dry_run)
-        if release_info.debian_command:
+        if release_info.is_new_release_branch():
+            title = "New release branch"
+        else:
+            title = "New release"
+        if (
+            release_info.progress_description == ReleaseProgressDescription.OK
+            and release_info.release_progress == ReleaseProgress.COMPLETED
+        ):
+            title = "Completed: " + title
             CIBuddy(dry_run=args.dry_run).post_done(
-                f"New release issued", dataclasses.asdict(release_info)
+                title, dataclasses.asdict(release_info)
             )
         else:
+            title = "Failed: " + title
             CIBuddy(dry_run=args.dry_run).post_critical(
-                f"Failed to issue new release", dataclasses.asdict(release_info)
+                title, dataclasses.asdict(release_info)
             )
 
     if args.set_progress_started:
