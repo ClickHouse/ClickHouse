@@ -39,19 +39,21 @@ def test_cache_evicted_by_temporary_data(start_cluster):
         q("SELECT sum(size) FROM system.filesystem_cache").strip()
     )
 
-    def dump_debug_info():
-        return "\n".join(
-            [
-                ">>> filesystem_cache <<<",
-                q("SELECT * FROM system.filesystem_cache FORMAT Vertical"),
-                ">>> remote_data_paths <<<",
-                q("SELECT * FROM system.remote_data_paths FORMAT Vertical"),
-                ">>> tiny_local_cache_local_disk <<<",
-                q(
-                    "SELECT * FROM system.disks WHERE name = 'tiny_local_cache_local_disk' FORMAT Vertical"
-                ),
-            ]
-        )
+    dump_debug_info = lambda: "\n".join(
+        [
+            ">>> filesystem_cache <<<",
+            q("SELECT * FROM system.filesystem_cache FORMAT Vertical"),
+            ">>> remote_data_paths <<<",
+            q("SELECT * FROM system.remote_data_paths FORMAT Vertical"),
+            ">>> tiny_local_cache_local_disk <<<",
+            q(
+                "SELECT * FROM system.disks WHERE name = 'tiny_local_cache_local_disk' FORMAT Vertical"
+            ),
+        ]
+    )
+
+    q("SYSTEM DROP FILESYSTEM CACHE")
+    q("DROP TABLE IF EXISTS t1 SYNC")
 
     assert get_cache_size() == 0, dump_debug_info()
     assert get_free_space() > 8 * MB, dump_debug_info()
@@ -124,4 +126,4 @@ def test_cache_evicted_by_temporary_data(start_cluster):
         str(exc.value), "*Failed to reserve * for temporary file*"
     ), exc.value
 
-    q("DROP TABLE IF EXISTS t1")
+    q("DROP TABLE IF EXISTS t1 SYNC")
