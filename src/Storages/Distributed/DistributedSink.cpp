@@ -366,9 +366,12 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         {
             if (!job.is_local_job || !settings.prefer_localhost_replica)
             {
+                // Prepare the query context string, such as the table name or other identifiers
+                std::string query_context = storage.getRemoteDatabaseName() + "." + storage.getRemoteTableName();
+
                 if (!job.executor)
                 {
-                    job.connection_entry = cluster->getConnectionWithRetries(job.shard_index, job.replica_index, settings);
+                    job.connection_entry = cluster->getConnectionWithRetries(job.shard_index, job.replica_index, settings, /* max_retries */ 3, query_context);
                     if (throttler)
                         job.connection_entry->setThrottler(throttler);
 

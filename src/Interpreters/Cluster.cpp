@@ -893,7 +893,12 @@ bool Cluster::maybeCrossReplication() const
     return false;
 }
 
-ConnectionPoolWithFailover::Entry Cluster::getConnectionWithRetries(size_t shard_index, size_t replica_index, const Settings & settings, size_t max_retries)
+ConnectionPoolWithFailover::Entry Cluster::getConnectionWithRetries(
+    size_t shard_index,
+    size_t replica_index,
+    const Settings & settings,
+    size_t max_retries,
+    const std::string & query_context) // New parameter
 {
     const auto & shard_info = getShardsInfo()[shard_index];
     const auto & addresses = getShardsAddresses();
@@ -909,12 +914,12 @@ ConnectionPoolWithFailover::Entry Cluster::getConnectionWithRetries(size_t shard
 
             if (shard_info.hasInternalReplication())
             {
-                auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, getQualifiedName());
+                auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, query_context);
                 connection_entry = std::move(results.front().entry);
             }
             else
             {
-                const auto & replica = addresses.at(shard_index).at(replica_index);
+                // const auto & replica = addresses.at(shard_index).at(replica_index);
                 const ConnectionPoolPtr & connection_pool = shard_info.per_replica_pools.at(replica_index);
                 connection_entry = connection_pool->get(timeouts, settings);
             }
