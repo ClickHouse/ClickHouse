@@ -13,7 +13,7 @@
 #include <chrono>
 #include <optional>
 #include <Interpreters/Cluster.h>
-
+#include "JobReplica.h"
 
 namespace Poco
 {
