@@ -9,7 +9,6 @@
 #include <base/defines.h>
 #include <base/types.h>
 
-#include <Common/logger_useful.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
@@ -19,6 +18,7 @@
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Processors/Chunk.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
 
 
@@ -40,7 +40,7 @@ FullMergeJoinCursorPtr createCursor(const Block & block, const Names & columns)
     desc.reserve(columns.size());
     for (const auto & name : columns)
         desc.emplace_back(name);
-    return std::make_unique<FullMergeJoinCursor>(materializeBlock(block), desc);
+    return std::make_unique<FullMergeJoinCursor>(block, desc);
 }
 
 template <bool has_left_nulls, bool has_right_nulls>
@@ -234,8 +234,13 @@ void inline addMany(PaddedPODArray<UInt64> & left_or_right_map, size_t idx, size
     for (size_t i = 0; i < num; ++i)
         left_or_right_map.push_back(idx);
 }
-
 }
+
+FullMergeJoinCursor::FullMergeJoinCursor(const Block & sample_block_, const SortDescription & description_)
+    : sample_block(materializeBlock(sample_block_).cloneEmpty()), desc(description_)
+{
+}
+
 
 const Chunk & FullMergeJoinCursor::getCurrent() const
 {
@@ -259,6 +264,10 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
         detach();
         return;
     }
+
+    // should match the structure of sample_block (after materialization)
+    convertToFullIfConst(chunk);
+    convertToFullIfSparse(chunk);
 
     current_chunk = std::move(chunk);
     cursor = SortCursorImpl(sample_block, current_chunk.getColumns(), desc);

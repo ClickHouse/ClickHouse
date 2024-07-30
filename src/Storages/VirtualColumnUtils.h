@@ -26,7 +26,7 @@ void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block,
 void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context);
 
 /// Builds sets used by ActionsDAG inplace.
-void buildSetsForDAG(const ActionsDAGPtr & dag, const ContextPtr & context);
+void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
 /// Recursively checks if all functions used in DAG are deterministic in scope of query.
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
