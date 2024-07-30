@@ -560,6 +560,7 @@ MinMax
 MindsDB
 mongoc
 mongocxx
+Mongo
 Mongodb
 Monotonicity
 MsgPack

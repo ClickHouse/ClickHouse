@@ -184,17 +184,13 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(const
     if (func->getArguments().getNodes().empty())
         return {};
 
-    std::cout << func->dumpTree() << std::endl;
     if (const auto & column = func->getArguments().getNodes().at(0)->as<ColumnNode>())
     {
-        std::cout << column->dumpTree() << std::endl;
-        // Skip unknows columns, which don't belong to the table.
+        // Skip unknown columns, which don't belong to the table.
         const auto & table = column->getColumnSource()->as<TableNode>();
         if (!table)
             return {};
 
-        std::cout << table->getStorage()->getStorageID().getFullTableName() << std::endl;
-        std::cout << this->getStorageID().getFullTableName() << std::endl;
         // Skip columns from other tables in JOIN queries.
         if (table->getStorage()->getStorageID().getFullTableName() != this->getStorageID().getFullTableName())
             return {};
