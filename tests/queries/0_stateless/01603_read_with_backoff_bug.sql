@@ -1,5 +1,5 @@
--- Tags: no-tsan, long
--- Tag no-tsan: Too long for TSan
+-- Tags: no-tsan, no-msan, long
+-- too long.
 
 set enable_filesystem_cache=0;
 set enable_filesystem_cache_on_write_operations=0;
