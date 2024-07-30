@@ -1330,7 +1330,8 @@ class FunctionBinaryArithmetic : public IFunction
         return function->execute(new_arguments, result_type, input_rows_count);
     }
 
-    /// Execute the comparison when the operation is least or greatest, make the result not null when the input has null values.
+    /// Execute the comparison when the operation is least or greatest, and the input type is Nullable Numberic, make the result not to
+    /// return null when the input has null vaues.
     ColumnPtr executeComparison(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         bool args_have_nulls = false;
@@ -1354,6 +1355,7 @@ class FunctionBinaryArithmetic : public IFunction
             }
         }
 
+        /// If the input has null values, use `FunctionLeastGreatestGeneric` to do the comparison.
         if (args_have_nulls || args_have_constants)
         {
             if constexpr (IsOperation<Op>::greatest)
@@ -1528,10 +1530,10 @@ public:
     bool useDefaultImplementationForNulls() const override
     {
         /// We shouldn't use default implementation for nulls for the case when operation is divide,
-        /// intDiv or modulo and denominator is Nullable(Something), because it may cause division
-        /// by zero error (when value is Null we store default value 0 in nested column).
-        /// We also shouldn't use default implementation for nulls for the case when operation is least
-        /// or greatest, because it would return null when the input has null values, and this is incorrect.
+        /// intDiv or modulo and denominator is Nullable(Something), or the case when operation is
+        /// least, greatest. For the first case, it may cause division by zero error (when value is
+        /// Null we store default value 0 in nested column), and for the second case, it would return
+        /// null as result when the input has null values, which is incorrect.
         return !division_by_nullable && !is_compare;
     }
 
