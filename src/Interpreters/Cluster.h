@@ -287,7 +287,7 @@ private:
     void initMisc();
 
     // Add a logger instance
-    LoggerPtr log = &Poco::Logger::get("Cluster");
+    LoggerPtr log = getLogger("Cluster");
 
     /// For getClusterWithMultipleShards implementation.
     struct SubclusterTag {};
