@@ -57,7 +57,7 @@ DROP TABLE video_views;
 
 
 -- Test for tsan: Ensure cache is used from one thread
-SET max_threads = 32;
+SET max_threads = 32, max_memory_usage = '10G';
 
 DROP TABLE IF EXISTS sample_00632;
 
