@@ -462,19 +462,19 @@ static void makeColumnNameUnique(const ColumnsWithTypeAndName & source_columns, 
     }
 }
 
-static ActionsDAGPtr createWrapWithTupleActions(
+static std::optional<ActionsDAG> createWrapWithTupleActions(
     const ColumnsWithTypeAndName & source_columns,
     std::unordered_set<std::string_view> && column_names_to_wrap,
     NameToNameMap & new_names)
 {
     if (column_names_to_wrap.empty())
-        return nullptr;
+        return {};
 
-    auto actions_dag = std::make_shared<ActionsDAG>(source_columns);
+    ActionsDAG actions_dag(source_columns);
 
     FunctionOverloadResolverPtr func_builder = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
 
-    for (const auto * input_node : actions_dag->getInputs())
+    for (const auto * input_node : actions_dag.getInputs())
     {
         const auto & column_name = input_node->result_name;
         auto it = column_names_to_wrap.find(column_name);
@@ -485,9 +485,9 @@ static ActionsDAGPtr createWrapWithTupleActions(
         String node_name = "__wrapNullsafe(" + column_name + ")";
         makeColumnNameUnique(source_columns, node_name);
 
-        const auto & dst_node = actions_dag->addFunction(func_builder, {input_node}, node_name);
+        const auto & dst_node = actions_dag.addFunction(func_builder, {input_node}, node_name);
         new_names[column_name] = dst_node.result_name;
-        actions_dag->addOrReplaceInOutputs(dst_node);
+        actions_dag.addOrReplaceInOutputs(dst_node);
     }
 
     if (!column_names_to_wrap.empty())
@@ -537,21 +537,23 @@ std::pair<NameSet, NameSet> TableJoin::getKeysForNullSafeComparion(const Columns
     return {left_keys_to_wrap, right_keys_to_wrap};
 }
 
-static void mergeDags(ActionsDAGPtr & result_dag, ActionsDAGPtr && new_dag)
+static void mergeDags(std::optional<ActionsDAG> & result_dag, std::optional<ActionsDAG> && new_dag)
 {
+    if (!new_dag)
+        return;
     if (result_dag)
         result_dag->mergeInplace(std::move(*new_dag));
     else
         result_dag = std::move(new_dag);
 }
 
-std::pair<ActionsDAGPtr, ActionsDAGPtr>
+std::pair<std::optional<ActionsDAG>, std::optional<ActionsDAG>>
 TableJoin::createConvertingActions(
     const ColumnsWithTypeAndName & left_sample_columns,
     const ColumnsWithTypeAndName & right_sample_columns)
 {
-    ActionsDAGPtr left_dag = nullptr;
-    ActionsDAGPtr right_dag = nullptr;
+    std::optional<ActionsDAG> left_dag;
+    std::optional<ActionsDAG> right_dag;
     /** If the types are not equal, we need to convert them to a common type.
       * Example:
       *   SELECT * FROM t1 JOIN t2 ON t1.a = t2.b
@@ -616,7 +618,7 @@ TableJoin::createConvertingActions(
         mergeDags(right_dag, std::move(new_right_dag));
     }
 
-    return {left_dag, right_dag};
+    return {std::move(left_dag), std::move(right_dag)};
 }
 
 template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
@@ -693,7 +695,7 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
     }
 }
 
-static ActionsDAGPtr changeKeyTypes(const ColumnsWithTypeAndName & cols_src,
+static std::optional<ActionsDAG> changeKeyTypes(const ColumnsWithTypeAndName & cols_src,
                                     const TableJoin::NameToTypeMap & type_mapping,
                                     bool add_new_cols,
                                     NameToNameMap & key_column_rename)
@@ -710,7 +712,7 @@ static ActionsDAGPtr changeKeyTypes(const ColumnsWithTypeAndName & cols_src,
         }
     }
     if (!has_some_to_do)
-        return nullptr;
+        return {};
 
     return ActionsDAG::makeConvertingActions(
         /* source= */ cols_src,
@@ -721,7 +723,7 @@ static ActionsDAGPtr changeKeyTypes(const ColumnsWithTypeAndName & cols_src,
         /* new_names= */ &key_column_rename);
 }
 
-static ActionsDAGPtr changeTypesToNullable(
+static std::optional<ActionsDAG> changeTypesToNullable(
     const ColumnsWithTypeAndName & cols_src,
     const NameSet & exception_cols)
 {
@@ -737,7 +739,7 @@ static ActionsDAGPtr changeTypesToNullable(
     }
 
     if (!has_some_to_do)
-        return nullptr;
+        return {};
 
     return ActionsDAG::makeConvertingActions(
         /* source= */ cols_src,
@@ -748,29 +750,29 @@ static ActionsDAGPtr changeTypesToNullable(
         /* new_names= */ nullptr);
 }
 
-ActionsDAGPtr TableJoin::applyKeyConvertToTable(
+std::optional<ActionsDAG> TableJoin::applyKeyConvertToTable(
     const ColumnsWithTypeAndName & cols_src,
     const NameToTypeMap & type_mapping,
     JoinTableSide table_side,
     NameToNameMap & key_column_rename)
 {
     if (type_mapping.empty())
-        return nullptr;
+        return {};
 
     /// Create DAG to convert key columns
-    ActionsDAGPtr convert_dag = changeKeyTypes(cols_src, type_mapping, !hasUsing(), key_column_rename);
+    auto convert_dag = changeKeyTypes(cols_src, type_mapping, !hasUsing(), key_column_rename);
     applyRename(table_side, key_column_rename);
     return convert_dag;
 }
 
-ActionsDAGPtr TableJoin::applyNullsafeWrapper(
+std::optional<ActionsDAG> TableJoin::applyNullsafeWrapper(
     const ColumnsWithTypeAndName & cols_src,
     const NameSet & columns_for_nullsafe_comparison,
     JoinTableSide table_side,
     NameToNameMap & key_column_rename)
 {
     if (columns_for_nullsafe_comparison.empty())
-        return nullptr;
+        return {};
 
     std::unordered_set<std::string_view> column_names_to_wrap;
     for (const auto & name : columns_for_nullsafe_comparison)
@@ -784,7 +786,7 @@ ActionsDAGPtr TableJoin::applyNullsafeWrapper(
     }
 
     /// Create DAG to wrap keys with tuple for null-safe comparison
-    ActionsDAGPtr null_safe_wrap_dag = createWrapWithTupleActions(cols_src, std::move(column_names_to_wrap), key_column_rename);
+    auto null_safe_wrap_dag = createWrapWithTupleActions(cols_src, std::move(column_names_to_wrap), key_column_rename);
     for (auto & clause : clauses)
     {
         for (size_t i : clause.nullsafe_compare_key_indexes)
@@ -799,7 +801,7 @@ ActionsDAGPtr TableJoin::applyNullsafeWrapper(
     return null_safe_wrap_dag;
 }
 
-ActionsDAGPtr TableJoin::applyJoinUseNullsConversion(
+std::optional<ActionsDAG> TableJoin::applyJoinUseNullsConversion(
     const ColumnsWithTypeAndName & cols_src,
     const NameToNameMap & key_column_rename)
 {
@@ -809,8 +811,7 @@ ActionsDAGPtr TableJoin::applyJoinUseNullsConversion(
         exclude_columns.insert(it.second);
 
     /// Create DAG to make columns nullable if needed
-    ActionsDAGPtr add_nullable_dag = changeTypesToNullable(cols_src, exclude_columns);
-    return add_nullable_dag;
+    return changeTypesToNullable(cols_src, exclude_columns);
 }
 
 void TableJoin::setStorageJoin(std::shared_ptr<const IKeyValueEntity> storage)
@@ -957,7 +958,7 @@ bool TableJoin::allowParallelHashJoin() const
     return true;
 }
 
-ActionsDAGPtr TableJoin::createJoinedBlockActions(ContextPtr context) const
+ActionsDAG TableJoin::createJoinedBlockActions(ContextPtr context) const
 {
     ASTPtr expression_list = rightKeysList();
     auto syntax_result = TreeRewriter(context).analyze(expression_list, columnsFromJoinedTable());
