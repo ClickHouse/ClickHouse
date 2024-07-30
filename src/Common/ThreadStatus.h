@@ -93,7 +93,7 @@ public:
 
         //QueryPlan can not build parallel, but processor may build parallel in expand() function.
         //so we use atomic_size_t for processor_count
-        std::shared_ptr<size_t> step_count = std::make_shared<size_t>(0);
+        std::shared_ptr<std::atomic_size_t> step_count = std::make_shared<std::atomic_size_t>(0);
         std::shared_ptr<std::atomic_size_t> processor_count = std::make_shared<std::atomic_size_t>(0);
 
         QueryIsCanceledPredicate query_is_canceled_predicate = {};

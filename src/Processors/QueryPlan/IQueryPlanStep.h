@@ -76,7 +76,10 @@ class IQueryPlanStep
 public:
     IQueryPlanStep()
     {
-        step_index = CurrentThread::get().incrStepIndex();
+        if (CurrentThread::isInitialized()) [[likely]]
+        {
+            step_index = CurrentThread::get().incrStepIndex();
+        }
     }
     virtual ~IQueryPlanStep() = default;
 

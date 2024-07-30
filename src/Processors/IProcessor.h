@@ -140,7 +140,10 @@ public:
 
     void setProcessorIndex()
     {
-        processor_index = CurrentThread::get().incrProcessorIndex();
+        if (CurrentThread::isInitialized()) [[likely]]
+        {
+            processor_index = CurrentThread::get().incrProcessorIndex();
+        }
     }
 
     virtual String getName() const = 0;
