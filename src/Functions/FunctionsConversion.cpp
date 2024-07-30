@@ -3461,7 +3461,7 @@ private:
                 using LeftDataType = typename Types::LeftType;
                 using RightDataType = typename Types::RightType;
 
-                if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType> && !std::is_same_v<DataTypeDateTime64, RightDataType>)
+                if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
                 {
                     if (wrapper_cast_type == CastType::accurate)
                     {
@@ -5270,7 +5270,6 @@ FunctionBasePtr createFunctionBaseCast(
         }))
     {
     }
-
     return std::make_unique<FunctionCast>(context, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
 }
 
