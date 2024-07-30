@@ -11,11 +11,9 @@ class ColumnFilterHelper
 {
 public:
 
-
-
-    static std::pair<std::vector<ColumnFilterPtr>, ActionsDAGPtr> splitFilterForPushDown(ActionsDAGPtr filter_expression, String filter_name)
+    static std::pair<std::vector<ColumnFilterPtr>, std::optional<ActionsDAG>> splitFilterForPushDown(ActionsDAG filter_expression, String filter_name)
     {
-        const auto * filter_node = &filter_expression->findInOutputs(filter_name);
+        const auto * filter_node = &filter_expression.findInOutputs(filter_name);
         auto conditions = ActionsDAG::extractConjunctionAtoms(filter_node);
         std::vector<ColumnFilterPtr> filters;
         ActionsDAG::NodeRawConstPtrs unsupported_conditions;
@@ -30,7 +28,7 @@ public:
         }
 
         auto remain_filter = ActionsDAG::buildFilterActionsDAG(unsupported_conditions);
-        return {filters, remain_filter};
+        return {filters, std::move(remain_filter)};
     }
 
 private:

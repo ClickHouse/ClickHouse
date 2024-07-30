@@ -1,9 +1,11 @@
 #pragma once
+#include <iostream>
+#include <unordered_set>
 #include <base/types.h>
 #include <boost/dynamic_bitset.hpp>
 #include <Common/Exception.h>
-#include <unordered_set>
-#include <iostream>
+
+#include <Interpreters/ActionsDAG.h>
 
 namespace DB
 {
@@ -55,26 +57,34 @@ class ColumnFilter
 public:
     ColumnFilter(ColumnFilterKind kind, bool null_allowed_) : kind_(kind), null_allowed(null_allowed_) { }
     virtual ~ColumnFilter() = default;
-    virtual ColumnFilterKind kind() { return kind_; }
-    virtual bool testNull() { return null_allowed; }
-    virtual bool testNotNull() { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testNotNull not implemented"); }
-    virtual bool testInt64(Int64) { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testInt64 not implemented"); }
-    virtual bool testFloat32(Float32) { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testFloat32 not implemented"); }
-    virtual bool testFloat64(Float64) { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testFloat64 not implemented"); }
-    virtual bool testBool(bool) { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testBool not implemented"); }
-    virtual bool testString(const String & /*value*/) { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testString not implemented"); }
-    virtual bool testInt64Range(Int64, Int64) { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testInt64Range not implemented"); }
-    virtual bool testFloat32Range(Float32, Float32)
+    virtual ColumnFilterKind kind() const { return kind_; }
+    virtual bool testNull() const { return null_allowed; }
+    virtual bool testNotNull() const { return true; }
+    virtual bool testInt64(Int64) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testInt64 not implemented"); }
+    virtual bool testFloat32(Float32) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testFloat32 not implemented"); }
+    virtual bool testFloat64(Float64) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testFloat64 not implemented"); }
+    virtual bool testBool(bool) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testBool not implemented"); }
+    virtual bool testString(const String & /*value*/) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testString not implemented"); }
+    virtual bool testInt64Range(Int64, Int64) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testInt64Range not implemented"); }
+    virtual bool testFloat32Range(Float32, Float32) const
     {
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testFloat32Range not implemented");
     }
-    virtual bool testFloat64Range(Float64, Float64)
+    virtual bool testFloat64Range(Float64, Float64) const
     {
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testFloat64Range not implemented");
     }
-    virtual void testInt64Values(RowSet & /*row_set*/, size_t /*offset*/, size_t /*len*/, const Int64 * /*data*/)
+    virtual void testInt64Values(RowSet & row_set, size_t offset, size_t len, const Int64 * data) const
     {
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testInt64Values not implemented");
+        for (size_t i = offset; i < offset+len; ++i)
+        {
+            row_set.set(i, testInt64(data[i]));
+        }
+    }
+
+    virtual ColumnFilterPtr merge(const ColumnFilter * /*filter*/) const
+    {
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "merge not implemented");
     }
 
 protected:
@@ -82,33 +92,68 @@ protected:
     bool null_allowed;
 };
 
+class IsNullFilter : public ColumnFilter
+{
+public:
+    IsNullFilter() : ColumnFilter(IsNull, true) { }
+    bool testNotNull() const override { return false; }
+};
+
+class IsNotNullFilter : public ColumnFilter
+{
+public:
+    IsNotNullFilter() : ColumnFilter(IsNotNull, false) { }
+};
+
 class AlwaysTrueFilter : public ColumnFilter
 {
 public:
-    ColumnFilterKind kind() override { return AlwaysTrue; }
-    bool testNull() override { return true; }
-    bool testNotNull() override { return true; }
-    bool testInt64(Int64) override { return true; }
-    bool testFloat32(Float32) override { return true; }
-    bool testFloat64(Float64) override { return true; }
-    bool testBool(bool) override { return true; }
-    bool testInt64Range(Int64, Int64) override { return true; }
-    bool testFloat32Range(Float32, Float32) override { return true; }
-    bool testFloat64Range(Float64, Float64) override { return true; }
-    void testInt64Values(RowSet & set, size_t, size_t, const Int64 *) override { set.setAllTrue(); }
+    AlwaysTrueFilter() : ColumnFilter(AlwaysTrue, true) { }
+    bool testNull() const override { return true; }
+    bool testNotNull() const override { return true; }
+    bool testInt64(Int64) const override { return true; }
+    bool testFloat32(Float32) const override { return true; }
+    bool testFloat64(Float64) const override { return true; }
+    bool testBool(bool) const override { return true; }
+    bool testInt64Range(Int64, Int64) const override { return true; }
+    bool testFloat32Range(Float32, Float32) const override { return true; }
+    bool testFloat64Range(Float64, Float64) const override { return true; }
+    void testInt64Values(RowSet & set, size_t, size_t, const Int64 *) const override { set.setAllTrue(); }
+    bool testString(const String & /*value*/) const override { return true; }
+    ColumnFilterPtr merge(const ColumnFilter * /*filter*/) const override { return std::make_shared<AlwaysTrueFilter>(); }
+};
+
+class AlwaysFalseFilter : public ColumnFilter
+{
+public:
+    AlwaysFalseFilter() : ColumnFilter(AlwaysFalse, false) { }
+    bool testNull() const override { return false; }
+    bool testNotNull() const override { return false; }
+    bool testInt64(Int64) const override { return false; }
+    bool testFloat32(Float32) const override { return false; }
+    bool testFloat64(Float64) const override { return false; }
+    bool testBool(bool) const override { return true; }
+    bool testInt64Range(Int64, Int64) const override { return false; }
+    bool testFloat32Range(Float32, Float32) const override { return false; }
+    bool testFloat64Range(Float64, Float64) const override { return false; }
+    void testInt64Values(RowSet & set, size_t, size_t, const Int64 *) const override { set.setAllFalse(); }
+    bool testString(const String & /*value*/) const override { return false; }
+    ColumnFilterPtr merge(const ColumnFilter * /*filter*/) const override { return std::make_shared<AlwaysFalseFilter>(); }
 };
 
 class Int64RangeFilter : public ColumnFilter
 {
 public:
+    static ColumnFilterPtr create(const ActionsDAG::Node & node);
     explicit Int64RangeFilter(const Int64 min_, const Int64 max_, bool null_allowed_)
         : ColumnFilter(Int64Range, null_allowed_), max(max_), min(min_), is_single_value(max == min)
     {
     }
     ~Int64RangeFilter() override = default;
-    bool testInt64(Int64 int64) override { return int64 >= min && int64 <= max; }
-    bool testInt64Range(Int64 lower, Int64 upper) override { return min >= lower && max <= upper; }
-    void testInt64Values(RowSet & row_set, size_t offset, size_t len, const Int64 * data) override;
+    bool testInt64(Int64 int64) const override { return int64 >= min && int64 <= max; }
+    bool testInt64Range(Int64 lower, Int64 upper) const override { return min >= lower && max <= upper; }
+    void testInt64Values(RowSet & row_set, size_t offset, size_t len, const Int64 * data) const override;
+    ColumnFilterPtr merge(const ColumnFilter * filter) const override;
 
 private:
     const Int64 max;
@@ -124,14 +169,31 @@ public:
         std::ranges::for_each(values_, [&](const String & value) { lengths.insert(value.size()); });
     }
 
-    bool testString(const String & value) override
+    ByteValuesFilter(const std::unordered_set<String> & values_, bool null_allowed_)
+        : ColumnFilter(ByteValues, null_allowed_), values(values_)
     {
-        return lengths.contains(value.size()) && values.contains(value);
+        std::ranges::for_each(values_, [&](const String & value) { lengths.insert(value.size()); });
     }
+
+    bool testString(const String & value) const override { return lengths.contains(value.size()) && values.contains(value); }
+    ColumnFilterPtr merge(const ColumnFilter * filter) const override;
 
 private:
     std::unordered_set<size_t> lengths;
     std::unordered_set<String> values;
+};
+
+class Int64MultiRangeFilter : public ColumnFilter
+{
+public:
+    Int64MultiRangeFilter(const std::vector<ColumnFilterPtr> & ranges_, bool null_allowed_)
+        : ColumnFilter(Int64MultiRange, null_allowed_), ranges(ranges_)
+    {
+    }
+
+private:
+    std::vector<ColumnFilterPtr> ranges;
+    std::vector<Int64> lower_bounds;
 };
 
 
@@ -173,6 +235,9 @@ protected:
 };
 
 template <class T>
+concept is_floating_point = std::is_same_v<T, double> || std::is_same_v<T, float>;
+
+template <is_floating_point T>
 class FloatRangeFilter : public AbstractRange
 {
 public:
@@ -190,8 +255,9 @@ public:
     {
     }
 
-    bool testFloat32(Float32 value) override { return testFloatingPoint(value); }
-    bool testFloat64(Float64 value) override { return testFloatingPoint(value); }
+    bool testFloat32(Float32 value) const override { return testFloatingPoint(value); }
+    bool testFloat64(Float64 value) const override { return testFloatingPoint(value); }
+    ColumnFilterPtr merge(const ColumnFilter * filter) const override;
 
 private:
     bool testFloatingPoint(T value) const
@@ -218,5 +284,7 @@ private:
     const T min;
     const T max;
 };
+
+
 
 }
