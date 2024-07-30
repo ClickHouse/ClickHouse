@@ -46,7 +46,11 @@ def assert_keeper_exception_after_partition(query):
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(node)
         try:
-            error = node.query_and_get_error_with_retry(query, sleep_time=1)
+            error = node.query_and_get_error_with_retry(
+                query,
+                sleep_time=1,
+                settings={"insert_keeper_max_retries": 1, "keeper_max_retries": 1},
+            )
             assert "Coordination::Exception" in error
         except:
             print_iptables_rules()
@@ -84,7 +88,9 @@ def test_keeper_map_without_zk(started_cluster):
         node.restart_clickhouse(60)
         try:
             error = node.query_and_get_error_with_retry(
-                "SELECT * FROM test_keeper_map_without_zk", sleep_time=1
+                "SELECT * FROM test_keeper_map_without_zk",
+                sleep_time=1,
+                settings={"keeper_max_retries": 1},
             )
             assert "Failed to activate table because of connection issues" in error
         except:
