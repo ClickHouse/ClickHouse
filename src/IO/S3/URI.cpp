@@ -30,7 +30,7 @@ namespace ErrorCodes
 namespace S3
 {
 
-URI::URI(const std::string & uri_)
+URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
 {
     /// Case when bucket name represented in domain name of S3 URL.
     /// E.g. (https://bucket-name.s3.region.amazonaws.com/key)
@@ -55,7 +55,11 @@ URI::URI(const std::string & uri_)
     static constexpr auto OSS = "OSS";
     static constexpr auto EOS = "EOS";
 
-    std::tie(uri_str, archive_pattern) = getURIAndArchivePattern(uri_);
+    if (!allow_archive_path_syntax)
+        uri_str = uri_;
+    else
+        std::tie(uri_str, archive_pattern) = getURIAndArchivePattern(uri_);
+
     uri = Poco::URI(uri_str);
 
     std::unordered_map<std::string, std::string> mapper;

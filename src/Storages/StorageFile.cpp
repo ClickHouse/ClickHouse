@@ -2208,7 +2208,11 @@ void registerStorageFile(StorageFactory & factory)
                 else if (type == Field::Types::UInt64)
                     source_fd = static_cast<int>(literal->value.get<UInt64>());
                 else if (type == Field::Types::String)
-                    StorageFile::parseFileSource(literal->value.get<String>(), source_path, storage_args.path_to_archive);
+                    StorageFile::parseFileSource(
+                        literal->value.get<String>(),
+                        source_path,
+                        storage_args.path_to_archive,
+                        factory_args.getLocalContext()->getSettingsRef().allow_archive_path_syntax);
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
             }
@@ -2235,8 +2239,14 @@ SchemaCache & StorageFile::getSchemaCache(const ContextPtr & context)
     return schema_cache;
 }
 
-void StorageFile::parseFileSource(String source, String & filename, String & path_to_archive)
+void StorageFile::parseFileSource(String source, String & filename, String & path_to_archive, bool allow_archive_path_syntax)
 {
+    if (!allow_archive_path_syntax)
+    {
+        filename = std::move(source);
+        return;
+    }
+
     size_t pos = source.find("::");
     if (pos == String::npos)
     {
