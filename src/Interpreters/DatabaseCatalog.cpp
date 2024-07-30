@@ -1355,7 +1355,7 @@ void DatabaseCatalog::dropTableDataTask()
         }
         catch (...)
         {
-            /// We don't re-throw expection, because we are in a background pool.
+            /// We don't re-throw exception, because we are in a background pool.
             tryLogCurrentException(log, "Cannot drop tables. Will retry later.");
         }
     }
