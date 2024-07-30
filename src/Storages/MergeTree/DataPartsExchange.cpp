@@ -19,15 +19,13 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
-#include <Common/randomDelay.h>
-#include <Common/FailPoint.h>
-#include <Common/thread_local_rng.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <boost/algorithm/string/join.hpp>
+#include <iterator>
 #include <base/sort.h>
-#include <random>
+
 
 namespace fs = std::filesystem;
 
@@ -51,12 +49,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
     extern const int ZERO_COPY_REPLICATION_ERROR;
-    extern const int FAULT_INJECTED;
-}
-
-namespace FailPoints
-{
-    extern const char replicated_sends_failpoint[];
 }
 
 namespace DataPartsExchange
@@ -130,10 +122,6 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION))});
 
     LOG_TRACE(log, "Sending part {}", part_name);
-
-    static const auto test_delay = data.getContext()->getConfigRef().getUInt64("test.data_parts_exchange.delay_before_sending_part_ms", 0);
-    if (test_delay)
-        randomDelayForMaxMilliseconds(test_delay, log, "DataPartsExchange: Before sending part");
 
     MergeTreeData::DataPartPtr part;
 
@@ -312,23 +300,11 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
         auto file_in = desc.input_buffer_getter();
         HashingWriteBuffer hashing_out(out);
-
-        const auto & is_cancelled = blocker.getCounter();
-        auto cancellation_hook = [&]()
-        {
-            if (is_cancelled)
-                throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
-
-            fiu_do_on(FailPoints::replicated_sends_failpoint,
-            {
-                std::bernoulli_distribution fault(0.1);
-                if (fault(thread_local_rng))
-                    throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint replicated_sends_failpoint is triggered");
-            });
-        };
-        copyDataWithThrottler(*file_in, hashing_out, cancellation_hook, data.getSendsThrottler());
-
+        copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
         hashing_out.finalize();
+
+        if (blocker.isCancelled())
+            throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
 
         if (hashing_out.count() != desc.file_size)
             throw Exception(
@@ -344,7 +320,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     }
 
     if (!from_remote_disk && isFullPartStorage(part->getDataPartStorage()))
-        part->checksums.checkEqual(data_checksums, false, part->name);
+        part->checksums.checkEqual(data_checksums, false);
 
     return data_checksums;
 }
@@ -768,11 +744,9 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
 
         if (expected_hash != hashing_out.getHash())
             throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH,
-                "Checksum mismatch for file {} transferred from {} (0x{} vs 0x{})",
+                "Checksum mismatch for file {} transferred from {}",
                 (fs::path(data_part_storage->getFullPath()) / file_name).string(),
-                replica_path,
-                getHexUIntLowercase(expected_hash),
-                getHexUIntLowercase(hashing_out.getHash()));
+                replica_path);
 
         if (file_name != "checksums.txt" &&
             file_name != "columns.txt" &&
@@ -831,7 +805,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`tmp_prefix` and `part_name` cannot be empty or contain '.' or '/' characters.");
 
     auto part_dir = tmp_prefix + part_name;
-    auto part_relative_path = data.getRelativeDataPath() + String(to_detached ? MergeTreeData::DETACHED_DIR_NAME : "");
+    auto part_relative_path = data.getRelativeDataPath() + String(to_detached ? "detached/" : "");
     auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
 
     /// Create temporary part storage to write sent files.
@@ -934,7 +908,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     else
     {
         if (isFullPartStorage(new_data_part->getDataPartStorage()))
-            new_data_part->checksums.checkEqual(data_checksums, false, new_data_part->name);
+            new_data_part->checksums.checkEqual(data_checksums, false);
         LOG_DEBUG(log, "Download of part {} onto disk {} finished.", part_name, disk->getName());
     }
 

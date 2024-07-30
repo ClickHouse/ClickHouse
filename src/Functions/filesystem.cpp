@@ -91,7 +91,7 @@ public:
 
                 auto col_res = ColumnVector<UInt64>::create(col_str->size());
                 auto & data = col_res->getData();
-                for (size_t i = 0; i < input_rows_count; ++i)
+                for (size_t i = 0; i < col_str->size(); ++i)
                 {
                     auto disk_name = col_str->getDataAt(i).toString();
                     if (auto it = disk_map.find(disk_name); it != disk_map.end())

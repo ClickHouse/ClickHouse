@@ -1,19 +1,17 @@
-#include "PostgreSQLHandler.h"
 #include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
+#include "PostgreSQLHandler.h"
 #include <Parsers/parseQuery.h>
 #include <Server/TCPServer.h>
-#include <base/scope_guard.h>
-#include <pcg_random.hpp>
-#include <Common/CurrentThread.h>
-#include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
-#include <Core/Settings.h>
+#include <base/scope_guard.h>
+#include <pcg_random.hpp>
+#include <Common/config_version.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -59,6 +57,7 @@ void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 void PostgreSQLHandler::run()
 {
     setThreadName("PostgresHandler");
+    ThreadStatus thread_status;
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);
     SCOPE_EXIT({ session.reset(); });

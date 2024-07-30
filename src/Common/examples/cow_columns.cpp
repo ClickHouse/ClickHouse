@@ -1,6 +1,5 @@
 #include <Common/COW.h>
 #include <iostream>
-#include <base/defines.h>
 
 
 class IColumn : public COW<IColumn>
@@ -16,6 +15,8 @@ public:
 
     virtual int get() const = 0;
     virtual void set(int value) = 0;
+
+    virtual MutablePtr test() const = 0;
 };
 
 using ColumnPtr = IColumn::Ptr;
@@ -30,63 +31,58 @@ private:
     explicit ConcreteColumn(int data_) : data(data_) {}
     ConcreteColumn(const ConcreteColumn &) = default;
 
+    MutableColumnPtr test() const override
+    {
+        MutableColumnPtr res = create(123);
+        return res;
+    }
+
 public:
     int get() const override { return data; }
     void set(int value) override { data = value; }
 };
 
-template <typename ColPtr>
-void print(const ColumnPtr & x, const ColPtr & y)
-{
-    std::cerr << "values:    " << x->get()        << ", " << y->get()       << "\n";
-    std::cerr << "refcounts: " << x->use_count()  << ", " << y->use_count() << "\n";
-    std::cerr << "addresses: " << x.get()         << ", " << y.get()        << "\n";
-}
 
 int main(int, char **)
 {
     ColumnPtr x = ConcreteColumn::create(1);
-    ColumnPtr y = x;
-    print(x, y);
-    chassert(x->get() == 1 && y->get() == 1);
-    chassert(x->use_count() == 2 && y->use_count() == 2);
-    chassert(x.get() == y.get());
+    ColumnPtr y = x;//x->test();
+
+    std::cerr << "values:    " << x->get() << ", " << y->get() << "\n";
+    std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << "\n";
+    std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
     {
         MutableColumnPtr mut = IColumn::mutate(std::move(y));
         mut->set(2);
-        print(x, mut);
-        chassert(x->get() == 1 && mut->get() == 2);
-        chassert(x->use_count() == 1 && mut->use_count() == 1);
-        chassert(x.get() != mut.get());
 
+        std::cerr << "refcounts: " << x->use_count() << ", " << mut->use_count() << "\n";
+        std::cerr << "addresses: " << x.get() << ", " << mut.get() << "\n";
         y = std::move(mut);
     }
-    print(x, y);
-    chassert(x->get() == 1 && y->get() == 2);
-    chassert(x->use_count() == 1 && y->use_count() == 1);
-    chassert(x.get() != y.get());
+
+    std::cerr << "values:    " << x->get() << ", " << y->get() << "\n";
+    std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << "\n";
+    std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
     x = ConcreteColumn::create(0);
-    print(x, y);
-    chassert(x->get() == 0 && y->get() == 2);
-    chassert(x->use_count() == 1 && y->use_count() == 1);
-    chassert(x.get() != y.get());
+
+    std::cerr << "values:    " << x->get() << ", " << y->get() << "\n";
+    std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << "\n";
+    std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
     {
         MutableColumnPtr mut = IColumn::mutate(std::move(y));
         mut->set(3);
-        print(x, mut);
-        chassert(x->get() == 0 && mut->get() == 3);
-        chassert(x->use_count() == 1 && mut->use_count() == 1);
-        chassert(x.get() != mut.get());
 
+        std::cerr << "refcounts: " << x->use_count() << ", " << mut->use_count() << "\n";
+        std::cerr << "addresses: " << x.get() << ", " << mut.get() << "\n";
         y = std::move(mut);
     }
-    print(x, y);
-    chassert(x->get() == 0 && y->get() == 3);
-    chassert(x->use_count() == 1 && y->use_count() == 1);
-    chassert(x.get() != y.get());
+
+    std::cerr << "values:    " << x->get() << ", " << y->get() << "\n";
+    std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << "\n";
 
     return 0;
 }
+

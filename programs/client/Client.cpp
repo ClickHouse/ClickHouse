@@ -17,15 +17,15 @@
 
 #include <Access/AccessControl.h>
 
+#include <Common/config_version.h>
+#include <Common/Exception.h>
+#include <Common/formatReadable.h>
+#include <Common/TerminalSize.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
-#include <Common/CurrentThread.h>
-#include <Common/Exception.h>
-#include <Common/TerminalSize.h>
-#include <Common/config_version.h>
-#include <Common/formatReadable.h>
-#include <Core/Settings.h>
+
 #include <Columns/ColumnString.h>
+#include <Poco/Util/Application.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -48,8 +48,6 @@
 #include <Formats/registerFormats.h>
 #include <Formats/FormatFactory.h>
 
-#include <Poco/Util/Application.h>
-
 namespace fs = std::filesystem;
 using namespace std::literals;
 
@@ -65,7 +63,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int AUTHENTICATION_FAILED;
     extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int USER_EXPIRED;
 }
 
 
@@ -76,12 +73,6 @@ void Client::processError(const String & query) const
         fmt::print(stderr, "Received exception from server (version {}):\n{}\n",
                 server_version,
                 getExceptionMessage(*server_exception, print_stack_trace, true));
-
-        if (server_exception->code() == ErrorCodes::USER_EXPIRED)
-        {
-            server_exception->rethrow();
-        }
-
         if (is_interactive)
         {
             fmt::print(stderr, "\n");
@@ -186,8 +177,6 @@ void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & con
                 history_file = home_path + "/" + history_file.substr(1);
             config.setString("history_file", history_file);
         }
-        if (config.has(prefix + ".accept-invalid-certificate"))
-            config.setBool("accept-invalid-certificate", config.getBool(prefix + ".accept-invalid-certificate"));
     }
 
     if (!connection_name.empty() && !connection_found)
@@ -251,10 +240,6 @@ std::vector<String> Client::loadWarningMessages()
     }
 }
 
-Poco::Util::LayeredConfiguration & Client::getClientConfiguration()
-{
-    return config();
-}
 
 void Client::initialize(Poco::Util::Application & self)
 {
@@ -277,13 +262,7 @@ void Client::initialize(Poco::Util::Application & self)
         config().add(loaded_config.configuration);
     }
     else if (config().has("connection"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "--connection was specified, but config does not exist");
-
-    if (config().has("accept-invalid-certificate"))
-    {
-        config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
-        config().setString("openSSL.client.verificationMode", "none");
-    }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "--connection was specified, but config does not exists");
 
     /** getenv is thread-safe in Linux glibc and in all sane libc implementations.
       * But the standard does not guarantee that subsequent calls will not rewrite the value by returned pointer.
@@ -502,7 +481,6 @@ void Client::connect()
 
     server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
     load_suggestions = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION) && !config().getBool("disable_suggestion", false);
-    wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
 
     if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
         server_display_name = config().getString("host", "localhost");
@@ -708,9 +686,7 @@ bool Client::processWithFuzzing(const String & full_query)
     try
     {
         const char * begin = full_query.data();
-        orig_ast = parseQuery(begin, begin + full_query.size(),
-            global_context->getSettingsRef(),
-            /*allow_multi_statements=*/ true);
+        orig_ast = parseQuery(begin, begin + full_query.size(), true);
     }
     catch (const Exception & e)
     {
@@ -739,7 +715,7 @@ bool Client::processWithFuzzing(const String & full_query)
     }
     if (auto *q = orig_ast->as<ASTSetQuery>())
     {
-        if (auto *set_dialect = q->changes.tryGet("dialect"); set_dialect && set_dialect->safeGet<String>() == "kusto")
+        if (auto *setDialect = q->changes.tryGet("dialect"); setDialect && setDialect->safeGet<String>() == "kusto")
             return true;
     }
 
@@ -936,13 +912,11 @@ bool Client::processWithFuzzing(const String & full_query)
 }
 
 
-void Client::printHelpMessage(const OptionsDescription & options_description, bool verbose)
+void Client::printHelpMessage(const OptionsDescription & options_description)
 {
     std::cout << options_description.main_description.value() << "\n";
     std::cout << options_description.external_description.value() << "\n";
     std::cout << options_description.hosts_and_ports_description.value() << "\n";
-    if (verbose)
-        std::cout << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     std::cout << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
@@ -959,10 +933,9 @@ void Client::addOptions(OptionsDescription & options_description)
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         ("password", po::value<std::string>(), "password")
         ("ask-password", "ask-password")
-        ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")
-        ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
+        ("ssh-key-file", po::value<std::string>(), "File containing ssh private key needed for authentication. If not set does password authentication.")
+        ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for imported ssh key.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
-        ("jwt", po::value<std::string>(), "Use JWT for authentication")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
         ("compression", po::value<bool>(), "enable or disable compression (enabled by default for remote communication and disabled for localhost communication).")
@@ -976,7 +949,6 @@ void Client::addOptions(OptionsDescription & options_description)
         ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
 
         ("no-warnings", "disable warnings when client connects to server")
-        /// TODO: Left for compatibility as it's used in upgrade check, remove after next release and use server setting ignore_drop_queries_probability
         ("fake-drop", "Ignore all DROP queries, should be used only for testing")
         ("accept-invalid-certificate", "Ignore certificate verification errors, equal to config parameters openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none")
     ;
@@ -1120,14 +1092,7 @@ void Client::processOptions(const OptionsDescription & options_description,
     if (options.count("no-warnings"))
         config().setBool("no-warnings", true);
     if (options.count("fake-drop"))
-        config().setString("ignore_drop_queries_probability", "1");
-    if (options.count("jwt"))
-    {
-        if (!options["user"].defaulted())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and JWT flags can't be specified together");
-        config().setString("jwt", options["jwt"].as<std::string>());
-        config().setString("user", "");
-    }
+        fake_drop = true;
     if (options.count("accept-invalid-certificate"))
     {
         config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
@@ -1204,7 +1169,7 @@ void Client::processConfig()
 
     pager = config().getString("pager", "");
 
-    setDefaultFormatsAndCompressionFromConfiguration();
+    setDefaultFormatsFromConfiguration();
 
     global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
     global_context->setQueryKindInitial();

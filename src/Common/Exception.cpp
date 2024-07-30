@@ -1,27 +1,26 @@
-#include <IO/Operators.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <base/demangle.h>
-#include <Common/AtomicLogger.h>
-#include <Common/ErrorCodes.h>
-#include <Common/Exception.h>
-#include <Common/LockMemoryExceptionInThread.h>
-#include <Common/MemorySanitizer.h>
-#include <Common/SensitiveDataMasker.h>
-#include <Common/config_version.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
+#include "Exception.h"
 
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <cxxabi.h>
-
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <base/demangle.h>
 #include <Poco/String.h>
+#include <Common/ErrorCodes.h>
+#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/MemorySanitizer.h>
+#include <Common/SensitiveDataMasker.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
+
+#include <Common/config_version.h>
 
 namespace fs = std::filesystem;
 
@@ -38,41 +37,28 @@ namespace ErrorCodes
     extern const int CANNOT_MREMAP;
 }
 
-void abortOnFailedAssertion(const String & description, void * const * trace, size_t trace_offset, size_t trace_size)
-{
-    auto & logger = Poco::Logger::root();
-    LOG_FATAL(&logger, "Logical error: '{}'.", description);
-    if (trace)
-        LOG_FATAL(&logger, "Stack trace (when copying this message, always include the lines below):\n\n{}", StackTrace::toString(trace, trace_offset, trace_size));
-    abort();
-}
-
 void abortOnFailedAssertion(const String & description)
 {
-    StackTrace st;
-    abortOnFailedAssertion(description, st.getFramePointers().data(), st.getOffset(), st.getSize());
+    LOG_FATAL(&Poco::Logger::root(), "Logical error: '{}'.", description);
+    abort();
 }
 
 bool terminate_on_any_exception = false;
 static int terminate_status_code = 128 + SIGABRT;
 thread_local bool update_error_statistics = true;
-std::function<void(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)> Exception::callback = {};
 
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
-void handle_error_code(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifdef ABORT_ON_LOGICAL_ERROR
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
-        abortOnFailedAssertion(msg, trace.data(), 0, trace.size());
+        abortOnFailedAssertion(msg);
     }
 #endif
-
-    if (Exception::callback)
-        Exception::callback(msg, code, remote, trace);
 
     if (!update_error_statistics) [[unlikely]]
         return;
@@ -400,7 +386,6 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
 {
     WriteBufferFromOwnString stream;
     std::string_view message_format_string;
-    std::vector<std::string> message_format_string_args;
 
     try
     {
@@ -412,7 +397,6 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
                << (with_extra_info ? getExtraExceptionInfo(e) : "")
                << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         message_format_string = e.tryGetMessageFormatString();
-        message_format_string_args = e.getMessageFormatStringArgs();
     }
     catch (const Poco::Exception & e)
     {
@@ -443,7 +427,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
         }
         catch (...) {} // NOLINT(bugprone-empty-catch)
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifdef ABORT_ON_LOGICAL_ERROR
         try
         {
             throw;
@@ -473,7 +457,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
         catch (...) {} // NOLINT(bugprone-empty-catch)
     }
 
-    return PreformattedMessage{stream.str(), message_format_string, message_format_string_args};
+    return PreformattedMessage{stream.str(), message_format_string};
 }
 
 
@@ -592,7 +576,7 @@ PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with
     }
     catch (...) {} // NOLINT(bugprone-empty-catch)
 
-    return PreformattedMessage{stream.str(), e.tryGetMessageFormatString(), e.getMessageFormatStringArgs()};
+    return PreformattedMessage{stream.str(), e.tryGetMessageFormatString()};
 }
 
 std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)

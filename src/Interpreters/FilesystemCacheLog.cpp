@@ -15,7 +15,18 @@ namespace DB
 
 static String typeToString(FilesystemCacheLogElement::CacheType type)
 {
-    return String(magic_enum::enum_name(type));
+    switch (type)
+    {
+        case FilesystemCacheLogElement::CacheType::READ_FROM_CACHE:
+            return "READ_FROM_CACHE";
+        case FilesystemCacheLogElement::CacheType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE:
+            return "READ_FROM_FS_AND_DOWNLOADED_TO_CACHE";
+        case FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE:
+            return "READ_FROM_FS_BYPASSING_CACHE";
+        case FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE:
+            return "WRITE_THROUGH_CACHE";
+    }
+    UNREACHABLE();
 }
 
 ColumnsDescription FilesystemCacheLogElement::getColumnsDescription()

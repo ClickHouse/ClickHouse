@@ -5,9 +5,8 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
-#include <Disks/ObjectStorages/MetadataOperationsHolder.h>
+#include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
-#include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 
 namespace DB
 {
@@ -75,10 +74,17 @@ public:
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> & lock) const;
 };
 
-class MetadataStorageFromDiskTransaction final : public IMetadataTransaction, private MetadataOperationsHolder
+class MetadataStorageFromDiskTransaction final : public IMetadataTransaction
 {
 private:
     const MetadataStorageFromDisk & metadata_storage;
+
+    std::vector<MetadataOperationPtr> operations;
+    MetadataFromDiskTransactionState state{MetadataFromDiskTransactionState::PREPARING};
+
+    void addOperation(MetadataOperationPtr && operation);
+
+    void rollback(size_t until_pos);
 
 public:
     explicit MetadataStorageFromDiskTransaction(const MetadataStorageFromDisk & metadata_storage_)
@@ -129,7 +135,6 @@ public:
 
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
-    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
 
 };
 
