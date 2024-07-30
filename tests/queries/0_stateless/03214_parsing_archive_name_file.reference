@@ -1,0 +1,12 @@
+::nonexistentfile.csv
+1
+nonexistent::nonexistentfile.csv
+1
+nonexistent :: nonexistentfile.csv
+1
+nonexistent ::nonexistentfile.csv
+1
+nonexistent.tar.gz :: nonexistentfile.csv
+1
+nonexistent.zip:: nonexistentfile.csv
+1

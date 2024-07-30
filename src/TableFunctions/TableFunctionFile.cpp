@@ -63,9 +63,12 @@ std::optional<String> TableFunctionFile::tryGetFormatFromFirstArgument()
         return FormatFactory::instance().tryGetFormatFromFileName(filename);
 }
 
-StoragePtr TableFunctionFile::getStorage(const String & source,
-    const String & format_, const ColumnsDescription & columns,
-    ContextPtr global_context, const std::string & table_name,
+StoragePtr TableFunctionFile::getStorage(
+    const String & source,
+    const String & format_,
+    const ColumnsDescription & columns,
+    ContextPtr global_context,
+    const std::string & table_name,
     const std::string & compression_method_) const
 {
     // For `file` table function, we are going to use format settings from the

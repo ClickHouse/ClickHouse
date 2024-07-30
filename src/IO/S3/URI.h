@@ -42,8 +42,7 @@ struct URI
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
 
 private:
-    bool containsArchive(const std::string & source);
-    std::pair<std::string, std::string> getPathToArchiveAndArchivePattern(const std::string & source);
+    std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(const std::string & source);
 };
 
 }

@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
+#include <IO/Archives/ArchiveUtils.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -54,10 +55,7 @@ URI::URI(const std::string & uri_)
     static constexpr auto OSS = "OSS";
     static constexpr auto EOS = "EOS";
 
-    if (containsArchive(uri_))
-        std::tie(uri_str, archive_pattern) = getPathToArchiveAndArchivePattern(uri_);
-    else
-        uri_str = uri_;
+    std::tie(uri_str, archive_pattern) = getURIAndArchivePattern(uri_);
     uri = Poco::URI(uri_str);
 
     std::unordered_map<std::string, std::string> mapper;
@@ -167,32 +165,29 @@ void URI::validateBucket(const String & bucket, const Poco::URI & uri)
             !uri.empty() ? " (" + uri.toString() + ")" : "");
 }
 
-bool URI::containsArchive(const std::string & source)
+std::pair<std::string, std::optional<std::string>> URI::getURIAndArchivePattern(const std::string & source)
 {
     size_t pos = source.find("::");
-    return (pos != std::string::npos);
-}
+    if (pos == String::npos)
+        return {source, std::nullopt};
 
-std::pair<std::string, std::string> URI::getPathToArchiveAndArchivePattern(const std::string & source)
-{
-    size_t pos = source.find("::");
-    assert(pos != std::string::npos);
+    std::string_view path_to_archive_view = std::string_view{source}.substr(0, pos);
+    while (path_to_archive_view.ends_with(' '))
+        path_to_archive_view.remove_suffix(1);
 
-    std::string path_to_archive = source.substr(0, pos);
-    while ((!path_to_archive.empty()) && path_to_archive.ends_with(' '))
-        path_to_archive.pop_back();
+    if (path_to_archive_view.empty() || !hasSupportedArchiveExtension(path_to_archive_view))
+        return {source, std::nullopt};
 
-    if (path_to_archive.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path to archive is empty");
+    auto archive_uri = path_to_archive_view;
 
-    std::string_view path_in_archive_view = std::string_view{source}.substr(pos + 2);
-    while (path_in_archive_view.front() == ' ')
-        path_in_archive_view.remove_prefix(1);
+    std::string_view archive_pattern_view = std::string_view{source}.substr(pos + 2);
+    while (archive_pattern_view.front() == ' ')
+        archive_pattern_view.remove_prefix(1);
 
-    if (path_in_archive_view.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filename is empty");
+    if (archive_pattern_view.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Archive pattern is empty");
 
-    return {path_to_archive, std::string{path_in_archive_view}};
+    return std::pair{std::string{archive_uri}, std::string{archive_pattern_view}};
 }
 }
 
