@@ -1,6 +1,7 @@
 #include <Interpreters/SystemLog.h>
 
 #include <base/scope_guard.h>
+#include "Common/SystemLogBase.h"
 #include <Common/logger_useful.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/quoteString.h>
@@ -462,33 +463,26 @@ void SystemLog<LogElement>::savingThreadFunction()
 {
     setThreadName("SystemLogFlush");
 
-    std::vector<LogElement> to_flush;
-    bool exit_this_thread = false;
-    while (!exit_this_thread)
+    while (true)
     {
         try
         {
-            // The end index (exclusive, like std end()) of the messages we are
-            // going to flush.
-            uint64_t to_flush_end = 0;
-            // Should we prepare table even if there are no new messages.
-            bool should_prepare_tables_anyway = false;
+            auto result = queue->pop();
 
-            to_flush_end = queue->pop(to_flush, should_prepare_tables_anyway, exit_this_thread);
-
-            if (to_flush.empty())
+            if (result.is_shutdown)
             {
-                if (should_prepare_tables_anyway)
-                {
-                    prepareTable();
-                    LOG_TRACE(log, "Table created (force)");
-
-                    queue->confirm(to_flush_end);
-                }
+                LOG_TRACE(log, "Terminating");
+                return;
             }
-            else
+
+            if (!result.logs_elemets.empty())
             {
-                flushImpl(to_flush, to_flush_end);
+                flushImpl(result.logs_elemets, result.logs_index);
+            }
+            else if (result.create_table_force)
+            {
+                prepareTable();
+                queue->confirm(/* last_flashed_index */ 0);
             }
         }
         catch (...)
@@ -496,7 +490,6 @@ void SystemLog<LogElement>::savingThreadFunction()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
-    LOG_TRACE(log, "Terminating");
 }
 
 
@@ -579,6 +572,9 @@ StoragePtr SystemLog<LogElement>::getStorage() const
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
+    if (is_prepared)
+        return;
+
     String description = table_id.getNameForLogs();
 
     auto table = getStorage();

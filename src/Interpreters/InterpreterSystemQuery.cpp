@@ -712,11 +712,18 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
 
             auto logs = getContext()->getSystemLogs();
+
             std::vector<std::function<void()>> commands;
             commands.reserve(logs.size());
             for (auto * system_log : logs)
-                commands.emplace_back([system_log] { system_log->flush(true); });
+            {
+                auto current_index = system_log->getLastLogIndex();
+                /// The data is started to being flushed in the background after notifyFlush call
+                system_log->notifyFlush(current_index);
+                commands.emplace_back([system_log, current_index] { system_log->flush(current_index); });
+            }
 
+            /// The data is flashing in the background, we need to wait until it is done
             executeCommandsAndThrowIfError(commands);
             break;
         }

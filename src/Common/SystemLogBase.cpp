@@ -27,12 +27,15 @@
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 
+#define LOGICAL_IF_THEN(A, B) (!(A) || !!(B))
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
+    extern const int ABORTED;
 }
 
 ISystemLog::~ISystemLog() = default;
@@ -86,9 +89,8 @@ void SystemLogQueue<LogElement>::push(LogElement&& element)
             // by one, under exclusive lock, so we will see each message count.
             // It is enough to only wake the flushing thread once, after the message
             // count increases past half available size.
-            const uint64_t queue_end = queue_front_index + queue.size();
-            requested_flush_up_to = std::max(requested_flush_up_to, queue_end);
-
+            const auto last_log_index = queue_front_index + queue.size();
+            requested_flush_index = std::max(requested_flush_index, last_log_index);
             flush_event.notify_all();
         }
 
@@ -127,20 +129,46 @@ template <typename LogElement>
 void SystemLogQueue<LogElement>::handleCrash()
 {
     if (settings.notify_flush_on_crash)
-        notifyFlush(/* force */ true);
+    {
+        notifyFlush(getLastLogIndex(), /* should_prepare_tables_anyway */ true);
+    }
 }
 
 template <typename LogElement>
-void SystemLogQueue<LogElement>::waitFlush(uint64_t expected_flushed_up_to)
+void SystemLogQueue<LogElement>::notifyFlush(SystemLogQueue<LogElement>::Index expected_flushed_index, bool should_prepare_tables_anyway)
 {
+    std::unique_lock lock(mutex);
+    // Publish our flush request, taking care not to overwrite the requests
+    // made by other threads.
+    force_prepare_tables_requested |= should_prepare_tables_anyway;
+    requested_flush_index = std::max(requested_flush_index, expected_flushed_index);
+    flush_event.notify_all();
+}
+
+template <typename LogElement>
+void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index expected_flushed_index, bool should_prepare_tables_anyway)
+{
+    LOG_DEBUG(log, "Requested flush up to offset {}", expected_flushed_index);
+
     // Use an arbitrary timeout to avoid endless waiting. 60s proved to be
     // too fast for our parallel functional tests, probably because they
     // heavily load the disk.
     const int timeout_seconds = 180;
+
     std::unique_lock lock(mutex);
-    bool result = flush_event.wait_for(lock, std::chrono::seconds(timeout_seconds), [&]
+
+    // there is no obligation to call notifyFlush before waitFlush, than we have to be sure that flush_event has been triggered
+    force_prepare_tables_requested |= should_prepare_tables_anyway;
+    if (requested_flush_index < expected_flushed_index)
     {
-        return flushed_up_to >= expected_flushed_up_to && !is_force_prepare_tables;
+        requested_flush_index = expected_flushed_index;
+        flush_event.notify_all();
+    }
+
+    auto result = confirm_event.wait_for(lock, std::chrono::seconds(timeout_seconds), [&]
+    {
+        const bool if_should_prepare_then_it_is_done = LOGICAL_IF_THEN(should_prepare_tables_anyway, prepare_tables_done);
+        return (flushed_index >= expected_flushed_index && if_should_prepare_then_it_is_done) || is_shutdown;
     });
 
     if (!result)
@@ -148,67 +176,54 @@ void SystemLogQueue<LogElement>::waitFlush(uint64_t expected_flushed_up_to)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded ({} s) while flushing system log '{}'.",
             toString(timeout_seconds), demangle(typeid(*this).name()));
     }
-}
 
-template <typename LogElement>
-uint64_t SystemLogQueue<LogElement>::notifyFlush(bool should_prepare_tables_anyway)
-{
-    uint64_t this_thread_requested_offset;
-
+    if (is_shutdown)
     {
-        std::lock_guard lock(mutex);
-        if (is_shutdown)
-            return uint64_t(-1);
-
-        this_thread_requested_offset = queue_front_index + queue.size();
-
-        // Publish our flush request, taking care not to overwrite the requests
-        // made by other threads.
-        is_force_prepare_tables |= should_prepare_tables_anyway;
-        requested_flush_up_to = std::max(requested_flush_up_to, this_thread_requested_offset);
-
-        flush_event.notify_all();
+        throw Exception(ErrorCodes::ABORTED, "Shutdown has been called while flushing system log '{}'. Aborting.",
+            demangle(typeid(*this).name()));
     }
-
-    LOG_DEBUG(log, "Requested flush up to offset {}", this_thread_requested_offset);
-    return this_thread_requested_offset;
 }
 
 template <typename LogElement>
-void SystemLogQueue<LogElement>::confirm(uint64_t to_flush_end)
+SystemLogQueue<LogElement>::Index SystemLogQueue<LogElement>::getLastLogIndex()
 {
     std::lock_guard lock(mutex);
-    flushed_up_to = to_flush_end;
-    is_force_prepare_tables = false;
-    flush_event.notify_all();
+    return queue_front_index + queue.size();
 }
 
 template <typename LogElement>
-typename SystemLogQueue<LogElement>::Index SystemLogQueue<LogElement>::pop(std::vector<LogElement> & output,
-                                                                           bool & should_prepare_tables_anyway,
-                                                                           bool & exit_this_thread)
+void SystemLogQueue<LogElement>::confirm(SystemLogQueue<LogElement>::Index last_flashed_index)
 {
-    /// Call dtors and deallocate strings without holding the global lock
-    output.resize(0);
+    std::lock_guard lock(mutex);
+    prepare_tables_done = true;
+    flushed_index = std::max(flushed_index, last_flashed_index);
+    confirm_event.notify_all();
+}
 
+template <typename LogElement>
+typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
+{
     std::unique_lock lock(mutex);
-    flush_event.wait_for(lock,
-        std::chrono::milliseconds(settings.flush_interval_milliseconds),
-        [&] ()
-        {
-            return requested_flush_up_to > flushed_up_to || is_shutdown || is_force_prepare_tables;
-        }
-    );
+
+    flush_event.wait_for(lock, std::chrono::milliseconds(settings.flush_interval_milliseconds), [&] ()
+    {
+        const bool if_prepare_requested_and_it_is_not_done = force_prepare_tables_requested && !prepare_tables_done;
+        return requested_flush_index > flushed_index || if_prepare_requested_and_it_is_not_done || is_shutdown;
+    });
+
+    if (is_shutdown)
+        return PopResult{.is_shutdown = true};
 
     queue_front_index += queue.size();
-    // Swap with existing array from previous flush, to save memory
-    // allocations.
-    queue.swap(output);
 
-    should_prepare_tables_anyway = is_force_prepare_tables;
+    PopResult result;
+    result.logs_index = queue_front_index;
+    result.logs_elemets.swap(queue);
 
-    exit_this_thread = is_shutdown;
-    return queue_front_index;
+    const bool if_prepare_requested_and_it_is_not_done = force_prepare_tables_requested && !prepare_tables_done;
+    result.create_table_force = if_prepare_requested_and_it_is_not_done;
+
+    return result;
 }
 
 template <typename LogElement>
@@ -229,13 +244,21 @@ SystemLogBase<LogElement>::SystemLogBase(
 }
 
 template <typename LogElement>
-void SystemLogBase<LogElement>::flush(bool force)
+SystemLogBase<LogElement>::Index SystemLogBase<LogElement>::getLastLogIndex()
 {
-    uint64_t this_thread_requested_offset = queue->notifyFlush(force);
-    if (this_thread_requested_offset == uint64_t(-1))
-        return;
+    return queue->getLastLogIndex();
+}
 
-    queue->waitFlush(this_thread_requested_offset);
+template <typename LogElement>
+void SystemLogBase<LogElement>::notifyFlush(Index expected_flushed_index)
+{
+    queue->notifyFlush(expected_flushed_index, /* should_prepare_tables_anyway */ true);
+}
+
+template <typename LogElement>
+void SystemLogBase<LogElement>::flush(Index expected_flushed_index)
+{
+    queue->waitFlush(expected_flushed_index, /* should_prepare_tables_anyway */ true);
 }
 
 template <typename LogElement>
@@ -257,9 +280,6 @@ void SystemLogBase<LogElement>::add(LogElement element)
     queue->push(std::move(element));
 }
 
-template <typename LogElement>
-void SystemLogBase<LogElement>::notifyFlush(bool force) { queue->notifyFlush(force); }
-
 #define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) template class SystemLogBase<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
 
@@ -267,3 +287,5 @@ SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_QUEUE)
 
 }
+
+#undef LOGICAL_IF_THEN
