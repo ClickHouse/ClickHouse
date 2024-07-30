@@ -13,7 +13,6 @@
 #include <chrono>
 #include <optional>
 #include <Interpreters/Cluster.h>
-#include "JobReplica.h"
 
 namespace Poco
 {
@@ -53,10 +52,6 @@ public:
     void onFinish() override;
 
 private:
-
-    // Helper methods for reconnection logic
-    bool reconnectAndResend(JobReplica & job, const Block & shard_block);
-
 
     void onCancel() override;
 
@@ -159,6 +154,9 @@ private:
     std::atomic<unsigned> finished_jobs_count{0};
 
     LoggerPtr log;
+
+    // Helper methods for reconnection logic
+    bool reconnectAndResend(JobReplica & job, const Block & shard_block);
 };
 
 }
