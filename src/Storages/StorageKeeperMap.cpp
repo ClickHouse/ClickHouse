@@ -35,6 +35,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
+#include "Common/ZooKeeper/ZooKeeperRetries.h"
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -120,7 +121,7 @@ public:
         : SinkToStorage(header), storage(storage_), context(std::move(context_))
     {
         auto primary_key = storage.getPrimaryKey();
-        assert(primary_key.size() == 1);
+        chassert(primary_key.size() == 1);
         primary_key_pos = getHeader().getPositionByName(primary_key[0]);
     }
 
@@ -171,76 +172,89 @@ public:
     template <bool for_update>
     void finalize(bool strict)
     {
-        auto zookeeper = storage.getClient();
+        const auto & settings = context->getSettingsRef();
 
-        auto keys_limit = storage.keysLimit();
+        ZooKeeperRetriesControl zk_retry{
+            getName(),
+            getLogger(getName()),
+            ZooKeeperRetriesInfo{
+                settings.insert_keeper_max_retries,
+                settings.insert_keeper_retry_initial_backoff_ms,
+                settings.insert_keeper_retry_max_backoff_ms},
+            context->getProcessListElement()};
 
-        size_t current_keys_num = 0;
-        size_t new_keys_num = 0;
-
-        // We use keys limit as a soft limit so we ignore some cases when it can be still exceeded
-        // (e.g if parallel insert queries are being run)
-        if (keys_limit != 0)
+        retries_ctl.retryLoop([&]()
         {
-            Coordination::Stat data_stat;
-            zookeeper->get(storage.dataPath(), &data_stat);
-            current_keys_num = data_stat.numChildren;
-        }
+            auto zookeeper = storage.getClient();
+            auto keys_limit = storage.keysLimit();
 
-        std::vector<std::string> key_paths;
-        key_paths.reserve(new_values.size());
-        for (const auto & [key, _] : new_values)
-            key_paths.push_back(storage.fullPathForKey(key));
+            size_t current_keys_num = 0;
+            size_t new_keys_num = 0;
 
-        zkutil::ZooKeeper::MultiExistsResponse results;
-
-        if constexpr (!for_update)
-        {
-            if (!strict)
-                results = zookeeper->exists(key_paths);
-        }
-
-        Coordination::Requests requests;
-        requests.reserve(key_paths.size());
-        for (size_t i = 0; i < key_paths.size(); ++i)
-        {
-            auto key = fs::path(key_paths[i]).filename();
-
-            if constexpr (for_update)
+            // We use keys limit as a soft limit so we ignore some cases when it can be still exceeded
+            // (e.g if parallel insert queries are being run)
+            if (keys_limit != 0)
             {
-                int32_t version = -1;
-                if (strict)
-                    version = versions.at(key);
-
-                requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], version));
+                Coordination::Stat data_stat;
+                zookeeper->get(storage.dataPath(), &data_stat);
+                current_keys_num = data_stat.numChildren;
             }
-            else
+
+            std::vector<std::string> key_paths;
+            key_paths.reserve(new_values.size());
+            for (const auto & [key, _] : new_values)
+                key_paths.push_back(storage.fullPathForKey(key));
+
+            zkutil::ZooKeeper::MultiExistsResponse results;
+
+            if constexpr (!for_update)
             {
-                if (!strict && results[i].error == Coordination::Error::ZOK)
+                if (!strict)
+                    results = zookeeper->exists(key_paths);
+            }
+
+            Coordination::Requests requests;
+            requests.reserve(key_paths.size());
+            for (size_t i = 0; i < key_paths.size(); ++i)
+            {
+                auto key = fs::path(key_paths[i]).filename();
+
+                if constexpr (for_update)
                 {
-                    requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], -1));
+                    int32_t version = -1;
+                    if (strict)
+                        version = versions.at(key);
+
+                    requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], version));
                 }
                 else
                 {
-                    requests.push_back(zkutil::makeCreateRequest(key_paths[i], new_values[key], zkutil::CreateMode::Persistent));
-                    ++new_keys_num;
+                    if (!strict && results[i].error == Coordination::Error::ZOK)
+                    {
+                        requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], -1));
+                    }
+                    else
+                    {
+                        requests.push_back(zkutil::makeCreateRequest(key_paths[i], new_values[key], zkutil::CreateMode::Persistent));
+                        ++new_keys_num;
+                    }
                 }
             }
-        }
 
-        if (new_keys_num != 0)
-        {
-            auto will_be = current_keys_num + new_keys_num;
-            if (keys_limit != 0 && will_be > keys_limit)
-                throw Exception(
-                    ErrorCodes::LIMIT_EXCEEDED,
-                    "Limit would be exceeded by inserting {} new key(s). Limit is {}, while the number of keys would be {}",
-                    new_keys_num,
-                    keys_limit,
-                    will_be);
-        }
+            if (new_keys_num != 0)
+            {
+                auto will_be = current_keys_num + new_keys_num;
+                if (keys_limit != 0 && will_be > keys_limit)
+                    throw Exception(
+                        ErrorCodes::LIMIT_EXCEEDED,
+                        "Limit would be exceeded by inserting {} new key(s). Limit is {}, while the number of keys would be {}",
+                        new_keys_num,
+                        keys_limit,
+                        will_be);
+            }
 
-        zookeeper->multi(requests, /* check_session_valid */ true);
+            zookeeper->multi(requests, /* check_session_valid */ true);
+        });
     }
 };
 
@@ -529,8 +543,8 @@ Pipe StorageKeeperMap::read(
         size_t num_keys = keys->size();
         size_t num_threads = std::min<size_t>(num_streams, keys->size());
 
-        assert(num_keys <= std::numeric_limits<uint32_t>::max());
-        assert(num_threads <= std::numeric_limits<uint32_t>::max());
+        chassert(num_keys <= std::numeric_limits<uint32_t>::max());
+        chassert(num_threads <= std::numeric_limits<uint32_t>::max());
 
         for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
         {
@@ -1160,7 +1174,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
     bool strict = local_context->getSettingsRef().keeper_map_strict_mode;
 
-    assert(commands.size() == 1);
+    chassert(commands.size() == 1);
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
@@ -1236,7 +1250,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
         return;
     }
 
-    assert(commands.front().type == MutationCommand::Type::UPDATE);
+    chassert(commands.front().type == MutationCommand::Type::UPDATE);
     if (commands.front().column_to_update_expression.contains(primary_key))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
 
