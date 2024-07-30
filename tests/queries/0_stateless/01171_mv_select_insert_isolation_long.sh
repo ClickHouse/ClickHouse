@@ -27,28 +27,30 @@ is_pid_exist()
     ps -p $pid > /dev/null
 }
 
-function run_until_deadline_and_at_least_times()
+function run_until_deadline_with_min_max_iterations()
 {
     set -e
 
     local deadline=$1; shift
     local min_iterations=$1; shift
+    local max_iterations=$1; shift
     local function_to_run=$1; shift
 
     local started_time
     started_time=$SECONDS
-    local i=0
+    local iteration=0
 
     while true
     do
-        $function_to_run $i "$@"
+        $function_to_run $iteration "$@"
 
         [[ $SECONDS -lt $deadline ]] || break
+        [[ $iteration -lt $max_iterations ]] || break
 
-        i=$(($i + 1))
+        iteration=$(($iteration + 1))
     done
 
-    [[ $i -gt $min_iterations ]] || echo "$i/$min_iterations : not enough iterations of $function_to_run has been made from $started_time until $deadline" >&2
+    [[ $iteration -gt $min_iterations ]] || echo "$iteration/$min_iterations : not enough iterations of $function_to_run has been made from $started_time until $deadline" >&2
 }
 
 function insert_commit_action()
@@ -163,17 +165,18 @@ START_TIME=$SECONDS
 STOP_TIME=$((START_TIME + MAIN_TIME_PART))
 SECOND_STOP_TIME=$((STOP_TIME + SECOND_TIME_PART))
 MIN_ITERATIONS=20
+MAX_ITERATIONS=200
 
-run_until_deadline_and_at_least_times $STOP_TIME $MIN_ITERATIONS insert_commit_action 1   & PID_1=$!
-run_until_deadline_and_at_least_times $STOP_TIME $MIN_ITERATIONS insert_commit_action 2   & PID_2=$!
-run_until_deadline_and_at_least_times $STOP_TIME $MIN_ITERATIONS insert_rollback_action 3 & PID_3=$!
+run_until_deadline_with_min_max_iterations $STOP_TIME $MIN_ITERATIONS $MAX_ITERATIONS insert_commit_action 1   & PID_1=$!
+run_until_deadline_with_min_max_iterations $STOP_TIME $MIN_ITERATIONS $MAX_ITERATIONS insert_commit_action 2   & PID_2=$!
+run_until_deadline_with_min_max_iterations $STOP_TIME $MIN_ITERATIONS $MAX_ITERATIONS insert_rollback_action 3 & PID_3=$!
 
-run_until_deadline_and_at_least_times $SECOND_STOP_TIME $MIN_ITERATIONS optimize_action      & PID_4=$!
-run_until_deadline_and_at_least_times $SECOND_STOP_TIME $MIN_ITERATIONS select_action        & PID_5=$!
-run_until_deadline_and_at_least_times $SECOND_STOP_TIME $MIN_ITERATIONS select_insert_action & PID_6=$!
+run_until_deadline_with_min_max_iterations $SECOND_STOP_TIME $MIN_ITERATIONS $MAX_ITERATIONS optimize_action      & PID_4=$!
+run_until_deadline_with_min_max_iterations $SECOND_STOP_TIME $MIN_ITERATIONS $MAX_ITERATIONS select_action        & PID_5=$!
+run_until_deadline_with_min_max_iterations $SECOND_STOP_TIME $MIN_ITERATIONS $MAX_ITERATIONS select_insert_action & PID_6=$!
 sleep 0.$RANDOM
-run_until_deadline_and_at_least_times $SECOND_STOP_TIME $MIN_ITERATIONS select_action        & PID_7=$!
-run_until_deadline_and_at_least_times $SECOND_STOP_TIME $MIN_ITERATIONS select_insert_action & PID_8=$!
+run_until_deadline_with_min_max_iterations $SECOND_STOP_TIME $MIN_ITERATIONS $MAX_ITERATIONS select_action        & PID_7=$!
+run_until_deadline_with_min_max_iterations $SECOND_STOP_TIME $MIN_ITERATIONS $MAX_ITERATIONS select_insert_action & PID_8=$!
 
 wait $PID_1 || echo "insert_commit_action has failed with status $?" 2>&1
 wait $PID_2 || echo "second insert_commit_action has failed with status $?" 2>&1
