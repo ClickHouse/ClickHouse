@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <memory>
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/Socket.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -1355,7 +1356,14 @@ void Connection::enableKeepAlive(const Poco::Timespan & interval)
     if (socket)
     {
         socket->setKeepAlive(true);
-        socket->setOption(SOL_SOCKET, SO_KEEPALIVE, interval.totalSeconds());
+        int idle = interval.totalSeconds(); // Keep-alive idle time
+        int interval_sec = 10;              // Interval between keep-alive probes (10 seconds as example)
+        int count = 5;                      // Number of probes before considering the connection dead
+
+        socket->setOption(SOL_SOCKET, SO_KEEPALIVE, 1);
+        socket->setOption(IPPROTO_TCP, TCP_KEEPIDLE, idle);
+        socket->setOption(IPPROTO_TCP, TCP_KEEPINTVL, interval_sec);
+        socket->setOption(IPPROTO_TCP, TCP_KEEPCNT, count);
     }
 }
 

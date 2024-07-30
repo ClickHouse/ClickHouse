@@ -63,9 +63,9 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
         throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
                             "Cannot get connection from ConnectionPoolWithFailover cause nested pools are empty");
 
-    TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message) -> TryResult
+    TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
     {
-        TryResult entry = tryGetEntry(pool, timeouts, fail_message, settings);
+        auto entry = tryGetEntry(pool, timeouts, fail_message, settings);
         if (!entry.entry.isNull())
         {
             entry.entry->setSocketTimeouts(timeouts.receive_timeout, timeouts.send_timeout);

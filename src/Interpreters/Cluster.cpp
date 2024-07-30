@@ -691,8 +691,8 @@ void Cluster::initMisc()
             auto entry = shard_info.pool->get(timeouts);
             if (!entry.isNull())
             {
-                entry->setSocketTimeouts(receive_timeout, send_timeout);
-                entry->enableKeepAlive(tcp_keep_alive_timeout);
+                entry->setSocketTimeouts(timeouts.receive_timeout, timeouts.send_timeout);
+                entry->enableKeepAlive(timeouts.tcp_keep_alive_timeout);
             }
         }
     }
