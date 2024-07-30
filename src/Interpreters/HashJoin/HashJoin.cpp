@@ -77,6 +77,44 @@ Int64 getCurrentQueryMemoryUsage()
     return 0;
 }
 
+Block filterColumnsPresentInSampleBlock(const Block & block, const Block & sample_block)
+{
+    Block filtered_block;
+    for (const auto & sample_column : sample_block.getColumnsWithTypeAndName())
+    {
+        ColumnWithTypeAndName column = block.getByName(sample_column.name);
+        filtered_block.insert(std::move(column));
+    }
+    return filtered_block;
+}
+
+Block materializeColumnsFromRightBlock(Block block, const Block & sample_block, const Names & right_key_names)
+{
+    for (const auto & sample_column : sample_block.getColumnsWithTypeAndName())
+    {
+        auto & column = block.getByName(sample_column.name);
+
+        /// There's no optimization for right side const columns. Remove constness if any.
+        column.column = recursiveRemoveSparse(column.column->convertToFullColumnIfConst());
+
+        if (column.column->lowCardinality() && !sample_column.column->lowCardinality())
+        {
+            column.column = column.column->convertToFullColumnIfLowCardinality();
+            column.type = removeLowCardinality(column.type);
+        }
+
+        if (sample_column.column->isNullable())
+            JoinCommon::convertColumnToNullable(column);
+    }
+
+    for (const auto & column_name : right_key_names)
+    {
+        auto & column = block.getByName(column_name).column;
+        column = recursiveRemoveSparse(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
+    }
+
+    return block;
+}
 }
 
 static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nullable)
@@ -411,29 +449,15 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
     }
 }
 
+Block HashJoin::materializeColumnsFromRightBlock(Block block) const
+{
+    return DB::materializeColumnsFromRightBlock(std::move(block), savedBlockSample(), table_join->getAllNames(JoinTableSide::Right));
+}
+
 Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block_sample_)
 {
-    Block structured_block;
-    for (const auto & sample_column : saved_block_sample_.getColumnsWithTypeAndName())
-    {
-        ColumnWithTypeAndName column = block.getByName(sample_column.name);
-
-        /// There's no optimization for right side const columns. Remove constness if any.
-        column.column = recursiveRemoveSparse(column.column->convertToFullColumnIfConst());
-
-        if (column.column->lowCardinality() && !sample_column.column->lowCardinality())
-        {
-            column.column = column.column->convertToFullColumnIfLowCardinality();
-            column.type = removeLowCardinality(column.type);
-        }
-
-        if (sample_column.column->isNullable())
-            JoinCommon::convertColumnToNullable(column);
-
-        structured_block.insert(std::move(column));
-    }
-
-    return structured_block;
+    Block structured_block = DB::materializeColumnsFromRightBlock(block, saved_block_sample_, {});
+    return filterColumnsPresentInSampleBlock(structured_block, saved_block_sample_);
 }
 
 Block HashJoin::prepareRightBlock(const Block & block) const

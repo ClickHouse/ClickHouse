@@ -518,6 +518,8 @@ public:
 
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
 
+    Block materializeColumnsFromRightBlock(Block block) const;
+
 private:
     friend class NotJoinedHash;
 
@@ -596,5 +598,4 @@ private:
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 };
-
 }
