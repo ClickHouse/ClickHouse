@@ -1,7 +1,7 @@
 #include <Interpreters/SystemLog.h>
 
 #include <base/scope_guard.h>
-#include "Common/SystemLogBase.h"
+#include <Common/SystemLogBase.h>
 #include <Common/logger_useful.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/quoteString.h>
