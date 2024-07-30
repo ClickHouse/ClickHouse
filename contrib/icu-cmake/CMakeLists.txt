@@ -4,15 +4,15 @@ else ()
     option(ENABLE_ICU "Enable ICU" 0)
 endif ()
 
-if (NOT ENABLE_ICU)
+# Temporarily disabled s390x because the ICU build links a blob (icudt71b_dat.S) and our friends from IBM did not explain how they generated
+# the blob on s390x: https://github.com/ClickHouse/icudata/pull/2#issuecomment-2226957255
+if (NOT ENABLE_ICU OR ARCH_S390X)
     message(STATUS "Not using ICU")
     return()
 endif()
 
 set(ICU_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/icu/icu4c/source")
 set(ICUDATA_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/icudata/")
-
-set (CMAKE_CXX_STANDARD 17)
 
 # These lists of sources were generated from build log of the original ICU build system (configure + make).
 
@@ -462,9 +462,9 @@ file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp" CONTENT " ")
 enable_language(ASM)
 
 if (ARCH_S390X)
-    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt70b_dat.S" )
+    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt75b_dat.S" )
 else()
-    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt70l_dat.S" )
+    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt75l_dat.S" )
 endif()
 
 set(ICUDATA_SOURCES
