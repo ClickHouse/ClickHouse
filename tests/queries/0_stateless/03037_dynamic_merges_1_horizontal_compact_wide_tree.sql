@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-tsan, no-msan, no-ubsan, no-asan
 set allow_experimental_dynamic_type=1;
 
 drop table if exists test;
