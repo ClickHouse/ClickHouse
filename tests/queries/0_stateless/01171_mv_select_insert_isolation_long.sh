@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-ordinary-database
-# Test is too heavy, avoid parallel run in Flaky Check
+# Tags: long, no-ordinary-database
 # shellcheck disable=SC2119
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -22,11 +21,6 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE tmp (x UInt32, nm Int32) ENGINE=MergeTr
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO src VALUES (0, 0)"
 
-function get_now()
-{
-    date +%s
-}
-
 is_pid_exist()
 {
     local pid=$1
@@ -42,14 +36,14 @@ function run_until_deadline_and_at_least_times()
     local function_to_run=$1; shift
 
     local started_time
-    started_time=$(get_now)
+    started_time=$SECONDS
     local i=0
 
     while true
     do
         $function_to_run $i "$@"
 
-        [[ $(get_now) -lt $deadline ]] || break
+        [[ $SECONDS -lt $deadline ]] || break
 
         i=$(($i + 1))
     done
@@ -165,7 +159,7 @@ if [[ $((MAIN_TIME_PART + SECOND_TIME_PART + WAIT_FINISH + LAST_TIME_GAP)) -ge  
     exit 1
 fi
 
-START_TIME=$(get_now)
+START_TIME=$SECONDS
 STOP_TIME=$((START_TIME + MAIN_TIME_PART))
 SECOND_STOP_TIME=$((STOP_TIME + SECOND_TIME_PART))
 MIN_ITERATIONS=20
