@@ -78,13 +78,13 @@ $CLICKHOUSE_CLIENT -nq "
 # Cancel.
 $CLICKHOUSE_CLIENT -nq "
     system cancel view f;"
-while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes where view = 'f' -- $LINENO" | xargs`" != 'Cancelled' ]
+while [ "`$CLICKHOUSE_CLIENT -nq "select status from refreshes where view = 'f' -- $LINENO" | xargs`" != 'Scheduled' ]
 do
     sleep 0.5
 done
 # Check that another refresh doesn't immediately start after the cancelled one.
 $CLICKHOUSE_CLIENT -nq "
-    select '<27: cancelled>', view, status from refreshes where view = 'f';
+    select '<27: cancelled>', view, status, last_refresh_result from refreshes where view = 'f';
     system refresh view f;"
 while [ "`$CLICKHOUSE_CLIENT -nq "select status from refreshes where view = 'f' -- $LINENO" | xargs`" != 'Running' ]
 do
