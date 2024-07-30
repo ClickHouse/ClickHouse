@@ -8,12 +8,12 @@
 #include <Common/PODArray.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadPool.h>
+#include <Interpreters/Cluster.h>
+#include <Core/Settings.h>
 #include <atomic>
 #include <memory>
 #include <chrono>
 #include <optional>
-#include <Interpreters/Cluster.h>
-#include <Core/Settings.h>
 
 namespace Poco
 {
@@ -114,6 +114,7 @@ private:
     std::optional<ThreadPool> pool;
     ThrottlerPtr throttler;
 
+    size_t max_retries; // Declare max_retries
     std::mutex execution_mutex;
 
     struct JobReplica

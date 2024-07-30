@@ -434,7 +434,7 @@ bool DistributedSink::reconnectAndResend(JobReplica & job, const Block & shard_b
 
     try
     {
-        job.connection_entry = cluster->getConnectionWithRetries(job.shard_index, job.replica_index, settings, settings.max_retries);
+        job.connection_entry = cluster->getConnectionWithRetries(job.shard_index, job.replica_index, settings, max_retries);
 
         if (throttler)
             job.connection_entry->setThrottler(throttler);
