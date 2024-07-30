@@ -17,7 +17,7 @@ SerializationPtr DataTypeDate::doGetDefaultSerialization() const
 
 void registerDataTypeDate(DataTypeFactory & factory)
 {
-    factory.registerSimpleDataType("Date", [] { return DataTypePtr(std::make_shared<DataTypeDate>()); }, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("Date", [] { return DataTypePtr(std::make_shared<DataTypeDate>()); }, DataTypeFactory::Case::Insensitive);
 }
 
 }

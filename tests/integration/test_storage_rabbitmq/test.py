@@ -2220,13 +2220,11 @@ def test_rabbitmq_commit_on_block_write(rabbitmq_cluster):
 
 
 def test_rabbitmq_no_connection_at_startup_1(rabbitmq_cluster):
-    # no connection when table is initialized
-    rabbitmq_cluster.pause_container("rabbitmq1")
-    instance.query_and_get_error(
+    error = instance.query_and_get_error(
         """
         CREATE TABLE test.cs (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+            SETTINGS rabbitmq_host_port = 'no_connection_at_startup:5672',
                      rabbitmq_exchange_name = 'cs',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_flush_interval_ms=1000,
@@ -2234,7 +2232,7 @@ def test_rabbitmq_no_connection_at_startup_1(rabbitmq_cluster):
                      rabbitmq_row_delimiter = '\\n';
     """
     )
-    rabbitmq_cluster.unpause_container("rabbitmq1")
+    assert "CANNOT_CONNECT_RABBITMQ" in error
 
 
 def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster):

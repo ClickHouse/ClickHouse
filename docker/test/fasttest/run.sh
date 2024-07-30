@@ -9,7 +9,7 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 
 # Compiler version, normally set by Dockerfile
-export LLVM_VERSION=${LLVM_VERSION:-17}
+export LLVM_VERSION=${LLVM_VERSION:-18}
 
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
@@ -261,9 +261,12 @@ function timeout_with_logging() {
 
     timeout -s TERM --preserve-status "${@}" || exit_code="${?}"
 
+    echo "Checking if it is a timeout. The code 124 will indicate a timeout."
     if [[ "${exit_code}" -eq "124" ]]
     then
-      echo "The command 'timeout ${*}' has been killed by timeout"
+        echo "The command 'timeout ${*}' has been killed by timeout."
+    else
+        echo "No, it isn't a timeout."
     fi
 
     return $exit_code

@@ -6,14 +6,17 @@
 #include <Common/ProgressIndication.h>
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
-#include <Common/QueryFuzzer.h>
 #include <Common/Stopwatch.h>
 #include <Common/DNSResolver.h>
 #include <Core/ExternalTable.h>
 #include <Core/Settings.h>
 #include <Poco/Util/Application.h>
+#include <Poco/ConsoleChannel.h>
+#include <Poco/SimpleFileChannel.h>
+#include <Poco/SplitterChannel.h>
 #include <Interpreters/Context.h>
 #include <Client/Suggest.h>
+#include <Client/QueryFuzzer.h>
 #include <boost/program_options.hpp>
 #include <Storages/StorageFile.h>
 #include <Storages/SelectQueryInfo.h>
@@ -153,8 +156,6 @@ protected:
 
     void setInsertionTable(const ASTInsertQuery & insert_query);
 
-    void addMultiquery(std::string_view query, Arguments & common_arguments) const;
-
 private:
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
@@ -203,6 +204,9 @@ protected:
     /// Adjust some settings after command line options and config had been processed.
     void adjustSettings();
 
+    /// Initializes the client context.
+    void initClientContext();
+
     void setDefaultFormatsAndCompressionFromConfiguration();
 
     void initTTYBuffer(ProgressOption progress);
@@ -212,8 +216,17 @@ protected:
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
 
+    /// Client context is a context used only by the client to parse queries, process query parameters and to connect to clickhouse-server.
+    ContextMutablePtr client_context;
+
+    LoggerPtr fatal_log;
+    Poco::AutoPtr<Poco::SplitterChannel> fatal_channel_ptr;
+    Poco::AutoPtr<Poco::Channel> fatal_console_channel_ptr;
+    Poco::AutoPtr<Poco::Channel> fatal_file_channel_ptr;
+    Poco::Thread signal_listener_thread;
+    std::unique_ptr<Poco::Runnable> signal_listener;
+
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
-    bool is_multiquery = false;
     bool delayed_interactive = false;
 
     bool echo_queries = false; /// Print queries before execution in batch mode.

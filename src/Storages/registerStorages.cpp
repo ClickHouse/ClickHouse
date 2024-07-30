@@ -26,7 +26,6 @@ void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
 void registerStorageLoop(StorageFactory & factory);
-void registerStorageFuzzQuery(StorageFactory & factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
 void registerStorageFuzzJSON(StorageFactory & factory);
 #endif
@@ -127,7 +126,6 @@ void registerStorages()
     registerStorageExecutable(factory);
     registerStorageWindowView(factory);
     registerStorageLoop(factory);
-    registerStorageFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerStorageFuzzJSON(factory);
 #endif
