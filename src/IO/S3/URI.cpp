@@ -55,10 +55,10 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     static constexpr auto OSS = "OSS";
     static constexpr auto EOS = "EOS";
 
-    if (!allow_archive_path_syntax)
-        uri_str = uri_;
-    else
+    if (allow_archive_path_syntax)
         std::tie(uri_str, archive_pattern) = getURIAndArchivePattern(uri_);
+    else
+        uri_str = uri_;
 
     uri = Poco::URI(uri_str);
 
@@ -176,22 +176,30 @@ std::pair<std::string, std::optional<std::string>> URI::getURIAndArchivePattern(
         return {source, std::nullopt};
 
     std::string_view path_to_archive_view = std::string_view{source}.substr(0, pos);
+    bool contains_spaces_around_operator = false;
     while (path_to_archive_view.ends_with(' '))
+    {
+        contains_spaces_around_operator = true;
         path_to_archive_view.remove_suffix(1);
-
-    if (path_to_archive_view.empty() || !hasSupportedArchiveExtension(path_to_archive_view))
-        return {source, std::nullopt};
-
-    auto archive_uri = path_to_archive_view;
+    }
 
     std::string_view archive_pattern_view = std::string_view{source}.substr(pos + 2);
-    while (archive_pattern_view.front() == ' ')
+    while (archive_pattern_view.starts_with(' '))
+    {
+        contains_spaces_around_operator = true;
         archive_pattern_view.remove_prefix(1);
+    }
 
-    if (archive_pattern_view.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Archive pattern is empty");
+    /// possible situations when the first part can be archive is only if one of the following is true:
+    /// - it contains supported extension
+    /// - it contains spaces after or before :: (URI cannot contain spaces)
+    /// - it contains characters that could mean glob expression
+    if (archive_pattern_view.empty() || path_to_archive_view.empty()
+        || (!contains_spaces_around_operator && !hasSupportedArchiveExtension(path_to_archive_view)
+            && path_to_archive_view.find_first_of("*?{") == std::string_view::npos))
+        return {source, std::nullopt};
 
-    return std::pair{std::string{archive_uri}, std::string{archive_pattern_view}};
+    return std::pair{std::string{path_to_archive_view}, std::string{archive_pattern_view}};
 }
 }
 

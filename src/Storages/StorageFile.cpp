@@ -2258,21 +2258,21 @@ void StorageFile::parseFileSource(String source, String & filename, String & pat
     while (path_to_archive_view.ends_with(' '))
         path_to_archive_view.remove_suffix(1);
 
-    if (path_to_archive_view.empty() || !hasSupportedArchiveExtension(path_to_archive_view))
+    std::string_view filename_view = std::string_view{source}.substr(pos + 2);
+    while (filename_view.starts_with(' '))
+        filename_view.remove_prefix(1);
+
+    /// possible situations when the first part can be archive is only if one of the following is true:
+    /// - it contains supported extension
+    /// - it contains characters that could mean glob expression
+    if (filename_view.empty() || path_to_archive_view.empty()
+        || (!hasSupportedArchiveExtension(path_to_archive_view) && path_to_archive_view.find_first_of("*?{") == std::string_view::npos))
     {
         filename = std::move(source);
         return;
     }
 
     path_to_archive = path_to_archive_view;
-
-    std::string_view filename_view = std::string_view{source}.substr(pos + 2);
-    while (filename_view.front() == ' ')
-        filename_view.remove_prefix(1);
-
-    if (filename_view.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filename is empty");
-
     filename = filename_view;
 }
 
