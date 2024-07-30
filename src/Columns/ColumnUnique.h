@@ -90,11 +90,7 @@ public:
         return getNestedColumn()->updateHashWithValue(n, hash_func);
     }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
-#else
-    int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
-#endif
 
     void getExtremes(Field & min, Field & max) const override { column_holder->getExtremes(min, max); }
     bool valuesHaveFixedSize() const override { return column_holder->valuesHaveFixedSize(); }
@@ -492,11 +488,7 @@ const char * ColumnUnique<ColumnType>::skipSerializedInArena(const char *) const
 }
 
 template <typename ColumnType>
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnUnique<ColumnType>::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
-#else
-int ColumnUnique<ColumnType>::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
-#endif
 {
     if (is_nullable)
     {

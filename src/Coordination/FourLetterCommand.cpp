@@ -1,6 +1,5 @@
 #include <Coordination/FourLetterCommand.h>
 
-#include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Server/KeeperTCPHandler.h>
 #include <Common/ZooKeeper/IKeeper.h>

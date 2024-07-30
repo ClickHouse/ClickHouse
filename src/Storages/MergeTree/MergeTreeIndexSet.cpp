@@ -44,12 +44,10 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     const String & index_name_,
     const Block & index_sample_block_,
     size_t max_rows_,
-    MutableColumns && mutable_columns_,
-    std::vector<Range> && set_hyperrectangle_)
+    MutableColumns && mutable_columns_)
     : index_name(index_name_)
     , max_rows(max_rows_)
     , block(index_sample_block_.cloneWithColumns(std::move(mutable_columns_)))
-    , set_hyperrectangle(std::move(set_hyperrectangle_))
 {
 }
 
@@ -108,10 +106,6 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
     settings.position_independent_encoding = false;
 
-    set_hyperrectangle.clear();
-    Field min_val;
-    Field max_val;
-
     for (size_t i = 0; i < num_columns; ++i)
     {
         auto & elem = block.getByPosition(i);
@@ -122,13 +116,6 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
 
         serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
         serialization->deserializeBinaryBulkWithMultipleStreams(elem.column, rows_to_read, settings, state, nullptr);
-
-        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(elem.column.get()))
-            column_nullable->getExtremesNullLast(min_val, max_val);
-        else
-            elem.column->getExtremes(min_val, max_val);
-
-        set_hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
 }
 
@@ -195,29 +182,10 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
 
     if (has_new_data)
     {
-        FieldRef field_min;
-        FieldRef field_max;
         for (size_t i = 0; i < columns.size(); ++i)
         {
             auto filtered_column = block.getByName(index_columns[i]).column->filter(filter, block.rows());
             columns[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
-
-            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(filtered_column.get()))
-                column_nullable->getExtremesNullLast(field_min, field_max);
-            else
-                filtered_column->getExtremes(field_min, field_max);
-
-            if (set_hyperrectangle.size() <= i)
-            {
-                set_hyperrectangle.emplace_back(field_min, true, field_max, true);
-            }
-            else
-            {
-                set_hyperrectangle[i].left
-                    = applyVisitor(FieldVisitorAccurateLess(), set_hyperrectangle[i].left, field_min) ? set_hyperrectangle[i].left : field_min;
-                set_hyperrectangle[i].right
-                    = applyVisitor(FieldVisitorAccurateLess(), set_hyperrectangle[i].right, field_max) ? field_max : set_hyperrectangle[i].right;
-            }
         }
     }
 
@@ -253,7 +221,7 @@ bool MergeTreeIndexAggregatorSet::buildFilter(
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
 {
-    auto granule = std::make_shared<MergeTreeIndexGranuleSet>(index_name, index_sample_block, max_rows, std::move(columns), std::move(set_hyperrectangle));
+    auto granule = std::make_shared<MergeTreeIndexGranuleSet>(index_name, index_sample_block, max_rows, std::move(columns));
 
     switch (data.type)
     {
@@ -272,22 +240,17 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
     return granule;
 }
 
-KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGPtr & filter_actions_dag, ContextPtr context)
-{
-    return KeyCondition{filter_actions_dag, context, index.column_names, index.expression};
-}
 
 MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
+    const String & index_name_,
+    const Block & index_sample_block,
     size_t max_rows_,
     const ActionsDAGPtr & filter_dag,
-    ContextPtr context,
-    const IndexDescription & index_description)
-    : index_name(index_description.name)
+    ContextPtr context)
+    : index_name(index_name_)
     , max_rows(max_rows_)
-    , index_data_types(index_description.data_types)
-    , condition(buildCondition(index_description, filter_dag, context))
 {
-    for (const auto & name : index_description.sample_block.getNames())
+    for (const auto & name : index_sample_block.getNames())
         if (!key_columns.contains(name))
             key_columns.insert(name);
 
@@ -329,9 +292,6 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     size_t size = granule.size();
     if (size == 0 || (max_rows != 0 && size > max_rows))
         return true;
-
-    if (!condition.checkInHyperrectangle(granule.set_hyperrectangle, index_data_types).can_be_true)
-        return false;
 
     Block result = granule.block;
     actions->execute(result);
@@ -586,7 +546,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator(const Merge
 MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
     const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionSet>(max_rows, filter_actions_dag, context, index);
+    return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, filter_actions_dag, context);
 }
 
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)

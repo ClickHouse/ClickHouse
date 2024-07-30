@@ -115,16 +115,6 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr conte
 #undef ADD_IF_ABSENT
 }
 
-bool MergeTreeSettings::isReadonlySetting(const String & name)
-{
-    return name == "index_granularity" || name == "index_granularity_bytes" || name == "enable_mixed_granularity_parts";
-}
-
-bool MergeTreeSettings::isPartFormatSetting(const String & name)
-{
-    return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part";
-}
-
 void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
 {
     if (number_of_free_entries_in_pool_to_execute_mutation > background_pool_tasks)

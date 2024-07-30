@@ -40,21 +40,7 @@ jobs:
             } >> "$GITHUB_OUTPUT"
   BuildDockers:
     needs: [RunConfig]
-    uses: ./.github/workflows/docker_test_images.yml
+    uses: ./.github/workflows/reusable_docker.yml
     with:
       data: "${{ needs.RunConfig.outputs.data }}"
       set_latest: true
-  CheckWorkflow:
-    if: ${{ !cancelled() }}
-    needs: [RunConfig, BuildDockers]
-    runs-on: [self-hosted, style-checker-aarch64]
-    steps:
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-      - name: Check Workflow results
-        run: |
-          export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
-          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          python3 ./tests/ci/ci_buddy.py --check-wf-status

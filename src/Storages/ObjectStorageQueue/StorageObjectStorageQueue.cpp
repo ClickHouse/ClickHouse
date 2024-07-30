@@ -454,13 +454,7 @@ bool StorageObjectStorageQueue::streamToViews()
 
     while (!shutdown_called && !file_iterator->isFinished())
     {
-        InterpreterInsertQuery interpreter(
-            insert,
-            queue_context,
-            /* allow_materialized */ false,
-            /* no_squash */ true,
-            /* no_destination */ true,
-            /* async_isnert */ false);
+        InterpreterInsertQuery interpreter(insert, queue_context, false, true, true);
         auto block_io = interpreter.execute();
         auto read_from_format_info = prepareReadingFromFormat(
             block_io.pipeline.getHeader().getNames(),

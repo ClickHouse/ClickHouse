@@ -53,8 +53,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
 
-#include <Core/Settings.h>
-
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -368,21 +366,12 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     }
     else if (path.find_first_of("*?{") == std::string::npos)
     {
-        if (!fs::is_directory(path))
-        {
-            std::error_code error;
-            size_t size = fs::file_size(path, error);
-            if (!error)
-                total_bytes_to_read += size;
+        std::error_code error;
+        size_t size = fs::file_size(path, error);
+        if (!error)
+            total_bytes_to_read += size;
 
-            paths.push_back(path);
-        }
-        else
-        {
-            /// We list non-directory files under that directory.
-            paths = listFilesWithRegexpMatching(path / fs::path("*"), total_bytes_to_read);
-            can_be_directory = false;
-        }
+        paths.push_back(path);
     }
     else
     {
@@ -1789,19 +1778,18 @@ public:
 
     String getName() const override { return "StorageFileSink"; }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
         std::lock_guard cancel_lock(cancel_mutex);
         if (cancelled)
             return;
-        writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
+        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     void onCancel() override
     {
         std::lock_guard cancel_lock(cancel_mutex);
-        cancelBuffers();
-        releaseBuffers();
+        finalize();
         cancelled = true;
     }
 
@@ -1815,18 +1803,18 @@ public:
         catch (...)
         {
             /// An exception context is needed to proper delete write buffers without finalization
-            releaseBuffers();
+            release();
         }
     }
 
     void onFinish() override
     {
         std::lock_guard cancel_lock(cancel_mutex);
-        finalizeBuffers();
+        finalize();
     }
 
 private:
-    void finalizeBuffers()
+    void finalize()
     {
         if (!writer)
             return;
@@ -1839,25 +1827,17 @@ private:
         catch (...)
         {
             /// Stop ParallelFormattingOutputFormat correctly.
-            releaseBuffers();
+            release();
             throw;
         }
 
         write_buf->finalize();
     }
 
-    void releaseBuffers()
+    void release()
     {
         writer.reset();
         write_buf.reset();
-    }
-
-    void cancelBuffers()
-    {
-        if (writer)
-            writer->cancel();
-        if (write_buf)
-            write_buf->cancel();
     }
 
     StorageMetadataPtr metadata_snapshot;

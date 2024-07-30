@@ -26,13 +26,7 @@ namespace DB
 struct SocketInterruptablePollWrapper;
 using SocketInterruptablePollWrapperPtr = std::unique_ptr<SocketInterruptablePollWrapper>;
 
-struct RequestWithResponse
-{
-    Coordination::ZooKeeperResponsePtr response;
-    Coordination::ZooKeeperRequestPtr request; /// it can be nullptr for some responses
-};
-
-using ThreadSafeResponseQueue = ConcurrentBoundedQueue<RequestWithResponse>;
+using ThreadSafeResponseQueue = ConcurrentBoundedQueue<Coordination::ZooKeeperResponsePtr>;
 using ThreadSafeResponseQueuePtr = std::shared_ptr<ThreadSafeResponseQueue>;
 
 struct LastOp;
@@ -110,7 +104,7 @@ private:
     void packageSent();
     void packageReceived();
 
-    void updateStats(Coordination::ZooKeeperResponsePtr & response, const Coordination::ZooKeeperRequestPtr & request);
+    void updateStats(Coordination::ZooKeeperResponsePtr & response);
 
     Poco::Timestamp established;
 

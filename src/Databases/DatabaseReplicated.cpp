@@ -13,8 +13,6 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/PoolId.h>
-#include <Core/ServerSettings.h>
-#include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseReplicatedWorker.h>
@@ -67,7 +65,6 @@ static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
 static constexpr const char * DROPPED_MARK = "DROPPED";
 static constexpr const char * BROKEN_TABLES_SUFFIX = "_broken_tables";
 static constexpr const char * BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
-static constexpr const char * FIRST_REPLICA_DATABASE_NAME = "first_replica_database_name";
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
@@ -468,13 +465,6 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
             return;
         }
 
-        /// If not exist, create a node with the database name for introspection.
-        /// Technically, the database may have different names on different replicas, but this is not a usual case and we only save the first one
-        auto db_name_path = fs::path(zookeeper_path) / FIRST_REPLICA_DATABASE_NAME;
-        auto error_code = current_zookeeper->trySet(db_name_path, getDatabaseName());
-        if (error_code == Coordination::Error::ZNONODE)
-            current_zookeeper->tryCreate(db_name_path, getDatabaseName(), zkutil::CreateMode::Persistent);
-
         is_readonly = false;
     }
     catch (...)
@@ -729,14 +719,81 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
 
         if (auto * create = query->as<ASTCreateQuery>())
         {
-            if (create->storage)
-                checkTableEngine(*create, *create->storage, query_context);
+            bool replicated_table = create->storage && create->storage->engine &&
+                (startsWith(create->storage->engine->name, "Replicated") || startsWith(create->storage->engine->name, "Shared"));
+            if (!replicated_table || !create->storage->engine->arguments)
+                return;
 
-            if (create->targets)
+            ASTs & args_ref = create->storage->engine->arguments->children;
+            ASTs args = args_ref;
+            if (args.size() < 2)
+                return;
+
+            /// It can be a constant expression. Try to evaluate it, ignore exception if we cannot.
+            bool has_expression_argument = args_ref[0]->as<ASTFunction>() || args_ref[1]->as<ASTFunction>();
+            if (has_expression_argument)
             {
-                for (const auto & inner_table_engine : create->targets->getInnerEngines())
-                    checkTableEngine(*create, *inner_table_engine, query_context);
+                try
+                {
+                    args[0] = evaluateConstantExpressionAsLiteral(args_ref[0]->clone(), query_context);
+                    args[1] = evaluateConstantExpressionAsLiteral(args_ref[1]->clone(), query_context);
+                }
+                catch (...) // NOLINT(bugprone-empty-catch)
+                {
+                }
             }
+
+            ASTLiteral * arg1 = args[0]->as<ASTLiteral>();
+            ASTLiteral * arg2 = args[1]->as<ASTLiteral>();
+            if (!arg1 || !arg2 || arg1->value.getType() != Field::Types::String || arg2->value.getType() != Field::Types::String)
+                return;
+
+            String maybe_path = arg1->value.get<String>();
+            String maybe_replica = arg2->value.get<String>();
+
+            /// Looks like it's ReplicatedMergeTree with explicit zookeeper_path and replica_name arguments.
+            /// Let's ensure that some macros are used.
+            /// NOTE: we cannot check here that substituted values will be actually different on shards and replicas.
+
+            Macros::MacroExpansionInfo info;
+            info.table_id = {getDatabaseName(), create->getTable(), create->uuid};
+            info.shard = getShardName();
+            info.replica = getReplicaName();
+            query_context->getMacros()->expand(maybe_path, info);
+            bool maybe_shard_macros = info.expanded_other;
+            info.expanded_other = false;
+            query_context->getMacros()->expand(maybe_replica, info);
+            bool maybe_replica_macros = info.expanded_other;
+            bool enable_functional_tests_helper = getContext()->getConfigRef().has("_functional_tests_helper_database_replicated_replace_args_macros");
+
+            if (!enable_functional_tests_helper)
+            {
+                if (query_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments)
+                    LOG_WARNING(log, "It's not recommended to explicitly specify zookeeper_path and replica_name in ReplicatedMergeTree arguments");
+                else
+                    throw Exception(ErrorCodes::INCORRECT_QUERY,
+                                    "It's not allowed to specify explicit zookeeper_path and replica_name "
+                                    "for ReplicatedMergeTree arguments in Replicated database. If you really want to "
+                                    "specify them explicitly, enable setting "
+                                    "database_replicated_allow_replicated_engine_arguments.");
+            }
+
+            if (maybe_shard_macros && maybe_replica_macros)
+                return;
+
+            if (enable_functional_tests_helper && !has_expression_argument)
+            {
+                if (maybe_path.empty() || maybe_path.back() != '/')
+                    maybe_path += '/';
+                args_ref[0]->as<ASTLiteral>()->value = maybe_path + "auto_{shard}";
+                args_ref[1]->as<ASTLiteral>()->value = maybe_replica + "auto_{replica}";
+                return;
+            }
+
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                            "Explicit zookeeper_path and replica_name are specified in ReplicatedMergeTree arguments. "
+                            "If you really want to specify it explicitly, then you should use some macros "
+                            "to distinguish different shards and replicas");
         }
     }
 
@@ -758,85 +815,6 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
                                                          "Use DETACH TABLE PERMANENTLY or SYSTEM RESTART REPLICA or set "
                                                          "database_replicated_always_detach_permanently to 1");
     }
-}
-
-void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStorage & storage, ContextPtr query_context) const
-{
-    bool replicated_table = storage.engine &&
-        (startsWith(storage.engine->name, "Replicated") || startsWith(storage.engine->name, "Shared"));
-    if (!replicated_table || !storage.engine->arguments)
-        return;
-
-    ASTs & args_ref = storage.engine->arguments->children;
-    ASTs args = args_ref;
-    if (args.size() < 2)
-        return;
-
-    /// It can be a constant expression. Try to evaluate it, ignore exception if we cannot.
-    bool has_expression_argument = args_ref[0]->as<ASTFunction>() || args_ref[1]->as<ASTFunction>();
-    if (has_expression_argument)
-    {
-        try
-        {
-            args[0] = evaluateConstantExpressionAsLiteral(args_ref[0]->clone(), query_context);
-            args[1] = evaluateConstantExpressionAsLiteral(args_ref[1]->clone(), query_context);
-        }
-        catch (...) // NOLINT(bugprone-empty-catch)
-        {
-        }
-    }
-
-    ASTLiteral * arg1 = args[0]->as<ASTLiteral>();
-    ASTLiteral * arg2 = args[1]->as<ASTLiteral>();
-    if (!arg1 || !arg2 || arg1->value.getType() != Field::Types::String || arg2->value.getType() != Field::Types::String)
-        return;
-
-    String maybe_path = arg1->value.get<String>();
-    String maybe_replica = arg2->value.get<String>();
-
-    /// Looks like it's ReplicatedMergeTree with explicit zookeeper_path and replica_name arguments.
-    /// Let's ensure that some macros are used.
-    /// NOTE: we cannot check here that substituted values will be actually different on shards and replicas.
-
-    Macros::MacroExpansionInfo info;
-    info.table_id = {getDatabaseName(), query.getTable(), query.uuid};
-    info.shard = getShardName();
-    info.replica = getReplicaName();
-    query_context->getMacros()->expand(maybe_path, info);
-    bool maybe_shard_macros = info.expanded_other;
-    info.expanded_other = false;
-    query_context->getMacros()->expand(maybe_replica, info);
-    bool maybe_replica_macros = info.expanded_other;
-    bool enable_functional_tests_helper = getContext()->getConfigRef().has("_functional_tests_helper_database_replicated_replace_args_macros");
-
-    if (!enable_functional_tests_helper)
-    {
-        if (query_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments)
-            LOG_WARNING(log, "It's not recommended to explicitly specify zookeeper_path and replica_name in ReplicatedMergeTree arguments");
-        else
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                            "It's not allowed to specify explicit zookeeper_path and replica_name "
-                            "for ReplicatedMergeTree arguments in Replicated database. If you really want to "
-                            "specify them explicitly, enable setting "
-                            "database_replicated_allow_replicated_engine_arguments.");
-    }
-
-    if (maybe_shard_macros && maybe_replica_macros)
-        return;
-
-    if (enable_functional_tests_helper && !has_expression_argument)
-    {
-        if (maybe_path.empty() || maybe_path.back() != '/')
-            maybe_path += '/';
-        args_ref[0]->as<ASTLiteral>()->value = maybe_path + "auto_{shard}";
-        args_ref[1]->as<ASTLiteral>()->value = maybe_replica + "auto_{replica}";
-        return;
-    }
-
-    throw Exception(ErrorCodes::INCORRECT_QUERY,
-                    "Explicit zookeeper_path and replica_name are specified in ReplicatedMergeTree arguments. "
-                    "If you really want to specify it explicitly, then you should use some macros "
-                    "to distinguish different shards and replicas");
 }
 
 BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags)
@@ -1324,9 +1302,11 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
     if (create.uuid == UUIDHelpers::Nil || create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create.database)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected query from {}: {}", node_name, query);
 
+    bool is_materialized_view_with_inner_table = create.is_materialized_view && create.to_table_id.empty();
+
     create.setDatabase(getDatabaseName());
     create.setTable(unescapeForFileName(node_name));
-    create.attach = create.is_materialized_view_with_inner_table();
+    create.attach = is_materialized_view_with_inner_table;
 
     return ast;
 }
@@ -1400,13 +1380,6 @@ void DatabaseReplicated::drop(ContextPtr context_)
         /// It was the last replica, remove all metadata
         current_zookeeper->tryRemoveRecursive(zookeeper_path);
     }
-}
-
-void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String & new_name)
-{
-    DatabaseAtomic::renameDatabase(query_context, new_name);
-    auto db_name_path = fs::path(zookeeper_path) / FIRST_REPLICA_DATABASE_NAME;
-    getZooKeeper()->set(db_name_path, getDatabaseName());
 }
 
 void DatabaseReplicated::stopReplication()

@@ -1,47 +1,34 @@
 #include <vector>
 #include <Interpreters/Squashing.h>
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
 #include <Common/CurrentThread.h>
-#include <base/defines.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
 
 Squashing::Squashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_)
-    : min_block_size_rows(min_block_size_rows_)
+    : header(header_)
+    , min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
-    , header(header_)
 {
 }
 
 Chunk Squashing::flush()
 {
-    if (!accumulated)
-        return {};
-
-    auto result = convertToChunk(extract());
-    chassert(result);
-    return result;
+    return convertToChunk(std::move(chunks_to_merge_vec));
 }
 
 Chunk Squashing::squash(Chunk && input_chunk)
 {
-    if (!input_chunk)
+    if (!input_chunk.hasChunkInfo())
         return Chunk();
 
-    auto squash_info = input_chunk.getChunkInfos().extract<ChunksToSquash>();
-
-    if (!squash_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no ChunksToSquash in ChunkInfoPtr");
-
-    return squash(std::move(squash_info->chunks), std::move(input_chunk.getChunkInfos()));
+    const auto *info = getInfoFromChunk(input_chunk);
+    return squash(info->chunks);
 }
 
 Chunk Squashing::add(Chunk && input_chunk)
@@ -50,62 +37,67 @@ Chunk Squashing::add(Chunk && input_chunk)
         return {};
 
     /// Just read block is already enough.
-    if (isEnoughSize(input_chunk))
+    if (isEnoughSize(input_chunk.getNumRows(), input_chunk.bytes()))
     {
         /// If no accumulated data, return just read block.
-        if (!accumulated)
+        if (chunks_to_merge_vec.empty())
         {
-            accumulated.add(std::move(input_chunk));
-            return convertToChunk(extract());
+            chunks_to_merge_vec.push_back(std::move(input_chunk));
+            Chunk res_chunk = convertToChunk(std::move(chunks_to_merge_vec));
+            chunks_to_merge_vec.clear();
+            return res_chunk;
         }
 
         /// Return accumulated data (maybe it has small size) and place new block to accumulated data.
-        Chunk res_chunk = convertToChunk(extract());
-        accumulated.add(std::move(input_chunk));
+        Chunk res_chunk = convertToChunk(std::move(chunks_to_merge_vec));
+        chunks_to_merge_vec.clear();
+        changeCurrentSize(input_chunk.getNumRows(), input_chunk.bytes());
+        chunks_to_merge_vec.push_back(std::move(input_chunk));
         return res_chunk;
     }
 
     /// Accumulated block is already enough.
-    if (isEnoughSize())
+    if (isEnoughSize(accumulated_size.rows, accumulated_size.bytes))
     {
         /// Return accumulated data and place new block to accumulated data.
-        Chunk res_chunk = convertToChunk(extract());
-        accumulated.add(std::move(input_chunk));
+        Chunk res_chunk = convertToChunk(std::move(chunks_to_merge_vec));
+        chunks_to_merge_vec.clear();
+        changeCurrentSize(input_chunk.getNumRows(), input_chunk.bytes());
+        chunks_to_merge_vec.push_back(std::move(input_chunk));
         return res_chunk;
     }
 
     /// Pushing data into accumulating vector
-    accumulated.add(std::move(input_chunk));
+    expandCurrentSize(input_chunk.getNumRows(), input_chunk.bytes());
+    chunks_to_merge_vec.push_back(std::move(input_chunk));
 
     /// If accumulated data is big enough, we send it
-    if (isEnoughSize())
-        return convertToChunk(extract());
-
+    if (isEnoughSize(accumulated_size.rows, accumulated_size.bytes))
+    {
+        Chunk res_chunk = convertToChunk(std::move(chunks_to_merge_vec));
+        changeCurrentSize(0, 0);
+        chunks_to_merge_vec.clear();
+        return res_chunk;
+    }
     return {};
 }
 
-Chunk Squashing::convertToChunk(CurrentData && data) const
+Chunk Squashing::convertToChunk(std::vector<Chunk> && chunks) const
 {
-    if (data.chunks.empty())
+    if (chunks.empty())
         return {};
 
     auto info = std::make_shared<ChunksToSquash>();
-    info->chunks = std::move(data.chunks);
+    info->chunks = std::move(chunks);
 
-    // It is imortant that chunk is not empty, it has to have columns even if they are empty
-    // Sometimes there are could be no columns in header but not empty rows in chunks
-    // That happens when we intend to add defaults for the missing columns after
-    auto aggr_chunk = Chunk(header.getColumns(), 0);
-    if (header.columns() == 0)
-        aggr_chunk = Chunk(header.getColumns(), data.getRows());
+    chunks.clear();
 
-    aggr_chunk.getChunkInfos().add(std::move(info));
-    chassert(aggr_chunk);
-    return aggr_chunk;
+    return Chunk(header.cloneEmptyColumns(), 0, info);
 }
 
-Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoCollection && infos)
+Chunk Squashing::squash(std::vector<Chunk> & input_chunks)
 {
+    Chunk accumulated_chunk;
     std::vector<IColumn::MutablePtr> mutable_columns = {};
     size_t rows = 0;
     for (const Chunk & chunk : input_chunks)
@@ -127,17 +119,35 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
         for (size_t j = 0, size = mutable_columns.size(); j < size; ++j)
         {
             const auto source_column = columns[j];
+
             mutable_columns[j]->insertRangeFrom(*source_column, 0, source_column->size());
         }
     }
+    accumulated_chunk.setColumns(std::move(mutable_columns), rows);
+    return accumulated_chunk;
+}
 
-    Chunk result;
-    result.setColumns(std::move(mutable_columns), rows);
-    result.setChunkInfos(infos);
-    result.getChunkInfos().appendIfUniq(std::move(input_chunks.back().getChunkInfos()));
+const ChunksToSquash* Squashing::getInfoFromChunk(const Chunk & chunk)
+{
+    const auto& info = chunk.getChunkInfo();
+    const auto * agg_info = typeid_cast<const ChunksToSquash *>(info.get());
 
-    chassert(result);
-    return result;
+    if (!agg_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no ChunksToSquash in ChunkInfoPtr");
+
+    return agg_info;
+}
+
+void Squashing::expandCurrentSize(size_t rows, size_t bytes)
+{
+    accumulated_size.rows += rows;
+    accumulated_size.bytes += bytes;
+}
+
+void Squashing::changeCurrentSize(size_t rows, size_t bytes)
+{
+    accumulated_size.rows = rows;
+    accumulated_size.bytes = bytes;
 }
 
 bool Squashing::isEnoughSize(size_t rows, size_t bytes) const
@@ -146,29 +156,4 @@ bool Squashing::isEnoughSize(size_t rows, size_t bytes) const
         || (min_block_size_rows && rows >= min_block_size_rows)
         || (min_block_size_bytes && bytes >= min_block_size_bytes);
 }
-
-bool Squashing::isEnoughSize() const
-{
-    return isEnoughSize(accumulated.getRows(), accumulated.getBytes());
-};
-
-bool Squashing::isEnoughSize(const Chunk & chunk) const
-{
-    return isEnoughSize(chunk.getNumRows(), chunk.bytes());
-}
-
-void Squashing::CurrentData::add(Chunk && chunk)
-{
-    rows += chunk.getNumRows();
-    bytes += chunk.bytes();
-    chunks.push_back(std::move(chunk));
-}
-
-Squashing::CurrentData Squashing::extract()
-{
-    auto result = std::move(accumulated);
-    accumulated = {};
-    return result;
-}
-
 }

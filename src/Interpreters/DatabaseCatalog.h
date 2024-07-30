@@ -225,7 +225,7 @@ public:
     String getPathForDroppedMetadata(const StorageID & table_id) const;
     String getPathForMetadata(const StorageID & table_id) const;
     void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false);
-    void undropTable(StorageID table_id);
+    void dequeueDroppedTableCleanup(StorageID table_id);
 
     void waitTableFinallyDropped(const UUID & uuid);
 
@@ -296,12 +296,6 @@ private:
     void dropTableDataTask();
     void dropTableFinally(const TableMarkedAsDropped & table);
 
-    time_t getMinDropTime() TSA_REQUIRES(tables_marked_dropped_mutex);
-    std::tuple<size_t, size_t> getDroppedTablesCountAndInuseCount();
-    std::vector<TablesMarkedAsDropped::iterator> getTablesToDrop();
-    void dropTablesParallel(std::vector<TablesMarkedAsDropped::iterator> tables);
-    void rescheduleDropTableTask();
-
     void cleanupStoreDirectoryTask();
     bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
 
@@ -368,9 +362,6 @@ private:
 
     static constexpr time_t default_drop_error_cooldown_sec = 5;
     time_t drop_error_cooldown_sec = default_drop_error_cooldown_sec;
-
-    static constexpr size_t default_drop_table_concurrency = 10;
-    size_t drop_table_concurrency = default_drop_table_concurrency;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> reload_disks_task;
     std::mutex reload_disks_mutex;

@@ -48,6 +48,10 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           echo "Testing the main ci directory"
           python3 -m unittest discover -s . -p 'test_*.py'
+          for dir in *_lambda/; do
+            echo "Testing $dir"
+            python3 -m unittest discover -s "$dir" -p 'test_*.py'
+          done
       - name: PrepareRunConfig
         id: runconfig
         run: |
@@ -68,7 +72,7 @@ jobs:
   BuildDockers:
     needs: [RunConfig]
     if: ${{ !failure() && !cancelled() && toJson(fromJson(needs.RunConfig.outputs.data).docker_data.missing_multi) != '[]' }}
-    uses: ./.github/workflows/docker_test_images.yml
+    uses: ./.github/workflows/reusable_docker.yml
     with:
       data: ${{ needs.RunConfig.outputs.data }}
   StyleCheck:
@@ -151,10 +155,9 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
 
   CheckReadyForMerge:
-    if: ${{ !cancelled() }}
-    # Test_2 or Test_3 do not have the jobs required for Mergeable check,
-    #  however, set them as "needs" to get all checks results before the automatic merge occurs.
-    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2, Tests_3]
+    if: ${{ !cancelled() && needs.StyleCheck.result == 'success' }}
+    # Test_2 or Test_3 must not have jobs required for Mergeable check
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code
@@ -162,22 +165,14 @@ jobs:
         with:
           filter: tree:0
       - name: Check and set merge status
-        if: ${{ needs.StyleCheck.result == 'success' }}
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 merge_pr.py --set-ci-status --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
-      - name: Check Workflow results
-        run: |
-          export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
-          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          python3 ./tests/ci/ci_buddy.py --check-wf-status
 
   ################################# Stage Final #################################
   #
   FinishCheck:
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ !cancelled() }}
     needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2, Tests_3]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:

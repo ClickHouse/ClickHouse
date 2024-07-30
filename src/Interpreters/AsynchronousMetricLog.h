@@ -8,6 +8,8 @@
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
 
+#include <vector>
+#include <atomic>
 #include <ctime>
 
 
