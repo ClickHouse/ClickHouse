@@ -829,7 +829,8 @@ public:
     void setMacros(std::unique_ptr<Macros> && macros);
 
     bool displaySecretsInShowAndSelect() const;
-    Settings getSettings() const;
+    Settings getSettingsCopy() const;
+    const Settings & getSettingsRef() const { return *settings; }
     void setSettings(const Settings & settings_);
 
     /// Set settings by name.
@@ -953,8 +954,6 @@ public:
     void makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings);
     void makeSessionContext();
     void makeGlobalContext();
-
-    const Settings & getSettingsRef() const { return *settings; }
 
     void setProgressCallback(ProgressCallback callback);
     /// Used in executeQuery() to pass it to the QueryPipeline.
