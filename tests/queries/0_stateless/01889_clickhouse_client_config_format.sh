@@ -15,6 +15,8 @@ yaml_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.yaml
 autodetect_xml_with_leading_whitespace_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.config
 autodetect_xml_non_leading_whitespace_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.cfg
 autodetect_yaml_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.properties
+autodetect_invalid_xml_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.badxml
+autodetect_invalid_yaml_config=$CLICKHOUSE_TMP/config_$CLICKHOUSE_DATABASE.badyaml
 
 function cleanup()
 {
@@ -27,6 +29,8 @@ function cleanup()
     rm "${autodetect_xml_with_leading_whitespace_config:?}"
     rm "${autodetect_xml_non_leading_whitespace_config:?}"
     rm "${autodetect_yaml_config:?}"
+    rm "${autodetect_invalid_xml_config:?}"
+    rm "${autodetect_invalid_yaml_config:?}"
 }
 trap cleanup EXIT
 
@@ -70,6 +74,15 @@ EOL
 cat > "$autodetect_yaml_config" <<EOL
 max_threads: 2
 EOL
+cat > "$autodetect_invalid_xml_config" <<EOL
+<!-- This is a XML file comment -->
+<invalid tag><invalid tag>
+EOL
+cat > "$autodetect_invalid_yaml_config" <<EOL
+; This is a INI file comment
+max_threads: 2
+EOL
+
 
 echo 'default'
 $CLICKHOUSE_CLIENT --config "$config" -q "select getSetting('max_threads')"
@@ -95,3 +108,7 @@ echo 'autodetect xml (non leading whitespaces)'
 $CLICKHOUSE_CLIENT --config "$autodetect_xml_non_leading_whitespace_config" -q "select getSetting('max_threads')"
 echo 'autodetect yaml'
 $CLICKHOUSE_CLIENT --config "$autodetect_yaml_config" -q "select getSetting('max_threads')"
+echo 'autodetect invalid xml'
+$CLICKHOUSE_CLIENT --config "$autodetect_invalid_xml_config" -q "select getSetting('max_threads')" 2>&1 |& sed -n '1p' | sed -e "s#$CLICKHOUSE_TMP##" -e "s#Poco::Exception. ##"
+echo 'autodetect invalid yaml'
+$CLICKHOUSE_CLIENT --config "$autodetect_invalid_yaml_config" -q "select getSetting('max_threads')" 2>&1 |& sed -n '1p' | sed -e "s#$CLICKHOUSE_TMP##" -e "s#DB::Exception: ##"

@@ -18,3 +18,7 @@ autodetect xml (non leading whitespaces)
 2
 autodetect yaml
 2
+autodetect invalid xml
+Code: 1000, e.code() = 0, SAXParseException: Invalid token in '/config_test.badxml', line 2 column 12, Stack trace (when copying this message, always include the lines below):
+autodetect invalid yaml
+Code: 585. Unable to parse YAML configuration file /config_test.badyaml, yaml-cpp: error at line 2, column 12: illegal map value. (CANNOT_PARSE_YAML)

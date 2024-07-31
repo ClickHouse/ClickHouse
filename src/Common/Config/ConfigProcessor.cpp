@@ -654,22 +654,19 @@ XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path)
             while (std::getline(file, line))
             {
                 const size_t pos = firstNonWhitespacePos(line);
-                if (pos == std::string::npos)
-                    continue;
 
                 if (pos < line.size() && '<' == line[pos])
                 {
                     maybe_xml = true;
+                    break;
                 }
-
-                break;
+                else if (pos != std::string::npos)
+                    break;
             }
         }
-
         if (maybe_xml)
             return dom_parser.parse(config_path);
-        else
-            return YAMLParser::parse(config_path);
+        return YAMLParser::parse(config_path);
     }
 }
 
