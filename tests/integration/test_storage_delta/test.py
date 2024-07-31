@@ -28,7 +28,7 @@ from pyspark.sql.functions import monotonically_increasing_id, row_number
 from pyspark.sql.window import Window
 from minio.deleteobjects import DeleteObject
 
-from helpers.s3_tools import (
+from helpers.cloud_tools import (
     prepare_s3_bucket,
     upload_directory,
     get_file_contents,

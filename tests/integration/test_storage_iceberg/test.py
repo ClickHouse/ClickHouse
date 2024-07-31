@@ -12,6 +12,14 @@ import glob
 import uuid
 import os
 
+import tempfile
+
+import io
+import avro.schema
+import avro.io
+import avro.datafile
+import pandas as pd
+
 from pyspark.sql.types import (
     StructType,
     StructField,
@@ -29,11 +37,13 @@ from pyspark.sql.window import Window
 from pyspark.sql.readwriter import DataFrameWriter, DataFrameWriterV2
 from minio.deleteobjects import DeleteObject
 
-from helpers.s3_tools import (
+from helpers.cloud_tools import (
     prepare_s3_bucket,
-    upload_directory,
     get_file_contents,
     list_s3_objects,
+    S3Uploader,
+    AzureUploader,
+    LocalUploader,
 )
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -67,6 +77,7 @@ def started_cluster():
             main_configs=["configs/config.d/named_collections.xml"],
             user_configs=["configs/users.d/users.xml"],
             with_minio=True,
+            with_azurite=True,
             stay_alive=True,
         )
 
@@ -77,6 +88,15 @@ def started_cluster():
         logging.info("S3 bucket created")
 
         cluster.spark_session = get_spark()
+        cluster.default_s3_uploader = S3Uploader(
+            cluster.minio_client, cluster.minio_bucket
+        )
+
+        container_name = "my_container"
+
+        cluster.default_azurite_uploader = AzureUploader(
+            cluster.blob_service_client, container_name
+        )
 
         yield cluster
 
@@ -142,13 +162,25 @@ def generate_data(spark, start, end):
     return df
 
 
-def create_iceberg_table(node, table_name, format="Parquet", bucket="root"):
-    node.query(
-        f"""
-        DROP TABLE IF EXISTS {table_name};
-        CREATE TABLE {table_name}
-        ENGINE=Iceberg(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
-    )
+def create_iceberg_table(storage_type, node, table_name, format="Parquet", **kwargs):
+    if storage_type == "local":
+        pass
+    elif storage_type == "s3":
+        node.query(
+            f"""
+            DROP TABLE IF EXISTS {table_name};
+            CREATE TABLE {table_name}
+            ENGINE=IcebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
+        )
+    elif storage_type == "azure":
+        node.query(
+            f"""
+            DROP TABLE IF EXISTS {table_name};
+            CREATE TABLE {table_name}
+            ENGINE=IcebergAzure(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
+        )
+    else:
+        raise Exception("Unknown iceberg storage type: {}", storage_type)
 
 
 def create_initial_data_file(
@@ -170,31 +202,133 @@ def create_initial_data_file(
     return result_path
 
 
+def default_upload_directory(started_cluster, storage_type, local_path, remote_path):
+    if storage_type == "local":
+        return LocalUploader().upload_directory(local_path, remote_path)
+    elif storage_type == "s3":
+        return started_cluster.default_s3_uploader.upload_directory(
+            local_path, remote_path
+        )
+    elif storage_type == "azure":
+        return started_cluster.default_azure_uploader.upload_directory(
+            local_path, remote_path
+        )
+    else:
+        raise Exception("Unknown iceberg storage type: {}", storage_type)
+
+
 @pytest.mark.parametrize("format_version", ["1", "2"])
-def test_single_iceberg_file(started_cluster, format_version):
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_single_iceberg_file(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
     TABLE_NAME = "test_single_iceberg_file_" + format_version
 
-    inserted_data = "SELECT number, toString(number) as string FROM numbers(100)"
-    parquet_data_path = create_initial_data_file(
-        started_cluster, instance, inserted_data, TABLE_NAME
+    write_iceberg_from_df(spark, generate_data(spark, 0, 100), TABLE_NAME)
+
+    files = default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        "",
     )
 
-    write_iceberg_from_file(
-        spark, parquet_data_path, TABLE_NAME, format_version=format_version
-    )
+    # for bucket in minio_client.list_buckets():
+    #     for object in minio_client.list_objects(bucket.name, recursive=True):
+    #         print("Object: ", object.object_name)
+    #         extension = object.object_name.split(".")[-1]
+    #         print("File extension: ", extension)
+    #         try:
+    #             response = minio_client.get_object(
+    #                 object.bucket_name, object.object_name
+    #             )
 
-    files = upload_directory(
-        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
-    )
+    #             if extension == "avro":
+    #                 avro_bytes = response.read()
+
+    #                 # Use BytesIO to create a file-like object from the byte string
+    #                 avro_file = io.BytesIO(avro_bytes)
+
+    #                 # Read the Avro data
+    #                 reader = avro.datafile.DataFileReader(
+    #                     avro_file, avro.io.DatumReader()
+    #                 )
+    #                 records = [record for record in reader]
+
+    #                 # Close the reader
+    #                 reader.close()
+
+    #                 # Now you can work with the records
+    #                 for record in records:
+    #                     # print(json.dumps(record, indent=4, sort_keys=True))
+    #                     print(str(record))
+    #                     # my_json = (
+    #                     #     str(record)
+    #                     #     .replace("'", '"')
+    #                     #     .replace("None", "null")
+    #                     #     .replace('b"', '"')
+    #                     # )
+    #                     # print(my_json)
+    #                     # data = json.loads(my_json)
+    #                     # s = json.dumps(data, indent=4, sort_keys=True)
+    #                     # print(s)
+    #             elif extension == "json":
+    #                 my_bytes_value = response.read()
+    #                 my_json = my_bytes_value.decode("utf8").replace("'", '"')
+    #                 data = json.loads(my_json)
+    #                 s = json.dumps(data, indent=4, sort_keys=True)
+    #                 print(s)
+    #             elif extension == "parquet":
+    #                 # print("To be continued...")
+    #                 # # Your byte string containing the Parquet data
+    #                 # parquet_bytes = response.read()
+
+    #                 # # Use BytesIO to create a file-like object from the byte string
+    #                 # parquet_file = io.BytesIO(parquet_bytes)
+
+    #                 # # Read the Parquet data into a PyArrow Table
+    #                 # table = pq.read_table(parquet_file)
+
+    #                 # # Convert the PyArrow Table to a Pandas DataFrame
+    #                 # df = table.to_pandas()
+
+    #                 # # Now you can work with s DataFrame
+    #                 # print(df)
+    #                 parquet_bytes = (
+    #                     response.read()
+    #                 )  # Replace with your actual byte string
+
+    #                 # Create a temporary file and write the byte string to it
+    #                 with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+    #                     tmp_file.write(parquet_bytes)
+    #                     tmp_file_path = tmp_file.name
+
+    #                 # Read the Parquet file using PySpark
+    #                 df = spark.read.parquet(tmp_file_path)
+
+    #                 # Show the DataFrame
+    #                 print(df.toPandas())
+    #             else:
+    #                 print(response.read())
+
+    #         finally:
+    #             print("----------------")
+    #             response.close()
+    #             response.release_conn()
 
     create_iceberg_table(instance, TABLE_NAME)
+
+    # print("Debug Print")
+
+    # print(instance.query(f"SELECT * FROM {TABLE_NAME}"))
+
+    # print(instance.query("SELECT number FROM numbers(100)"))
+
     assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
-        inserted_data
+        "SELECT number, toString(number + 1) FROM numbers(100)"
     )
+
+    # assert 0 == 1
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
@@ -215,7 +349,7 @@ def test_partition_by(started_cluster, format_version):
     )
 
     files = upload_directory(
-        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+        S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}/", ""
     )
     assert len(files) == 14  # 10 partitiions + 4 metadata files
 
@@ -240,7 +374,7 @@ def test_multiple_iceberg_files(started_cluster, format_version):
     )
 
     files = upload_directory(
-        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}", ""
+        S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}", ""
     )
     # ['/iceberg_data/default/test_multiple_iceberg_files/data/00000-1-35302d56-f1ed-494e-a85b-fbf85c05ab39-00001.parquet',
     # '/iceberg_data/default/test_multiple_iceberg_files/metadata/version-hint.text',
@@ -260,7 +394,7 @@ def test_multiple_iceberg_files(started_cluster, format_version):
         format_version=format_version,
     )
     files = upload_directory(
-        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}", ""
+        S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}", ""
     )
     assert len(files) == 9
 
@@ -302,7 +436,9 @@ def test_types(started_cluster, format_version):
         spark, df, TABLE_NAME, mode="overwrite", format_version=format_version
     )
 
-    upload_directory(minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}", "")
+    upload_directory(
+        S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}", ""
+    )
 
     create_iceberg_table(instance, TABLE_NAME)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 1
@@ -345,7 +481,7 @@ def test_delete_files(started_cluster, format_version):
     )
 
     files = upload_directory(
-        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+        S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}/", ""
     )
 
     create_iceberg_table(instance, TABLE_NAME)
@@ -354,7 +490,7 @@ def test_delete_files(started_cluster, format_version):
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE a >= 0")
     files = upload_directory(
-        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+        S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}/", ""
     )
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 0
@@ -369,14 +505,14 @@ def test_delete_files(started_cluster, format_version):
     )
 
     files = upload_directory(
-        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+        S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}/", ""
     )
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE a >= 150")
     files = upload_directory(
-        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+        S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}/", ""
     )
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 50
@@ -399,7 +535,7 @@ def test_evolved_schema(started_cluster, format_version):
     )
 
     files = upload_directory(
-        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+        S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}/", ""
     )
 
     create_iceberg_table(instance, TABLE_NAME)
@@ -410,7 +546,7 @@ def test_evolved_schema(started_cluster, format_version):
 
     spark.sql(f"ALTER TABLE {TABLE_NAME} ADD COLUMNS (x bigint)")
     files = upload_directory(
-        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+        S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}/", ""
     )
 
     error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME}")
@@ -437,7 +573,7 @@ def test_row_based_deletes(started_cluster):
     )
 
     files = upload_directory(
-        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+        S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}/", ""
     )
 
     create_iceberg_table(instance, TABLE_NAME)
@@ -446,7 +582,7 @@ def test_row_based_deletes(started_cluster):
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 10")
     files = upload_directory(
-        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+        S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}/", ""
     )
 
     error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME}")
@@ -472,7 +608,7 @@ def test_schema_inference(started_cluster, format_version):
         )
 
         files = upload_directory(
-            minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+            S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}/", ""
         )
 
         create_iceberg_table(instance, TABLE_NAME, format)
@@ -527,7 +663,7 @@ def test_metadata_file_selection(started_cluster, format_version):
         )
 
     files = upload_directory(
-        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+        S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}/", ""
     )
 
     create_iceberg_table(instance, TABLE_NAME)
@@ -559,7 +695,7 @@ def test_metadata_file_format_with_uuid(started_cluster, format_version):
         )
 
     files = upload_directory(
-        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+        S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}/", ""
     )
 
     create_iceberg_table(instance, TABLE_NAME)
@@ -586,7 +722,7 @@ def test_restart_broken(started_cluster):
 
     write_iceberg_from_file(spark, parquet_data_path, TABLE_NAME, format_version="1")
     files = upload_directory(
-        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+        S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}/", ""
     )
     create_iceberg_table(instance, TABLE_NAME, bucket=bucket)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
@@ -614,7 +750,7 @@ def test_restart_broken(started_cluster):
     minio_client.make_bucket(bucket)
 
     files = upload_directory(
-        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+        S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}/", ""
     )
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
