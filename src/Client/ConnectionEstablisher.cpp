@@ -48,8 +48,6 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {
             result.entry->forceConnected(*timeouts);
-            result.entry->setSocketTimeouts(timeouts->receive_timeout, timeouts->send_timeout);
-            result.entry->enableKeepAlive(timeouts->tcp_keep_alive_timeout);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionUsable);
             result.is_usable = true;
             result.is_up_to_date = true;

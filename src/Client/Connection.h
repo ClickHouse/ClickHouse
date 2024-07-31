@@ -164,9 +164,6 @@ public:
 
     bool haveMoreAddressesToConnect() const { return have_more_addresses_to_connect; }
 
-    void setSocketTimeouts(const Poco::Timespan & receive_timeout, const Poco::Timespan & send_timeout);
-    void enableKeepAlive(const Poco::Timespan & interval);
-
 private:
     String host;
     UInt16 port;
