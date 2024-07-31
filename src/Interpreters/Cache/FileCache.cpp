@@ -998,18 +998,19 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     FileCacheReserveStat stat;
     EvictionCandidates eviction_candidates;
 
-    bool limits_satisfied = true;
+    IFileCachePriority::DesiredSizeStatus desired_size_status;
     try
     {
         /// Collect at most `keep_up_free_space_remove_batch` elements to evict,
         /// (we use batches to make sure we do not block cache for too long,
         /// by default the batch size is quite small).
-        limits_satisfied = main_priority->collectCandidatesForEviction(
+        desired_size_status = main_priority->collectCandidatesForEviction(
             desired_size, desired_elements_num, keep_up_free_space_remove_batch, stat, eviction_candidates, lock);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
         /// Let's make sure that we correctly processed the limits.
-        if (limits_satisfied && eviction_candidates.size() < keep_up_free_space_remove_batch)
+        if (desired_size_status == IFileCachePriority::DesiredSizeStatus::SUCCESS
+            && eviction_candidates.size() < keep_up_free_space_remove_batch)
         {
             const auto current_size = main_priority->getSize(lock);
             chassert(current_size >= stat.total_stat.releasable_size);
@@ -1063,13 +1064,24 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     watch.stop();
     ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds, watch.elapsedMilliseconds());
 
-    LOG_TRACE(log, "Free space ratio keeping thread finished in {} ms", watch.elapsedMilliseconds());
+    LOG_TRACE(log, "Free space ratio keeping thread finished in {} ms (status: {})",
+              watch.elapsedMilliseconds(), desired_size_status);
 
     [[maybe_unused]] bool scheduled = false;
-    if (limits_satisfied)
-        scheduled = keep_up_free_space_ratio_task->scheduleAfter(general_reschedule_ms);
-    else
-        scheduled = keep_up_free_space_ratio_task->schedule();
+    switch (desired_size_status)
+    {
+        case IFileCachePriority::DesiredSizeStatus::SUCCESS: [[fallthrough]];
+        case IFileCachePriority::DesiredSizeStatus::CANNOT_EVICT:
+        {
+            scheduled = keep_up_free_space_ratio_task->scheduleAfter(general_reschedule_ms);
+            break;
+        }
+        case IFileCachePriority::DesiredSizeStatus::REACHED_MAX_CANDIDATES_LIMIT:
+        {
+            scheduled = keep_up_free_space_ratio_task->schedule();
+            break;
+        }
+    }
     chassert(scheduled);
 }
 
@@ -1546,7 +1558,7 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
             FileCacheReserveStat stat;
             if (main_priority->collectCandidatesForEviction(
                     new_settings.max_size, new_settings.max_elements, 0/* max_candidates_to_evict */,
-                    stat, eviction_candidates, cache_lock))
+                    stat, eviction_candidates, cache_lock) == IFileCachePriority::DesiredSizeStatus::SUCCESS)
             {
                 if (eviction_candidates.size() == 0)
                 {
