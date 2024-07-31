@@ -459,7 +459,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     chassert(numbers_storage.step != UInt64{0});
 
     /// Build rpn of query filters
-    KeyCondition condition(filter_actions_dag, context, column_names, key_expression);
+    KeyCondition condition(filter_actions_dag ? &*filter_actions_dag : nullptr, context, column_names, key_expression);
 
     if (condition.extractPlainRanges(ranges))
     {
@@ -596,12 +596,12 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             numbers_storage.step,
             step_between_chunks);
 
-        if (numbers_storage.limit && i == 0)
+        if (end && i == 0)
         {
-            auto rows_appr = itemCountInRange(numbers_storage.offset, *numbers_storage.limit, numbers_storage.step);
-            if (limit > 0 && limit < rows_appr)
-                rows_appr = query_info_limit;
-            source->addTotalRowsApprox(rows_appr);
+            UInt64 rows_approx = itemCountInRange(numbers_storage.offset, *end, numbers_storage.step);
+            if (limit > 0 && limit < rows_approx)
+                rows_approx = query_info_limit;
+            source->addTotalRowsApprox(rows_approx);
         }
 
         pipe.addSource(std::move(source));

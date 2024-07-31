@@ -21,7 +21,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [COMMENT 'comment for column'] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
-  COMMENT 'comment for table'
+  [COMMENT 'comment for table']
 ```
 
 Creates a table named `table_name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
@@ -625,11 +625,6 @@ SELECT * FROM base.t1;
 ## COMMENT Clause
 
 You can add a comment to the table when you creating it.
-
-:::note
-The comment clause is supported by all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
-:::
-
 
 **Syntax**
 
