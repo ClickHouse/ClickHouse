@@ -435,11 +435,6 @@ class ClickHouseCluster:
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
         self.project_name = re.sub(r"[^a-z0-9]", "", project_name.lower())
         self.instances_dir_name = get_instances_dir(self.name)
-        xdist_worker = os.getenv("PYTEST_XDIST_WORKER")
-        if xdist_worker:
-            self.project_name += f"_{xdist_worker}"
-            self.instances_dir_name += f"_{xdist_worker}"
-
         self.instances_dir = p.join(self.base_dir, self.instances_dir_name)
         self.docker_logs_path = p.join(self.instances_dir, "docker.log")
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
