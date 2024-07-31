@@ -2971,6 +2971,7 @@ class ClickHouseCluster:
                     "Trying to create Azurite instance by command %s",
                     " ".join(map(str, azurite_start_cmd)),
                 )
+
                 def logging_azurite_initialization(exception, retry_number, sleep_time):
                     logging.info(
                         f"Azurite initialization failed with error: {exception}"
