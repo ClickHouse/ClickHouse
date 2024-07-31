@@ -50,7 +50,8 @@ uint64_t getTimestampMillisecond()
     return sec * 1000 + tp.tv_nsec / 1000000;
 }
 
-uint64_t getRandomCounter() {
+uint64_t getRandomCounter()
+{
     return thread_local_rng() & ((1ull << bits_in_counter) - 1);
 }
 
@@ -75,12 +76,13 @@ struct UUIDRange
 {
     UUIDv7VarParts begin; /// inclusive
     UUIDv7VarParts end;   /// exclusive
+    uint64_t capacity;
 };
 
-/// To get the range of `input_rows_count` UUIDv7 from `max(available, now)`:
+/// To reserve a range of up to `input_rows_count` UUIDv7 from `max(available, now+random_counter)`:
 /// 1. calculate UUIDv7 by current timestamp (`now`) and a random counter
 /// 2. `begin = max(available, now)`
-/// 3. Calculate `end = begin + input_rows_count` handling `counter` overflow
+/// 3. calculate the capacity of the range, which could be lower than `input_rows_count`
 UUIDRange getRangeOfAvailableParts(const UUIDv7VarParts & available, size_t input_rows_count)
 {
     /// 1. `now`
@@ -95,18 +97,25 @@ UUIDRange getRangeOfAvailableParts(const UUIDv7VarParts & available, size_t inpu
         begin.counter = available.counter;
     }
 
-    /// 3. `end = begin + input_rows_count`
+    /// 3. `capacity`
     UUIDv7VarParts end;
     const uint64_t counter_nums_in_current_timestamp_left = (counter_limit - begin.counter);
+    uint64_t capacity = input_rows_count;
+
     if (input_rows_count >= counter_nums_in_current_timestamp_left) [[unlikely]]
-        /// if counter numbers in current timestamp is not enough for rows --> depending on how many elements input_rows_count overflows, forward timestamp by at least 1 tick
-        end.timestamp = begin.timestamp + 1 + (input_rows_count - counter_nums_in_current_timestamp_left) / (counter_limit);
+    {
+        capacity = counter_nums_in_current_timestamp_left;
+        /// The next range has to start on the next timestamp, with a random counter
+        end.timestamp = begin.timestamp + 1;
+        end.counter = getRandomCounter();
+    }
     else
+    {
         end.timestamp = begin.timestamp;
+        end.counter = begin.counter + capacity;
+    }
 
-    end.counter = (begin.counter + input_rows_count) & (1ull << bits_in_counter) - 1;
-
-    return {begin, end};
+    return {begin, end, capacity};
 }
 
 
@@ -121,13 +130,13 @@ struct Data
         : guard(mutex)
     {}
 
-    UUIDv7VarParts reserveRange(size_t input_rows_count)
+    UUIDRange reserveRange(size_t input_rows_count)
     {
         UUIDRange range = getRangeOfAvailableParts(lowest_available_parts, input_rows_count);
 
         lowest_available_parts = range.end;
 
-        return range.begin;
+        return range;
     }
 };
 
@@ -175,25 +184,28 @@ public:
             /// Not all random bytes produced here are required for the UUIDv7 but it's the simplest way to get the required number of them by using RandImpl
             RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
 
+            UUIDRange range;
             UUIDv7VarParts available_part;
-            {
-                Data data;
-                available_part = data.reserveRange(input_rows_count); /// returns begin of available snowflake ids range
-            }
+            size_t done = 0;
 
-            for (UUID & uuid : vec_to)
+            while (done != input_rows_count)
             {
-                setParts(uuid, available_part);
-                if (available_part.counter + 1 >= counter_limit)
                 {
-                    /// handle overflow
-                    available_part.counter = 0;
-                    ++available_part.timestamp;
+                    Data data;
+                    range = data.reserveRange(input_rows_count - done);
                 }
-                else
+                available_part = range.begin;
+
+                auto begin = vec_to.begin() + done;
+                auto end = vec_to.begin() + done + range.capacity;
+
+                for (auto uuid_it = begin; uuid_it != end; ++uuid_it)
                 {
+                    setParts(*uuid_it, available_part);
                     ++available_part.counter;
                 }
+
+                done += range.capacity;
             }
         }
         return col_res;
