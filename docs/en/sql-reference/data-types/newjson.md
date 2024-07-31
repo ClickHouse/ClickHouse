@@ -10,7 +10,7 @@ keywords: [json, data type]
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
 :::note
-This feature is experimental and is not production-ready. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-ingestion/data-formats/json.md) instead.
+This feature is experimental and is not production-ready. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-formats/json/overview) instead.
 If you want to use JSON type, set `allow_experimental_json_type = 1`. 
 :::
 
