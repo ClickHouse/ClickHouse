@@ -9,7 +9,7 @@
 #include <algorithm>
 
 #include <Common/CurrentMetrics.h>
-#include <Storages/Kafka/StorageKafkaCommon.h>
+#include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Common/ProfileEvents.h>
 #include <base/defines.h>
 

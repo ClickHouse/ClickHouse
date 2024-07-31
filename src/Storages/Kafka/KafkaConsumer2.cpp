@@ -9,7 +9,7 @@
 #include <boost/algorithm/string/join.hpp>
 
 #include <IO/ReadBufferFromMemory.h>
-#include <Storages/Kafka/StorageKafkaCommon.h>
+#include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>

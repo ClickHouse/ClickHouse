@@ -24,7 +24,7 @@ class StorageSystemKafkaConsumers;
 class ThreadStatus;
 
 template <typename TStorageKafka>
-struct StorageKafkaInterceptors;
+struct KafkaInterceptors;
 
 using KafkaConsumerPtr = std::shared_ptr<KafkaConsumer>;
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
@@ -34,8 +34,8 @@ using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
   */
 class StorageKafka final : public IStorage, WithContext
 {
-    using StorageKafkaInterceptors = StorageKafkaInterceptors<StorageKafka>;
-    friend StorageKafkaInterceptors;
+    using KafkaInterceptors = KafkaInterceptors<StorageKafka>;
+    friend KafkaInterceptors;
 
 public:
     StorageKafka(

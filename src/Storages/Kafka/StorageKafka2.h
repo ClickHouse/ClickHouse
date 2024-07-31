@@ -30,7 +30,7 @@ namespace DB
 {
 
 template <typename TStorageKafka>
-struct StorageKafkaInterceptors;
+struct KafkaInterceptors;
 
 using KafkaConsumer2Ptr = std::shared_ptr<KafkaConsumer2>;
 
@@ -51,8 +51,8 @@ using KafkaConsumer2Ptr = std::shared_ptr<KafkaConsumer2>;
 /// hashes for deduplication.
 class StorageKafka2 final : public IStorage, WithContext
 {
-    using StorageKafkaInterceptors = StorageKafkaInterceptors<StorageKafka2>;
-    friend StorageKafkaInterceptors;
+    using KafkaInterceptors = KafkaInterceptors<StorageKafka2>;
+    friend KafkaInterceptors;
 
 public:
     StorageKafka2(

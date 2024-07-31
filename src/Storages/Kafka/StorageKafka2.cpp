@@ -18,10 +18,11 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/ColumnDefault.h>
+#include <Storages/Kafka/KafkaConfigLoader.h>
 #include <Storages/Kafka/KafkaConsumer2.h>
 #include <Storages/Kafka/KafkaProducer.h>
 #include <Storages/Kafka/KafkaSettings.h>
-#include <Storages/Kafka/StorageKafkaCommon.h>
+#include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
