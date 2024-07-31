@@ -185,7 +185,7 @@ def test_drop_system_log():
     node.query("system flush logs")
     assert (
         node.query("select count() >= 0 from system.query_log") == "1\n"
-    ) # we check that query_log just exists
+    )  # we check that query_log just exists
 
     node.exec_in_container(
         ["rm", f"/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
