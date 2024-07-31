@@ -1341,7 +1341,6 @@ void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected
                        getDescription(), expected, String(Protocol::Server::toString(packet_type)));
 }
 
-
 ServerConnectionPtr Connection::createConnection(const ConnectionParameters & parameters, ContextPtr)
 {
     return std::make_unique<Connection>(

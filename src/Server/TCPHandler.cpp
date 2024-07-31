@@ -1,49 +1,48 @@
+#include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/Squashing.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <algorithm>
 #include <exception>
 #include <memory>
 #include <mutex>
-#include <string_view>
 #include <vector>
-#include <Access/AccessControl.h>
-#include <Access/Credentials.h>
+#include <string_view>
+#include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketAddress.h>
+#include <Poco/Util/LayeredConfiguration.h>
+#include <Common/CurrentThread.h>
+#include <Common/Stopwatch.h>
+#include <Common/NetException.h>
+#include <Common/setThreadName.h>
+#include <Common/OpenSSLHelpers.h>
+#include <IO/Progress.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
-#include <Core/ExternalTable.h>
-#include <Core/ServerSettings.h>
+#include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/LimitReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-#include <IO/LimitReadBuffer.h>
-#include <IO/Progress.h>
-#include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromPocoSocket.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/executeQuery.h>
+#include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Session.h>
-#include <Interpreters/Squashing.h>
-#include <Interpreters/TablesStatus.h>
-#include <Interpreters/executeQuery.h>
-#include <Parsers/ASTInsertQuery.h>
 #include <Server/TCPServer.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Poco/Net/NetException.h>
-#include <Poco/Net/SocketAddress.h>
-#include <Poco/Net/StreamSocket.h>
-#include <Poco/Util/LayeredConfiguration.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
-#include <Common/NetException.h>
-#include <Common/OpenSSLHelpers.h>
-#include <Common/Stopwatch.h>
+#include <Core/ExternalTable.h>
+#include <Core/ServerSettings.h>
+#include <Access/AccessControl.h>
+#include <Access/Credentials.h>
+#include <Compression/CompressionFactory.h>
 #include <Common/logger_useful.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/setThreadName.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/thread_local_rng.h>
+#include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
@@ -61,8 +60,6 @@
 #include "TCPHandler.h"
 
 #include <Common/config_version.h>
-
-#include <fmt/format.h>
 
 using namespace std::literals;
 using namespace DB;
@@ -251,7 +248,6 @@ void TCPHandler::runImpl()
 
     extractConnectionSettingsFromContext(server.context());
 
-
     socket().setReceiveTimeout(receive_timeout);
     socket().setSendTimeout(send_timeout);
     socket().setNoDelay(true);
@@ -337,18 +333,6 @@ void TCPHandler::runImpl()
         if (!tcp_server.isOpen() || server.isCancelled() || in->eof())
         {
             LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, eof: {})", tcp_server.isOpen(), server.isCancelled(), in->eof());
-            break;
-        }
-
-        // Ping mechanism to detect if the connection is still alive
-        try
-        {
-            writeVarUInt(Protocol::Server::Pong, *out);
-            out->next();
-        }
-        catch (const Exception & e)
-        {
-            LOG_ERROR(log, "Failed to send ping to client: {}", e.message());
             break;
         }
 
@@ -1052,17 +1036,6 @@ void TCPHandler::processOrdinaryQuery()
         PullingAsyncPipelineExecutor executor(pipeline);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
-        /// The following may happen:
-        /// * current thread is holding the lock
-        /// * because of the exception we unwind the stack and call the destructor of `executor`
-        /// * the destructor calls cancel() and waits for all query threads to finish
-        /// * at the same time one of the query threads is trying to acquire the lock, e.g. inside `merge_tree_read_task_callback`
-        /// * deadlock
-        SCOPE_EXIT({
-            if (out_lock.owns_lock())
-                out_lock.unlock();
-        });
-
         Block block;
         while (executor.pull(block, interactive_delay / 1000))
         {
@@ -1106,7 +1079,8 @@ void TCPHandler::processOrdinaryQuery()
         }
 
         /// This lock wasn't acquired before and we make .lock() call here
-        /// so everything under this line is covered.
+        /// so everything under this line is covered even together
+        /// with sendProgress() out of the scope
         out_lock.lock();
 
         /** If data has run out, we will send the profiling data and total values to
@@ -1133,7 +1107,6 @@ void TCPHandler::processOrdinaryQuery()
         last_sent_snapshots.clear();
     }
 
-    out_lock.lock();
     sendProgress();
 }
 
@@ -1693,33 +1666,7 @@ bool TCPHandler::receivePacket()
             return false;
 
         default:
-            // Attempt to reconnect to another replica and resend the query if no data has been returned
-            if (state.io.pipeline.completed())
-            {
-                LOG_WARNING(log, "Unknown packet {} from client, attempting to reconnect and resend query", toString(packet_type));
-                try
-                {
-                    // Logic to reconnect to another replica
-                    // This could involve creating a new session, re-authenticating, etc.
-                    session = makeSession();
-                    receiveHello();
-                    sendHello();
-                    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
-                        receiveAddendum();
-
-                    receiveQuery();
-                    return true;
-                }
-                catch (const Exception & e)
-                {
-                    LOG_ERROR(log, "Failed to reconnect and resend query: {}", e.message());
-                    throw;
-                }
-            }
-            else
-            {
-                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));
-            }
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));
     }
 }
 
