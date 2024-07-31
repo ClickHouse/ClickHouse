@@ -23,7 +23,7 @@ namespace
     constexpr size_t max_string_size = 1UL << 15;
 
     template <typename ModelMap>
-    ALWAYS_INLINE inline Float64 naiveBayes(
+    Float64 naiveBayes(
         const FrequencyHolder::EncodingMap & standard,
         const ModelMap & model,
         Float64 max_result)
@@ -51,7 +51,7 @@ namespace
 
     /// Count how many times each bigram occurs in the text.
     template <typename ModelMap>
-    ALWAYS_INLINE inline void calculateStats(
+    void calculateStats(
         const UInt8 * data,
         const size_t size,
         ModelMap & model)
@@ -77,24 +77,25 @@ struct CharsetClassificationImpl
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         const auto & encodings_freq = FrequencyHolder::getInstance().getEncodingsFrequency();
 
         if constexpr (detect_language)
             /// 2 chars for ISO code + 1 zero byte
-            res_data.reserve(offsets.size() * 3);
+            res_data.reserve(input_rows_count * 3);
         else
             /// Mean charset length is 8
-            res_data.reserve(offsets.size() * 8);
+            res_data.reserve(input_rows_count * 8);
 
-        res_offsets.resize(offsets.size());
+        res_offsets.resize(input_rows_count);
 
         size_t current_result_offset = 0;
 
         double zero_frequency_log = log(zero_frequency);
 
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * str = data.data() + offsets[i - 1];
             const size_t str_len = offsets[i] - offsets[i - 1] - 1;

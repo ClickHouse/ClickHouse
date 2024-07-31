@@ -1,9 +1,14 @@
 #pragma once
-#include "Access/ContextAccess.h"
-#include "Interpreters/Context.h"
+
+#include <Access/ContextAccess.h>
+#include <Interpreters/Context.h>
+
+
+#include <Core/Settings.h>
 
 namespace DB
 {
+
 struct SecretHidingFormatSettings
 {
     // We can't store const Context& as there's a dangerous usage {.ctx = *getContext()}
@@ -22,4 +27,5 @@ inline String format(const SecretHidingFormatSettings & settings)
 
     return settings.query.formatWithPossiblyHidingSensitiveData(settings.max_length, settings.one_line, show_secrets);
 }
+
 }

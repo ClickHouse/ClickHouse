@@ -13,6 +13,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Common/parseGlobs.h>
+#include <Core/Settings.h>
 
 namespace fs = std::filesystem;
 
@@ -76,7 +77,7 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
     create_reader_pool->wait();
 }
 
-void StorageObjectStorageSource::setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_)
+void StorageObjectStorageSource::setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_)
 {
     setKeyConditionImpl(filter_actions_dag, context_, read_from_format_info.format_header);
 }
@@ -138,7 +139,10 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
             paths.reserve(keys.size());
             for (const auto & key : keys)
                 paths.push_back(fs::path(configuration->getNamespace()) / key);
-            VirtualColumnUtils::filterByPathOrFile(keys, paths, filter_dag, virtual_columns, local_context);
+
+            VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
+            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            VirtualColumnUtils::filterByPathOrFile(keys, paths, actions, virtual_columns);
             copy_configuration->setPaths(keys);
         }
 
@@ -206,23 +210,25 @@ Chunk StorageObjectStorageSource::generate()
             if (!partition_columns.empty() && chunk_size && chunk.hasColumns())
             {
                 auto partition_values = partition_columns.find(filename);
-
-                for (const auto & [name_and_type, value] : partition_values->second)
+                if (partition_values != partition_columns.end())
                 {
-                    if (!read_from_format_info.source_header.has(name_and_type.name))
-                        continue;
+                    for (const auto & [name_and_type, value] : partition_values->second)
+                    {
+                        if (!read_from_format_info.source_header.has(name_and_type.name))
+                            continue;
 
-                    const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
-                    auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
+                        const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
+                        auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
 
-                    /// This column is filled with default value now, remove it.
-                    chunk.erase(column_pos);
+                        /// This column is filled with default value now, remove it.
+                        chunk.erase(column_pos);
 
-                    /// Add correct values.
-                    if (chunk.hasColumns())
-                        chunk.addColumn(column_pos, std::move(partition_column));
-                    else
-                        chunk.addColumn(std::move(partition_column));
+                        /// Add correct values.
+                        if (column_pos < chunk.getNumColumns())
+                            chunk.addColumn(column_pos, std::move(partition_column));
+                        else
+                            chunk.addColumn(std::move(partition_column));
+                    }
                 }
             }
             return chunk;
@@ -419,7 +425,7 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     /// FIXME: Changing this setting to default value breaks something around parquet reading
     read_settings.remote_read_min_bytes_for_seek = read_settings.remote_fs_buffer_size;
 
-    const bool object_too_small = object_size <= 2 * context_->getSettings().max_download_buffer_size;
+    const bool object_too_small = object_size <= 2 * context_->getSettingsRef().max_download_buffer_size;
     const bool use_prefetch = object_too_small && read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
     read_settings.remote_fs_method = use_prefetch ? RemoteFSReadMethod::threadpool : RemoteFSReadMethod::read;
     /// User's object may change, don't cache it.
@@ -503,7 +509,11 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         }
 
         recursive = key_with_globs == "/**";
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
+        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns))
+        {
+            VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
+            filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+        }
     }
     else
     {
@@ -567,14 +577,14 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
                     ++it;
             }
 
-            if (filter_dag)
+            if (filter_expr)
             {
                 std::vector<String> paths;
                 paths.reserve(new_batch.size());
                 for (const auto & object_info : new_batch)
                     paths.push_back(getUniqueStoragePathIdentifier(*configuration, *object_info, false));
 
-                VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_dag, virtual_columns, getContext());
+                VirtualColumnUtils::filterByPathOrFile(new_batch, paths, filter_expr, virtual_columns);
 
                 LOG_TEST(logger, "Filtered files: {} -> {}", paths.size(), new_batch.size());
             }

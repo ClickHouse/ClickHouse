@@ -10,6 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -624,8 +625,6 @@ void ValuesBlockInputFormat::readSuffix()
         skipWhitespaceIfAny(*buf);
         if (buf->hasUnreadData())
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data after semicolon");
-        if (!format_settings.values.allow_data_after_semicolon && !buf->eof())
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data after semicolon (and input_format_values_allow_data_after_semicolon=0)");
         return;
     }
 

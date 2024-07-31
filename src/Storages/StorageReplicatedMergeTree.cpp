@@ -5,22 +5,25 @@
 
 #include <base/hex.h>
 #include <base/interpolate.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/StringUtils.h>
+#include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
+#include <Common/randomDelay.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
-#include <Common/ThreadFuzzer.h>
-#include <Common/FailPoint.h>
-#include <Common/randomDelay.h>
 
+#include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
+#include <Core/Settings.h>
 
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 
@@ -39,6 +42,7 @@
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
@@ -1512,7 +1516,7 @@ static time_t tryGetPartCreateTime(zkutil::ZooKeeperPtr & zookeeper, const Strin
 
 void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(const Strings & parts_in_zk, const Strings & parts_to_fetch) const
 {
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     constexpr bool paranoid_check_for_covered_parts_default = true;
 #else
     constexpr bool paranoid_check_for_covered_parts_default = false;
@@ -2379,7 +2383,7 @@ static void paranoidCheckForCoveredPartsInZooKeeper(
     const String & covering_part_name,
     const StorageReplicatedMergeTree & storage)
 {
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     constexpr bool paranoid_check_for_covered_parts_default = true;
 #else
     constexpr bool paranoid_check_for_covered_parts_default = false;
@@ -3936,7 +3940,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         merge_selecting_task->schedule();
     else
     {
-        LOG_TRACE(log, "Scheduling next merge selecting task after {}ms", merge_selecting_sleep_ms);
+        LOG_TRACE(log, "Scheduling next merge selecting task after {}ms, current attempt status: {}", merge_selecting_sleep_ms, result);
         merge_selecting_task->scheduleAfter(merge_selecting_sleep_ms);
     }
 }
@@ -5272,6 +5276,8 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
     if (shutdown_prepared_called.exchange(true))
         return;
 
+    LOG_TRACE(log, "Start preparing for shutdown");
+
     try
     {
         auto settings_ptr = getSettings();
@@ -5282,7 +5288,11 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
         stopBeingLeader();
 
         if (attach_thread)
+        {
             attach_thread->shutdown();
+            LOG_TRACE(log, "The attach thread is shutdown");
+        }
+
 
         restarting_thread.shutdown(/* part_of_full_shutdown */true);
         /// Explicitly set the event, because the restarting thread will not set it again
@@ -5295,6 +5305,8 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
         shutdown_deadline.emplace(std::chrono::system_clock::now());
         throw;
     }
+
+    LOG_TRACE(log, "Finished preparing for shutdown");
 }
 
 void StorageReplicatedMergeTree::partialShutdown()
@@ -5331,6 +5343,8 @@ void StorageReplicatedMergeTree::shutdown(bool)
 {
     if (shutdown_called.exchange(true))
         return;
+
+    LOG_TRACE(log, "Shutdown started");
 
     flushAndPrepareForShutdown();
 
@@ -5374,6 +5388,7 @@ void StorageReplicatedMergeTree::shutdown(bool)
         /// Wait for all of them
         std::lock_guard lock(data_parts_exchange_ptr->rwlock);
     }
+    LOG_TRACE(log, "Shutdown finished");
 }
 
 
@@ -5589,7 +5604,7 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRows(const Settings & set
     return res;
 }
 
-std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr local_context) const
+std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
 {
     DataPartsVector parts;
     foreachActiveParts([&](auto & part) { parts.push_back(part); }, local_context->getSettingsRef().select_sequential_consistency);
@@ -7348,7 +7363,7 @@ void StorageReplicatedMergeTree::fetchPartition(
         if (try_no)
             LOG_INFO(log, "Some of parts ({}) are missing. Will try to fetch covering parts.", missing_parts.size());
 
-        if (try_no >= query_context->getSettings().max_fetch_partition_retries_count)
+        if (try_no >= query_context->getSettingsRef().max_fetch_partition_retries_count)
             throw Exception(ErrorCodes::TOO_MANY_RETRIES_TO_FETCH_PARTS,
                 "Too many retries to fetch parts from {}:{}", from_zookeeper_name, best_replica_path);
 

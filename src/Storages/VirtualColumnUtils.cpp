@@ -77,15 +77,19 @@ void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
     }
 }
 
-void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
+ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context)
 {
-    buildSetsForDAG(*dag, context);
-    auto actions = std::make_shared<ExpressionActions>(dag);
+    buildSetsForDAG(dag, context);
+    return std::make_shared<ExpressionActions>(std::move(dag));
+}
+
+void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block)
+{
     Block block_with_filter = block;
     actions->execute(block_with_filter, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
 
     /// Filter the block.
-    String filter_column_name = dag->getOutputs().at(0)->result_name;
+    String filter_column_name = actions->getActionsDAG().getOutputs().at(0)->result_name;
     ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullColumnIfConst();
 
     ConstantFilterDescription constant_filter(*filter_column);
@@ -155,7 +159,7 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
-ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns)
+std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns)
 {
     if (!predicate || virtual_columns.empty())
         return {};
@@ -171,7 +175,7 @@ ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, con
     return splitFilterDagForAllowedInputs(predicate, &block);
 }
 
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ActionsDAGPtr & dag, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns)
 {
     Block block;
     for (const auto & column : virtual_columns)
@@ -184,7 +188,7 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     for (size_t i = 0; i != paths.size(); ++i)
         addPathAndFileToVirtualColumns(block, paths[i], i);
 
-    filterBlockWithDAG(dag, block, context);
+    filterBlockWithExpression(actions, block);
 
     return block.getByName("_idx").column;
 }
@@ -271,7 +275,8 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
 static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
     const ActionsDAG::Node * node,
     const Block * allowed_inputs,
-    ActionsDAG::Nodes & additional_nodes)
+    ActionsDAG::Nodes & additional_nodes,
+    bool allow_non_deterministic_functions)
 {
     if (node->type == ActionsDAG::ActionType::FUNCTION)
     {
@@ -280,8 +285,14 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
             auto & node_copy = additional_nodes.emplace_back(*node);
             node_copy.children.clear();
             for (const auto * child : node->children)
-                if (const auto * child_copy = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes))
+                if (const auto * child_copy = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes, allow_non_deterministic_functions))
                     node_copy.children.push_back(child_copy);
+                /// Expression like (now_allowed AND allowed) is not allowed if allow_non_deterministic_functions = true. This is important for
+                /// trivial count optimization, otherwise we can get incorrect results. For example, if the query is
+                /// SELECT count() FROM table WHERE _partition_id = '0' AND rowNumberInBlock() = 1, we cannot apply
+                /// trivial count.
+                else if (!allow_non_deterministic_functions)
+                    return nullptr;
 
             if (node_copy.children.empty())
                 return nullptr;
@@ -307,7 +318,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
         {
             auto & node_copy = additional_nodes.emplace_back(*node);
             for (auto & child : node_copy.children)
-                if (child = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes); !child)
+                if (child = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes, allow_non_deterministic_functions); !child)
                     return nullptr;
 
             return &node_copy;
@@ -318,10 +329,10 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
             {
                 if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
                 {
-                    auto index_hint_dag = index_hint->getActions()->clone();
+                    auto index_hint_dag = index_hint->getActions().clone();
                     ActionsDAG::NodeRawConstPtrs atoms;
-                    for (const auto & output : index_hint_dag->getOutputs())
-                        if (const auto * child_copy = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes))
+                    for (const auto & output : index_hint_dag.getOutputs())
+                        if (const auto * child_copy = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes, allow_non_deterministic_functions))
                             atoms.push_back(child_copy);
 
                     if (!atoms.empty())
@@ -331,13 +342,13 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                         if (atoms.size() > 1)
                         {
                             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-                            res = &index_hint_dag->addFunction(func_builder_and, atoms, {});
+                            res = &index_hint_dag.addFunction(func_builder_and, atoms, {});
                         }
 
                         if (!res->result_type->equals(*node->result_type))
-                            res = &index_hint_dag->addCast(*res, node->result_type, {});
+                            res = &index_hint_dag.addCast(*res, node->result_type, {});
 
-                        additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(*index_hint_dag)));
+                        additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(index_hint_dag)));
                         return res;
                     }
                 }
@@ -355,24 +366,24 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
     return node;
 }
 
-ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs)
+std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, bool allow_non_deterministic_functions)
 {
     if (!predicate)
-        return nullptr;
+        return {};
 
     ActionsDAG::Nodes additional_nodes;
-    const auto * res = splitFilterNodeForAllowedInputs(predicate, allowed_inputs, additional_nodes);
+    const auto * res = splitFilterNodeForAllowedInputs(predicate, allowed_inputs, additional_nodes, allow_non_deterministic_functions);
     if (!res)
-        return nullptr;
+        return {};
 
     return ActionsDAG::cloneSubDAG({res}, true);
 }
 
 void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context)
 {
-    auto dag = splitFilterDagForAllowedInputs(predicate, &block);
+    auto dag = splitFilterDagForAllowedInputs(predicate, &block,  /*allow_non_deterministic_functions=*/ false);
     if (dag)
-        filterBlockWithDAG(dag, block, context);
+        filterBlockWithExpression(buildFilterExpression(std::move(*dag), context), block);
 }
 
 }

@@ -1,5 +1,6 @@
 #include <Interpreters/JoinedTables.h>
 
+#include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 
 #include <Interpreters/DatabaseCatalog.h>
