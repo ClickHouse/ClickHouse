@@ -1410,7 +1410,7 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
     const bool has_table = TSA_SUPPRESS_WARNING_FOR_READ(tables_marked_dropped_ids).contains(uuid);
     LOG_DEBUG(log, "Done waiting for the table {} to be dropped. The outcome: {}", toString(uuid), has_table ? "table still exists" : "table dropped successfully");
 
-    if has_table)
+    if (has_table)
         throw Exception(ErrorCodes::UNFINISHED, "Did not finish dropping the table with UUID {} because the server is shutting down, "
                                                 "will finish after restart", uuid);
 }
