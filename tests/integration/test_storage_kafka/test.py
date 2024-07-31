@@ -5103,7 +5103,6 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
 
-
     topic_prefix = "http_row_"
 
     # It is important to have:
@@ -5120,7 +5119,7 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
     extra_settings = {
         "Protobuf": ", kafka_schema = 'string_key_value.proto:StringKeyValuePair'",
         "CapnProto": ", kafka_schema='string_key_value:StringKeyValuePair'",
-        "Template": ", format_template_row='string_key_value.format'"
+        "Template": ", format_template_row='string_key_value.format'",
     }
 
     # Only the formats that can be used both and input and output format are tested
@@ -5208,7 +5207,10 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
             """
         )
 
-        instance.http_query(insert_query_template.format(table_name="test.kafka_writer_"+topic), method="POST")
+        instance.http_query(
+            insert_query_template.format(table_name="test.kafka_writer_" + topic),
+            method="POST",
+        )
 
     expected = f"""\
 {expected_key}\t{expected_value}
@@ -5220,11 +5222,15 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
         logging.debug(f"Checking result for {format}")
         topic = topic_prefix + format
 
-        result = instance.query_with_retry(f"SELECT * FROM test.view_{topic}", check_callback=lambda res: res.count("\n") == 3)
+        result = instance.query_with_retry(
+            f"SELECT * FROM test.view_{topic}",
+            check_callback=lambda res: res.count("\n") == 3,
+        )
 
         assert TSV(result) == TSV(expected)
 
         kafka_delete_topic(admin_client, topic)
+
 
 if __name__ == "__main__":
     cluster.start()
