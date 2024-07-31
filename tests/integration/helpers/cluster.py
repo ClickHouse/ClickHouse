@@ -2471,7 +2471,7 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 connection.list_database_names()
-                logging.debug(f"Connected to Mongo dbs: {connection.database_names()}")
+                logging.debug(f"Connected to Mongo dbs: {connection.list_database_names()}")
                 return
             except Exception as ex:
                 logging.debug("Can't connect to Mongo " + str(ex))
@@ -4451,7 +4451,7 @@ class ClickHouseInstance:
                 dirs_exist_ok=True,
             )
 
-        if self.with_mongo:
+        if self.with_mongo and os.path.exists(self.mongo_secure_config_dir):
             shutil.copytree(
                 self.mongo_secure_config_dir,
                 p.abspath(p.join(self.path, "mongo_secure_config")),
