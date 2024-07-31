@@ -522,7 +522,8 @@ def test_auth_source(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
     admin_db = mongo_connection["admin"]
     admin_db.command("dropAllUsersFromDatabase")
-    admin_db.command("createUser",
+    admin_db.command(
+        "createUser",
         "root",
         pwd="clickhouse",
         roles=[{"role": "userAdminAnyDatabase", "db": "admin"}, "readWriteAnyDatabase"],
