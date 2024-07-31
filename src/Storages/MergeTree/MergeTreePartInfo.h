@@ -101,9 +101,8 @@ struct MergeTreePartInfo
 
     bool isFakeDropRangePart() const
     {
-        /// Another max level was previously used for REPLACE/MOVE PARTITION
-        auto another_max_level = std::numeric_limits<decltype(level)>::max();
-        return level == MergeTreePartInfo::MAX_LEVEL || level == another_max_level;
+        /// LEGACY_MAX_LEVEL was previously used for REPLACE/MOVE PARTITION
+        return level == MergeTreePartInfo::MAX_LEVEL || level == MergeTreePartInfo::LEGACY_MAX_LEVEL;
     }
 
     String getPartNameAndCheckFormat(MergeTreeDataFormatVersion format_version) const;

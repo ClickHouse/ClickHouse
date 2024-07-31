@@ -9,7 +9,6 @@ Columns:
 
 - `name` ([String](../../sql-reference/data-types/string.md)) – The name of the function.
 - `is_aggregate` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Whether the function is an aggregate function.
-- `is_deterministic` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md))) - Whether the function is deterministic.
 - `case_insensitive`, ([UInt8](../../sql-reference/data-types/int-uint.md)) - Whether the function name can be used case-insensitively.
 - `alias_to`, ([String](../../sql-reference/data-types/string.md)) - The original function name, if the function name is an alias.
 - `create_query`, ([String](../../sql-reference/data-types/enum.md)) - Unused.

@@ -5,8 +5,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <base/hex.h>
-#include "Common/ZooKeeper/IKeeper.h"
-#include "Common/ZooKeeper/ZooKeeperCommon.h"
+#include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/checkStackSize.h>
@@ -14,6 +14,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Coordination/CoordinationSettings.h>
 
 #include <Disks/IDisk.h>
 
@@ -116,13 +117,13 @@ void KeeperDispatcher::requestThread()
     RaftAppendResult prev_result = nullptr;
     /// Requests from previous iteration. We store them to be able
     /// to send errors to the client.
-    KeeperStorage::RequestsForSessions prev_batch;
+    KeeperStorageBase::RequestsForSessions prev_batch;
 
     const auto & shutdown_called = keeper_context->isShutdownCalled();
 
     while (!shutdown_called)
     {
-        KeeperStorage::RequestForSession request;
+        KeeperStorageBase::RequestForSession request;
 
         auto coordination_settings = configuration_and_settings->coordination_settings;
         uint64_t max_wait = coordination_settings->operation_timeout_ms.totalMilliseconds();
@@ -152,7 +153,7 @@ void KeeperDispatcher::requestThread()
                     continue;
                 }
 
-                KeeperStorage::RequestsForSessions current_batch;
+                KeeperStorageBase::RequestsForSessions current_batch;
                 size_t current_batch_bytes_size = 0;
 
                 bool has_read_request = false;
@@ -310,7 +311,7 @@ void KeeperDispatcher::responseThread()
     const auto & shutdown_called = keeper_context->isShutdownCalled();
     while (!shutdown_called)
     {
-        KeeperStorage::ResponseForSession response_for_session;
+        KeeperStorageBase::ResponseForSession response_for_session;
 
         uint64_t max_wait = configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds();
 
@@ -401,7 +402,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
             return false;
     }
 
-    KeeperStorage::RequestForSession request_info;
+    KeeperStorageBase::RequestForSession request_info;
     request_info.request = request;
     using namespace std::chrono;
     request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
@@ -447,7 +448,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         snapshots_queue,
         keeper_context,
         snapshot_s3,
-        [this](uint64_t /*log_idx*/, const KeeperStorage::RequestForSession & request_for_session)
+        [this](uint64_t /*log_idx*/, const KeeperStorageBase::RequestForSession & request_for_session)
         {
             {
                 /// check if we have queue of read requests depending on this request to be committed
@@ -539,7 +540,7 @@ void KeeperDispatcher::shutdown()
                 update_configuration_thread.join();
         }
 
-        KeeperStorage::RequestForSession request_for_session;
+        KeeperStorageBase::RequestForSession request_for_session;
 
         /// Set session expired for all pending requests
         while (requests_queue && requests_queue->tryPop(request_for_session))
@@ -550,7 +551,7 @@ void KeeperDispatcher::shutdown()
             setResponse(request_for_session.session_id, response);
         }
 
-        KeeperStorage::RequestsForSessions close_requests;
+        KeeperStorageBase::RequestsForSessions close_requests;
         {
             /// Clear all registered sessions
             std::lock_guard lock(session_to_response_callback_mutex);
@@ -564,7 +565,7 @@ void KeeperDispatcher::shutdown()
                     auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
                     using namespace std::chrono;
-                    KeeperStorage::RequestForSession request_info
+                    KeeperStorageBase::RequestForSession request_info
                     {
                         .session_id = session,
                         .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
@@ -662,7 +663,7 @@ void KeeperDispatcher::sessionCleanerTask()
                     auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
                     using namespace std::chrono;
-                    KeeperStorage::RequestForSession request_info
+                    KeeperStorageBase::RequestForSession request_info
                     {
                         .session_id = dead_session,
                         .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
@@ -710,16 +711,16 @@ void KeeperDispatcher::finishSession(int64_t session_id)
     }
 }
 
-void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSessions & requests_for_sessions, Coordination::Error error)
+void KeeperDispatcher::addErrorResponses(const KeeperStorageBase::RequestsForSessions & requests_for_sessions, Coordination::Error error)
 {
     for (const auto & request_for_session : requests_for_sessions)
     {
-        KeeperStorage::ResponsesForSessions responses;
+        KeeperStorageBase::ResponsesForSessions responses;
         auto response = request_for_session.request->makeResponse();
         response->xid = request_for_session.request->xid;
         response->zxid = 0;
         response->error = error;
-        if (!responses_queue.push(DB::KeeperStorage::ResponseForSession{request_for_session.session_id, response}))
+        if (!responses_queue.push(DB::KeeperStorageBase::ResponseForSession{request_for_session.session_id, response}))
             throw Exception(ErrorCodes::SYSTEM_ERROR,
                 "Could not push error response xid {} zxid {} error message {} to responses queue",
                 response->xid,
@@ -729,7 +730,7 @@ void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSession
 }
 
 nuraft::ptr<nuraft::buffer> KeeperDispatcher::forceWaitAndProcessResult(
-    RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions, bool clear_requests_on_success)
+    RaftAppendResult & result, KeeperStorageBase::RequestsForSessions & requests_for_sessions, bool clear_requests_on_success)
 {
     if (!result->has_result())
         result->get();
@@ -754,7 +755,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
 {
     /// New session id allocation is a special request, because we cannot process it in normal
     /// way: get request -> put to raft -> set response for registered callback.
-    KeeperStorage::RequestForSession request_info;
+    KeeperStorageBase::RequestForSession request_info;
     std::shared_ptr<Coordination::ZooKeeperSessionIDRequest> request = std::make_shared<Coordination::ZooKeeperSessionIDRequest>();
     /// Internal session id. It's a temporary number which is unique for each client on this server
     /// but can be same on different servers.

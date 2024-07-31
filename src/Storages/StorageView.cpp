@@ -19,6 +19,8 @@
 
 #include <Common/typeid_cast.h>
 
+#include <Core/Settings.h>
+
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -177,8 +179,8 @@ void StorageView::read(
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    auto materializing_actions = std::make_shared<ActionsDAG>(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
-    materializing_actions->addMaterializingOutputActions();
+    ActionsDAG materializing_actions(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
+    materializing_actions.addMaterializingOutputActions();
 
     auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(materializing_actions));
     materializing->setStepDescription("Materialize constants after VIEW subquery");
@@ -203,7 +205,7 @@ void StorageView::read(
             expected_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
 
-    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
+    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(convert_actions_dag));
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
     query_plan.addStep(std::move(converting));
 }

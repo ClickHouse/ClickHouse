@@ -185,7 +185,7 @@ public:
 
     String getName() const override { return name; }
 
-    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override
+    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override
     {
         setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
     }
@@ -251,7 +251,7 @@ public:
         const String & method = Poco::Net::HTTPRequest::HTTP_POST);
 
     std::string getName() const override { return "StorageURLSink"; }
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     void onCancel() override;
     void onException(std::exception_ptr exception) override;
     void onFinish() override;

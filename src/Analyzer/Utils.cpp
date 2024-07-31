@@ -1,5 +1,7 @@
 #include <Analyzer/Utils.h>
 
+#include <Core/Settings.h>
+
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
