@@ -501,6 +501,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
         }
     },
     {"24.8", {{"enable_analyzer", false, true, "Move analyzer to the Beta stage."},
+    {"24.8", {{"enable_analyzer", true, true, "Added an alias to the `allow_experimental_analyzer` setting."}
               }},
     {"24.7", {{"output_format_parquet_write_page_index", false, true, "Add a possibility to write page index into parquet files."},
               {"output_format_binary_encode_types_in_binary_format", false, false, "Added new setting to allow to write type names in binary format in RowBinaryWithNamesAndTypes output format"},
