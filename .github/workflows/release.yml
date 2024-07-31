@@ -14,6 +14,10 @@ on: # yamllint disable-line rule:truthy
         required: true
         type: string
 
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+
 jobs:
   ReleasePublish:
     runs-on: [self-hosted, style-checker]
@@ -29,7 +33,10 @@ jobs:
     - name: Deploy packages and assets
       run: |
         curl --silent --data '' --no-buffer \
-          '${{ secrets.PACKAGES_RELEASE_URL }}/release/'"${GITHUB_TAG}"'?binary=binary_darwin&binary=binary_darwin_aarch64&sync=true'
+          '${{ secrets.PACKAGES_RELEASE_URL }}/release/'"${GITHUB_TAG}"'?binary=binary_darwin&binary=binary_darwin_aarch64&sync=true' | \
+          tee deployment.log
+        # shellcheck disable=SC2016
+        grep -q 'Mark the release as finished with status `success`' deployment.log || { echo 'The deploymen failed'; exit 1; }
   ############################################################################################
   ##################################### Docker images  #######################################
   ############################################################################################
