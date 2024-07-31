@@ -20,11 +20,5 @@ ENGINE = Distributed('test_shard_localhost', 'test_mlt65kbw', 'local_table', ran
 -- Step 3: Insert data into the distributed table
 INSERT INTO test_mlt65kbw.distributed_table VALUES (1, 'test1'), (2, 'test2'), (3, 'test3');
 
--- Step 4: Simulate network error (omitted for now)
--- SET simulate_network_error = 1;
-
--- Step 5: Query the distributed table to verify the results
-SELECT id, value FROM test_mlt65kbw.distributed_table ORDER BY id;
-
--- Disable the network error simulation (omitted for now)
--- SET simulate_network_error = 0;
+-- Step 4: Query the distributed table to verify the results in the correct format
+SELECT id, value FROM test_mlt65kbw.distributed_table ORDER BY id FORMAT TabSeparated;
