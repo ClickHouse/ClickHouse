@@ -60,7 +60,8 @@ public:
         size_t num_streams) override;
 
 private:
-    std::optional<bsoncxx::document::value> visitWhereFunction(const ContextPtr & context, const FunctionNode * func);
+    template <typename OnError>
+    std::optional<bsoncxx::document::value> visitWhereFunction(const ContextPtr & context, const FunctionNode * func, OnError on_error);
     bsoncxx::document::value buildMongoDBQuery(const ContextPtr & context, mongocxx::options::find & options, const SelectQueryInfo & query, const Block & sample_block);
 
     const MongoDBConfiguration configuration;

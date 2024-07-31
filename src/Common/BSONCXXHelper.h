@@ -103,32 +103,37 @@ static JSONBuilder::ItemPtr BSONElementAsJSON(const T & value)
             return std::make_unique<JSONBuilder::JSONString>(DateLUT::instance().timeToString(value.get_date().to_int64() / 1000));
         case bsoncxx::type::k_timestamp:
             return std::make_unique<JSONBuilder::JSONString>(DateLUT::instance().timeToString(value.get_timestamp().timestamp));
-        case bsoncxx::type::k_document: {
+        case bsoncxx::type::k_document:
+        {
             auto doc = std::make_unique<JSONBuilder::JSONMap>();
             for (const auto & elem : value.get_document().value)
                 doc->add(std::string(elem.key()), BSONElementAsJSON(elem));
             return doc;
         }
-        case bsoncxx::type::k_array: {
+        case bsoncxx::type::k_array:
+        {
             auto arr = std::make_unique<JSONBuilder::JSONArray>();
             for (const auto & elem : value.get_array().value)
                 arr->add(BSONElementAsJSON(elem));
             return arr;
         }
-        case bsoncxx::type::k_regex: {
+        case bsoncxx::type::k_regex:
+        {
             auto doc = std::make_unique<JSONBuilder::JSONMap>();
             doc->add(std::string(value.get_regex().regex), std::string(value.get_regex().options));
             return doc;
         }
-        case bsoncxx::type::k_dbpointer: {
+        case bsoncxx::type::k_dbpointer:
+        {
             auto doc = std::make_unique<JSONBuilder::JSONMap>();
             doc->add(value.get_dbpointer().value.to_string(), std::string(value.get_dbpointer().collection));
             return doc;
         }
         case bsoncxx::type::k_null:
             return std::make_unique<JSONBuilder::JSONNull>();
+
         default:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BSON type {} is unserializable.", bsoncxx::to_string(value.type()));
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization BSON type '{}' is not supported", bsoncxx::to_string(value.type()));
     }
 }
 
@@ -163,7 +168,8 @@ static std::string BSONElementAsString(const T & value, const JSONBuilder::Forma
         case bsoncxx::type::k_array:
         case bsoncxx::type::k_regex:
         case bsoncxx::type::k_dbpointer:
-        case bsoncxx::type::k_symbol: {
+        case bsoncxx::type::k_symbol:
+        {
             WriteBufferFromOwnString buf;
             auto format_context = JSONBuilder::FormatContext{.out = buf};
             BSONElementAsJSON(value)->format(json_format_settings, format_context);

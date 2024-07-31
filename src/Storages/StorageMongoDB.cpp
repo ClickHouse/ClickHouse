@@ -37,7 +37,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int FAILED_TO_BUILD_MONGODB_QUERY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 using BSONCXXHelper::fieldAsBSONValue;
@@ -176,10 +176,11 @@ std::string mongoFuncName(const std::string & func)
     if (func == "or")
         return "$or";
 
-    throw Exception(ErrorCodes::FAILED_TO_BUILD_MONGODB_QUERY, "Function '{}' is not supported. You can disable this error with 'SET mongodb_fail_on_query_build_error=0', but this may cause poor performance, and is highly not recommended.", func);
+    return "";
 }
 
-std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(const ContextPtr & context, const FunctionNode * func)
+template <typename OnError>
+std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(const ContextPtr & context, const FunctionNode * func, OnError on_error)
 {
     if (func->getArguments().getNodes().empty())
         return {};
@@ -192,7 +193,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(const
             return {};
 
         // Skip columns from other tables in JOIN queries.
-        if (table->getStorage()->getStorageID().getFullTableName() != this->getStorageID().getFullTableName())
+        if (table->getStorage()->getStorageID() != this->getStorageID())
             return {};
 
         // Only these function can have exactly one argument and be passed to MongoDB.
@@ -206,6 +207,12 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(const
             return make_document(kvp(column->getColumnName(), make_document(kvp("$nin", make_array(bsoncxx::types::b_null{}, "")))));
 
         auto func_name = mongoFuncName(func->getFunctionName());
+        if (func_name.empty())
+        {
+            on_error(func);
+            return {};
+        }
+
         if (func->getArguments().getNodes().size() == 2)
         {
             const auto & value = func->getArguments().getNodes().at(1);
@@ -227,7 +234,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(const
             }
 
             if (const auto & func_value = value->as<FunctionNode>())
-                if (const auto & res_value = visitWhereFunction(context, func_value); res_value.has_value())
+                if (const auto & res_value = visitWhereFunction(context, func_value, on_error); res_value.has_value())
                     return make_document(kvp(column->getColumnName(), make_document(kvp(func_name, *res_value))));
         }
     }
@@ -237,17 +244,23 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(const
         for (const auto & elem : func->getArguments().getNodes())
         {
             if (const auto & elem_func = elem->as<FunctionNode>())
-                if (const auto & res_value = visitWhereFunction(context, elem_func); res_value.has_value())
+                if (const auto & res_value = visitWhereFunction(context, elem_func, on_error); res_value.has_value())
                     arr.append(*res_value);
         }
         if (!arr.view().empty())
-            return make_document(kvp(mongoFuncName(func->getFunctionName()), arr));
+        {
+            auto func_name = mongoFuncName(func->getFunctionName());
+            if (func_name.empty())
+            {
+                on_error(func);
+                return {};
+            }
+            return make_document(kvp(func_name, arr));
+        }
     }
 
-    throw Exception(
-        ErrorCodes::FAILED_TO_BUILD_MONGODB_QUERY,
-        "Only constant expressions are supported in WHERE section. You can disable this error with 'SET "
-        "mongodb_fail_on_query_build_error=0', but this may cause poor performance, and is highly not recommended.");
+    on_error(func);
+    return {};
 }
 
 bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & context, mongocxx::options::find & options, const SelectQueryInfo & query, const Block & sample_block)
@@ -255,103 +268,105 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
     document projection{};
     for (const auto & column : sample_block)
         projection.append(kvp(column.name, 1));
-    LOG_DEBUG(log, "MongoDB projection has built: '{}'.", bsoncxx::to_json(projection));
+    LOG_DEBUG(log, "MongoDB projection has built: '{}'", bsoncxx::to_json(projection));
     options.projection(projection.extract());
 
-    if (!context->getSettingsRef().allow_experimental_analyzer)
-        return make_document();
-    auto & query_tree = query.query_tree->as<QueryNode &>();
+    bool throw_on_error = context->getSettingsRef().mongodb_throw_on_unsupported_query;
 
-    if (context->getSettingsRef().mongodb_fail_on_query_build_error)
+    if (!context->getSettingsRef().allow_experimental_analyzer)
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MongoDB storage does not support 'allow_experimental_analyzer = 0' setting");
+        return make_document();
+    }
+
+    const auto & query_tree = query.query_tree->as<QueryNode &>();
+
+    if (throw_on_error)
     {
         if (query_tree.hasHaving())
-            throw Exception(ErrorCodes::FAILED_TO_BUILD_MONGODB_QUERY, "HAVING section is not supported. You can disable this error with 'SET mongodb_fail_on_query_build_error=0', but this may cause poor performance, and is highly not recommended.");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "HAVING section is not supported. You can disable this error with 'SET mongodb_throw_on_unsupported_query=0', but this may cause poor performance, and is highly not recommended");
         if (query_tree.hasGroupBy())
-            throw Exception(ErrorCodes::FAILED_TO_BUILD_MONGODB_QUERY, "GROUP BY section is not supported. You can disable this error with 'SET mongodb_fail_on_query_build_error=0', but this may cause poor performance, and is highly not recommended.");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GROUP BY section is not supported. You can disable this error with 'SET mongodb_throw_on_unsupported_query=0', but this may cause poor performance, and is highly not recommended");
         if (query_tree.hasWindow())
-            throw Exception(ErrorCodes::FAILED_TO_BUILD_MONGODB_QUERY, "WINDOW section is not supported. You can disable this error with 'SET mongodb_fail_on_query_build_error=0', but this may cause poor performance, and is highly not recommended.");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WINDOW section is not supported. You can disable this error with 'SET mongodb_throw_on_unsupported_query=0', but this may cause poor performance, and is highly not recommended");
         if (query_tree.hasPrewhere())
-            throw Exception(ErrorCodes::FAILED_TO_BUILD_MONGODB_QUERY, "PREWHERE section is not supported. You can disable this error with 'SET mongodb_fail_on_query_build_error=0', but this may cause poor performance, and is highly not recommended.");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PREWHERE section is not supported. You can disable this error with 'SET mongodb_throw_on_unsupported_query=0', but this may cause poor performance, and is highly not recommended");
         if (query_tree.hasLimitBy())
-            throw Exception(ErrorCodes::FAILED_TO_BUILD_MONGODB_QUERY, "LIMIT BY section is not supported. You can disable this error with 'SET mongodb_fail_on_query_build_error=0', but this may cause poor performance, and is highly not recommended.");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT BY section is not supported. You can disable this error with 'SET mongodb_throw_on_unsupported_query=0', but this may cause poor performance, and is highly not recommended");
         if (query_tree.hasOffset())
-            throw Exception(ErrorCodes::FAILED_TO_BUILD_MONGODB_QUERY, "OFFSET section is not supported. You can disable this error with 'SET mongodb_fail_on_query_build_error=0', but this may cause poor performance, and is highly not recommended.");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OFFSET section is not supported. You can disable this error with 'SET mongodb_throw_on_unsupported_query=0', but this may cause poor performance, and is highly not recommended");
     }
+
+    auto on_error = [&] (const auto * node)
+    {
+        /// Reset limit, because if we omit ORDER BY, it should not be applied
+        options.limit(0);
+
+        if (throw_on_error)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Only simple queries are supported, failed to convert expression '{}' to MongoDB query. "
+                "You can disable this restriction with 'SET mongodb_throw_on_unsupported_query=0', to read the full table and process on CLickHouse side (this may cause poor performance)", node->formatASTForErrorMessage());
+        LOG_WARNING(log, "Failed to build MongoDB sort for '{}'", node ? node->formatASTForErrorMessage() : "<unknown>");
+    };
+
 
     if (query_tree.hasLimit())
     {
-        try
-        {
-            if (const auto & limit = query_tree.getLimit()->as<ConstantNode>())
-                options.limit(limit->getValue().safeGet<UInt64>());
-            else
-                throw Exception(ErrorCodes::FAILED_TO_BUILD_MONGODB_QUERY, "Only simple limit is supported. You can disable this error with 'SET mongodb_fail_on_query_build_error=0', but this may cause poor performance, and is highly not recommended.");
-        }
-        catch (Exception & e)
-        {
-            if (context->getSettingsRef().mongodb_fail_on_query_build_error)
-                throw;
-            LOG_WARNING(log, "Failed to build MongoDB limit: '{}'.", e.message());
-        }
+        if (const auto & limit = query_tree.getLimit()->as<ConstantNode>())
+            options.limit(limit->getValue().safeGet<UInt64>());
+        else
+            on_error(query_tree.getLimit().get());
     }
 
     if (query_tree.hasOrderBy())
     {
-        try
+        document sort{};
+        for (const auto & child : query_tree.getOrderByNode()->getChildren())
         {
-            document sort{};
-            for (const auto & child : query_tree.getOrderByNode()->getChildren())
+            if (const auto * sort_node = child->as<SortNode>())
             {
-                if (const auto & sort_node = child->as<SortNode>())
-                {
-                    if (sort_node->withFill() || sort_node->hasFillTo() || sort_node->hasFillFrom() || sort_node->hasFillStep())
-                        throw Exception(ErrorCodes::FAILED_TO_BUILD_MONGODB_QUERY, "ORDER BY WITH FILL is not supported. You can disable this error with 'SET mongodb_fail_on_query_build_error=0', but this may cause poor performance, and is highly not recommended.");
-                    if (const auto & column = sort_node->getExpression()->as<ColumnNode>())
-                        sort.append(kvp(column->getColumnName(), sort_node->getSortDirection() == SortDirection::ASCENDING ? 1 : -1));
-                    else
-                        throw Exception(ErrorCodes::FAILED_TO_BUILD_MONGODB_QUERY, "Only simple sort is supported. You can disable this error with 'SET mongodb_fail_on_query_build_error=0', but this may cause poor performance, and is highly not recommended.");
-                }
+                if (sort_node->withFill() || sort_node->hasFillTo() || sort_node->hasFillFrom() || sort_node->hasFillStep())
+                    on_error(sort_node);
+
+                if (const auto & column = sort_node->getExpression()->as<ColumnNode>())
+                    sort.append(kvp(column->getColumnName(), sort_node->getSortDirection() == SortDirection::ASCENDING ? 1 : -1));
                 else
-                    throw Exception(ErrorCodes::FAILED_TO_BUILD_MONGODB_QUERY, "Only simple sort is supported. You can disable this error with 'SET mongodb_fail_on_query_build_error=0', but this may cause poor performance, and is highly not recommended.");
+                    on_error(sort_node);
             }
-            LOG_DEBUG(log, "MongoDB sort has built: '{}'.", bsoncxx::to_json(sort));
-            options.sort(sort.extract());
+            else
+                on_error(sort_node);
         }
-        catch (Exception & e)
+        if (!sort.view().empty())
         {
-            if (context->getSettingsRef().mongodb_fail_on_query_build_error)
-                throw;
-            LOG_WARNING(log, "Failed to build MongoDB sort: '{}'.", e.message());
+            LOG_DEBUG(log, "MongoDB sort has built: '{}'", bsoncxx::to_json(sort));
+            options.sort(sort.extract());
         }
     }
 
     if (query_tree.hasWhere())
     {
-        try
-        {
-            std::optional<bsoncxx::document::value> filter{};
-            if (const auto & func = query_tree.getWhere()->as<FunctionNode>())
-                filter = visitWhereFunction(context, func);
-            else if (const auto & const_expr = query_tree.getWhere()->as<ConstantNode>())
-            {
-                if (const_expr->hasSourceExpression())
-                {
-                    if (const auto & func_expr = const_expr->getSourceExpression()->as<FunctionNode>())
-                        filter = visitWhereFunction(context, func_expr);
-                }
-            }
+        std::optional<bsoncxx::document::value> filter{};
+        if (const auto & func = query_tree.getWhere()->as<FunctionNode>())
+            filter = visitWhereFunction(context, func, on_error);
 
-            if (filter.has_value())
+        else if (const auto & const_expr = query_tree.getWhere()->as<ConstantNode>())
+        {
+            if (const_expr->hasSourceExpression())
             {
-                LOG_DEBUG(log, "MongoDB query has built: '{}'.", bsoncxx::to_json(*filter));
-                return std::move(*filter);
+                if (const auto & func_expr = const_expr->getSourceExpression()->as<FunctionNode>())
+                    filter = visitWhereFunction(context, func_expr, on_error);
             }
         }
-        catch (Exception & e)
+
+        if (filter.has_value())
         {
-            if (context->getSettingsRef().mongodb_fail_on_query_build_error)
-                throw;
-            LOG_WARNING(log, "Failed to build MongoDB query: '{}'.", e.message());
+            LOG_DEBUG(log, "MongoDB query has built: '{}'.", bsoncxx::to_json(*filter));
+            return std::move(*filter);
+        }
+        else
+        {
+            on_error(query_tree.getWhere().get());
         }
     }
 
