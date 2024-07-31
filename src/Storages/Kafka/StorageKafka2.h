@@ -181,7 +181,6 @@ private:
     void partialShutdown();
 
     void assertActive() const;
-    SettingsChanges createSettingsAdjustments();
     KafkaConsumer2Ptr createConsumer(size_t consumer_number);
     // Returns full consumer related configuration, also the configuration
     // contains global kafka properties.

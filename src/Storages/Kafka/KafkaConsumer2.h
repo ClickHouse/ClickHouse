@@ -115,6 +115,8 @@ public:
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
     String currentPayload() const { return current[-1].get_payload(); }
 
+    void subscribeIfNotSubscribedYet();
+
 private:
     using Messages = std::vector<cppkafka::Message>;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaConsumers};
@@ -136,6 +138,7 @@ private:
     StalledStatus stalled_status = StalledStatus::NO_MESSAGES_RETURNED;
 
     const std::atomic<bool> & stopped;
+    bool is_subscribed = false;
 
     // order is important, need to be destructed before consumer
     Messages messages;

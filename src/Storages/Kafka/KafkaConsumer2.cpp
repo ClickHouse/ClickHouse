@@ -122,8 +122,6 @@ KafkaConsumer2::KafkaConsumer2(
             LOG_ERROR(log, "Rebalance error: {}", err);
             ProfileEvents::increment(ProfileEvents::KafkaRebalanceErrors);
         });
-
-    consumer->subscribe(topics);
 }
 
 KafkaConsumer2::~KafkaConsumer2()
@@ -340,6 +338,16 @@ void KafkaConsumer2::commit(const TopicPartition & topic_partition)
     {
         ProfileEvents::increment(ProfileEvents::KafkaCommits);
     }
+}
+
+void KafkaConsumer2::subscribeIfNotSubscribedYet()
+{
+    if (likely(is_subscribed))
+        return;
+
+    consumer->subscribe(topics);
+    is_subscribed = true;
+    LOG_DEBUG(log, "Subscribed.");
 }
 
 ReadBufferPtr KafkaConsumer2::getNextMessage()

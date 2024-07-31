@@ -372,6 +372,8 @@ void StorageKafka2::startup()
             consumers.push_back(ConsumerAndAssignmentInfo{.consumer = createConsumer(i), .keeper = getZooKeeper()});
             LOG_DEBUG(log, "Created #{} consumer", num_created_consumers);
             ++num_created_consumers;
+
+            consumers.back().consumer->subscribeIfNotSubscribedYet();
         }
         catch (const cppkafka::Exception &)
         {
@@ -404,16 +406,11 @@ KafkaConsumer2Ptr StorageKafka2::createConsumer(size_t consumer_number)
     consumer_impl->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
 
     /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
-    if (thread_per_consumer)
-    {
-        // call subscribe;
-        auto & stream_cancelled = tasks[consumer_number]->stream_cancelled;
-        return std::make_shared<KafkaConsumer2>(
-            consumer_impl, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), stream_cancelled, topics);
-    }
-
+    chassert((thread_per_consumer || num_consumers == 1) && "StorageKafka2 cannot handle multiple consumers on a single thread");
+    auto & stream_cancelled = tasks[consumer_number]->stream_cancelled;
     return std::make_shared<KafkaConsumer2>(
-        consumer_impl, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), tasks.back()->stream_cancelled, topics);
+        consumer_impl, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), stream_cancelled, topics);
+
 }
 
 
@@ -1067,6 +1064,8 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
     auto & consumer_info = consumers[idx];
     consumer_info.watch.restart();
     auto & consumer = consumer_info.consumer;
+    // In case the initial subscribe in startup failed, let's subscribe now
+    consumer->subscribeIfNotSubscribedYet();
 
     // To keep the consumer alive
     const auto wait_for_assignment = consumer_info.locks.empty();
