@@ -108,7 +108,9 @@ echo 'autodetect xml (non leading whitespaces)'
 $CLICKHOUSE_CLIENT --config "$autodetect_xml_non_leading_whitespace_config" -q "select getSetting('max_threads')"
 echo 'autodetect yaml'
 $CLICKHOUSE_CLIENT --config "$autodetect_yaml_config" -q "select getSetting('max_threads')"
+
+# Error code is 1000 (Poco::Exception). It is not ignored.
 echo 'autodetect invalid xml'
-$CLICKHOUSE_CLIENT --config "$autodetect_invalid_xml_config" -q "select getSetting('max_threads')" 2>&1 |& sed -n '1p' | sed -e "s#$CLICKHOUSE_TMP##" -e "s#Poco::Exception. ##"
+$CLICKHOUSE_CLIENT --config "$autodetect_invalid_xml_config" -q "select getSetting('max_threads')" 2>&1 |& grep -q "Code: 1000" && echo "Correct: invalid xml parsed with exception" || echo 'Fail: expected error code 1000 but got other'
 echo 'autodetect invalid yaml'
-$CLICKHOUSE_CLIENT --config "$autodetect_invalid_yaml_config" -q "select getSetting('max_threads')" 2>&1 |& sed -n '1p' | sed -e "s#$CLICKHOUSE_TMP##" -e "s#DB::Exception: ##"
+$CLICKHOUSE_CLIENT --config "$autodetect_invalid_yaml_config" -q "select getSetting('max_threads')" 2>&1 |& sed -e "s#$CLICKHOUSE_TMP##" -e "s#DB::Exception: ##"
