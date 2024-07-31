@@ -356,7 +356,7 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
             paths_get.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "log_ptr");
         }
     }
-    
+
     try
     {
         auto current_zookeeper = getZooKeeper();
@@ -396,7 +396,7 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
                 ++global_replica_index;
             }
         }
-    
+
         return replicas_info;
     } catch (...)
     {

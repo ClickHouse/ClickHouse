@@ -116,7 +116,7 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const Nam
                 else
                     res_columns[i++]->insertDefault();
             }
-            
+
             ++global_replica_idx;
         }
     }
