@@ -690,6 +690,9 @@ void TCPHandler::runImpl()
             exception = std::make_unique<DB::Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
         }
 
+        /// In case of exception state was not reset, so socket's timouts must be reset explicitly
+        state.timeout_setter.reset();
+
         try
         {
             if (exception)
