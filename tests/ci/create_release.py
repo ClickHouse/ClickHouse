@@ -315,7 +315,7 @@ class ReleaseInfo:
                 cmd_push_branch = f"{GIT_PREFIX} push --set-upstream origin {branch_upd_version_contributors}"
                 body_file = get_abs_path(".github/PULL_REQUEST_TEMPLATE.md")
                 actor = os.getenv("GITHUB_ACTOR", "") or "me"
-                cmd_create_pr = f"gh pr create --repo {GITHUB_REPOSITORY} --title 'Update version after release' --head {branch_upd_version_contributors} --base {self.release_branch} --body-file '{body_file} --label 'do not test' --assignee @{actor}"
+                cmd_create_pr = f"gh pr create --repo {GITHUB_REPOSITORY} --title 'Update version after release' --head {branch_upd_version_contributors} --base {self.release_branch} --body-file {body_file} --label 'do not test' --assignee {actor}"
                 Shell.run(cmd_commit_version_upd, check=True, dry_run=dry_run)
                 Shell.run(cmd_push_branch, check=True, dry_run=dry_run)
                 Shell.run(cmd_create_pr, check=True, dry_run=dry_run)

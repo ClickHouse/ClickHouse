@@ -16,8 +16,7 @@ inputs:
       - new
   dry-run:
     description: 'Dry run'
-    required: false
-    default: true
+    required: true
     type: boolean
   token:
     required: true
@@ -30,8 +29,7 @@ runs:
       shell: bash
       run: |
         python3 ./tests/ci/create_release.py --prepare-release-info \
-          --ref ${{ inputs.ref }} --release-type ${{ inputs.type }} \
-          ${{ inputs.dry-run && '--dry-run' || '' }}
+          --ref ${{ inputs.ref }} --release-type ${{ inputs.type }} ${{ inputs.dry-run == true && '--dry-run' || '' }}
         echo "::group::Release Info"
         python3 -m json.tool /tmp/release_info.json
         echo "::endgroup::"
@@ -44,20 +42,20 @@ runs:
       if: ${{ inputs.type == 'patch' }}
       shell: bash
       run: |
-        python3 ./tests/ci/create_release.py --download-packages ${{ inputs.dry-run && '--dry-run' || '' }}
+        python3 ./tests/ci/create_release.py --download-packages ${{ inputs.dry-run == true && '--dry-run' || '' }}
     - name: Push Git Tag for the Release
       shell: bash
       run: |
-        python3 ./tests/ci/create_release.py --push-release-tag ${{ inputs.dry-run && '--dry-run' || '' }}
+        python3 ./tests/ci/create_release.py --push-release-tag ${{ inputs.dry-run == true && '--dry-run' || '' }}
     - name: Push New Release Branch
       if: ${{ inputs.type == 'new' }}
       shell: bash
       run: |
-        python3 ./tests/ci/create_release.py --push-new-release-branch ${{ inputs.dry-run && '--dry-run' || '' }}
+        python3 ./tests/ci/create_release.py --push-new-release-branch ${{ inputs.dry-run == true && '--dry-run' || '' }}
     - name: Bump CH Version and Update Contributors' List
       shell: bash
       run: |
-        python3 ./tests/ci/create_release.py --create-bump-version-pr ${{ inputs.dry-run && '--dry-run' || '' }}
+        python3 ./tests/ci/create_release.py --create-bump-version-pr ${{ inputs.dry-run == true && '--dry-run' || '' }}
     - name: Bump Docker versions, Changelog, Security
       if: ${{ inputs.type == 'patch' }}
       shell: bash
@@ -107,37 +105,37 @@ runs:
       shell: bash
       if: ${{ inputs.type == 'patch' }}
       run: |
-        python3 ./tests/ci/create_release.py --create-gh-release ${{ inputs.dry-run && '--dry-run' || '' }}
+        python3 ./tests/ci/create_release.py --create-gh-release ${{ inputs.dry-run == true && '--dry-run' || '' }}
     - name: Export TGZ Packages
       if: ${{ inputs.type == 'patch' }}
       shell: bash
       run: |
-        python3 ./tests/ci/artifactory.py --export-tgz ${{ inputs.dry-run && '--dry-run' || '' }}
+        python3 ./tests/ci/artifactory.py --export-tgz ${{ inputs.dry-run == true && '--dry-run' || '' }}
     - name: Test TGZ Packages
       if: ${{ inputs.type == 'patch' }}
       shell: bash
       run: |
-        python3 ./tests/ci/artifactory.py --test-tgz ${{ inputs.dry-run && '--dry-run' || '' }}
+        python3 ./tests/ci/artifactory.py --test-tgz ${{ inputs.dry-run == true && '--dry-run' || '' }}
     - name: Export RPM Packages
       if: ${{ inputs.type == 'patch' }}
       shell: bash
       run: |
-        python3 ./tests/ci/artifactory.py --export-rpm ${{ inputs.dry-run && '--dry-run' || '' }}
+        python3 ./tests/ci/artifactory.py --export-rpm ${{ inputs.dry-run == true && '--dry-run' || '' }}
     - name: Test RPM Packages
       if: ${{ inputs.type == 'patch' }}
       shell: bash
       run: |
-        python3 ./tests/ci/artifactory.py --test-rpm ${{ inputs.dry-run && '--dry-run' || '' }}
+        python3 ./tests/ci/artifactory.py --test-rpm ${{ inputs.dry-run == true && '--dry-run' || '' }}
     - name: Export Debian Packages
       if: ${{ inputs.type == 'patch' }}
       shell: bash
       run: |
-        python3 ./tests/ci/artifactory.py --export-debian ${{ inputs.dry-run && '--dry-run' || '' }}
+        python3 ./tests/ci/artifactory.py --export-debian ${{ inputs.dry-run == true && '--dry-run' || '' }}
     - name: Test Debian Packages
       if: ${{ inputs.type == 'patch' }}
       shell: bash
       run: |
-        python3 ./tests/ci/artifactory.py --test-debian ${{ inputs.dry-run && '--dry-run' || '' }}
+        python3 ./tests/ci/artifactory.py --test-debian ${{ inputs.dry-run == true && '--dry-run' || '' }}
     - name: Docker clickhouse/clickhouse-server building
       if: ${{ inputs.type == 'patch' }}
       shell: bash
@@ -165,4 +163,4 @@ runs:
       if: ${{ !cancelled() }}
       shell: bash
       run: |
-        python3 ./tests/ci/create_release.py --post-status ${{ inputs.dry-run && '--dry-run' || '' }}
+        python3 ./tests/ci/create_release.py --post-status ${{ inputs.dry-run == true && '--dry-run' || '' }}
