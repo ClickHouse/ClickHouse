@@ -464,7 +464,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
             * to avoid unnecessary squashing.
             */
 
-        Settings new_settings = select_context->getSettings();
+        Settings new_settings = select_context->getSettingsCopy();
 
         new_settings.max_threads = std::max<UInt64>(1, settings.max_insert_threads);
 
