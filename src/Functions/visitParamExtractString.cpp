@@ -16,7 +16,7 @@ struct ExtractString
             res_data.resize(old_size);
     }
 
-    static const FormatSettings::JSON constexpr default_json_settings;
+    static const FormatSettings::JSON inline default_json_settings;
 };
 
 struct NameSimpleJSONExtractString { static constexpr auto name = "simpleJSONExtractString"; };
