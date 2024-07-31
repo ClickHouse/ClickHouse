@@ -35,7 +35,7 @@ std::unique_ptr<S3ObjectStorageSettings> getSettings(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     ContextPtr context,
-    const std::string & endpoint,
+    const std::pair<std::string, int> &endpoint,
     bool validate_settings)
 {
     const auto & settings = context->getSettingsRef();
@@ -44,7 +44,7 @@ std::unique_ptr<S3ObjectStorageSettings> getSettings(
     auto request_settings = S3::RequestSettings(config, settings, config_prefix, "s3_", validate_settings);
 
     request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
-        ProxyConfiguration::protocolFromString(S3::URI(endpoint).uri.getScheme()), config_prefix, config);
+        ProxyConfiguration::protocolFromString(S3::URI(endpoint.first, endpoint.second).uri.getScheme()), config_prefix, config);
 
     return std::make_unique<S3ObjectStorageSettings>(
         request_settings,
@@ -56,12 +56,12 @@ std::unique_ptr<S3ObjectStorageSettings> getSettings(
 }
 
 std::unique_ptr<S3::Client> getClient(
-    const std::string & endpoint,
+    const std::pair<std::string, int> &endpoint,
     const S3ObjectStorageSettings & settings,
     ContextPtr context,
     bool for_disk_s3)
 {
-    auto url = S3::URI(endpoint);
+    auto url = S3::URI(endpoint.first, endpoint.second);
     if (!url.key.ends_with('/'))
         url.key.push_back('/');
     return getClient(url, settings, context, for_disk_s3);

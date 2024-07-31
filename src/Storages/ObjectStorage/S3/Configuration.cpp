@@ -109,7 +109,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     const auto & settings = context->getSettingsRef();
 
     auto s3_settings = getSettings(
-        config, "s3"/* config_prefix */, context, url.uri_str, settings.s3_validate_request_settings);
+        config, "s3"/* config_prefix */, context, std::pair<std::string, int>(url.uri_str, url.endpoint_style), settings.s3_validate_request_settings);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
