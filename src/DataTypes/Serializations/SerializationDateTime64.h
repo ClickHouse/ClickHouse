@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationDecimalBase.h>
-#include <DataTypes/Serializations/SerializationAsStringNonTrivialJSON.h>
 #include <DataTypes/TimezoneMixin.h>
 
 class DateLUTImpl;
@@ -9,7 +8,7 @@ class DateLUTImpl;
 namespace DB
 {
 
-class SerializationDateTime64 final : public SerializationAsStringNonTrivialJSON<SerializationDecimalBase<DateTime64>>, public TimezoneMixin
+class SerializationDateTime64 final : public SerializationDecimalBase<DateTime64>, public TimezoneMixin
 {
 public:
     SerializationDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_);
@@ -26,8 +25,8 @@ public:
     void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     bool tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextNoEmptyCheckJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    bool tryDeserializeTextNoEmptyCheckJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    bool tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;

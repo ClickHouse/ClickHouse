@@ -5,6 +5,7 @@
 #include <Core/Field.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -317,22 +318,98 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    auto deserialize_element = [&](IColumn & element_column, size_t element_pos)
+    static constexpr auto EMPTY_STRING = "\"\"";
+    static constexpr auto EMPTY_STRING_LENGTH = std::string_view(EMPTY_STRING).length();
+
+    auto do_deserialize_element = [](IColumn & element_column, size_t element_pos, ReadBuffer & buf, auto && check_for_empty_string, auto && deserialize) -> ReturnType
+    {
+        if (check_for_empty_string(buf))
+        {
+            element_column.insertDefault();
+            return ReturnType(true);
+        }
+
+        return deserialize(element_column, element_pos, buf);
+    };
+
+    auto deserialize_element_impl = [&settings, this](IColumn & element_column, size_t element_pos, ReadBuffer & buf) -> ReturnType
     {
         if constexpr (throw_exception)
         {
             if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(element_column, istr, settings, elems[element_pos]);
+                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(element_column, buf, settings, elems[element_pos]);
             else
-                elems[element_pos]->deserializeTextJSON(element_column, istr, settings);
-            return true;
+                elems[element_pos]->deserializeTextJSON(element_column, buf, settings);
         }
         else
         {
             if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
-                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(element_column, istr, settings, elems[element_pos]);
-            return elems[element_pos]->tryDeserializeTextJSON(element_column, istr, settings);
+                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(element_column, buf, settings, elems[element_pos]);
+            return elems[element_pos]->tryDeserializeTextJSON(element_column, buf, settings);
         }
+    };
+
+    auto deserialize_element = [&settings, &do_deserialize_element, &deserialize_element_impl, &istr](IColumn & element_column, size_t element_pos) -> ReturnType
+    {
+        if (!settings.json.empty_as_default || istr.eof() || *istr.position() != EMPTY_STRING[0])
+            return do_deserialize_element(element_column, element_pos, istr, [](ReadBuffer &) { return false; }, deserialize_element_impl);
+
+        if (istr.available() >= EMPTY_STRING_LENGTH)
+        {
+            /// We have enough data in buffer to check if we have an empty string.
+            auto check_for_empty_string = [](ReadBuffer & buf_) -> bool
+            {
+                auto * pos = buf_.position();
+                if (checkString(EMPTY_STRING, buf_))
+                    return true;
+                else
+                {
+                    buf_.position() = pos;
+                    return false;
+                }
+            };
+
+            return do_deserialize_element(element_column, element_pos, istr, check_for_empty_string, deserialize_element_impl);
+        }
+
+        /// We don't have enough data in buffer to check if we have an empty string.
+        /// Use PeekableReadBuffer to make a checkpoint before checking for an
+        /// empty string and rollback if check was failed.
+
+        auto check_for_empty_string = [](ReadBuffer & buf_) -> bool
+        {
+            auto & peekable_buf = assert_cast<PeekableReadBuffer &>(buf_);
+            peekable_buf.setCheckpoint();
+            SCOPE_EXIT(peekable_buf.dropCheckpoint());
+            if (checkString(EMPTY_STRING, peekable_buf))
+                return true;
+            else
+            {
+                peekable_buf.rollbackToCheckpoint();
+                return false;
+            }
+        };
+
+        auto deserialize_element_impl_with_check = [&deserialize_element_impl](IColumn & element_column_, size_t element_pos_, ReadBuffer & buf_) -> ReturnType
+        {
+            auto & peekable_buf = assert_cast<PeekableReadBuffer &>(buf_);
+            if constexpr (throw_exception)
+            {
+                deserialize_element_impl(element_column_, element_pos_, peekable_buf);
+                assert(!peekable_buf.hasUnreadData());
+            }
+            else
+            {
+                if (!deserialize_element_impl(element_column_, element_pos_, peekable_buf))
+                    return false;
+                if (likely(!peekable_buf.hasUnreadData()))
+                    return true;
+                return false;
+            }
+        };
+
+        PeekableReadBuffer peekable_buf(istr, true);
+        return do_deserialize_element(element_column, element_pos, peekable_buf, check_for_empty_string, deserialize_element_impl_with_check);
     };
 
     if (settings.json.read_named_tuples_as_objects

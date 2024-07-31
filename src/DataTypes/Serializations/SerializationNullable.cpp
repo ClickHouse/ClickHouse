@@ -844,52 +844,25 @@ bool SerializationNullable::tryDeserializeNullJSON(DB::ReadBuffer & istr)
     return checkString("null", istr);
 }
 
-namespace
-{
-
-enum class Strategy : uint8_t
-{
-    Deserialize,
-    DeserializeNoEmptyCheck,
-    TryDeserialize
-};
-
-template <Strategy> struct ReturnTypeImpl;
-template <> struct ReturnTypeImpl<Strategy::Deserialize> { using Type = void; };
-template <> struct ReturnTypeImpl<Strategy::TryDeserialize> { using Type = bool; };
-template <> struct ReturnTypeImpl<Strategy::DeserializeNoEmptyCheck> { using Type = void; };
-
-template <Strategy strategy>
-using ReturnType = typename ReturnTypeImpl<strategy>::Type;
-
-template <Strategy> struct AlwaysFalse : std::false_type {};
-
-template <Strategy strategy>
-ReturnType<strategy> deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested, bool & is_null)
+template<typename ReturnType>
+ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested, bool & is_null)
 {
     auto check_for_null = [](ReadBuffer & buf){ return checkStringByFirstCharacterAndAssertTheRest("null", buf); };
-    auto deserialize_nested = [&nested, &settings](IColumn & nested_column, ReadBuffer & buf) -> ReturnType<strategy>
+    auto deserialize_nested = [&nested, &settings](IColumn & nested_column, ReadBuffer & buf)
     {
-        if constexpr (strategy == Strategy::TryDeserialize)
+        if constexpr (std::is_same_v<ReturnType, bool>)
             return nested->tryDeserializeTextJSON(nested_column, buf, settings);
-        else if constexpr (strategy == Strategy::Deserialize)
-            nested->deserializeTextJSON(nested_column, buf, settings);
-        else if constexpr (strategy == Strategy::DeserializeNoEmptyCheck)
-            nested->deserializeTextNoEmptyCheckJSON(nested_column, buf, settings);
-        else
-            static_assert(AlwaysFalse<strategy>::value);
+        nested->deserializeTextJSON(nested_column, buf, settings);
     };
 
-    return deserializeImpl<ReturnType<strategy>>(column, istr, check_for_null, deserialize_nested, is_null);
-}
-
+    return deserializeImpl<ReturnType>(column, istr, check_for_null, deserialize_nested, is_null);
 }
 
 void SerializationNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     ColumnNullable & col = assert_cast<ColumnNullable &>(column);
     bool is_null;
-    deserializeTextJSONImpl<Strategy::Deserialize>(col.getNestedColumn(), istr, settings, nested, is_null);
+    deserializeTextJSONImpl<void>(col.getNestedColumn(), istr, settings, nested, is_null);
     safeAppendToNullMap<void>(col, is_null);
 }
 
@@ -897,27 +870,20 @@ bool SerializationNullable::tryDeserializeTextJSON(IColumn & column, ReadBuffer 
 {
     ColumnNullable & col = assert_cast<ColumnNullable &>(column);
     bool is_null;
-    return deserializeTextJSONImpl<Strategy::TryDeserialize>(col.getNestedColumn(), istr, settings, nested, is_null) && safeAppendToNullMap<bool>(col, is_null);
+    return deserializeTextJSONImpl<bool>(col.getNestedColumn(), istr, settings, nested, is_null) && safeAppendToNullMap<bool>(col, is_null);
 }
 
 bool SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
 {
     bool is_null;
-    deserializeTextJSONImpl<Strategy::Deserialize>(nested_column, istr, settings, nested_serialization, is_null);
-    return !is_null;
-}
-
-bool SerializationNullable::deserializeNullAsDefaultOrNestedTextNoEmptyCheckJSON(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
-{
-    bool is_null;
-    deserializeTextJSONImpl<Strategy::DeserializeNoEmptyCheck>(nested_column, istr, settings, nested_serialization, is_null);
+    deserializeTextJSONImpl<void>(nested_column, istr, settings, nested_serialization, is_null);
     return !is_null;
 }
 
 bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
 {
     bool is_null;
-    return deserializeTextJSONImpl<Strategy::TryDeserialize>(nested_column, istr, settings, nested_serialization, is_null);
+    return deserializeTextJSONImpl<bool>(nested_column, istr, settings, nested_serialization, is_null);
 }
 
 void SerializationNullable::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

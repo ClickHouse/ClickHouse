@@ -64,8 +64,6 @@ public:
     SerializationPtr doGetDefaultSerialization() const override;
     bool supportsSparseSerialization() const override { return false; }
 
-    bool isNonTriviallySerializedAsStringJSON() const override { return true; }
-
     bool isVersioned() const;
 
     /// Version is not empty only if it was parsed from AST or implicitly cast to 0 or version according

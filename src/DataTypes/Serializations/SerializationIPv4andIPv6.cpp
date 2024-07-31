@@ -69,7 +69,7 @@ void SerializationIP<IPv>::serializeTextJSON(const DB::IColumn & column, size_t 
 }
 
 template <typename IPv>
-void SerializationIP<IPv>::deserializeTextNoEmptyCheckJSON(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
+void SerializationIP<IPv>::deserializeTextJSON(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
 {
     IPv x;
     assertChar('"', istr);
@@ -84,7 +84,7 @@ void SerializationIP<IPv>::deserializeTextNoEmptyCheckJSON(DB::IColumn & column,
 }
 
 template <typename IPv>
-bool SerializationIP<IPv>::tryDeserializeTextNoEmptyCheckJSON(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings &) const
+bool SerializationIP<IPv>::tryDeserializeTextJSON(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings &) const
 {
     IPv x;
     if (!checkChar('"', istr) || !tryReadText(x, istr) || !checkChar('"', istr))

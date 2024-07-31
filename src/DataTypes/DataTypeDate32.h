@@ -18,7 +18,6 @@ public:
 
     bool canBeUsedAsVersion() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
-    bool isNonTriviallySerializedAsStringJSON() const override { return true; }
 
     bool equals(const IDataType & rhs) const override;
 
