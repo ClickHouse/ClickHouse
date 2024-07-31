@@ -1090,7 +1090,7 @@ void TCPHandler::processOrdinaryQuery()
         }
 
         /// This lock wasn't acquired before and we make .lock() call here
-        /// so everything under this line is covered even together
+        /// so everything under this line is covered.
         out_lock.lock();
 
         /** If data has run out, we will send the profiling data and total values to
@@ -1117,7 +1117,7 @@ void TCPHandler::processOrdinaryQuery()
         last_sent_snapshots.clear();
     }
 
-    out_lock.lock()
+    out_lock.lock();
     sendProgress();
 }
 
