@@ -114,7 +114,7 @@ StorageKafkaInterceptors<TStorageKafka>::rdKafkaOnThreadExit(rd_kafka_t *, rd_ka
 
     self->thread_statuses.erase(it);
 
-        return RD_KAFKA_RESP_ERR_NO_ERROR;
+    return RD_KAFKA_RESP_ERR_NO_ERROR;
 }
 
 template <typename TStorageKafka>

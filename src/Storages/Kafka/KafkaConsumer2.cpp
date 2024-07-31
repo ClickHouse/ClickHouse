@@ -326,7 +326,7 @@ void KafkaConsumer2::commit(const TopicPartition & topic_partition)
             if (e.get_error() == RD_KAFKA_RESP_ERR__NO_OFFSET)
                 committed = true;
             else
-                LOG_WARNING(log, "Exception during commit attempt: {}", e.what());
+                LOG_ERROR(log, "Exception during attempt to commit to Kafka: {}", e.what());
         }
     }
 
@@ -334,7 +334,7 @@ void KafkaConsumer2::commit(const TopicPartition & topic_partition)
     {
         // The failure is not the biggest issue, it only counts when a table is dropped and recreated, otherwise the offsets are taken from keeper.
         ProfileEvents::increment(ProfileEvents::KafkaCommitFailures);
-        LOG_INFO(log, "All commit attempts failed");
+        LOG_ERROR(log, "All commit attempts failed");
     }
     else
     {

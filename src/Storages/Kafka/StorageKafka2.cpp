@@ -319,34 +319,6 @@ void StorageKafka2::assertActive() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table is not active (replica path: {})", replica_path);
 }
 
-SettingsChanges StorageKafka2::createSettingsAdjustments()
-{
-    SettingsChanges result;
-    // Needed for backward compatibility
-    if (!kafka_settings->input_format_skip_unknown_fields.changed)
-    {
-        // Always skip unknown fields regardless of the context (JSON or TSKV)
-        kafka_settings->input_format_skip_unknown_fields = true;
-    }
-
-    if (!kafka_settings->input_format_allow_errors_ratio.changed)
-        kafka_settings->input_format_allow_errors_ratio = 0.;
-
-    if (!kafka_settings->input_format_allow_errors_num.changed)
-        kafka_settings->input_format_allow_errors_num = kafka_settings->kafka_skip_broken_messages.value;
-
-    if (!schema_name.empty())
-        result.emplace_back("format_schema", schema_name);
-
-    for (const auto & setting : *kafka_settings)
-    {
-        const auto & name = setting.getName();
-        if (name.find("kafka_") == std::string::npos)
-            result.emplace_back(name, setting.getValue());
-    }
-    return result;
-}
-
 
 Pipe StorageKafka2::read(
     const Names & /*column_names */,
