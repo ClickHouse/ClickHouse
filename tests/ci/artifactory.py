@@ -15,6 +15,7 @@ from ci_utils import WithIter, Shell
 class MountPointApp(metaclass=WithIter):
     RCLONE = "rclone"
     S3FS = "s3fs"
+    GEESEFS = "geesefs"
 
 
 class R2MountPoint:
@@ -70,6 +71,20 @@ class R2MountPoint:
             )
             # Use --no-modtime to try to avoid: ERROR : rpm/lts/clickhouse-client-24.3.6.5.x86_64.rpm: Failed to apply pending mod time
             self.mount_cmd = f"rclone mount remote:{self.bucket_name} {self.MOUNT_POINT} --daemon --cache-dir {self.cache_dir} --umask 0000 --log-file {self.LOG_FILE} {self.aux_mount_options}"
+        elif self.app == MountPointApp.GEESEFS:
+            self.cache_dir = "/home/ubuntu/geesefs_cache"
+            self.aux_mount_options += (
+                f" --cache={self.cache_dir} " if self.CACHE_ENABLED else ""
+            )
+            if not dry_run:
+                self.aux_mount_options += f" --shared-config=/home/ubuntu/.r2_auth "
+            else:
+                self.aux_mount_options += (
+                    f" --shared-config=/home/ubuntu/.r2_auth_test "
+                )
+            if self.DEBUG:
+                self.aux_mount_options += " --debug_s3 --debug_fuse "
+            self.mount_cmd = f"geesefs --endpoint={self.API_ENDPOINT} --cheap --memory-limit=2050 --gc-interval=100 --max-flushers=5 --max-parallel-parts=1 --max-parallel-copy=2 --log-file={self.LOG_FILE} {self.aux_mount_options} {self.bucket_name} {self.MOUNT_POINT}"
         else:
             assert False
 
@@ -87,7 +102,7 @@ class R2MountPoint:
         Shell.run(_UNMOUNT_CMD)
         Shell.run(_MKDIR_CMD)
         Shell.run(_MKDIR_FOR_CACHE)
-        if self.app == MountPointApp.S3FS:
+        if self.app != MountPointApp.RCLONE:
             Shell.run(self.mount_cmd, check=True)
         else:
             # didn't manage to use simple run() and without blocking or failure
@@ -158,7 +173,13 @@ class DebianArtifactory:
         cmd = f'docker run --rm ubuntu:latest bash -c "apt update -y; apt install -y sudo gnupg ca-certificates; apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754; {debian_command}"'
         print("Running test command:")
         print(f"  {cmd}")
-        Shell.run(cmd, check=True)
+        assert Shell.check(cmd)
+        print(f"Test packages installation, version [latest]")
+        debian_command_2 = f"echo 'deb {self.repo_url} stable main' | tee /etc/apt/sources.list.d/clickhouse.list; apt update -y; apt-get install -y clickhouse-common-static clickhouse-client"
+        cmd = f'docker run --rm ubuntu:latest bash -c "apt update -y; apt install -y sudo gnupg ca-certificates; apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754; {debian_command_2}"'
+        print("Running test command:")
+        print(f"  {cmd}")
+        assert Shell.check(cmd)
         self.release_info.debian_command = debian_command
         self.release_info.dump()
 
@@ -234,7 +255,13 @@ class RpmArtifactory:
         cmd = f'docker run --rm fedora:latest /bin/bash -c "dnf -y install dnf-plugins-core && dnf config-manager --add-repo={self.repo_url} && {rpm_command}"'
         print("Running test command:")
         print(f"  {cmd}")
-        Shell.run(cmd, check=True)
+        assert Shell.check(cmd)
+        print(f"Test package installation, version [latest]")
+        rpm_command_2 = f"dnf config-manager --add-repo={self.repo_url} && dnf makecache && dnf -y install clickhouse-client"
+        cmd = f'docker run --rm fedora:latest /bin/bash -c "dnf -y install dnf-plugins-core && dnf config-manager --add-repo={self.repo_url} && {rpm_command_2}"'
+        print("Running test command:")
+        print(f"  {cmd}")
+        assert Shell.check(cmd)
         self.release_info.rpm_command = rpm_command
         self.release_info.dump()
 
@@ -350,7 +377,7 @@ if __name__ == "__main__":
            ERROR : IO error: NotImplemented: versionId not implemented
            Failed to copy: NotImplemented: versionId not implemented
     """
-    mp = R2MountPoint(MountPointApp.S3FS, dry_run=args.dry_run)
+    mp = R2MountPoint(MountPointApp.GEESEFS, dry_run=args.dry_run)
     if args.export_debian:
         with ReleaseContextManager(
             release_progress=ReleaseProgress.EXPORT_DEB

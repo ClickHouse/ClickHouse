@@ -246,15 +246,14 @@ class Shell:
 
     @classmethod
     def check(cls, command):
-        result = subprocess.run(
+        proc = subprocess.Popen(
             command,
             shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
+            stdout=subprocess.STDOUT,
+            stderr=subprocess.STDOUT,
         )
-        return result.returncode == 0
+        proc.wait()
+        return proc.returncode == 0
 
 
 class Utils:
