@@ -767,8 +767,6 @@ void drainConsumer(
 
 void eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandler error_handler)
 {
-    assert(current == messages.begin());
-
     size_t skipped = std::erase_if(
         messages,
         [&](auto & message)
