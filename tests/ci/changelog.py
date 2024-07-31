@@ -19,6 +19,8 @@ from env_helper import TEMP_PATH
 from git_helper import git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
 from s3_helper import S3Helper
+from get_robot_token import get_best_robot_token
+from ci_utils import Shell
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     get_abs_path,
@@ -171,6 +173,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--gh-user-or-token",
         help="user name or GH token to authenticate",
+        default=get_best_robot_token(),
     )
     parser.add_argument(
         "--gh-password",
@@ -397,6 +400,15 @@ def get_year(prs: PullRequests) -> int:
     return max(pr.created_at.year for pr in prs)
 
 
+def get_branch_by_tag(tag: str) -> Optional[str]:
+    tag.removeprefix("v")
+    versions = tag.split(".")
+    if len(versions) < 3:
+        print("ERROR: Can't get branch by tag")
+        return None
+    return f"{versions[0]}.{versions[1]}"
+
+
 def main():
     log_levels = [logging.WARN, logging.INFO, logging.DEBUG]
     args = parse_args()
@@ -446,6 +458,17 @@ def main():
     gh_cache = GitHubCache(gh.cache_path, temp_path, S3Helper())
     gh_cache.download()
     query = f"type:pr repo:{args.repo} is:merged"
+    branch = get_branch_by_tag(TO_REF)
+    if branch and Shell.check(f"git show-ref --quiet {branch}"):
+        try:
+            if int(branch.split(".")[-1]) > 1:
+                query += f" base:{branch}"
+            print(f"NOTE: will use base branch to filter PRs {branch}")
+        except ValueError:
+            print(f"ERROR: cannot get minor version from branch {branch} - pass")
+            pass
+    else:
+        print(f"ERROR: invalid branch {branch} - pass")
     prs = gh.get_pulls_from_search(
         query=query, merged=merged, sort="created", progress_func=tqdm.tqdm
     )

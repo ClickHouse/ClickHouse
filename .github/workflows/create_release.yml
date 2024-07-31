@@ -81,7 +81,7 @@ jobs:
           docker run -u "${UID}:${GID}" -e PYTHONUNBUFFERED=1 -e CI=1 --network=host \
             --volume=".:/ClickHouse" clickhouse/style-test \
             /ClickHouse/tests/ci/changelog.py -v --debug-helpers \
-            --gh-user-or-token=${{secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN}} --jobs=5 \
+            --jobs=5 \
             --output="/ClickHouse/docs/changelogs/${{ env.RELEASE_TAG }}.md" ${{ env.RELEASE_TAG }}
           git add ./docs/changelogs/${{ env.RELEASE_TAG }}.md
           echo "Generate Security"
@@ -111,11 +111,11 @@ jobs:
           python3 ./tests/ci/create_release.py --set-progress-completed
           git reset --hard HEAD
           git checkout "$GITHUB_REF_NAME"
-      - name: Create GH Release
-        shell: bash
-        if: ${{ inputs.type == 'patch' }}
-        run: |
-          python3 ./tests/ci/create_release.py --create-gh-release ${{ inputs.dry-run == true && '--dry-run' || '' }}
+#      - name: Create GH Release
+#        shell: bash
+#        if: ${{ inputs.type == 'patch' }}
+#        run: |
+#          python3 ./tests/ci/create_release.py --create-gh-release ${{ inputs.dry-run == true && '--dry-run' || '' }}
       - name: Export TGZ Packages
         if: ${{ inputs.type == 'patch' }}
         shell: bash

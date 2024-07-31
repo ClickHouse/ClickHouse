@@ -52,6 +52,10 @@ class R2MountPoint:
                 if self.CACHE_ENABLED
                 else ""
             )
+            if not dry_run:
+                self.aux_mount_options += (
+                    "-o passwd_file /home/ubuntu/.passwd-s3fs_packages "
+                )
             # without -o nomultipart there are errors like "Error 5 writing to /home/ubuntu/***.deb: Input/output error"
             self.mount_cmd = f"s3fs {self.bucket_name} {self.MOUNT_POINT} -o url={self.API_ENDPOINT} -o use_path_request_style -o umask=0000 -o nomultipart -o logfile={self.LOG_FILE} {self.aux_mount_options}"
         elif self.app == MountPointApp.RCLONE:
