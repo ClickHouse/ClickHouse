@@ -30,6 +30,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfLockContention;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadRun;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds;
+    extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
 }
 
 namespace DB
@@ -813,7 +814,7 @@ bool FileCache::tryReserve(
     /// ok compared to the number of cases this check will help.
     if (cache_is_being_resized.load(std::memory_order_relaxed))
     {
-        ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfLockContention);
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfCacheResize);
         return false;
     }
 
@@ -1006,7 +1007,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
         limits_satisfied = main_priority->collectCandidatesForEviction(
             desired_size, desired_elements_num, keep_up_free_space_remove_batch, stat, eviction_candidates, lock);
 
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
         /// Let's make sure that we correctly processed the limits.
         if (limits_satisfied && eviction_candidates.size() < keep_up_free_space_remove_batch)
         {
@@ -1109,7 +1110,7 @@ void FileCache::removeAllReleasable(const UserID & user_id)
 {
     assertInitialized();
 
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     assertCacheCorrectness();
 #endif
 
@@ -1225,7 +1226,7 @@ void FileCache::loadMetadataImpl()
     if (first_exception)
         std::rethrow_exception(first_exception);
 
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     assertCacheCorrectness();
 #endif
 }
@@ -1392,7 +1393,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
 FileCache::~FileCache()
 {
     deactivateBackgroundOperations();
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     assertCacheCorrectness();
 #endif
 }

@@ -6,6 +6,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Utils.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
