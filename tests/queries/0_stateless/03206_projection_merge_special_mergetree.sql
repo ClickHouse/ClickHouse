@@ -9,7 +9,7 @@ CREATE TABLE tp (
 
 INSERT INTO tp SELECT number%3, 1 FROM numbers(3);
 
-OPTIMIZE TABLE tp DEDUPLICATE;  -- { serverError NOT_IMPLEMENTED }
+OPTIMIZE TABLE tp DEDUPLICATE;  -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE tp;
 
@@ -26,7 +26,7 @@ OPTIMIZE TABLE tp DEDUPLICATE;
 
 ALTER TABLE tp MODIFY SETTING deduplicate_merge_projection_mode = 'throw';
 
-OPTIMIZE TABLE tp DEDUPLICATE;  -- { serverError NOT_IMPLEMENTED }
+OPTIMIZE TABLE tp DEDUPLICATE;  -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE tp;
 
@@ -36,14 +36,14 @@ CREATE TABLE tp (
     type Int32,
     eventcnt UInt64,
     PROJECTION p (select sum(eventcnt), type group by type)
-) engine = ReplacingMergeTree order by type;  -- { serverError NOT_IMPLEMENTED }
+) engine = ReplacingMergeTree order by type;  -- { serverError SUPPORT_IS_DISABLED }
 
 CREATE TABLE tp (
     type Int32,
     eventcnt UInt64,
     PROJECTION p (select sum(eventcnt), type group by type)
 ) engine = ReplacingMergeTree order by type
-SETTINGS deduplicate_merge_projection_mode = 'throw';  -- { serverError NOT_IMPLEMENTED }
+SETTINGS deduplicate_merge_projection_mode = 'throw';  -- { serverError SUPPORT_IS_DISABLED }
 
 CREATE TABLE tp (
     type Int32,
@@ -65,7 +65,7 @@ WHERE (database = currentDatabase()) AND (`table` = 'tp') AND (active = 1);
 
 ALTER TABLE tp MODIFY SETTING deduplicate_merge_projection_mode = 'throw';
 
-OPTIMIZE TABLE tp DEDUPLICATE;  -- { serverError NOT_IMPLEMENTED }
+OPTIMIZE TABLE tp DEDUPLICATE;  -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE tp;
 
@@ -78,7 +78,7 @@ SETTINGS deduplicate_merge_projection_mode = 'rebuild';
 
 ALTER TABLE tp MODIFY SETTING deduplicate_merge_projection_mode = 'throw';
 
-OPTIMIZE TABLE tp DEDUPLICATE;  -- { serverError NOT_IMPLEMENTED }
+OPTIMIZE TABLE tp DEDUPLICATE;  -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE tp;
 
@@ -88,7 +88,7 @@ CREATE TABLE tp (
     eventcnt UInt64
 ) engine = ReplacingMergeTree order by type;
 
-ALTER TABLE tp ADD PROJECTION p (SELECT sum(eventcnt), type GROUP BY type);  -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE tp ADD PROJECTION p (SELECT sum(eventcnt), type GROUP BY type);  -- { serverError SUPPORT_IS_DISABLED }
 
 ALTER TABLE tp MODIFY SETTING deduplicate_merge_projection_mode = 'drop';
 

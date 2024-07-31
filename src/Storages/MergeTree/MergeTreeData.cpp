@@ -3216,9 +3216,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     {
         if (auto storage_name = getName(); storage_name != "MergeTree" && storage_name != "ReplicatedMergeTree"
             && settings_from_storage->deduplicate_merge_projection_mode == DeduplicateMergeProjectionMode::THROW)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Projection is fully supported in (Replictaed)MergeTree, but also allowed in non-throw mode with other"
-                " mergetree family members. Consider drop or rebuild option of deduplicate_merge_projection_mode.");
+                " mergetree family members. Consider drop or rebuild option of deduplicate_merge_projection_mode."
+                " Current storage name is {}.", storage_name);
     }
 
     commands.apply(new_metadata, local_context);

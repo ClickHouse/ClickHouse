@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int BAD_ARGUMENTS;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES;
-    extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -223,9 +223,10 @@ StoragePtr StorageFactory::get(
                         }
                     }
                     if (!projection_allowed)
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Projection is fully supported in (Replictaed)MergeTree, but also allowed in non-throw mode with other"
-                            " mergetree family members. Consider drop or rebuild option of deduplicate_merge_projection_mode.");
+                            " mergetree family members. Consider drop or rebuild option of deduplicate_merge_projection_mode."
+                            " Current storage name is {}.", engine_name);
                 }
             }
         }
