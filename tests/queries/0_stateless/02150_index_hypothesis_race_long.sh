@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-distributed-cache
+# Tags: long, no-random-settings, no-distributed-cache
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
