@@ -80,8 +80,8 @@ public:
     template <bool throw_on_error>
     void checkTable() const
     {
-        auto is_table_valid = isTableValid();
-        if (!is_table_valid.has_value())
+        auto current_table_status = getTableStatus();
+        if (table_status == TableStatus::UNKNOWN)
         {
             static constexpr auto error_msg = "Failed to activate table because of connection issues. It will be activated "
                                                           "once a connection is established and metadata is verified";
@@ -94,10 +94,10 @@ public:
             }
         }
 
-        if (!*is_table_valid)
+        if (current_table_status != TableStatus::VALID)
         {
             static constexpr auto error_msg
-                = "Failed to activate table because of invalid metadata in ZooKeeper. Please DETACH table";
+                = "Failed to activate table because of invalid metadata in ZooKeeper. Please DROP/DETACH table";
             if constexpr (throw_on_error)
                 throw Exception(ErrorCodes::INVALID_STATE, error_msg);
             else
@@ -111,7 +111,15 @@ public:
 private:
     bool dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock);
 
-    std::optional<bool> isTableValid() const;
+    enum class TableStatus : uint8_t
+    {
+        UNKNOWN,
+        INVALID_METADATA,
+        INVALID_KEEPER_STRUCTURE,
+        VALID
+    };
+
+    TableStatus getTableStatus() const;
 
     void restoreDataImpl(
         const BackupPtr & backup,
@@ -143,7 +151,8 @@ private:
     mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
 
     mutable std::mutex init_mutex;
-    mutable std::optional<bool> table_is_valid;
+
+    mutable TableStatus table_status{TableStatus::UNKNOWN};
 
     LoggerPtr log;
 };

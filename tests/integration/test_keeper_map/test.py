@@ -67,6 +67,7 @@ def run_query(query):
 
 
 def test_keeper_map_without_zk(started_cluster):
+    run_query("DROP TABLE IF EXISTS test_keeper_map_without_zk SYNC")
     assert_keeper_exception_after_partition(
         "CREATE TABLE test_keeper_map_without_zk (key UInt64, value UInt64) ENGINE = KeeperMap('/test_keeper_map_without_zk') PRIMARY KEY(key);"
     )
@@ -107,12 +108,12 @@ def test_keeper_map_without_zk(started_cluster):
     )
     assert "Failed to activate table because of invalid metadata in ZooKeeper" in error
 
-    node.query("DETACH TABLE test_keeper_map_without_zk")
-
     client.stop()
 
 
 def test_keeper_map_with_failed_drop(started_cluster):
+    run_query("DROP TABLE IF EXISTS test_keeper_map_with_failed_drop SYNC")
+    run_query("DROP TABLE IF EXISTS test_keeper_map_with_failed_drop_another SYNC")
     run_query(
         "CREATE TABLE test_keeper_map_with_failed_drop (key UInt64, value UInt64) ENGINE = KeeperMap('/test_keeper_map_with_failed_drop') PRIMARY KEY(key);"
     )
