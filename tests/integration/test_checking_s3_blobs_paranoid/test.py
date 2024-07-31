@@ -61,6 +61,7 @@ def test_upload_after_check_works(cluster, broken_s3):
 
     node.query(
         """
+        DROP TABLE IF EXISTS s3_upload_after_check_works;
         CREATE TABLE s3_upload_after_check_works (
             id Int64,
             data String
@@ -631,6 +632,7 @@ def test_no_key_found_disk(cluster, broken_s3):
 
     node.query(
         """
+        DROP TABLE IF EXISTS no_key_found_disk;
         CREATE TABLE no_key_found_disk (
             id Int64
         ) ENGINE=MergeTree()

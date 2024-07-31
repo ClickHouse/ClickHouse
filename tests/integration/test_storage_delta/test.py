@@ -52,6 +52,11 @@ def get_spark():
     return builder.master("local").getOrCreate()
 
 
+def remove_local_directory_contents(local_path):
+    for local_file in glob.glob(local_path + "/**"):
+        os.unlink(local_file)
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -169,6 +174,9 @@ def test_single_log_file(started_cluster):
         inserted_data
     )
 
+    os.unlink(parquet_data_path)
+    remove_local_directory_contents(f"/{TABLE_NAME}")
+
 
 def test_partition_by(started_cluster):
     instance = started_cluster.instances["node1"]
@@ -191,6 +199,7 @@ def test_partition_by(started_cluster):
     create_delta_table(instance, TABLE_NAME)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
 
+    remove_local_directory_contents(f"/{TABLE_NAME}")
 
 def test_checkpoint(started_cluster):
     instance = started_cluster.instances["node1"]
@@ -266,6 +275,9 @@ def test_checkpoint(started_cluster):
         ).strip()
     )
 
+    remove_local_directory_contents(f"/{TABLE_NAME}")
+    spark.sql(f"DROP TABLE {TABLE_NAME}")
+
 
 def test_multiple_log_files(started_cluster):
     instance = started_cluster.instances["node1"]
@@ -304,6 +316,8 @@ def test_multiple_log_files(started_cluster):
         "SELECT number, toString(number + 1) FROM numbers(200)"
     )
 
+    remove_local_directory_contents(f"/{TABLE_NAME}")
+
 
 def test_metadata(started_cluster):
     instance = started_cluster.instances["node1"]
@@ -336,6 +350,9 @@ def test_metadata(started_cluster):
 
     create_delta_table(instance, TABLE_NAME)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    os.unlink(parquet_data_path)
+    remove_local_directory_contents(f"/{TABLE_NAME}")
 
 
 def test_types(started_cluster):
@@ -409,6 +426,9 @@ def test_types(started_cluster):
         ]
     )
 
+    remove_local_directory_contents(f"/{result_file}")
+    spark.sql(f"DROP TABLE {TABLE_NAME}")
+
 
 def test_restart_broken(started_cluster):
     instance = started_cluster.instances["node1"]
@@ -470,6 +490,9 @@ def test_restart_broken(started_cluster):
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
+    os.unlink(parquet_data_path)
+    remove_local_directory_contents(f"/{TABLE_NAME}")
+
 
 def test_restart_broken_table_function(started_cluster):
     instance = started_cluster.instances["node1"]
@@ -523,6 +546,9 @@ def test_restart_broken_table_function(started_cluster):
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    os.unlink(parquet_data_path)
+    remove_local_directory_contents(f"/{TABLE_NAME}")
 
 
 def test_partition_columns(started_cluster):
@@ -721,3 +747,6 @@ SELECT * FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.mini
         )
         == 1
     )
+
+    remove_local_directory_contents(f"/{TABLE_NAME}")
+    spark.sql(f"DROP TABLE {TABLE_NAME}")
