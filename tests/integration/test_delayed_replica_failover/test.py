@@ -101,7 +101,7 @@ SELECT sum(x) FROM distributed WITH TOTALS SETTINGS
         # allow pings to zookeeper to timeout (must be greater than ZK session timeout).
         for _ in range(30):
             try:
-                node_2_2.query("SELECT * FROM system.zookeeper where path = '/'")
+                node_2_2.query("SELECT * FROM system.zookeeper where path = '/' SETTINGS insert_keeper_max_retries = 0")
                 time.sleep(0.5)
             except:
                 break
@@ -120,7 +120,7 @@ SELECT sum(x) FROM distributed SETTINGS
             == "3"
         )
 
-        # Regression for skip_unavailable_shards in conjunction with skip_unavailable_shards
+        # Prefer fallback_to_stale_replicas over skip_unavailable_shards
         assert (
             instance_with_dist_table.query(
                 """
