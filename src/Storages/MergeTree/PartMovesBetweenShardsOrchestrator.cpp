@@ -431,13 +431,12 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                         storage.getClearBlocksInPartitionOps(
                             ops, *zk, drop_part_info.partition_id, drop_part_info.min_block, drop_part_info.max_block);
+                        size_t clear_block_ops_size = ops.size();
 
                         attach_rollback_log_entry.type = ReplicatedMergeTreeLogEntryData::DROP_RANGE;
                         attach_rollback_log_entry.log_entry_id = attach_rollback_log_entry_barrier_path;
                         attach_rollback_log_entry.source_replica = storage.replica_name;
                         attach_rollback_log_entry.source_shard = zookeeper_path;
-                        attach_rollback_log_entry.task_name = entry.znode_name;
-                        attach_rollback_log_entry.task_entry_zk_path = entries_znode_path;
 
                         attach_rollback_log_entry.new_part_name = getPartNamePossiblyFake(storage.format_version, drop_part_info);
                         attach_rollback_log_entry.create_time = time(nullptr);
@@ -446,14 +445,20 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                         ops.emplace_back(zkutil::makeCreateRequest(
                             entry.to_shard + "/log/log-", attach_rollback_log_entry.toString(), zkutil::CreateMode::PersistentSequential));
                         ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
-                        ops.emplace_back(zkutil::makeRemoveRequest(entries_znode_path + "/task_queue/" + entry.znode_name, -1));
-
                         Coordination::Responses responses;
                         Coordination::Error rc = zk->tryMulti(ops, responses);
                         zkutil::KeeperMultiException::check(rc, ops, responses);
 
-                        LOG_DEBUG(log, "Pushed log entry for task {} and state {}", entry.znode_name, entry.state.toString());
+                        String log_znode_path
+                            = dynamic_cast<const Coordination::CreateResponse &>(*responses[clear_block_ops_size]).path_created;
+                        attach_rollback_log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+                        LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
                     }
+
+                    Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, attach_rollback_log_entry, 1);
+                    if (!unwaited.empty())
+                        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
 
                     entry.state = EntryState::DESTINATION_FETCH;
                     return entry;
@@ -609,7 +614,9 @@ void PartMovesBetweenShardsOrchestrator::removePins(const Entry & entry, zkutil:
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/pinned_part_uuids", src_pins.toString(), src_pins.stat.version));
     ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/pinned_part_uuids", dst_pins.toString(), dst_pins.stat.version));
-
+    if(entry.rollback){
+        ops.emplace_back(zkutil::makeRemoveRequest(entries_znode_path + "/task_queue/" + entry.znode_name, -1));
+    }
     zk->multi(ops);
 }
 
