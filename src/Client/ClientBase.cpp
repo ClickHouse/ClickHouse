@@ -1039,10 +1039,10 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
                     connection_parameters.timeouts,
                     query,
                     query_parameters,
-                    global_context->getCurrentQueryId(),
+                    client_context->getCurrentQueryId(),
                     query_processing_stage,
-                    &global_context->getSettingsRef(),
-                    &global_context->getClientInfo(),
+                    &client_context->getSettingsRef(),
+                    &client_context->getClientInfo(),
                     true,
                     [&](const Progress & progress) { onProgress(progress); });
 
