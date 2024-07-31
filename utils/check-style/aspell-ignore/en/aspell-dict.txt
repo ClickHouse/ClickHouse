@@ -2043,6 +2043,7 @@ minimalistic
 mininum
 miniselect
 minmap
+mflix
 minmax
 mins
 misconfiguration
