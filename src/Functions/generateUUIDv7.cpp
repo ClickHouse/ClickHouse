@@ -1,3 +1,4 @@
+#include <Common/thread_local_rng.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -35,11 +36,11 @@ constexpr uint64_t counter_limit = (1ull << bits_in_counter);
 
 /// bit masks for UUIDv7 components
 constexpr uint64_t variant_2_mask  = (2ull << rand_b_bits_count);
-constexpr uint64_t rand_a_bits_mask = (1ull << rand_a_bits_count) - 1;
-constexpr uint64_t rand_b_bits_mask = (1ull << rand_b_bits_count) - 1;
+// constexpr uint64_t rand_a_bits_mask = (1ull << rand_a_bits_count) - 1;
+// constexpr uint64_t rand_b_bits_mask = (1ull << rand_b_bits_count) - 1;
 constexpr uint64_t rand_b_with_counter_bits_mask = (1ull << rand_b_low_bits_count) - 1;
 constexpr uint64_t counter_low_bits_mask = (1ull << counter_low_bits_count) - 1;
-constexpr uint64_t counter_high_bits_mask = rand_a_bits_mask;
+// constexpr uint64_t counter_high_bits_mask = rand_a_bits_mask;
 
 uint64_t getTimestampMillisecond()
 {
@@ -49,66 +50,70 @@ uint64_t getTimestampMillisecond()
     return sec * 1000 + tp.tv_nsec / 1000000;
 }
 
-void setTimestampAndVersion(UUID & uuid, uint64_t timestamp)
-{
-    UUIDHelpers::getHighBytes(uuid) = (UUIDHelpers::getHighBytes(uuid) & rand_a_bits_mask) | (timestamp << 16) | 0x7000;
+uint64_t getRandomCounter() {
+    return thread_local_rng() & ((1ull << bits_in_counter) - 1);
 }
 
-void setVariant(UUID & uuid)
+struct UUIDv7VarParts
 {
-    UUIDHelpers::getLowBytes(uuid) = (UUIDHelpers::getLowBytes(uuid) & rand_b_bits_mask) | variant_2_mask;
-}
-
-struct CounterFields
-{
-    uint64_t last_timestamp = 0;
-    uint64_t counter = 0;
-
-    void resetCounter(const UUID & uuid)
-    {
-        const uint64_t counter_low_bits = (UUIDHelpers::getLowBytes(uuid) >> rand_b_low_bits_count) & counter_low_bits_mask;
-        const uint64_t counter_high_bits = UUIDHelpers::getHighBytes(uuid) & counter_high_bits_mask;
-        counter = (counter_high_bits << 30) | counter_low_bits;
-    }
-
-    void incrementCounter(UUID & uuid)
-    {
-        if (++counter == counter_limit) [[unlikely]]
-        {
-            ++last_timestamp;
-            resetCounter(uuid);
-            setTimestampAndVersion(uuid, last_timestamp);
-            setVariant(uuid);
-        }
-        else
-        {
-            UUIDHelpers::getHighBytes(uuid) = (last_timestamp << 16) | 0x7000 | (counter >> counter_low_bits_count);
-            UUIDHelpers::getLowBytes(uuid) = (UUIDHelpers::getLowBytes(uuid) & rand_b_with_counter_bits_mask) | variant_2_mask | ((counter & counter_low_bits_mask) << rand_b_low_bits_count);
-        }
-    }
-
-    void generate(UUID & uuid, uint64_t timestamp)
-    {
-        const bool need_to_increment_counter = (last_timestamp == timestamp) || ((last_timestamp > timestamp) & (last_timestamp < timestamp + 10000));
-        if (need_to_increment_counter)
-        {
-            incrementCounter(uuid);
-        }
-        else
-        {
-            last_timestamp = timestamp;
-            resetCounter(uuid);
-            setTimestampAndVersion(uuid, last_timestamp);
-            setVariant(uuid);
-        }
-    }
+    uint64_t timestamp;
+    uint64_t counter;
 };
+
+void setParts(UUID & uuid, UUIDv7VarParts & parts)
+{
+    const uint64_t high = (parts.timestamp << 16) | 0x7000 | (parts.counter >> counter_low_bits_count);
+
+    uint64_t low = (UUIDHelpers::getLowBytes(uuid) & rand_b_with_counter_bits_mask) | variant_2_mask;
+    low |= ((parts.counter & counter_low_bits_mask) << rand_b_low_bits_count);
+
+    UUIDHelpers::getHighBytes(uuid) = high;
+    UUIDHelpers::getLowBytes(uuid) = low;
+}
+
+struct UUIDRange
+{
+    UUIDv7VarParts begin; /// inclusive
+    UUIDv7VarParts end;   /// exclusive
+};
+
+/// To get the range of `input_rows_count` UUIDv7 from `max(available, now)`:
+/// 1. calculate UUIDv7 by current timestamp (`now`) and a random counter
+/// 2. `begin = max(available, now)`
+/// 3. Calculate `end = begin + input_rows_count` handling `counter` overflow
+UUIDRange getRangeOfAvailableParts(const UUIDv7VarParts & available, size_t input_rows_count)
+{
+    /// 1. `now`
+    UUIDv7VarParts begin = {.timestamp = getTimestampMillisecond(), .counter = getRandomCounter()};
+
+    /// 2. `begin`
+    bool available_is_now_or_later = begin.timestamp <= available.timestamp;
+    bool available_is_too_far_ahead = begin.timestamp + 10000 <= available.timestamp;
+    if (available_is_now_or_later && !available_is_too_far_ahead)
+    {
+        begin.timestamp = available.timestamp;
+        begin.counter = available.counter;
+    }
+
+    /// 3. `end = begin + input_rows_count`
+    UUIDv7VarParts end;
+    const uint64_t counter_nums_in_current_timestamp_left = (counter_limit - begin.counter);
+    if (input_rows_count >= counter_nums_in_current_timestamp_left) [[unlikely]]
+        /// if counter numbers in current timestamp is not enough for rows --> depending on how many elements input_rows_count overflows, forward timestamp by at least 1 tick
+        end.timestamp = begin.timestamp + 1 + (input_rows_count - counter_nums_in_current_timestamp_left) / (counter_limit);
+    else
+        end.timestamp = begin.timestamp;
+
+    end.counter = (begin.counter + input_rows_count) & (1ull << bits_in_counter) - 1;
+
+    return {begin, end};
+}
 
 
 struct Data
 {
     /// Guarantee counter monotonicity within one timestamp across all threads generating UUIDv7 simultaneously.
-    static inline CounterFields fields;
+    static inline UUIDv7VarParts lowest_available_parts;
     static inline SharedMutex mutex; /// works a little bit faster than std::mutex here
     std::lock_guard<SharedMutex> guard;
 
@@ -116,9 +121,13 @@ struct Data
         : guard(mutex)
     {}
 
-    void generate(UUID & uuid, uint64_t timestamp)
+    UUIDv7VarParts reserveRange(size_t input_rows_count)
     {
-        fields.generate(uuid, timestamp);
+        UUIDRange range = getRangeOfAvailableParts(lowest_available_parts, input_rows_count);
+
+        lowest_available_parts = range.end;
+
+        return range.begin;
     }
 };
 
@@ -166,13 +175,25 @@ public:
             /// Not all random bytes produced here are required for the UUIDv7 but it's the simplest way to get the required number of them by using RandImpl
             RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
 
-            /// Note: For performance reasons, clock_gettime is called once per chunk instead of once per UUID. This reduces precision but
-            /// it still complies with the UUID standard.
-            uint64_t timestamp = getTimestampMillisecond();
-            for (UUID & uuid : vec_to)
+            UUIDv7VarParts available_part;
             {
                 Data data;
-                data.generate(uuid, timestamp);
+                available_part = data.reserveRange(input_rows_count); /// returns begin of available snowflake ids range
+            }
+
+            for (UUID & uuid : vec_to)
+            {
+                setParts(uuid, available_part);
+                if (available_part.counter + 1 >= counter_limit)
+                {
+                    /// handle overflow
+                    available_part.counter = 0;
+                    ++available_part.timestamp;
+                }
+                else
+                {
+                    ++available_part.counter;
+                }
             }
         }
         return col_res;
