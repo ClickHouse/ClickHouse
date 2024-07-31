@@ -93,7 +93,8 @@ struct ExtractParamImpl
         std::string needle,
         const ColumnPtr & start_pos,
         PaddedPODArray<ResultType> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        [[maybe_unused]] ColumnUInt8 * res_null,
+        size_t /*input_rows_count*/)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
         assert(!res_null);
