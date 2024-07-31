@@ -309,6 +309,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/util/compression_context_cache.cc
     ${ROCKSDB_SOURCE_DIR}/util/concurrent_task_limiter_impl.cc
     ${ROCKSDB_SOURCE_DIR}/util/crc32c.cc
+    ${ROCKSDB_SOURCE_DIR}/util/data_structure.cc
     ${ROCKSDB_SOURCE_DIR}/util/dynamic_bloom.cc
     ${ROCKSDB_SOURCE_DIR}/util/hash.cc
     ${ROCKSDB_SOURCE_DIR}/util/murmurhash.cc
