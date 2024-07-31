@@ -124,10 +124,11 @@ You can just open shell inside a container by overwritting the command:
 ### Parallel test execution
 
 On the CI, we run a number of parallel runners (5 at the time of this writing), each on its own
-Docker container. These runner containers spawn more containers for the services needed such as
-ZooKeeper, MySQL, PostgreSQL and minio, among others. Within each runner, tests are parallelized
-using [pytest-xdist](https://pytest-xdist.readthedocs.io/en/stable/). We're using `--dist=loadfile`
-to [distribute the load](https://pytest-xdist.readthedocs.io/en/stable/distribution.html). In the
+Docker container. These runner containers spawn more containers for each test for the services
+needed such as ZooKeeper, MySQL, PostgreSQL and minio, among others. This means that tests do not
+share any services among them. Within each runner, tests are parallelized using
+[pytest-xdist](https://pytest-xdist.readthedocs.io/en/stable/). We're using `--dist=loadfile` to
+[distribute the load](https://pytest-xdist.readthedocs.io/en/stable/distribution.html). In the
 documentation words: this guarantees that all tests in a file run in the same worker. This means
 that any test within the same file will never execute their tests in parallel. They'll be executed
 on the same worker one after the other.

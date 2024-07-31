@@ -907,7 +907,7 @@ def test_max_set_age(started_cluster):
     file_with_error = f"max_set_age_fail_{uuid4().hex[:8]}.csv"
     put_s3_file_content(started_cluster, f"{files_path}/{file_with_error}", values_csv)
 
-    wait_for_condition(lambda: failed_count + 1 <= get_object_storage_failures())
+    wait_for_condition(lambda: failed_count + 1 == get_object_storage_failures())
 
     node.query("SYSTEM FLUSH LOGS")
     assert "Cannot parse input" in node.query(
@@ -920,7 +920,7 @@ def test_max_set_age(started_cluster):
         )
     )
 
-    wait_for_condition(lambda: failed_count + 2 <= get_object_storage_failures())
+    wait_for_condition(lambda: failed_count + 2 == get_object_storage_failures())
 
     node.query("SYSTEM FLUSH LOGS")
     assert "Cannot parse input" in node.query(
