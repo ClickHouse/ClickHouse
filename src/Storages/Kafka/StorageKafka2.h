@@ -40,7 +40,7 @@ using KafkaConsumer2Ptr = std::shared_ptr<KafkaConsumer2>;
 /// It is similar to the already existing StorageKafka, it instead of storing the offsets
 /// in Kafka, its main source of information about offsets is Keeper. On top of the
 /// offsets, it also stores the number of messages (intent size) it tried to insert from
-/// each topic. By storing the intent sizes it possible to retry the same batch of
+/// each topic. By storing the intent sizes it is possible to retry the same batch of
 /// messages in case of any errors and giving deduplication a chance to deduplicate
 /// blocks.
 ///
