@@ -4546,7 +4546,15 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     resolveExpressionNode(nodes[1], scope, /* allow_lambda_expression */false, /* allow_table_function */false);
                     if (auto * constant = nodes[1]->as<ConstantNode>())
                     {
-                        view_params[identifier_node->getIdentifier().getFullName()] = convertFieldToString(constant->getValue());
+                        /// Serialize the constant value using datatype specific
+                        /// interfaces to match the deserialization in ReplaceQueryParametersVistor.
+                        WriteBufferFromOwnString buf;
+                        auto constval = constant->getValue();
+                        auto realtype = constant->getResultType();
+                        auto tempcol  = realtype->createColumn();
+                        tempcol->insert(constval);
+                        realtype->getDefaultSerialization()->serializeTextEscaped(*tempcol, 0, buf, {});
+                        view_params[identifier_node->getIdentifier().getFullName()] = buf.str();
                     }
                 }
             }
