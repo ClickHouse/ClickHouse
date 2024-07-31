@@ -25,7 +25,7 @@ SELECT
     ProfileEvents['S3ReadRequestsCount'] - ProfileEvents['S3ReadRequestsError'],
     ProfileEvents['ReadBufferFromS3Bytes'] < ProfileEvents['ReadCompressedBytes'] * 1.1
 FROM system.query_log
-WHERE type = 'QueryFinish'
+WHERE event_date >= yesterday() AND type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND query ilike '%INSERT INTO t_compact_bytes_s3 SELECT number, number, number%';
 
@@ -33,7 +33,7 @@ SELECT
     ProfileEvents['S3ReadRequestsCount'] - ProfileEvents['S3ReadRequestsError'],
     ProfileEvents['ReadBufferFromS3Bytes'] < ProfileEvents['ReadCompressedBytes'] * 1.1
 FROM system.query_log
-WHERE type = 'QueryFinish'
+WHERE event_date >= yesterday() AND type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND query ilike '%OPTIMIZE TABLE t_compact_bytes_s3 FINAL%';
 
