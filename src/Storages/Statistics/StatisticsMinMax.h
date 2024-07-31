@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Storages/Statistics/Statistics.h>
 
 

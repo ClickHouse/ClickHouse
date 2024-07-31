@@ -9,7 +9,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_STATISTICS;
-extern const int LOGICAL_ERROR;
 }
 
 StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & stat_, DataTypePtr data_type_)
@@ -44,7 +43,7 @@ Float64 StatisticsTDigest::estimateLess(const Field & val) const
     Field val_converted = convertFieldToType(val, *data_type);
     if (val_converted.isNull())
         return 0;
-    
+
     auto val_as_float = applyVisitor(FieldVisitorConvertToNumber<Float64>(), val_converted);
     return t_digest.getCountLessThan(val_as_float);
 }
@@ -54,7 +53,7 @@ Float64 StatisticsTDigest::estimateEqual(const Field & val) const
     Field val_converted = convertFieldToType(val, *data_type);
     if (val_converted.isNull())
         return 0;
-    
+
     auto val_as_float = applyVisitor(FieldVisitorConvertToNumber<Float64>(), val_converted);
     return t_digest.getCountEqual(val_as_float);
 }
