@@ -26,7 +26,11 @@ private:
     void createImpl();
 
     /// Returns the write buffer used for the current HTTP response.
-    WriteBuffer & getOutputStream(HTTPServerResponse & response);
+    WriteBufferFromHTTPServerResponse & getOutputStream(HTTPServerResponse & response);
+
+    /// Finalizes the output stream and sends the response to the client.
+    void finalizeResponse(HTTPServerResponse & response);
+    void tryFinalizeResponse(HTTPServerResponse & response);
 
     /// Writes the current exception to the response.
     void trySendExceptionToClient(const String & exception_message, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response);
@@ -50,6 +54,7 @@ private:
     String http_method;
     bool send_stacktrace = false;
     std::unique_ptr<WriteBufferFromHTTPServerResponse> write_buffer_from_response;
+    bool response_finalized = false;
     ProfileEvents::Event write_event;
 };
 

@@ -33,6 +33,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Base implementation of a prometheus protocol.
@@ -343,9 +344,10 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
     try
     {
+        response_finalized = false;
         write_event = write_event_;
         http_method = request.getMethod();
-        chassert(!write_buffer_from_response);
+        chassert(!write_buffer_from_response); /// Nothing is written to the response yet.
 
         /// Make keep-alive works.
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
@@ -356,28 +358,24 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         impl->beforeHandlingRequest(request);
         impl->handleRequest(request, response);
 
-        if (write_buffer_from_response)
-        {
-            write_buffer_from_response->finalize();
-            write_buffer_from_response = nullptr;
-        }
+        finalizeResponse(response);
     }
     catch (...)
     {
         tryLogCurrentException(log);
-        tryCallOnException();
 
         ExecutionStatus status = ExecutionStatus::fromCurrentException("", send_stacktrace);
         trySendExceptionToClient(status.message, status.code, request, response);
-        tryCallOnException();
+        tryFinalizeResponse(response);
 
-        /// `write_buffer_from_response` must be finalized already or at least tried to finalize.
-        write_buffer_from_response = nullptr;
+        tryCallOnException();
     }
 }
 
-WriteBuffer & PrometheusRequestHandler::getOutputStream(HTTPServerResponse & response)
+WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputStream(HTTPServerResponse & response)
 {
+    if (response_finalized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PrometheusRequestHandler: Response already sent");
     if (write_buffer_from_response)
         return *write_buffer_from_response;
     write_buffer_from_response = std::make_unique<WriteBufferFromHTTPServerResponse>(
@@ -385,27 +383,51 @@ WriteBuffer & PrometheusRequestHandler::getOutputStream(HTTPServerResponse & res
     return *write_buffer_from_response;
 }
 
+void PrometheusRequestHandler::finalizeResponse(HTTPServerResponse & response)
+{
+    if (response_finalized)
+    {
+        /// Response is already finalized or at least tried to. We don't need the write buffer anymore in either case.
+        write_buffer_from_response = nullptr;
+    }
+    else
+    {
+        /// We set `response_finalized = true` before actually calling `write_buffer_from_response->finalize()`
+        /// because we shouldn't call finalize() again even if finalize() throws an exception.
+        response_finalized = true;
+
+        if (write_buffer_from_response)
+            std::exchange(write_buffer_from_response, {})->finalize();
+        else
+            WriteBufferFromHTTPServerResponse{response, http_method == HTTPRequest::HTTP_HEAD, config.keep_alive_timeout, write_event}.finalize();
+    }
+    chassert(response_finalized && !write_buffer_from_response);
+}
+
 void PrometheusRequestHandler::trySendExceptionToClient(const String & exception_message, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response)
 {
+    if (response_finalized)
+        return; /// Response is already finalized (or tried to). We can't write the error message to the response in either case.
+
     try
     {
-        sendExceptionToHTTPClient(exception_message, exception_code, request, response, write_buffer_from_response.get(), log);
+        sendExceptionToHTTPClient(exception_message, exception_code, request, response, &getOutputStream(response), log);
     }
     catch (...)
     {
         tryLogCurrentException(log, "Couldn't send exception to client");
+    }
+}
 
-        if (write_buffer_from_response)
-        {
-            try
-            {
-                write_buffer_from_response->finalize();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Cannot flush data to client (after sending exception)");
-            }
-        }
+void PrometheusRequestHandler::tryFinalizeResponse(HTTPServerResponse & response)
+{
+    try
+    {
+        finalizeResponse(response);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Cannot flush data to client (after sending exception)");
     }
 }
 
