@@ -107,24 +107,7 @@ public:
 
     size_t getPoolSize() const { return Base::getPoolSize(); }
 
-    TryResult getEntryWithSettings(const ConnectionTimeouts & timeouts, std::string & fail_message, const Settings & settings)
-    {
-        return tryGetEntry(nullptr, timeouts, fail_message, settings);
-    }
-
-    // void setSocketTimeouts(ConnectionPtr connection, const Poco::Timespan & receive_timeout, const Poco::Timespan & send_timeout);
-    // void enableKeepAlive(ConnectionPtr connection, const Poco::Timespan & interval);
-
-    void setSocketTimeouts(const Poco::Timespan & receive_timeout, const Poco::Timespan & send_timeout);
-    void enableKeepAlive(const Poco::Timespan & interval);
-
 private:
-
-    // New members for reconnection logic
-    Poco::Timespan socket_read_timeout;
-    Poco::Timespan socket_write_timeout;
-    Poco::Timespan tcp_keep_alive;
-
     /// Get the values of relevant settings and call Base::getMany()
     std::vector<TryResult> getManyImpl(
         const Settings & settings,
@@ -148,7 +131,6 @@ private:
     GetPriorityForLoadBalancing::Func makeGetPriorityFunc(const Settings & settings);
 
     GetPriorityForLoadBalancing get_priority_load_balancing;
-
 };
 
 using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;

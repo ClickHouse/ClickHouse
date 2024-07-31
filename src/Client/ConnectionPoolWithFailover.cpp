@@ -1,10 +1,8 @@
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Client/ConnectionEstablisher.h>
 
-#include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
-#include <Poco/Timespan.h>
 
 #include <Common/BitHelpers.h>
 #include <Common/quoteString.h>
@@ -15,6 +13,7 @@
 
 #include <IO/ConnectionTimeouts.h>
 
+
 namespace DB
 {
 
@@ -23,6 +22,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ALL_CONNECTION_TRIES_FAILED;
 }
+
 
 ConnectionPoolWithFailover::ConnectionPoolWithFailover(
     ConnectionPoolPtrs nested_pools_,
@@ -65,13 +65,7 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
 
     TryGetEntryFunc try_get_entry = [&](const NestedPoolPtr & pool, std::string & fail_message)
     {
-        auto entry = tryGetEntry(pool, timeouts, fail_message, settings);
-        if (!entry.entry.isNull())
-        {
-            entry.entry->setSocketTimeouts(timeouts.receive_timeout, timeouts.send_timeout);
-            entry.entry->enableKeepAlive(Poco::Timespan(10, 0)); // Example interval for keep-alive
-        }
-        return entry;
+        return tryGetEntry(pool, timeouts, fail_message, settings);
     };
 
     const size_t offset = settings.load_balancing_first_offset % nested_pools.size();
@@ -84,7 +78,6 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
 
     return Base::get(max_ignored_errors, fallback_to_stale_replicas, try_get_entry, get_priority);
 }
-
 
 ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
 {
@@ -281,35 +274,6 @@ ConnectionPoolWithFailover::getShuffledPools(const Settings & settings, GetPrior
 
     UInt64 max_ignored_errors = settings.distributed_replica_max_ignored_errors.value;
     return Base::getShuffledPools(max_ignored_errors, priority_func, use_slowdown_count);
-}
-
-// void ConnectionPoolWithFailover::setSocketTimeouts(ConnectionPtr connection, const Poco::Timespan & receive_timeout, const Poco::Timespan & send_timeout)
-// {
-//     connection->setSocketTimeouts(receive_timeout, send_timeout);
-// }
-
-// void ConnectionPoolWithFailover::enableKeepAlive(ConnectionPtr connection, const Poco::Timespan & interval)
-// {
-//     connection->enableKeepAlive(interval);
-// }
-
-
-void ConnectionPoolWithFailover::setSocketTimeouts(const Poco::Timespan & receive_timeout, const Poco::Timespan & send_timeout)
-{
-    for (const auto & pool : nested_pools)
-    {
-        auto entry = pool->get(ConnectionTimeouts()); // Use appropriate timeouts if needed
-        entry->setSocketTimeouts(receive_timeout, send_timeout);
-    }
-}
-
-void ConnectionPoolWithFailover::enableKeepAlive(const Poco::Timespan & interval)
-{
-    for (const auto & pool : nested_pools)
-    {
-        auto entry = pool->get(ConnectionTimeouts()); // Use appropriate timeouts if needed
-        entry->enableKeepAlive(interval);
-    }
 }
 
 }

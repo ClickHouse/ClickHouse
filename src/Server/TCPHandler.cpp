@@ -256,11 +256,6 @@ void TCPHandler::runImpl()
     socket().setSendTimeout(send_timeout);
     socket().setNoDelay(true);
 
-    // socket().setKeepAlive(true);
-    // socket().setOption(IPPROTO_TCP, TCP_KEEPIDLE, 60);  // Increased idle time before starting keep-alive probes
-    // socket().setOption(IPPROTO_TCP, TCP_KEEPINTVL, 20); // Increased interval between keep-alive probes
-    // socket().setOption(IPPROTO_TCP, TCP_KEEPCNT, 5);    // Increased number of keep-alive probes before declaring the connection dead
-
     in = std::make_shared<ReadBufferFromPocoSocket>(socket(), read_event);
     out = std::make_shared<WriteBufferFromPocoSocket>(socket(), write_event);
 
