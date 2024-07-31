@@ -1036,6 +1036,17 @@ void TCPHandler::processOrdinaryQuery()
         PullingAsyncPipelineExecutor executor(pipeline);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
+        /// The following may happen:
+        /// * current thread is holding the lock
+        /// * because of the exception we unwind the stack and call the destructor of `executor`
+        /// * the destructor calls cancel() and waits for all query threads to finish
+        /// * at the same time one of the query threads is trying to acquire the lock, e.g. inside `merge_tree_read_task_callback`
+        /// * deadlock
+        SCOPE_EXIT({
+            if (out_lock.owns_lock())
+                out_lock.unlock();
+        });
+
         Block block;
         while (executor.pull(block, interactive_delay / 1000))
         {
@@ -1080,7 +1091,6 @@ void TCPHandler::processOrdinaryQuery()
 
         /// This lock wasn't acquired before and we make .lock() call here
         /// so everything under this line is covered even together
-        /// with sendProgress() out of the scope
         out_lock.lock();
 
         /** If data has run out, we will send the profiling data and total values to
@@ -1107,6 +1117,7 @@ void TCPHandler::processOrdinaryQuery()
         last_sent_snapshots.clear();
     }
 
+    out_lock.lock()
     sendProgress();
 }
 
