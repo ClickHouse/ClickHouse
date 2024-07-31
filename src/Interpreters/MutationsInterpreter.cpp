@@ -491,16 +491,6 @@ static void validateUpdateColumns(
             {
                 if (!source.supportsLightweightDelete())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
-
-                if (const MergeTreeData * merge_tree_data = source.getMergeTreeData(); merge_tree_data != nullptr)
-                {
-                    if (merge_tree_data->getSettings()->lightweight_mutation_projection_mode == LightweightMutationProjectionMode::THROW
-                        && merge_tree_data->hasProjection())
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                            "DELETE query is not supported for table {} as it has projections. "
-                            "User should drop all the projections manually before running the query",
-                            source.getStorage()->getStorageID().getFullTableName());
-                }
             }
             else if (virtual_columns.tryGet(column_name))
             {

@@ -21,7 +21,7 @@ SELECT 'testing throw default mode';
 
 ALTER TABLE users MODIFY SETTING lightweight_mutation_projection_mode = 'throw';
 
-DELETE FROM users WHERE uid = 1231;  -- { serverError NOT_IMPLEMENTED }
+DELETE FROM users WHERE uid = 1231;  -- { serverError SUPPORT_IS_DISABLED }
 
 SELECT 'testing drop mode';
 ALTER TABLE users MODIFY SETTING lightweight_mutation_projection_mode = 'drop';
@@ -85,7 +85,7 @@ INSERT INTO users VALUES (1231, 'John', 33);
 SELECT 'testing throw default mode';
 ALTER TABLE users MODIFY SETTING lightweight_mutation_projection_mode = 'throw';
 
-DELETE FROM users WHERE uid = 1231;  -- { serverError NOT_IMPLEMENTED }
+DELETE FROM users WHERE uid = 1231;  -- { serverError SUPPORT_IS_DISABLED }
 
 SELECT 'testing drop mode';
 ALTER TABLE users MODIFY SETTING lightweight_mutation_projection_mode = 'drop';

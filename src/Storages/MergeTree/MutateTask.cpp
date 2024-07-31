@@ -2320,10 +2320,14 @@ bool MutateTask::prepare()
             ctx->context,
             ctx->materialized_indices);
 
-        bool lightweight_delete_projection_drop = lightweight_delete_mode
-            && ctx->data->getSettings()->lightweight_mutation_projection_mode == LightweightMutationProjectionMode::DROP;
+        auto lightweight_mutation_projection_mode = ctx->data->getSettings()->lightweight_mutation_projection_mode;
+        bool lightweight_delete_drops_projections =
+            lightweight_mutation_projection_mode == LightweightMutationProjectionMode::DROP
+            || lightweight_mutation_projection_mode == LightweightMutationProjectionMode::THROW;
+
+        bool should_create_projections = !(lightweight_delete_mode && lightweight_delete_drops_projections);
         /// Under lightweight delete mode, if option is drop, projections_to_recalc should be empty.
-        if (!lightweight_delete_projection_drop)
+        if (should_create_projections)
         {
             ctx->projections_to_recalc = MutationHelpers::getProjectionsToRecalculate(
                 ctx->source_part,
@@ -2342,7 +2346,7 @@ bool MutateTask::prepare()
             ctx->projections_to_recalc,
             ctx->stats_to_recalc,
             ctx->metadata_snapshot,
-            lightweight_delete_projection_drop);
+            !should_create_projections);
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->source_part,

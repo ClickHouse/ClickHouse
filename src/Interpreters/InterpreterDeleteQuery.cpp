@@ -16,6 +16,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 
 namespace DB
@@ -84,6 +85,18 @@ BlockIO InterpreterDeleteQuery::execute()
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Lightweight delete mutate is disabled. "
                             "Set `enable_lightweight_delete` setting to enable it");
+
+        if (metadata_snapshot->hasProjections())
+        {
+            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(table.get()))
+                if (merge_tree_data->getSettings()->lightweight_mutation_projection_mode == LightweightMutationProjectionMode::THROW)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "DELETE query is not allowed for table {} because as it has projections and setting "
+                        "lightweight_mutation_projection_mode is set to THROW. "
+                        "User should change lightweight_mutation_projection_mode OR "
+                        "drop all the projections manually before running the query",
+                        table_id.getFullTableName());
+        }
 
         /// Build "ALTER ... UPDATE _row_exists = 0 WHERE predicate" query
         String alter_query =
