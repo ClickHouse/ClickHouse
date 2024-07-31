@@ -206,7 +206,7 @@ bool ColumnTuple::tryInsert(const Field & x)
     return true;
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
 #else
 void ColumnTuple::doInsertFrom(const IColumn & src_, size_t n)
@@ -223,7 +223,7 @@ void ColumnTuple::doInsertFrom(const IColumn & src_, size_t n)
         columns[i]->insertFrom(*src.columns[i], n);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnTuple::insertManyFrom(const IColumn & src, size_t position, size_t length)
 #else
 void ColumnTuple::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
@@ -327,7 +327,7 @@ void ColumnTuple::updateHashFast(SipHash & hash) const
         column->updateHashFast(hash);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else
 void ColumnTuple::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -483,7 +483,7 @@ int ColumnTuple::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_
     return 0;
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 #else
 int ColumnTuple::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const

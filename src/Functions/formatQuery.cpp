@@ -39,7 +39,7 @@ public:
     FunctionFormatQuery(ContextPtr context, String name_, OutputFormatting output_formatting_, ErrorHandling error_handling_)
         : name(name_), output_formatting(output_formatting_), error_handling(error_handling_)
     {
-        const Settings & settings = context->getSettings();
+        const Settings & settings = context->getSettingsRef();
         max_query_size = settings.max_query_size;
         max_parser_depth = settings.max_parser_depth;
         max_parser_backtracks = settings.max_parser_backtracks;
@@ -75,7 +75,7 @@ public:
         if (const ColumnString * col_query_string = checkAndGetColumn<ColumnString>(col_query.get()))
         {
             auto col_res = ColumnString::create();
-            formatVector(col_query_string->getChars(), col_query_string->getOffsets(), col_res->getChars(), col_res->getOffsets(), col_null_map);
+            formatVector(col_query_string->getChars(), col_query_string->getOffsets(), col_res->getChars(), col_res->getOffsets(), col_null_map, input_rows_count);
 
             if (error_handling == ErrorHandling::Null)
                 return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
@@ -92,16 +92,16 @@ private:
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
-        ColumnUInt8::MutablePtr & res_null_map) const
+        ColumnUInt8::MutablePtr & res_null_map,
+        size_t input_rows_count) const
     {
-        const size_t size = offsets.size();
-        res_offsets.resize(size);
+        res_offsets.resize(input_rows_count);
         res_data.resize(data.size());
 
         size_t prev_offset = 0;
         size_t res_data_size = 0;
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const char * begin = reinterpret_cast<const char *>(&data[prev_offset]);
             const char * end = begin + offsets[i] - prev_offset - 1;

@@ -241,8 +241,9 @@ jobs:
       runner_type: stress-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FinishCheck:
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ !cancelled() }}
     needs:
+      - RunConfig
       - Builds_Report
       - FunctionalStatelessTestAsan
       - FunctionalStatefulTestDebug
@@ -257,6 +258,7 @@ jobs:
         with:
           clear-repository: true
       - name: Finish label
+        if: ${{ !failure() }}
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           # update mergeable check
@@ -264,3 +266,10 @@ jobs:
           # update overall ci report
           python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
           python3 merge_pr.py
+      - name: Check Workflow results
+        run: |
+          export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
+          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          python3 ./tests/ci/ci_buddy.py --check-wf-status
