@@ -56,7 +56,7 @@ function check_replication_consistency()
     readarray -t tables_arr < <(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database=currentDatabase() AND name like '$table_name_prefix%'")
     for t in "${tables_arr[@]}"
     do
-        ${CLICKHOUSE_CLIENT} -q "KILL MUTATION WHERE database=currentDatabase() AND table='$t'" > /dev/null 2>/dev/null
+        ${CLICKHOUSE_CLIENT} -q "KILL MUTATION WHERE database=currentDatabase() AND table='$t'" > /dev/null 2>/dev/null ||:
     done
 
     # Wait for all queries to finish (query may still be running if thread is killed by timeout)
