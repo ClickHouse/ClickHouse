@@ -1406,6 +1406,8 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
         return !tables_marked_dropped_ids.contains(uuid) || is_shutting_down;
     });
 
+    LOG_DEBUG(log, "Done waiting for the table {} to be dropped. The outcome: {}", toString(uuid), tables_marked_dropped_ids).contains(uuid) ? "table still exists" : "table dropped successfully");
+
     /// TSA doesn't support unique_lock
     if (TSA_SUPPRESS_WARNING_FOR_READ(tables_marked_dropped_ids).contains(uuid))
         throw Exception(ErrorCodes::UNFINISHED, "Did not finish dropping the table with UUID {} because the server is shutting down, "
