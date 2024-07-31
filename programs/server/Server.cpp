@@ -615,7 +615,9 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(log, "Failed to execute the condition query");
+                    auto message = getCurrentExceptionMessageAndPattern(true);
+                    context->addWarningMessage(fmt::format("The condition query `{}` failed with the exception {}. Will skip this query.", condition, message.text));
+                    continue;
                 }
 
                 auto result = condition_write_buffer.str();
