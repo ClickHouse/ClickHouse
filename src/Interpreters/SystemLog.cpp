@@ -475,14 +475,14 @@ void SystemLog<LogElement>::savingThreadFunction()
                 return;
             }
 
-            if (!result.logs_elemets.empty())
+            if (!result.logs.empty())
             {
-                flushImpl(result.logs_elemets, result.logs_index);
+                flushImpl(result.logs, result.last_log_index);
             }
             else if (result.create_table_force)
             {
                 prepareTable();
-                queue->confirm(/* last_flashed_index */ 0);
+                queue->confirm(result.last_log_index);
             }
         }
         catch (...)
@@ -572,9 +572,6 @@ StoragePtr SystemLog<LogElement>::getStorage() const
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
-    if (is_prepared)
-        return;
-
     String description = table_id.getNameForLogs();
 
     auto table = getStorage();

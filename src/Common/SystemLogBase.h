@@ -1,6 +1,7 @@
 #pragma once
 
 #include <condition_variable>
+#include <limits>
 #include <memory>
 #include <vector>
 #include <base/types.h>
@@ -54,7 +55,7 @@ struct StorageID;
 class ISystemLog
 {
 public:
-    using Index = uint64_t;
+    using Index = int64_t;
 
     virtual String getName() const = 0;
 
@@ -125,8 +126,8 @@ public:
 
     struct PopResult
     {
-        Index logs_index = 0;
-        std::vector<LogElement> logs_elemets = {};
+        Index last_log_index = 0;
+        std::vector<LogElement> logs = {};
         bool create_table_force = false;
         bool is_shutdown = false;
     };
@@ -136,6 +137,8 @@ public:
     void confirm(Index last_flashed_index);
 
 private:
+    void notifyFlushUnlocked(Index expected_flushed_index, bool should_prepare_tables_anyway);
+
     /// Data shared between callers of add()/flush()/shutdown(), and the saving thread
     std::mutex mutex;
 
@@ -150,18 +153,21 @@ private:
     // synchronous log flushing for SYSTEM FLUSH LOGS.
     Index queue_front_index = 0;
 
-    // A flag that says we must create the tables even if the queue is empty.
-    bool force_prepare_tables_requested = false;
-    bool prepare_tables_done = false;
-
     // Requested to flush logs up to this index, exclusive
-    Index requested_flush_index = 0;
-
+    Index requested_flush_index = std::numeric_limits<Index>::min();
     // Flushed log up to this index, exclusive
     Index flushed_index = 0;
 
-    // Logged overflow message at this queue front index
-    Index logged_queue_full_at_index = -1;
+    // The same logic for the prepare tables: if requested_prepar_tables > prepared_tables we need to do prepare
+    // except that initial prepared_tables is -1
+    // it is due to the difference: when no logs have been written and we call flush logs
+    // it becomes in the state: requested_flush_index = 0 and flushed_index = 0 -- we do not want to do anything
+    // but if we need to prepare tables it becomes requested_prepare_tables = 0 and prepared_tables = -1
+    // we trigger background thread and do prepare
+    Index requested_prepare_tables = std::numeric_limits<Index>::min();
+    Index prepared_tables = -1;
+
+    size_t ignored_logs = 0;
 
     bool is_shutdown = false;
 

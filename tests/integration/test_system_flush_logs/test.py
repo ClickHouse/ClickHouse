@@ -4,7 +4,7 @@
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, assert_logs_contain_with_retry, TSV
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -75,6 +75,8 @@ def test_system_suspend():
 
 
 def test_log_max_size(start_cluster):
+    # we do misconfiguration here: buffer_size_rows_flush_threshold > max_size_rows, flush_interval_milliseconds is huge
+    # no auto flush by size not by time has a chance
     node.exec_in_container(
         [
             "bash",
@@ -83,6 +85,7 @@ def test_log_max_size(start_cluster):
         <clickhouse>
             <query_log>
                 <flush_interval_milliseconds replace=\\"replace\\">1000000</flush_interval_milliseconds>
+                <buffer_size_rows_flush_threshold replace=\\"replace\\">1000000</buffer_size_rows_flush_threshold>
                 <max_size_rows replace=\\"replace\\">10</max_size_rows>
                 <reserved_size_rows replace=\\"replace\\">10</reserved_size_rows>
             </query_log>
@@ -91,11 +94,23 @@ def test_log_max_size(start_cluster):
         """,
         ]
     )
-    node.restart_clickhouse()
-    for i in range(10):
-        node.query(f"select {i}")
 
-    assert node.query("select count() >= 10 from system.query_log") == "1\n"
+    node.query(f"TRUNCATE TABLE IF EXISTS system.query_log")
+    node.restart_clickhouse()
+
+    # all logs records above max_size_rows are lost
+    # The accepted logs records are never flushed until system flush logs is called by us
+    for i in range(21):
+        node.query(f"select {i}")
+    node.query("system flush logs")
+
+    assert_logs_contain_with_retry(
+        node, "Queue had been full at 0, accepted 10 logs, ignored 34 logs."
+    )
+    assert node.query(
+        "select count() >= 10, count() < 20 from system.query_log"
+    ) == TSV([[1, 1]])
+
     node.exec_in_container(
         ["rm", f"/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
     )

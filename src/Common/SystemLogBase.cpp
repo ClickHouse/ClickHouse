@@ -88,31 +88,18 @@ void SystemLogQueue<LogElement>::push(LogElement&& element)
             // by one, under exclusive lock, so we will see each message count.
             // It is enough to only wake the flushing thread once, after the message
             // count increases past half available size.
+
             const auto last_log_index = queue_front_index + queue.size();
-            requested_flush_index = std::max(requested_flush_index, last_log_index);
-            flush_event.notify_all();
+            notifyFlushUnlocked(last_log_index, /* should_prepare_tables_anyway */ false);
         }
 
         if (queue.size() >= settings.max_size_rows)
         {
+            chassert(queue.size() == settings.max_size_rows);
+
             // Ignore all further entries until the queue is flushed.
-            // Log a message about that. Don't spam it -- this might be especially
-            // problematic in case of trace log. Remember what the front index of the
-            // queue was when we last logged the message. If it changed, it means the
-            // queue was flushed, and we can log again.
-            if (queue_front_index != logged_queue_full_at_index)
-            {
-                logged_queue_full_at_index = queue_front_index;
-
-                // TextLog sets its logger level to 0, so this log is a noop and
-                // there is no recursive logging.
-                lock.unlock();
-                LOG_ERROR(log, "Queue is full for system log '{}' at {}. max_size_rows {}",
-                          demangle(typeid(*this).name()),
-                          queue_front_index,
-                          settings.max_size_rows);
-            }
-
+            // To the next batch we add a log message about how much we have lost
+            ++ignored_logs;
             return;
         }
 
@@ -134,14 +121,21 @@ void SystemLogQueue<LogElement>::handleCrash()
 }
 
 template <typename LogElement>
+void SystemLogQueue<LogElement>::notifyFlushUnlocked(Index expected_flushed_index, bool should_prepare_tables_anyway)
+{
+    if (should_prepare_tables_anyway)
+        requested_prepare_tables = std::max(requested_prepare_tables, expected_flushed_index);
+
+    requested_flush_index = std::max(requested_flush_index, expected_flushed_index);
+
+    flush_event.notify_all();
+}
+
+template <typename LogElement>
 void SystemLogQueue<LogElement>::notifyFlush(SystemLogQueue<LogElement>::Index expected_flushed_index, bool should_prepare_tables_anyway)
 {
-    std::unique_lock lock(mutex);
-    // Publish our flush request, taking care not to overwrite the requests
-    // made by other threads.
-    force_prepare_tables_requested |= should_prepare_tables_anyway;
-    requested_flush_index = std::max(requested_flush_index, expected_flushed_index);
-    flush_event.notify_all();
+    std::lock_guard lock(mutex);
+    notifyFlushUnlocked(expected_flushed_index, should_prepare_tables_anyway);
 }
 
 template <typename LogElement>
@@ -156,18 +150,15 @@ void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index exp
 
     std::unique_lock lock(mutex);
 
-    // there is no obligation to call notifyFlush before waitFlush, than we have to be sure that flush_event has been triggered
-    force_prepare_tables_requested |= should_prepare_tables_anyway;
-    if (requested_flush_index < expected_flushed_index)
-    {
-        requested_flush_index = expected_flushed_index;
-        flush_event.notify_all();
-    }
+    // there is no obligation to call notifyFlush before waitFlush, than we have to be sure that flush_event has been triggered before we wait the result
+    notifyFlushUnlocked(expected_flushed_index, should_prepare_tables_anyway);
 
     auto result = confirm_event.wait_for(lock, std::chrono::seconds(timeout_seconds), [&]
     {
-        const bool if_should_prepare_then_it_is_done = LOGICAL_IF_THEN(should_prepare_tables_anyway, prepare_tables_done);
-        return (flushed_index >= expected_flushed_index && if_should_prepare_then_it_is_done) || is_shutdown;
+        if (should_prepare_tables_anyway)
+            return (flushed_index >= expected_flushed_index && prepared_tables >= requested_prepare_tables) || is_shutdown;
+        else
+            return (flushed_index >= expected_flushed_index) || is_shutdown;
     });
 
     if (!result)
@@ -194,7 +185,7 @@ template <typename LogElement>
 void SystemLogQueue<LogElement>::confirm(SystemLogQueue<LogElement>::Index last_flashed_index)
 {
     std::lock_guard lock(mutex);
-    prepare_tables_done = true;
+    prepared_tables = std::max(prepared_tables, last_flashed_index);
     flushed_index = std::max(flushed_index, last_flashed_index);
     confirm_event.notify_all();
 }
@@ -202,25 +193,34 @@ void SystemLogQueue<LogElement>::confirm(SystemLogQueue<LogElement>::Index last_
 template <typename LogElement>
 typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
 {
-    std::unique_lock lock(mutex);
-
-    flush_event.wait_for(lock, std::chrono::milliseconds(settings.flush_interval_milliseconds), [&] ()
-    {
-        const bool if_prepare_requested_and_it_is_not_done = force_prepare_tables_requested && !prepare_tables_done;
-        return requested_flush_index > flushed_index || if_prepare_requested_and_it_is_not_done || is_shutdown;
-    });
-
-    if (is_shutdown)
-        return PopResult{.is_shutdown = true};
-
-    queue_front_index += queue.size();
-
     PopResult result;
-    result.logs_index = queue_front_index;
-    result.logs_elemets.swap(queue);
+    size_t prev_ignored_logs = 0;
 
-    const bool if_prepare_requested_and_it_is_not_done = force_prepare_tables_requested && !prepare_tables_done;
-    result.create_table_force = if_prepare_requested_and_it_is_not_done;
+    {
+        std::unique_lock lock(mutex);
+
+        flush_event.wait_for(lock, std::chrono::milliseconds(settings.flush_interval_milliseconds), [&] ()
+        {
+            return requested_flush_index > flushed_index || requested_prepare_tables > prepared_tables || is_shutdown;
+        });
+
+        if (is_shutdown)
+            return PopResult{.is_shutdown = true};
+
+        queue_front_index += queue.size();
+        prev_ignored_logs = ignored_logs;
+        ignored_logs = 0;
+
+        result.last_log_index = queue_front_index;
+        result.logs.swap(queue);
+        result.create_table_force = requested_prepare_tables > prepared_tables;
+    }
+
+    if (prev_ignored_logs)
+        LOG_ERROR(log, "Queue had been full at {}, accepted {} logs, ignored {} logs.",
+                    result.last_log_index - result.logs.size(),
+                    result.logs.size(),
+                    prev_ignored_logs);
 
     return result;
 }

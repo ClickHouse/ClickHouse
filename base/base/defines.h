@@ -164,5 +164,3 @@ template <typename... Args>
 constexpr void UNUSED(Args &&... args [[maybe_unused]]) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
 }
-
-#define LOGICAL_IF_THEN(A, B) (!(A) || !!(B))

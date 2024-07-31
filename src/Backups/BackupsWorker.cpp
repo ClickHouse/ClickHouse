@@ -1171,6 +1171,8 @@ void BackupsWorker::waitAll()
     for (const auto & id : current_operations)
         wait(id, /* rethrow_exception= */ false);
 
+    backup_log->flush(backup_log->getLastLogIndex());
+
     LOG_INFO(log, "Backups and restores finished");
 }
 
