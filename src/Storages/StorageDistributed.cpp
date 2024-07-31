@@ -90,7 +90,6 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -496,7 +495,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     }
 
     std::optional<QueryProcessingStage::Enum> optimized_stage;
-    if (settings.allow_experimental_analyzer)
+    if (query_info.query_tree)
         optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings);
     else
         optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
@@ -860,31 +859,28 @@ void StorageDistributed::read(
         modified_query_info.query = queryNodeToDistributedSelectQuery(query_tree_distributed);
 
         modified_query_info.query_tree = std::move(query_tree_distributed);
+
+        /// Return directly (with correct header) if no shard to query.
+        if (modified_query_info.getCluster()->getShardsInfo().empty())
+            return;
     }
     else
     {
         header = InterpreterSelectQuery(modified_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
-    }
 
-    if (!settings.allow_experimental_analyzer)
-    {
         modified_query_info.query = ClusterProxy::rewriteSelectQuery(
             local_context, modified_query_info.query,
             remote_database, remote_table, remote_table_function_ptr);
-    }
 
-    /// Return directly (with correct header) if no shard to query.
-    if (modified_query_info.getCluster()->getShardsInfo().empty())
-    {
-        if (settings.allow_experimental_analyzer)
+        if (modified_query_info.getCluster()->getShardsInfo().empty())
+            {
+                Pipe pipe(std::make_shared<NullSource>(header));
+                auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+                read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
+                query_plan.addStep(std::move(read_from_pipe));
+
             return;
-
-        Pipe pipe(std::make_shared<NullSource>(header));
-        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-        read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
-        query_plan.addStep(std::move(read_from_pipe));
-
-        return;
+        }
     }
 
     const auto & snapshot_data = assert_cast<const SnapshotData &>(*storage_snapshot->data);
