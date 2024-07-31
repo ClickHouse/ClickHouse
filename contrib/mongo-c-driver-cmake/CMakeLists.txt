@@ -1,5 +1,5 @@
-option(USE_MONGODB "Enable MongoDB" ${ENABLE_LIBRARIES})
-if (NOT USE_MONGODB)
+option(ENABLE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
+if (NOT ENABLE_MONGODB)
     message(STATUS "Not using libmongoc and libbson")
     return()
 endif()

@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#if USE_MONGODB
+#if ENABLE_MONGODB
 #include <Processors/ISource.h>
 #include <Interpreters/Context.h>
 #include <Common/JSONBuilder.h>

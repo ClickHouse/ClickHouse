@@ -40,7 +40,7 @@ target_link_libraries(clickhouse_dictionaries
         Poco::Redis
 )
 
-if (USE_MONGODB)
+if (ENABLE_MONGODB)
     target_link_libraries(clickhouse_dictionaries PRIVATE Poco::MongoDB)
 endif()
 

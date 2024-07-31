@@ -1,6 +1,6 @@
 #include "config.h"
 
-#if USE_MONGODB
+#if ENABLE_MONGODB
 #include <Storages/StorageMongoDBPocoLegacy.h>
 #include <Storages/StorageMongoDBPocoLegacySocketFactory.h>
 #include <Storages/StorageFactory.h>

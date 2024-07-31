@@ -67,8 +67,6 @@ ENGINE = MongoDB(uri, collection);
 | MongoDB            | ClickHouse                                                            |
 |--------------------|-----------------------------------------------------------------------|
 | bool, int32, int64 | *any numeric type*, String                                            |
-| int32              | Int32, String                                                         |
-| int64              | Int64, String                                                         |
 | double             | Float64, String                                                       |
 | date               | Date, Date32, DateTime, DateTime64, String                            |
 | string             | String, UUID                                                          |

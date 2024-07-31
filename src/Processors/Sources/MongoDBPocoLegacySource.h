@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#if USE_MONGODB
+#if ENABLE_MONGODB
 #include <Poco/MongoDB/Element.h>
 #include <Poco/MongoDB/Array.h>
 

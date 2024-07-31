@@ -1,6 +1,6 @@
 #include "config.h"
 
-#if USE_MONGODB
+#if ENABLE_MONGODB
 #include <memory>
 
 #include <Analyzer/ColumnNode.h>

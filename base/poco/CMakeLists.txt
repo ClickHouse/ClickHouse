@@ -4,7 +4,7 @@ add_subdirectory (Data/ODBC)
 add_subdirectory (Foundation)
 add_subdirectory (JSON)
 
-if (USE_MONGODB)
+if (ENABLE_MONGODB)
     add_subdirectory(MongoDB)
 endif()
 

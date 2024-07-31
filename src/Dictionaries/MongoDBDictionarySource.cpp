@@ -1,7 +1,7 @@
 #include "config.h"
 
 #include "DictionarySourceFactory.h"
-#if USE_MONGODB
+#if ENABLE_MONGODB
 #include "MongoDBDictionarySource.h"
 #include "DictionaryStructure.h"
 
@@ -21,7 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    #if USE_MONGODB
+    #if ENABLE_MONGODB
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
     #else
@@ -31,7 +31,7 @@ namespace ErrorCodes
 
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
-    #if USE_MONGODB
+    #if ENABLE_MONGODB
     auto create_dictionary_source = [](
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
@@ -109,7 +109,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
     factory.registerSource("mongodb", create_dictionary_source);
 }
 
-#if USE_MONGODB
+#if ENABLE_MONGODB
 static const UInt64 max_block_size = 8192;
 
 

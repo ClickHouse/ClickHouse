@@ -13,7 +13,7 @@ struct FormatSettings
     const DB::FormatSettings & settings;
     size_t indent = 2;
     bool print_simple_arrays_in_single_row = true;
-    bool solid = false;
+    bool solid = false; // the output will not contain spaces and line breaks
 };
 
 struct FormatContext

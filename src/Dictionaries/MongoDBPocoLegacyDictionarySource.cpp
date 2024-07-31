@@ -1,7 +1,7 @@
 #include "config.h"
 
 #include "DictionarySourceFactory.h"
-#if USE_MONGODB
+#if ENABLE_MONGODB
 #include "MongoDBPocoLegacyDictionarySource.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
@@ -14,7 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-#if USE_MONGODB
+#if ENABLE_MONGODB
 extern const int NOT_IMPLEMENTED;
 extern const int UNSUPPORTED_METHOD;
 extern const int MONGODB_CANNOT_AUTHENTICATE;
@@ -23,14 +23,14 @@ extern const int SUPPORT_IS_DISABLED;
 #endif
 }
 
-#if USE_MONGODB
+#if ENABLE_MONGODB
 static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
     "host", "port", "user", "password", "db", "database", "uri", "collection", "name", "method", "options"};
 #endif
 
 void registerDictionarySourceMongoDBPocoLegacy(DictionarySourceFactory & factory)
 {
-    #if USE_MONGODB
+    #if ENABLE_MONGODB
     auto create_mongo_db_dictionary = [](
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
@@ -92,7 +92,7 @@ void registerDictionarySourceMongoDBPocoLegacy(DictionarySourceFactory & factory
 
 }
 
-#if USE_MONGODB
+#if ENABLE_MONGODB
 #include <Common/logger_useful.h>
 #include <Poco/MongoDB/Array.h>
 #include <Poco/MongoDB/Connection.h>
