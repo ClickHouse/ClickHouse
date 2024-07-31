@@ -21,6 +21,7 @@ def start_cluster():
 def test_recovery_time_metric(start_cluster):
     node.query(
         """
+        DROP DATABASE IF EXISTS rdb;
         CREATE DATABASE rdb
         ENGINE = Replicated('/test/test_recovery_time_metric', 'shard1', 'replica1')
         """
@@ -28,6 +29,7 @@ def test_recovery_time_metric(start_cluster):
 
     node.query(
         """
+        DROP TABLE IF EXISTS rdb.t;
         CREATE TABLE rdb.t
         (
             `x` UInt32
@@ -51,3 +53,9 @@ def test_recovery_time_metric(start_cluster):
         ).strip()
     )
     assert ret > 0
+
+    node.query(
+        """
+        DROP DATABASE rdb
+        """
+    )
