@@ -201,6 +201,7 @@ def test_partition_by(started_cluster):
 
     remove_local_directory_contents(f"/{TABLE_NAME}")
 
+
 def test_checkpoint(started_cluster):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
