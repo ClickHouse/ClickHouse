@@ -1200,34 +1200,37 @@ bool KeyCondition::tryPrepareSetIndex(
       */
     auto set_columns = prepared_set->getSetElements();
     auto set_types = future_set->getTypes();
-    while (set_columns.size() != left_args_count)
     {
-        bool has_tuple = false;
-        for (size_t i = 0; i < set_columns.size(); i++)
+        Columns new_columns;
+        DataTypes new_types;
+        while (set_columns.size() < left_args_count) /// If we have an unpacked tuple inside, we unpack it
         {
-            if (isTuple(set_columns[i]->getDataType()))
+            bool has_tuple = false;
+            for (size_t i = 0; i < set_columns.size(); ++i)
             {
-                has_tuple = true;
-                auto columns_tuple = assert_cast<const ColumnTuple *>(set_columns[i].get())->getColumns();
-                auto subtypes = assert_cast<const DataTypeTuple &>(*set_types[i]).getElements();
-                set_columns.erase(set_columns.begin() + i);
-                set_types.erase(set_types.begin() + i);
-                for (size_t j = 0; j < columns_tuple.size(); j++)
+                if (isTuple(set_types[i]))
                 {
-                    set_columns.insert(set_columns.begin() + i + j, columns_tuple[j]);
-                    set_types.insert(set_types.begin() + i + j, subtypes[j]);
+                    has_tuple = true;
+                    auto columns_tuple = assert_cast<const ColumnTuple*>(set_columns[i].get())->getColumns();
+                    auto subtypes = assert_cast<const DataTypeTuple&>(*set_types[i]).getElements();
+                    new_columns.insert(new_columns.end(), columns_tuple.begin(), columns_tuple.end());
+                    new_types.insert(new_types.end(), subtypes.begin(), subtypes.end());
+                }
+                else
+                {
+                    new_columns.push_back(set_columns[i]);
+                    new_types.push_back(set_types[i]);
                 }
             }
+            if (!has_tuple)
+                return false;
+
+            set_columns.swap(new_columns);
+            set_types.swap(new_types);
         }
-        if (!has_tuple)
-            return false;
     }
     size_t set_types_size = set_types.size();
     size_t indexes_mapping_size = indexes_mapping.size();
-
-    for (auto & index_mapping : indexes_mapping)
-        if (index_mapping.tuple_index >= set_types_size)
-            return false;
     assert(set_types_size == set_columns.size());
 
     for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping_size; ++indexes_mapping_index)
