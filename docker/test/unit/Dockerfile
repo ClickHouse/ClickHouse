@@ -4,4 +4,4 @@ ARG FROM_TAG=latest
 FROM clickhouse/test-base:$FROM_TAG
 
 COPY run.sh /
-CMD ["/bin/bash", "/run.sh"]
+ENTRYPOINT ["/run.sh"]

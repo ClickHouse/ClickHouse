@@ -174,10 +174,13 @@ def main():
     test_output = temp_path / "test_output"
     test_output.mkdir(parents=True, exist_ok=True)
 
+    # Don't run ASAN under gdb since that breaks leak detection
+    gdb_enabled = "NO_GDB" if "asan" in check_name else "GDB"
+
     run_command = (
         f"docker run --cap-add=SYS_PTRACE --volume={tests_binary}:/unit_tests_dbms "
         "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
-        f"--volume={test_output}:/test_output {docker_image}"
+        f"--volume={test_output}:/test_output {docker_image} ${gdb_enabled}"
     )
 
     run_log_path = test_output / "run.log"
