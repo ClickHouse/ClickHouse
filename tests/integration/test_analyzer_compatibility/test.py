@@ -78,10 +78,12 @@ WHERE initial_query_id = '{query_id}';"""
     current.query("SYSTEM FLUSH LOGS")
     backward.query("SYSTEM FLUSH LOGS")
 
+    # The old version doesn't know about the alias.
+    # For this we will ask about the old experimental name.
     assert (
         backward.query(
             """
-SELECT hostname() AS h, getSetting('enable_analyzer')
+SELECT hostname() AS h, getSetting('allow_experimental_analyzer')
 FROM clusterAllReplicas('test_cluster_mixed', system.one)
 ORDER BY h;"""
         )
@@ -92,7 +94,7 @@ ORDER BY h;"""
     analyzer_enabled = backward.query(
         f"""
 SELECT
-DISTINCT Settings['enable_analyzer']
+DISTINCT Settings['allow_experimental_analyzer']
 FROM clusterAllReplicas('test_cluster_mixed', system.query_log)
 WHERE initial_query_id = '{query_id}';"""
     )
