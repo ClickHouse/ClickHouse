@@ -26,6 +26,7 @@ profiles:
     max_execution_time_leaf: 600
     max_execution_speed: 100G
     max_execution_speed_bytes: 10T
+    timeout_before_checking_execution_speed: 300
     max_estimated_execution_time: 600
     max_columns_to_read: 20K
     max_temporary_columns: 20K
