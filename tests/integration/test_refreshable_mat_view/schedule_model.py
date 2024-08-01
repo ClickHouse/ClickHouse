@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from dateutil.relativedelta import relativedelta
+import dateutil.relativedelta as rd
 
 """
 It is the model to test the scheduling of refreshable mat view
@@ -8,26 +8,29 @@ It is the model to test the scheduling of refreshable mat view
 
 
 def relative_offset(unit, value):
-    if unit == "SECONDS":
-        return relativedelta(seconds=value)
+    if unit == "SECOND":
+        return rd.relativedelta(seconds=value)
     elif unit == "MINUTE":
-        return relativedelta(minutes=value)
+        return rd.relativedelta(minutes=value)
     elif unit == "HOUR":
-        return relativedelta(hours=value)
+        return rd.relativedelta(hours=value)
     elif unit == "DAY":
-        return relativedelta(days=value)
+        return rd.relativedelta(days=value)
+    # elif unit == "WEEK":
+    #     return rd.relativedelta(days=7 * value)
     elif unit == "WEEK":
-        return relativedelta(days=7 * value)
-    elif unit == "MONTH":
-        return relativedelta(months=value)
-    elif unit == "YEAR":
-        return relativedelta(years=value)
+        return rd.relativedelta(weeks=7 * value)
 
-    raise Exception("Cant parse unit: {}".format(unit))
+    elif unit == "MONTH":
+        return rd.relativedelta(months=value)
+    elif unit == "YEAR":
+        return rd.relativedelta(years=value)
+
+    raise Exception("Can't parse unit: {}".format(unit))
 
 
 def group_and_sort(parts, reverse=False):
-    order = ["YEAR", "MONTH", "WEEK", "DAY", "HOUR", "MINUTE", "SECONDS"]
+    order = ["YEAR", "MONTH", "WEEK", "DAY", "HOUR", "MINUTE", "SECOND"]
     grouped_parts = []
 
     for i in range(0, len(parts), 2):
@@ -41,7 +44,6 @@ def group_and_sort(parts, reverse=False):
 
 def get_next_refresh_time(schedule, current_time: datetime):
     parts = schedule.split()
-
     randomize_offset = timedelta()
 
     if "RANDOMIZE" in parts:
@@ -69,37 +71,36 @@ def get_next_refresh_time(schedule, current_time: datetime):
             value = int(part[0])
             unit = part[1]
 
-            if unit == "SECONDS":
-                current_time = current_time.replace(microsecond=0) + relativedelta(
+            if unit == "SECOND":
+                current_time = current_time.replace(microsecond=0) + rd.relativedelta(
                     seconds=value
                 )
             elif unit == "MINUTE":
                 current_time = current_time.replace(
                     second=0, microsecond=0
-                ) + relativedelta(minutes=value)
+                ) + rd.relativedelta(minutes=value)
             elif unit == "HOUR":
                 current_time = current_time.replace(
                     minute=0, second=0, microsecond=0
-                ) + relativedelta(hours=value)
+                ) + rd.relativedelta(hours=value)
             elif unit == "DAY":
                 current_time = current_time.replace(
                     hour=0, minute=0, second=0, microsecond=0
-                ) + relativedelta(days=value)
+                ) + rd.relativedelta(days=value)
             elif unit == "WEEK":
                 current_time = current_time.replace(
                     hour=0, minute=0, second=0, microsecond=0
-                ) + relativedelta(weekday=0, weeks=value)
+                ) + rd.relativedelta(weekday=0, weeks=value)
             elif unit == "MONTH":
                 current_time = current_time.replace(
                     day=1, hour=0, minute=0, second=0, microsecond=0
-                ) + relativedelta(months=value)
+                ) + rd.relativedelta(months=value)
             elif unit == "YEAR":
                 current_time = current_time.replace(
                     month=1, day=1, hour=0, minute=0, second=0, microsecond=0
-                ) + relativedelta(years=value)
+                ) + rd.relativedelta(years=value)
 
         current_time += offset
-
         if randomize_offset:
             half_offset = (current_time + randomize_offset - current_time) / 2
             return (
@@ -111,31 +112,32 @@ def get_next_refresh_time(schedule, current_time: datetime):
 
     elif parts[0] == "AFTER":
         parts = group_and_sort(parts[1:], reverse=True)
-        interval = relativedelta()
+        interval = rd.relativedelta()
         for part in parts:
             value = int(part[0])
             unit = part[1]
 
-            if unit == "SECONDS":
-                interval += relativedelta(seconds=value)
+            if unit == "SECOND":
+                interval += rd.relativedelta(seconds=value)
             elif unit == "MINUTE":
-                interval += relativedelta(minutes=value)
+                interval += rd.relativedelta(minutes=value)
             elif unit == "HOUR":
-                interval += relativedelta(hours=value)
+                interval += rd.relativedelta(hours=value)
             elif unit == "DAY":
-                interval += relativedelta(days=value)
+                interval += rd.relativedelta(days=value)
             elif unit == "WEEK":
-                interval += relativedelta(weeks=value)
+                interval += rd.relativedelta(weeks=value)
             elif unit == "MONTH":
-                interval += relativedelta(months=value)
+                interval += rd.relativedelta(months=value)
             elif unit == "YEAR":
-                interval += relativedelta(years=value)
+                interval += rd.relativedelta(years=value)
 
         current_time += interval
         if randomize_offset:
             half_offset = (current_time + randomize_offset - current_time) / 2
             return (
                 current_time - half_offset,
+                # current_time,
                 current_time + half_offset,
             )
 
