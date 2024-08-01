@@ -23,7 +23,11 @@ INSERT INTO t2_shard VALUES (1, 'a'), (2, 'b'), (3, 'c');
 -- Set the distributed product mode to allow global subqueries
 SET distributed_product_mode = 'global';
 
--- Simple distributed query to verify setup
+-- Simulate replica failure by dropping and recreating a partition
+-- to mimic a situation where data becomes temporarily unavailable
+ALTER TABLE t1_shard DROP PARTITION id = 1;
+
+-- Execute a distributed query that may need to retry due to missing data
 SELECT DISTINCT d0.id, d0.value
 FROM t1_distr d0
 WHERE d0.id IN
@@ -34,6 +38,9 @@ WHERE d0.id IN
     WHERE d1.id > 0
     ORDER BY d1.id
 );
+
+-- Recreate the partition to restore the data
+INSERT INTO t1_shard VALUES (1, 'a');
 
 -- Test distributed join
 SELECT DISTINCT d0.id, d0.value
