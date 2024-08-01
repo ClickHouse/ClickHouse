@@ -99,7 +99,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     /// Need to remove even if cache_on_write == false.
     removeCacheIfExists(object.remote_path);
 
-    if (cache_on_write)
+    if (cache_on_write && cache->isInitialized())
     {
         auto key = getCacheKey(object.remote_path);
         return std::make_unique<CachedOnDiskWriteBufferFromFile>(
@@ -122,7 +122,8 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
         return;
 
     /// Add try catch?
-    cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonUser().user_id);
+    if (cache->isInitialized())
+        cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonUser().user_id);
 }
 
 void CachedObjectStorage::removeObject(const StoredObject & object)

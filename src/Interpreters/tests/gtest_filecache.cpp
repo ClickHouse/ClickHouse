@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <numeric>
 #include <thread>
+#include <chrono>
 
 #include <Core/ServerUUID.h>
 #include <Common/iota.h>
@@ -42,6 +43,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/scope_guard.h>
 
+using namespace std::chrono_literals;
 namespace fs = std::filesystem;
 using namespace DB;
 
@@ -283,6 +285,14 @@ void increasePriority(const HolderPtr & holder, size_t pos)
     (*it)->increasePriority();
 }
 
+void waitForCacheInit(DB::FileCache& cache)
+{
+    while (!cache.isInitialized())
+    {
+        std::this_thread::sleep_for(100ms);
+    }
+}
+
 class FileCacheTest : public ::testing::Test
 {
 public:
@@ -361,6 +371,7 @@ TEST_F(FileCacheTest, LRUPolicy)
 
     const size_t file_size = INT_MAX; // the value doesn't really matter because boundary_alignment == 1.
 
+
     const auto user = FileCache::getCommonUser();
     {
         std::cerr << "Step 1\n";
@@ -373,6 +384,7 @@ TEST_F(FileCacheTest, LRUPolicy)
             return cache.getOrSet(key, offset, size, file_size, {}, 0, user);
         };
 
+        waitForCacheInit(cache);
         {
             auto holder = get_or_set(0, 10); /// Add range [0, 9]
             assertEqual(holder, { Range(0, 9) }, { State::EMPTY });
@@ -732,6 +744,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         cache2.initialize();
         auto key = DB::FileCache::createKeyForPath("key1");
 
+        waitForCacheInit(cache2);
         /// Get [2, 29]
         assertEqual(
             cache2.getOrSet(key, 2, 28, file_size, {}, 0, user),
@@ -751,6 +764,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         cache2.initialize();
         auto key = DB::FileCache::createKeyForPath("key1");
 
+        waitForCacheInit(cache2);
         /// Get [0, 24]
         assertEqual(
             cache2.getOrSet(key, 0, 25, file_size, {}, 0, user),
@@ -767,6 +781,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         const auto key = FileCache::createKeyForPath("key10");
         const auto key_path = cache.getKeyPath(key, user);
 
+        waitForCacheInit(cache);
         cache.removeAllReleasable(user.user_id);
         ASSERT_EQ(cache.getUsedCacheSize(), 0);
         ASSERT_TRUE(!fs::exists(key_path));
@@ -791,6 +806,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         const auto key = FileCache::createKeyForPath("key10");
         const auto key_path = cache.getKeyPath(key, user);
 
+        waitForCacheInit(cache);
         cache.removeAllReleasable(user.user_id);
         ASSERT_EQ(cache.getUsedCacheSize(), 0);
         ASSERT_TRUE(!fs::exists(key_path));
@@ -820,6 +836,7 @@ TEST_F(FileCacheTest, writeBuffer)
     cache.initialize();
     const auto user = FileCache::getCommonUser();
 
+    waitForCacheInit(cache);
     auto write_to_cache = [&, this](const String & key, const Strings & data, bool flush, ReadBufferPtr * out_read_buffer = nullptr)
     {
         CreateFileSegmentSettings segment_settings;
@@ -949,6 +966,7 @@ TEST_F(FileCacheTest, temporaryData)
 
     DB::FileCache file_cache("7", settings);
     file_cache.initialize();
+    waitForCacheInit(file_cache);
 
     const auto user = FileCache::getCommonUser();
     auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, TemporaryDataOnDiskSettings{});
@@ -1092,6 +1110,8 @@ TEST_F(FileCacheTest, CachedReadBuffer)
 
     auto cache = std::make_shared<DB::FileCache>("8", settings);
     cache->initialize();
+    waitForCacheInit(*cache);
+
     auto key = cache->createKeyForPath(file_path);
     const auto user = FileCache::getCommonUser();
 
@@ -1135,6 +1155,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
 
         DB::FileCache file_cache("cache", settings);
         file_cache.initialize();
+        waitForCacheInit(file_cache);
 
         auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(/*volume=*/nullptr, &file_cache, /*settings=*/TemporaryDataOnDiskSettings{});
 
@@ -1206,6 +1227,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
     {
         auto cache = DB::FileCache(std::to_string(++file_cache_name), settings);
         cache.initialize();
+        waitForCacheInit(cache);
         auto key = FileCache::createKeyForPath("key1");
 
         auto add_range = [&](size_t offset, size_t size)
@@ -1310,6 +1332,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
 
         auto cache = std::make_shared<DB::FileCache>("slru_2", settings2);
         cache->initialize();
+        waitForCacheInit(*cache);
 
         auto read_and_check = [&](const std::string & file, const FileCacheKey & key, const std::string & expect_result)
         {
