@@ -376,14 +376,9 @@ void DiskObjectStorage::removeSharedFileIfExists(const String & path, bool delet
 void DiskObjectStorage::removeSharedRecursive(
     const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
-    /// At most remove_shared_recursive_file_limit files are removed in one transaction
-    /// Retry until all of them are removed
-    while (exists(path))
-    {
-        auto transaction = createObjectStorageTransaction();
-        transaction->removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
-        transaction->commit();
-    }
+    auto transaction = createObjectStorageTransaction();
+    transaction->removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
+    transaction->commit();
 }
 
 bool DiskObjectStorage::tryReserve(UInt64 bytes)
