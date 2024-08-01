@@ -24,7 +24,7 @@ INSERT INTO t2_shard VALUES (1, 'a'), (2, 'b'), (3, 'c');
 SET distributed_product_mode = 'global';
 
 -- Simple distributed query to verify setup
-SELECT d0.id, d0.value
+SELECT DISTINCT d0.id, d0.value
 FROM t1_distr d0
 WHERE d0.id IN
 (
@@ -35,7 +35,8 @@ WHERE d0.id IN
     ORDER BY d1.id
 );
 
-SELECT d0.id, d0.value
+-- Test distributed join
+SELECT DISTINCT d0.id, d0.value
 FROM t1_distr d0
 JOIN (
     SELECT d1.id, d1.value
