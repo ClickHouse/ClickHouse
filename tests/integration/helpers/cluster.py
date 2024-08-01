@@ -248,7 +248,7 @@ def check_rabbitmq_is_available(rabbitmq_id, cookie):
         ),
         stdout=subprocess.PIPE,
     )
-    p.communicate()
+    p.wait(timeout=60)
     return p.returncode == 0
 
 
