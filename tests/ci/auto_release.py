@@ -85,7 +85,7 @@ class AutoReleaseInfo:
 def _prepare(token):
     assert len(token) > 10
     os.environ["GH_TOKEN"] = token
-    Shell.run("gh auth status", check=True)
+    Shell.check("gh auth status")
 
     gh = GitHub(token)
     prs = gh.get_release_pulls(GITHUB_REPOSITORY)
@@ -106,9 +106,8 @@ def _prepare(token):
         latest_release_tag_ref = refs[-1]
         latest_release_tag = repo.get_git_tag(latest_release_tag_ref.object.sha)
 
-        commits = Shell.run(
+        commits = Shell.get_output_or_raise(
             f"git rev-list --first-parent {latest_release_tag.tag}..origin/{pr.head.ref}",
-            check=True,
         ).split("\n")
         commit_num = len(commits)
         print(

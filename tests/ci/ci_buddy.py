@@ -120,8 +120,10 @@ class CIBuddy:
     ) -> None:
         instance_id, instance_type = "unknown", "unknown"
         if with_instance_info:
-            instance_id = Shell.run("ec2metadata --instance-id") or instance_id
-            instance_type = Shell.run("ec2metadata --instance-type") or instance_type
+            instance_id = Shell.get_output("ec2metadata --instance-id") or instance_id
+            instance_type = (
+                Shell.get_output("ec2metadata --instance-type") or instance_type
+            )
         if not job_name:
             job_name = os.getenv("CHECK_NAME", "unknown")
         sign = ":red_circle:" if not critical else ":black_circle:"

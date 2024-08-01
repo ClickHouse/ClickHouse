@@ -554,7 +554,7 @@ class CommonJobConfigs:
         run_command="sqllogic_test.py",
         timeout=10800,
         release_only=True,
-        runner_type=Runners.STYLE_CHECKER,
+        runner_type=Runners.FUNC_TESTER,
     )
     SQL_TEST = JobConfig(
         job_name_keyword="sqltest",
@@ -582,6 +582,7 @@ class CommonJobConfigs:
         digest=DigestConfig(
             include_paths=[
                 "tests/ci/docker_server.py",
+                "tests/ci/docker_images_helper.py",
                 "./docker/server",
             ]
         ),

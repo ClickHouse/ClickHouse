@@ -39,6 +39,7 @@ disable = '''
           no-else-return,
           global-statement,
           f-string-without-interpolation,
+          consider-using-with,
           '''
 
 [tool.pylint.SIMILARITIES]
