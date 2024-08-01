@@ -1211,6 +1211,16 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
         }
         column->takeDynamicStructureFromSourceColumns(dynamic_path_source_columns);
     }
+
+    /// Typed paths also can contain types with dynamic structure.
+    for (auto & [path, column] : typed_paths)
+    {
+        Columns typed_path_source_columns;
+        typed_path_source_columns.reserve(source_columns.size());
+        for (const auto & source_column : source_columns)
+            typed_path_source_columns.push_back(assert_cast<const ColumnObject &>(*source_column).typed_paths.at(path));
+        column->takeDynamicStructureFromSourceColumns(typed_path_source_columns);
+    }
 }
 
 size_t ColumnObject::findPathLowerBoundInSharedData(StringRef path, const ColumnString & shared_data_paths, size_t start, size_t end)
