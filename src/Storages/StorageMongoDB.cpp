@@ -7,8 +7,9 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/SortNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/JoinNode.h>
+#include <Analyzer/SortNode.h>
 #include <Formats/BSONTypes.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
@@ -22,6 +23,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/BSONCXXHelper.h>
 #include <Core/Settings.h>
+#include <Core/Joins.h>
 
 #include <bsoncxx/json.hpp>
 
@@ -346,28 +348,43 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 
     if (query_tree.hasWhere())
     {
-        std::optional<bsoncxx::document::value> filter{};
-        if (const auto & func = query_tree.getWhere()->as<FunctionNode>())
-            filter = visitWhereFunction(context, func, on_error);
-
-        else if (const auto & const_expr = query_tree.getWhere()->as<ConstantNode>())
+        const auto & join_tree = query_tree.getJoinTree();
+        const auto * join_node = join_tree->as<JoinNode>();
+        bool allow_where = true;
+        if (join_node)
         {
-            if (const_expr->hasSourceExpression())
+            if (join_node->getKind() == JoinKind::Left)
+                allow_where = join_node->getLeftTableExpression()->isEqual(*query.table_expression);
+            else if (join_node->getKind() == JoinKind::Right)
+                allow_where = join_node->getRightTableExpression()->isEqual(*query.table_expression);
+            else
+                allow_where = (join_node->getKind() == JoinKind::Inner);
+        }
+
+        if (allow_where)
+        {
+            std::optional<bsoncxx::document::value> filter{};
+            if (const auto & func = query_tree.getWhere()->as<FunctionNode>())
+                filter = visitWhereFunction(context, func, on_error);
+
+            else if (const auto & const_expr = query_tree.getWhere()->as<ConstantNode>())
             {
-                if (const auto & func_expr = const_expr->getSourceExpression()->as<FunctionNode>())
-                    filter = visitWhereFunction(context, func_expr, on_error);
+                if (const_expr->hasSourceExpression())
+                {
+                    if (const auto & func_expr = const_expr->getSourceExpression()->as<FunctionNode>())
+                        filter = visitWhereFunction(context, func_expr, on_error);
+                }
             }
-        }
 
-        if (filter.has_value())
-        {
-            LOG_DEBUG(log, "MongoDB query has built: '{}'.", bsoncxx::to_json(*filter));
-            return std::move(*filter);
-        }
-        else
-        {
+            if (filter.has_value())
+            {
+                LOG_DEBUG(log, "MongoDB query has built: '{}'.", bsoncxx::to_json(*filter));
+                return std::move(*filter);
+            }
             on_error(query_tree.getWhere().get());
         }
+        else
+            on_error(join_node);
     }
 
     return make_document();

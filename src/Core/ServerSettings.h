@@ -166,7 +166,7 @@ namespace DB
     M(Bool, prepare_system_log_tables_on_startup, false, "If true, ClickHouse creates all configured `system.*_log` tables before the startup. It can be helpful if some startup scripts depend on these tables.", 0) \
     M(Double, gwp_asan_force_sample_probability, 0.0003, "Probability that an allocation from specific places will be sampled by GWP Asan (i.e. PODArray allocations)", 0) \
     M(UInt64, config_reload_interval_ms, 2000, "How often clickhouse will reload config and check for new changes", 0) \
-    M(Bool, use_legacy_mongodb_integration, false, "Use the legacy MongoDB integration implementation. Deprecated.", 0) \
+    M(Bool, use_legacy_mongodb_integration, true, "Use the legacy MongoDB integration implementation. Deprecated.", 0) \
 
 /// If you add a setting which can be updated at runtime, please update 'changeable_settings' map in StorageSystemServerSettings.cpp
 

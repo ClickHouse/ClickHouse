@@ -3160,4 +3160,4 @@ Default value: "default"
 
 Use the legacy MongoDB integration implementation. Deprecated.
 
-Default value: `false`.
+Default value: `true`.
