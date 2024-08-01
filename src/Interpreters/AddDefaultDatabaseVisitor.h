@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
+#include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
@@ -100,6 +101,7 @@ private:
 
     const String database_name;
     std::set<String> external_tables;
+    mutable String with_alias;
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
@@ -117,6 +119,9 @@ private:
 
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
+        if (auto with = select.with())
+            with_alias = with->children[0]->as<ASTWithElement>()->name;
+
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
 
@@ -164,6 +169,9 @@ private:
             return;
         /// There is temporary table with such name, should not be rewritten.
         if (external_tables.contains(identifier.shortName()))
+            return;
+        /// This is WITH RECURSIVE alias.
+        if (identifier.name() == with_alias)
             return;
 
         auto qualified_identifier = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
