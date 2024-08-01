@@ -249,15 +249,15 @@ SystemLogBase<LogElement>::Index SystemLogBase<LogElement>::getLastLogIndex()
 }
 
 template <typename LogElement>
-void SystemLogBase<LogElement>::notifyFlush(Index expected_flushed_index)
+void SystemLogBase<LogElement>::notifyFlush(Index expected_flushed_index, bool should_prepare_tables_anyway)
 {
-    queue->notifyFlush(expected_flushed_index, /* should_prepare_tables_anyway */ true);
+    queue->notifyFlush(expected_flushed_index, should_prepare_tables_anyway);
 }
 
 template <typename LogElement>
-void SystemLogBase<LogElement>::flush(Index expected_flushed_index)
+void SystemLogBase<LogElement>::flush(Index expected_flushed_index, bool should_prepare_tables_anyway)
 {
-    queue->waitFlush(expected_flushed_index, /* should_prepare_tables_anyway */ true);
+    queue->waitFlush(expected_flushed_index, should_prepare_tables_anyway);
 }
 
 template <typename LogElement>

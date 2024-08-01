@@ -5,6 +5,32 @@
 #include <Parsers/IAST.h>
 
 #include <boost/noncopyable.hpp>
+#include <vector>
+
+#define LIST_OF_ALL_SYSTEM_LOGS(M) \
+    M(QueryLog, query_log, "Used to log queries.") \
+    M(QueryThreadLog, query_thread_log, "Used to log query threads.") \
+    M(PartLog, part_log, "Used to log operations with parts.") \
+    M(TraceLog, trace_log, "Used to log traces from query profiler.") \
+    M(CrashLog, crash_log, "Used to log server crashes.") \
+    M(TextLog, text_log, "Used to log all text messages.") \
+    M(MetricLog, metric_log, "Used to log all metrics.") \
+    M(ErrorLog, error_log, "Used to log errors.") \
+    M(FilesystemCacheLog, filesystem_cache_log, "") \
+    M(FilesystemReadPrefetchesLog, filesystem_read_prefetches_log, "") \
+    M(ObjectStorageQueueLog, s3_queue_log, "") \
+    M(ObjectStorageQueueLog, azure_queue_log, "") \
+    M(AsynchronousMetricLog, asynchronous_metric_log, "Metrics from system.asynchronous_metrics") \
+    M(OpenTelemetrySpanLog, opentelemetry_span_log, "OpenTelemetry trace spans.") \
+    M(QueryViewsLog, query_views_log, "Used to log queries of materialized and live views.") \
+    M(ZooKeeperLog, zookeeper_log, "Used to log all actions of ZooKeeper client.") \
+    M(SessionLog, session_log, "Login, LogOut and Login failure events.") \
+    M(TransactionsInfoLog, transactions_info_log, "Events related to transactions.") \
+    M(ProcessorsProfileLog, processors_profile_log, "Used to log processors profiling") \
+    M(AsynchronousInsertLog, asynchronous_insert_log, "") \
+    M(BackupLog, backup_log, "Backup and restore events") \
+    M(BlobStorageLog, blob_storage_log, "Log blob storage operations") \
+
 
 namespace DB
 {
@@ -34,71 +60,39 @@ namespace DB
     };
     */
 
-class QueryLog;
-class QueryThreadLog;
-class PartLog;
-class TextLog;
-class TraceLog;
-class CrashLog;
-class ErrorLog;
-class MetricLog;
-class AsynchronousMetricLog;
-class OpenTelemetrySpanLog;
-class QueryViewsLog;
-class ZooKeeperLog;
-class SessionLog;
-class TransactionsInfoLog;
-class ProcessorsProfileLog;
-class FilesystemCacheLog;
-class FilesystemReadPrefetchesLog;
-class AsynchronousInsertLog;
-class BackupLog;
-class ObjectStorageQueueLog;
-class BlobStorageLog;
+/// NOLINTBEGIN(bugprone-macro-parentheses)
+#define FORWARD_DECLARATION(log_type, member, descr) \
+    class log_type; \
+
+LIST_OF_ALL_SYSTEM_LOGS(FORWARD_DECLARATION)
+#undef FORWARD_DECLARATION
+/// NOLINTEND(bugprone-macro-parentheses)
+
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
-struct SystemLogs
+class SystemLogs
 {
+public:
+    SystemLogs() = default;
     SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config);
-    ~SystemLogs();
+    SystemLogs(const SystemLogs & other) = default;
 
+    void flush(bool should_prepare_tables_anyway);
+    void flushAndShutdown();
     void shutdown();
     void handleCrash();
 
-    std::shared_ptr<QueryLog> query_log;                /// Used to log queries.
-    std::shared_ptr<QueryThreadLog> query_thread_log;   /// Used to log query threads.
-    std::shared_ptr<PartLog> part_log;                  /// Used to log operations with parts
-    std::shared_ptr<TraceLog> trace_log;                /// Used to log traces from query profiler
-    std::shared_ptr<CrashLog> crash_log;                /// Used to log server crashes.
-    std::shared_ptr<TextLog> text_log;                  /// Used to log all text messages.
-    std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
-    std::shared_ptr<ErrorLog> error_log;                /// Used to log errors.
-    std::shared_ptr<FilesystemCacheLog> filesystem_cache_log;
-    std::shared_ptr<FilesystemReadPrefetchesLog> filesystem_read_prefetches_log;
-    std::shared_ptr<ObjectStorageQueueLog> s3_queue_log;
-    std::shared_ptr<ObjectStorageQueueLog> azure_queue_log;
-    /// Metrics from system.asynchronous_metrics.
-    std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
-    /// OpenTelemetry trace spans.
-    std::shared_ptr<OpenTelemetrySpanLog> opentelemetry_span_log;
-    /// Used to log queries of materialized and live views
-    std::shared_ptr<QueryViewsLog> query_views_log;
-    /// Used to log all actions of ZooKeeper client
-    std::shared_ptr<ZooKeeperLog> zookeeper_log;
-    /// Login, LogOut and Login failure events
-    std::shared_ptr<SessionLog> session_log;
-    /// Events related to transactions
-    std::shared_ptr<TransactionsInfoLog> transactions_info_log;
-    /// Used to log processors profiling
-    std::shared_ptr<ProcessorsProfileLog> processors_profile_log;
-    std::shared_ptr<AsynchronousInsertLog> asynchronous_insert_log;
-    /// Backup and restore events
-    std::shared_ptr<BackupLog> backup_log;
-    /// Log blob storage operations
-    std::shared_ptr<BlobStorageLog> blob_storage_log;
+/// NOLINTBEGIN(bugprone-macro-parentheses)
+#define PUBLIC_MEMBERS(log_type, member, descr) \
+    std::shared_ptr<log_type> member; \
 
-    std::vector<ISystemLog *> logs;
+    LIST_OF_ALL_SYSTEM_LOGS(PUBLIC_MEMBERS)
+#undef PUBLIC_MEMBERS
+/// NOLINTEND(bugprone-macro-parentheses)
+
+private:
+    std::vector<ISystemLog *> getAllLogs() const;
 };
 
 struct SystemLogSettings

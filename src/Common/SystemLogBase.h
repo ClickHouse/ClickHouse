@@ -64,9 +64,9 @@ public:
     /// Thereby all the records whose index is less than the flashed index are flushed already.
     virtual Index getLastLogIndex() = 0;
     /// Call this method to wake up the flush thread and flush the data in the background. It is non blocking call
-    virtual void notifyFlush(Index expected_flushed_index) = 0;
+    virtual void notifyFlush(Index expected_flushed_index, bool should_prepare_tables_anyway) = 0;
     /// Call this method to wait intill the logs are flushed up to expected_flushed_index. It is blocking call.
-    virtual void flush(Index expected_flushed_index) = 0;
+    virtual void flush(Index expected_flushed_index, bool should_prepare_tables_anyway) = 0;
 
     virtual void prepareTable() = 0;
 
@@ -198,10 +198,10 @@ public:
 
     Index getLastLogIndex() override;
 
-    void notifyFlush(Index expected_flushed_index) override;
+    void notifyFlush(Index expected_flushed_index, bool should_prepare_tables_anyway) override;
 
     /// Flush data in the buffer to disk. Block the thread until the data is stored on disk.
-    void flush(Index expected_flushed_index) override;
+    void flush(Index expected_flushed_index, bool should_prepare_tables_anyway) override;
 
     /// Handles crash, flushes log without blocking if notify_flush_on_crash is set
     void handleCrash() override;

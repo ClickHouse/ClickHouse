@@ -50,6 +50,7 @@
 
 #include <fmt/core.h>
 
+
 namespace DB
 {
 
@@ -312,56 +313,13 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     azure_queue_log = createSystemLog<ObjectStorageQueueLog>(global_context, "system", "azure_queue_log", config, "azure_queue_log", "Contains logging entries with the information files processes by S3Queue engine.");
     blob_storage_log = createSystemLog<BlobStorageLog>(global_context, "system", "blob_storage_log", config, "blob_storage_log", "Contains logging entries with information about various blob storage operations such as uploads and deletes.");
 
-    if (query_log)
-        logs.emplace_back(query_log.get());
-    if (query_thread_log)
-        logs.emplace_back(query_thread_log.get());
-    if (part_log)
-        logs.emplace_back(part_log.get());
-    if (trace_log)
-        logs.emplace_back(trace_log.get());
-    if (crash_log)
-        logs.emplace_back(crash_log.get());
-    if (text_log)
-        logs.emplace_back(text_log.get());
-    if (metric_log)
-        logs.emplace_back(metric_log.get());
-    if (error_log)
-        logs.emplace_back(error_log.get());
-    if (asynchronous_metric_log)
-        logs.emplace_back(asynchronous_metric_log.get());
-    if (opentelemetry_span_log)
-        logs.emplace_back(opentelemetry_span_log.get());
-    if (query_views_log)
-        logs.emplace_back(query_views_log.get());
-    if (zookeeper_log)
-        logs.emplace_back(zookeeper_log.get());
     if (session_log)
-    {
-        logs.emplace_back(session_log.get());
         global_context->addWarningMessage("Table system.session_log is enabled. It's unreliable and may contain garbage. Do not use it for any kind of security monitoring.");
-    }
-    if (transactions_info_log)
-        logs.emplace_back(transactions_info_log.get());
-    if (processors_profile_log)
-        logs.emplace_back(processors_profile_log.get());
-    if (filesystem_cache_log)
-        logs.emplace_back(filesystem_cache_log.get());
-    if (filesystem_read_prefetches_log)
-        logs.emplace_back(filesystem_read_prefetches_log.get());
-    if (asynchronous_insert_log)
-        logs.emplace_back(asynchronous_insert_log.get());
-    if (backup_log)
-        logs.emplace_back(backup_log.get());
-    if (s3_queue_log)
-        logs.emplace_back(s3_queue_log.get());
-    if (blob_storage_log)
-        logs.emplace_back(blob_storage_log.get());
 
     bool should_prepare = global_context->getServerSettings().prepare_system_log_tables_on_startup;
     try
     {
-        for (auto & log : logs)
+        for (auto & log : getAllLogs())
         {
             log->startup();
             if (should_prepare)
@@ -395,20 +353,56 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     }
 }
 
-
-SystemLogs::~SystemLogs()
+std::vector<ISystemLog *> SystemLogs::getAllLogs() const
 {
+/// NOLINTBEGIN(bugprone-macro-parentheses)
+#define GET_RAW_POINTERS(log_type, member, descr) \
+    member.get(), \
+
+    std::vector<ISystemLog *> result = {
+        LIST_OF_ALL_SYSTEM_LOGS(GET_RAW_POINTERS)
+    };
+#undef GET_RAW_POINTERS
+/// NOLINTEND(bugprone-macro-parentheses)
+
+    auto last_it = std::remove(result.begin(), result.end(), nullptr);
+    result.erase(last_it, result.end());
+
+    return result;
+}
+
+void SystemLogs::flush(bool should_prepare_tables_anyway)
+{
+    auto logs = getAllLogs();
+    std::vector<ISystemLog::Index> logs_indexes(logs.size(), 0);
+
+    for (size_t i = 0; i < logs.size(); ++i)
+    {
+        auto last_log_index = logs[i]->getLastLogIndex();
+        logs_indexes[i] = last_log_index;
+        logs[i]->notifyFlush(last_log_index, should_prepare_tables_anyway);
+    }
+
+    for (size_t i = 0; i < logs.size(); ++i)
+        logs[i]->flush(logs_indexes[i], should_prepare_tables_anyway);
+}
+
+void SystemLogs::flushAndShutdown()
+{
+    flush(/* should_prepare_tables_anyway */ false);
     shutdown();
 }
 
 void SystemLogs::shutdown()
 {
+    auto logs = getAllLogs();
     for (auto & log : logs)
         log->shutdown();
 }
 
 void SystemLogs::handleCrash()
 {
+    auto logs = getAllLogs();
     for (auto & log : logs)
         log->handleCrash();
 }
