@@ -171,6 +171,10 @@ jobs:
           export CHECK_NAME="Docker keeper image"
           python3 docker_server.py --release-type auto --version ${{ env.RELEASE_TAG }} --check-name "$CHECK_NAME" --sha ${{ env.COMMIT_SHA }} ${{ ! inputs.dry-run && '--push'  || '' }}
           python3 ./create_release.py --set-progress-completed
+      - name: Update release info. Merge created PRs
+        shell: bash
+        run: |
+          python3 ./tests/ci/create_release.py --merge-prs ${{ inputs.dry-run == true && '--dry-run' || '' }}
       - name: Set current Release progress to Completed with OK
         shell: bash
         run: |

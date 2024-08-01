@@ -228,7 +228,7 @@ class Shell:
     ):
         if dry_run:
             print(f"Dry-ryn. Would run command [{command}]")
-            return 0
+            return True
         if verbose:
             print(f"Run command [{command}]")
         proc = subprocess.Popen(

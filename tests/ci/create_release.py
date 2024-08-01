@@ -43,6 +43,7 @@ class ReleaseProgress:
     TEST_TGZ = "test TGZ packages"
     TEST_RPM = "test RPM packages"
     TEST_DEB = "test DEB packages"
+    MERGE_CREATED_PRS = "merge created PRs"
     COMPLETED = "completed"
 
 
@@ -101,6 +102,7 @@ class ReleaseInfo:
     previous_release_sha: str
     changelog_pr: str = ""
     version_bump_pr: str = ""
+    prs_merged: bool = False
     release_url: str = ""
     debian_command: str = ""
     rpm_command: str = ""
@@ -380,6 +382,38 @@ class ReleaseInfo:
             self.release_url = f"dry-run"
         self.dump()
 
+    def merge_prs(self, dry_run: bool) -> None:
+        repo = CI.Envs.GITHUB_REPOSITORY
+        assert self.version_bump_pr
+        if dry_run:
+            version_bump_pr_num = 12345
+        else:
+            version_bump_pr_num = int(self.version_bump_pr.split("/")[-1])
+        print("Merging Version bump PR")
+        res_1 = Shell.check(
+            f"gh pr merge {version_bump_pr_num} --repo {repo} --merge --auto",
+            verbose=True,
+            dry_run=dry_run,
+        )
+
+        res_2 = True
+        if not self.release_tag.endswith("-new"):
+            assert self.changelog_pr
+            print("Merging ChangeLog PR")
+            if dry_run:
+                changelog_pr_num = 23456
+            else:
+                changelog_pr_num = int(self.changelog_pr.split("/")[-1])
+            res_2 = Shell.check(
+                f"gh pr merge {changelog_pr_num} --repo {repo} --merge --auto",
+                verbose=True,
+                dry_run=dry_run,
+            )
+        else:
+            assert not self.changelog_pr
+
+        self.prs_merged = res_1 and res_2
+
 
 class RepoTypes:
     RPM = "rpm"
@@ -628,6 +662,11 @@ def parse_args() -> argparse.Namespace:
         help="Create GH Release object and attach all packages",
     )
     parser.add_argument(
+        "--merge-prs",
+        action="store_true",
+        help="Merge PRs with version, changelog updates",
+    )
+    parser.add_argument(
         "--post-status",
         action="store_true",
         help="Post release status into Slack",
@@ -732,7 +771,6 @@ if __name__ == "__main__":
 
     if args.post_status:
         release_info = ReleaseInfo.from_file()
-        release_info.update_release_info(dry_run=args.dry_run)
         if release_info.is_new_release_branch():
             title = "New release branch"
         else:
@@ -765,6 +803,13 @@ if __name__ == "__main__":
         ), "Must be FAILED before set to OK"
         ri.progress_description = ReleaseProgressDescription.OK
         ri.dump()
+
+    if args.merge_prs:
+        with ReleaseContextManager(
+            release_progress=ReleaseProgress.MERGE_CREATED_PRS
+        ) as release_info:
+            release_info.update_release_info(dry_run=args.dry_run)
+            release_info.merge_prs(dry_run=args.dry_run)
 
     # tear down ssh
     if _ssh_agent and _key_pub:
