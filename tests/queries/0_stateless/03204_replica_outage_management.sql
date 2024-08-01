@@ -1,38 +1,51 @@
--- Step 1: Create the database if it does not exist on the cluster
-CREATE DATABASE IF NOT EXISTS test_mlt65kbw ON CLUSTER 'test_shard_localhost';
+-- Tags: distributed, no-parallel
 
--- Step 2: Use the database to ensure all subsequent operations are within this context
-USE test_mlt65kbw;
+CREATE DATABASE IF NOT EXISTS test_03204;
+USE test_03204;
 
--- Step 3: Create necessary tables on the cluster within the correct database
-CREATE TABLE local_table ON CLUSTER 'test_shard_localhost'
+DROP TABLE IF EXISTS t1_shard;
+DROP TABLE IF EXISTS t2_shard;
+DROP TABLE IF EXISTS t1_distr;
+DROP TABLE IF EXISTS t2_distr;
+
+-- Create the shard tables
+CREATE TABLE t1_shard (id Int32, value String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t2_shard (id Int32, value String) ENGINE = MergeTree ORDER BY id;
+
+-- Create the distributed tables
+CREATE TABLE t1_distr AS t1_shard ENGINE = Distributed(test_cluster_two_shards_localhost, test_03204, t1_shard, id);
+CREATE TABLE t2_distr AS t2_shard ENGINE = Distributed(test_cluster_two_shards_localhost, test_03204, t2_shard, id);
+
+-- Insert some data into the shard tables
+INSERT INTO t1_shard VALUES (1, 'a'), (2, 'b'), (3, 'c');
+INSERT INTO t2_shard VALUES (1, 'a'), (2, 'b'), (3, 'c');
+
+-- Simple distributed query to verify setup
+SELECT d0.id, d0.value
+FROM t1_distr d0
+WHERE d0.id IN
 (
-    id UInt32,
-    value String
-)
-ENGINE = MergeTree()
-ORDER BY id;
+    SELECT d1.id
+    FROM t1_distr AS d1
+    INNER JOIN t2_distr AS d2 ON d1.id = d2.id
+    WHERE d1.id > 0
+    ORDER BY d1.id
+);
 
-CREATE TABLE distributed_table ON CLUSTER 'test_shard_localhost'
-(
-    id UInt32,
-    value String
-)
-ENGINE = Distributed('test_shard_localhost', currentDatabase(), 'local_table', rand());
+-- Join query to ensure distributed functionality
+SELECT d0.id, d0.value
+FROM t1_distr d0
+JOIN (
+    SELECT d1.id, d1.value
+    FROM t1_distr AS d1
+    INNER JOIN t2_distr AS d2 ON d1.id = d2.id
+    WHERE d1.id > 0
+    ORDER BY d1.id
+) s0 USING (id, value);
 
--- Step 4: Insert data into the distributed table
-INSERT INTO distributed_table VALUES (1, 'test1'), (2, 'test2'), (3, 'test3');
-
--- Step 5: Query the distributed table to verify the results
--- Ensure the query format is correct and suppress unnecessary output
-SET output_format_enable_streaming = 0, output_format_write_statistics = 0;
-
--- Correctly format the output to TabSeparated
-SELECT id, value FROM distributed_table ORDER BY id FORMAT TabSeparated;
-
--- Step 6: Drop the tables to clean up
-DROP TABLE IF EXISTS local_table ON CLUSTER 'test_shard_localhost';
-DROP TABLE IF EXISTS distributed_table ON CLUSTER 'test_shard_localhost';
-
--- Drop the database to clean up
-DROP DATABASE IF EXISTS test_mlt65kbw ON CLUSTER 'test_shard_localhost';
+-- Cleanup
+DROP TABLE t1_shard;
+DROP TABLE t2_shard;
+DROP TABLE t1_distr;
+DROP TABLE t2_distr;
+DROP DATABASE test_03204;
