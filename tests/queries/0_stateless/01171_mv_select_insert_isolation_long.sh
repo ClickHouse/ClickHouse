@@ -158,7 +158,7 @@ function select_insert_action()
 }
 
 MIN_SECONDS=5
-MAX_SECONDS=300
+MAX_SECONDS=400
 WAIT_FINISH=60
 
 if [[ $((MAX_SECONDS + WAIT_FINISH)) -ge  550 ]]; then
