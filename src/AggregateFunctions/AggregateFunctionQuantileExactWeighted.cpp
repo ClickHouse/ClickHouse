@@ -129,12 +129,17 @@ struct QuantileExactWeighted
             std::cout << "array[" << i << "]: " << toString(Field(array[i].first)) << ", " << array[i].second << std::endl;
         std::cout << "position: " << position << std::endl;
         */
+
         size_t lower = static_cast<size_t>(std::floor(position));
         size_t higher = static_cast<size_t>(std::ceil(position));
         // std::cout << "lower: " << lower << ", higher: " << higher << std::endl;
 
         const auto * lower_it = std::lower_bound(array, array + size, lower + 1, [](const Pair & a, size_t b) { return a.second < b; });
         const auto * higher_it = std::lower_bound(array, array + size, higher + 1, [](const Pair & a, size_t b) { return a.second < b; });
+        if (lower_it == array + size)
+            lower_it = array + size - 1;
+        if (higher_it == array + size)
+            higher_it = array + size - 1;
         // std::cout << "lower_index:" << lower_it - array << ", higher_index:" << higher_it - array << std::endl;
 
         UnderlyingType lower_key = lower_it->first;
