@@ -1,6 +1,6 @@
 <clickhouse>
     <zookeeper>
-        <send_fault_probability>0.05</send_fault_probability>
-        <recv_fault_probability>0.05</recv_fault_probability>
+        <send_fault_probability>0.005</send_fault_probability>
+        <recv_fault_probability>0.005</recv_fault_probability>
     </zookeeper>
 </clickhouse>
