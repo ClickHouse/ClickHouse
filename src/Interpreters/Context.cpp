@@ -2270,7 +2270,7 @@ bool Context::displaySecretsInShowAndSelect() const
     return shared->server_settings.display_secrets_in_show_and_select;
 }
 
-Settings Context::getSettings() const
+Settings Context::getSettingsCopy() const
 {
     SharedLockGuard lock(mutex);
     return *settings;

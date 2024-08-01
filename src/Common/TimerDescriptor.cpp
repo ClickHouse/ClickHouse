@@ -2,9 +2,11 @@
 
 #include <Common/TimerDescriptor.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 #include <sys/timerfd.h>
 #include <unistd.h>
+#include <fmt/format.h>
 
 
 namespace DB
@@ -89,9 +91,29 @@ void TimerDescriptor::drain() const
 
             /// A signal happened, need to retry.
             if (errno == EINTR)
-                continue;
+            {
+                /** This is to help with debugging.
+                  *
+                  * Sometimes reading from timer_fd blocks, which should not happen, because we opened it in a non-blocking mode.
+                  * But it could be possible if a rogue 3rd-party library closed our file descriptor by mistake
+                  * (for example by double closing due to the lack of exception safety or if it is a crappy code in plain C)
+                  * and then another file descriptor is opened in its place.
+                  *
+                  * Let's try to get a name of this file descriptor and log it.
+                  */
+                LoggerPtr log = getLogger("TimerDescriptor");
 
-            throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot drain timer_fd");
+                static constexpr ssize_t max_link_path_length = 256;
+                char link_path[max_link_path_length];
+                ssize_t link_path_length = readlink(fmt::format("/proc/self/fd/{}", timer_fd).c_str(), link_path, max_link_path_length);
+                if (-1 == link_path_length)
+                    throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot readlink for a timer_fd {}", timer_fd);
+
+                LOG_TRACE(log, "Received EINTR while trying to drain a TimerDescriptor, fd {}: {}", timer_fd, std::string_view(link_path, link_path_length));
+                continue;
+            }
+
+            throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot drain timer_fd {}", timer_fd);
         }
 
         chassert(res == sizeof(buf));

@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 
-${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
+${CLICKHOUSE_CLIENT} --multiline -q """
 drop table if exists forget_partition;
 
 create table forget_partition
@@ -31,7 +31,7 @@ alter table forget_partition drop partition '20240102';
 # DROP PARTITION do not wait for a part to be removed from memory due to possible concurrent SELECTs, so we have to do wait manually here
 while [[ $(${CLICKHOUSE_CLIENT} -q "select count() from system.parts where database=currentDatabase() and table='forget_partition' and partition IN ('20240101', '20240102')") != 0 ]]; do sleep 1; done
 
-${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
+${CLICKHOUSE_CLIENT} --multiline -q """
 set allow_unrestricted_reads_from_keeper=1;
 
 select '---before---';
