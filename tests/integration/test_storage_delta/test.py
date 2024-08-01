@@ -52,9 +52,13 @@ def get_spark():
     return builder.master("local").getOrCreate()
 
 
-def remove_local_directory_contents(local_path):
-    for local_file in glob.glob(local_path + "/**"):
-        os.unlink(local_file)
+def remove_local_directory_contents(full_path):
+    for path in glob.glob(f"{full_path}/**"):
+        if os.path.isfile(path):
+            os.unlink(path)
+        else:
+            remove_local_directory_contents(path)
+            os.rmdir(path)
 
 
 @pytest.fixture(scope="module")
