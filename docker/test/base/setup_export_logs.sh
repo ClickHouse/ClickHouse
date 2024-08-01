@@ -215,10 +215,9 @@ function setup_logs_replication
 function stop_logs_replication
 {
     echo "Detach all logs replication"
-    timeout --preserve-status --signal TERM --kill-after 10m 20m \
-        clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
+    clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
         tee /dev/stderr
     } | {
-        xargs -n1 -r -i clickhouse-client --query "drop table {}"
+        timeout --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -r -i clickhouse-client --query "drop table {}"
     }
 }
