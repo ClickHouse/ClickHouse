@@ -20,7 +20,7 @@ WITH (
 SELECT
     coalesce(materialize(toLowCardinality(toNullable(1))), 10, NULL),
     max(v)
-FROM remote('127.0.0.{1,2}', default, test__fuzz_21)
+FROM remote('127.0.0.{1,2}', currentDatabase(), test__fuzz_21)
 GROUP BY
     coalesce(NULL),
     coalesce(1, 10, 10, materialize(NULL));
