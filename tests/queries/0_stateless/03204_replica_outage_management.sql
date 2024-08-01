@@ -36,7 +36,8 @@ WHERE d0.id IN
     INNER JOIN t2_distr AS d2 ON d1.id = d2.id
     WHERE d1.id > 0
     ORDER BY d1.id
-);
+)
+ORDER BY d0.id;
 
 -- Reattach the partition to restore the data
 ALTER TABLE t1_shard ATTACH PARTITION 1;
@@ -50,7 +51,8 @@ JOIN (
     INNER JOIN t2_distr AS d2 ON d1.id = d2.id
     WHERE d1.id > 0
     ORDER BY d1.id
-) s0 USING (id, value);
+) s0 USING (id, value)
+ORDER BY d0.id;
 
 -- Cleanup
 DROP TABLE t1_shard;
