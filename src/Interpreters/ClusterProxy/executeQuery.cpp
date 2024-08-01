@@ -28,6 +28,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/buildQueryTreeForShard.h>
+#include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Storages/getStructureOfRemoteTable.h>
 
 namespace DB
@@ -38,6 +39,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_CLUSTER;
+    extern const int INCONSISTENT_CLUSTER_DEFINITION;
 }
 
 namespace ClusterProxy
@@ -439,7 +441,8 @@ void executeQueryWithParallelReplicas(
     QueryProcessingStage::Enum processed_stage,
     const ASTPtr & query_ast,
     ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits)
+    std::shared_ptr<const StorageLimitsList> storage_limits,
+    QueryPlanStepPtr analyzed_read_from_merge_tree)
 {
     auto logger = getLogger("executeQueryWithParallelReplicas");
     LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
@@ -485,12 +488,12 @@ void executeQueryWithParallelReplicas(
         shard_num = column->getUInt(0);
     }
 
-    const auto shard_count = not_optimized_cluster->getShardCount();
     ClusterPtr new_cluster = not_optimized_cluster;
     /// if got valid shard_num from query initiator, then parallel replicas scope is the specified shard
     /// shards are numbered in order of appearance in the cluster config
     if (shard_num > 0)
     {
+        const auto shard_count = not_optimized_cluster->getShardCount();
         if (shard_num > shard_count)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -516,21 +519,147 @@ void executeQueryWithParallelReplicas(
                 "`cluster_for_parallel_replicas` setting refers to cluster with several shards. Expected a cluster with one shard");
     }
 
-    auto external_tables = new_context->getExternalTables();
-    auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
-        query_ast,
-        new_cluster,
-        storage_id,
-        header,
-        processed_stage,
-        new_context,
-        getThrottler(new_context),
-        std::move(scalars),
-        std::move(external_tables),
-        getLogger("ReadFromParallelRemoteReplicasStep"),
-        std::move(storage_limits));
+    const auto & shard = new_cluster->getShardsInfo().at(0);
+    size_t max_replicas_to_use = settings.max_parallel_replicas;
+    if (max_replicas_to_use > shard.getAllNodeCount())
+    {
+        LOG_INFO(
+            getLogger("ReadFromParallelRemoteReplicasStep"),
+            "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
+            "Will use the latter number to execute the query.",
+            settings.max_parallel_replicas,
+            shard.getAllNodeCount());
+        max_replicas_to_use = shard.getAllNodeCount();
+    }
 
-    query_plan.addStep(std::move(read_from_remote));
+    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use, settings.parallel_replicas_mark_segment_size);
+
+    auto external_tables = new_context->getExternalTables();
+
+    std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> shuffled_pool;
+    if (max_replicas_to_use < shard.getAllNodeCount())
+    {
+        // will be shuffled according to `load_balancing` setting
+        shuffled_pool = shard.pool->getShuffledPools(settings);
+    }
+    else
+    {
+        /// If all replicas in cluster are used for query execution,
+        /// try to preserve replicas order as in cluster definition.
+        /// It's important for data locality during query execution
+        /// independently of the query initiator
+        auto priority_func = [](size_t i) { return Priority{static_cast<Int64>(i)}; };
+        shuffled_pool = shard.pool->getShuffledPools(settings, priority_func);
+    }
+
+    std::vector<ConnectionPoolPtr> pools_to_use;
+    pools_to_use.reserve(shuffled_pool.size());
+    for (auto & pool : shuffled_pool)
+        pools_to_use.emplace_back(std::move(pool.pool));
+
+    /// do not build local plan for distributed queries for now (address it later)
+    if (settings.allow_experimental_analyzer && settings.parallel_replicas_local_plan && !shard_num)
+    {
+        /// find local replica index in pool
+        std::optional<size_t> local_replica_index;
+        for (size_t i = 0, s = pools_to_use.size(); i < s; ++i)
+        {
+            const auto & hostname = pools_to_use[i]->getHost();
+            const auto found = std::find_if(
+                begin(shard.local_addresses),
+                end(shard.local_addresses),
+                [&hostname](const Cluster::Address & local_addr) { return hostname == local_addr.host_name; });
+            if (found != shard.local_addresses.end())
+            {
+                local_replica_index = i;
+                break;
+            }
+        }
+        if (!local_replica_index)
+            throw Exception(
+                ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
+                "Local replica is not found in '{}' cluster definition, see 'cluster_for_parallel_replicas' setting",
+                new_cluster->getName());
+
+        // resize the pool but keep local replicas in it (and update its index)
+        chassert(max_replicas_to_use <= pools_to_use.size());
+        if (local_replica_index >= max_replicas_to_use)
+        {
+            std::swap(pools_to_use[max_replicas_to_use - 1], pools_to_use[local_replica_index.value()]);
+            local_replica_index = max_replicas_to_use - 1;
+        }
+        pools_to_use.resize(max_replicas_to_use);
+
+        auto [local_plan, with_parallel_replicas] = createLocalPlanForParallelReplicas(
+            query_ast,
+            header,
+            new_context,
+            processed_stage,
+            coordinator,
+            std::move(analyzed_read_from_merge_tree),
+            local_replica_index.value());
+
+        if (!with_parallel_replicas)
+        {
+            query_plan = std::move(*local_plan);
+            return;
+        }
+
+        LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
+
+        auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
+            query_ast,
+            new_cluster,
+            storage_id,
+            coordinator,
+            header,
+            processed_stage,
+            new_context,
+            getThrottler(new_context),
+            std::move(scalars),
+            std::move(external_tables),
+            getLogger("ReadFromParallelRemoteReplicasStep"),
+            std::move(storage_limits),
+            std::move(pools_to_use),
+            local_replica_index);
+
+        auto remote_plan = std::make_unique<QueryPlan>();
+        remote_plan->addStep(std::move(read_from_remote));
+
+        DataStreams input_streams;
+        input_streams.reserve(2);
+        input_streams.emplace_back(local_plan->getCurrentDataStream());
+        input_streams.emplace_back(remote_plan->getCurrentDataStream());
+
+        std::vector<QueryPlanPtr> plans;
+        plans.emplace_back(std::move(local_plan));
+        plans.emplace_back(std::move(remote_plan));
+
+        auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+        query_plan.unitePlans(std::move(union_step), std::move(plans));
+    }
+    else
+    {
+        chassert(max_replicas_to_use <= pools_to_use.size());
+        pools_to_use.resize(max_replicas_to_use);
+
+        auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
+            query_ast,
+            new_cluster,
+            storage_id,
+            std::move(coordinator),
+            header,
+            processed_stage,
+            new_context,
+            getThrottler(new_context),
+            std::move(scalars),
+            std::move(external_tables),
+            getLogger("ReadFromParallelRemoteReplicasStep"),
+            std::move(storage_limits),
+            std::move(pools_to_use));
+
+        query_plan.addStep(std::move(read_from_remote));
+    }
 }
 
 void executeQueryWithParallelReplicas(
@@ -540,7 +669,8 @@ void executeQueryWithParallelReplicas(
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits)
+    std::shared_ptr<const StorageLimitsList> storage_limits,
+    QueryPlanStepPtr analyzed_read_from_merge_tree)
 {
     QueryTreeNodePtr modified_query_tree = query_tree->clone();
     rewriteJoinToGlobalJoin(modified_query_tree, context);
@@ -550,7 +680,8 @@ void executeQueryWithParallelReplicas(
         = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
     auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
-    executeQueryWithParallelReplicas(query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits);
+    executeQueryWithParallelReplicas(
+        query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits, std::move(analyzed_read_from_merge_tree));
 }
 
 void executeQueryWithParallelReplicas(
@@ -646,6 +777,49 @@ void executeQueryWithParallelReplicasCustomKey(
         context, query_info.query, storage_id.getDatabaseName(), storage_id.getTableName(), /*table_function_ptr=*/nullptr);
     executeQueryWithParallelReplicasCustomKey(query_plan, storage_id, query_info, columns, snapshot, processed_stage, header, context);
 }
+
+bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
+{
+    if (!context->canUseParallelReplicasOnInitiator())
+        return false;
+
+    auto cluster = context->getClusterForParallelReplicas();
+    if (cluster->getShardCount() == 1)
+        return cluster->getShardsInfo()[0].getAllNodeCount() > 1;
+
+    /// parallel replicas with distributed table
+    auto scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
+    UInt64 shard_num = 0; /// shard_num is 1-based, so 0 - no shard specified
+    const auto it = scalars.find("_shard_num");
+    if (it != scalars.end())
+    {
+        const Block & block = it->second;
+        const auto & column = block.safeGetByPosition(0).column;
+        shard_num = column->getUInt(0);
+    }
+    if (shard_num > 0)
+    {
+        const auto shard_count = cluster->getShardCount();
+        if (shard_num > shard_count)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Shard number is greater than shard count: shard_num={} shard_count={} cluster={}",
+                shard_num,
+                shard_count,
+                cluster->getName());
+
+        return cluster->getShardsInfo().at(shard_num - 1).getAllNodeCount() > 1;
+    }
+
+    if (cluster->getShardCount() > 1)
+        throw DB::Exception(
+            ErrorCodes::UNEXPECTED_CLUSTER,
+            "`cluster_for_parallel_replicas` setting refers to cluster with {} shards. Expected a cluster with one shard",
+            cluster->getShardCount());
+
+    return false;
+}
+
 }
 
 }
