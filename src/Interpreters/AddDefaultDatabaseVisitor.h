@@ -120,7 +120,8 @@ private:
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
         if (auto with = select.with())
-            with_alias = with->children[0]->as<ASTWithElement>()->name;
+            if (auto with_element = with->children[0]->as<ASTWithElement>())
+                with_alias = with_element->name;
 
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
@@ -171,7 +172,7 @@ private:
         if (external_tables.contains(identifier.shortName()))
             return;
         /// This is WITH RECURSIVE alias.
-        if (identifier.name() == with_alias)
+        if (!with_alias.empty() && identifier.name() == with_alias)
             return;
 
         auto qualified_identifier = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
