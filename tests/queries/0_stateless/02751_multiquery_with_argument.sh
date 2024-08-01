@@ -4,18 +4,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_LOCAL --multiquery "SELECT 100"
-$CLICKHOUSE_LOCAL --multiquery "SELECT 101;"
-$CLICKHOUSE_LOCAL --multiquery "SELECT 102;SELECT 103;"
+$CLICKHOUSE_LOCAL "SELECT 100"
+$CLICKHOUSE_LOCAL "SELECT 101;"
+$CLICKHOUSE_LOCAL "SELECT 102;SELECT 103;"
 
 # Invalid SQL.
-$CLICKHOUSE_LOCAL --multiquery "SELECT 200; S" 2>&1 | grep -o 'Syntax error'
-$CLICKHOUSE_LOCAL --multiquery "; SELECT 201;" 2>&1 | grep -o 'Empty query'
-$CLICKHOUSE_LOCAL --multiquery "; S; SELECT 202" 2>&1 | grep -o 'Empty query'
-
-# Simultaneously passing --queries-file + --query (multiquery) is prohibited.
-$CLICKHOUSE_LOCAL --queries-file "queries.csv" --multiquery "SELECT 250;" 2>&1 | grep -o 'BAD_ARGUMENTS'
-$CLICKHOUSE_CLIENT --queries-file "queries.csv" --multiquery "SELECT 251;" 2>&1 | grep -o 'BAD_ARGUMENTS'
+$CLICKHOUSE_LOCAL "SELECT 200; S" 2>&1 | grep -o 'Syntax error'
+$CLICKHOUSE_LOCAL "; SELECT 201;" 2>&1 | grep -o 'Empty query'
+$CLICKHOUSE_LOCAL "; S; SELECT 202" 2>&1 | grep -o 'Empty query'
 
 # Error expectation cases.
 # -n <SQL> is also interpreted as a query

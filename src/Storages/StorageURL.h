@@ -228,12 +228,12 @@ private:
     bool need_only_count;
     size_t total_rows_in_file = 0;
 
+    Poco::Net::HTTPBasicCredentials credentials;
+
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
-
-    Poco::Net::HTTPBasicCredentials credentials;
 };
 
 class StorageURLSink : public SinkToStorage
