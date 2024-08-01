@@ -234,11 +234,4 @@ class CiSettings:
         for job in add_parents:
             res[job] = job_configs[job]
 
-        for job, job_config in res.items():
-            batches = []
-            for batch in range(job_config.num_batches):
-                if not self.job_batches or batch in self.job_batches:
-                    batches.append(batch)
-            job_config.batches = batches
-
         return res

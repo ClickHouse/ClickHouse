@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 from typing import Union, Dict
@@ -7,7 +8,7 @@ import requests
 from botocore.exceptions import ClientError
 
 from pr_info import PRInfo
-from ci_utils import Shell
+from ci_utils import Shell, GHActions
 
 
 class CIBuddy:
@@ -28,6 +29,12 @@ class CIBuddy:
         self.head_ref = pr_info.head_ref
         self.commit_url = pr_info.commit_html_url
         self.sha = pr_info.sha[:10]
+
+    def check_workflow(self):
+        GHActions.print_workflow_results()
+        res = GHActions.get_workflow_job_result(GHActions.ActionsNames.RunConfig)
+        if res != GHActions.ActionStatuses.SUCCESS:
+            self.post_job_error("Workflow Configuration Failed", critical=True)
 
     @staticmethod
     def _get_webhooks():
@@ -139,7 +146,30 @@ class CIBuddy:
         self.post(message)
 
 
+def parse_args():
+    parser = argparse.ArgumentParser("CI Buddy bot notifies about CI events")
+    parser.add_argument(
+        "--check-wf-status",
+        action="store_true",
+        help="Checks workflow status",
+    )
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="for test and debug",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="dry run mode",
+    )
+    return parser.parse_args(), parser
+
+
 if __name__ == "__main__":
-    # test
-    buddy = CIBuddy(dry_run=True)
-    buddy.post_job_error("TEst")
+    args, parser = parse_args()
+
+    if args.test:
+        CIBuddy(dry_run=True).post_job_error("TEst")
+    elif args.check_wf_status:
+        CIBuddy(dry_run=args.dry_run).check_workflow()

@@ -304,7 +304,7 @@ void RefreshTask::refreshTask()
                 {
                     PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
                     auto text = message.text;
-                    message.text = fmt::format("Refresh failed: {}", message.text);
+                    message.text = fmt::format("Refresh view {} failed: {}", view->getStorageID().getFullTableName(), message.text);
                     LOG_ERROR(log, message);
                     exception = text;
                 }
@@ -357,7 +357,7 @@ void RefreshTask::refreshTask()
         stop_requested = true;
         tryLogCurrentException(log,
             "Unexpected exception in refresh scheduling, please investigate. The view will be stopped.");
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
         abortOnFailedAssertion("Unexpected exception in refresh scheduling");
 #endif
     }
