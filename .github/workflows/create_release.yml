@@ -16,6 +16,11 @@ concurrency:
         options:
           - patch
           - new
+      only-repo:
+        description: 'Run only repos updates including docker (recovery)'
+        required: false
+        default: false
+        type: boolean
       dry-run:
         description: 'Dry run'
         required: false
@@ -54,11 +59,12 @@ jobs:
         run: |
           python3 ./tests/ci/create_release.py --download-packages ${{ inputs.dry-run == true && '--dry-run' || '' }}
       - name: Push Git Tag for the Release
+        if: ${{ ! inputs.only-repo }}
         shell: bash
         run: |
           python3 ./tests/ci/create_release.py --push-release-tag ${{ inputs.dry-run == true && '--dry-run' || '' }}
       - name: Push New Release Branch
-        if: ${{ inputs.type == 'new' }}
+        if: ${{ inputs.type == 'new' && ! inputs.only-repo }}
         shell: bash
         run: |
           python3 ./tests/ci/create_release.py --push-new-release-branch ${{ inputs.dry-run == true && '--dry-run' || '' }}
@@ -67,7 +73,7 @@ jobs:
 #        run: |
 #          python3 ./tests/ci/create_release.py --create-bump-version-pr ${{ inputs.dry-run == true && '--dry-run' || '' }}
       - name: Bump Docker versions, Changelog, Security
-        if: ${{ inputs.type == 'patch' }}
+        if: ${{ inputs.type == 'patch' && ! inputs.only-repo }}
         shell: bash
         run: |
           python3 ./tests/ci/create_release.py --set-progress-started --progress "update changelog, docker version, security"
@@ -87,7 +93,7 @@ jobs:
           python3 ./utils/security-generator/generate_security.py > SECURITY.md
           git diff HEAD
       - name: Create ChangeLog PR
-        if: ${{ inputs.type == 'patch' && ! inputs.dry-run }}
+        if: ${{ inputs.type == 'patch' && ! inputs.dry-run && ! inputs.only-repo }}
         uses: peter-evans/create-pull-request@v6
         with:
           author: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
@@ -105,7 +111,7 @@ jobs:
             ### Changelog category (leave one):
             - Not for changelog (changelog entry is not required)
       - name: Complete previous steps and Restore git state
-        if: ${{ inputs.type == 'patch' }}
+        if: ${{ inputs.type == 'patch' && ! inputs.only-repo }}
         shell: bash
         run: |
           python3 ./tests/ci/create_release.py --set-progress-completed
