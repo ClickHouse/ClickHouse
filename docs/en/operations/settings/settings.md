@@ -5609,6 +5609,12 @@ Minimal size of block to compress in CROSS JOIN. Zero value means - disable this
 
 Default value: `1GiB`.
 
+## disable_insertion_and_mutation
+
+Disable all insert and mutations (alter table update / alter table delete / alter table drop partition). Set to true, can make this node focus on reading queries.
+
+Default value: `false`.
+
 ## restore_replace_external_engines_to_null
 
 For testing purposes. Replaces all external engines to Null to not initiate external connections.
