@@ -25,6 +25,9 @@ INSERT INTO distributed_table VALUES (1, 'test1'), (2, 'test2'), (3, 'test3');
 
 -- Step 5: Query the distributed table to verify the results
 -- Ensure the query format is correct and suppress unnecessary output
+SET output_format_enable_streaming = 0, output_format_write_statistics = 0;
+
+-- Correctly format the output to TabSeparated
 SELECT id, value FROM distributed_table ORDER BY id FORMAT TabSeparated;
 
 -- Step 6: Drop the tables to clean up
