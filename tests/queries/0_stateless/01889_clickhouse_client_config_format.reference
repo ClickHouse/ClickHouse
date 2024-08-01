@@ -21,4 +21,4 @@ autodetect yaml
 autodetect invalid xml
 Correct: invalid xml parsed with exception
 autodetect invalid yaml
-Code: 585. Unable to parse YAML configuration file /config_test.badyaml, yaml-cpp: error at line 2, column 12: illegal map value. (CANNOT_PARSE_YAML)
+Code: 585. Unable to parse YAML configuration file /config_default.badyaml, yaml-cpp: error at line 2, column 12: illegal map value. (CANNOT_PARSE_YAML)
