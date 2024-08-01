@@ -119,9 +119,8 @@ private:
 
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
-        if (auto with = select.with())
-            if (auto with_element = with->children[0]->as<ASTWithElement>())
-                with_alias = with_element->name;
+        if (select.recursive_with)
+            with_alias = select.with()->children[0]->as<ASTWithElement>()->name;
 
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
