@@ -5615,18 +5615,6 @@ Disable all insert and mutations (alter table update / alter table delete / alte
 
 Default value: `false`.
 
-## restore_replace_external_engines_to_null
-
-For testing purposes. Replaces all external engines to Null to not initiate external connections.
-
-Default value: `False`
-
-## restore_replace_external_table_functions_to_null
-
-For testing purposes. Replaces all external table functions to Null to not initiate external connections.
-
-Default value: `False`
-
 ## use_hive_partitioning
 
 When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](../../engines/table-engines/special/file.md#hive-style-partitioning)/[S3](../../engines/table-engines/integrations/s3.md#hive-style-partitioning)/[URL](../../engines/table-engines/special/url.md#hive-style-partitioning)/[HDFS](../../engines/table-engines/integrations/hdfs.md#hive-style-partitioning)/[AzureBlobStorage](../../engines/table-engines/integrations/azureBlobStorage.md#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
