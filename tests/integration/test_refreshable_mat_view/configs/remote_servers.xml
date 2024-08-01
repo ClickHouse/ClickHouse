@@ -10,17 +10,6 @@
                     <host>node1_2</host>
                     <port>9000</port>
                 </replica>
-
-            </shard>
-            <shard>
-                <replica>
-                    <host>node2_1</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>node2_2</host>
-                    <port>9000</port>
-                </replica>
             </shard>
         </test_cluster>
     </remote_servers>
