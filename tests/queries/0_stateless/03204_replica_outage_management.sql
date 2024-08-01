@@ -9,8 +9,8 @@ DROP TABLE IF EXISTS t1_distr;
 DROP TABLE IF EXISTS t2_distr;
 
 -- Create the shard tables
-CREATE TABLE t1_shard (id Int32, value String) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE t2_shard (id Int32, value String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t1_shard (id Int32, value String) ENGINE = MergeTree PARTITION BY id ORDER BY id;
+CREATE TABLE t2_shard (id Int32, value String) ENGINE = MergeTree PARTITION BY id ORDER BY id;
 
 -- Create the distributed tables
 CREATE TABLE t1_distr AS t1_shard ENGINE = Distributed(test_cluster_two_shards_localhost, test_03204, t1_shard, id);
@@ -23,9 +23,8 @@ INSERT INTO t2_shard VALUES (1, 'a'), (2, 'b'), (3, 'c');
 -- Set the distributed product mode to allow global subqueries
 SET distributed_product_mode = 'global';
 
--- Simulate replica failure by dropping and recreating a partition
--- to mimic a situation where data becomes temporarily unavailable
-ALTER TABLE t1_shard DROP PARTITION id = 1;
+-- Simulate replica failure by detaching a partition
+ALTER TABLE t1_shard DETACH PARTITION 1;
 
 -- Execute a distributed query that may need to retry due to missing data
 SELECT DISTINCT d0.id, d0.value
@@ -39,8 +38,8 @@ WHERE d0.id IN
     ORDER BY d1.id
 );
 
--- Recreate the partition to restore the data
-INSERT INTO t1_shard VALUES (1, 'a');
+-- Reattach the partition to restore the data
+ALTER TABLE t1_shard ATTACH PARTITION 1;
 
 -- Test distributed join
 SELECT DISTINCT d0.id, d0.value
