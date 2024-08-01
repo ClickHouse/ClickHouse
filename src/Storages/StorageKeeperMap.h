@@ -78,9 +78,9 @@ public:
     UInt64 keysLimit() const;
 
     template <bool throw_on_error>
-    void checkTable() const
+    void checkTable(const ContextPtr & local_context) const
     {
-        auto current_table_status = getTableStatus();
+        auto current_table_status = getTableStatus(local_context);
         if (table_status == TableStatus::UNKNOWN)
         {
             static constexpr auto error_msg = "Failed to activate table because of connection issues. It will be activated "
@@ -119,7 +119,7 @@ private:
         VALID
     };
 
-    TableStatus getTableStatus() const;
+    TableStatus getTableStatus(const ContextPtr & context) const;
 
     void restoreDataImpl(
         const BackupPtr & backup,

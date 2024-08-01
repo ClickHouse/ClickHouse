@@ -11,6 +11,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/enable_keeper_map.xml"],
+    user_configs=["configs/keeper_retries.xml"],
     with_zookeeper=True,
     stay_alive=True,
 )
@@ -42,10 +43,6 @@ def repeat_query(query, repeat):
     for _ in range(repeat):
         node.query(
             query,
-            settings={
-                "keeper_max_retries": 20,
-                "keeper_retry_max_backoff_ms": 10000,
-            },
         )
 
 
@@ -53,10 +50,6 @@ def test_queries(started_cluster):
     start_clean_clickhouse()
 
     node.query("DROP TABLE IF EXISTS keeper_map_retries SYNC")
-    node.query(
-        "CREATE TABLE keeper_map_retries (a UInt64, b UInt64) Engine=KeeperMap('/keeper_map_retries') PRIMARY KEY a"
-    )
-
     node.stop_clickhouse()
     node.copy_file_to_container(
         os.path.join(CONFIG_DIR, "fault_injection.xml"),
@@ -65,6 +58,10 @@ def test_queries(started_cluster):
     node.start_clickhouse()
 
     repeat_count = 10
+
+    node.query(
+        "CREATE TABLE keeper_map_retries (a UInt64, b UInt64) Engine=KeeperMap('/keeper_map_retries') PRIMARY KEY a",
+    )
 
     repeat_query(
         "INSERT INTO keeper_map_retries SELECT number, number FROM numbers(500)",

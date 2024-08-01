@@ -10,6 +10,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/enable_keeper_map.xml"],
+    user_configs=["configs/keeper_retries.xml"],
     with_zookeeper=True,
     stay_alive=True,
 )
@@ -49,7 +50,6 @@ def assert_keeper_exception_after_partition(query):
             error = node.query_and_get_error_with_retry(
                 query,
                 sleep_time=1,
-                settings={"insert_keeper_max_retries": 1, "keeper_max_retries": 1},
             )
             assert "Coordination::Exception" in error
         except:
@@ -91,7 +91,6 @@ def test_keeper_map_without_zk(started_cluster):
             error = node.query_and_get_error_with_retry(
                 "SELECT * FROM test_keeper_map_without_zk",
                 sleep_time=1,
-                settings={"keeper_max_retries": 1},
             )
             assert "Failed to activate table because of connection issues" in error
         except:
