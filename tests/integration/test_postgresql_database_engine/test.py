@@ -1,5 +1,8 @@
+import time
+
 import pytest
 import psycopg2
+import logging
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
@@ -463,6 +466,58 @@ def test_inaccessible_postgresql_database_engine_filterable_on_system_tables(
 
     node1.query("DROP DATABASE postgres_database")
     assert "postgres_database" not in node1.query("SHOW DATABASES")
+
+
+
+def test_postgresql_database_engine_connections_release(started_cluster):
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+    # postgres query to get active connections
+    pg_stat_activity_query = "SELECT datname, usename, state, query FROM pg_stat_activity;"
+    # condition function for filter results of pg_stat_activity_query
+    def filter_postgres_pg_stat_activity(value):
+        # postgres have a problem that it have some empty lines in pg_stat_activity. It is not our problem.
+        if value[0] is None:
+            return False
+        # filter itself
+        if value[3] == pg_stat_activity_query:
+            return False
+        # filter intial create database query made not with clickhouse
+        if str(value[3]).startswith("CREATE DATABASE "):
+            return False
+        return True
+
+    node1.query(
+        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+    )
+
+    cursor.execute(pg_stat_activity_query)
+    connections = list(filter(lambda x: filter_postgres_pg_stat_activity(x), cursor.fetchall()))
+    logging.debug(f"connections before: {connections}")
+
+    create_postgres_table(cursor, "test_table")
+    assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
+
+    node1.query("SELECT * FROM postgres_database.test_table")
+
+    cursor.execute(pg_stat_activity_query)
+    connections = list(filter(lambda x: filter_postgres_pg_stat_activity(x), cursor.fetchall()))
+    logging.debug(f"connections after: {connections}")
+
+    start_time = time.time()
+    timeout = start_time + 300
+    while time.time() <= timeout and len(connections) > 0:
+        time.sleep(10)
+        cursor.execute(pg_stat_activity_query)
+        connections = list(filter(lambda x: filter_postgres_pg_stat_activity(x), cursor.fetchall()))
+        logging.debug(f"connections: {connections}")
+    logging.debug(f"connections after: {connections}")
+    # it can be possible that there will still be some opened connections in the end and our desire to have 3 opened connections is too much. In that case we can either settle for <=1 or add additional filters to filter_postgres_pg_stat_activity
+    assert len(connections) == 0, f"there are still connections opened: {connections}"
+
+    drop_postgres_table(cursor, "test_table")
 
 
 if __name__ == "__main__":
