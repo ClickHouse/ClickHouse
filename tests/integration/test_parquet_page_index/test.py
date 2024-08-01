@@ -61,7 +61,7 @@ def delete_if_exists(file_path):
     },
 )
 def test_parquet_page_index_select_into_outfile(query, expected_result, start_cluster):
-    file_name = "export.parquet"
+    file_name = f"export{time.time()}.parquet"
     query = query.format(file_name=file_name)
     delete_if_exists(file_name)
     assert node.query(query) == ""
@@ -76,14 +76,14 @@ def test_parquet_page_index_select_into_outfile(query, expected_result, start_cl
     {
         (
             "INSERT INTO TABLE FUNCTION file('{file_name}') "
-            "SElECT number, number+1 FROM system.numbers LIMIT 100 "
+            "SELECT number, number+1 FROM system.numbers LIMIT 100 "
             "SETTINGS output_format_parquet_use_custom_encoder=false, "
             "output_format_parquet_write_page_index=true FORMAT Parquet",
             True,
         ),
         (
             "INSERT INTO TABLE FUNCTION file('{file_name}') "
-            "SElECT number, number+1 FROM system.numbers LIMIT 100 "
+            "SELECT number, number+1 FROM system.numbers LIMIT 100 "
             "SETTINGS output_format_parquet_use_custom_encoder=false, "
             "output_format_parquet_write_page_index=false FORMAT Parquet",
             False,
@@ -92,7 +92,7 @@ def test_parquet_page_index_select_into_outfile(query, expected_result, start_cl
         # # output_format_parquet_use_custom_encoder = true
         (
             "INSERT INTO TABLE FUNCTION file('{file_name}') "
-            "SElECT number, number+1 FROM system.numbers LIMIT 100 FORMAT Parquet",
+            "SELECT number, number+1 FROM system.numbers LIMIT 100 FORMAT Parquet",
             False,
         ),
     },
@@ -100,7 +100,7 @@ def test_parquet_page_index_select_into_outfile(query, expected_result, start_cl
 def test_parquet_page_index_insert_into_table_function_file(
     query, expected_result, start_cluster
 ):
-    file_name = "export.parquet"
+    file_name = f"export{time.time()}.parquet"
     query = query.format(file_name=file_name)
     file_path = f"{path_to_external_dirs}{path_to_userfiles}{file_name}"
     delete_if_exists(file_path)
