@@ -352,7 +352,7 @@ public:
         /// Whether the right table reranged by key
         bool sorted = false;
 
-        size_t avgPerKeyRows()
+        size_t avgPerKeyRows() const
         {
             if (keys_to_join == 0)
                 return 0;
