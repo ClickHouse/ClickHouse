@@ -192,7 +192,7 @@ public:
             else
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument types of function {} must be Array or Map, but {} is given",
+                    "Arguments of function {} must be Array or Map, but {} is given",
                     getName(),
                     type->getName());
 
@@ -275,10 +275,7 @@ public:
     static constexpr auto name = "mapUpdate";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapUpdate>(); }
 
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -287,9 +284,11 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be 2",
-                getName(), arguments.size());
+                getName(),
+                arguments.size());
 
         const auto * left = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
         const auto * right = checkAndGetDataType<DataTypeMap>(arguments[1].type.get());
@@ -405,7 +404,6 @@ public:
         return ColumnMap::create(nested_column);
     }
 };
-
 }
 
 REGISTER_FUNCTION(Map)
