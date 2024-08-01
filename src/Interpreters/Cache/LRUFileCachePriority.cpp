@@ -323,7 +323,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     }
 }
 
-IFileCachePriority::DesiredSizeStatus LRUFileCachePriority::collectCandidatesForEviction(
+IFileCachePriority::CollectStatus LRUFileCachePriority::collectCandidatesForEviction(
     size_t desired_size,
     size_t desired_elements_count,
     size_t max_candidates_to_evict,
@@ -336,23 +336,23 @@ IFileCachePriority::DesiredSizeStatus LRUFileCachePriority::collectCandidatesFor
         return canFit(0, 0, stat.total_stat.releasable_size, stat.total_stat.releasable_count,
                       lock, &desired_size, &desired_elements_count);
     };
-    auto status = DesiredSizeStatus::CANNOT_EVICT;
+    auto status = CollectStatus::CANNOT_EVICT;
     auto stop_condition = [&]()
     {
         if (desired_limits_satisfied())
         {
-            status = DesiredSizeStatus::SUCCESS;
+            status = CollectStatus::SUCCESS;
             return true;
         }
         if (max_candidates_to_evict && res.size() >= max_candidates_to_evict)
         {
-            status = DesiredSizeStatus::REACHED_MAX_CANDIDATES_LIMIT;
+            status = CollectStatus::REACHED_MAX_CANDIDATES_LIMIT;
             return true;
         }
         return false;
     };
     iterateForEviction(res, stat, stop_condition, lock);
-    chassert(status != DesiredSizeStatus::SUCCESS || stop_condition());
+    chassert(status != CollectStatus::SUCCESS || stop_condition());
     return status;
 }
 

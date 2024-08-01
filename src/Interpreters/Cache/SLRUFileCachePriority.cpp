@@ -256,7 +256,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     return true;
 }
 
-IFileCachePriority::DesiredSizeStatus SLRUFileCachePriority::collectCandidatesForEviction(
+IFileCachePriority::CollectStatus SLRUFileCachePriority::collectCandidatesForEviction(
     size_t desired_size,
     size_t desired_elements_count,
     size_t max_candidates_to_evict,
@@ -285,7 +285,7 @@ IFileCachePriority::DesiredSizeStatus SLRUFileCachePriority::collectCandidatesFo
     chassert(!max_candidates_to_evict || res.size() <= max_candidates_to_evict);
     chassert(res.size() == stat.total_stat.releasable_count);
 
-    if (probationary_desired_size_status == DesiredSizeStatus::REACHED_MAX_CANDIDATES_LIMIT)
+    if (probationary_desired_size_status == CollectStatus::REACHED_MAX_CANDIDATES_LIMIT)
         return probationary_desired_size_status;
 
     const auto desired_protected_size = getRatio(desired_size, size_ratio);
@@ -306,7 +306,7 @@ IFileCachePriority::DesiredSizeStatus SLRUFileCachePriority::collectCandidatesFo
              desired_protected_size, desired_protected_elements_num,
              protected_queue.getStateInfoForLog(lock));
 
-    if (probationary_desired_size_status == DesiredSizeStatus::SUCCESS)
+    if (probationary_desired_size_status == CollectStatus::SUCCESS)
         return protected_desired_size_status;
     else
         return probationary_desired_size_status;

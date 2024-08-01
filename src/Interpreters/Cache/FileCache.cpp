@@ -998,7 +998,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     FileCacheReserveStat stat;
     EvictionCandidates eviction_candidates;
 
-    IFileCachePriority::DesiredSizeStatus desired_size_status;
+    IFileCachePriority::CollectStatus desired_size_status;
     try
     {
         /// Collect at most `keep_up_free_space_remove_batch` elements to evict,
@@ -1009,7 +1009,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
         /// Let's make sure that we correctly processed the limits.
-        if (desired_size_status == IFileCachePriority::DesiredSizeStatus::SUCCESS
+        if (desired_size_status == IFileCachePriority::CollectStatus::SUCCESS
             && eviction_candidates.size() < keep_up_free_space_remove_batch)
         {
             const auto current_size = main_priority->getSize(lock);
@@ -1070,13 +1070,13 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     [[maybe_unused]] bool scheduled = false;
     switch (desired_size_status)
     {
-        case IFileCachePriority::DesiredSizeStatus::SUCCESS: [[fallthrough]];
-        case IFileCachePriority::DesiredSizeStatus::CANNOT_EVICT:
+        case IFileCachePriority::CollectStatus::SUCCESS: [[fallthrough]];
+        case IFileCachePriority::CollectStatus::CANNOT_EVICT:
         {
             scheduled = keep_up_free_space_ratio_task->scheduleAfter(general_reschedule_ms);
             break;
         }
-        case IFileCachePriority::DesiredSizeStatus::REACHED_MAX_CANDIDATES_LIMIT:
+        case IFileCachePriority::CollectStatus::REACHED_MAX_CANDIDATES_LIMIT:
         {
             scheduled = keep_up_free_space_ratio_task->schedule();
             break;
@@ -1558,7 +1558,7 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
             FileCacheReserveStat stat;
             if (main_priority->collectCandidatesForEviction(
                     new_settings.max_size, new_settings.max_elements, 0/* max_candidates_to_evict */,
-                    stat, eviction_candidates, cache_lock) == IFileCachePriority::DesiredSizeStatus::SUCCESS)
+                    stat, eviction_candidates, cache_lock) == IFileCachePriority::CollectStatus::SUCCESS)
             {
                 if (eviction_candidates.size() == 0)
                 {
