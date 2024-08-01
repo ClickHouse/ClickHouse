@@ -21,6 +21,7 @@
 #include <Common/HilbertUtils.h>
 #include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
@@ -1184,14 +1185,6 @@ bool KeyCondition::tryPrepareSetIndex(
     if (!future_set)
         return false;
 
-    const auto set_types = future_set->getTypes();
-    size_t set_types_size = set_types.size();
-    size_t indexes_mapping_size = indexes_mapping.size();
-
-    for (auto & index_mapping : indexes_mapping)
-        if (index_mapping.tuple_index >= set_types_size)
-            return false;
-
     auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
     if (!prepared_set)
         return false;
@@ -1206,6 +1199,35 @@ bool KeyCondition::tryPrepareSetIndex(
       * we need to convert set column to primary key column.
       */
     auto set_columns = prepared_set->getSetElements();
+    auto set_types = future_set->getTypes();
+    while (set_columns.size() != left_args_count)
+    {
+        bool has_tuple = false;
+        for (size_t i = 0; i < set_columns.size(); i++)
+        {
+            if (isTuple(set_columns[i]->getDataType()))
+            {
+                has_tuple = true;
+                auto columns_tuple = assert_cast<const ColumnTuple *>(set_columns[i].get())->getColumns();
+                auto subtypes = assert_cast<const DataTypeTuple &>(*set_types[i]).getElements();
+                set_columns.erase(set_columns.begin() + i);
+                set_types.erase(set_types.begin() + i);
+                for (size_t j = 0; j < columns_tuple.size(); j++)
+                {
+                    set_columns.insert(set_columns.begin() + i + j, columns_tuple[j]);
+                    set_types.insert(set_types.begin() + i + j, subtypes[j]);
+                }
+            }
+        }
+        if (!has_tuple)
+            return false;
+    }
+    size_t set_types_size = set_types.size();
+    size_t indexes_mapping_size = indexes_mapping.size();
+
+    for (auto & index_mapping : indexes_mapping)
+        if (index_mapping.tuple_index >= set_types_size)
+            return false;
     assert(set_types_size == set_columns.size());
 
     for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping_size; ++indexes_mapping_index)
