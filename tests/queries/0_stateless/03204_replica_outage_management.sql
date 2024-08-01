@@ -20,6 +20,9 @@ CREATE TABLE t2_distr AS t2_shard ENGINE = Distributed(test_cluster_two_shards_l
 INSERT INTO t1_shard VALUES (1, 'a'), (2, 'b'), (3, 'c');
 INSERT INTO t2_shard VALUES (1, 'a'), (2, 'b'), (3, 'c');
 
+-- Set the distributed product mode to allow global subqueries
+SET distributed_product_mode = 'global';
+
 -- Simple distributed query to verify setup
 SELECT d0.id, d0.value
 FROM t1_distr d0
@@ -32,7 +35,6 @@ WHERE d0.id IN
     ORDER BY d1.id
 );
 
--- Join query to ensure distributed functionality
 SELECT d0.id, d0.value
 FROM t1_distr d0
 JOIN (
