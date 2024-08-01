@@ -410,7 +410,7 @@ struct FormatSettings
         bool use_fast_decoder = true;
         bool filter_push_down = true;
         UInt64 output_row_index_stride = 10'000;
-        bool read_use_writer_time_zone = false;
+        String reader_time_zone_name = "GMT";
     } orc{};
 
     /// For capnProto format we should determine how to
