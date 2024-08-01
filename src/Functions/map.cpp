@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -157,7 +158,7 @@ private:
     bool use_variant_as_common_type = false;
 };
 
-/// mapFromArrays(keys, values) is a function that allows you to make key-value pair from a pair of arrays
+/// mapFromArrays(keys, values) is a function that allows you to make key-value pair from a pair of arrays or maps
 class FunctionMapFromArrays : public IFunction
 {
 public:
@@ -181,13 +182,13 @@ public:
                 getName(),
                 arguments.size());
 
-        auto get_nested_type = [this](const DataTypePtr & type) -> DataTypePtr
+        auto get_nested_type = [&](const DataTypePtr & type)
         {
             DataTypePtr nested;
-            if (const auto * array_type = checkAndGetDataType<DataTypeArray>(type.get()))
-                nested = array_type->getNestedType();
-            else if (const auto * map_type = checkAndGetDataType<DataTypeMap>(type.get()))
-                nested = std::make_shared<DataTypeTuple>(map_type->getKeyValueTypes());
+            if (const auto * type_as_array = checkAndGetDataType<DataTypeArray>(type.get()))
+                nested = type_as_array->getNestedType();
+            else if (const auto * type_as_map = checkAndGetDataType<DataTypeMap>(type.get()))
+                nested = std::make_shared<DataTypeTuple>(type_as_map->getKeyValueTypes());
             else
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -201,8 +202,9 @@ public:
         auto key_type = get_nested_type(arguments[0]);
         auto value_type = get_nested_type(arguments[1]);
 
-        /// Remove Nullable from key_type if needed for map key must not be Nullable
+        /// We accept Array(Nullable(T)) or Array(LowCardinality(Nullable(T))) as key types as long as the actual array doesn't contain NULL value(this is checked in executeImpl).
         key_type = removeNullableOrLowCardinalityNullable(key_type);
+
         DataTypes key_value_types{key_type, value_type};
         return std::make_shared<DataTypeMap>(key_value_types);
     }
@@ -210,7 +212,7 @@ public:
     ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
     {
-        auto get_array_column = [this](const ColumnPtr & column) -> std::pair<const ColumnArray *, ColumnPtr>
+        auto get_array_column = [&](const ColumnPtr & column) -> std::pair<const ColumnArray *, ColumnPtr>
         {
             bool is_const = isColumnConst(*column);
             ColumnPtr holder = is_const ? column->convertToFullColumnIfConst() : column;
@@ -231,8 +233,9 @@ public:
         };
 
         auto [col_keys, key_holder] = get_array_column(arguments[0].column);
+        auto [col_values, values_holder] = get_array_column(arguments[1].column);
 
-        /// Check if nested column of first argument contains NULL value in case its nested type is Nullable(T) type.
+        /// Nullable(T) or LowCardinality(Nullable(T)) are okay as nested key types but actual NULL values are not okay.
         ColumnPtr data_keys = col_keys->getDataPtr();
         if (isColumnNullableOrLowCardinalityNullable(*data_keys))
         {
@@ -253,10 +256,9 @@ public:
 
             if (null_map && !memoryIsZero(null_map->data(), 0, null_map->size()))
                 throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN, "The nested column of first argument in function {} must not contain NULLs", getName());
+                    ErrorCodes::BAD_ARGUMENTS, "The nested column of first argument in function {} must not contain NULLs", getName());
         }
 
-        auto [col_values, values_holder] = get_array_column(arguments[1].column);
         if (!col_keys->hasEqualOffsets(*col_values))
             throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Two arguments of function {} must have equal sizes", getName());
 
