@@ -30,7 +30,7 @@ TEST(ConvertDictionaryAST, SimpleDictConfiguration)
 {
     if (!registered)
     {
-        registerDictionaries(true);
+        registerDictionaries(false);
         registered = true;
     }
 
@@ -103,7 +103,7 @@ TEST(ConvertDictionaryAST, TrickyAttributes)
 {
     if (!registered)
     {
-        registerDictionaries(true);
+        registerDictionaries(false);
         registered = true;
     }
 
@@ -147,7 +147,7 @@ TEST(ConvertDictionaryAST, ComplexKeyAndLayoutWithParams)
 {
     if (!registered)
     {
-        registerDictionaries(true);
+        registerDictionaries(false);
         registered = true;
     }
 
@@ -198,7 +198,7 @@ TEST(ConvertDictionaryAST, ComplexSource)
 {
     if (!registered)
     {
-        registerDictionaries(true);
+        registerDictionaries(false);
         registered = true;
     }
 
