@@ -9,7 +9,7 @@ opts=(
     "--allow_experimental_analyzer=0"
 )
 
-${CLICKHOUSE_CLIENT} "${opts[@]}" --multiquery --multiline --query """
+${CLICKHOUSE_CLIENT} "${opts[@]}" --multiline --query """
 DROP TABLE IF EXISTS mt ON CLUSTER test_shard_localhost;
 DROP TABLE IF EXISTS wv ON CLUSTER test_shard_localhost;
 CREATE TABLE mt ON CLUSTER test_shard_localhost (a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
