@@ -1157,7 +1157,7 @@ SELECT toModifiedJulianDayOrNull('2020-01-01');
 
 ## fromModifiedJulianDay {#frommodifiedjulianday}
 
-将 [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) 数字转换为 `YYYY-MM-DD` 文本格式的 [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) 日期。该函数支持从 `-678941` 到 `2973119` 的天数（分别代表 0000-01-01 和 9999-12-31）。如果天数超出支持范围，则会引发异常。
+将 [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) 数字转换为 `YYYY-MM-DD` 文本格式的 [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) 日期。该函数支持从 `-678941` 到 `2973483` 的天数（分别代表 0000-01-01 和 9999-12-31）。如果天数超出支持范围，则会引发异常。
 
 **语法**
 
