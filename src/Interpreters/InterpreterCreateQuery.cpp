@@ -361,18 +361,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode};
             auto load_tasks = loader.loadTablesAsync();
             auto startup_tasks = loader.startupTablesAsync();
-            if (getContext()->getGlobalContext()->getServerSettings().async_load_databases)
-            {
-                scheduleLoad(load_tasks);
-                scheduleLoad(startup_tasks);
-            }
-            else
-            {
-                /// First prioritize, schedule and wait all the load table tasks
-                waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), load_tasks);
-                /// Only then prioritize, schedule and wait all the startup tasks
-                waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
-            }
+            /// First prioritize, schedule and wait all the load table tasks
+            waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), load_tasks);
+            /// Only then prioritize, schedule and wait all the startup tasks
+            waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
         }
     }
     catch (...)
