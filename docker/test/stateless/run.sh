@@ -164,7 +164,7 @@ do
 done
 
 setup_logs_replication
-attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
+attach_gdb_to_clickhouse
 
 function fn_exists() {
     declare -F "$1" > /dev/null;
