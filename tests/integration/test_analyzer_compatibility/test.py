@@ -1,4 +1,5 @@
 import uuid
+import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -51,19 +52,19 @@ def test_two_new_versions(start_cluster):
     assert (
         current.query(
             """
-SELECT hostname() AS h, getSetting('enable_analyzer')
+SELECT hostname() AS h, getSetting('allow_experimental_analyzer')
 FROM clusterAllReplicas('test_cluster_mixed', system.one)
 ORDER BY h;"""
         )
         == TSV([["backward", "true"], ["current", "true"]])
     )
 
-    # Should be enabled everywhere
-    analyzer_enabled = current.query(
+    # Should be enabled explicitly on the old instance.
+    analyzer_enabled = backward.query(
         f"""
 SELECT
-DISTINCT Settings['enable_analyzer']
-FROM clusterAllReplicas('test_cluster_mixed', system.query_log)
+DISTINCT Settings['allow_experimental_analyzer']
+FROM system.query_log
 WHERE initial_query_id = '{query_id}';"""
     )
 
@@ -100,3 +101,26 @@ WHERE initial_query_id = '{query_id}';"""
     )
 
     assert TSV(analyzer_enabled) == TSV("0")
+
+    # Only new version knows about the alias
+    # and it will send the old setting `allow_experimental_analyzer`
+    # to the remote server.
+    query_id = str(uuid.uuid4())
+    current.query(
+        "SELECT * FROM clusterAllReplicas('test_cluster_mixed', system.tables) SETTINGS enable_analyzer = 1;",
+        query_id=query_id,
+    )
+
+    current.query("SYSTEM FLUSH LOGS")
+    backward.query("SYSTEM FLUSH LOGS")
+
+    # Should be disabled explicitly everywhere.
+    analyzer_enabled = current.query(
+        f"""
+SELECT
+DISTINCT Settings['allow_experimental_analyzer']
+FROM system.query_log
+WHERE initial_query_id = '{query_id}';"""
+    )
+
+    assert TSV(analyzer_enabled) == TSV("1")
