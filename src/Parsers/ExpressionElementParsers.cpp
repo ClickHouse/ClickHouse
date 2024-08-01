@@ -696,6 +696,7 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto function_node = std::make_shared<ASTFunction>();
     function_node->name = "CODEC";
+    function_node->kind = ASTFunction::Kind::CODEC;
     function_node->arguments = expr_list_args;
     function_node->children.push_back(function_node->arguments);
 
@@ -723,6 +724,7 @@ bool ParserStatisticsType::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     auto function_node = std::make_shared<ASTFunction>();
     function_node->name = "STATISTICS";
+    function_node->kind = ASTFunction::Kind::STATISTICS;
     function_node->arguments = stat_type;
     function_node->children.push_back(function_node->arguments);
     node = function_node;
