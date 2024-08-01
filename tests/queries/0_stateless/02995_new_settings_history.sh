@@ -7,12 +7,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Note that this is a broad check. A per version check is done in the upgrade test
-# Baseline generated with 24.7.1
-# clickhouse local --query "select name, default from system.settings order by name format TSV" > 02995_baseline_24_7_1.tsv
+# Baseline generated with 24.7.2
+# clickhouse local --query "select name, default from system.settings order by name format TSV" > 02995_baseline_24_7_2.tsv
 $CLICKHOUSE_LOCAL --query "
     WITH old_settings AS
     (
-        SELECT * FROM file('${CUR_DIR}/02995_baseline_24_7_1.tsv', 'TSV', 'name String, default String')
+        SELECT * FROM file('${CUR_DIR}/02995_baseline_24_7_2.tsv', 'TSV', 'name String, default String')
     ),
     new_settings AS
     (
