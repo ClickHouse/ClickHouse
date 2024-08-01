@@ -237,7 +237,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     /// Remove global settings limit and offset
     if (const auto & settings_ref = updated_context->getSettingsRef(); settings_ref.limit || settings_ref.offset)
     {
-        Settings settings = updated_context->getSettings();
+        Settings settings = updated_context->getSettingsCopy();
         limit = settings.limit;
         offset = settings.offset;
         settings.limit = 0;

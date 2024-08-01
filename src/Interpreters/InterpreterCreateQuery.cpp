@@ -361,18 +361,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode};
             auto load_tasks = loader.loadTablesAsync();
             auto startup_tasks = loader.startupTablesAsync();
-            if (getContext()->getGlobalContext()->getServerSettings().async_load_databases)
-            {
-                scheduleLoad(load_tasks);
-                scheduleLoad(startup_tasks);
-            }
-            else
-            {
-                /// First prioritize, schedule and wait all the load table tasks
-                waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), load_tasks);
-                /// Only then prioritize, schedule and wait all the startup tasks
-                waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
-            }
+            /// First prioritize, schedule and wait all the load table tasks
+            waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), load_tasks);
+            /// Only then prioritize, schedule and wait all the startup tasks
+            waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
         }
     }
     catch (...)
@@ -1373,8 +1365,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
-    bool allow_heavy_create = getContext()->getSettingsRef().database_replicated_allow_heavy_create;
-    if (!allow_heavy_create && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
+    bool allow_heavy_populate = getContext()->getSettingsRef().database_replicated_allow_heavy_create && create.is_populate;
+    if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
     {
         bool is_storage_replicated = false;
 
@@ -1392,10 +1384,18 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         const bool allow_create_select_for_replicated = (create.isView() && !create.is_populate) || create.is_create_empty || !is_storage_replicated;
         if (!allow_create_select_for_replicated)
+        {
+            /// POPULATE can be enabled with setting, provide hint in error message
+            if (create.is_populate)
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "CREATE with POPULATE is not supported with Replicated databases. Consider using separate CREATE and INSERT queries. "
+                    "Alternatively, you can enable 'database_replicated_allow_heavy_create' setting to allow this operation, use with caution");
+
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "CREATE AS SELECT and POPULATE is not supported with Replicated databases. Consider using separate CREATE and INSERT queries. "
-                "Alternatively, you can enable 'database_replicated_allow_heavy_create' setting to allow this operation, use with caution");
+                "CREATE AS SELECT is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
+        }
     }
 
     if (database && database->shouldReplicateQuery(getContext(), query_ptr))
