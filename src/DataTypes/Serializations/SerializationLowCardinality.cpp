@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -751,6 +752,11 @@ void SerializationLowCardinality::deserializeTextCSV(IColumn & column, ReadBuffe
 bool SerializationLowCardinality::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     return tryDeserializeImpl(column, &ISerialization::tryDeserializeTextCSV, istr, settings);
+}
+
+void SerializationLowCardinality::serializeTextHive(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeTextHive is not implemented for LowCardinality");
 }
 
 void SerializationLowCardinality::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

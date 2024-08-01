@@ -345,6 +345,7 @@ Heredoc
 HexAreaKm
 HexAreaM
 HexRing
+HiveText
 Holistics
 Homebrew
 Homebrew's
@@ -1787,6 +1788,7 @@ heredocs
 hilbertDecode
 hilbertEncode
 hiveHash
+hivetext
 holistics
 homebrew
 hopEnd

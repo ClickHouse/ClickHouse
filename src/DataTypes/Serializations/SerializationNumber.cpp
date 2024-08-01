@@ -166,6 +166,12 @@ bool SerializationNumber<T>::tryDeserializeTextCSV(IColumn & column, ReadBuffer 
 }
 
 template <typename T>
+void SerializationNumber<T>::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+{
+    writeText(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr);
+}
+
+template <typename T>
 void SerializationNumber<T>::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
     /// ColumnVector<T>::ValueType is a narrower type. For example, UInt8, when the Field type is UInt64

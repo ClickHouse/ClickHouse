@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 struct SerializeBinaryBulkStateDynamic : public ISerialization::SerializeBinaryBulkState
@@ -638,6 +639,11 @@ void SerializationDynamic::serializeTextXML(const IColumn & column, size_t row_n
 {
     const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
     dynamic_column.getVariantInfo().variant_type->getDefaultSerialization()->serializeTextXML(dynamic_column.getVariantColumn(), row_num, ostr, settings);
+}
+
+void SerializationDynamic::serializeTextHive(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeTextHive is not implemented for Dynamic");
 }
 
 }

@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 /// Helper class to define same ISerialization text (de)serialization for all the variants (escaped, quoted, JSON, CSV).
 /// You need to define serializeText() and deserializeText() in derived class.
 class SimpleTextSerialization : public ISerialization
@@ -79,6 +84,12 @@ protected:
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
         return tryDeserializeText(column, istr, settings, false);
+    }
+
+    void serializeTextHive(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/) const override
+    {
+        // Only implement the data types supported in Hive.
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeTextHive is not implemented for this type.");
     }
 
     /// whole = true means that buffer contains only one value, so we should read until EOF.
