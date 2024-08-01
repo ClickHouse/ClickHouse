@@ -72,6 +72,8 @@ template<>
 template<bool from_row_list>
 void AddedColumns<true>::buildOutputFromBlocks()
 {
+     if (this->size() == 0)
+        return;
     std::vector<const Block *> blocks;
     std::vector<UInt32> row_nums;
     blocks.reserve(lazy_output.row_refs.size());
