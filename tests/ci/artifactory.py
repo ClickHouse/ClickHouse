@@ -67,8 +67,8 @@ class R2MountPoint:
                     f" --shared-config=/home/ubuntu/.r2_auth_test "
                 )
             if self.DEBUG:
-                self.aux_mount_options += " --debug_s3 --debug_fuse "
-            self.mount_cmd = f"geesefs --endpoint={self.API_ENDPOINT} --cheap --memory-limit=2050 --gc-interval=100 --max-flushers=5 --max-parallel-parts=1 --max-parallel-copy=2 --log-file={self.LOG_FILE} {self.aux_mount_options} {self.bucket_name} {self.MOUNT_POINT}"
+                self.aux_mount_options += " --debug_s3 "
+            self.mount_cmd = f"geesefs --endpoint={self.API_ENDPOINT} --cheap --memory-limit=1000 --gc-interval=100 --max-flushers=10 --max-parallel-parts=1 --max-parallel-copy=10 --log-file={self.LOG_FILE} {self.aux_mount_options} {self.bucket_name} {self.MOUNT_POINT}"
         else:
             assert False
 
@@ -207,8 +207,10 @@ class RpmArtifactory:
         for package in paths:
             _copy_if_not_exists(Path(package), dest_dir)
 
+        # switching between different fuse providers invalidates --update option (apparently some fuse(s) can mess around with mtime)
+        #   add --skip-stat to skip mtime check
         commands = (
-            f"createrepo_c --local-sqlite --workers=2 --update --verbose {dest_dir}",
+            f"createrepo_c --local-sqlite --workers=2 --update --skip-stat --verbose {dest_dir}",
             f"gpg --sign-with {self._SIGN_KEY} --detach-sign --batch --yes --armor {dest_dir / 'repodata' / 'repomd.xml'}",
         )
         print(f"Exporting RPM packages into [{codename}]")
