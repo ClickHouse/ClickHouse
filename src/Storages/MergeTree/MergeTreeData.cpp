@@ -5557,12 +5557,16 @@ public:
         auto it = temp_part_dirs.find(part_name);
         if (it == temp_part_dirs.end())
         {
-            auto temp_part_dir = std::make_shared<TemporaryFileOnDisk>(disk, fs::path{storage->getRelativeDataPath()} / ("tmp_restore_" + part_name + "-"));
+            auto temp_dir_deleter = std::make_unique<TemporaryFileOnDisk>(disk, fs::path{storage->getRelativeDataPath()} / ("tmp_restore_" + part_name + "-"));
+            auto temp_part_dir = fs::path{temp_dir_deleter->getRelativePath()}.filename();
             /// Attaching parts will rename them so it's expected for a temporary part directory not to exist anymore in the end.
-            temp_part_dir->setShowWarningIfRemoved(false);
-            it = temp_part_dirs.emplace(part_name, temp_part_dir).first;
+            temp_dir_deleter->setShowWarningIfRemoved(false);
+            /// The following holder is needed to prevent clearOldTemporaryDirectories() from clearing `temp_part_dir` before we attach the part.
+            auto temp_dir_holder = storage->getTemporaryPartDirectoryHolder(temp_part_dir);
+            it = temp_part_dirs.emplace(part_name,
+                                        std::make_pair(std::move(temp_dir_deleter), std::move(temp_dir_holder))).first;
         }
-        return it->second->getRelativePath();
+        return it->second.first->getRelativePath();
     }
 
 private:
@@ -5588,7 +5592,7 @@ private:
     size_t num_parts = 0;
     size_t num_broken_parts = 0;
     MutableDataPartsVector parts;
-    std::map<String /* part_name*/, std::shared_ptr<TemporaryFileOnDisk>> temp_part_dirs;
+    std::map<String /* part_name*/, std::pair<std::unique_ptr<TemporaryFileOnDisk>, scope_guard>> temp_part_dirs;
     mutable std::mutex mutex;
 };
 
