@@ -128,11 +128,20 @@ def run_and_check(
     return out
 
 
+# get_free_port() can return the same port multiple times.
+# To avoid it we just collect all returned ports and check for overlap.
+used_ports = []
+
 # Based on https://stackoverflow.com/a/1365284/3706827
 def get_free_port():
     with socket.socket() as s:
         s.bind(("", 0))
-        return s.getsockname()[1]
+        port = s.getsockname()[1]
+        if port in used_ports:
+            logging.debug(f"Clashing port: {port}")
+            return get_free_port()
+        used_ports.append(port)
+        return port
 
 
 def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
