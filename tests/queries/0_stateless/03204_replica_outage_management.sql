@@ -5,7 +5,7 @@ CREATE DATABASE IF NOT EXISTS test_mlt65kbw ON CLUSTER 'test_shard_localhost';
 USE test_mlt65kbw;
 
 -- Step 3: Create necessary tables on the cluster within the correct database
-CREATE TABLE test_mlt65kbw.local_table ON CLUSTER 'test_shard_localhost'
+CREATE TABLE local_table ON CLUSTER 'test_shard_localhost'
 (
     id UInt32,
     value String
@@ -13,18 +13,23 @@ CREATE TABLE test_mlt65kbw.local_table ON CLUSTER 'test_shard_localhost'
 ENGINE = MergeTree()
 ORDER BY id;
 
-CREATE TABLE test_mlt65kbw.distributed_table ON CLUSTER 'test_shard_localhost'
+CREATE TABLE distributed_table ON CLUSTER 'test_shard_localhost'
 (
     id UInt32,
     value String
 )
-ENGINE = Distributed('test_shard_localhost', 'test_mlt65kbw', 'local_table', rand());
+ENGINE = Distributed('test_shard_localhost', currentDatabase(), 'local_table', rand());
 
 -- Step 4: Insert data into the distributed table
-INSERT INTO test_mlt65kbw.distributed_table VALUES (1, 'test1'), (2, 'test2'), (3, 'test3');
+INSERT INTO distributed_table VALUES (1, 'test1'), (2, 'test2'), (3, 'test3');
 
--- Step 5: Query the distributed table to verify the results in the correct format
--- Suppress unnecessary output
-SET output_format_enable_aggregation_tree = 0, output_format_enable_debug_info = 0;
+-- Step 5: Query the distributed table to verify the results
+-- Ensure the query format is correct and suppress unnecessary output
+SELECT id, value FROM distributed_table ORDER BY id FORMAT TabSeparated;
 
-SELECT id, value FROM test_mlt65kbw.distributed_table ORDER BY id FORMAT TabSeparated;
+-- Step 6: Drop the tables to clean up
+DROP TABLE IF EXISTS local_table ON CLUSTER 'test_shard_localhost';
+DROP TABLE IF EXISTS distributed_table ON CLUSTER 'test_shard_localhost';
+
+-- Drop the database to clean up
+DROP DATABASE IF EXISTS test_mlt65kbw ON CLUSTER 'test_shard_localhost';
