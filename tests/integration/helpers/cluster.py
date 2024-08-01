@@ -3920,7 +3920,11 @@ class ClickHouseInstance:
         )
 
     def contains_in_log(
-        self, substring, from_host=False, filename="clickhouse-server.log"
+        self,
+        substring,
+        from_host=False,
+        filename="clickhouse-server.log",
+        exclusion_substring="",
     ):
         if from_host:
             # We check fist file exists but want to look for all rotated logs as well
@@ -3928,7 +3932,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f {self.logs_dir}/{filename} ] && zgrep -aH "{substring}" {self.logs_dir}/{filename}* || true',
+                    f'[ -f {self.logs_dir}/{filename} ] && zgrep -aH "{substring}" {self.logs_dir}/{filename}* | ( [ -z "{exclusion_substring}" ] && cat || grep -v "${exclusion_substring}" ) || true',
                 ]
             )
         else:
@@ -3936,7 +3940,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -aH "{substring}" /var/log/clickhouse-server/{filename} || true',
+                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -aH "{substring}" /var/log/clickhouse-server/{filename} | ( [ -z "{exclusion_substring}" ] && cat || grep -v "${exclusion_substring}" ) || true',
                 ]
             )
         return len(result) > 0
