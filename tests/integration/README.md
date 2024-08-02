@@ -142,7 +142,7 @@ of parallel workers for `pytest-xdist`.
 $ export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=$HOME/ClickHouse/programs/server/
 $ export CLICKHOUSE_TESTS_SERVER_BIN_PATH=$HOME/ClickHouse/programs/clickhouse
 $ export CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH=$HOME/ClickHouse/programs/clickhouse-odbc-bridge
-$ ./runner 'test_storage_s3_queue/test.py::test_max_set_age -- --count 10 -n 5'
+$ ./runner test_storage_s3_queue/test.py::test_max_set_age --count 10 -n 5
 Start tests
 =============================================================================== test session starts ================================================================================
 platform linux -- Python 3.10.12, pytest-7.4.4, pluggy-1.5.0 -- /usr/bin/python3
