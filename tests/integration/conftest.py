@@ -132,7 +132,7 @@ def pytest_configure(config):
     worker_ports = os.getenv("WORKER_FREE_PORTS", None)
     if worker_ports is None:
         master_ports = get_unique_free_ports(PORTS_PER_WORKER)
-        os.environ["WORKER_FREE_PORTS"] = " ".join(([str(p) for p in master_ports]))
+        os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in master_ports])
 
 
 def pytest_xdist_setupnodes(config, specs):
@@ -148,4 +148,4 @@ def pytest_xdist_setupnodes(config, specs):
     for i, spec in enumerate(specs):
         start_range = i * PORTS_PER_WORKER
         per_workrer_ports = ports[start_range : start_range + PORTS_PER_WORKER]
-        spec.env["WORKER_FREE_PORTS"] = " ".join(([str(p) for p in per_workrer_ports]))
+        spec.env["WORKER_FREE_PORTS"] = " ".join([str(p) for p in per_workrer_ports])
