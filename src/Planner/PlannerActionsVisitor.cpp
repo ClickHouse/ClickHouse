@@ -1040,36 +1040,6 @@ String calculateConstantActionNodeName(const Field & constant_literal)
     return ActionNodeNameHelper::calculateConstantActionNodeName(constant_literal);
 }
 
-String calculateWindowNodeActionName(const QueryTreeNodePtr & node,
-    const PlannerContext & planner_context,
-    QueryTreeNodeToName & node_to_name,
-    bool use_column_identifier_as_action_node_name)
-{
-    ActionNodeNameHelper helper(node_to_name, planner_context, use_column_identifier_as_action_node_name);
-    auto get_window_frame = [&]()-> std::optional<WindowFrame>{
-        auto & window_node = node->as<WindowNode &>();
-        auto & window_frame = window_node.getWindowFrame();
-        if (!window_frame.is_default)
-            return window_frame;
-        return {};
-    };
-    return helper.calculateWindowNodeActionName(node, get_window_frame);
-}
-
-String calculateWindowNodeActionName(const QueryTreeNodePtr & node, const PlannerContext & planner_context, bool use_column_identifier_as_action_node_name)
-{
-    QueryTreeNodeToName empty_map;
-    ActionNodeNameHelper helper(empty_map, planner_context, use_column_identifier_as_action_node_name);
-    auto get_window_frame = [&]()-> std::optional<WindowFrame>{
-        auto & window_node = node->as<WindowNode &>();
-        auto & window_frame = window_node.getWindowFrame();
-        if (!window_frame.is_default)
-            return window_frame;
-        return {};
-    };
-    return helper.calculateWindowNodeActionName(node, get_window_frame);
-}
-
 String calculateWindowNodeActionName(const QueryTreeNodePtr & node, const PlannerContext & planner_context, std::function<std::optional<WindowFrame>()> get_window_frame, bool use_column_identifier_as_action_node_name)
 {
     QueryTreeNodeToName empty_map;
