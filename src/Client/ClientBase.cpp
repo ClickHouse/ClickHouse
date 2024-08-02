@@ -656,7 +656,7 @@ void ClientBase::initLogsOutputStream()
 
 void ClientBase::adjustSettings()
 {
-    Settings settings = global_context->getSettings();
+    Settings settings = global_context->getSettingsCopy();
 
     /// NOTE: Do not forget to set changed=false to avoid sending it to the server (to avoid breakage read only profiles)
 
@@ -865,7 +865,7 @@ bool ClientBase::isSyncInsertWithData(const ASTInsertQuery & insert_query, const
     if (!insert_query.data)
         return false;
 
-    auto settings = context->getSettings();
+    auto settings = context->getSettingsCopy();
     if (insert_query.settings_ast)
         settings.applyChanges(insert_query.settings_ast->as<ASTSetQuery>()->changes);
 
@@ -2671,7 +2671,7 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
 
     if (!getClientConfiguration().has("log_comment"))
     {
-        Settings settings = client_context->getSettings();
+        Settings settings = client_context->getSettingsCopy();
         /// NOTE: cannot use even weakly_canonical() since it fails for /dev/stdin due to resolving of "pipe:[X]"
         settings.log_comment = fs::absolute(fs::path(file_name));
         client_context->setSettings(settings);
