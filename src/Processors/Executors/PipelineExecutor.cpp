@@ -335,7 +335,9 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
         /// Allocate CPU slots from concurrency control
         constexpr size_t min_threads = 1uz; // Number of threads that should be granted to every query no matter how many threads are already running in other queries
         cpu_slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
+#ifndef NDEBUG
         LOG_TEST(log, "Allocate CPU slots. min: {}, max: {}, granted: {}", min_threads, num_threads, cpu_slots->grantedCount());
+#endif
     }
     else
     {
