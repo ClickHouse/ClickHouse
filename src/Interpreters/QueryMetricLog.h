@@ -14,7 +14,6 @@
 #include <chrono>
 #include <condition_variable>
 #include <ctime>
-#include <set>
 
 
 namespace DB
