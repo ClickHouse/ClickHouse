@@ -586,7 +586,7 @@ void logQueryException(
     }
 
     if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
-            query_metric_log->finishQuery(elem.client_info.current_query_id);
+        query_metric_log->finishQuery(elem.client_info.current_query_id);
 }
 
 void logExceptionBeforeStart(
@@ -685,7 +685,7 @@ void logExceptionBeforeStart(
     }
 
     if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log)
-            query_metric_log->finishQuery(elem.client_info.current_query_id);
+        query_metric_log->finishQuery(elem.client_info.current_query_id);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)

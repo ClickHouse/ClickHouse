@@ -115,8 +115,8 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
         auto current_time = std::chrono::system_clock::now();
         const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
 
-        // The query info should always be found because whenever a query ends, finishQuery is
-        // called and the query is removed from the list
+        /// The query info should always be found because whenever a query ends, finishQuery is
+        /// called and the query is removed from the list
         if (!query_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Query info not found: {}", query_id);
 
@@ -134,8 +134,11 @@ void QueryMetricLog::finishQuery(const String & query_id)
 {
     std::lock_guard lock(queries_mutex);
     auto it = queries.find(query_id);
+
+    /// finishQuery may be called from logExceptionBeforeStart when the query has not even started
+    /// yet, so its corresponding startQuery is never called.
     if (it == queries.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query not found: {}", query_id);
+        return;
 
     it->second.task->deactivate();
     queries.erase(it);
