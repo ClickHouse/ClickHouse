@@ -759,15 +759,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         lambda_arguments_names_and_types.emplace_back(lambda_argument_name, std::move(lambda_argument_type));
     }
 
-    auto lambda_actions_dag = std::make_shared<ActionsDAG>();
-    actions_stack.emplace_back(*lambda_actions_dag, node);
+    ActionsDAG lambda_actions_dag;
+    actions_stack.emplace_back(lambda_actions_dag, node);
 
     auto [lambda_expression_node_name, levels] = visitImpl(lambda_node.getExpression());
-    lambda_actions_dag->getOutputs().push_back(actions_stack.back().getNodeOrThrow(lambda_expression_node_name));
-    lambda_actions_dag->removeUnusedActions(Names(1, lambda_expression_node_name));
+    lambda_actions_dag.getOutputs().push_back(actions_stack.back().getNodeOrThrow(lambda_expression_node_name));
+    lambda_actions_dag.removeUnusedActions(Names(1, lambda_expression_node_name));
 
     auto expression_actions_settings = ExpressionActionsSettings::fromContext(planner_context->getQueryContext(), CompileExpressions::yes);
-    auto lambda_actions = std::make_shared<ExpressionActions>(lambda_actions_dag, expression_actions_settings);
+    auto lambda_actions = std::make_shared<ExpressionActions>(std::move(lambda_actions_dag), expression_actions_settings);
 
     Names captured_column_names;
     ActionsDAG::NodeRawConstPtrs lambda_children;
@@ -881,14 +881,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     const auto & function_node = node->as<FunctionNode &>();
     auto function_node_name = action_node_name_helper.calculateActionNodeName(node);
 
-    auto index_hint_actions_dag = std::make_shared<ActionsDAG>();
-    auto & index_hint_actions_dag_outputs = index_hint_actions_dag->getOutputs();
+    ActionsDAG index_hint_actions_dag;
+    auto & index_hint_actions_dag_outputs = index_hint_actions_dag.getOutputs();
     std::unordered_set<std::string_view> index_hint_actions_dag_output_node_names;
     PlannerActionsVisitor actions_visitor(planner_context);
 
     for (const auto & argument : function_node.getArguments())
     {
-        auto index_hint_argument_expression_dag_nodes = actions_visitor.visit(*index_hint_actions_dag, argument);
+        auto index_hint_argument_expression_dag_nodes = actions_visitor.visit(index_hint_actions_dag, argument);
 
         for (auto & expression_dag_node : index_hint_argument_expression_dag_nodes)
         {

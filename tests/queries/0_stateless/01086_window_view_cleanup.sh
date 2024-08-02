@@ -12,7 +12,7 @@ opts=(
     "--allow_experimental_analyzer=0"
 )
 
-$CLICKHOUSE_CLIENT "${opts[@]}" --allow_deprecated_database_ordinary=1 --multiquery <<EOF
+$CLICKHOUSE_CLIENT "${opts[@]}" --allow_deprecated_database_ordinary=1 <<EOF
 SET allow_experimental_window_view = 1;
 SET window_view_clean_interval = 1;
 
