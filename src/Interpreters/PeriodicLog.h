@@ -2,6 +2,7 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Common/ThreadPool.h>
+#include "Interpreters/Context_fwd.h"
 
 #include <atomic>
 #include <chrono>
@@ -23,7 +24,7 @@ public:
     using TimePoint = std::chrono::system_clock::time_point;
 
     /// Launches a background thread to collect metrics with periodic interval
-    void startCollect(ContextPtr context_, const String & thread_name, size_t collect_interval_milliseconds_);
+    void startCollect(const String & thread_name, size_t collect_interval_milliseconds_);
 
     /// Stop background thread
     virtual void stopCollect();
@@ -35,7 +36,6 @@ protected:
     virtual void threadFunction();
 
     std::atomic<bool> is_shutdown_metric_thread{false};
-    ContextPtr context;
     std::unique_ptr<ThreadFromGlobalPool> worker_thread;
 
 private:

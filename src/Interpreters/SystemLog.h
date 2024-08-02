@@ -111,7 +111,7 @@ struct SystemLogSettings
 };
 
 template <typename LogElement>
-class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, WithContext
+class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, public WithContext
 {
 public:
     using Self = SystemLog;

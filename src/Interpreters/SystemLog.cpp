@@ -382,18 +382,18 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     {
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        metric_log->startCollect(global_context, "MetricLog", collect_interval_milliseconds);
+        metric_log->startCollect("MetricLog", collect_interval_milliseconds);
     }
 
     if (error_log)
     {
         size_t collect_interval_milliseconds = config.getUInt64("error_log.collect_interval_milliseconds",
                                                                 DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        error_log->startCollect(global_context, "ErrorLog", collect_interval_milliseconds);
+        error_log->startCollect("ErrorLog", collect_interval_milliseconds);
     }
 
     if (query_metric_log)
-        query_metric_log->startCollect(global_context, "QueryMetricLog", 0);
+        query_metric_log->startCollect("QueryMetricLog", 0);
 
     if (crash_log)
     {

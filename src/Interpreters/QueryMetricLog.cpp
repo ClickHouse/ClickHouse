@@ -200,7 +200,7 @@ QueryMetricLogElement QueryMetricLog::createLogMetricElement(const String & quer
 
 void QueryMetricLog::stepFunction(TimePoint current_time)
 {
-    static const auto & process_list = context->getProcessList();
+    static const auto & process_list = getContext()->getProcessList();
 
     auto & queries_by_next_collect_time = queries.get<ByNextCollectTime>();
     for (const auto & query_status : queries_by_next_collect_time)
