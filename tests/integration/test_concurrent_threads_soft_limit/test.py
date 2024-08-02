@@ -90,12 +90,14 @@ def test_use_concurrency_control_default(started_cluster):
         "SELECT count(*) FROM numbers_mt(10000000) SETTINGS use_concurrency_control = 0",
         query_id="test_use_concurrency_control",
     )
+
+    # Concurrency control is not used, all metrics should be zeros
     node1.query("SYSTEM FLUSH LOGS")
     assert_profile_event(
         node1,
         "test_use_concurrency_control",
         "ConcurrencyControlGrantedHard",
-        lambda x: x == 100,
+        lambda x: x == 0,
     )
     assert_profile_event(
         node1,
@@ -107,7 +109,7 @@ def test_use_concurrency_control_default(started_cluster):
         node1,
         "test_use_concurrency_control",
         "ConcurrencyControlAcquiredTotal",
-        lambda x: x == 100,
+        lambda x: x == 0,
     )
     assert_profile_event(
         node1,
@@ -160,12 +162,13 @@ def test_use_concurrency_control_soft_limit_defined_50(started_cluster):
         "SELECT count(*) FROM numbers_mt(10000000) SETTINGS use_concurrency_control = 0",
         query_id="test_use_concurrency_control_2",
     )
+    # Concurrency control is not used, all metrics should be zeros
     node2.query("SYSTEM FLUSH LOGS")
     assert_profile_event(
         node2,
         "test_use_concurrency_control_2",
         "ConcurrencyControlGrantedHard",
-        lambda x: x == 100,
+        lambda x: x == 0,
     )
     assert_profile_event(
         node2,
@@ -177,7 +180,7 @@ def test_use_concurrency_control_soft_limit_defined_50(started_cluster):
         node2,
         "test_use_concurrency_control_2",
         "ConcurrencyControlAcquiredTotal",
-        lambda x: x == 100,
+        lambda x: x == 0,
     )
     assert_profile_event(
         node2,

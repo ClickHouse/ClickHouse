@@ -32,8 +32,8 @@ ConcurrencyControl::Slot::~Slot()
 }
 
 ConcurrencyControl::Slot::Slot(SlotAllocationPtr && allocation_)
-    : IAcquiredSlot(CurrentMetrics::ConcurrencyControlAcquired)
-    , allocation(std::move(allocation_))
+    : allocation(std::move(allocation_))
+    , acquired_slot_increment(CurrentMetrics::ConcurrencyControlAcquired)
 {
 }
 

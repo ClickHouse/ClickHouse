@@ -8,6 +8,7 @@
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
 
+#include <Common/CurrentMetrics.h>
 #include <Common/ISlotControl.h>
 
 namespace DB
@@ -53,6 +54,7 @@ public:
         explicit Slot(SlotAllocationPtr && allocation_);
 
         SlotAllocationPtr allocation;
+        CurrentMetrics::Increment acquired_slot_increment;
     };
 
     // Manages group of slots for a single query, see ConcurrencyControl::allocate(min, max)
