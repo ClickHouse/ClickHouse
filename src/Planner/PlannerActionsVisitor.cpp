@@ -1039,9 +1039,11 @@ std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node)
     auto aggregate_function = node.getAggregateFunction();
     if (const auto * win_func = dynamic_cast<const IWindowFunction *>(aggregate_function.get()))
     {
-        return win_func->getDefaultFrame();
+        auto function_default_window_frame = win_func->getDefaultFrame();
+        if (function_default_window_frame)
+            return function_default_window_frame;
     }
-    return {};
+    return window_frame;
 }
 
 String calculateWindowNodeActionName(const QueryTreeNodePtr & node, const PlannerContext & planner_context, std::function<std::optional<WindowFrame>()> get_window_frame, bool use_column_identifier_as_action_node_name)
