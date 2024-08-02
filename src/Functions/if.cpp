@@ -632,6 +632,11 @@ private:
 
     ColumnPtr executeTuple(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
+        /// For different Tuples the result type can be Variant with this Tuples if use_variant_as_common_type=1.
+        /// In this case we should use generic implementation.
+        if (!isTuple(result_type))
+            return nullptr;
+
         /// Calculate function for each corresponding elements of tuples.
 
         const ColumnWithTypeAndName & arg1 = arguments[1];
@@ -677,6 +682,11 @@ private:
 
     ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
+        /// For different Maps the result type can be Variant with this Maps if use_variant_as_common_type=1.
+        /// In this case we should use generic implementation.
+        if (!isMap(result_type))
+            return nullptr;
+
         auto extract_kv_from_map = [](const ColumnMap * map)
         {
             const ColumnTuple & tuple = map->getNestedData();
