@@ -627,8 +627,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                     }
                 }
 
-                auto function_builder = FunctionFactory::instance().get(name, context);
-                res = &inverted_dag.addFunction(function_builder, children, "");
+                res = &inverted_dag.addFunction(node.function_base, children, "");
                 handled_inversion = true;
             }
             else if (need_inversion && (name == "and" || name == "or"))
@@ -669,13 +668,23 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                 }
                 else
                 {
-                    /// Can't just addFunction(node.function_base) because argument types may have
-                    /// changed slightly because of our transformations, e.g. maybe some subexpression
-                    /// changed constness, which caused some function return value to change LowCardinality-ness.
-                    /// (I don't have a specific counterexample, but it seems likely that it exists.
-                    ///  One was fixed in the past: https://github.com/ClickHouse/ClickHouse/issues/65143 )
-                    auto function_builder = FunctionFactory::instance().get(name, context);
-                    res = &inverted_dag.addFunction(function_builder, children, "");
+                    /// Make sure we don't change types of function arguments (e.g. remove LowCardinality).
+                    /// Otherwise the function may crash when passed columns of unexpected types.
+                    ///  * Why not check this for all subexperessions rather than function arguments?
+                    ///    Because types may change, e.g. in `NOT (u64 AND u64)` -> `(NOT u64 OR NOT u64)`
+                    ///    the AND's args were UInt64, but OR's args are UInt8.
+                    ///  * Why not re-resolve function overload, using FunctionFactory::instance().get(name, context)?
+                    ///    Because some functions can't be found through FunctionFactory, e.g. FunctionCapture.
+                    ///    (But maybe we could re-resolve only if argument types changed.)
+                    for (size_t i = 0; i < children.size(); ++i)
+                    {
+                        if (!node.children[i]->result_type->equals(*children[i]->result_type))
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR, "KeyCondition inadvertently changed subexpression data type: '{}' -> '{}', column `{}`",
+                                node.children[i]->result_type->getName(), children[i]->result_type->getName(), node.children[i]->result_name);
+                    }
+
+                    res = &inverted_dag.addFunction(node.function_base, children, "");
                 }
             }
         }
