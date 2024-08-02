@@ -135,7 +135,7 @@ void QueryMetricLog::finishQuery(const String & query_id)
     std::lock_guard lock(queries_mutex);
     auto it = queries.find(query_id);
     if (it == queries.end())
-        return;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query not found: {}", query_id);
 
     it->second.task->deactivate();
     queries.erase(it);
