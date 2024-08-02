@@ -21,7 +21,7 @@ from env_helper import (
     TEMP_PATH,
 )
 from git_helper import Git
-from pr_info import PRInfo, EventType
+from pr_info import PRInfo
 from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -128,17 +128,9 @@ def parse_args() -> argparse.Namespace:
 
 def retry_popen(cmd: str, log_file: Path) -> int:
     max_retries = 2
-    for retry in range(max_retries):
-        # From time to time docker build may failed. Curl issues, or even push
-        # It will sleep progressively 5, 15, 30 and 50 seconds between retries
-        progressive_sleep = 5 * sum(i + 1 for i in range(retry))
-        if progressive_sleep:
-            logging.warning(
-                "The following command failed, sleep %s before retry: %s",
-                progressive_sleep,
-                cmd,
-            )
-            time.sleep(progressive_sleep)
+    sleep_seconds = 10
+    retcode = -1
+    for _retry in range(max_retries):
         with TeePopen(
             cmd,
             log_file=log_file,
@@ -146,7 +138,14 @@ def retry_popen(cmd: str, log_file: Path) -> int:
             retcode = process.wait()
             if retcode == 0:
                 return 0
-
+            else:
+                # From time to time docker build may failed. Curl issues, or even push
+                logging.error(
+                    "The following command failed, sleep %s before retry: %s",
+                    sleep_seconds,
+                    cmd,
+                )
+                time.sleep(sleep_seconds)
     return retcode
 
 
@@ -375,25 +374,8 @@ def main():
     tags = gen_tags(args.version, args.release_type)
     repo_urls = {}
     direct_urls: Dict[str, List[str]] = {}
-    if pr_info.event_type == EventType.PULL_REQUEST:
-        release_or_pr = str(pr_info.number)
-        sha = pr_info.sha
-    elif pr_info.event_type == EventType.PUSH and pr_info.is_master:
-        release_or_pr = str(0)
-        sha = pr_info.sha
-    else:
-        release_or_pr = f"{args.version.major}.{args.version.minor}"
-        sha = args.sha
-        assert sha
 
     for arch, build_name in zip(ARCH, ("package_release", "package_aarch64")):
-        if not args.bucket_prefix:
-            repo_urls[arch] = (
-                f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/"
-                f"{release_or_pr}/{sha}/{build_name}"
-            )
-        else:
-            repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
         if args.allow_build_reuse:
             # read s3 urls from pre-downloaded build reports
             if "clickhouse-server" in image_repo:
@@ -415,6 +397,21 @@ def main():
                 for url in urls
                 if any(package in url for package in PACKAGES) and "-dbg" not in url
             ]
+        elif args.bucket_prefix:
+            assert not args.allow_build_reuse
+            repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
+            print(f"Bucket prefix is set: Fetching packages from [{repo_urls}]")
+        elif args.sha:
+            version = args.version
+            repo_urls[arch] = (
+                f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/"
+                f"{version.major}.{version.minor}/{args.sha}/{build_name}"
+            )
+            print(f"Fetching packages from [{repo_urls}]")
+        else:
+            assert (
+                False
+            ), "--sha, --bucket_prefix or --allow-build-reuse (to fetch packages from build report) must be provided"
 
     if push:
         docker_login()
@@ -431,7 +428,6 @@ def main():
             )
             if test_results[-1].status != "OK":
                 status = FAILURE
-    pr_info = pr_info or PRInfo()
 
     description = f"Processed tags: {', '.join(tags)}"
     JobReport(
