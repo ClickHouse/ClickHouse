@@ -1281,6 +1281,10 @@ class IColumn;
     M(Bool, precise_float_parsing, false, "Prefer more precise (but slower) float parsing algorithm", 0) \
     M(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", "Overflow mode for Date, Date32, DateTime, DateTime64 types. Possible values: 'ignore', 'throw', 'saturate'.", 0) \
     M(Bool, validate_experimental_and_suspicious_types_inside_nested_types, true, "Validate usage of experimental and suspicious types inside nested types like Array/Map/Tuple", 0) \
+    M(Bool, s3_use_parallel_listing, false, "Either to use parallel listing in s3", 0) \
+    M(UInt64, s3_num_workers, 1, "Number of threads in parallel s3 listing", 0) \
+    M(UInt64, s3_num_parallel_requests, 1, "Number of parallel requests", 0) \
+    M(Double, s3_multiplication_length, 0.9, "Ratio of length of first request and other requests", 0) \
 
 
 // End of FORMAT_FACTORY_SETTINGS
