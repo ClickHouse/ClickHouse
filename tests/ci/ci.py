@@ -1019,7 +1019,9 @@ def _get_ext_check_name(check_name: str) -> str:
     return check_name_with_group
 
 
-def _cancel_pr_workflow(s3: S3Helper, pr_number: int, cancel_sync: bool = False) -> None:
+def _cancel_pr_workflow(
+    s3: S3Helper, pr_number: int, cancel_sync: bool = False
+) -> None:
     wf_data = CiMetadata(s3, pr_number).fetch_meta()
     if not cancel_sync:
         if not wf_data.run_id:
