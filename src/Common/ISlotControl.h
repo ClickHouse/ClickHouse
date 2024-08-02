@@ -39,7 +39,7 @@ constexpr SlotCount UnlimitedSlots = std::numeric_limits<SlotCount>::max();
 class IAcquiredSlot : public std::enable_shared_from_this<IAcquiredSlot>, boost::noncopyable
 {
 public:
-    IAcquiredSlot(CurrentMetrics::Metric metric, CurrentMetrics::Value amount = 1)
+    explicit IAcquiredSlot(CurrentMetrics::Metric metric, CurrentMetrics::Value amount = 1)
         : acquired_slot_increment(metric, amount)
     {}
 
