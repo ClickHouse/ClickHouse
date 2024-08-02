@@ -1141,7 +1141,7 @@ async function draw(idx, chart, url_params, query) {
 
     let {reply, error} = await doFetch(query, url_params);
     if (!error) {
-        if (reply.rows.length == 0) {
+        if (reply.rows == 0) {
             error = "Query returned empty result.";
         } else if (reply.meta.length < 2) {
             error = "Query should return at least two columns: unix timestamp and value.";
