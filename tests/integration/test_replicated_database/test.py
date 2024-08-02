@@ -1552,8 +1552,8 @@ def test_all_groups_cluster(started_cluster):
 
 
 def test_alter_modify_order_by(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS alter_modify_order_by SYNC;")
-    snapshotting_node.query("DROP DATABASE IF EXISTS alter_modify_order_by SYNC;")
+    main_node.query("DROP DATABASE IF EXISTS alter_modify_order_by SYNC")
+    snapshotting_node.query("DROP DATABASE IF EXISTS alter_modify_order_by SYNC")
 
     main_node.query(
         "CREATE DATABASE alter_modify_order_by ENGINE = Replicated('/test/database/alter_modify_order_by', 'shard1', 'replica1');"
@@ -1566,9 +1566,9 @@ def test_alter_modify_order_by(started_cluster):
         "CREATE DATABASE alter_modify_order_by ENGINE = Replicated('/test/database/alter_modify_order_by', 'shard2', 'replica1');"
     )
 
-    query = "show create table alter_modify_order_by.t1;"
+    query = "show create table alter_modify_order_by.t1"
     expected = main_node.query(query)
     assert_eq_with_retry(snapshotting_node, query, expected)
 
-    main_node.query("DROP DATABASE IF EXISTS alter_modify_order_by SYNC;")
-    snapshotting_node.query("DROP DATABASE IF EXISTS alter_modify_order_by SYNC;")
+    main_node.query("DROP DATABASE IF EXISTS alter_modify_order_by SYNC")
+    snapshotting_node.query("DROP DATABASE IF EXISTS alter_modify_order_by SYNC")
