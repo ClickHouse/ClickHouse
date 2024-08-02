@@ -1,5 +1,6 @@
 #include <Server/ReplicasStatusHandler.h>
 
+#include <Core/ServerSettings.h>
 #include <Databases/IDatabase.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/Context.h>
@@ -7,6 +8,7 @@
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/typeid_cast.h>
 

@@ -1030,7 +1030,7 @@ A table with no primary key represents the extreme case of a single equivalence 
 
 The fewer and the larger the equivalence classes are, the higher the degree of freedom when re-shuffling rows.
 
-The heuristics applied to find the best row order within each equivalence class is suggested by D. Lemir, O. Kaser in [Reordering columns for smaller indexes](https://doi.org/10.1016/j.ins.2011.02.002) and based on sorting the rows within each equivalence class by ascending cardinality of the non-primary key columns.
+The heuristics applied to find the best row order within each equivalence class is suggested by D. Lemire, O. Kaser in [Reordering columns for smaller indexes](https://doi.org/10.1016/j.ins.2011.02.002) and based on sorting the rows within each equivalence class by ascending cardinality of the non-primary key columns.
 It performs three steps:
 1. Find all equivalence classes based on the row values in primary key columns.
 2. For each equivalence class, calculate (usually estimate) the cardinalities of the non-primary-key columns.

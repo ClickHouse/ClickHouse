@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Settings.h>
 #include <Databases/IDatabase.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -295,7 +296,7 @@ private:
             {
                 auto joined_block_actions = data.table_join->createJoinedBlockActions(data.getContext());
                 NamesWithAliases required_columns_with_aliases = data.table_join->getRequiredColumns(
-                    Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());
+                    Block(joined_block_actions.getResultColumns()), joined_block_actions.getRequiredColumns().getNames());
 
                 for (auto & pr : required_columns_with_aliases)
                     required_columns.push_back(pr.first);

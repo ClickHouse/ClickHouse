@@ -29,7 +29,7 @@ REGISTER_FUNCTION(Logical)
     factory.registerFunction<FunctionAnd>();
     factory.registerFunction<FunctionOr>();
     factory.registerFunction<FunctionXor>();
-    factory.registerFunction<FunctionNot>({}, FunctionFactory::CaseInsensitive); /// Operator NOT(x) can be parsed as a function.
+    factory.registerFunction<FunctionNot>({}, FunctionFactory::Case::Insensitive); /// Operator NOT(x) can be parsed as a function.
 }
 
 namespace ErrorCodes
@@ -48,7 +48,7 @@ using UInt8Container = ColumnUInt8::Container;
 using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
 
 
-MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, const bool make_nullable)
+MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, bool make_nullable)
 {
     const size_t rows_count = ternary_data.size();
 

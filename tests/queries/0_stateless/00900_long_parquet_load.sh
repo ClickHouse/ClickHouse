@@ -58,7 +58,7 @@ for NAME in $(find "$DATA_DIR"/*.parquet -print0 | xargs -0 -n 1 basename | LC_A
     COLUMNS=$(cat "$COLUMNS_FILE") || continue
 
     ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS parquet_load"
-    $CLICKHOUSE_CLIENT --multiquery <<EOF
+    $CLICKHOUSE_CLIENT <<EOF
 CREATE TABLE parquet_load ($COLUMNS) ENGINE = Memory;
 EOF
 

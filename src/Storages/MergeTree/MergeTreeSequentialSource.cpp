@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/QueryPlan/ISourceStep.h>
@@ -14,15 +15,10 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/logger_useful.h>
 #include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
+#include <Storages/MergeTree/checkDataPart.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int MEMORY_LIMIT_EXCEEDED;
-}
-
 
 /// Lightweight (in terms of logic) stream for reading single part from
 /// MergeTree, used for merges and mutations.
@@ -264,7 +260,10 @@ try
                 ++it;
             }
 
-            return Chunk(std::move(res_columns), rows_read, add_part_level ? std::make_shared<MergeTreePartLevelInfo>(data_part->info.level) : nullptr);
+            auto result = Chunk(std::move(res_columns), rows_read);
+            if (add_part_level)
+                result.getChunkInfos().add(std::make_shared<MergeTreePartLevelInfo>(data_part->info.level));
+            return result;
         }
     }
     else
@@ -277,7 +276,7 @@ try
 catch (...)
 {
     /// Suspicion of the broken part. A part is added to the queue for verification.
-    if (getCurrentExceptionCode() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+    if (!isRetryableException(std::current_exception()))
         storage.reportBrokenPart(data_part);
     throw;
 }
@@ -349,7 +348,7 @@ public:
         MergeTreeData::DataPartPtr data_part_,
         Names columns_to_read_,
         bool apply_deleted_mask_,
-        ActionsDAGPtr filter_,
+        std::optional<ActionsDAG> filter_,
         ContextPtr context_,
         LoggerPtr log_)
         : ISourceStep(DataStream{.header = storage_snapshot_->getSampleBlockForColumns(columns_to_read_)})
@@ -376,7 +375,7 @@ public:
         {
             const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
             const Names & primary_key_column_names = primary_key.column_names;
-            KeyCondition key_condition(filter, context, primary_key_column_names, primary_key.expression);
+            KeyCondition key_condition(&*filter, context, primary_key_column_names, primary_key.expression);
             LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
             if (!key_condition.alwaysFalse())
@@ -417,7 +416,7 @@ private:
     MergeTreeData::DataPartPtr data_part;
     Names columns_to_read;
     bool apply_deleted_mask;
-    ActionsDAGPtr filter;
+    std::optional<ActionsDAG> filter;
     ContextPtr context;
     LoggerPtr log;
 };
@@ -430,14 +429,14 @@ void createReadFromPartStep(
     MergeTreeData::DataPartPtr data_part,
     Names columns_to_read,
     bool apply_deleted_mask,
-    ActionsDAGPtr filter,
+    std::optional<ActionsDAG> filter,
     ContextPtr context,
     LoggerPtr log)
 {
     auto reading = std::make_unique<ReadFromPart>(type,
         storage, storage_snapshot, std::move(data_part),
         std::move(columns_to_read), apply_deleted_mask,
-        filter, std::move(context), log);
+        std::move(filter), std::move(context), log);
 
     plan.addStep(std::move(reading));
 }
