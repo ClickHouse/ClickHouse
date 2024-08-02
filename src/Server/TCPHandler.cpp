@@ -1149,7 +1149,7 @@ void TCPHandler::processTablesStatusRequest()
     TablesStatusResponse response;
     for (const QualifiedTableName & table_name: request.tables)
     {
-        auto resolved_id = context_to_resolve_table_names->tryResolveStorageID({table_name.database, table_name.table});
+        auto resolved_id = context_to_resolve_table_names->tryResolveStorageID({table_name.database, table_name.table}, Context::ResolveAll, /*get_uuid*/ false);
         StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, context_to_resolve_table_names);
         if (!table)
             continue;

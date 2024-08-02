@@ -457,7 +457,7 @@ SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_o
     const auto * table = subquery_or_table_name->as<ASTTableIdentifier>();
     if (!table)
         return nullptr;
-    auto table_id = getContext()->resolveStorageID(subquery_or_table_name);
+    auto table_id = getContext()->resolveStorageID(subquery_or_table_name, Context::ResolveAll, /*get_uuid*/ false);
     const auto storage = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (storage->getName() != "Set")
         return nullptr;

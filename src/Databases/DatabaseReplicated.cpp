@@ -1833,7 +1833,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     /// we never replicate KeeperMap operations for some types of queries because it doesn't make sense
     const auto is_keeper_map_table = [&](const ASTPtr & ast)
     {
-        auto table_id = query_context->resolveStorageID(ast, Context::ResolveOrdinary);
+        auto table_id = query_context->resolveStorageID(ast, Context::ResolveOrdinary, /*get_uuid*/ false);
         StoragePtr table = DatabaseCatalog::instance().getTable(table_id, query_context);
 
         return table->as<StorageKeeperMap>() != nullptr;
@@ -1841,7 +1841,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
 
     const auto is_replicated_table = [&](const ASTPtr & ast)
     {
-        auto table_id = query_context->resolveStorageID(ast, Context::ResolveOrdinary);
+        auto table_id = query_context->resolveStorageID(ast, Context::ResolveOrdinary, /*get_uuid*/ false);
         StoragePtr table = DatabaseCatalog::instance().getTable(table_id, query_context);
 
         return table->supportsReplication();

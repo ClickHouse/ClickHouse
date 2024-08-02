@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int INVALID_IDENTIFIER;
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
+    extern const int TABLE_IS_DROPPED;
 }
 
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
@@ -407,20 +408,39 @@ QueryTreeNodePtr IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalo
     }
 
     StorageID storage_id(database_name, table_name);
-    storage_id = context->resolveStorageID(storage_id);
+    storage_id = context->resolveStorageID(storage_id, Context::ResolveAll, /*get_uuid*/ false);
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
     StoragePtr storage;
+    TableLockHolder storage_lock;
 
-    if (is_temporary_table)
-        storage = DatabaseCatalog::instance().getTable(storage_id, context);
-    else
-        storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+    // Find the table and lock it. Retry in case the table is dropped in the brief time before we lock it.
+    // In particular, this makes sure `SELECT FROM a` doesn't spuriously fail while another thread
+    // does `EXCHANGE TABLES a AND temp; DROP TABLE temp;`. Important for refreshable materialized views.
+    for (int attempt = 0; attempt < 10; ++attempt)
+    {
+        StoragePtr prev_storage = std::move(storage);
+        if (is_temporary_table)
+            storage = DatabaseCatalog::instance().getTable(storage_id, context);
+        else
+            storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
 
-    if (!storage)
-        return {};
+        if (!storage)
+            return {};
 
-    auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+        if (storage == prev_storage)
+        {
+            // Table was dropped but is still accessible in DatabaseCatalog.
+            // Either ABA problem or something's broken. Don't retry, just in case.
+            break;
+        }
+
+        storage_lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+    }
+
+    if (!storage_lock)
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", storage_id.getFullNameNotQuoted());
+
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
     auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
     if (is_temporary_table)

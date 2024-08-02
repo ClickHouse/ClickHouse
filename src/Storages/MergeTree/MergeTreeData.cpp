@@ -5329,7 +5329,7 @@ Pipe MergeTreeData::alterPartition(
                 if (command.replace)
                     checkPartitionCanBeDropped(command.partition, query_context);
 
-                auto resolved = query_context->resolveStorageID({command.from_database, command.from_table});
+                auto resolved = query_context->resolveStorageID({command.from_database, command.from_table}, Context::ResolveAll, /*get_uuid*/ false);
                 auto from_storage = DatabaseCatalog::instance().getTable(resolved, query_context);
 
                 auto * from_storage_merge_tree = dynamic_cast<MergeTreeData *>(from_storage.get());

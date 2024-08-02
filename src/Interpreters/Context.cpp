@@ -5060,7 +5060,7 @@ void Context::increaseDistributedDepth()
 }
 
 
-StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where) const
+StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where, bool get_uuid) const
 {
     if (storage_id.uuid != UUIDHelpers::Nil)
         return storage_id;
@@ -5073,12 +5073,12 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     }
     if (exc)
         throw Exception(*exc);
-    if (!resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+    if (get_uuid && !resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
         resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);
     return resolved;
 }
 
-StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace where) const
+StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace where, bool get_uuid) const
 {
     if (storage_id.uuid != UUIDHelpers::Nil)
         return storage_id;
@@ -5088,7 +5088,7 @@ StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace wh
         SharedLockGuard lock(mutex);
         resolved = resolveStorageIDImpl(std::move(storage_id), where, nullptr);
     }
-    if (resolved && !resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+    if (get_uuid && resolved && !resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
     {
         auto db = DatabaseCatalog::instance().tryGetDatabase(resolved.database_name);
         if (db)

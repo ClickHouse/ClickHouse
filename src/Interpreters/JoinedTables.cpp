@@ -319,7 +319,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     /// TODO This syntax does not support specifying a database name.
     if (table_to_join.database_and_table_name)
     {
-        auto joined_table_id = context->resolveStorageID(table_to_join.database_and_table_name);
+        auto joined_table_id = context->resolveStorageID(table_to_join.database_and_table_name, Context::ResolveAll, /*get_uuid*/ false);
         StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
         if (storage)
         {
