@@ -3,6 +3,7 @@
 
 #include <Access/ContextAccess.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
@@ -27,6 +28,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 
@@ -50,6 +52,9 @@ BlockIO InterpreterDeleteQuery::execute()
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
+
+    if (getContext()->getGlobalContext()->getServerSettings().disable_insertion_and_mutation)
+        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
