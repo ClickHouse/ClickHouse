@@ -2,11 +2,9 @@
 
 import logging
 import os
-import socket
-import multiprocessing
 
 import pytest  # pylint:disable=import-error; for style check
-from helpers.cluster import run_and_check
+from helpers.cluster import run_and_check, is_port_free
 from helpers.network import _NetworkManager
 
 # This is a workaround for a problem with logging in pytest [1].
@@ -114,15 +112,16 @@ def pytest_addoption(parser):
     )
 
 
-def get_n_free_ports(total):
+def get_unique_free_ports(total):
     ports = []
+    for port in range(30000, 55000):
+        if is_port_free(port) and port not in ports:
+            ports.append(port)
 
-    while len(ports) < total:
-        with socket.socket() as s:
-            s.bind(("", 0))
-            ports.append(s.getsockname()[1])
+        if len(ports) == total:
+            return ports
 
-    return ports
+    raise Exception(f"Can't collect {total} ports. Collected: {len(ports)}")
 
 
 def pytest_configure(config):
@@ -132,9 +131,8 @@ def pytest_configure(config):
     # the `pytest_xdist_setupnodes` hook is not executed
     worker_ports = os.getenv("WORKER_FREE_PORTS", None)
     if worker_ports is None:
-        os.environ["WORKER_FREE_PORTS"] = " ".join(
-            ([str(p) for p in get_n_free_ports(PORTS_PER_WORKER)])
-        )
+        master_ports = get_unique_free_ports(PORTS_PER_WORKER)
+        os.environ["WORKER_FREE_PORTS"] = " ".join(([str(p) for p in master_ports]))
 
 
 def pytest_xdist_setupnodes(config, specs):
@@ -142,18 +140,12 @@ def pytest_xdist_setupnodes(config, specs):
     # allocate pool of {PORTS_PER_WORKER} ports to each worker
 
     # Get number of xdist workers
-    num_workers = 1
-    if os.environ.get("PYTEST_XDIST_WORKER", "master") == "master":
-        num_workers = config.getoption("numprocesses", 1)
-        if num_workers == "auto":
-            num_workers = multiprocessing.cpu_count()
-
+    num_workers = len(specs)
     # Get free ports which will be distributed across workers
-    ports = get_n_free_ports(num_workers * PORTS_PER_WORKER)
+    ports = get_unique_free_ports(num_workers * PORTS_PER_WORKER)
 
     # Iterate over specs of workers and add allocated ports to env variable
     for i, spec in enumerate(specs):
         start_range = i * PORTS_PER_WORKER
-        spec.env["WORKER_FREE_PORTS"] = " ".join(
-            ([str(p) for p in ports[start_range : start_range + PORTS_PER_WORKER]])
-        )
+        per_workrer_ports = ports[start_range : start_range + PORTS_PER_WORKER]
+        spec.env["WORKER_FREE_PORTS"] = " ".join(([str(p) for p in per_workrer_ports]))
