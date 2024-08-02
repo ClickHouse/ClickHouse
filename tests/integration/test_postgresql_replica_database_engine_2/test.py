@@ -953,12 +953,14 @@ def test_generated_columns(started_cluster):
         "",
         f"""CREATE TABLE {table} (
              key integer PRIMARY KEY,
-             x integer,
+             x integer DEFAULT 0,
+             temp integer DEFAULT 0,
              y integer GENERATED ALWAYS AS (x*2) STORED,
-             z text);
+             z text DEFAULT 'z');
          """,
     )
 
+    pg_manager.execute(f"alter table {table} drop column temp;")
     pg_manager.execute(f"insert into {table} (key, x, z) values (1,1,'1');")
     pg_manager.execute(f"insert into {table} (key, x, z) values (2,2,'2');")
 
@@ -985,6 +987,44 @@ def test_generated_columns(started_cluster):
 
     pg_manager.execute(f"insert into {table} (key, x, z) values (5,5,'5');")
     pg_manager.execute(f"insert into {table} (key, x, z) values (6,6,'6');")
+
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_manager.get_default_database()
+    )
+
+
+def test_generated_columns_with_sequence(started_cluster):
+    table = "test_generated_columns_with_sequence"
+
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        f"""CREATE TABLE {table} (
+             key integer PRIMARY KEY,
+             x integer,
+             y integer GENERATED ALWAYS AS (x*2) STORED,
+             z text);
+         """,
+    )
+
+    pg_manager.execute(
+        f"create sequence {table}_id_seq increment by 1 minvalue 1 start 1;"
+    )
+    pg_manager.execute(
+        f"alter table {table} alter key set default nextval('{table}_id_seq');"
+    )
+    pg_manager.execute(f"insert into {table} (key, x, z) values (1,1,'1');")
+    pg_manager.execute(f"insert into {table} (key, x, z) values (2,2,'2');")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
 
     check_tables_are_synchronized(
         instance, table, postgres_database=pg_manager.get_default_database()
