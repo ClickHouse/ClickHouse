@@ -1054,9 +1054,12 @@ def test_mutation():
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    assert not has_mutation_in_backup("0000000000", backup_name, "default", "tbl")
+    # mutation #0000000000: "UPDATE x=x+1 WHERE 1" could already finish before starting the backup
+    # mutation #0000000001: "UPDATE x=x+1+sleep(3) WHERE 1"
     assert has_mutation_in_backup("0000000001", backup_name, "default", "tbl")
+    # mutation #0000000002: "UPDATE x=x+1+sleep(3) WHERE 1"
     assert has_mutation_in_backup("0000000002", backup_name, "default", "tbl")
+    # mutation #0000000003: not expected
     assert not has_mutation_in_backup("0000000003", backup_name, "default", "tbl")
 
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
