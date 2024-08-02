@@ -18,7 +18,7 @@ class ClickHouseClient:
         self.host = host
 
     def query(
-        self, query, connection_timeout=1500, settings=dict(), binary_result=False
+        self, query, connection_timeout=500, settings=dict(), binary_result=False
     ):
         NUMBER_OF_TRIES = 30
         DELAY = 10
@@ -47,12 +47,12 @@ class ClickHouseClient:
                 else:
                     raise ValueError(r.text)
 
-    def query_return_df(self, query, connection_timeout=1500):
+    def query_return_df(self, query, connection_timeout=500):
         data = self.query(query, connection_timeout)
         df = pd.read_csv(io.StringIO(data), sep="\t")
         return df
 
-    def query_with_data(self, query, data, connection_timeout=1500, settings=dict()):
+    def query_with_data(self, query, data, connection_timeout=500, settings=dict()):
         params = {
             "query": query,
             "timeout_before_checking_execution_speed": 120,
