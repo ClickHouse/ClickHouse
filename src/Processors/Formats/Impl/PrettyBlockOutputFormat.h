@@ -50,6 +50,10 @@ protected:
         const IColumn & column, const ISerialization & serialization, size_t row_num,
         size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number);
 
+    void writeHeaderWithPadding(
+    const PrettyBlockOutputFormat::Widths & max_widths, const PrettyBlockOutputFormat::Widths & name_widths,
+    const char* separator, size_t col_num, const ColumnWithTypeAndName & col);
+
     void resetFormatterImpl() override
     {
         total_rows = 0;
