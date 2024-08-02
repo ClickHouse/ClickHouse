@@ -1,3 +1,4 @@
+-- { echo }
 -- No arguments passed
 SELECT bitSlice(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 -- Invalid 1st argument passed
