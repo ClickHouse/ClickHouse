@@ -6,9 +6,6 @@ import time
 
 cluster = ClickHouseCluster(__file__)
 path_to_userfiles = "/var/lib/clickhouse/user_files/"
-path_to_external_dirs = (
-    "/ClickHouse/tests/integration/test_parquet_page_index/_instances"
-)
 node = cluster.add_instance("node", external_dirs=[path_to_userfiles])
 
 
@@ -45,7 +42,7 @@ def delete_if_exists(file_path):
             True,
         ),
         (
-            "SElECT number, number+1 FROM system.numbers LIMIT 100 "
+            "SELECT number, number+1 FROM system.numbers LIMIT 100 "
             "INTO OUTFILE '{file_name}' FORMAT Parquet "
             "SETTINGS output_format_parquet_use_custom_encoder = false, "
             "output_format_parquet_write_page_index = false;",
@@ -54,7 +51,7 @@ def delete_if_exists(file_path):
         # # default settings:
         # # output_format_parquet_use_custom_encoder = true
         (
-            "SElECT number, number+1 FROM system.numbers LIMIT 100 "
+            "SELECT number, number+1 FROM system.numbers LIMIT 100 "
             "INTO OUTFILE '{file_name}' FORMAT Parquet;",
             False,
         ),
@@ -102,7 +99,7 @@ def test_parquet_page_index_insert_into_table_function_file(
 ):
     file_name = f"export{time.time()}.parquet"
     query = query.format(file_name=file_name)
-    file_path = f"{path_to_external_dirs}{path_to_userfiles}{file_name}"
+    file_path = f"{cluster.instances_dir}{path_to_userfiles}{file_name}"
     delete_if_exists(file_path)
     assert node.query(query) == ""
     assert (
