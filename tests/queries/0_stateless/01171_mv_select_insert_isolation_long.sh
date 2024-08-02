@@ -65,7 +65,7 @@ function insert_commit_action()
     local tag=$1; shift
 
     # some transactions will fail due to constraint
-    $CLICKHOUSE_CLIENT --multiquery --query "
+    $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         INSERT INTO src VALUES /* ($i, $tag) */ ($i, $tag);
         SELECT throwIf((SELECT sum(nm) FROM mv) != $(($i * $tag))) /* ($i, $tag) */ FORMAT Null;
@@ -83,7 +83,7 @@ function insert_rollback_action()
     local i=$1; shift
     local tag=$1; shift
 
-    $CLICKHOUSE_CLIENT --multiquery --query "
+    $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         INSERT INTO src VALUES /* (42, $tag) */ (42, $tag);
         SELECT throwIf((SELECT count() FROM src WHERE n=42 AND m=$tag) != 1) FORMAT Null;
@@ -112,7 +112,7 @@ function optimize_action()
         action="ROLLBACK"
     fi
 
-    $CLICKHOUSE_CLIENT --multiquery --query "
+    $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
             $optimize_query;
         $action;
@@ -126,7 +126,7 @@ function select_action()
 {
     set -e
 
-    $CLICKHOUSE_CLIENT --multiquery --query "
+    $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         SELECT throwIf((SELECT (sum(n), count() % 2) FROM src) != (0, 1)) FORMAT Null;
         SELECT throwIf((SELECT (sum(nm), count() % 2) FROM mv) != (0, 1)) FORMAT Null;
@@ -140,7 +140,7 @@ function select_insert_action()
 {
     set -e
 
-    $CLICKHOUSE_CLIENT --multiquery --query "
+    $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         SELECT throwIf((SELECT count() FROM tmp) != 0) FORMAT Null;
         INSERT INTO tmp SELECT 1, n*m FROM src;
@@ -199,7 +199,7 @@ wait $PID_8 || echo "second select_insert_action has failed with status $?" 2>&1
 
 wait_for_queries_to_finish $WAIT_FINISH
 
-$CLICKHOUSE_CLIENT --multiquery --query "
+$CLICKHOUSE_CLIENT --query "
     BEGIN TRANSACTION;
         SELECT throwIf((SELECT (sum(n), count() % 2) FROM src) != (0, 1)) FORMAT Null;
         SELECT throwIf((SELECT (sum(nm), count() % 2) FROM mv) != (0, 1)) FORMAT Null;
@@ -209,7 +209,7 @@ $CLICKHOUSE_CLIENT --multiquery --query "
     COMMIT;
 "
 
-$CLICKHOUSE_CLIENT --multiquery --query  "
+$CLICKHOUSE_CLIENT --query  "
     SELECT throwIf((SELECT (sum(n), count() % 2) FROM src) != (0, 1)) FORMAT Null;
     SELECT throwIf((SELECT (sum(nm), count() % 2) FROM mv) != (0, 1)) FORMAT Null;
     SELECT throwIf((SELECT (sum(nm), count() % 2) FROM dst) != (0, 1)) FORMAT Null;
