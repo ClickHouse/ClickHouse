@@ -627,7 +627,8 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                     }
                 }
 
-                res = &inverted_dag.addFunction(node.function_base, children, "");
+                auto function_builder = FunctionFactory::instance().get(name, context);
+                res = &inverted_dag.addFunction(function_builder, children, "");
                 handled_inversion = true;
             }
             else if (need_inversion && (name == "and" || name == "or"))
@@ -668,8 +669,13 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                 }
                 else
                 {
-                    res = &inverted_dag.addFunction(node.function_base, children, "");
-                    chassert(res->result_type == node.result_type);
+                    /// Can't just addFunction(node.function_base) because argument types may have
+                    /// changed slightly because of our transformations, e.g. maybe some subexpression
+                    /// changed constness, which caused some function return value to change LowCardinality-ness.
+                    /// (I don't have a specific counterexample, but it seems likely that it exists.
+                    ///  One was fixed in the past: https://github.com/ClickHouse/ClickHouse/issues/65143 )
+                    auto function_builder = FunctionFactory::instance().get(name, context);
+                    res = &inverted_dag.addFunction(function_builder, children, "");
                 }
             }
         }
@@ -677,13 +683,6 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
 
     if (!handled_inversion && need_inversion)
         res = &inverted_dag.addFunction(FunctionFactory::instance().get("not", context), {res}, "");
-
-    /// Make sure we don't change any data types (e.g. remove LowCardinality).
-    /// If it turns out that we actually want to change data types sometimes, it's ok to remove this
-    /// check *and* replace all `addFunction(node.function_base, ...)` calls above with
-    /// `addFunction(FunctionFactory::instance().get(name, context), ...)` to re-resolve overloads.
-    if (!node.result_type->equals(*res->result_type))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "KeyCondition inadvertently changed subexpression data type: '{}' -> '{}', column `{}`", node.result_type->getName(), res->result_type->getName(), node.result_name);
 
     to_inverted[&node] = res;
     return *res;
