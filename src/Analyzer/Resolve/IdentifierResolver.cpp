@@ -385,7 +385,6 @@ QueryTreeNodePtr IdentifierResolver::wrapExpressionNodeInTupleElement(QueryTreeN
 
 /// Resolve identifier functions implementation
 
-/// Try resolve table identifier from database catalog
 QueryTreeNodePtr IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, ContextPtr context)
 {
     size_t parts_size = table_identifier.getPartsSize();
@@ -420,13 +419,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalo
     for (int attempt = 0; attempt < 10; ++attempt)
     {
         StoragePtr prev_storage = std::move(storage);
-        if (is_temporary_table)
-            storage = DatabaseCatalog::instance().getTable(storage_id, context);
-        else
-            storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
-
-        if (!storage)
-            return {};
+        storage = DatabaseCatalog::instance().getTable(storage_id, context);
 
         if (storage == prev_storage)
         {
