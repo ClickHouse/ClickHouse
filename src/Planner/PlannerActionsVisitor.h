@@ -72,7 +72,7 @@ String calculateConstantActionNodeName(const Field & constant_literal, const Dat
 String calculateConstantActionNodeName(const Field & constant_literal);
 
 /// If the window frame is not set in sql, try to use the default frame from window function
-/// if it have any one. Otherwise use the default window frame from `WindowNode`.
+/// if it have any one. Otherwise return empty.
 /// If the window frame is set in sql, use it anyway.
 std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node);
 
