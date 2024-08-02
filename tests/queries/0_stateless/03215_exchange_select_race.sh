@@ -16,7 +16,7 @@ end_time=$((start_time + 10))
 
 function exchange_thread()
 {
-    while [ $(date +%s) -lt $end_time ]
+    while [ "$(date +%s)" -lt $end_time ]
     do
         $CLICKHOUSE_CLIENT -nq "
             create table t empty as a;
@@ -28,7 +28,7 @@ function exchange_thread()
 
 function select_thread()
 {
-    while [ $(date +%s) -lt $end_time ]
+    while [ "$(date +%s)" -lt $end_time ]
     do
         r=`$CLICKHOUSE_CLIENT -q "select count(), sum(x) from a format CSV"`
         if [ "$r" != "2,3" ]
