@@ -6,6 +6,7 @@
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
+#include <Core/Settings.h>
 
 #include "config.h"
 

@@ -2388,6 +2388,24 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 }
 
+bool ParserExpressionWithOptionalArguments::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier id_p;
+    ParserFunction func_p;
+
+    if (ParserFunction(false, false).parse(pos, node, expected))
+        return true;
+
+    if (ParserIdentifier().parse(pos, node, expected))
+    {
+        node = makeASTFunction(node->as<ASTIdentifier>()->name());
+        node->as<ASTFunction &>().no_empty_args = true;
+        return true;
+    }
+
+    return false;
+}
+
 const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table
 {
     {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)},
@@ -2743,7 +2761,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     /// 'AND' can be both boolean function and part of the '... BETWEEN ... AND ...' operator
     if (op.function_name == "and" && layers.back()->between_counter)
     {
-        layers.back()->between_counter--;
+        --layers.back()->between_counter;
         op = finish_between_operator;
     }
 

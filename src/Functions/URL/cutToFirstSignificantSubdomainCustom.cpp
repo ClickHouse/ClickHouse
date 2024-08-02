@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
-#include "ExtractFirstSignificantSubdomain.h"
-#include "FirstSignificantSubdomainCustomImpl.h"
+#include <Functions/URL/ExtractFirstSignificantSubdomain.h>
+#include <Functions/URL/FirstSignificantSubdomainCustomImpl.h>
 
 namespace DB
 {

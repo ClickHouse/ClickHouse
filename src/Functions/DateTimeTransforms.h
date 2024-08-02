@@ -24,7 +24,7 @@ namespace DB
 
 static constexpr auto millisecond_multiplier = 1'000;
 static constexpr auto microsecond_multiplier = 1'000'000;
-static constexpr auto nanosecond_multiplier = 1'000'000'000;
+static constexpr auto nanosecond_multiplier  = 1'000'000'000;
 
 static constexpr FormatSettings::DateTimeOverflowBehavior default_date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
 
@@ -1954,7 +1954,10 @@ struct ToRelativeSubsecondNumImpl
             return t.value;
         if (scale > scale_multiplier)
             return t.value / (scale / scale_multiplier);
-        return t.value * (scale_multiplier / scale);
+        return static_cast<UInt128>(t.value) * static_cast<UInt128>((scale_multiplier / scale));
+        /// Casting ^^: All integers are Int64, yet if t.value is big enough the multiplication can still
+        /// overflow which is UB. This place is too low-level and generic to check if t.value is sane.
+        /// Therefore just let it overflow safely and don't bother further.
     }
     static Int64 execute(UInt32 t, const DateLUTImpl &)
     {
@@ -2131,20 +2134,22 @@ struct Transformer
 {
     template <typename FromTypeVector, typename ToTypeVector>
     static void vector(const FromTypeVector & vec_from, ToTypeVector & vec_to, const DateLUTImpl & time_zone, const Transform & transform,
-        [[maybe_unused]] ColumnUInt8::Container * vec_null_map_to)
+        [[maybe_unused]] ColumnUInt8::Container * vec_null_map_to, size_t input_rows_count)
     {
         using ValueType = typename ToTypeVector::value_type;
-        size_t size = vec_from.size();
-        vec_to.resize(size);
+        vec_to.resize(input_rows_count);
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             if constexpr (std::is_same_v<ToType, DataTypeDate> || std::is_same_v<ToType, DataTypeDateTime>)
             {
                 if constexpr (std::is_same_v<Additions, DateTimeAccurateConvertStrategyAdditions>
                     || std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
                 {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
                     bool is_valid_input = vec_from[i] >= 0 && vec_from[i] <= 0xFFFFFFFFL;
+#pragma clang diagnostic pop
                     if (!is_valid_input)
                     {
                         if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
@@ -2175,7 +2180,7 @@ struct DateTimeTransformImpl
 {
     template <typename Additions = void *>
     static ColumnPtr execute(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const Transform & transform = {})
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const Transform & transform = {})
     {
         using Op = Transformer<FromDataType, ToDataType, Transform, is_extended_result, Additions>;
 
@@ -2197,7 +2202,7 @@ struct DateTimeTransformImpl
             if (result_data_type.isDateTime() || result_data_type.isDateTime64())
             {
                 const auto & time_zone = dynamic_cast<const TimezoneMixin &>(*result_type).getTimeZone();
-                Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to);
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to, input_rows_count);
             }
             else
             {
@@ -2206,15 +2211,13 @@ struct DateTimeTransformImpl
                     time_zone_argument_position = 2;
 
                 const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, time_zone_argument_position, 0);
-                Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to);
+                Op::vector(sources->getData(), col_to->getData(), time_zone, transform, vec_null_map_to, input_rows_count);
             }
 
             if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
             {
                 if (vec_null_map_to)
-                {
                     return ColumnNullable::create(std::move(mutable_result_col), std::move(col_null_map_to));
-                }
             }
 
             return mutable_result_col;

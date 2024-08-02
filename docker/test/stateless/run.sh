@@ -6,19 +6,24 @@ source /setup_export_logs.sh
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
+MAX_RUN_TIME=${MAX_RUN_TIME:-9000}
+MAX_RUN_TIME=$((MAX_RUN_TIME == 0 ? 9000 : MAX_RUN_TIME))
+
+USE_DATABASE_REPLICATED=${USE_DATABASE_REPLICATED:=0}
+USE_SHARED_CATALOG=${USE_SHARED_CATALOG:=0}
+
 # Choose random timezone for this test run.
 #
 # NOTE: that clickhouse-test will randomize session_timezone by itself as well
 # (it will choose between default server timezone and something specific).
 TZ="$(rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -n1)"
-echo "Choosen random timezone $TZ"
+echo "Chosen random timezone $TZ"
 ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
 
 dpkg -i package_folder/clickhouse-common-static_*.deb
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
-# Accept failure in the next two commands until 24.4 is released (for compatibility and Bugfix validation run)
-dpkg -i package_folder/clickhouse-odbc-bridge_*.deb || true
-dpkg -i package_folder/clickhouse-library-bridge_*.deb || true
+dpkg -i package_folder/clickhouse-odbc-bridge_*.deb
+dpkg -i package_folder/clickhouse-library-bridge_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
 
@@ -43,6 +48,9 @@ source /utils.lib
 /usr/share/clickhouse-test/config/install.sh
 
 ./setup_minio.sh stateless
+./mc admin trace clickminio > /test_output/minio.log &
+MC_ADMIN_PID=$!
+
 ./setup_hdfs_minicluster.sh
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
@@ -54,12 +62,6 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
     rm /etc/clickhouse-server/config.d/handlers.yaml
     rm /etc/clickhouse-server/users.d/s3_cache_new.xml
     rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
-
-    #todo: remove these after 24.3 released.
-    sudo sed -i "s|<object_storage_type>azure<|<object_storage_type>azure_blob_storage<|" /etc/clickhouse-server/config.d/azure_storage_conf.xml
-
-    #todo: remove these after 24.3 released.
-    sudo sed -i "s|<object_storage_type>local<|<object_storage_type>local_blob_storage<|" /etc/clickhouse-server/config.d/storage_conf.xml
 
     function remove_keeper_config()
     {
@@ -96,7 +98,7 @@ fi
 # simplest way to forward env variables to server
 sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon --pid-file /var/run/clickhouse-server/clickhouse-server.pid
 
-if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
     sudo sed -i "s|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches_1/</filesystem_caches_path>|" /etc/clickhouse-server1/config.d/filesystem_caches_path.xml
 
     sudo sed -i "s|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches_2/</filesystem_caches_path>|" /etc/clickhouse-server2/config.d/filesystem_caches_path.xml
@@ -128,12 +130,9 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     --keeper_server.tcp_port 29181 --keeper_server.server_id 3 \
     --prometheus.port 29988 \
     --macros.shard s2   # It doesn't work :(
-
-    MAX_RUN_TIME=$((MAX_RUN_TIME < 9000 ? MAX_RUN_TIME : 9000))  # min(MAX_RUN_TIME, 2.5 hours)
-    MAX_RUN_TIME=$((MAX_RUN_TIME != 0 ? MAX_RUN_TIME : 9000))    # set to 2.5 hours if 0 (unlimited)
 fi
 
-if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
     sudo cat /etc/clickhouse-server1/config.d/filesystem_caches_path.xml \
     | sed "s|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches_1/</filesystem_caches_path>|" \
     > /etc/clickhouse-server1/config.d/filesystem_caches_path.xml.tmp
@@ -155,9 +154,6 @@ if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
     --keeper_server.tcp_port 19181 --keeper_server.server_id 2 \
     --prometheus.port 19988 \
     --macros.replica r2   # It doesn't work :(
-
-    MAX_RUN_TIME=$((MAX_RUN_TIME < 9000 ? MAX_RUN_TIME : 9000))  # min(MAX_RUN_TIME, 2.5 hours)
-    MAX_RUN_TIME=$((MAX_RUN_TIME != 0 ? MAX_RUN_TIME : 9000))    # set to 2.5 hours if 0 (unlimited)
 fi
 
 # Wait for the server to start, but not for too long.
@@ -168,7 +164,6 @@ do
 done
 
 setup_logs_replication
-
 attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
 
 function fn_exists() {
@@ -213,15 +208,15 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--no-random-merge-tree-settings')
     fi
 
-    if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+    if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--shared-catalog')
     fi
 
-    if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--replicated-database')
         # Too many tests fail for DatabaseReplicated in parallel.
         ADDITIONAL_OPTIONS+=('--jobs')
-        ADDITIONAL_OPTIONS+=('2')
+        ADDITIONAL_OPTIONS+=('3')
     elif [[ 1 == $(clickhouse-client --query "SELECT value LIKE '%SANITIZE_COVERAGE%' FROM system.build_options WHERE name = 'CXX_FLAGS'") ]]; then
         # Coverage on a per-test basis could only be collected sequentially.
         # Do not set the --jobs parameter.
@@ -252,24 +247,37 @@ function run_tests()
 
     try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
 
+    TIMEOUT=$((MAX_RUN_TIME - 800 > 8400 ? 8400 : MAX_RUN_TIME - 800))
+    START_TIME=${SECONDS}
     set +e
-    timeout -s TERM --preserve-status 120m clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
-         --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
+    timeout --preserve-status --signal TERM --kill-after 60m ${TIMEOUT}s \
+        clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
+            --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
     | ts '%Y-%m-%d %H:%M:%S' \
     | tee -a test_output/test_result.txt
     set -e
+    DURATION=$((START_TIME - SECONDS))
+
+    echo "Elapsed ${DURATION} seconds."
+    if [[ $DURATION -ge $TIMEOUT ]]
+    then
+        echo "It looks like the command is terminated by the timeout, which is ${TIMEOUT} seconds."
+    fi
 }
 
 export -f run_tests
 
+
+# This should be enough to setup job and collect artifacts
+TIMEOUT=$((MAX_RUN_TIME - 700))
 if [ "$NUM_TRIES" -gt "1" ]; then
     # We don't run tests with Ordinary database in PRs, only in master.
     # So run new/changed tests with Ordinary at least once in flaky check.
-    timeout_with_logging "$MAX_RUN_TIME" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
-      | sed 's/All tests have finished//' | sed 's/No tests were run//' ||:
+    timeout_with_logging "$TIMEOUT" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
+      | sed 's/All tests have finished/Redacted: a message about tests finish is deleted/' | sed 's/No tests were run/Redacted: a message about no tests run is deleted/' ||:
 fi
 
-timeout_with_logging "$MAX_RUN_TIME" bash -c run_tests ||:
+timeout_with_logging "$TIMEOUT" bash -c run_tests ||:
 
 echo "Files in current directory"
 ls -la ./
@@ -290,7 +298,7 @@ do
     err=$(clickhouse-client -q "select * from system.$table into outfile '/test_output/$table.tsv.gz' format TSVWithNamesAndTypes")
     echo "$err"
     [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
-    if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         err=$( { clickhouse-client --port 19000 -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst; } 2>&1 )
         echo "$err"
         [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
@@ -299,7 +307,7 @@ do
         [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
     fi
 
-    if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+    if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
         err=$( { clickhouse-client --port 19000 -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst; } 2>&1 )
         echo "$err"
         [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
@@ -310,14 +318,19 @@ done
 # Why do we read data with clickhouse-local?
 # Because it's the simplest way to read it when server has crashed.
 sudo clickhouse stop ||:
-if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+
+
+if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
     sudo clickhouse stop --pid-path /var/run/clickhouse-server1 ||:
     sudo clickhouse stop --pid-path /var/run/clickhouse-server2 ||:
 fi
 
-if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
     sudo clickhouse stop --pid-path /var/run/clickhouse-server1 ||:
 fi
+
+# Kill minio admin client to stop collecting logs
+kill $MC_ADMIN_PID
 
 rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server.log ||:
 rg -A50 -Fa "============" /var/log/clickhouse-server/stderr.log ||:
@@ -342,12 +355,13 @@ if [ $failed_to_save_logs -ne 0 ]; then
     for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log
     do
         clickhouse-local "$data_path_config" --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
-        if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+
+        if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
             clickhouse-local --path /var/lib/clickhouse1/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
             clickhouse-local --path /var/lib/clickhouse2/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst ||:
         fi
 
-        if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+        if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
             clickhouse-local --path /var/lib/clickhouse1/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
         fi
     done
@@ -383,7 +397,8 @@ rm -rf /var/lib/clickhouse/data/system/*/
 tar -chf /test_output/store.tar /var/lib/clickhouse/store ||:
 tar -chf /test_output/metadata.tar /var/lib/clickhouse/metadata/*.sql ||:
 
-if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+
+if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
     rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server1.log ||:
     rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server2.log ||:
     zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.zst ||:
@@ -394,9 +409,11 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     tar -chf /test_output/coordination2.tar /var/lib/clickhouse2/coordination ||:
 fi
 
-if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
     rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server1.log ||:
     zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.zst ||:
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
     tar -chf /test_output/coordination1.tar /var/lib/clickhouse1/coordination ||:
 fi
+
+collect_core_dumps

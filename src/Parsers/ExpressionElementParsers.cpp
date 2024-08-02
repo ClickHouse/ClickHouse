@@ -9,8 +9,8 @@
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
-#include "Parsers/CommonParsers.h"
 
+#include <Parsers/CommonParsers.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTCollation.h>
@@ -696,6 +696,7 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto function_node = std::make_shared<ASTFunction>();
     function_node->name = "CODEC";
+    function_node->kind = ASTFunction::Kind::CODEC;
     function_node->arguments = expr_list_args;
     function_node->children.push_back(function_node->arguments);
 
@@ -723,9 +724,9 @@ bool ParserStatisticsType::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     auto function_node = std::make_shared<ASTFunction>();
     function_node->name = "STATISTICS";
+    function_node->kind = ASTFunction::Kind::STATISTICS;
     function_node->arguments = stat_type;
     function_node->children.push_back(function_node->arguments);
-
     node = function_node;
     return true;
 }
@@ -1129,11 +1130,11 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
 
     if (hex)
     {
-        hexStringDecode(str_begin, str_end, res_pos);
+        hexStringDecode(str_begin, str_end, res_pos, word_size);
     }
     else
     {
-        binStringDecode(str_begin, str_end, res_pos);
+        binStringDecode(str_begin, str_end, res_pos, word_size);
     }
 
     return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), (res_pos - res_begin - 1)));
