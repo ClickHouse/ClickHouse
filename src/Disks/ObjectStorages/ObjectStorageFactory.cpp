@@ -141,11 +141,12 @@ namespace
 S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const ContextPtr & context)
 {
     String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+    int endpoint_style = config.getInt(config_prefix + ".endpoint_style", 0);
     String endpoint_subpath;
     if (config.has(config_prefix + ".endpoint_subpath"))
         endpoint_subpath = context->getMacros()->expand(config.getString(config_prefix + ".endpoint_subpath"));
 
-    S3::URI uri(fs::path(endpoint) / endpoint_subpath);
+    S3::URI uri(fs::path(endpoint) / endpoint_subpath, endpoint_style);
 
     /// An empty key remains empty.
     if (!uri.key.empty() && !uri.key.ends_with('/'))
@@ -171,12 +172,14 @@ void checkS3Capabilities(
 }
 }
 
-static std::string getEndpoint(
+static std::pair<std::string, int> getEndpoint(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context)
 {
-    return context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+    std::string endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+    int style = config.getInt(config_prefix + ".endpoint_style", 0);
+    return std::pair<std::string, int>(endpoint, style);
 }
 
 void registerS3ObjectStorage(ObjectStorageFactory & factory)

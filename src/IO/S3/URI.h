@@ -34,9 +34,10 @@ struct URI
     std::string uri_str;
 
     bool is_virtual_hosted_style;
+    int endpoint_style;
 
     URI() = default;
-    explicit URI(const std::string & uri_);
+    explicit URI(const std::string & uri_, int uri_style=0);
     void addRegionToURI(const std::string & region);
 
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
