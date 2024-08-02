@@ -60,17 +60,9 @@ def test_disk_is_immutable(started_cluster):
     node.query("INSERT INTO test_1 VALUES (1)")
     node.query("SYSTEM FLUSH LOGS;")
 
-    print(
-        node.query(
-            "SELECT 'test_1', * FROM system.blob_storage_log"
-        )
-    )
+    print(node.query("SELECT 'test_1', * FROM system.blob_storage_log"))
 
-    print(
-        node.query(
-            "SELECT 'test_1', * FROM test_1"
-        )
-    )
+    print(node.query("SELECT 'test_1', * FROM test_1"))
 
     node.query("DROP TABLE test_1 SYNC")
     node.query("DROP TABLE IF EXISTS test_2")
@@ -92,28 +84,12 @@ def test_disk_is_immutable(started_cluster):
     node.query("INSERT INTO test_2 VALUES (1)")
     node.query("SYSTEM FLUSH LOGS;")
 
-    print(
-        node.query(
-            "SELECT 'test_2', * FROM system.blob_storage_log"
-        )
-    )
+    print(node.query("SELECT 'test_2', * FROM system.blob_storage_log"))
 
-    print(
-        node.query(
-            "SELECT 'test_2', * FROM test_2"
-        )
-    )
+    print(node.query("SELECT 'test_2', * FROM test_2"))
 
     node.restart_clickhouse()
 
-    print(
-        node.query(
-            "SELECT 'test_2', * FROM system.blob_storage_log"
-        )
-    )
+    print(node.query("SELECT 'test_2', * FROM system.blob_storage_log"))
 
-    print(
-        node.query(
-            "SELECT 'test_2', * FROM test_2"
-        )
-    )
+    print(node.query("SELECT 'test_2', * FROM test_2"))
