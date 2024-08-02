@@ -5631,3 +5631,9 @@ INSERT INTO test_table SELECT number FROM system.numbers LIMIT 6;
 DETACH TABLE test_table;
 DROP DETACHED TABLE test_table SYNC;
 ```
+
+## disable_insertion_and_mutation
+
+Disable all insert and mutations (alter table update / alter table delete / alter table drop partition). Set to true, can make this node focus on reading queries.
+
+Default value: `false`.

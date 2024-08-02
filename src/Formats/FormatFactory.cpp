@@ -150,7 +150,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.try_infer_objects_as_tuples = settings.input_format_json_try_infer_named_tuples_from_objects;
     format_settings.json.throw_on_bad_escape_sequence = settings.input_format_json_throw_on_bad_escape_sequence;
     format_settings.json.ignore_unnecessary_fields = settings.input_format_json_ignore_unnecessary_fields;
-    format_settings.json.ignore_key_case = settings.input_format_json_ignore_key_case;
+    format_settings.json.case_insensitive_column_matching = settings.input_format_json_case_insensitive_column_matching;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.force_null_for_omitted_fields = settings.input_format_force_null_for_omitted_fields;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
@@ -215,7 +215,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.tsv.allow_variable_number_of_columns = settings.input_format_tsv_allow_variable_number_of_columns;
     format_settings.tsv.crlf_end_of_line_input = settings.input_format_tsv_crlf_end_of_line;
     format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
-    format_settings.values.allow_data_after_semicolon = settings.input_format_values_allow_data_after_semicolon;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
     format_settings.values.escape_quote_with_quote = settings.output_format_values_escape_quote_with_quote;
@@ -244,7 +243,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.output_row_index_stride = settings.output_format_orc_row_index_stride;
     format_settings.orc.use_fast_decoder = settings.input_format_orc_use_fast_decoder;
     format_settings.orc.filter_push_down = settings.input_format_orc_filter_push_down;
-    format_settings.orc.read_use_writer_time_zone = settings.input_format_orc_read_use_writer_time_zone;
+    format_settings.orc.reader_time_zone_name = settings.input_format_orc_reader_time_zone_name;
     format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
     format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference;
@@ -253,7 +252,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.msgpack.number_of_columns = settings.input_format_msgpack_number_of_columns;
     format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
-    format_settings.max_bytes_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
+    format_settings.max_bytes_to_read_for_schema_inference = settings.input_format_max_bytes_to_read_for_schema_inference;
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
     format_settings.schema_inference_hints = settings.schema_inference_hints;
     format_settings.schema_inference_make_columns_nullable = settings.schema_inference_make_columns_nullable;

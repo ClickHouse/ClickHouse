@@ -149,7 +149,7 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
             columns = metadata_ptr->columns.getAll();
         for (const auto & column_name_and_type: columns)
         {
-            const auto & ast_column_declaration = std::make_shared<ASTColumnDeclaration>();
+            const auto ast_column_declaration = std::make_shared<ASTColumnDeclaration>();
             ast_column_declaration->name = column_name_and_type.name;
             /// parser typename
             {
@@ -164,7 +164,7 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
                 if (!parser.parse(pos, ast_type, expected))
                 {
                     if (throw_on_error)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parser metadata of {}.{}",
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parse metadata of {}.{}",
                                         backQuote(table_id.database_name), backQuote(table_id.table_name));
                     else
                         return nullptr;
@@ -289,8 +289,11 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     tables.erase(it);
     table_storage->is_detached = true;
 
-    if (!table_storage->isSystemStorage() && database_name != DatabaseCatalog::SYSTEM_DATABASE)
+    if (!table_storage->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
+    {
+        LOG_TEST(log, "Counting detached table {} to database {}", table_name, database_name);
         CurrentMetrics::sub(getAttachedCounterForStorage(table_storage));
+    }
 
     auto table_id = table_storage->getStorageID();
     if (table_id.hasUUID())
@@ -334,8 +337,11 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     /// non-Atomic database the is_detached is set to true before RENAME.
     table->is_detached = false;
 
-    if (!table->isSystemStorage() && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
+    if (!table->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
+    {
+        LOG_TEST(log, "Counting attached table {} to database {}", table_name, database_name);
         CurrentMetrics::add(getAttachedCounterForStorage(table));
+    }
 }
 
 void DatabaseWithOwnTablesBase::shutdown()

@@ -40,7 +40,6 @@ ColumnPtr FunctionArrayConcat::executeImpl(const ColumnsWithTypeAndName & argume
     if (result_type->onlyNull())
         return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-    size_t rows = input_rows_count;
     size_t num_args = arguments.size();
 
     Columns preprocessed_columns(num_args);
@@ -69,7 +68,7 @@ ColumnPtr FunctionArrayConcat::executeImpl(const ColumnsWithTypeAndName & argume
         }
 
         if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get()))
-            sources.emplace_back(GatherUtils::createArraySource(*argument_column_array, is_const, rows));
+            sources.emplace_back(GatherUtils::createArraySource(*argument_column_array, is_const, input_rows_count));
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments for function {} must be arrays.", getName());
     }

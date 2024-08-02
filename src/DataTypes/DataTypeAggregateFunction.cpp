@@ -257,8 +257,8 @@ static DataTypePtr create(const ASTPtr & arguments)
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unexpected AST element passed as aggregate function name for data type AggregateFunction. "
-                        "Must be identifier or function.");
+                        "Unexpected AST element {} passed as aggregate function name for data type AggregateFunction. "
+                        "Must be identifier or function", data_type_ast->getID());
 
     for (size_t i = argument_types_start_idx; i < arguments->children.size(); ++i)
         argument_types.push_back(DataTypeFactory::instance().get(arguments->children[i]));

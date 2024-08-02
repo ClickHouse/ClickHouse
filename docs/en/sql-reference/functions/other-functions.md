@@ -346,12 +346,42 @@ Result:
 ## materialize
 
 Turns a constant into a full column containing a single value.
-Full columns and constants are represented differently in memory. Functions usually execute different code for normal and constant arguments, although the result should typically be the same. This function can be used to debug this behavior.
+Full columns and constants are represented differently in memory.
+Functions usually execute different code for normal and constant arguments, although the result should typically be the same. 
+This function can be used to debug this behavior.
 
 **Syntax**
 
 ```sql
 materialize(x)
+```
+
+**Parameters**
+
+- `x` — A constant. [Constant](../functions/index.md/#constants).
+
+**Returned value**
+
+- A column containing a single value `x`.
+
+**Example**
+
+In the example below the `countMatches` function expects a constant second argument. 
+This behaviour can be debugged by using the `materialize` function to turn a constant into a full column, 
+verifying that the function throws an error for a non-constant argument.
+
+Query:
+
+```sql
+SELECT countMatches('foobarfoo', 'foo');
+SELECT countMatches('foobarfoo', materialize('foo'));
+```
+
+Result:
+
+```response
+2
+Code: 44. DB::Exception: Received from localhost:9000. DB::Exception: Illegal type of argument #2 'pattern' of function countMatches, expected constant String, got String
 ```
 
 ## ignore
@@ -2102,14 +2132,14 @@ Result:
 └─────────────────┘
 ```
 
-## filesystemFree
+## filesystemUnreserved
 
-Returns the total amount of the free space on the filesystem hosting the database persistence. See also `filesystemAvailable`
+Returns the total amount of the free space on the filesystem hosting the database persistence. (previously `filesystemFree`). See also [`filesystemAvailable`](#filesystemavailable).
 
 **Syntax**
 
 ```sql
-filesystemFree()
+filesystemUnreserved()
 ```
 
 **Returned value**
@@ -2121,7 +2151,7 @@ filesystemFree()
 Query:
 
 ```sql
-SELECT formatReadableSize(filesystemFree()) AS "Free space";
+SELECT formatReadableSize(filesystemUnreserved()) AS "Free space";
 ```
 
 Result:
@@ -2449,11 +2479,11 @@ As you can see, `runningAccumulate` merges states for each group of rows separat
 
 ## joinGet
 
-The function lets you extract data from the table the same way as from a [dictionary](../../sql-reference/dictionaries/index.md).
+The function lets you extract data from the table the same way as from a [dictionary](../../sql-reference/dictionaries/index.md). Gets the data from [Join](../../engines/table-engines/special/join.md#creating-a-table) tables using the specified join key.
 
-Gets the data from [Join](../../engines/table-engines/special/join.md#creating-a-table) tables using the specified join key.
-
+:::note
 Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` statement.
+:::
 
 **Syntax**
 
@@ -2463,26 +2493,32 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 **Arguments**
 
-- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed. The identifier is searched in the default database (see setting `default_database` in the config file). To override the default database, use `USE db_name` or specify the database and the table through the separator `db_name.db_table` as in the example.
+- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed.
 - `value_column` — name of the column of the table that contains required data.
 - `join_keys` — list of keys.
 
+:::note
+The identifier is searched for in the default database (see setting `default_database` in the config file). To override the default database, use `USE db_name` or specify the database and the table through the separator `db_name.db_table` as in the example.
+:::
+
 **Returned value**
 
-Returns a list of values corresponded to list of keys.
+- Returns a list of values corresponded to the list of keys.
 
-If certain does not exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
-
+:::note
+If a certain key does not exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting during table creation.
 More info about `join_use_nulls` in [Join operation](../../engines/table-engines/special/join.md).
+:::
 
 **Example**
 
 Input table:
 
 ```sql
-CREATE DATABASE db_test
-CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id) SETTINGS join_use_nulls = 1
-INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
+CREATE DATABASE db_test;
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO db_test.id_val VALUES (1, 11)(2, 12)(4, 13);
+SELECT * FROM db_test.id_val;
 ```
 
 ```text
@@ -2496,18 +2532,116 @@ INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13)
 Query:
 
 ```sql
-SELECT joinGet(db_test.id_val, 'val', toUInt32(number)) from numbers(4) SETTINGS join_use_nulls = 1
+SELECT number, joinGet(db_test.id_val, 'val', toUInt32(number)) from numbers(4);
 ```
 
 Result:
 
 ```text
-┌─joinGet(db_test.id_val, 'val', toUInt32(number))─┐
-│                                                0 │
-│                                               11 │
-│                                               12 │
-│                                                0 │
-└──────────────────────────────────────────────────┘
+   ┌─number─┬─joinGet('db_test.id_val', 'val', toUInt32(number))─┐
+1. │      0 │                                                  0 │
+2. │      1 │                                                 11 │
+3. │      2 │                                                 12 │
+4. │      3 │                                                  0 │
+   └────────┴────────────────────────────────────────────────────┘
+```
+
+Setting `join_use_nulls` can be used during table creation to change the behaviour of what gets returned if no key exists in the source table.
+
+```sql
+CREATE DATABASE db_test;
+CREATE TABLE db_test.id_val_nulls(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id) SETTINGS join_use_nulls=1;
+INSERT INTO db_test.id_val_nulls VALUES (1, 11)(2, 12)(4, 13);
+SELECT * FROM db_test.id_val_nulls;
+```
+
+```text
+┌─id─┬─val─┐
+│  4 │  13 │
+│  2 │  12 │
+│  1 │  11 │
+└────┴─────┘
+```
+
+Query:
+
+```sql
+SELECT number, joinGet(db_test.id_val_nulls, 'val', toUInt32(number)) from numbers(4);
+```
+
+Result:
+
+```text
+   ┌─number─┬─joinGet('db_test.id_val_nulls', 'val', toUInt32(number))─┐
+1. │      0 │                                                     ᴺᵁᴸᴸ │
+2. │      1 │                                                       11 │
+3. │      2 │                                                       12 │
+4. │      3 │                                                     ᴺᵁᴸᴸ │
+   └────────┴──────────────────────────────────────────────────────────┘
+```
+
+## joinGetOrNull
+
+Like [joinGet](#joinget) but returns `NULL` when the key is missing instead of returning the default value.
+
+**Syntax**
+
+```sql
+joinGetOrNull(join_storage_table_name, `value_column`, join_keys)
+```
+
+**Arguments**
+
+- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed. 
+- `value_column` — name of the column of the table that contains required data.
+- `join_keys` — list of keys.
+
+:::note
+The identifier is searched for in the default database (see setting `default_database` in the config file). To override the default database, use `USE db_name` or specify the database and the table through the separator `db_name.db_table` as in the example.
+:::
+
+**Returned value**
+
+- Returns a list of values corresponded to the list of keys.
+
+:::note
+If a certain key does not exist in source table then `NULL` is returned for that key.
+:::
+
+**Example**
+
+Input table:
+
+```sql
+CREATE DATABASE db_test;
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO db_test.id_val VALUES (1, 11)(2, 12)(4, 13);
+SELECT * FROM db_test.id_val;
+```
+
+```text
+┌─id─┬─val─┐
+│  4 │  13 │
+│  2 │  12 │
+│  1 │  11 │
+└────┴─────┘
+```
+
+Query:
+
+```sql
+SELECT number, joinGetOrNull(db_test.id_val, 'val', toUInt32(number)) from numbers(4);
+```
+
+Result:
+
+```text
+   ┌─number─┬─joinGetOrNull('db_test.id_val', 'val', toUInt32(number))─┐
+1. │      0 │                                                     ᴺᵁᴸᴸ │
+2. │      1 │                                                       11 │
+3. │      2 │                                                       12 │
+4. │      3 │                                                     ᴺᵁᴸᴸ │
+   └────────┴──────────────────────────────────────────────────────────┘
 ```
 
 ## catboostEvaluate
