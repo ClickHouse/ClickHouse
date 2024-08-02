@@ -12,18 +12,6 @@ node = cluster.add_instance(
     stay_alive=True,
 )
 
-system_logs = [
-    # enabled by default
-    ("system.text_log", 1),
-    ("system.query_log", 1),
-    ("system.query_thread_log", 1),
-    ("system.part_log", 1),
-    ("system.trace_log", 1),
-    ("system.metric_log", 1),
-    ("system.error_log", 1),
-]
-
-
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
@@ -33,22 +21,29 @@ def start_cluster():
         cluster.shutdown()
 
 
-@pytest.fixture(scope="function")
-def flush_logs():
+def test_system_logs_exists():
+    system_logs = [
+        # disabled by default
+        ("system.text_log", 0),
+        ("system.query_log", 1),
+        ("system.query_thread_log", 1),
+        ("system.part_log", 1),
+        ("system.trace_log", 1),
+        ("system.metric_log", 1),
+        ("system.error_log", 1),
+    ]
+
     node.query("SYSTEM FLUSH LOGS")
-
-
-@pytest.mark.parametrize("table,exists", system_logs)
-def test_system_logs(flush_logs, table, exists):
-    q = "SELECT * FROM {}".format(table)
-    if exists:
-        node.query(q)
-    else:
-        response = node.query_and_get_error(q)
-        assert (
-            "Table {} does not exist".format(table) in response
-            or "Unknown table expression identifier '{}'".format(table) in response
-        )
+    for table, exists in system_logs:
+        q = "SELECT * FROM {}".format(table)
+        if exists:
+            node.query(q)
+        else:
+            response = node.query_and_get_error(q)
+            assert (
+                "Table {} does not exist".format(table) in response
+                or "Unknown table expression identifier '{}'".format(table) in response
+            )
 
 
 # Logic is tricky, let's check that there is no hang in case of message queue
@@ -67,11 +62,14 @@ def test_system_logs_non_empty_queue():
 
 
 def test_system_suspend():
-    node.query("CREATE TABLE t (x DateTime) ENGINE=Memory;")
-    node.query("INSERT INTO t VALUES (now());")
-    node.query("SYSTEM SUSPEND FOR 1 SECOND;")
-    node.query("INSERT INTO t VALUES (now());")
-    assert "1\n" == node.query("SELECT max(x) - min(x) >= 1 FROM t;")
+    try:
+        node.query("CREATE TABLE t (x DateTime) ENGINE=Memory;")
+        node.query("INSERT INTO t VALUES (now());")
+        node.query("SYSTEM SUSPEND FOR 1 SECOND;")
+        node.query("INSERT INTO t VALUES (now());")
+        assert "1\n" == node.query("SELECT max(x) - min(x) >= 1 FROM t;")
+    finally:
+        node.query("DROP TABLE IF EXISTS t;")
 
 
 def test_log_max_size(start_cluster):
@@ -95,6 +93,7 @@ def test_log_max_size(start_cluster):
         ]
     )
 
+    node.query("SYSTEM FLUSH LOGS")
     node.query(f"TRUNCATE TABLE IF EXISTS system.query_log")
     node.restart_clickhouse()
 
