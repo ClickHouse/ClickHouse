@@ -68,6 +68,7 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
+
 #include <iostream>
 #include <filesystem>
 #include <limits>
@@ -84,21 +85,20 @@
 #    include <Common/GWPAsan.h>
 #endif
 
-
-namespace fs = std::filesystem;
-using namespace std::literals;
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+
     extern const int DEADLOCK_AVOIDED;
+    extern const int DATABASE_ACCESS_DENIED;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int NO_DATA_TO_INSERT;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
+    extern const int INCORRECT_FILE_NAME;
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int LOGICAL_ERROR;
@@ -109,22 +109,6 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int USER_EXPIRED;
 }
-
-}
-
-namespace ProfileEvents
-{
-    extern const Event UserTimeMicroseconds;
-    extern const Event SystemTimeMicroseconds;
-}
-
-namespace
-{
-constexpr UInt64 THREAD_GROUP_ID = 0;
-}
-
-namespace DB
-{
 
 ProgressOption toProgressOption(std::string progress)
 {
@@ -149,6 +133,22 @@ std::istream& operator>> (std::istream & in, ProgressOption & progress)
     progress = toProgressOption(token);
     return in;
 }
+
+}
+
+namespace ProfileEvents
+{
+    extern const Event UserTimeMicroseconds;
+    extern const Event SystemTimeMicroseconds;
+}
+
+namespace
+{
+constexpr UInt64 THREAD_GROUP_ID = 0;
+}
+
+namespace DB
+{
 
 static void incrementProfileEventsBlock(Block & dst, const Block & src)
 {
@@ -250,13 +250,13 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
     dst.setColumns(std::move(mutable_columns));
 }
 
+
 /// To cancel the query on local format error.
 class LocalFormatError : public DB::Exception
 {
 public:
     using Exception::Exception;
 };
-
 
 ClientBase::~ClientBase() = default;
 
@@ -404,6 +404,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
         return;
 
     processed_rows += block.rows();
+
     /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
     initOutputFormat(block, parsed_query);
 
@@ -485,6 +486,7 @@ try
 {
     if (!output_format)
     {
+        auto is_embedded = global_context->getApplicationType() == Context::ApplicationType::SERVER;
         /// Ignore all results when fuzzing as they can be huge.
         if (query_fuzzer_runs)
         {
@@ -493,7 +495,7 @@ try
         }
 
         WriteBuffer * out_buf = nullptr;
-        if (!pager.empty())
+        if (!pager.empty() && !is_embedded)
         {
             if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
                 throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
@@ -524,8 +526,12 @@ try
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
+            if (query_with_output->out_file && is_embedded)
+            {
+                error_stream << "Out files are disabled when you are running client embedded into server. Ignoring this option.\n";
+            }
             String out_file;
-            if (query_with_output->out_file)
+            if (query_with_output->out_file && !is_embedded)
             {
                 select_into_file = true;
 
@@ -569,7 +575,7 @@ try
                 {
                     select_into_file_and_stdout = true;
                     out_file_buf = std::make_unique<ForkWriteBuffer>(std::vector<WriteBufferPtr>{std::move(out_file_buf),
-                            std::make_shared<WriteBufferFromFileDescriptor>(STDOUT_FILENO)});
+                            std::make_shared<WriteBufferFromFileDescriptor>(out_fd)});
                 }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
@@ -583,7 +589,7 @@ try
                 const auto & id = query_with_output->format->as<ASTIdentifier &>();
                 current_format = id.name();
             }
-            else if (query_with_output->out_file)
+            else if (query_with_output->out_file && !is_embedded)
             {
                 auto format_name = FormatFactory::instance().tryGetFormatFromFileName(out_file);
                 if (format_name)
@@ -632,7 +638,7 @@ void ClientBase::initLogsOutputStream()
             if (server_logs_file.empty())
             {
                 /// Use stderr by default
-                out_logs_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO);
+                out_logs_buf = std::make_unique<WriteBufferFromFileDescriptor>(err_fd);
                 wb = out_logs_buf.get();
                 color_logs = stderr_is_a_tty;
             }
@@ -679,6 +685,7 @@ void ClientBase::adjustSettings()
     global_context->setSettings(settings);
 }
 
+
 void ClientBase::initClientContext()
 {
     client_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
@@ -688,11 +695,13 @@ void ClientBase::initClientContext()
     client_context->setQueryParameters(query_parameters);
 }
 
+
 bool ClientBase::isRegularFile(int fd)
 {
     struct stat file_stat;
     return fstat(fd, &file_stat) == 0 && S_ISREG(file_stat.st_mode);
 }
+
 
 void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
 {
@@ -773,6 +782,7 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
     }
 }
 
+
 void ClientBase::initTTYBuffer(ProgressOption progress)
 {
     if (tty_buf)
@@ -784,11 +794,21 @@ void ClientBase::initTTYBuffer(ProgressOption progress)
          return;
     }
 
-    static constexpr auto tty_file_name = "/dev/tty";
-
     /// Output all progress bar commands to terminal at once to avoid flicker.
     /// This size is usually greater than the window size.
     static constexpr size_t buf_size = 1024;
+
+    // If we are embedded into server, there is no need to access terminal device via opening a file.
+    // Actually we need to pass tty's name, if we don't want this condition statement,
+    // because /dev/tty stands for controlling terminal of the process, thus a client will not see progress line.
+    // So it's easier to just pass a descriptor, without the terminal name.
+    if (global_context->getApplicationType() == Context::ApplicationType::SERVER)
+    {
+         tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(out_fd, buf_size);
+         return;
+    }
+
+    static constexpr auto tty_file_name = "/dev/tty";
 
     if (is_interactive || progress == ProgressOption::TTY)
     {
@@ -825,7 +845,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress)
 
     if (stderr_is_a_tty || progress == ProgressOption::ERR)
     {
-        tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO, buf_size);
+        tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(err_fd, buf_size);
     }
     else
         need_render_progress = false;
@@ -920,6 +940,7 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     if (have_error)
         processError(full_query);
 }
+
 
 void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
@@ -1366,7 +1387,7 @@ void ClientBase::resetOutput()
         if (SIG_ERR == signal(SIGQUIT, SIG_DFL))
             throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
 
-        setupSignalHandler();
+        // setupSignalHandler();
     }
     pager_cmd = nullptr;
 
@@ -1431,7 +1452,6 @@ void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
     }
 }
 
-
 namespace
 {
 bool isStdinNotEmptyAndValid(ReadBufferFromFileDescriptor & std_in)
@@ -1476,6 +1496,27 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         else
             return;
     }
+    // Validate infile before we pass further, as some files may be unsafe if client is embedded into server
+    if (global_context->getApplicationType() == Context::ApplicationType::SERVER && parsed_insert_query.infile)
+    {
+        const auto & in_file_node = parsed_insert_query.infile->as<ASTLiteral &>();
+        const auto in_file = in_file_node.value.safeGet<std::string>();
+        String user_files_absolute_path = fs::weakly_canonical(global_context->getUserFilesPath());
+        fs::path fs_table_path(in_file);
+        if (fs_table_path.is_relative())
+            fs_table_path = user_files_absolute_path / fs_table_path;
+
+        /// Do not use fs::canonical or fs::weakly_canonical.
+        /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
+        String path = fs::absolute(fs_table_path).lexically_normal(); /// Normalize path.
+
+        auto table_path_stat = fs::status(path);
+        if (!fs::exists(table_path_stat))
+            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Provided file doesn't exist: {}", in_file);
+
+        if (!fileOrSymlinkPathStartsWith(path, user_files_absolute_path))
+            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File `{}` is not inside `{}`", path, user_files_absolute_path);
+    }
 
     query_interrupt_handler.start();
     SCOPE_EXIT({ query_interrupt_handler.stop(); });
@@ -1501,7 +1542,10 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     {
         /// If structure was received (thus, server has not thrown an exception),
         /// send our data with that structure.
-        setInsertionTable(parsed_insert_query);
+        if (global_context->getApplicationType() != Context::ApplicationType::SERVER)
+        {
+            setInsertionTable(parsed_insert_query);
+        }
 
         sendData(sample, columns_description, parsed_query);
         receiveEndOfQuery();
@@ -1969,6 +2013,8 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         {
             const String & new_database = use_query->getDatabase();
             /// If the client initiates the reconnection, it takes the settings from the config.
+            /// TODO: Revisit
+            default_database = new_database;
             getClientConfiguration().setString("database", new_database);
             /// If the connection initiates the reconnection, it uses its variable.
             connection->setDefaultDatabase(new_database);
@@ -2282,14 +2328,14 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                         if (!server_exception)
                         {
                             error_matches_hint = false;
-                            fmt::print(stderr, "Expected server error code '{}' but got no server error (query: {}).\n",
+                            error_stream << fmt::format("Expected server error code '{}' but got no server error (query: {}).\n",
                                        test_hint.serverErrors(), full_query);
                         }
                         else if (!test_hint.hasExpectedServerError(server_exception->code()))
                         {
                             error_matches_hint = false;
-                            fmt::print(stderr, "Expected server error code: {} but got: {} (query: {}).\n",
-                                       test_hint.serverErrors(), server_exception->code(), full_query);
+                            error_stream << fmt::format("Expected server error code: {} but got: {} (query: {}).\n",
+                                              test_hint.serverErrors(), server_exception->code(), full_query);
                         }
                     }
                     if (test_hint.hasClientErrors())
@@ -2297,13 +2343,13 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                         if (!client_exception)
                         {
                             error_matches_hint = false;
-                            fmt::print(stderr, "Expected client error code '{}' but got no client error (query: {}).\n",
+                            error_stream << fmt::format("Expected client error code '{}' but got no client error (query: {}).\n",
                                        test_hint.clientErrors(), full_query);
                         }
                         else if (!test_hint.hasExpectedClientError(client_exception->code()))
                         {
                             error_matches_hint = false;
-                            fmt::print(stderr, "Expected client error code '{}' but got '{}' (query: {}).\n",
+                            error_stream << fmt::format("Expected client error code '{}' but got '{}' (query: {}).\n",
                                        test_hint.clientErrors(), client_exception->code(), full_query);
                         }
                     }
@@ -2320,14 +2366,14 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     if (test_hint.hasClientErrors())
                     {
                         error_matches_hint = false;
-                        fmt::print(stderr,
+                        error_stream << fmt::format(
                                    "The query succeeded but the client error '{}' was expected (query: {}).\n",
                                    test_hint.clientErrors(), full_query);
                     }
                     if (test_hint.hasServerErrors())
                     {
                         error_matches_hint = false;
-                        fmt::print(stderr,
+                        error_stream << fmt::format(
                                    "The query succeeded but the server error '{}' was expected (query: {}).\n",
                                    test_hint.serverErrors(), full_query);
                     }
@@ -2526,27 +2572,48 @@ void ClientBase::runInteractive()
     LineReader::Patterns query_delimiters = {";", "\\G", "\\G;"};
     char word_break_characters[] = " \t\v\f\a\b\r\n`~!@#$%^&*()-=+[{]}\\|;:'\",<.>/?";
 
+    std::unique_ptr<LineReader> lr;
+
+
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_t highlight_callback{};
+
     if (getClientConfiguration().getBool("highlight", true))
         highlight_callback = highlight;
 
-    ReplxxLineReader lr(
+    String actual_history_file_path;
+    if (global_context->getApplicationType() != Context::ApplicationType::SERVER)
+        actual_history_file_path = history_file;
+
+    lr = std::make_unique<ReplxxLineReader>(
         *suggest,
+        actual_history_file_path,
+        getClientConfiguration().has("multiline"),
+        query_extenders,
+        query_delimiters,
+        word_break_characters,
+        highlight_callback,
+        input_stream,
+        output_stream,
+        in_fd,
+        out_fd,
+        err_fd
+    );
+#else
+    lr = LineReader(
         history_file,
         getClientConfiguration().has("multiline"),
         query_extenders,
         query_delimiters,
         word_break_characters,
-        highlight_callback);
-#else
-    (void)word_break_characters;
-    LineReader lr(
-        history_file,
-        getClientConfiguration().has("multiline"),
-        query_extenders,
-        query_delimiters);
+        input_stream,
+        output_stream,
+        in_fd
+    );
 #endif
+
+    /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
+    lr->enableBracketedPaste();
 
     static const std::initializer_list<std::pair<String, String>> backslash_aliases =
         {
@@ -2571,10 +2638,10 @@ void ClientBase::runInteractive()
             /// But keep it disabled outside of query input, because it breaks password input
             /// (e.g. if we need to reconnect and show a password prompt).
             /// (Alternatively, we could make the password input ignore the control sequences.)
-            lr.enableBracketedPaste();
-            SCOPE_EXIT({ lr.disableBracketedPaste(); });
+            lr->enableBracketedPaste();
+            SCOPE_EXIT({ lr->disableBracketedPaste(); });
 
-            input = lr.readLine(prompt(), ":-] ");
+            input = lr->readLine(prompt(), ":-] ");
         }
 
         if (input.empty())
@@ -2721,7 +2788,7 @@ void ClientBase::runNonInteractive()
     {
         /// If 'query' parameter is not set, read a query from stdin.
         /// The query is read entirely into memory (streaming is disabled).
-        ReadBufferFromFileDescriptor in(STDIN_FILENO);
+        ReadBufferFromFileDescriptor in(in_fd);
         String text;
         readStringUntilEOF(text, in);
         if (query_fuzzer_runs)
