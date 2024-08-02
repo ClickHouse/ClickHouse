@@ -34,6 +34,7 @@ create table test (i int) engine MergeTree order by i;
 insert into test select arrayJoin(range(10000));
 
 set optimize_aggregation_in_order=1;
+
 select * from test where i < 10 group by i order by i FORMAT JSONCompact;
 select max(i) from test where i < 20 limit 1 FORMAT JSONCompact;
 
