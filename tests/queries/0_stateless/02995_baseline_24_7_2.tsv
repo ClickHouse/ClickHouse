@@ -18,11 +18,7 @@ allow_distributed_ddl	1
 allow_drop_detached	0
 allow_execute_multiif_columnar	1
 allow_experimental_alter_materialized_view_structure	1
-<<<<<<< HEAD:tests/queries/0_stateless/02995_baseline_24_7_2.tsv
 allow_experimental_analyzer	1
-=======
-allow_experimental_analyzer	0
->>>>>>> Fix tests:tests/queries/0_stateless/02995_baseline_23_12_1.tsv
 allow_experimental_annoy_index	0
 allow_experimental_bigint_types	1
 allow_experimental_codecs	0
@@ -163,10 +159,7 @@ cloud_mode	0
 cloud_mode_engine	1
 cluster_for_parallel_replicas	
 collect_hash_table_stats_during_aggregation	1
-<<<<<<< HEAD:tests/queries/0_stateless/02995_baseline_24_7_2.tsv
 collect_hash_table_stats_during_joins	1
-=======
->>>>>>> Fix tests:tests/queries/0_stateless/02995_baseline_23_12_1.tsv
 column_names_for_schema_inference	
 compatibility	
 compatibility_ignore_auto_increment_in_create_table	0
@@ -336,13 +329,9 @@ format_regexp_escaping_rule	Raw
 format_regexp_skip_unmatched	0
 format_schema	
 format_template_resultset	
-<<<<<<< HEAD:tests/queries/0_stateless/02995_baseline_24_7_2.tsv
 format_template_resultset_format	
 format_template_row	
 format_template_row_format	
-=======
-format_template_row	
->>>>>>> Fix tests:tests/queries/0_stateless/02995_baseline_23_12_1.tsv
 format_template_rows_between_delimiter	\n
 format_tsv_null_representation	\\N
 formatdatetime_f_prints_single_zero	0
@@ -399,11 +388,8 @@ iceberg_engine_ignore_schema_evolution	0
 idle_connection_timeout	3600
 ignore_cold_parts_seconds	0
 ignore_data_skipping_indices	
-<<<<<<< HEAD:tests/queries/0_stateless/02995_baseline_24_7_2.tsv
 ignore_drop_queries_probability	0
 ignore_materialized_views_with_dropped_target_table	0
-=======
->>>>>>> Fix tests:tests/queries/0_stateless/02995_baseline_23_12_1.tsv
 ignore_on_cluster_for_replicated_access_entities_queries	0
 ignore_on_cluster_for_replicated_named_collections_queries	0
 ignore_on_cluster_for_replicated_udf_queries	0
@@ -726,13 +712,8 @@ mutations_execute_subqueries_on_initiator	0
 mutations_max_literal_size_to_replace	16384
 mutations_sync	0
 mysql_datatypes_support_level	
-<<<<<<< HEAD:tests/queries/0_stateless/02995_baseline_24_7_2.tsv
 mysql_map_fixed_string_to_text_in_show_columns	1
 mysql_map_string_to_text_in_show_columns	1
-=======
-mysql_map_fixed_string_to_text_in_show_columns	0
-mysql_map_string_to_text_in_show_columns	0
->>>>>>> Fix tests:tests/queries/0_stateless/02995_baseline_23_12_1.tsv
 mysql_max_rows_to_insert	65536
 network_compression_method	LZ4
 network_zstd_compression_level	1
@@ -799,13 +780,9 @@ os_thread_priority	0
 output_format_arrow_compression_method	lz4_frame
 output_format_arrow_fixed_string_as_fixed_byte_array	1
 output_format_arrow_low_cardinality_as_dictionary	0
-<<<<<<< HEAD:tests/queries/0_stateless/02995_baseline_24_7_2.tsv
 output_format_arrow_string_as_string	1
 output_format_arrow_use_64_bit_indexes_for_dictionary	0
 output_format_arrow_use_signed_indexes_for_dictionary	1
-=======
-output_format_arrow_string_as_string	0
->>>>>>> Fix tests:tests/queries/0_stateless/02995_baseline_23_12_1.tsv
 output_format_avro_codec	
 output_format_avro_rows_in_file	1
 output_format_avro_string_column_pattern	
@@ -1068,10 +1045,7 @@ totals_mode	after_having_exclusive
 trace_profile_events	0
 transfer_overflow_mode	throw
 transform_null_in	0
-<<<<<<< HEAD:tests/queries/0_stateless/02995_baseline_24_7_2.tsv
 traverse_shadow_remote_data_paths	0
-=======
->>>>>>> Fix tests:tests/queries/0_stateless/02995_baseline_23_12_1.tsv
 union_default_mode	
 unknown_packet_in_send_data	0
 update_insert_deduplication_token_in_dependent_materialized_views	0
