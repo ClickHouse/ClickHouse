@@ -112,6 +112,7 @@ class WorkFlowNames(metaclass=WithIter):
     """
 
     JEPSEN = "JepsenWorkflow"
+    CreateRelease = "CreateRelease"
 
 
 class BuildNames(metaclass=WithIter):
@@ -578,7 +579,7 @@ class CommonJobConfigs:
     DOCKER_SERVER = JobConfig(
         job_name_keyword="docker",
         required_on_release_branch=True,
-        run_command='docker_server.py --check-name "$CHECK_NAME" --release-type head --allow-build-reuse',
+        run_command='docker_server.py --check-name "$CHECK_NAME" --tag-type head --allow-build-reuse',
         digest=DigestConfig(
             include_paths=[
                 "tests/ci/docker_server.py",

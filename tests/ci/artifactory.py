@@ -158,7 +158,7 @@ class DebianArtifactory:
         print("Running test command:")
         print(f"  {cmd}")
         assert Shell.check(cmd)
-        self.release_info.debian_command = debian_command
+        self.release_info.debian = debian_command
         self.release_info.dump()
 
 
@@ -240,7 +240,7 @@ class RpmArtifactory:
         print("Running test command:")
         print(f"  {cmd}")
         assert Shell.check(cmd)
-        self.release_info.rpm_command = rpm_command
+        self.release_info.rpm = rpm_command
         self.release_info.dump()
 
 
@@ -304,7 +304,7 @@ class TgzArtifactory:
             expected_checksum == actual_checksum
         ), f"[{actual_checksum} != {expected_checksum}]"
         Shell.check("rm /tmp/tmp.tgz*", verbose=True)
-        self.release_info.tgz_command = cmd
+        self.release_info.tgz = cmd
         self.release_info.dump()
 
 

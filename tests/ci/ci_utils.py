@@ -16,6 +16,8 @@ class Envs:
     WORKFLOW_RESULT_FILE = os.getenv(
         "WORKFLOW_RESULT_FILE", "/tmp/workflow_results.json"
     )
+    S3_BUILDS_BUCKET = os.getenv("S3_BUILDS_BUCKET", "clickhouse-builds")
+    GITHUB_WORKFLOW = os.getenv("GITHUB_WORKFLOW", "")
 
 
 LABEL_CATEGORIES = {
@@ -83,7 +85,7 @@ def normalize_string(string: str) -> str:
     return res
 
 
-class GHActions:
+class GH:
     class ActionsNames:
         RunConfig = "RunConfig"
 
@@ -116,6 +118,14 @@ class GHActions:
         res = cls._get_workflow_results()
         results = [f"{job}: {data['result']}" for job, data in res.items()]
         cls.print_in_group("Workflow results", results)
+
+    @classmethod
+    def is_workflow_ok(cls) -> bool:
+        res = cls._get_workflow_results()
+        for _job, data in res.items():
+            if data["result"] == "failure":
+                return False
+        return bool(res)
 
     @classmethod
     def get_workflow_job_result(cls, wf_job_name: str) -> Optional[str]:
@@ -189,14 +199,24 @@ class GHActions:
         return False
 
     @staticmethod
-    def get_pr_url_by_branch(repo, branch):
-        get_url_cmd = (
-            f"gh pr list --repo {repo} --head {branch} --json url --jq '.[0].url'"
-        )
+    def get_pr_url_by_branch(branch, repo=None):
+        repo = repo or Envs.GITHUB_REPOSITORY
+        get_url_cmd = f"gh pr list --repo {repo} --head {branch} --json url --jq '.[0].url' --state open"
         url = Shell.get_output(get_url_cmd)
+        if not url:
+            print(f"WARNING: No open PR found, branch [{branch}] - search for merged")
+            get_url_cmd = f"gh pr list --repo {repo} --head {branch} --json url --jq '.[0].url' --state merged"
+            url = Shell.get_output(get_url_cmd)
         if not url:
             print(f"ERROR: PR nor found, branch [{branch}]")
         return url
+
+    @staticmethod
+    def is_latest_release_branch(branch):
+        latest_branch = Shell.get_output(
+            'gh pr list --label release --repo ClickHouse/ClickHouse --search "sort:created" -L1 --json headRefName'
+        )
+        return latest_branch == branch
 
 
 class Shell:

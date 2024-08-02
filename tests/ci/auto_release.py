@@ -127,15 +127,13 @@ def _prepare(token):
             )
             commit_num -= 1
 
-            is_completed = CI.GHActions.check_wf_completed(
-                token=token, commit_sha=commit
-            )
+            is_completed = CI.GH.check_wf_completed(token=token, commit_sha=commit)
             if not is_completed:
                 print(f"CI is in progress for [{commit}] - check previous commit")
                 commits_to_branch_head += 1
                 continue
 
-            commit_ci_status = CI.GHActions.get_commit_status_by_name(
+            commit_ci_status = CI.GH.get_commit_status_by_name(
                 token=token,
                 commit_sha=commit,
                 status_name=(CI.JobNames.BUILD_CHECK, "ClickHouse build check"),
