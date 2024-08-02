@@ -1,7 +1,8 @@
 import os
 import io
-import sys
 import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 import time
 import pandas as pd
 
@@ -77,3 +78,17 @@ class ClickHouseClient:
             return result
         else:
             raise ValueError(r.text)
+
+
+def requests_session_with_retries(retries=3, timeout=180):
+    session = requests.Session()
+    retry = Retry(
+        total=retries,
+        read=retries,
+        connect=retries,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    session.timeout = timeout
+    return session
