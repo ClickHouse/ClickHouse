@@ -25,7 +25,7 @@ function insert_data
         $CLICKHOUSE_CURL -sS -d 'begin transaction' "$CLICKHOUSE_URL&$TXN_SETTINGS"
         SETTINGS="$SETTINGS&session_check=1"
         BEGIN="begin transaction;"
-        COMMIT=$(echo -ne "\n\ncommit")
+        COMMIT=$(echo -ne "\n\n\ncommit")
     fi
 
     # max_block_size=10000, so external table will contain smaller blocks that will be squashed on insert-select (more chances to catch a bug on query cancellation)

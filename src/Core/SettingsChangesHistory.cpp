@@ -69,7 +69,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
               {"dictionary_validate_primary_key_type", false, false, "Validate primary key type for dictionaries. By default id type for simple layouts will be implicitly converted to UInt64."},
               {"collect_hash_table_stats_during_joins", false, true, "New setting."},
               {"max_size_to_preallocate_for_joins", 0, 100'000'000, "New setting."},
-              {"input_format_orc_read_use_writer_time_zone", false, false, "Whether use the writer's time zone in ORC stripe for ORC row reader, the default ORC row reader's time zone is GMT."},
+              {"input_format_orc_reader_time_zone_name", "GMT", "GMT", "The time zone name for ORC row reader, the default ORC row reader's time zone is GMT."},
               {"lightweight_mutation_projection_mode", "throw", "throw", "When lightweight delete happens on a table with projection(s), the possible operations include throw the exception as projection exists, or drop all projection related to this table then do lightweight delete."},
               {"database_replicated_allow_heavy_create", true, false, "Long-running DDL queries (CREATE AS SELECT and POPULATE) for Replicated database engine was forbidden"},
               {"query_plan_merge_filters", false, false, "Allow to merge filters in the query plan"},
