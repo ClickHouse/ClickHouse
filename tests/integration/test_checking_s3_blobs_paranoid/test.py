@@ -135,7 +135,9 @@ def test_upload_s3_fail_create_multi_part_upload(cluster, broken_s3, compression
 
     broken_s3.setup_at_create_multi_part_upload()
 
-    insert_query_id = randomize_query_id(f"INSERT_INTO_TABLE_FUNCTION_FAIL_CREATE_MPU_{compression}")
+    insert_query_id = randomize_query_id(
+        f"INSERT_INTO_TABLE_FUNCTION_FAIL_CREATE_MPU_{compression}"
+    )
     error = node.query_and_get_error(
         f"""
         INSERT INTO
@@ -177,7 +179,9 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
     broken_s3.setup_fake_multpartuploads()
     broken_s3.setup_at_part_upload(count=1, after=2)
 
-    insert_query_id = randomize_query_id(f"INSERT_INTO_TABLE_FUNCTION_FAIL_UPLOAD_PART_{compression}")
+    insert_query_id = randomize_query_id(
+        f"INSERT_INTO_TABLE_FUNCTION_FAIL_UPLOAD_PART_{compression}"
+    )
     error = node.query_and_get_error(
         f"""
         INSERT INTO
