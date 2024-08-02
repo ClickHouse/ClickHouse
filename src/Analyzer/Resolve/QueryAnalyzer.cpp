@@ -503,7 +503,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         ProfileEvents::increment(ProfileEvents::ScalarSubqueriesCacheMiss);
         auto subquery_context = Context::createCopy(context);
 
-        Settings subquery_settings = context->getSettings();
+        Settings subquery_settings = context->getSettingsCopy();
         subquery_settings.max_result_rows = 1;
         subquery_settings.extremes = false;
         subquery_context->setSettings(subquery_settings);
