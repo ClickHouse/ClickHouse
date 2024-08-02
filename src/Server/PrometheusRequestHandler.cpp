@@ -151,25 +151,25 @@ protected:
         if (!roles.empty())
             context->setCurrentRoles(roles);
 
-        auto param_could_be_skipped = [&] (const String & name)
+        /// Settings can be overridden in the URL query.
+        auto is_setting_like_parameter = [&] (const String & name)
         {
             /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
             if (name.empty())
-                return true;
+                return false;
 
             /// Some parameters (database, default_format, everything used in the code above) do not
             /// belong to the Settings class.
             static const NameSet reserved_param_names{"user", "password", "quota_key", "stacktrace", "role", "query_id"};
-            return reserved_param_names.contains(name);
+            return !reserved_param_names.contains(name);
         };
 
-        /// Settings can be overridden in the query.
         SettingsChanges settings_changes;
         for (const auto & [key, value] : *params)
         {
-            if (!param_could_be_skipped(key))
+            if (is_setting_like_parameter(key))
             {
-                /// Other than query parameters are treated as settings.
+                /// This query parameter should be considered as a ClickHouse setting.
                 settings_changes.push_back({key, value});
             }
         }

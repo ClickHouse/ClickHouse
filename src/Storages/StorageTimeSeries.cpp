@@ -371,9 +371,8 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
 }
 
 
-void StorageTimeSeries::renameInMemory(const StorageID & new_table_id)
+void StorageTimeSeries::renameInMemory(const StorageID & /* new_table_id */)
 {
-    UNUSED(new_table_id);
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Renaming is not supported by storage {} yet", getName());
 }
 
@@ -406,33 +405,22 @@ void StorageTimeSeries::restoreDataFromBackup(RestorerFromBackup & restorer, con
 
 
 void StorageTimeSeries::read(
-    QueryPlan & query_plan,
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr local_context,
-    QueryProcessingStage::Enum processed_stage,
-    size_t max_block_size,
-    size_t num_streams)
+    QueryPlan & /* query_plan */,
+    const Names & /* column_names */,
+    const StorageSnapshotPtr & /* storage_snapshot */,
+    SelectQueryInfo & /* query_info */,
+    ContextPtr /* local_context */,
+    QueryProcessingStage::Enum /* processed_stage */,
+    size_t /* max_block_size */,
+    size_t /* num_streams */)
 {
-    UNUSED(query_plan);
-    UNUSED(column_names);
-    UNUSED(storage_snapshot);
-    UNUSED(query_info);
-    UNUSED(local_context);
-    UNUSED(processed_stage);
-    UNUSED(max_block_size);
-    UNUSED(num_streams);
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SELECT is not supported by storage {} yet", getName());
 }
 
 
-SinkToStoragePtr StorageTimeSeries::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert)
+SinkToStoragePtr StorageTimeSeries::write(
+    const ASTPtr & /* query */, const StorageMetadataPtr & /* metadata_snapshot */, ContextPtr /* local_context */, bool /* async_insert */)
 {
-    UNUSED(query);
-    UNUSED(metadata_snapshot);
-    UNUSED(local_context);
-    UNUSED(async_insert);
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "INSERT is not supported by storage {} yet", getName());
 }
 

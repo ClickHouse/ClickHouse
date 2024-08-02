@@ -213,8 +213,8 @@ CREATE TABLE my_table
 ## The `tags` and `all_tags` columns {#tags-and-all-tags}
 
 There are two columns containing maps of tags - `tags` and `all_tags`. In this example they mean the same, however they can be different
-if setting `tags_to_columns` is used. This setting allows to specify that a specific tag should be stored in a separate column instead of storing
-in a map inside the `tags` column:
+if setting `tags_to_columns` is used. This setting allows you to specify that a specific tag should be stored in a separate column instead of storing
+it in a map inside the `tags` column:
 
 ``` sql
 CREATE TABLE my_table ENGINE=TimeSeries SETTINGS = {'instance': 'instance', 'job': 'job'}
