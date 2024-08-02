@@ -2,6 +2,8 @@
 
 import logging
 import os
+import socket
+import multiprocessing
 
 import pytest  # pylint:disable=import-error; for style check
 from helpers.cluster import run_and_check
@@ -11,6 +13,7 @@ from helpers.network import _NetworkManager
 #
 #   [1]: https://github.com/pytest-dev/pytest/issues/5502
 logging.raiseExceptions = False
+PORTS_PER_WORKER = 50
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -111,5 +114,46 @@ def pytest_addoption(parser):
     )
 
 
+def get_n_free_ports(total):
+    ports = []
+
+    while len(ports) < total:
+        with socket.socket() as s:
+            s.bind(("", 0))
+            ports.append(s.getsockname()[1])
+
+    return ports
+
+
 def pytest_configure(config):
     os.environ["INTEGRATION_TESTS_RUN_ID"] = config.option.run_id
+
+    # When running tests without pytest-xdist,
+    # the `pytest_xdist_setupnodes` hook is not executed
+    worker_ports = os.getenv("WORKER_FREE_PORTS", None)
+    if worker_ports is None:
+        os.environ["WORKER_FREE_PORTS"] = " ".join(
+            ([str(p) for p in get_n_free_ports(PORTS_PER_WORKER)])
+        )
+
+
+def pytest_xdist_setupnodes(config, specs):
+    # Find {PORTS_PER_WORKER} * {number of xdist workers} ports and
+    # allocate pool of {PORTS_PER_WORKER} ports to each worker
+
+    # Get number of xdist workers
+    num_workers = 1
+    if os.environ.get("PYTEST_XDIST_WORKER", "master") == "master":
+        num_workers = config.getoption("numprocesses", 1)
+        if num_workers == "auto":
+            num_workers = multiprocessing.cpu_count()
+
+    # Get free ports which will be distributed across workers
+    ports = get_n_free_ports(num_workers * PORTS_PER_WORKER)
+
+    # Iterate over specs of workers and add allocated ports to env variable
+    for i, spec in enumerate(specs):
+        start_range = i * PORTS_PER_WORKER
+        spec.env["WORKER_FREE_PORTS"] = " ".join(
+            ([str(p) for p in ports[start_range : start_range + PORTS_PER_WORKER]])
+        )
