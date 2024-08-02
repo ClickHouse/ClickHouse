@@ -10,10 +10,7 @@ export DATA_FILE="$CLICKHOUSE_TMP/deduptest.tsv"
 export TEST_MARK="02434_insert_${CLICKHOUSE_DATABASE}_"
 
 $CLICKHOUSE_CLIENT -q 'select * from numbers(5000000) format TSV' > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "create table dedup_test(A Int64) Engine = MergeTree order by A
-    settings non_replicated_deduplication_window=1000
-    , merge_tree_clear_old_temporary_directories_interval_seconds = 1
-    ;"
+$CLICKHOUSE_CLIENT -q "create table dedup_test(A Int64) Engine = MergeTree order by A settings non_replicated_deduplication_window=1000, merge_tree_clear_old_temporary_directories_interval_seconds = 1;"
 $CLICKHOUSE_CLIENT -q "create table dedup_dist(A Int64) Engine = Distributed('test_cluster_one_shard_two_replicas', currentDatabase(), dedup_test)"
 
 function insert_data
