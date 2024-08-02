@@ -945,6 +945,7 @@ function showMassEditor() {
     let editor = document.getElementById('mass-editor-textarea');
     editor.value = JSON.stringify({params: params, queries: queries}, null, 2);
 
+    editor.focus();
     mass_editor_active = true;
 }
 
