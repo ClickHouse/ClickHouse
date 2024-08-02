@@ -98,3 +98,63 @@
     "bytes_read": 43984
   }
 }
+{
+  "data": [
+    {
+      "str": "LYLDL",
+      "fixed_str": "BYYC"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 3000,
+    "bytes_read": 99010
+  }
+}
+{
+  "data": [
+    {
+      "str": "LYLDL",
+      "fixed_str": "BYYC"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1342,
+    "bytes_read": 44044
+  }
+}
+{
+  "data": [
+    {
+      "str": "LYLDL",
+      "fixed_str": "BYYC"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 3000,
+    "bytes_read": 99010
+  }
+}
+{
+  "data": [
+    {
+      "str": "LYLDL",
+      "fixed_str": "BYYC"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 1342,
+    "bytes_read": 44044
+  }
+}
+{
+  "data": [],
+  "rows": 0,
+  "statistics": {
+    "rows_read": 0,
+    "bytes_read": 0
+  }
+}

@@ -562,7 +562,8 @@ void ParquetBlockInputFormat::initializeIfNeeded()
             const auto column_index_to_bf = buildColumnIndexToBF(bf_reader, row_group, getPort().getHeader(), column_name_to_index);
 
             // make sure to hold refs instead
-            const auto parquet_bloom_filter_condition = ParquetBloomFilterCondition(key_condition->getRPN(), getPort().getHeader().getDataTypes());
+            // make sure to do this only once
+            const auto parquet_bloom_filter_condition = ParquetBloomFilterCondition(keyConditionRPNToParquetBloomFilterCondition(key_condition->getRPN(), getPort().getHeader().getDataTypes(), column_index_to_bf));
 
             if (!parquet_bloom_filter_condition.mayBeTrueOnRowGroup(column_index_to_bf))
             {

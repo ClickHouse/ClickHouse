@@ -97,4 +97,19 @@ ${CLICKHOUSE_CLIENT} --query="select f32, fixed_str from file('${DATA_FILE_USER_
 # IN check for floats
 ${CLICKHOUSE_CLIENT} --query="select f64 from file('${DATA_FILE_USER_PATH}', Parquet) where f64 in (toFloat64(22.89182051713945), toFloat64(68.62704389505595)) order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
 
+# tuple in case, bf is off.
+${CLICKHOUSE_CLIENT} --query="select str, fixed_str from file('${DATA_FILE_USER_PATH}', Parquet) where (str, fixed_str) in ('LYLDL', 'BYYC') order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=false, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
+
+# tuple in case, bf is on.
+${CLICKHOUSE_CLIENT} --query="select str, fixed_str from file('${DATA_FILE_USER_PATH}', Parquet) where (str, fixed_str) in ('LYLDL', 'BYYC') order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
+
+# complex tuple in case, bf is off
+${CLICKHOUSE_CLIENT} --query="select str, fixed_str from file('${DATA_FILE_USER_PATH}', Parquet) where (str, fixed_str) in (('NON1', 'NON1'), ('LYLDL', 'BYYC'), ('NON2', 'NON2')) order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=false, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
+
+# complex tuple in case, bf is on
+${CLICKHOUSE_CLIENT} --query="select str, fixed_str from file('${DATA_FILE_USER_PATH}', Parquet) where (str, fixed_str) in (('NON1', 'NON1'), ('LYLDL', 'BYYC'), ('NON2', 'NON2')) order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
+
+# complex tuple in case, bf is on. Non existent
+${CLICKHOUSE_CLIENT} --query="select str, fixed_str from file('${DATA_FILE_USER_PATH}', Parquet) where (str, fixed_str) in (('NON1', 'NON1'), ('NON2', 'NON2'), ('NON3', 'NON3')) order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
+
 rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/*
