@@ -88,4 +88,7 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
 
 ASTPtr parseAdditionalResultFilter(const Settings & settings);
 
+using UsefulSets = std::unordered_set<FutureSetPtr>;
+void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
+
 }

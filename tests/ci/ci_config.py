@@ -519,10 +519,10 @@ class CI:
             runner_type=Runners.STYLE_CHECKER,
         ),
         JobNames.DOCKER_SERVER: CommonJobConfigs.DOCKER_SERVER.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE]
+            required_builds=[BuildNames.PACKAGE_RELEASE, BuildNames.PACKAGE_AARCH64]
         ),
         JobNames.DOCKER_KEEPER: CommonJobConfigs.DOCKER_SERVER.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE]
+            required_builds=[BuildNames.PACKAGE_RELEASE, BuildNames.PACKAGE_AARCH64]
         ),
         JobNames.DOCS_CHECK: JobConfig(
             digest=DigestConfig(
@@ -587,10 +587,10 @@ class CI:
                 if job_name in REQUIRED_CHECKS:
                     stage_type = WorkflowStages.TESTS_1
                 else:
-                    stage_type = WorkflowStages.TESTS_3
+                    stage_type = WorkflowStages.TESTS_2
         assert stage_type, f"BUG [{job_name}]"
-        if non_blocking_ci and stage_type == WorkflowStages.TESTS_3:
-            stage_type = WorkflowStages.TESTS_2
+        if non_blocking_ci and stage_type == WorkflowStages.TESTS_2:
+            stage_type = WorkflowStages.TESTS_2_WW
         return stage_type
 
     @classmethod

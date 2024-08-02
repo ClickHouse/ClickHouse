@@ -5,6 +5,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTForeignKeyDeclaration.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
@@ -76,9 +77,9 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!close.ignore(pos, expected))
         return false;
 
-    auto func = std::make_shared<ASTFunction>();
+    auto func = std::make_shared<ASTDataType>();
     tryGetIdentifierNameInto(name, func->name);
-    // FIXME(ilezhankin): func->no_empty_args = true; ?
+
     func->arguments = columns;
     func->children.push_back(columns);
     node = func;
@@ -179,7 +180,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword s_granularity(Keyword::GRANULARITY);
 
     ParserIdentifier name_p;
-    ParserDataType data_type_p;
+    ParserExpressionWithOptionalArguments type_p;
     ParserExpression expression_p;
     ParserUnsignedInteger granularity_p;
 
@@ -197,7 +198,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!s_type.ignore(pos, expected))
         return false;
 
-    if (!data_type_p.parse(pos, type, expected))
+    if (!type_p.parse(pos, type, expected))
         return false;
 
     if (s_granularity.ignore(pos, expected))
@@ -231,7 +232,7 @@ bool ParserStatisticsDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserKeyword s_type(Keyword::TYPE);
 
     ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
-    ParserList types_p(std::make_unique<ParserDataType>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserList types_p(std::make_unique<ParserExpressionWithOptionalArguments>(), std::make_unique<ParserToken>(TokenType::Comma), false);
 
     ASTPtr columns;
     ASTPtr types;
@@ -751,7 +752,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     auto * table_id = table->as<ASTTableIdentifier>();
 
-    // Shortcut for ATTACH a previously detached table
+    /// A shortcut for ATTACH a previously detached table.
     bool short_attach = attach && !from_path;
     if (short_attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
     {

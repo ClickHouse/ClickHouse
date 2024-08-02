@@ -3,8 +3,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <fmt/format.h>
-
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
 #include <base/getPageSize.h>

@@ -32,6 +32,8 @@ public:
 
     int schedule() override { return fd; }
 
+    void onAsyncJobReady() override;
+
     void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
 
 protected:
@@ -52,6 +54,7 @@ private:
     int fd = -1;
     size_t rows = 0;
     bool manually_add_rows_before_limit_counter = false;
+    bool preprocessed_packet = false;
 };
 
 /// Totals source from RemoteQueryExecutor.

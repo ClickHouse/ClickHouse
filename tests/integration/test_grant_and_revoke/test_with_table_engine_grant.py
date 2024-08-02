@@ -5,7 +5,7 @@ from helpers.test_tools import TSV
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/config.xml"],
+    main_configs=["configs/config_with_table_engine_grant.xml"],
     user_configs=["configs/users.d/users.xml"],
 )
 

@@ -4,8 +4,9 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
 #include <IO/Operators.h>
+
 
 namespace DB
 {
@@ -53,13 +54,13 @@ static DataTypePtr create(const ASTPtr & arguments)
     ASTPtr schema_argument = arguments->children[0];
     bool is_nullable = false;
 
-    if (const auto * func = schema_argument->as<ASTFunction>())
+    if (const auto * type = schema_argument->as<ASTDataType>())
     {
-        if (func->name != "Nullable" || func->arguments->children.size() != 1)
+        if (type->name != "Nullable" || type->arguments->children.size() != 1)
             throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-                "Expected 'Nullable(<schema_name>)' as parameter for type Object (function: {})", func->name);
+                "Expected 'Nullable(<schema_name>)' as parameter for type Object (function: {})", type->name);
 
-        schema_argument = func->arguments->children[0];
+        schema_argument = type->arguments->children[0];
         is_nullable = true;
     }
 

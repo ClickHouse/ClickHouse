@@ -124,16 +124,16 @@ static ASTPtr parseAdditionalPostFilter(const Context & context)
                 "additional filter", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
 }
 
-static ActionsDAGPtr makeAdditionalPostFilter(ASTPtr & ast, ContextPtr context, const Block & header)
+static ActionsDAG makeAdditionalPostFilter(ASTPtr & ast, ContextPtr context, const Block & header)
 {
     auto syntax_result = TreeRewriter(context).analyze(ast, header.getNamesAndTypesList());
     String result_column_name = ast->getColumnName();
     auto dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(false, false);
-    const ActionsDAG::Node * result_node = &dag->findInOutputs(result_column_name);
-    auto & outputs = dag->getOutputs();
+    const ActionsDAG::Node * result_node = &dag.findInOutputs(result_column_name);
+    auto & outputs = dag.getOutputs();
     outputs.clear();
-    outputs.reserve(dag->getInputs().size() + 1);
-    for (const auto * node : dag->getInputs())
+    outputs.reserve(dag.getInputs().size() + 1);
+    for (const auto * node : dag.getInputs())
         outputs.push_back(node);
 
     outputs.push_back(result_node);
@@ -151,7 +151,7 @@ void IInterpreterUnionOrSelectQuery::addAdditionalPostFilter(QueryPlan & plan) c
         return;
 
     auto dag = makeAdditionalPostFilter(ast, context, plan.getCurrentDataStream().header);
-    std::string filter_name = dag->getOutputs().back()->result_name;
+    std::string filter_name = dag.getOutputs().back()->result_name;
     auto filter_step = std::make_unique<FilterStep>(
         plan.getCurrentDataStream(), std::move(dag), std::move(filter_name), true);
     filter_step->setStepDescription("Additional result filter");

@@ -1,14 +1,16 @@
 #pragma once
 
-#include <Client/ClientBase.h>
+#include <Client/ClientApplicationBase.h>
 
 
 namespace DB
 {
 
-class Client : public ClientBase
+class Client : public ClientApplicationBase
 {
 public:
+    using Arguments = ClientApplicationBase::Arguments;
+
     Client() = default;
 
     void initialize(Poco::Util::Application & self) override;

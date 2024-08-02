@@ -93,6 +93,9 @@ struct ChiSquaredDistribution
 
     static void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container)
     {
+        if (degree_of_freedom <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
+
         auto distribution = std::chi_squared_distribution<>(degree_of_freedom);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
@@ -107,6 +110,9 @@ struct StudentTDistribution
 
     static void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container)
     {
+        if (degree_of_freedom <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
+
         auto distribution = std::student_t_distribution<>(degree_of_freedom);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
@@ -121,6 +127,9 @@ struct FisherFDistribution
 
     static void generate(Float64 d1, Float64 d2, ColumnFloat64::Container & container)
     {
+        if (d1 <= 0 || d2 <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
+
         auto distribution = std::fisher_f_distribution<>(d1, d2);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
@@ -300,7 +309,7 @@ public:
             }
             else
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than two argument specified for function {}", getName());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than two arguments specified for function {}", getName());
             }
 
             return res_column;

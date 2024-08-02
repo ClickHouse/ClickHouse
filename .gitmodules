@@ -372,3 +372,6 @@
 [submodule "contrib/double-conversion"]
 	path = contrib/double-conversion
 	url = https://github.com/ClickHouse/double-conversion.git
+[submodule "contrib/numactl"]
+	path = contrib/numactl
+	url = https://github.com/ClickHouse/numactl.git

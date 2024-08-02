@@ -776,7 +776,6 @@ def test_system_users():
 
 def test_system_functions():
     node1.query("CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;")
-
     node1.query("CREATE FUNCTION parity_str AS (n) -> if(n % 2, 'odd', 'even');")
 
     backup_name = new_backup_name()
@@ -816,6 +815,9 @@ def test_system_functions():
     assert node2.query("SELECT number, parity_str(number) FROM numbers(3)") == TSV(
         [[0, "even"], [1, "odd"], [2, "even"]]
     )
+
+    node1.query("DROP FUNCTION linear_equation")
+    node1.query("DROP FUNCTION parity_str")
 
 
 def test_projection():

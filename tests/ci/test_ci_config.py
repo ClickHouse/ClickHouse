@@ -211,7 +211,7 @@ class TestCIConfig(unittest.TestCase):
                 else:
                     self.assertTrue(
                         CI.get_job_ci_stage(job)
-                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_3),
+                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_2),
                         msg=f"Stage for [{job}] is not correct",
                     )
 
@@ -242,7 +242,7 @@ class TestCIConfig(unittest.TestCase):
                 else:
                     self.assertTrue(
                         CI.get_job_ci_stage(job, non_blocking_ci=True)
-                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_2),
+                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_2_WW),
                         msg=f"Stage for [{job}] is not correct",
                     )
 
@@ -478,6 +478,7 @@ class TestCIConfig(unittest.TestCase):
         pr_info = PRInfo(github_event=_TEST_EVENT_JSON)
         pr_info.event_type = EventType.PUSH
         pr_info.number = 0
+        pr_info.head_ref = "24.12345"
         assert pr_info.is_release and not pr_info.is_merge_queue
         ci_cache = CIPY._configure_jobs(
             S3Helper(), pr_info, settings, skip_jobs=False, dry_run=True

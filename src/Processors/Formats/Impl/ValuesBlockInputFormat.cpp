@@ -406,7 +406,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 {
     const Block & header = getPort().getHeader();
     const IDataType & type = *header.getByPosition(column_idx).type;
-    auto settings = context->getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     /// Advance the token iterator until the start of the column expression
     readUntilTheEndOfRowAndReTokenize(column_idx);
@@ -625,8 +625,6 @@ void ValuesBlockInputFormat::readSuffix()
         skipWhitespaceIfAny(*buf);
         if (buf->hasUnreadData())
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data after semicolon");
-        if (!format_settings.values.allow_data_after_semicolon && !buf->eof())
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data after semicolon (and input_format_values_allow_data_after_semicolon=0)");
         return;
     }
 

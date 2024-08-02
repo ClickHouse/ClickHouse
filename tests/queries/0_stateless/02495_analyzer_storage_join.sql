@@ -23,7 +23,7 @@ SELECT x FROM t1 ALL RIGHT JOIN tj ON t1.id1 == tj.key1 AND t1.id2 == tj.key2 OR
 SELECT '--- name clashes ---';
 
 CREATE TABLE t (key2 UInt64, key1 Int64, b UInt64, x UInt64, val UInt64) ENGINE = Memory;
-INSERT INTO t VALUES (1, -1, 11, 111, 1111), (2, -2, 22, 222, 2222), (3, -3, 33, 333, 2222), (4, -4, 44, 444, 4444), (5, -5, 55, 555, 5555)
+INSERT INTO t VALUES (1, -1, 11, 111, 1111), (2, -2, 22, 222, 2222), (3, -3, 33, 333, 2222), (4, -4, 44, 444, 4444), (5, -5, 55, 555, 5555);
 
 SELECT '-- using --';
 

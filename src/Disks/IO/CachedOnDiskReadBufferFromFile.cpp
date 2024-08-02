@@ -810,6 +810,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 {
     last_caller_id = FileSegment::getCallerId();
 
+    chassert(file_offset_of_buffer_end <= read_until_position);
     if (file_offset_of_buffer_end == read_until_position)
         return false;
 
@@ -1051,7 +1052,11 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         if (download_current_segment && download_current_segment_succeeded)
             chassert(file_segment.getCurrentWriteOffset() >= file_offset_of_buffer_end);
-        chassert(file_offset_of_buffer_end <= read_until_position);
+
+        chassert(
+            file_offset_of_buffer_end <= read_until_position,
+            fmt::format("Expected {} <= {} (size: {}, read range: {})",
+                        file_offset_of_buffer_end, read_until_position, size, current_read_range.toString()));
     }
 
     swap(*implementation_buffer);

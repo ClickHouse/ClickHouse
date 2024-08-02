@@ -98,7 +98,27 @@ void RemoteSource::work()
         executor_finished = true;
         return;
     }
+
+    if (preprocessed_packet)
+    {
+        preprocessed_packet = false;
+        return;
+    }
+
     ISource::work();
+}
+
+void RemoteSource::onAsyncJobReady()
+{
+    chassert(async_read);
+
+    if (!was_query_sent)
+        return;
+
+    chassert(!preprocessed_packet);
+    preprocessed_packet = query_executor->processParallelReplicaPacketIfAny();
+    if (preprocessed_packet)
+        is_async_state = false;
 }
 
 std::optional<Chunk> RemoteSource::tryGenerate()

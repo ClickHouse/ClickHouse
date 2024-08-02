@@ -7,8 +7,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserDataType.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+
 
 namespace DB
 {
@@ -21,7 +21,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     ParserToken close_p(TokenType::ClosingRoundBracket);
     ParserOrderByExpressionList order_list_p;
 
-    ParserDataType data_type_p;
+    ParserExpressionWithOptionalArguments type_p;
     ParserExpression expression_p;
     ParserUnsignedInteger granularity_p;
 
@@ -68,7 +68,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
 
     if (s_type.ignore(pos, expected))
     {
-        if (!data_type_p.parse(pos, type, expected))
+        if (!type_p.parse(pos, type, expected))
             return false;
     }
 

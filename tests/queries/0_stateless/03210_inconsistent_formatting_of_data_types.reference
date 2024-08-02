@@ -1,0 +1,7 @@
+ALTER TABLE columns_with_multiple_streams MODIFY COLUMN `field1` Nullable(tupleElement(x, 2), UInt8)
+ALTER TABLE t_update_empty_nested ADD COLUMN `nested.arr2` Array(tuple('- ON NULL -', toLowCardinality(11), 11, 11, toLowCardinality(11), 11), UInt64)
+ALTER TABLE t ADD COLUMN `x` Array(tuple(1), UInt8)
+ALTER TABLE enum_alter_issue MODIFY COLUMN `a` Enum8(equals('one', timeSlots(timeSlots(arrayEnumerateDense(tuple('0.2147483646', toLowCardinality(toUInt128)), NULL), 4, 12.34, materialize(73), 2)), 1))
+ALTER TABLE t_sparse_mutations_3 MODIFY COLUMN `s` Tuple(Nullable(tupleElement(s, 1), UInt64), Nullable(UInt64), Nullable(UInt64), Nullable(UInt64), Nullable(String))
+Syntax error
+Syntax error

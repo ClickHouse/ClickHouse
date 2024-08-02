@@ -152,22 +152,20 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
     return conversion_expr_list;
 }
 
-ActionsDAGPtr createExpressions(
+std::optional<ActionsDAG> createExpressions(
     const Block & header,
     ASTPtr expr_list,
     bool save_unneeded_columns,
     ContextPtr context)
 {
     if (!expr_list)
-        return nullptr;
+        return {};
 
     auto syntax_result = TreeRewriter(context).analyze(expr_list, header.getNamesAndTypesList());
     auto expression_analyzer = ExpressionAnalyzer{expr_list, syntax_result, context};
-    auto dag = std::make_shared<ActionsDAG>(header.getNamesAndTypesList());
+    ActionsDAG dag(header.getNamesAndTypesList());
     auto actions = expression_analyzer.getActionsDAG(true, !save_unneeded_columns);
-    dag = ActionsDAG::merge(std::move(*dag), std::move(*actions));
-
-    return dag;
+    return ActionsDAG::merge(std::move(dag), std::move(actions));
 }
 
 }
@@ -180,7 +178,7 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
 
     if (auto dag = createExpressions(block, conversion_expr_list, true, context))
     {
-        auto expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context));
+        auto expression = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings::fromContext(context));
         expression->execute(block);
     }
 }
@@ -195,7 +193,7 @@ bool needConvertAnyNullToDefault(const Block & header, const NamesAndTypesList &
     return false;
 }
 
-ActionsDAGPtr evaluateMissingDefaults(
+std::optional<ActionsDAG> evaluateMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
@@ -204,7 +202,7 @@ ActionsDAGPtr evaluateMissingDefaults(
     bool null_as_default)
 {
     if (!columns.hasDefaults() && (!null_as_default || !needConvertAnyNullToDefault(header, required_columns, columns)))
-        return nullptr;
+        return {};
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
     return createExpressions(header, expr_list, save_unneeded_columns, context);
