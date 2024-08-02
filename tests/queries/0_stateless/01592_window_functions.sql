@@ -124,3 +124,14 @@ ORDER BY
 
 drop table product_groups;
 drop table products;
+
+select '---- Q9 ----';
+select number, row_number, cast(percent_rank * 10000 as Int32) as percent_rank
+from (
+	select number, row_number() over () as row_number, percent_rank() over (order by number) as percent_rank
+	from numbers(10000)
+	order by number
+	limit 10
+)
+settings max_block_size=100;
+

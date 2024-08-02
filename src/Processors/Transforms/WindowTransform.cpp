@@ -1341,13 +1341,6 @@ IProcessor::Status WindowTransform::prepare()
         {
             // Output the ready block.
             const auto i = next_output_block_number - first_block_number;
-            LOG_ERROR(
-                getLogger("WindowTransform"),
-                "xxx {} output block: {}, next_output_block_number: {} first_not_ready_row.block: {}",
-                fmt::ptr(this),
-                i,
-                next_output_block_number,
-                first_not_ready_row.block);
             auto & block = blocks[i];
             auto columns = block.original_input_columns;
             for (auto & res : block.output_columns)
@@ -2158,6 +2151,7 @@ public:
         frame.type = WindowFrame::FrameType::RANGE;
         frame.begin_type = WindowFrame::BoundaryType::Unbounded;
         frame.end_type = WindowFrame::BoundaryType::Unbounded;
+        //frame.end_type = WindowFrame::BoundaryType::Current;
         return frame;
     }
 
