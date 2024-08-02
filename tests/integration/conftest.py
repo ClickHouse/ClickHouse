@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# pylint: disable=unused-argument
+# pylint: disable=broad-exception-raised
 
 import logging
 import os
