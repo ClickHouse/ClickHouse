@@ -12,12 +12,13 @@
 
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
-#include <Storages/ObjectStorage/Utils.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/HDFS/Configuration.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
+#include <Storages/ObjectStorage/Local/Configuration.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 
 namespace DB
@@ -203,6 +204,11 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
         .allow_readonly = false
     });
 #endif
+    factory.registerFunction<TableFunctionObjectStorage<LocalDefinition, StorageLocalConfiguration>>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the data stored locally.)",
+            .examples{{"local", "SELECT * FROM  local(file_path, [format, compression, structure])", ""}}},
+         .allow_readonly = false});
 }
 
 #if USE_AZURE_BLOB_STORAGE
@@ -223,4 +229,5 @@ template class TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfigurati
 template class TableFunctionObjectStorage<HDFSClusterDefinition, StorageHDFSConfiguration>;
 #endif
 
+template class TableFunctionObjectStorage<LocalDefinition, StorageLocalConfiguration>;
 }
