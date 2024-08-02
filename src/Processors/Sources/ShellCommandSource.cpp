@@ -75,6 +75,15 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
     while (true)
     {
         Stopwatch watch;
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        auto describe_fd = [](const auto & pollfd) { return fmt::format("(fd={}, flags={})", pollfd.fd, fcntl(pollfd.fd, F_GETFL)); };
+        LOG_TRACE(
+            getLogger("TimeoutReadBufferFromFileDescriptor"),
+            "Polling descriptors: {}",
+            fmt::join(std::span(pfds, pfds + num) | std::views::transform(describe_fd), ", "));
+#endif
+
         res = poll(pfds, static_cast<nfds_t>(num), static_cast<int>(timeout_milliseconds));
 
         if (res < 0)
@@ -84,7 +93,16 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
 
             const auto elapsed = watch.elapsedMilliseconds();
             if (timeout_milliseconds <= elapsed)
+            {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+                LOG_TRACE(
+                    getLogger("TimeoutReadBufferFromFileDescriptor"),
+                    "Timeout exceeded: elapsed={}, timeout={}",
+                    elapsed,
+                    timeout_milliseconds);
+#endif
                 break;
+            }
             timeout_milliseconds -= elapsed;
         }
         else
@@ -92,6 +110,15 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
             break;
         }
     }
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    auto describe_fd = [](const auto & pollfd) { return fmt::format("(fd={}, flags={})", pollfd.fd, fcntl(pollfd.fd, F_GETFL)); };
+    LOG_TRACE(
+        getLogger("TimeoutReadBufferFromFileDescriptor"),
+        "Poll for descriptors: {} returned {}",
+        fmt::join(std::span(pfds, pfds + num) | std::views::transform(describe_fd), ", "),
+        res);
+#endif
 
     return res;
 }
@@ -139,15 +166,9 @@ public:
 
         while (!bytes_read)
         {
-            LOG_TRACE(
-                getLogger("TimeoutReadBufferFromFileDescriptor"),
-                "Starting polling on descriptors ({}) with timeout {} ms",
-                fmt::join(std::span(pfds, pfds + num_pfds) | std::views::transform([](const auto & pollfd) { return pollfd.fd; }), ", "),
-                timeout_milliseconds);
             pfds[0].revents = 0;
             pfds[1].revents = 0;
             size_t num_events = pollWithTimeout(pfds, num_pfds, timeout_milliseconds);
-            LOG_TRACE(getLogger("TimeoutReadBufferFromFileDescriptor"), "Poll returned with num_events={}", num_events);
             if (0 == num_events)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe read timeout exceeded {} milliseconds", timeout_milliseconds);
 
@@ -206,12 +227,6 @@ public:
         }
 
         return true;
-    }
-
-    void reset() const
-    {
-        makeFdBlocking(stdout_fd);
-        makeFdBlocking(stderr_fd);
     }
 
     ~TimeoutReadBufferFromFileDescriptor() override
