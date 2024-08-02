@@ -26,7 +26,7 @@ SET distributed_product_mode = 'global';
 -- Simulate replica failure by detaching a partition
 ALTER TABLE t1_shard DETACH PARTITION 1;
 
--- Execute a distributed query that may need to retry due to missing data
+-- Execute a distributed query that should reflect missing data
 SELECT DISTINCT d0.id, d0.value
 FROM t1_distr d0
 WHERE d0.id IN
@@ -42,7 +42,7 @@ ORDER BY d0.id;
 -- Reattach the partition to restore the data
 ALTER TABLE t1_shard ATTACH PARTITION 1;
 
--- Test distributed join
+-- Execute the query again to verify restoration
 SELECT DISTINCT d0.id, d0.value
 FROM t1_distr d0
 JOIN (
