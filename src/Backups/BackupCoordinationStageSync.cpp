@@ -29,22 +29,289 @@ BackupCoordinationStageSync::BackupCoordinationStageSync(
     , with_retries(with_retries_)
     , log(log_)
 {
-    createRootNodes();
+    task = schedule_pool.createTask(log_name, [this]{ run(); });
 }
 
-void BackupCoordinationStageSync::createRootNodes()
+BackupCoordinationStageSync::~BackupCoordinationStageSync()
 {
-    auto holder = with_retries.createRetriesControlHolder("createRootNodes");
-    holder.retries_ctl.retryLoop(
-        [&, &zookeeper = holder.faulty_zookeeper]()
-    {
-        with_retries.renewZooKeeper(zookeeper);
-        zookeeper->createAncestors(zookeeper_path);
-        zookeeper->createIfNotExists(zookeeper_path, "");
-    });
+    shutdown();
 }
 
-void BackupCoordinationStageSync::set(const String & current_host, const String & new_stage, const String & message, const bool & all_hosts)
+void BackupCoordinationStageSync::run()
+{
+    try
+    {
+        runImpl();
+    }
+    catch (...)
+    {
+        consecutive_check_failures++;
+        if (!shutdown)
+            task->scheduleAfter(next_failure_retry_ms);
+    }
+}
+
+
+void BackupCoordinationStageSync::runImpl()
+{
+    while (!shutdown)
+    {
+        createRootNodes();
+        createEphemeralNode(zookeeper);
+        readState(zookeeper);
+        zk_nodes_changed.tryWait(check_period_ms);
+    }
+}
+
+void BackupCoordinationStageSync::createRootNodes(FaultyKeeper zookeeper)
+{
+    zookeeper->createAncestors(zookeeper_path);
+    zookeeper->createIfNotExists(zookeeper_path, "");
+}
+
+void BackupCoordinationStageSync::createEphemeralNode(FaultyKeeper zookeeper)
+{
+    zookeeper->tryCreate(zookeeper_path + "/alive|" + current_host, "", zkutil::CreateMode::Ephemeral);
+}
+
+void BackupCoordinationStageSync::readState(FaultyKeeper zookeeper)
+{
+    zk_nodes_changed->reset();
+
+    /// Get zk nodes and subscribe on their changes.
+    Strings zk_nodes = zookeeper->getChildren(zookeeper_path, nullptr, zk_nodes_changed);
+    std::unordered_set<std::string_view> zk_nodes_set{zk_nodes.begin(), zk_nodes.end()};
+
+    State new_state;
+    {
+        std::lock_guard lock{mutex};
+        new_state = state;
+    }
+
+    /// Read the current state of zk nodes.
+    auto error_zk_node = std::find(zk_nodes.begin(), zk_nodes.end(), "error");
+    if (error_zk_node != zk_nodes.end())
+    {
+        String errors = zookeeper->get(zookeeper_path + "/error");
+        ReadBufferFromOwnString buf{errors};
+        String host;
+        readStringBinary(host, buf);
+        auto error = readException(buf, fmt::format("Got error from {}", host));
+
+        new_state.error = std::make_pair(host, error);
+    }
+
+    auto get_host_info = [&](const String & host) -> HostInfo &
+    {
+        auto it = new_state.hosts_info.find(host);
+        if (it == new_state.hosts_info.end())
+        {
+            it = new_state.hosts_info.emplace(host, HostInfo{});
+            it->second.host = host;
+        }
+        return it->second;
+    };
+
+    new_state.connected_hosts.clear();
+
+    for (const auto & zk_node : zk_nodes)
+    {
+        if (zk_node.starts_with("started|"))
+        {
+            String host = zk_node.substr(strlen("started|"));
+            auto & host_info = get_host_info(host);
+            host_info.started = true;
+            continue;
+        }
+
+        if (zk_node.starts_with("alive|"))
+        {
+            String host = zk_node.substr(strlen("alive|"));
+            auto & host_info = get_host_info(host);
+            host_info.connected = true;
+            host_info.last_time_connected = std::chrono::system_clock::now();
+            host_info.started = true;
+            continue;
+        }
+
+        if (zk_node == "error")
+        {
+            String host_and_exception = zookeeper->get(fs::path{zookeeper_path} / zk_node);
+            ReadBufferFromOwnString buf{host_and_exception};
+            String host;
+            readStringBinary(host, buf);
+            auto exception = readException(buf, fmt::format("Got error from {}", host));
+            new_state.error = std::make_pair(host, exception);
+            continue;
+        }
+
+        if (zk_node.starts_with("current|"))
+        {
+            String host_and_stage = zk_node.substr(strlen("current|"))
+            size_t separator_pos = host_and_stage.find('|');
+            if (separator_pos == String::npos)
+                continue;
+            String host = host_and_stage.substr(0, separator_pos);
+            String stage = host_and_stage.substr(separator_pos + 1);
+            auto & host_info = get_host_info(host);
+            if (!host_info.results.contains(stage))
+            {
+                String stage_result = zookeeper->get(fs::path{zookeeper_path} / zk_node);
+                host_info.results[stage] = std::move(stage_result);
+            }
+        }
+    }
+
+    bool was_state_changed;
+    {
+        std::lock_guard lock{mutex};
+        was_state_changed = (new_state != state);
+        state = new_state;
+    }
+
+    if (was_state_changed)
+        state_changed.notify_all();
+}
+
+
+Strings BackupCoordinationStageSync::wait(const Strings & all_hosts, const String & stage_to_wait)
+{
+    return waitImpl(all_hosts, stage_to_wait, {});
+}
+
+Strings BackupCoordinationStageSync::waitFor(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout)
+{
+    return waitImpl(all_hosts, stage_to_wait, timeout);
+}
+
+
+Strings BackupCoordinationStageSync::waitImpl(const Strings & all_hosts, const String & stage_to_wait, std::optional<std::chrono::milliseconds> timeout) const
+{
+    Strings results;
+    results.resize(all_hosts.size());
+
+    auto check_if_ready = [&](bool throw_if_not_ready)
+    {
+        if (state.error)
+            state.error->exception.rethrow();
+
+        for (size_t i = 0; i != all_hosts.size(); ++i)
+        {
+            const String & host = all_hosts[i];
+            auto it = state.hosts_info.find(host);
+            if (it == state.hosts_info.end())
+            {
+                if (throw_if_not_ready)
+                {
+                    throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Never connected to host {}", host);
+                }
+                else
+                {
+                    LOG_INFO(log, "No connection to host {} yet", host);
+                    return false;
+                }
+            }
+
+            HostInfo & host_info = it->second;
+            auto stage_result_it = host_info.stage_results.find(stage_to_wait);
+            if (stage_result_it != host_info.stage_results.end())
+            {
+                results[i] = stage_result_it;
+                continue;
+            }
+
+            if (host_info.connected)
+            {
+                if (throw_if_not_ready)
+                    throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Waited for host {} to come to stage {} for too long{}",
+                                    host, stage_to_wait, timeout ? fmt::format(" ({})", *timeout) : "");
+                else
+                    return false;
+            }
+            else if (host_info.started)
+            {
+                if (throw_if_not_ready)
+                    throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Host disconnected {}{}",
+                                    host, host_info.last_time_connected ? fmt::format(", last time it was connected at {}", *host_info.last_time_connected, ""));
+                else
+                    return false;
+            }
+            else
+            {
+                if (throw_if_not_ready)
+                    throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Host never started {}", host);
+                else
+                    return false;
+            }
+        }
+    };
+
+    std::unique_lock lock{mutex};
+    if (timeout)
+    {
+        if (!state_changed.wait_for(lock, [&]() { check_if_ready(/* throw_if_not_ready= */ false); }, timeout))
+        {
+            check_if_ready(/* throw_if_not_ready= */ true);
+        }
+    }
+    else
+    {
+        state_changed.wait(lock, [&]() { check_if_ready(/* throw_if_not_ready= */ false); });
+    }
+
+    return results;
+}
+
+
+
+        if (zk_node.starts_with("current|"))
+        if (!zk_nodes_set.contains("current|" + host + "|" + stage_to_wait))
+        {
+            const String started_node_name = "started|" + host;
+            const String alive_node_name = "alive|" + host;
+
+            bool started = zk_nodes_set.contains(started_node_name);
+            bool alive = zk_nodes_set.contains(alive_node_name);
+
+            if (!alive)
+            {
+                /// If the "alive" node doesn't exist then we don't have connection to the corresponding host.
+                /// This node is ephemeral so probably it will be recreated soon. We use zookeeper retries to wait.
+                /// In worst case when we won't manage to see the alive node for a long time we will just abort the backup.
+                const auto * const suffix = retries_ctl.isLastRetry() ? "" : ", will retry";
+                if (started)
+                    retries_ctl.setUserError(Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
+                                                       "Lost connection to host {}{}", host, suffix));
+                else
+                    retries_ctl.setUserError(Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
+                                                       "No connection to host {} yet{}", host, suffix));
+
+                state.disconnected_host = host;
+                return state;
+            }
+
+            if (!unready_host)
+                unready_host.emplace(UnreadyHost{.host = host, .started = started});
+        }
+    }
+
+    if (unready_host)
+    {
+        state.unready_host = std::move(unready_host);
+        return state;
+    }
+
+    Strings results;
+    for (const auto & host : all_hosts)
+        results.emplace_back(zookeeper->get(zookeeper_path + "/current|" + host + "|" + stage_to_wait));
+    state.results = std::move(results);
+
+
+    state = readCurrentState(holder, zk_nodes, all_hosts, stage_to_wait);
+}
+
+
+void BackupCoordinationStageSync::setStage(const String & new_stage, const String & message)
 {
     auto holder = with_retries.createRetriesControlHolder("set");
     holder.retries_ctl.retryLoop(
