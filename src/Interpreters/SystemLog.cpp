@@ -5,6 +5,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/BackupLog.h>
@@ -356,10 +357,15 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     if (blob_storage_log)
         logs.emplace_back(blob_storage_log.get());
 
+    bool should_prepare = global_context->getServerSettings().prepare_system_log_tables_on_startup;
     try
     {
         for (auto & log : logs)
+        {
             log->startup();
+            if (should_prepare)
+                log->prepareTable();
+        }
     }
     catch (...)
     {
@@ -538,7 +544,13 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         insert_context->makeQueryContext();
         addSettingsForQuery(insert_context, IAST::QueryKind::Insert);
 
-        InterpreterInsertQuery interpreter(query_ptr, insert_context);
+        InterpreterInsertQuery interpreter(
+            query_ptr,
+            insert_context,
+            /* allow_materialized */ false,
+            /* no_squash */ false,
+            /* no_destination */ false,
+            /* async_isnert */ false);
         BlockIO io = interpreter.execute();
 
         PushingPipelineExecutor executor(io.pipeline);

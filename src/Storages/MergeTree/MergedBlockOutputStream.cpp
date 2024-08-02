@@ -4,6 +4,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Parsers/queryToString.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -33,7 +34,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , write_settings(write_settings_)
 {
     MergeTreeWriterSettings writer_settings(
-        data_part->storage.getContext()->getSettings(),
+        data_part->storage.getContext()->getSettingsRef(),
         write_settings,
         storage_settings,
         data_part->index_granularity_info.mark_type.adaptive,
@@ -93,6 +94,7 @@ struct MergedBlockOutputStream::Finalizer::Impl
 void MergedBlockOutputStream::Finalizer::finish()
 {
     std::unique_ptr<Impl> to_finish = std::move(impl);
+    impl.reset();
     if (to_finish)
         to_finish->finish();
 }
@@ -130,7 +132,19 @@ MergedBlockOutputStream::Finalizer::Finalizer(Finalizer &&) noexcept = default;
 MergedBlockOutputStream::Finalizer & MergedBlockOutputStream::Finalizer::operator=(Finalizer &&) noexcept = default;
 MergedBlockOutputStream::Finalizer::Finalizer(std::unique_ptr<Impl> impl_) : impl(std::move(impl_)) {}
 
-MergedBlockOutputStream::Finalizer::~Finalizer() = default;
+MergedBlockOutputStream::Finalizer::~Finalizer()
+{
+    try
+    {
+        if (impl)
+            finish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
 
 void MergedBlockOutputStream::finalizePart(
     const MergeTreeMutableDataPartPtr & new_part,

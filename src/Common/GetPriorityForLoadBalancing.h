@@ -1,6 +1,10 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
+#include <Common/Priority.h>
+#include <Core/LoadBalancing.h>
+
+#include <functional>
+#include <vector>
 
 namespace DB
 {

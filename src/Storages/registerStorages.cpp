@@ -34,7 +34,6 @@ void registerStorageFuzzJSON(StorageFactory & factory);
 void registerStorageS3(StorageFactory & factory);
 void registerStorageHudi(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory);
-void registerStorageAzureQueue(StorageFactory & factory);
 
 #if USE_PARQUET
 void registerStorageDeltaLake(StorageFactory & factory);
@@ -42,6 +41,10 @@ void registerStorageDeltaLake(StorageFactory & factory);
 #if USE_AVRO
 void registerStorageIceberg(StorageFactory & factory);
 #endif
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+void registerStorageAzureQueue(StorageFactory & factory);
 #endif
 
 #if USE_HDFS

@@ -165,7 +165,7 @@ private:
             });
         }
 
-        validateFunctionArgumentTypes(*this, arguments,
+        validateFunctionArguments(*this, arguments,
             FunctionArgumentDescriptors{
                 {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "encryption mode string"},
                 {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "plaintext"},
@@ -438,7 +438,7 @@ private:
             });
         }
 
-        validateFunctionArgumentTypes(*this, arguments,
+        validateFunctionArguments(*this, arguments,
             FunctionArgumentDescriptors{
                 {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "decryption mode string"},
                 {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "ciphertext"},

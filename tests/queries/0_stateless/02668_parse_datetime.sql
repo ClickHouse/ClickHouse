@@ -162,7 +162,7 @@ select sTr_To_DaTe('10:04:11 03-07-2019', '%s:%i:%H %d-%m-%Y', 'UTC') = toDateTi
 select str_to_date('10:04:11 invalid 03-07-2019', '%s:%i:%H %d-%m-%Y', 'UTC') IS NULL;
 
 -- Error handling
-select parseDateTime('12 AM'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select parseDateTime(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 select parseDateTime('12 AM', '%h %p', 'UTC', 'a fourth argument'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 -- Fuzzer crash bug #53715
@@ -186,5 +186,10 @@ select parseDateTime('08 13, 2022, 07:58:32', '%m %e, %G, %k:%i:%s', 'UTC');
 -- %c accepts single or double digits inputs
 select parseDateTime('8 13, 2022, 7:58:32', '%c %e, %G, %k:%i:%s', 'UTC');
 select parseDateTime('08 13, 2022, 07:58:32', '%c %e, %G, %k:%i:%s', 'UTC');
+
+-- The format string argument is optional
+set session_timezone = 'UTC'; -- don't randomize the session timezone
+select parseDateTime('2021-01-04 23:12:34') = toDateTime('2021-01-04 23:12:34');
+
 
 -- { echoOff }
