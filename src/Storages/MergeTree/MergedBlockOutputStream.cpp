@@ -34,7 +34,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , write_settings(write_settings_)
 {
     MergeTreeWriterSettings writer_settings(
-        data_part->storage.getContext()->getSettings(),
+        data_part->storage.getContext()->getSettingsRef(),
         write_settings,
         storage_settings,
         data_part->index_granularity_info.mark_type.adaptive,

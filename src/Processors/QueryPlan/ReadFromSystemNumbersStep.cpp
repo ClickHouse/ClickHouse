@@ -459,7 +459,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     chassert(numbers_storage.step != UInt64{0});
 
     /// Build rpn of query filters
-    KeyCondition condition(filter_actions_dag, context, column_names, key_expression);
+    KeyCondition condition(filter_actions_dag ? &*filter_actions_dag : nullptr, context, column_names, key_expression);
 
     if (condition.extractPlainRanges(ranges))
     {
