@@ -71,7 +71,11 @@ String calculateConstantActionNodeName(const Field & constant_literal, const Dat
 /// Calculate action node name for constant, data type will be derived from constant literal value
 String calculateConstantActionNodeName(const Field & constant_literal);
 
+/// If the window frame is not set in sql, try to use the default frame from window function
+/// if it have any one. Otherwise use the default window frame from `WindowNode`.
+/// If the window frame is set in sql, use it anyway.
 std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node);
+
 /** Calculate action node name for window node.
   * Window node action name can only be part of window function action name.
   * For column node column node identifier from planner context is used, if use_column_identifier_as_action_node_name = true.
