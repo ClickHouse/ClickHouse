@@ -101,37 +101,7 @@ SELECT
 FROM products INNER JOIN  product_groups USING (group_id)) t
 order by group_name, product_name, price;
 
-select '---- Q8 ----';
-INSERT INTO product_groups  VALUES	(4, 'Unknow');
-INSERT INTO products (product_id,product_name, group_id,price) VALUES (12, 'Others', 4, 200);
-
-SELECT *
-FROM
-(
-    SELECT
-        product_name,
-        group_name,
-        price,
-        rank() OVER (PARTITION BY group_name ORDER BY price ASC) AS rank,
-        percent_rank() OVER (PARTITION BY group_name ORDER BY price ASC) AS percent
-    FROM products
-    INNER JOIN product_groups USING (group_id)
-) AS t
-ORDER BY
-    group_name ASC,
-    price ASC,
-    product_name ASC;
-
 drop table product_groups;
 drop table products;
 
-select '---- Q9 ----';
-select number, row_number, cast(percent_rank * 10000 as Int32) as percent_rank
-from (
-	select number, row_number() over () as row_number, percent_rank() over (order by number) as percent_rank
-	from numbers(10000)
-	order by number
-	limit 10
-)
-settings max_block_size=100;
 
