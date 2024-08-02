@@ -237,19 +237,7 @@ public:
 
                 if (function_node.isWindowFunction())
                 {
-                    auto get_window_frame = [&]() -> std::optional<WindowFrame>
-                    {
-                        auto & window_node = function_node.getWindowNode()->as<WindowNode &>();
-                        auto & window_frame = window_node.getWindowFrame();
-                        if (!window_frame.is_default)
-                            return window_frame;
-                        auto aggregate_function = function_node.getAggregateFunction();
-                        if (const auto * win_func = dynamic_cast<const IWindowFunction *>(aggregate_function.get()))
-                        {
-                            return win_func->getDefaultFrame();
-                        }
-                        return {};
-                    };
+                    auto get_window_frame = [&]() { return extractWindowFrame(function_node); };
                     buffer << " OVER (";
                     buffer << calculateWindowNodeActionName(function_node.getWindowNode(), get_window_frame);
                     buffer << ')';
@@ -1038,6 +1026,22 @@ String calculateConstantActionNodeName(const Field & constant_literal, const Dat
 String calculateConstantActionNodeName(const Field & constant_literal)
 {
     return ActionNodeNameHelper::calculateConstantActionNodeName(constant_literal);
+}
+
+std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node)
+{
+    if (!node.isWindowFunction())
+        return {};
+    auto & window_node = node.getWindowNode()->as<WindowNode &>();
+    const auto & window_frame = window_node.getWindowFrame();
+    if (!window_frame.is_default)
+        return window_frame;
+    auto aggregate_function = node.getAggregateFunction();
+    if (const auto * win_func = dynamic_cast<const IWindowFunction *>(aggregate_function.get()))
+    {
+        return win_func->getDefaultFrame();
+    }
+    return {};
 }
 
 String calculateWindowNodeActionName(const QueryTreeNodePtr & node, const PlannerContext & planner_context, std::function<std::optional<WindowFrame>()> get_window_frame, bool use_column_identifier_as_action_node_name)

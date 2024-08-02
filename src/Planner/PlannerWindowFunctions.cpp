@@ -29,18 +29,7 @@ WindowDescription extractWindowDescriptionFromWindowNode(const FunctionNode & fu
     auto node = func_node.getWindowNode();
     auto & window_node = node->as<WindowNode &>();
 
-    auto get_window_frame = [&]() -> std::optional<WindowFrame>
-    {
-        auto frame = window_node.getWindowFrame();
-        if (!frame.is_default)
-            return frame;
-        auto aggregate_function = func_node.getAggregateFunction();
-        if (const auto * win_func = dynamic_cast<const IWindowFunction *>(aggregate_function.get()))
-        {
-            return win_func->getDefaultFrame();
-        }
-        return {};
-    };
+    auto get_window_frame = [&]() { return extractWindowFrame(func_node); };
 
     WindowDescription window_description;
     window_description.window_name = calculateWindowNodeActionName(node, planner_context, get_window_frame);
