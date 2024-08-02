@@ -663,6 +663,19 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
         restoreColumnObject(column_object, prev_size);
         throw;
     }
+
+    /// Insert default to all remaining typed and dynamic paths.
+    for (auto & [_, column] : typed_paths)
+    {
+        if (column->size() == prev_size)
+            column->insertDefault();
+    }
+
+    for (auto & [_, column] : column_object.getDynamicPathsPtrs())
+    {
+        if (column->size() == prev_size)
+            column->insertDefault();
+    }
 }
 
 SerializationPtr SerializationObject::TypedPathSubcolumnCreator::create(const DB::SerializationPtr & prev) const
