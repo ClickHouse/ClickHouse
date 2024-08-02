@@ -2,15 +2,13 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Common/ThreadPool.h>
-#include "Interpreters/Context_fwd.h"
 
 #include <atomic>
 #include <chrono>
 
 #define SYSTEM_PERIODIC_LOG_ELEMENTS(M) \
     M(ErrorLogElement) \
-    M(MetricLogElement) \
-    M(QueryMetricLogElement)
+    M(MetricLogElement)
 
 namespace DB
 {

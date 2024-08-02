@@ -94,18 +94,14 @@ void QueryMetricLogElement::appendToBlock(MutableColumns & columns) const
 
 void QueryMetricLog::stopCollect()
 {
-    bool old_val = false;
-    if (!is_shutdown_metric_thread.compare_exchange_strong(old_val, true))
-        return;
-    queries_cv.notify_all();
-    if (worker_thread)
-        worker_thread->join();
+    std::lock_guard lock(queries_mutex);
+    for (auto & [query_id, status] : queries)
+        status.task->deactivate();
 }
 
 void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds)
 {
     QueryMetricLogStatus status;
-    status.query_id = query_id;
     status.interval_milliseconds = interval_milliseconds;
     status.next_collect_time = query_start_time + std::chrono::milliseconds(interval_milliseconds);
 
@@ -113,113 +109,63 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         status.last_profile_events[i] = profile_events[i].load(std::memory_order_relaxed);
 
-    std::lock_guard lock(queries_mutex);
-    queries.emplace(std::move(status));
+    auto context = getContext();
+    const auto & process_list = context->getProcessList();
+    status.task = context->getSchedulePool().createTask("QueryLog", [this, &process_list, query_id] {
+        auto current_time = std::chrono::system_clock::now();
+        const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
 
-    // Wake up the sleeping thread only if the collection for this query needs to wake up sooner
-    const auto & queries_by_next_collect_time = queries.get<ByNextCollectTime>();
-    if (query_id == queries_by_next_collect_time.begin()->query_id)
-    {
-        std::unique_lock cv_lock(queries_cv_mutex);
-        queries_cv_wakeup = true;
-        cv_lock.unlock();
-        queries_cv.notify_all();
-    }
+        // The query info should always be found because whenever a query ends, finishQuery is
+        // called and the query is removed from the list
+        if (!query_info)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query info not found: {}", query_id);
+
+        auto elem = createLogMetricElement(query_id, query_info->profile_counters, current_time);
+        add(std::move(elem));
+    });
+
+    status.task->scheduleAfter(interval_milliseconds);
+
+    std::lock_guard lock(queries_mutex);
+    queries.emplace(query_id, std::move(status));
 }
 
 void QueryMetricLog::finishQuery(const String & query_id)
 {
     std::lock_guard lock(queries_mutex);
-    auto & queries_by_id = queries.get<ByQueryId>();
-    queries_by_id.erase(query_id);
+    auto it = queries.find(query_id);
+    if (it == queries.end())
+        return;
+
+    it->second.task->deactivate();
+    queries.erase(it);
 }
 
-void QueryMetricLog::threadFunction()
+QueryMetricLogElement QueryMetricLog::createLogMetricElement(const String & query_id, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters, TimePoint current_time)
 {
-    auto desired_timepoint = std::chrono::system_clock::now();
-    while (!is_shutdown_metric_thread)
-    {
-        try
-        {
-            {
-                std::lock_guard lock(queries_mutex);
-                const auto current_time = std::chrono::system_clock::now();
-                if (!queries.empty())
-                {
-                    auto & queries_by_next_collect_time = queries.get<ByNextCollectTime>();
-                    stepFunction(current_time);
-                    desired_timepoint = queries_by_next_collect_time.begin()->next_collect_time;
-                }
-                else
-                {
-                    // Use an absurdidly far time to avoid waking up too often
-                    desired_timepoint = desired_timepoint + std::chrono::hours(1);
-                }
-            }
-
-            std::unique_lock cv_lock(queries_cv_mutex);
-            queries_cv.wait_until(cv_lock, desired_timepoint, [this, desired_timepoint] {
-                return queries_cv_wakeup || is_shutdown_metric_thread || desired_timepoint >= std::chrono::system_clock::now();
-            });
-            queries_cv_wakeup = false;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-}
-
-QueryMetricLogElement QueryMetricLog::createLogMetricElement(const String & query_id, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters, PeriodicLog<QueryMetricLogElement>::TimePoint current_time)
-{
+    std::lock_guard lock(queries_mutex);
     auto query_status_it = queries.find(query_id);
 
     QueryMetricLogElement elem;
     elem.event_time = timeInSeconds(current_time);
     elem.event_time_microseconds = timeInMicroseconds(current_time);
-    elem.query_id = query_status_it->query_id;
+    elem.query_id = query_status_it->first;
     elem.memory = CurrentMetrics::values[CurrentMetrics::MemoryTracking];
     elem.background_memory = CurrentMetrics::values[CurrentMetrics::MergesMutationsMemoryTracking];
 
-    // We copy the QueryMetricLogStatus and update the queries in a final step because updating the multi-index set
-    // for every profile event doesn't seem a good idea.
-    auto new_query_status = *query_status_it;
-    new_query_status.next_collect_time += std::chrono::milliseconds(new_query_status.interval_milliseconds);
-
+    auto & query_status = query_status_it->second;
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
     {
         const auto & new_value = (*profile_counters)[i];
-        elem.profile_events[i] = new_value - new_query_status.last_profile_events[i];
-        new_query_status.last_profile_events[i] = new_value;
+        elem.profile_events[i] = new_value - query_status.last_profile_events[i];
+        query_status.last_profile_events[i] = new_value;
     }
 
-    queries.modify(query_status_it, [&](QueryMetricLogStatus & query_status) { query_status = std::move(new_query_status); });
+    query_status.next_collect_time += std::chrono::milliseconds(query_status.interval_milliseconds);
+    const auto wait_time = std::chrono::duration_cast<std::chrono::milliseconds>(query_status.next_collect_time - std::chrono::system_clock::now()).count();
+    query_status.task->scheduleAfter(wait_time);
 
     return elem;
-}
-
-void QueryMetricLog::stepFunction(TimePoint current_time)
-{
-    static const auto & process_list = getContext()->getProcessList();
-
-    auto & queries_by_next_collect_time = queries.get<ByNextCollectTime>();
-    for (const auto & query_status : queries_by_next_collect_time)
-    {
-        // The queries are already sorted by next_collect_time, so once we find a query with a next_collect_time
-        // in the future, we know we don't need to collect data anymore
-        if (query_status.next_collect_time > current_time)
-            break;
-
-        const auto query_info = process_list.getQueryInfo(query_status.query_id, false, true, false);
-
-        // The query info should always be found because whenever a query ends, finishQuery is
-        // called and the query is removed from the list
-        if (!query_info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query info not found: {}", query_status.query_id);
-
-        auto elem = createLogMetricElement(query_status.query_id, query_info->profile_counters, current_time);
-        add(std::move(elem));
-    }
 }
 
 }

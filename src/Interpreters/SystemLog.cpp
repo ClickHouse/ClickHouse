@@ -392,9 +392,6 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         error_log->startCollect("ErrorLog", collect_interval_milliseconds);
     }
 
-    if (query_metric_log)
-        query_metric_log->startCollect("QueryMetricLog", 0);
-
     if (crash_log)
     {
         CrashLog::initialize(crash_log);
