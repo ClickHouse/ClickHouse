@@ -5073,8 +5073,13 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     }
     if (exc)
         throw Exception(*exc);
-    if (get_uuid && !resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
-        resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);
+    if (!resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+    {
+        /// Throw if database doesn't exist.
+        auto database = DatabaseCatalog::instance().getDatabase(resolved.database_name);
+        if (get_uuid)
+            resolved.uuid = database->tryGetTableUUID(resolved.table_name);
+    }
     return resolved;
 }
 

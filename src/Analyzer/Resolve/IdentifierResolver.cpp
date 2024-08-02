@@ -419,7 +419,13 @@ QueryTreeNodePtr IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalo
     for (int attempt = 0; attempt < 10; ++attempt)
     {
         StoragePtr prev_storage = std::move(storage);
-        storage = DatabaseCatalog::instance().getTable(storage_id, context);
+        if (is_temporary_table)
+            storage = DatabaseCatalog::instance().getTable(storage_id, context);
+        else
+            storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+
+        if (!storage)
+            return {};
 
         if (storage == prev_storage)
         {

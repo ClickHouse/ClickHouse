@@ -717,11 +717,10 @@ public:
 
     /// Find table.
     /// If the table is in a regular database (not external, not temporary):
-    ///  * If get_uuid is true, do the lookup in that database and return StorageID with UUID.
-    ///    Use this if you need to make sure the table exists and/or that the returned StorageID
-    ///    identifies a specific table.
-    ///  * If `get_uuid` is false, a StorageID without UUID will be returned, and the table may not
-    ///    exist. Use this if you're going to do a lookup in the database right away anyway.
+    ///  * If get_uuid is true, do the lookup in the database, and if the table is found return StorageID with UUID.
+    ///    Use this if it's preferable for the returned StorageID to identify a specific table.
+    ///  * If `get_uuid` is false, a StorageID without UUID will be returned.
+    ///    Use this if you're going to do a lookup in the database right away anyway.
     StorageID resolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll, bool get_uuid = true) const;
     StorageID tryResolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll, bool get_uuid = true) const;
     StorageID resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const;
