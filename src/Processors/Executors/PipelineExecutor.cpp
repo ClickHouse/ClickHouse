@@ -329,12 +329,11 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 {
     is_execution_initialized = true;
 
-    size_t use_threads = num_threads;
-
     /// Allocate CPU slots from concurrency control
     size_t min_threads = concurrency_control ? 1uz : num_threads;
     cpu_slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
-    use_threads = cpu_slots->grantedCount();
+    size_t use_threads = cpu_slots->grantedCount();
+    LOG_TEST(log, "Allocate CPU slots: {}-{}; granted: {}", min_threads, num_threads, use_threads);
 
     Queue queue;
     graph->initializeExecution(queue);
