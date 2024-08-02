@@ -1,5 +1,6 @@
 #include <Planner/PlannerActionsVisitor.h>
 
+#include <AggregateFunctions/WindowFunction.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/SetUtils.h>
 #include <Analyzer/ConstantNode.h>
@@ -242,6 +243,11 @@ public:
                         auto & window_frame = window_node.getWindowFrame();
                         if (!window_frame.is_default)
                             return window_frame;
+                        auto aggregate_function = function_node.getAggregateFunction();
+                        if (const auto * win_func = dynamic_cast<const IWindowFunction *>(aggregate_function.get()))
+                        {
+                            return win_func->getDefaultFrame();
+                        }
                         return {};
                     };
                     buffer << " OVER (";

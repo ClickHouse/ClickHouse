@@ -24,7 +24,6 @@ extern const int NOT_IMPLEMENTED;
 namespace
 {
 
-//WindowDescription extractWindowDescriptionFromWindowNode(const QueryTreeNodePtr & node, const PlannerContext & planner_context)
 WindowDescription extractWindowDescriptionFromWindowNode(const FunctionNode & func_node, const PlannerContext & planner_context)
 {
     auto node = func_node.getWindowNode();
