@@ -19,11 +19,11 @@ def docker_login(relogin: bool = True) -> None:
     if relogin or not Shell.check(
         "docker system info | grep --quiet -E 'Username|Registry'"
     ):
-        Shell.run(  # pylint: disable=unexpected-keyword-arg
+        Shell.check(  # pylint: disable=unexpected-keyword-arg
             "docker login --username 'robotclickhouse' --password-stdin",
-            input=get_parameter_from_ssm("dockerhub_robot_password"),
+            strict=True,
+            stdin_str=get_parameter_from_ssm("dockerhub_robot_password"),
             encoding="utf-8",
-            check=True,
         )
 
 
@@ -42,7 +42,7 @@ class DockerImage:
 def pull_image(image: DockerImage) -> DockerImage:
     try:
         logging.info("Pulling image %s - start", image)
-        Shell.run(f"docker pull {image}", check=True)
+        Shell.check(f"docker pull {image}", strict=True)
         logging.info("Pulling image %s - done", image)
     except Exception as ex:
         logging.info("Got exception pulling docker %s", ex)
