@@ -90,8 +90,10 @@ select id from ipv4_pv(ipv4param=(select ipaddr from ipv4_table_pv where id=3));
 
 drop view date_pv;
 drop view date_pv2;
+drop view date32_pv;
 drop view uuid_pv;
 drop view ipv4_pv;
 drop table date_table_pv;
+drop table date32_table_pv;
 drop table uuid_table_pv;
 drop table ipv4_table_pv;

@@ -4549,11 +4549,11 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                         /// Serialize the constant value using datatype specific
                         /// interfaces to match the deserialization in ReplaceQueryParametersVistor.
                         WriteBufferFromOwnString buf;
-                        auto constval = constant->getValue();
-                        auto realtype = constant->getResultType();
-                        auto tempcol  = realtype->createColumn();
-                        tempcol->insert(constval);
-                        realtype->getDefaultSerialization()->serializeTextEscaped(*tempcol, 0, buf, {});
+                        const auto & value = constant->getValue();
+                        auto real_type = constant->getResultType();
+                        auto temporary_column  = real_type->createColumn();
+                        temporary_column->insert(value);
+                        real_type->getDefaultSerialization()->serializeTextEscaped(*temporary_column, 0, buf, {});
                         view_params[identifier_node->getIdentifier().getFullName()] = buf.str();
                     }
                 }
