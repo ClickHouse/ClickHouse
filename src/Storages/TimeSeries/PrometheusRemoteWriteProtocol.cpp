@@ -15,6 +15,7 @@
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/addMissingDefaults.h>
 #include <Parsers/ASTIdentifier.h>
@@ -107,7 +108,7 @@ namespace
                     ColumnsDescription{id_column_description},
                     context);
 
-        auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(adding_missing_defaults_dag);
+        auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, adding_missing_defaults_actions);
@@ -118,7 +119,7 @@ namespace
             header_with_id.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position);
         auto actions = std::make_shared<ExpressionActions>(
-            convert_actions_dag,
+            std::move(convert_actions_dag),
             ExpressionActionsSettings::fromContext(context, CompileExpressions::yes));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
@@ -528,7 +529,14 @@ namespace
                 ContextMutablePtr insert_context = Context::createCopy(context);
                 insert_context->setCurrentQueryId(context->getCurrentQueryId() + ":" + String{toString(table_kind)});
 
-                InterpreterInsertQuery interpreter(insert_query, insert_context);
+                InterpreterInsertQuery interpreter(
+                    insert_query,
+                    insert_context,
+                    /* allow_materialized= */ false,
+                    /* no_squash= */ false,
+                    /* no_destination= */ false,
+                    /* async_insert= */ false);
+
                 BlockIO io = interpreter.execute();
                 PushingPipelineExecutor executor(io.pipeline);
 

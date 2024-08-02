@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -169,7 +170,7 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create) 
     auto get_string_to_string_map_type = [&] { return makeASTDataType("Map", get_string_type(), get_string_type()); };
     auto get_lc_string_to_string_map_type = [&] { return makeASTDataType("Map", get_lc_string_type(), get_string_type()); };
 
-    auto make_nullable = [&](std::shared_ptr<ASTFunction> type)
+    auto make_nullable = [&](std::shared_ptr<ASTDataType> type)
     {
         if (type->name == "Nullable")
             return type;
@@ -185,7 +186,7 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create) 
         make_new_column(TimeSeriesColumnNames::Timestamp, get_datetime_type());
 
     auto timestamp_column = typeid_cast<std::shared_ptr<ASTColumnDeclaration>>(columns[position - 1]);
-    auto timestamp_type = typeid_cast<std::shared_ptr<ASTFunction>>(timestamp_column->type->ptr());
+    auto timestamp_type = typeid_cast<std::shared_ptr<ASTDataType>>(timestamp_column->type->ptr());
 
     if (!is_next_column_named(TimeSeriesColumnNames::Value))
         make_new_column(TimeSeriesColumnNames::Value, get_float_type());

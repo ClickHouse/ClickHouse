@@ -150,7 +150,7 @@ StorageID TimeSeriesInnerTablesCreator::getInnerTableID(ViewTarget::Kind inner_t
 std::shared_ptr<ASTCreateQuery> TimeSeriesInnerTablesCreator::getInnerTableCreateQuery(
     ViewTarget::Kind inner_table_kind,
     const UUID & inner_table_uuid,
-    const std::shared_ptr<ASTStorage> inner_storage_def) const
+    const std::shared_ptr<ASTStorage> & inner_storage_def) const
 {
     auto manual_create_query = std::make_shared<ASTCreateQuery>();
 
@@ -173,7 +173,7 @@ std::shared_ptr<ASTCreateQuery> TimeSeriesInnerTablesCreator::getInnerTableCreat
 StorageID TimeSeriesInnerTablesCreator::createInnerTable(
     ViewTarget::Kind inner_table_kind,
     const UUID & inner_table_uuid,
-    const std::shared_ptr<ASTStorage> inner_storage_def) const
+    const std::shared_ptr<ASTStorage> & inner_storage_def) const
 {
     /// We will make a query to create the inner target table.
     auto create_context = Context::createCopy(getContext());
