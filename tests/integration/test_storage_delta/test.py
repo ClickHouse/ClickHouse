@@ -8,6 +8,7 @@ import os
 import json
 import time
 import glob
+import shutil
 
 import pyspark
 import delta
@@ -50,15 +51,6 @@ def get_spark():
     )
 
     return builder.master("local").getOrCreate()
-
-
-def remove_local_directory_contents(full_path):
-    for path in glob.glob(f"{full_path}/**"):
-        if os.path.isfile(path):
-            os.unlink(path)
-        else:
-            remove_local_directory_contents(path)
-            os.rmdir(path)
 
 
 @pytest.fixture(scope="module")
@@ -179,7 +171,7 @@ def test_single_log_file(started_cluster):
     )
 
     os.unlink(parquet_data_path)
-    remove_local_directory_contents(f"/{TABLE_NAME}")
+    shutil.rmtree(f"/{TABLE_NAME}")
 
 
 def test_partition_by(started_cluster):
@@ -203,7 +195,7 @@ def test_partition_by(started_cluster):
     create_delta_table(instance, TABLE_NAME)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
 
-    remove_local_directory_contents(f"/{TABLE_NAME}")
+    shutil.rmtree(f"/{TABLE_NAME}")
 
 
 def test_checkpoint(started_cluster):
@@ -280,7 +272,7 @@ def test_checkpoint(started_cluster):
         ).strip()
     )
 
-    remove_local_directory_contents(f"/{TABLE_NAME}")
+    shutil.rmtree(f"/{TABLE_NAME}")
     spark.sql(f"DROP TABLE {TABLE_NAME}")
 
 
@@ -321,7 +313,7 @@ def test_multiple_log_files(started_cluster):
         "SELECT number, toString(number + 1) FROM numbers(200)"
     )
 
-    remove_local_directory_contents(f"/{TABLE_NAME}")
+    shutil.rmtree(f"/{TABLE_NAME}")
 
 
 def test_metadata(started_cluster):
@@ -357,7 +349,7 @@ def test_metadata(started_cluster):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     os.unlink(parquet_data_path)
-    remove_local_directory_contents(f"/{TABLE_NAME}")
+    shutil.rmtree(f"/{TABLE_NAME}")
 
 
 def test_types(started_cluster):
@@ -431,7 +423,7 @@ def test_types(started_cluster):
         ]
     )
 
-    remove_local_directory_contents(f"/{result_file}")
+    shutil.rmtree(f"/{result_file}")
     spark.sql(f"DROP TABLE {TABLE_NAME}")
 
 
@@ -496,7 +488,7 @@ def test_restart_broken(started_cluster):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     os.unlink(parquet_data_path)
-    remove_local_directory_contents(f"/{TABLE_NAME}")
+    shutil.rmtree(f"/{TABLE_NAME}")
 
 
 def test_restart_broken_table_function(started_cluster):
@@ -553,7 +545,7 @@ def test_restart_broken_table_function(started_cluster):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     os.unlink(parquet_data_path)
-    remove_local_directory_contents(f"/{TABLE_NAME}")
+    shutil.rmtree(f"/{TABLE_NAME}")
 
 
 def test_partition_columns(started_cluster):
@@ -753,5 +745,5 @@ SELECT * FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.mini
         == 1
     )
 
-    remove_local_directory_contents(f"/{TABLE_NAME}")
+    shutil.rmtree(f"/{TABLE_NAME}")
     spark.sql(f"DROP TABLE {TABLE_NAME}")
