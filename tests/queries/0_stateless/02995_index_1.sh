@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --multiquery "
+${CLICKHOUSE_CLIENT} "
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a String, b String, c String) ENGINE = MergeTree ORDER BY (a, b, c) SETTINGS index_granularity = 11;
@@ -39,6 +39,6 @@ WHERE a >= (round(pow(sipHash64(1, try), 1 / (3 + sipHash64(2, try) % 8))) AS a1
   AND c <= (c1 + round(pow(sipHash64(11, try), 1 / (3 + sipHash64(12, try) % 8))))::String
 HAVING count() > 0;
 "
-done | ${CLICKHOUSE_CLIENT} --multiquery
+done | ${CLICKHOUSE_CLIENT} 
 
-${CLICKHOUSE_CLIENT} --multiquery "DROP TABLE test"
+${CLICKHOUSE_CLIENT} "DROP TABLE test"
