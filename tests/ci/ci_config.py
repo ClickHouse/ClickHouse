@@ -34,7 +34,8 @@ class CI:
     from ci_definitions import Runners as Runners
     from ci_utils import Envs as Envs
     from ci_utils import Utils as Utils
-    from ci_utils import GHActions as GHActions
+    from ci_utils import GH as GH
+    from ci_utils import Shell as Shell
     from ci_definitions import Labels as Labels
     from ci_definitions import TRUSTED_CONTRIBUTORS as TRUSTED_CONTRIBUTORS
     from ci_definitions import WorkFlowNames as WorkFlowNames
