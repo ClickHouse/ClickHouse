@@ -16,7 +16,7 @@ import upload_result_helper
 from build_check import get_release_or_pr
 from ci_config import CI
 from ci_metadata import CiMetadata
-from ci_utils import GHActions, normalize_string, Utils
+from ci_utils import GH, normalize_string, Utils
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
@@ -368,7 +368,7 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
                 )
                 to_be_skipped = True
                 # skip_status = SUCCESS already there
-                GHActions.print_in_group("Commit Status Data", job_status)
+                GH.print_in_group("Commit Status Data", job_status)
 
     # create pre report
     jr = JobReport.create_pre_report(status=skip_status, job_skipped=to_be_skipped)

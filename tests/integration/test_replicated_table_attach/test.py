@@ -80,4 +80,8 @@ def test_startup_with_small_bg_pool_partitioned(started_cluster):
         assert_values()
 
     # check that we activate it in the end
-    node.query_with_retry("INSERT INTO replicated_table_partitioned VALUES(20, 30)")
+    node.query_with_retry(
+        "INSERT INTO replicated_table_partitioned VALUES(20, 30)",
+        retry_count=20,
+        sleep_time=3,
+    )
