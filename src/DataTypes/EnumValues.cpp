@@ -1,7 +1,11 @@
 #include <DataTypes/EnumValues.h>
 #include <boost/algorithm/string.hpp>
 #include <base/sort.h>
-
+#include "Core/Names.h"
+#include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -50,9 +54,20 @@ void EnumValues<T>::fillMaps()
 }
 
 template <typename T>
-T EnumValues<T>::getValue(StringRef field_name, bool try_treat_as_id) const
+T EnumValues<T>::getValue(StringRef field_name, bool try_treat_as_id, bool cast_keys_to_string_from_json) const
 {
-    const auto it = name_to_value_map.find(field_name);
+    auto it = name_to_value_map.find(field_name);
+    if (!it && cast_keys_to_string_from_json)
+    {
+        for (const auto& item : name_to_value_map)
+        {
+            if (item.getValue().second == parseFromString<int>(field_name.toView()))
+            {
+                it = name_to_value_map.find(item.getKey());
+            }
+        }
+    }
+
     if (!it)
     {
         /// It is used in CSV and TSV input formats. If we fail to find given string in
@@ -75,9 +90,20 @@ T EnumValues<T>::getValue(StringRef field_name, bool try_treat_as_id) const
 }
 
 template <typename T>
-bool EnumValues<T>::tryGetValue(T & x, StringRef field_name, bool try_treat_as_id) const
+bool EnumValues<T>::tryGetValue(T & x, StringRef field_name, bool try_treat_as_id, bool cast_keys_to_string_from_json) const
 {
-    const auto it = name_to_value_map.find(field_name);
+    auto it = name_to_value_map.find(field_name);
+    if (cast_keys_to_string_from_json)
+    {
+        for (const auto& item : name_to_value_map)
+        {
+            if (item.getValue().second == parseFromString<int>(field_name.toView()))
+            {
+                it = name_to_value_map.find(item.getKey());
+            }
+        }
+    }
+
     if (!it)
     {
         /// It is used in CSV and TSV input formats. If we fail to find given string in
