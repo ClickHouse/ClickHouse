@@ -1,6 +1,9 @@
 #!/bin/bash
 
 set -x
+# Need to keep error from tests after `tee`. Otherwise we don't alert on asan errors
+set -o pipefail
+set -e
 
 if [ "$#" -ne 1 ]; then
     echo "Expected exactly one argument"
