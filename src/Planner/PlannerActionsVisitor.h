@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
@@ -8,6 +9,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/WindowDescription.h>
 
 namespace DB
 {
@@ -84,6 +86,10 @@ String calculateWindowNodeActionName(const QueryTreeNodePtr & node,
   */
 String calculateWindowNodeActionName(const QueryTreeNodePtr & node,
     const PlannerContext & planner_context,
+    bool use_column_identifier_as_action_node_name = true);
+String calculateWindowNodeActionName(const QueryTreeNodePtr & node,
+    const PlannerContext & planner_context,
+    std::function<std::optional<WindowFrame>()> get_window_frame,
     bool use_column_identifier_as_action_node_name = true);
 
 }

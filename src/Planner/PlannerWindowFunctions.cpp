@@ -1,5 +1,7 @@
+#include <optional>
 #include <Planner/PlannerWindowFunctions.h>
 
+#include <AggregateFunctions/WindowFunction.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/WindowNode.h>
@@ -8,41 +10,60 @@
 
 #include <Interpreters/Context.h>
 
-#include <Planner/PlannerSorting.h>
 #include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerSorting.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace
 {
 
-WindowDescription extractWindowDescriptionFromWindowNode(const QueryTreeNodePtr & node, const PlannerContext & planner_context)
+//WindowDescription extractWindowDescriptionFromWindowNode(const QueryTreeNodePtr & node, const PlannerContext & planner_context)
+WindowDescription extractWindowDescriptionFromWindowNode(const FunctionNode & func_node, const PlannerContext & planner_context)
 {
+    auto node = func_node.getWindowNode();
     auto & window_node = node->as<WindowNode &>();
 
+    auto get_window_frame = [&]() -> std::optional<WindowFrame>
+    {
+        auto frame = window_node.getWindowFrame();
+        if (!frame.is_default)
+            return frame;
+        auto aggregate_function = func_node.getAggregateFunction();
+        if (const auto * win_func = dynamic_cast<const IWindowFunction *>(aggregate_function.get()))
+        {
+            return win_func->getDefaultFrame();
+        }
+        return {};
+    };
+
     WindowDescription window_description;
-    window_description.window_name = calculateWindowNodeActionName(node, planner_context);
+    window_description.window_name = calculateWindowNodeActionName(node, planner_context, get_window_frame);
 
     for (const auto & partition_by_node : window_node.getPartitionBy().getNodes())
     {
         auto partition_by_node_action_name = calculateActionNodeName(partition_by_node, planner_context);
-        auto partition_by_sort_column_description = SortColumnDescription(partition_by_node_action_name, 1 /* direction */, 1 /* nulls_direction */);
+        auto partition_by_sort_column_description
+            = SortColumnDescription(partition_by_node_action_name, 1 /* direction */, 1 /* nulls_direction */);
         window_description.partition_by.push_back(std::move(partition_by_sort_column_description));
     }
 
     window_description.order_by = extractSortDescription(window_node.getOrderByNode(), planner_context);
 
     window_description.full_sort_description = window_description.partition_by;
-    window_description.full_sort_description.insert(window_description.full_sort_description.end(), window_description.order_by.begin(), window_description.order_by.end());
+    window_description.full_sort_description.insert(
+        window_description.full_sort_description.end(), window_description.order_by.begin(), window_description.order_by.end());
 
     /// WINDOW frame is validated during query analysis stage
-    window_description.frame = window_node.getWindowFrame();
+    auto window_frame = get_window_frame();
+    window_description.frame = window_frame ? *window_frame : window_node.getWindowFrame();
+    auto node_frame = window_node.getWindowFrame();
 
     const auto & query_context = planner_context.getQueryContext();
     const auto & query_context_settings = query_context->getSettingsRef();
@@ -64,7 +85,8 @@ WindowDescription extractWindowDescriptionFromWindowNode(const QueryTreeNodePtr 
 
 }
 
-std::vector<WindowDescription> extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const PlannerContext & planner_context)
+std::vector<WindowDescription>
+extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const PlannerContext & planner_context)
 {
     std::unordered_map<std::string, WindowDescription> window_name_to_description;
 
@@ -72,7 +94,7 @@ std::vector<WindowDescription> extractWindowDescriptions(const QueryTreeNodes & 
     {
         auto & window_function_node_typed = window_function_node->as<FunctionNode &>();
 
-        auto function_window_description = extractWindowDescriptionFromWindowNode(window_function_node_typed.getWindowNode(), planner_context);
+        auto function_window_description = extractWindowDescriptionFromWindowNode(window_function_node_typed, planner_context);
 
         auto frame_type = function_window_description.frame.type;
         if (frame_type != WindowFrame::FrameType::ROWS && frame_type != WindowFrame::FrameType::RANGE)

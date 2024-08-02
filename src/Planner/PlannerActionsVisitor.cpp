@@ -236,8 +236,16 @@ public:
 
                 if (function_node.isWindowFunction())
                 {
+                    auto get_window_frame = [&]() -> std::optional<WindowFrame>
+                    {
+                        auto & window_node = function_node.getWindowNode()->as<WindowNode &>();
+                        auto & window_frame = window_node.getWindowFrame();
+                        if (!window_frame.is_default)
+                            return window_frame;
+                        return {};
+                    };
                     buffer << " OVER (";
-                    buffer << calculateWindowNodeActionName(function_node.getWindowNode());
+                    buffer << calculateWindowNodeActionName(function_node.getWindowNode(), get_window_frame);
                     buffer << ')';
                 }
 
@@ -298,7 +306,7 @@ public:
         return calculateConstantActionNodeName(constant_literal, applyVisitor(FieldToDataType(), constant_literal));
     }
 
-    String calculateWindowNodeActionName(const QueryTreeNodePtr & node)
+    String calculateWindowNodeActionName(const QueryTreeNodePtr & node, std::function<std::optional<WindowFrame>()> get_window_frame)
     {
         auto & window_node = node->as<WindowNode &>();
         WriteBufferFromOwnString buffer;
@@ -364,44 +372,14 @@ public:
             }
         }
 
-        auto & window_frame = window_node.getWindowFrame();
-        if (!window_frame.is_default)
+        auto window_frame_opt = get_window_frame();
+        if (window_frame_opt)
         {
+            auto & window_frame = *window_frame_opt;
             if (window_node.hasPartitionBy() || window_node.hasOrderBy())
                 buffer << ' ';
 
-            buffer << window_frame.type << " BETWEEN ";
-            if (window_frame.begin_type == WindowFrame::BoundaryType::Current)
-            {
-                buffer << "CURRENT ROW";
-            }
-            else if (window_frame.begin_type == WindowFrame::BoundaryType::Unbounded)
-            {
-                buffer << "UNBOUNDED";
-                buffer << " " << (window_frame.begin_preceding ? "PRECEDING" : "FOLLOWING");
-            }
-            else
-            {
-                buffer << calculateActionNodeName(window_node.getFrameBeginOffsetNode());
-                buffer << " " << (window_frame.begin_preceding ? "PRECEDING" : "FOLLOWING");
-            }
-
-            buffer << " AND ";
-
-            if (window_frame.end_type == WindowFrame::BoundaryType::Current)
-            {
-                buffer << "CURRENT ROW";
-            }
-            else if (window_frame.end_type == WindowFrame::BoundaryType::Unbounded)
-            {
-                buffer << "UNBOUNDED";
-                buffer << " " << (window_frame.end_preceding ? "PRECEDING" : "FOLLOWING");
-            }
-            else
-            {
-                buffer << calculateActionNodeName(window_node.getFrameEndOffsetNode());
-                buffer << " " << (window_frame.end_preceding ? "PRECEDING" : "FOLLOWING");
-            }
+            window_frame.toString(buffer);
         }
 
         return buffer.str();
@@ -1062,14 +1040,35 @@ String calculateWindowNodeActionName(const QueryTreeNodePtr & node,
     bool use_column_identifier_as_action_node_name)
 {
     ActionNodeNameHelper helper(node_to_name, planner_context, use_column_identifier_as_action_node_name);
-    return helper.calculateWindowNodeActionName(node);
+    auto get_window_frame = [&]()-> std::optional<WindowFrame>{
+        auto & window_node = node->as<WindowNode &>();
+        auto & window_frame = window_node.getWindowFrame();
+        if (!window_frame.is_default)
+            return window_frame;
+        return {};
+    };
+    return helper.calculateWindowNodeActionName(node, get_window_frame);
 }
 
 String calculateWindowNodeActionName(const QueryTreeNodePtr & node, const PlannerContext & planner_context, bool use_column_identifier_as_action_node_name)
 {
     QueryTreeNodeToName empty_map;
     ActionNodeNameHelper helper(empty_map, planner_context, use_column_identifier_as_action_node_name);
-    return helper.calculateWindowNodeActionName(node);
+    auto get_window_frame = [&]()-> std::optional<WindowFrame>{
+        auto & window_node = node->as<WindowNode &>();
+        auto & window_frame = window_node.getWindowFrame();
+        if (!window_frame.is_default)
+            return window_frame;
+        return {};
+    };
+    return helper.calculateWindowNodeActionName(node, get_window_frame);
+}
+
+String calculateWindowNodeActionName(const QueryTreeNodePtr & node, const PlannerContext & planner_context, std::function<std::optional<WindowFrame>()> get_window_frame, bool use_column_identifier_as_action_node_name)
+{
+    QueryTreeNodeToName empty_map;
+    ActionNodeNameHelper helper(empty_map, planner_context, use_column_identifier_as_action_node_name);
+    return helper.calculateWindowNodeActionName(node, get_window_frame);
 }
 
 }
