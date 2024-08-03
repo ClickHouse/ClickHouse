@@ -668,23 +668,30 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                 }
                 else
                 {
-                    /// Make sure we don't change types of function arguments (e.g. remove LowCardinality).
-                    /// Otherwise the function may crash when passed columns of unexpected types.
-                    ///  * Why not check this for all subexpressions rather than function arguments?
-                    ///    Because types may change, e.g. in `NOT (u64 AND u64)` -> `(NOT u64 OR NOT u64)`
-                    ///    the AND's args were UInt64, but OR's args are UInt8.
-                    ///  * Why not re-resolve function overload, using FunctionFactory::instance().get(name, context)?
-                    ///    Because some functions can't be found through FunctionFactory, e.g. FunctionCapture.
-                    ///    (But maybe we could re-resolve only if argument types changed.)
+                    /// Argument types could change slightly because of our transformations, e.g.
+                    /// LowCardinality can be added because some subexpressions became constant
+                    /// (in particular, sets). If that happens, re-run function overload resolver.
+                    /// Otherwise don't re-run it because some functions may not be available
+                    /// through FunctionFactory::get(), e.g. FunctionCapture.
+                    bool types_changed = false;
                     for (size_t i = 0; i < children.size(); ++i)
                     {
                         if (!node.children[i]->result_type->equals(*children[i]->result_type))
-                            throw Exception(
-                                ErrorCodes::LOGICAL_ERROR, "KeyCondition inadvertently changed subexpression data type: '{}' -> '{}', column `{}`",
-                                node.children[i]->result_type->getName(), children[i]->result_type->getName(), node.children[i]->result_name);
+                        {
+                            types_changed = true;
+                            break;
+                        }
                     }
 
-                    res = &inverted_dag.addFunction(node.function_base, children, "");
+                    if (types_changed)
+                    {
+                        auto function_builder = FunctionFactory::instance().get(name, context);
+                        res = &inverted_dag.addFunction(function_builder, children, "");
+                    }
+                    else
+                    {
+                        res = &inverted_dag.addFunction(node.function_base, children, "");
+                    }
                 }
             }
         }
