@@ -3438,11 +3438,12 @@ def parse_args():
 
 
 class Terminated(KeyboardInterrupt):
-    pass
+    def __init__(self, signal):
+        self.signal = signal
 
 
-def signal_handler(sig, frame):
-    raise Terminated(f"Terminated with {sig} signal")
+def signal_handler(signal, frame):
+    raise Terminated(signal)
 
 
 if __name__ == "__main__":
@@ -3594,4 +3595,14 @@ if __name__ == "__main__":
     if args.replace_replicated_with_shared:
         args.s3_storage = True
 
-    main(args)
+    try:
+        main(args)
+    except ServerDied as e:
+        print(f"{e}", file=sys.stderr)
+        sys.exit(1)
+    except Terminated as e:
+        print(f"Terminated with {e.signal} signal", file=sys.stderr)
+        sys.exit(128 + e.signal)
+    except KeyboardInterrupt:
+        print("Interrupted")
+        sys.exit(128 + signal.SIGINT)
