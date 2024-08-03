@@ -218,6 +218,7 @@
 
         #chart-params .param {
             width: 6%;
+            font-family: monospace;
         }
 
         input {
@@ -657,6 +658,10 @@ function insertParam(name, value) {
     param_value.type = 'text';
     param_value.value = value;
     param_value.spellcheck = false;
+
+    let setWidth = e => { e.style.width = (e.value.length + 1) + 'ch' };
+    if (value) { setWidth(param_value); }
+    param_value.addEventListener('input', e => setWidth(e.target));
 
     param_wrapper.appendChild(param_name);
     param_wrapper.appendChild(param_value);
