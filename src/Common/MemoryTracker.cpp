@@ -34,21 +34,21 @@
 
 namespace
 {
-    /// MemoryTracker cannot throw MEMORY_LIMIT_EXCEEDED (either configured memory
-    /// limit reached or fault injected), in the following cases:
-    ///
-    /// - when it is explicitly blocked with LockExceptionInThread
-    ///
-    /// - when there are uncaught exceptions objects in the current thread
-    ///   (to avoid std::terminate())
-    ///
-    ///   NOTE: that since C++11 destructor marked with noexcept by default, and
-    ///   this means that any throw from destructor (that is not marked with
-    ///   noexcept(false)) will cause std::terminate()
-    bool inline memoryTrackerCanThrow(VariableContext level, bool fault_injection)
-    {
-        return !LockMemoryExceptionInThread::isBlocked(level, fault_injection) && !std::uncaught_exceptions();
-    }
+/// MemoryTracker cannot throw MEMORY_LIMIT_EXCEEDED (either configured memory
+/// limit reached or fault injected), in the following cases:
+///
+/// - when it is explicitly blocked with LockExceptionInThread
+///
+/// - when there are uncaught exceptions objects in the current thread
+///   (to avoid std::terminate())
+///
+///   NOTE: that since C++11 destructor marked with noexcept by default, and
+///   this means that any throw from destructor (that is not marked with
+///   noexcept(false)) will cause std::terminate()
+bool inline memoryTrackerCanThrow(VariableContext level, bool fault_injection)
+{
+    return !LockMemoryExceptionInThread::isBlocked(level, fault_injection) && !std::uncaught_exceptions();
+}
 
 }
 
@@ -622,7 +622,7 @@ void MemoryTracker::updateMemoryCredits()
 {
     static thread_local Stopwatch stopwatch;
     static std::atomic<size_t> previous_value{0}; // Use atomic for previous_value
-    constexpr Int64 local_threshold = 1024 * 1024; // The choice is arbitrary (maybe we should decrease it)
+    constexpr Int64 local_threshold = 512 * 1024;
     size_t current_value = amount.load(std::memory_order_relaxed); // Use relaxed order for reading
 
     if (current_value > previous_value.load(std::memory_order_relaxed) &&
