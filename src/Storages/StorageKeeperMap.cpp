@@ -8,6 +8,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
 #include <Core/ServerUUID.h>
+#include <Core/Settings.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -119,10 +120,10 @@ public:
 
     std::string getName() const override { return "StorageKeeperMapSink"; }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
         auto rows = chunk.getNumRows();
-        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+        auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
         WriteBufferFromOwnString wb_key;
         WriteBufferFromOwnString wb_value;
@@ -1248,7 +1249,10 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
     Block block;
     while (executor.pull(block))
-        sink->consume(Chunk{block.getColumns(), block.rows()});
+    {
+        auto chunk = Chunk(block.getColumns(), block.rows());
+        sink->consume(chunk);
+    }
 
     sink->finalize<true>(strict);
 }

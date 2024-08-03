@@ -4,6 +4,7 @@
 
 #include <Common/Exception.h>
 #include <Common/re2.h>
+#include <Core/Settings.h>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
 #include <azure/storage/blobs/blob_options.hpp>

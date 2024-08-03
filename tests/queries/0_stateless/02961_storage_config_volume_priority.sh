@@ -15,7 +15,7 @@ WHERE policy_name = 'policy_02961'
 ORDER BY volume_priority ASC;
 "
 
-config_path=/etc/clickhouse-server/config.d/storage_conf_02961.xml
+config_path=${CLICKHOUSE_CONFIG_DIR}/config.d/storage_conf_02961.xml
 config_path_tmp=$config_path.tmp
 
 echo 'check non-unique values dont work'
