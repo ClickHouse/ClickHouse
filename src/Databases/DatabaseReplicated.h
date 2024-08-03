@@ -17,6 +17,14 @@ using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
+struct ReplicaInfo
+{
+    bool is_active;
+    UInt32 replication_lag;
+    UInt64 recovery_time;
+};
+using ReplicasInfo = std::vector<ReplicaInfo>;
+
 class DatabaseReplicated : public DatabaseAtomic
 {
 public:
@@ -84,7 +92,7 @@ public:
 
     static void dropReplica(DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica, bool throw_if_noop);
 
-    std::vector<UInt8> tryGetAreReplicasActive(const ClusterPtr & cluster_) const;
+    ReplicasInfo tryGetReplicasInfo(const ClusterPtr & cluster_) const;
 
     void renameDatabase(ContextPtr query_context, const String & new_name) override;
 
