@@ -1,14 +1,15 @@
-#include <Functions/IFunction.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <Columns/ColumnMap.h>
-#include <Interpreters/castColumn.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 #include <Common/HashTable/HashSet.h>
 
 
@@ -123,24 +124,38 @@ public:
 
         MutableColumnPtr keys_data = key_type->createColumn();
         MutableColumnPtr values_data = value_type->createColumn();
-        MutableColumnPtr offsets = DataTypeNumber<IColumn::Offset>().createColumn();
+        MutableColumnPtr offsets = DataTypeUInt64().createColumn();
 
         size_t total_elements = input_rows_count * num_elements / 2;
         keys_data->reserve(total_elements);
         values_data->reserve(total_elements);
-        offsets->reserve(input_rows_count);
+        auto & offsets_data = assert_cast<ColumnUInt64 &>(*offsets).getData();
+        offsets_data.resize_exact(input_rows_count);
 
         IColumn::Offset current_offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        if (num_elements == 2)
         {
-            for (size_t j = 0; j < num_elements; j += 2)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
-                keys_data->insertFrom(*column_ptrs[j], i);
-                values_data->insertFrom(*column_ptrs[j + 1], i);
+                ++current_offset;
+                offsets_data[i] = current_offset;
             }
+            keys_data->insertManyFrom(*column_ptrs[0], 0, input_rows_count);
+            values_data->insertManyFrom(*column_ptrs[1], 0, input_rows_count);
+        }
+        else
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                for (size_t j = 0; j < num_elements; j += 2)
+                {
+                    keys_data->insertFrom(*column_ptrs[j], i);
+                    values_data->insertFrom(*column_ptrs[j + 1], i);
+                }
 
-            current_offset += num_elements / 2;
-            offsets->insert(current_offset);
+                current_offset += num_elements / 2;
+                offsets_data[i] = current_offset;
+            }
         }
 
         auto nested_column = ColumnArray::create(

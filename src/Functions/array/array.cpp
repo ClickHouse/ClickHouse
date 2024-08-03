@@ -46,8 +46,10 @@ public:
         size_t num_elements = arguments.size();
 
         if (num_elements == 0)
+        {
             /// We should return constant empty array.
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
+        }
 
         const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*result_type).getNestedType();
 
@@ -59,7 +61,6 @@ public:
 
         Columns columns_holder(num_elements);
         ColumnRawPtrs column_ptrs(num_elements);
-
         for (size_t i = 0; i < num_elements; ++i)
         {
             const auto & arg = arguments[i];
@@ -76,22 +77,33 @@ public:
         }
 
         /// Create and fill the result array.
-
         auto out = ColumnArray::create(elem_type->createColumn());
         IColumn & out_data = out->getData();
         IColumn::Offsets & out_offsets = out->getOffsets();
 
         out_data.reserve(input_rows_count * num_elements);
-        out_offsets.resize(input_rows_count);
+        out_offsets.resize_exact(input_rows_count);
 
         IColumn::Offset current_offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        if (num_elements == 1)
         {
-            for (size_t j = 0; j < num_elements; ++j)
-                out_data.insertFrom(*column_ptrs[j], i);
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                ++current_offset;
+                out_offsets[i] = current_offset;
+            }
+            out_data.insertManyFrom(*column_ptrs[0], 0, input_rows_count);
+        }
+        else
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                for (size_t j = 0; j < num_elements; ++j)
+                    out_data.insertFrom(*column_ptrs[j], i);
 
-            current_offset += num_elements;
-            out_offsets[i] = current_offset;
+                current_offset += num_elements;
+                out_offsets[i] = current_offset;
+            }
         }
 
         return out;
