@@ -21,7 +21,6 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
 #include <Server/ServerType.h>
@@ -4104,6 +4103,16 @@ std::shared_ptr<QueryLog> Context::getQueryLog() const
         return {};
 
     return shared->system_logs->query_log;
+}
+
+std::shared_ptr<QueryMetricLog> Context::getQueryMetricLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->query_metric_log;
 }
 
 std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const

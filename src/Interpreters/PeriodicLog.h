@@ -21,23 +21,23 @@ class PeriodicLog : public SystemLog<LogElement>
 public:
     using TimePoint = std::chrono::system_clock::time_point;
 
-    /// Launches a background thread to collect metrics with interval
-    void startCollect(size_t collect_interval_milliseconds_);
+    /// Launches a background thread to collect metrics with periodic interval
+    void startCollect(const String & thread_name, size_t collect_interval_milliseconds_);
 
     /// Stop background thread
-    void stopCollect();
+    virtual void stopCollect();
 
     void shutdown() final;
 
 protected:
     virtual void stepFunction(TimePoint current_time) = 0;
+    virtual void threadFunction();
+
+    std::atomic<bool> is_shutdown_metric_thread{false};
+    std::unique_ptr<ThreadFromGlobalPool> worker_thread;
 
 private:
-    void threadFunction();
-
-    std::unique_ptr<ThreadFromGlobalPool> flush_thread;
     size_t collect_interval_milliseconds;
-    std::atomic<bool> is_shutdown_metric_thread{false};
 };
 
 }

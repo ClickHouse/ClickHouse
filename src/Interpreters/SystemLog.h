@@ -42,6 +42,7 @@ class TraceLog;
 class CrashLog;
 class ErrorLog;
 class MetricLog;
+class QueryMetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class QueryViewsLog;
@@ -74,6 +75,7 @@ struct SystemLogs
     std::shared_ptr<TextLog> text_log;                  /// Used to log all text messages.
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
     std::shared_ptr<ErrorLog> error_log;                /// Used to log errors.
+    std::shared_ptr<QueryMetricLog> query_metric_log;   /// Used to log all metrics for individual queries.
     std::shared_ptr<FilesystemCacheLog> filesystem_cache_log;
     std::shared_ptr<FilesystemReadPrefetchesLog> filesystem_read_prefetches_log;
     std::shared_ptr<ObjectStorageQueueLog> s3_queue_log;
@@ -109,7 +111,7 @@ struct SystemLogSettings
 };
 
 template <typename LogElement>
-class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, WithContext
+class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, public WithContext
 {
 public:
     using Self = SystemLog;

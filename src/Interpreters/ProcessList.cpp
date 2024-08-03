@@ -685,6 +685,27 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
     return per_query_infos;
 }
 
+QueryStatusInfoPtr ProcessList::getQueryInfo(const String & query_id, bool get_thread_list, bool get_profile_events, bool get_settings) const
+{
+    std::optional<QueryStatusPtr> process_found;
+    {
+        auto lock = safeLock();
+        for (const auto & process : processes)
+        {
+            if (process->client_info.current_query_id == query_id)
+            {
+                process_found = process;
+                break;
+            }
+        }
+    }
+
+    if (process_found)
+        return std::make_shared<QueryStatusInfo>(process_found.value()->getInfo(get_thread_list, get_profile_events, get_settings));
+
+    return nullptr;
+}
+
 
 ProcessListForUser::ProcessListForUser(ProcessList * global_process_list)
     : ProcessListForUser(nullptr, global_process_list)

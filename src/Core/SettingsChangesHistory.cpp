@@ -76,6 +76,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     {"24.8",
         {
             {"merge_tree_min_bytes_per_task_for_remote_reading", 4194304, 2097152, "Value is unified with `filesystem_prefetch_min_bytes_for_single_read_task`"},
+            {"query_metric_log_interval", 0, 0, "New setting."},
         }
     },
     {"24.7",
