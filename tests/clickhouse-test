@@ -1318,18 +1318,35 @@ class TestCase:
 
         return None
 
-    def process_result_impl(
-        self, proc, stdout: str, stderr: str, debug_log: str, total_time: float
-    ):
+    def process_result_impl(self, proc, total_time: float):
+        if proc:
+            if proc.returncode is None:
+                kill_process_group(os.getpgid(proc.pid))
+
         description = ""
+
+        debug_log = ""
+        if os.path.exists(self.testcase_args.debug_log_file):
+            with open(self.testcase_args.debug_log_file, "rb") as stream:
+                debug_log += self.testcase_args.debug_log_file + ":\n"
+                debug_log += str(stream.read(), errors="replace", encoding="utf-8")
+                debug_log += "\n"
+
+        stdout = ""
+        if os.path.exists(self.stdout_file):
+            with open(self.stdout_file, "rb") as stdfd:
+                stdout = str(stdfd.read(), errors="replace", encoding="utf-8")
+
+        stderr = ""
+        if os.path.exists(self.stderr_file):
+            with open(self.stderr_file, "rb") as stdfd:
+                stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
 
         if debug_log:
             debug_log = "\n".join(debug_log.splitlines()[:100])
 
         if proc:
             if proc.returncode is None:
-                kill_process_group(os.getpgid(proc.pid))
-
                 if stderr:
                     description += stderr
                 if debug_log:
@@ -1658,13 +1675,6 @@ class TestCase:
             # Whether the test timed out will be decided later
             pass
 
-        debug_log = ""
-        if os.path.exists(self.testcase_args.debug_log_file):
-            with open(self.testcase_args.debug_log_file, "rb") as stream:
-                debug_log += self.testcase_args.debug_log_file + ":\n"
-                debug_log += str(stream.read(), errors="replace", encoding="utf-8")
-                debug_log += "\n"
-
         total_time = (datetime.now() - start_time).total_seconds()
 
         # Normalize randomized database names in stdout, stderr files.
@@ -1716,17 +1726,7 @@ class TestCase:
                 "https://localhost:8443/",
             )
 
-        stdout = ""
-        if os.path.exists(self.stdout_file):
-            with open(self.stdout_file, "rb") as stdfd:
-                stdout = str(stdfd.read(), errors="replace", encoding="utf-8")
-
-        stderr = ""
-        if os.path.exists(self.stderr_file):
-            with open(self.stderr_file, "rb") as stdfd:
-                stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
-
-        return proc, stdout, stderr, debug_log, total_time
+        return proc, total_time
 
     def run(self, args, suite, client_options, server_logs_level):
         start_time = datetime.now()
@@ -1758,14 +1758,14 @@ class TestCase:
             if not is_valid_utf_8(self.case_file) or (
                 self.reference_file and not is_valid_utf_8(self.reference_file)
             ):
-                proc, stdout, stderr, debug_log, total_time = self.run_single_test(
+                proc, total_time = self.run_single_test(
                     server_logs_level, client_options
                 )
 
-                result = self.process_result_impl(
-                    proc, stdout, stderr, debug_log, total_time
+                result = self.process_result_impl(proc, total_time)
+                result.check_if_need_retry(
+                    args, result.description, result.description, self.runs_count
                 )
-                result.check_if_need_retry(args, stdout, stderr, self.runs_count)
                 # to avoid breaking CSV parser
                 result.description = result.description.replace("\0", "")
             else:
@@ -1783,17 +1783,16 @@ class TestCase:
                     ):
                         (
                             proc,
-                            stdout,
-                            stderr,
-                            debug_log,
                             total_time,
                         ) = self.run_single_test(server_logs_level, client_options)
 
-                        result = self.process_result_impl(
-                            proc, stdout, stderr, debug_log, total_time
-                        )
+                        result = self.process_result_impl(proc, total_time)
+
                         result.check_if_need_retry(
-                            args, stdout, stderr, self.runs_count
+                            args,
+                            result.description,
+                            result.description,
+                            self.runs_count,
                         )
                         # to avoid breaking CSV parser
                         result.description = result.description.replace("\0", "")
