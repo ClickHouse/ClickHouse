@@ -358,14 +358,78 @@ def clickhouse_execute_json(
     return rows
 
 
+def kill_process_group(pgid):
+    print(f"Killing process group {pgid}")
+    print(f"Processes in process group {pgid}:")
+    print(
+        subprocess.check_output(
+            f"pgrep --pgroup {pgid} -a", shell=True, stderr=subprocess.STDOUT
+        ).decode("utf-8"),
+        end="",
+    )
+    try:
+        # NOTE: this still may leave some processes, that had been
+        # created by timeout(1), since it also creates new process
+        # group. But this should not be a problem with default
+        # options, since the default time for each test is 10min,
+        # and this is way more bigger then the timeout for each
+        # timeout(1) invocation.
+        #
+        # But as a workaround we are sending SIGTERM first, and
+        # only after SIGKILL, that way timeout(1) will have an
+        # ability to terminate childrens (though not always since
+        # signals are asynchronous).
+        os.killpg(pgid, signal.SIGTERM)
+        # This may not be enough, but this is at least something
+        # (and anyway it is OK to spend 0.1 second more in case of
+        # test timeout).
+        sleep(0.1)
+        os.killpg(pgid, signal.SIGKILL)
+    except OSError as e:
+        if e.errno == ESRCH:
+            print(f"Got ESRCH while killing {pgid}. Ignoring.")
+        else:
+            raise
+    print(f"Process group {pgid} should be killed")
+
+
+def cleanup_child_processes(pid):
+    pgid = os.getpgid(os.getpid())
+    print(f"Child processes of {pid}:")
+    print(
+        subprocess.check_output(
+            f"pgrep --parent {pid} -a", shell=True, stderr=subprocess.STDOUT
+        ).decode("utf-8"),
+        end="",
+    )
+    # Due to start_new_session=True, it is not enough to kill by PGID, we need
+    # to look at children processes as well.
+    # But we are hoping that nobody create session in the tests (though it is
+    # possible via timeout(), but we assuming that they will be killed by
+    # timeout).
+    processes = subprocess.check_output(
+        f"pgrep --parent {pid}", shell=True, stderr=subprocess.STDOUT
+    )
+    processes = processes.decode("utf-8")
+    processes = processes.strip()
+    processes = processes.split("\n")
+    processes = map(lambda x: int(x.strip()), processes)
+    processes = list(processes)
+    for child in processes:
+        child_pgid = os.getpgid(child)
+        if child_pgid != pgid:
+            kill_process_group(child_pgid)
+
+    # SIGKILL should not be sent, since this will kill the script itself
+    os.killpg(pgid, signal.SIGTERM)
+
+
+# send signal to all processes in group to avoid hung check triggering
+# (to avoid terminating clickhouse-test itself, the signal should be ignored)
 def stop_tests():
-    # send signal to all processes in group to avoid hung check triggering
-    # (to avoid terminating clickhouse-test itself, the signal should be ignored)
-    print("Sending signals")
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    os.killpg(os.getpgid(os.getpid()), signal.SIGTERM)
-    signal.signal(signal.SIGTERM, signal.SIG_DFL)
-    print("Sending signals DONE")
+    cleanup_child_processes(os.getpid())
+    signal.signal(signal.SIGTERM, signal_handler)
 
 
 def get_db_engine(args, database_name):
@@ -1258,28 +1322,7 @@ class TestCase:
 
         if proc:
             if proc.returncode is None:
-                try:
-                    pgid = os.getpgid(proc.pid)
-                    # NOTE: this still may leave some processes, that had been
-                    # created by timeout(1), since it also creates new process
-                    # group. But this should not be a problem with default
-                    # options, since the default time for each test is 10min,
-                    # and this is way more bigger then the timeout for each
-                    # timeout(1) invocation.
-                    #
-                    # But as a workaround we are sending SIGTERM first, and
-                    # only after SIGKILL, that way timeout(1) will have an
-                    # ability to terminate childrens (though not always since
-                    # signals are asynchronous).
-                    os.killpg(pgid, signal.SIGTERM)
-                    # This may not be enough, but this is at least something
-                    # (and anyway it is OK to spend 0.1 second more in case of
-                    # test timeout).
-                    sleep(0.1)
-                    os.killpg(pgid, signal.SIGKILL)
-                except OSError as e:
-                    if e.errno != ESRCH:
-                        raise
+                kill_process_group(os.getpgid(proc.pid))
 
                 if stderr:
                     description += stderr
