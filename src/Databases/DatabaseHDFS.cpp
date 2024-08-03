@@ -75,8 +75,8 @@ std::string DatabaseHDFS::getTablePath(const std::string & table_name) const
         return table_name;
 
     if (source.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}. "
-                        "It should have structure 'hdfs://<host_name>:<port>/path'", table_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS URL: {}. "
+            "It should have the following structure 'hdfs://<host_name>:<port>/path'", table_name);
 
     return fs::path(source) / table_name;
 }

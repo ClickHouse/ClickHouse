@@ -163,7 +163,10 @@ create temporary table known_short_messages (s String) as select * from (select 
     '{} -> {}',
     '{} {}',
     '{}%',
-    '{}: {}'
+    '{}: {}',
+    'Unknown data type family: {}',
+    'Cannot load time zone {}',
+    'Unknown table engine {}'
     ] as arr) array join arr;
 
 -- Check that we don't have too many short meaningless message patterns.
