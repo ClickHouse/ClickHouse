@@ -2,9 +2,9 @@
 
 #include "config.h"
 
-#if ENABLE_MONGODB
+#if USE_MONGODB
+#include <Analyzer/JoinNode.h>
 #include <Interpreters/Context.h>
-
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 
@@ -61,8 +61,17 @@ public:
 
 private:
     template <typename OnError>
-    std::optional<bsoncxx::document::value> visitWhereFunction(const ContextPtr & context, const FunctionNode * func, OnError on_error);
-    bsoncxx::document::value buildMongoDBQuery(const ContextPtr & context, mongocxx::options::find & options, const SelectQueryInfo & query, const Block & sample_block);
+    std::optional<bsoncxx::document::value> visitWhereFunction(
+        const ContextPtr & context,
+        const FunctionNode * func,
+        const JoinNode * join_node,
+        OnError on_error);
+
+    bsoncxx::document::value buildMongoDBQuery(
+        const ContextPtr & context,
+        mongocxx::options::find & options,
+        const SelectQueryInfo & query,
+        const Block & sample_block);
 
     const MongoDBConfiguration configuration;
     LoggerPtr log;

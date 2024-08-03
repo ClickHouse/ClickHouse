@@ -1,6 +1,6 @@
-option(ENABLE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
+option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_MONGODB)
+if (NOT USE_MONGODB)
     message(STATUS "Not using mongocxx and bsoncxx")
     return()
 endif()

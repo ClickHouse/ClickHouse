@@ -155,8 +155,8 @@ add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (incbin-cmake incbin)
 add_contrib (sqids-cpp-cmake sqids-cpp)
 
-option(ENABLE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
-if (ENABLE_MONGODB)
+option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
+if (USE_MONGODB)
     add_contrib (mongo-c-driver-cmake mongo-c-driver) # requires: zlib
     add_contrib (mongo-cxx-driver-cmake mongo-cxx-driver) # requires: libmongoc, libbson
 endif()

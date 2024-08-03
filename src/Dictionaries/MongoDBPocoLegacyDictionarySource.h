@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#if ENABLE_MONGODB
+#if USE_MONGODB
 #include <Processors/Sources/MongoDBPocoLegacySource.h>
 #include <Core/Block.h>
 

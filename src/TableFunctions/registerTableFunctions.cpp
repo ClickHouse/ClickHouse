@@ -22,7 +22,7 @@ void registerTableFunctions(bool use_legacy_mongodb_integration [[maybe_unused]]
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
-#if ENABLE_MONGODB
+#if USE_MONGODB
     if (use_legacy_mongodb_integration)
         registerTableFunctionMongoDBPocoLegacy(factory);
     else

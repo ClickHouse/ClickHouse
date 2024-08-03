@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#if ENABLE_MONGODB
+#if USE_MONGODB
 #include <Common/Base64.h>
 #include <DataTypes/FieldToDataType.h>
 

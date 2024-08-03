@@ -412,7 +412,7 @@ dbms_target_link_libraries (
         Poco::Redis
 )
 
-if (ENABLE_MONGODB)
+if (USE_MONGODB)
     dbms_target_link_libraries (PUBLIC Poco::MongoDB)
 endif()
 

@@ -61,7 +61,7 @@ void registerStorageJDBC(StorageFactory & factory);
 void registerStorageMySQL(StorageFactory & factory);
 #endif
 
-#if ENABLE_MONGODB
+#if USE_MONGODB
 void registerStorageMongoDB(StorageFactory & factory);
 void registerStorageMongoDBPocoLegacy(StorageFactory & factory);
 #endif
@@ -165,7 +165,7 @@ void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
     registerStorageMySQL(factory);
     #endif
 
-    #if ENABLE_MONGODB
+    #if USE_MONGODB
     if (use_legacy_mongodb_integration)
         registerStorageMongoDBPocoLegacy(factory);
     else

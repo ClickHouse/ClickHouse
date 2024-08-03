@@ -1,6 +1,6 @@
 #include "config.h"
 
-#if ENABLE_MONGODB
+#if USE_MONGODB
 #include <memory>
 
 #include <Analyzer/ColumnNode.h>
@@ -182,7 +182,11 @@ std::string mongoFuncName(const std::string & func)
 }
 
 template <typename OnError>
-std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(const ContextPtr & context, const FunctionNode * func, OnError on_error)
+std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
+    const ContextPtr & context,
+    const FunctionNode * func,
+    const JoinNode * join_node,
+    OnError on_error)
 {
     if (func->getArguments().getNodes().empty())
         return {};
@@ -196,6 +200,8 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(const
 
         // Skip columns from other tables in JOIN queries.
         if (table->getStorage()->getStorageID() != this->getStorageID())
+            return {};
+        if (join_node && column->getColumnSource() != join_node->getLeftTableExpression())
             return {};
 
         // Only these function can have exactly one argument and be passed to MongoDB.
@@ -236,7 +242,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(const
             }
 
             if (const auto & func_value = value->as<FunctionNode>())
-                if (const auto & res_value = visitWhereFunction(context, func_value, on_error); res_value.has_value())
+                if (const auto & res_value = visitWhereFunction(context, func_value, join_node, on_error); res_value.has_value())
                     return make_document(kvp(column->getColumnName(), make_document(kvp(func_name, *res_value))));
         }
     }
@@ -246,7 +252,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(const
         for (const auto & elem : func->getArguments().getNodes())
         {
             if (const auto & elem_func = elem->as<FunctionNode>())
-                if (const auto & res_value = visitWhereFunction(context, elem_func, on_error); res_value.has_value())
+                if (const auto & res_value = visitWhereFunction(context, elem_func, join_node, on_error); res_value.has_value())
                     arr.append(*res_value);
         }
         if (!arr.view().empty())
@@ -308,8 +314,8 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
         if (throw_on_error)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Only simple queries are supported, failed to convert expression '{}' to MongoDB query. "
-                "You can disable this restriction with 'SET mongodb_throw_on_unsupported_query=0', to read the full table and process on CLickHouse side (this may cause poor performance)", node->formatASTForErrorMessage());
-        LOG_WARNING(log, "Failed to build MongoDB sort for '{}'", node ? node->formatASTForErrorMessage() : "<unknown>");
+                "You can disable this restriction with 'SET mongodb_throw_on_unsupported_query=0', to read the full table and process on ClickHouse side (this may cause poor performance)", node->formatASTForErrorMessage());
+        LOG_WARNING(log, "Failed to build MongoDB query for '{}'", node ? node->formatASTForErrorMessage() : "<unknown>");
     };
 
 
@@ -365,14 +371,14 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
         {
             std::optional<bsoncxx::document::value> filter{};
             if (const auto & func = query_tree.getWhere()->as<FunctionNode>())
-                filter = visitWhereFunction(context, func, on_error);
+                filter = visitWhereFunction(context, func, join_node, on_error);
 
             else if (const auto & const_expr = query_tree.getWhere()->as<ConstantNode>())
             {
                 if (const_expr->hasSourceExpression())
                 {
                     if (const auto & func_expr = const_expr->getSourceExpression()->as<FunctionNode>())
-                        filter = visitWhereFunction(context, func_expr, on_error);
+                        filter = visitWhereFunction(context, func_expr, join_node, on_error);
                 }
             }
 
@@ -381,7 +387,6 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
                 LOG_DEBUG(log, "MongoDB query has built: '{}'.", bsoncxx::to_json(*filter));
                 return std::move(*filter);
             }
-            on_error(query_tree.getWhere().get());
         }
         else
             on_error(join_node);

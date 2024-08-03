@@ -20,7 +20,7 @@ void registerTableFunctionURLCluster(TableFunctionFactory & factory);
 void registerTableFunctionValues(TableFunctionFactory & factory);
 void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
-#if ENABLE_MONGODB
+#if USE_MONGODB
 void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 void registerTableFunctionMongoDBPocoLegacy(TableFunctionFactory & factory);
 #endif
