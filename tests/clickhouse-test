@@ -267,7 +267,7 @@ def clickhouse_execute_http(
     max_http_retries=5,
     retry_error_codes=False,
 ):
-    if args.secure:
+    if base_args.secure:
         client = http.client.HTTPSConnection(
             host=base_args.tcp_host, port=base_args.http_port, timeout=timeout
         )
