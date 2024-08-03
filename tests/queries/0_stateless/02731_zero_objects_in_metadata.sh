@@ -7,6 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 for DISK in s3_disk s3_cache
 do
+    echo "Backup of disk $DISK"
     ${CLICKHOUSE_CLIENT} -n --query "
     DROP TABLE IF EXISTS test;
     CREATE TABLE test (id Int32, empty Array(Int32))
@@ -18,9 +19,9 @@ do
     "
 
     ${CLICKHOUSE_CLIENT} -n --query "
-    BACKUP TABLE test TO Disk('backups', 'test_s3_backup');
+    BACKUP TABLE test TO Disk('backups', 'test_s3_backup_$DISK');
     DROP TABLE test;
-    RESTORE TABLE test FROM Disk('backups', 'test_s3_backup');
+    RESTORE TABLE test FROM Disk('backups', 'test_s3_backup_$DISK');
     " &>/dev/null
 
     ${CLICKHOUSE_CLIENT} -n --query "

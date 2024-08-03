@@ -38,8 +38,12 @@ void DiskSelector::initialize(
     bool has_default_disk = false;
     constexpr auto local_disk_name = "local";
     bool has_local_disk = false;
+    LOG_DEBUG(&Poco::Logger::get("Initializing"), "Keys size: {}", keys.size());
+
     for (const auto & disk_name : keys)
     {
+        LOG_DEBUG(&Poco::Logger::get("Trying to initialize Disk name"), "{}", disk_name);
+
         if (!std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
             throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Disk name can contain only alphanumeric and '_' ({})", disk_name);
 
@@ -58,6 +62,7 @@ void DiskSelector::initialize(
         if (created_disk.get())
         {
             disks.emplace(disk_name, std::move(created_disk));
+            LOG_DEBUG(&Poco::Logger::get("Created Disk name"), "{}", disk_name);
         }
     }
     if (!has_default_disk)
