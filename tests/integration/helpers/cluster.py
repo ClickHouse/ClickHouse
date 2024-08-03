@@ -135,6 +135,52 @@ def get_free_port():
         return s.getsockname()[1]
 
 
+def is_port_free(port: int) -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("", port))
+            return True
+    except socket.error:
+        return False
+
+
+class PortPoolManager:
+    """
+    This class is used for distribution of ports allocated to single pytest-xdist worker
+    It can be used by multiple ClickHouseCluster instances
+    """
+
+    # Shared between instances
+    all_ports = None
+    free_ports = None
+
+    def __init__(self):
+        self.used_ports = []
+
+        if self.all_ports is None:
+            worker_ports = os.getenv("WORKER_FREE_PORTS")
+            ports = [int(p) for p in worker_ports.split(" ")]
+
+            # Static vars
+            PortPoolManager.all_ports = ports
+            PortPoolManager.free_ports = ports
+
+    def get_port(self):
+        for port in self.free_ports:
+            if is_port_free(port):
+                self.free_ports.remove(port)
+                self.used_ports.append(port)
+                return port
+
+        raise Exception(
+            f"No free ports: {self.all_ports}",
+        )
+
+    def return_used_ports(self):
+        self.free_ports.extend(self.used_ports)
+        self.used_ports.clear()
+
+
 def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
     """
     Retry if `func()` throws, `num` times.
@@ -248,7 +294,7 @@ def check_rabbitmq_is_available(rabbitmq_id, cookie):
         ),
         stdout=subprocess.PIPE,
     )
-    p.communicate()
+    p.wait(timeout=60)
     return p.returncode == 0
 
 
@@ -716,61 +762,66 @@ class ClickHouseCluster:
                 .stop()
             )
 
+        self.port_pool = PortPoolManager()
+
     @property
     def kafka_port(self):
         if self._kafka_port:
             return self._kafka_port
-        self._kafka_port = get_free_port()
+        self._kafka_port = self.port_pool.get_port()
         return self._kafka_port
 
     @property
     def schema_registry_port(self):
         if self._schema_registry_port:
             return self._schema_registry_port
-        self._schema_registry_port = get_free_port()
+        self._schema_registry_port = self.port_pool.get_port()
         return self._schema_registry_port
 
     @property
     def schema_registry_auth_port(self):
         if self._schema_registry_auth_port:
             return self._schema_registry_auth_port
-        self._schema_registry_auth_port = get_free_port()
+        self._schema_registry_auth_port = self.port_pool.get_port()
         return self._schema_registry_auth_port
 
     @property
     def kerberized_kafka_port(self):
         if self._kerberized_kafka_port:
             return self._kerberized_kafka_port
-        self._kerberized_kafka_port = get_free_port()
+        self._kerberized_kafka_port = self.port_pool.get_port()
         return self._kerberized_kafka_port
 
     @property
     def azurite_port(self):
         if self._azurite_port:
             return self._azurite_port
-        self._azurite_port = get_free_port()
+        self._azurite_port = self.port_pool.get_port()
         return self._azurite_port
 
     @property
     def mongo_port(self):
         if self._mongo_port:
             return self._mongo_port
-        self._mongo_port = get_free_port()
+        self._mongo_port = self.port_pool.get_port()
         return self._mongo_port
 
     @property
     def mongo_no_cred_port(self):
         if self._mongo_no_cred_port:
             return self._mongo_no_cred_port
-        self._mongo_no_cred_port = get_free_port()
+        self._mongo_no_cred_port = self.port_pool.get_port()
         return self._mongo_no_cred_port
 
     @property
     def redis_port(self):
         if self._redis_port:
             return self._redis_port
-        self._redis_port = get_free_port()
+        self._redis_port = self.port_pool.get_port()
         return self._redis_port
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.port_pool.return_used_ports()
 
     def print_all_docker_pieces(self):
         res_networks = subprocess.check_output(

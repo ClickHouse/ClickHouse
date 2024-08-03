@@ -76,6 +76,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     {"24.8",
         {
             {"merge_tree_min_bytes_per_task_for_remote_reading", 4194304, 2097152, "Value is unified with `filesystem_prefetch_min_bytes_for_single_read_task`"},
+            {"allow_archive_path_syntax", true, true, "Added new setting to allow disabling archive path syntax."},
         }
     },
     {"24.7",
@@ -151,6 +152,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"cast_string_to_dynamic_use_inference", false, false, "Add setting to allow converting String to Dynamic through parsing"},
             {"allow_experimental_dynamic_type", false, false, "Add new experimental Dynamic type"},
             {"azure_max_blocks_in_multipart_upload", 50000, 50000, "Maximum number of blocks in multipart upload for Azure."},
+            {"allow_archive_path_syntax", false, true, "Added new setting to allow disabling archive path syntax."},
         }
     },
     {"24.4",
