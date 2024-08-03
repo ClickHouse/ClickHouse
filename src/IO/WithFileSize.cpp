@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/PeekableReadBuffer.h>
 
+
 namespace DB
 {
 
@@ -87,6 +88,5 @@ size_t getDataOffsetMaybeCompressed(const ReadBuffer & in)
 
     return in.count();
 }
-
 
 }

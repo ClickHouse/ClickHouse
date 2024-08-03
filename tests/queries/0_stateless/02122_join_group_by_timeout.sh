@@ -12,6 +12,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 MAX_PROCESS_WAIT=5
 
+IS_SANITIZER=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.warnings WHERE message like '%built with sanitizer%'")
+if [ "$IS_SANITIZER" -gt 0 ]; then
+    # Query may hang for more than 5 seconds, especially in tsan build
+    MAX_PROCESS_WAIT=15
+fi
+
 # TCP CLIENT: As of today (02/12/21) uses PullingAsyncPipelineExecutor
 ### Should be cancelled after 1 second and return a 159 exception (timeout)
 timeout -s KILL $MAX_PROCESS_WAIT $CLICKHOUSE_CLIENT --max_execution_time 1 -q \
