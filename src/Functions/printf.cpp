@@ -6,11 +6,10 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/formatString.h>
+#include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 
 #include <memory>
-#include <sstream>
-#include <string>
 #include <vector>
 #include <fmt/format.h>
 #include <fmt/printf.h>
@@ -22,6 +21,7 @@ namespace ErrorCodes
 extern const int ILLEGAL_COLUMN;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -52,10 +52,9 @@ private:
 
         [[maybe_unused]] String toString() const
         {
-            std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            oss << "format:" << format << ", rows:" << rows << ", is_literal:" << is_literal << ", input:" << input.dumpStructure()
-                << std::endl;
-            return oss.str();
+            WriteBufferFromOwnString buf;
+            buf << "format:" << format << ", rows:" << rows << ", is_literal:" << is_literal << ", input:" << input.dumpStructure() << "\n";
+            return buf.str();
         }
 
     private:
@@ -229,9 +228,31 @@ public:
         ColumnsWithTypeAndName concat_args(instructions.size());
         for (size_t i = 0; i < instructions.size(); ++i)
         {
-            // std::cout << "instruction[" << i << "]:" << instructions[i].toString() << std::endl;
-            concat_args[i] = instructions[i].execute();
-            // std::cout << "concat_args[" << i << "]:" << concat_args[i].dumpStructure() << std::endl;
+            const auto & instruction = instructions[i];
+            try
+            {
+                // std::cout << "instruction[" << i << "]:" << instructions[i].toString() << std::endl;
+                concat_args[i] = instruction.execute();
+                // std::cout << "concat_args[" << i << "]:" << concat_args[i].dumpStructure() << std::endl;
+            }
+            catch (const fmt::v9::format_error & e)
+            {
+                if (instruction.is_literal)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Bad format {} in function {} without input argument, reason: {}",
+                        instruction.format,
+                        getName(),
+                        e.what());
+                else
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Bad format {} in function {} with {} as input argument, reason: {}",
+                        instructions[i].format,
+                        getName(),
+                        instruction.input.dumpStructure(),
+                        e.what());
+            }
         }
 
         auto res = function_concat->build(concat_args)->execute(concat_args, std::make_shared<DataTypeString>(), input_rows_count);

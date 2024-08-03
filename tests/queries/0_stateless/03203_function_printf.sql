@@ -32,3 +32,8 @@ select printf('%%.2g: %.2g', 123.456) = '%.2g: 1.2e+02';
 
 -- Testing character formats with precision
 select printf('%%.2s: %.2s', 'abc') = '%.2s: ab';
+
+select printf('%%X: %X', 123.123); -- { serverError BAD_ARGUMENTS }
+select printf('%%A: %A', 'abc'); -- { serverError BAD_ARGUMENTS }
+select printf('%%s: %s', 100); -- { serverError BAD_ARGUMENTS }
+select printf('%%n: %n', 100); -- { serverError BAD_ARGUMENTS }
