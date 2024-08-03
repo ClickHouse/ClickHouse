@@ -20,12 +20,10 @@ class CI:
     from ci_definitions import BuildConfig as BuildConfig
     from ci_definitions import DigestConfig as DigestConfig
     from ci_definitions import JobConfig as JobConfig
-    from ci_definitions import CheckDescription as CheckDescription
     from ci_definitions import Tags as Tags
     from ci_definitions import JobNames as JobNames
     from ci_definitions import BuildNames as BuildNames
     from ci_definitions import StatusNames as StatusNames
-    from ci_definitions import CHECK_DESCRIPTIONS as CHECK_DESCRIPTIONS
     from ci_definitions import REQUIRED_CHECKS as REQUIRED_CHECKS
     from ci_definitions import SyncState as SyncState
     from ci_definitions import MQ_JOBS as MQ_JOBS
