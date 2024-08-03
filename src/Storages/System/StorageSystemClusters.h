@@ -1,9 +1,9 @@
 #pragma once
 
+#include <Databases/DatabaseReplicated.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
-
 
 namespace DB
 {
@@ -27,7 +27,7 @@ protected:
     using NameAndCluster = std::pair<String, std::shared_ptr<Cluster>>;
 
     void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
-    static void writeCluster(MutableColumns & res_columns, const NameAndCluster & name_and_cluster, const std::vector<UInt8> & is_active);
+    static void writeCluster(MutableColumns & res_columns, const NameAndCluster & name_and_cluster, const ReplicasInfo & replicas_info);
 };
 
 }
