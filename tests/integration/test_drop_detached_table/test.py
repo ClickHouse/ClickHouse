@@ -178,7 +178,7 @@ def test_drop_s3_table(start_cluster):
 
 
 def test_drop_distributed_table(start_cluster):
-    test_table_name = "test_dist_table"
+    test_table_name = "test_drop_distributed_table"
     create_distributed_table(node=replica1, table_name=test_table_name)
 
     replica1.query(f"DETACH TABLE {test_table_name}")
