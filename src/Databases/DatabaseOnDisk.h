@@ -83,7 +83,7 @@ protected:
 
     using IteratingFunction = std::function<void(const String &)>;
 
-    void iterateMetadataFiles(ContextPtr context, const IteratingFunction & process_metadata_file) const;
+    void iterateMetadataFiles(const IteratingFunction & process_metadata_file) const;
 
     ASTPtr getCreateTableQueryImpl(
         const String & table_name,
