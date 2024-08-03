@@ -368,6 +368,13 @@ def kill_process_group(pgid):
         end="",
     )
     try:
+        # Let's try to dump stacktrace in client (useful to catch issues there)
+        os.killpg(pgid, signal.SIGTSTP)
+        # Wait some time for clickhouse utilities to gather stacktrace
+        if RELEASE_BUILD:
+            sleep(0.5)
+        else:
+            sleep(5)
         # NOTE: this still may leave some processes, that had been
         # created by timeout(1), since it also creates new process
         # group. But this should not be a problem with default
@@ -380,9 +387,8 @@ def kill_process_group(pgid):
         # ability to terminate childrens (though not always since
         # signals are asynchronous).
         os.killpg(pgid, signal.SIGTERM)
-        # This may not be enough, but this is at least something
-        # (and anyway it is OK to spend 0.1 second more in case of
-        # test timeout).
+        # We need minimal delay to let processes handle SIGTERM - 0.1 (this may
+        # not be enough, but at least something)
         sleep(0.1)
         os.killpg(pgid, signal.SIGKILL)
     except OSError as e:
@@ -2396,7 +2402,13 @@ class BuildFlags:
     POLYMORPHIC_PARTS = "polymorphic-parts"
 
 
+# Release and non-sanitizer build
+RELEASE_BUILD = False
+
+
 def collect_build_flags(args):
+    global RELEASE_BUILD
+
     result = []
 
     value = clickhouse_execute(
@@ -2420,6 +2432,8 @@ def collect_build_flags(args):
         result.append(BuildFlags.DEBUG)
     elif b"RelWithDebInfo" in value or b"Release" in value:
         result.append(BuildFlags.RELEASE)
+
+    RELEASE_BUILD = result == [BuildFlags.RELEASE]
 
     value = clickhouse_execute(
         args,
