@@ -112,6 +112,7 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
         });
     }
 
+    builder.setConcurrencyControl(context->getSettingsRef().use_concurrency_control);
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 

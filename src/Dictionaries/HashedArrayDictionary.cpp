@@ -475,6 +475,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::updateData()
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
         Block block;
 
@@ -973,6 +974,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
 
         QueryPipeline pipeline(source_ptr->loadAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        pipeline.setConcurrencyControl(false);
 
         UInt64 pull_time_microseconds = 0;
         UInt64 process_time_microseconds = 0;

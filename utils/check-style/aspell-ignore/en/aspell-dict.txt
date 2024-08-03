@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2942 
+personal_ws-1.1 en 2942
 AArch
 ACLs
 ALTERs
@@ -178,6 +178,9 @@ ComplexKeyCache
 ComplexKeyDirect
 ComplexKeyHashed
 Composable
+composable
+ConcurrencyControlAcquired
+ConcurrencyControlSoftLimit
 Config
 ConnectionDetails
 Const
