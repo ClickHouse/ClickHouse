@@ -204,10 +204,10 @@ StoragePtr StorageFactory::get(
 
                 /// Now let's handle the merge tree family. Note we only handle in the mode of CREATE due to backward compatibility.
                 /// Otherwise, it would fail to start in the case of existing projections with special mergetree.
-                /// Projection is fully supported in (Replictaed)MergeTree, but also allowed in non-throw mode with other mergetree family members.
                 chassert(query.storage->engine);
-                if (std::string_view engine_name(query.storage->engine->name); mode == LoadingStrictnessLevel::CREATE
-                    && engine_name != "MergeTree" && engine_name != "ReplicatedMergeTree")
+                const std::unordered_set<String> allowed_engines{"MergeTree", "ReplicatedMergeTree", "SharedMergeTree"};
+                if (auto engine_name(query.storage->engine->name); mode == LoadingStrictnessLevel::CREATE
+                    && !allowed_engines.contains(engine_name))
                 {
                     /// default throw mode in deduplicate_merge_projection_mode
                     bool projection_allowed = false;
@@ -224,7 +224,7 @@ StoragePtr StorageFactory::get(
                     }
                     if (!projection_allowed)
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Projection is fully supported in (Replictaed)MergeTree, but also allowed in non-throw mode with other"
+                            "Projection is fully supported in (Replictaed, Shared)MergeTree, but also allowed in non-throw mode with other"
                             " mergetree family members. Consider drop or rebuild option of deduplicate_merge_projection_mode."
                             " Current storage name is {}.", engine_name);
                 }
