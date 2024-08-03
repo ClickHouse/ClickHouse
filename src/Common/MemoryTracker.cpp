@@ -628,7 +628,7 @@ void MemoryTracker::updateMemoryCredits()
     if (current_value > previous_value.load(std::memory_order_relaxed) &&
         current_value - previous_value.load(std::memory_order_relaxed) > local_threshold)
     {
-        size_t delta = (current_value - previous_value.load(std::memory_order_relaxed)) * stopwatch.elapsedMicroseconds();
+        size_t delta = ((current_value - previous_value.load(std::memory_order_relaxed)) * stopwatch.elapsedMicroseconds()) / (1024 * 1024);
         ProfileEvents::increment(ProfileEvents::MemoryCredits, delta);
         previous_value.store(current_value, std::memory_order_relaxed); // Use relaxed order for storing
         stopwatch.restart();
