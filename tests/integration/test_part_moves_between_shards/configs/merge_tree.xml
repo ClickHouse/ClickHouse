@@ -2,5 +2,6 @@
     <merge_tree>
         <assign_part_uuids>1</assign_part_uuids>
         <part_moves_between_shards_enable>1</part_moves_between_shards_enable>
+        <disable_quorum_check_move_parts>1</disable_quorum_check_move_parts>
     </merge_tree>
 </clickhouse>

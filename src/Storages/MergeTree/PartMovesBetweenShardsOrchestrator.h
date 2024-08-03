@@ -1,9 +1,10 @@
 #pragma once
 
+#include <set>
 #include <vector>
-#include <unordered_set>
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include "Core/Types.h"
 #include <Core/UUID.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <IO/WriteHelpers.h>
@@ -131,8 +132,9 @@ public:
         String to_shard;
         String dst_part_name;
 
-        size_t required_number_of_replicas{};
-        std::set<String> replicas;
+        UInt64 required_number_of_replicas;
+        std::set<String> replicas_success;
+        std::set<String> replicas_failed;
 
         EntryState state;
         bool rollback = false;
@@ -166,6 +168,9 @@ private:
     static constexpr auto JSON_KEY_ROLLBACK = "rollback";
     static constexpr auto JSON_KEY_LAST_EX_MSG = "last_exception";
     static constexpr auto JSON_KEY_NUM_TRIES = "num_tries";
+    static constexpr auto JSON_KEY_REQUIRED_NUM_REPLICAS = "required_number_of_replicas";
+    static constexpr auto JSON_KEY_REPLICAS_SUCCESS = "replicas_success";
+    static constexpr auto JSON_KEY_REPLICAS_FAILED = "replicas_failed";
 
 public:
     explicit PartMovesBetweenShardsOrchestrator(StorageReplicatedMergeTree & storage_);
@@ -180,13 +185,15 @@ public:
 
 private:
     void run();
-    bool step();
-    Entry stepEntry(Entry entry, zkutil::ZooKeeperPtr zk);
+    void step(Entry & entry);
+    void stepEntry(Entry & entry, zkutil::ZooKeeperPtr zk);
 
     Entry getEntryByUUID(const UUID & task_uuid);
-    void removePins(const Entry & entry, zkutil::ZooKeeperPtr zk);
-    void syncStateFromZK();
-    EntryState getNextState(Entry entry);
+    void removePins(Entry & entry,zkutil::ZooKeeperPtr zk);
+    std::vector<PartMovesBetweenShardsOrchestrator::Entry> getEntriesFromZk();
+    std::optional<PartMovesBetweenShardsOrchestrator::Entry> selectEntryFromZk();
+
+    EntryState getNextState(Entry & entry) const;
 
     StorageReplicatedMergeTree & storage;
 
@@ -198,8 +205,6 @@ private:
     BackgroundSchedulePool::TaskHolder task;
 
     mutable std::mutex state_mutex;
-    std::vector<Entry> entries;
-    std::unordered_set<String> signaled_entries;
 
 public:
     String entries_znode_path;
