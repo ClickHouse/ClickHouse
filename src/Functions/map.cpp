@@ -140,8 +140,8 @@ public:
                 ++current_offset;
                 offsets_data[i] = current_offset;
             }
-            keys_data->insertManyFrom(*column_ptrs[0], 0, input_rows_count);
-            values_data->insertManyFrom(*column_ptrs[1], 0, input_rows_count);
+            keys_data->insertRangeFrom(*column_ptrs[0], 0, input_rows_count);
+            values_data->insertRangeFrom(*column_ptrs[1], 0, input_rows_count);
         }
         else
         {

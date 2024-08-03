@@ -92,7 +92,7 @@ public:
                 ++current_offset;
                 out_offsets[i] = current_offset;
             }
-            out_data.insertManyFrom(*column_ptrs[0], 0, input_rows_count);
+            out_data.insertRangeFrom(*column_ptrs[0], 0, input_rows_count);
         }
         else
         {
