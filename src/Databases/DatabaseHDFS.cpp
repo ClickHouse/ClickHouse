@@ -51,7 +51,7 @@ DatabaseHDFS::DatabaseHDFS(const String & name_, const String & source_url, Cont
     if (!source.empty())
     {
         if (!re2::RE2::FullMatch(source, std::string(HDFS_HOST_REGEXP)))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs host: {}. "
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS host: {}. "
                             "It should have structure 'hdfs://<host_name>:<port>'", source);
 
         context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(source));
