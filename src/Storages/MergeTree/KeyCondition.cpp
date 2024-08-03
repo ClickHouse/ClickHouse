@@ -670,7 +670,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                 {
                     /// Make sure we don't change types of function arguments (e.g. remove LowCardinality).
                     /// Otherwise the function may crash when passed columns of unexpected types.
-                    ///  * Why not check this for all subexperessions rather than function arguments?
+                    ///  * Why not check this for all subexpressions rather than function arguments?
                     ///    Because types may change, e.g. in `NOT (u64 AND u64)` -> `(NOT u64 OR NOT u64)`
                     ///    the AND's args were UInt64, but OR's args are UInt8.
                     ///  * Why not re-resolve function overload, using FunctionFactory::instance().get(name, context)?
