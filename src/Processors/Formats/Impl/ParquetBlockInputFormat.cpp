@@ -465,6 +465,15 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
     return hyperrectangle;
 }
 
+static std::vector<ParquetBloomFilterCondition::ConditionElement> createConditionsFromRpn(parquet::BloomFilterReader & bf_reader,
+                                                                                          const Block & header,
+                                                                                          const std::vector<std::pair<std::string, int>> & column_name_to_index,
+                                                                                          const std::shared_ptr<const KeyCondition> & key_condition)
+{
+    const auto column_index_to_bf = buildColumnIndexToBF(bf_reader, 0, header, column_name_to_index);
+    return keyConditionRPNToParquetBloomFilterCondition(key_condition->getRPN(), header.getDataTypes(), column_index_to_bf);
+};
+
 ParquetBlockInputFormat::ParquetBlockInputFormat(
     ReadBuffer & buf,
     const Block & header_,
@@ -552,20 +561,24 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         return std::min(std::max(preferred_num_rows, MIN_ROW_NUM), static_cast<size_t>(format_settings.parquet.max_block_size));
     };
 
+    std::unique_ptr<ParquetBloomFilterCondition> parquet_bloom_filter_condition;
+
+    if (format_settings.parquet.bloom_filter_push_down && key_condition)
+    {
+        const auto parquet_conditions = createConditionsFromRpn(bf_reader, getPort().getHeader(), column_name_to_index, key_condition);
+        parquet_bloom_filter_condition = std::make_unique<ParquetBloomFilterCondition>(parquet_conditions);
+    }
+
     for (int row_group = 0; row_group < num_row_groups; ++row_group)
     {
         if (skip_row_groups.contains(row_group))
             continue;
 
-        if (format_settings.parquet.bloom_filter_push_down && key_condition)
+        if (parquet_bloom_filter_condition)
         {
             const auto column_index_to_bf = buildColumnIndexToBF(bf_reader, row_group, getPort().getHeader(), column_name_to_index);
 
-            // make sure to hold refs instead
-            // make sure to do this only once
-            const auto parquet_bloom_filter_condition = ParquetBloomFilterCondition(keyConditionRPNToParquetBloomFilterCondition(key_condition->getRPN(), getPort().getHeader().getDataTypes(), column_index_to_bf));
-
-            if (!parquet_bloom_filter_condition.mayBeTrueOnRowGroup(column_index_to_bf))
+            if (!parquet_bloom_filter_condition->mayBeTrueOnRowGroup(column_index_to_bf))
             {
                 continue;
             }
