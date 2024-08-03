@@ -1312,6 +1312,31 @@
         <ttl>event_date + INTERVAL 30 DAY</ttl>
     </blob_storage_log>
 
+    <!-- Configure system.dashboards for dashboard.html.
+
+         Could have any query parameters, for which there will be an input on the page.
+         For instance an example from comments have the following:
+         - seconds
+         - rounding
+
+         NOTE: All default dashboards will be overwritten if it was set here. -->
+    <!-- Here is an example without merge() function, to make it work with readonly user -->
+    <!--
+    <dashboards>
+        <dashboard>
+            <dashboard>Overview</dashboard>
+            <title>Queries/second</title>
+            <query>
+                SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_Query)
+                FROM system.metric_log
+                WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+                GROUP BY t
+                ORDER BY t WITH FILL STEP {rounding:UInt32}
+            </query>
+        </dashboard>
+    </dashboards>
+    -->
+
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
          Format: <name>/path/to/file</name>
