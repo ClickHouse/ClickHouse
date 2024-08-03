@@ -214,7 +214,6 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
 
             if (rpn_element.key_column >= data_types.size())
             {
-                // todo arthur is this correct
                 condition_elements.emplace_back(Function::ALWAYS_TRUE);
                 continue;
             }
