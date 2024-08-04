@@ -212,6 +212,10 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--shared-catalog')
     fi
 
+    if [[ "$USE_DISTRIBUTED_CACHE" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--distributed-cache')
+    fi
+
     if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--replicated-database')
         # Too many tests fail for DatabaseReplicated in parallel.
