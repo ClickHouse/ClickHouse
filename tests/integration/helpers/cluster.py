@@ -2399,7 +2399,7 @@ class ClickHouseCluster:
                 )
             rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
         except Exception as e:
-            logging.debug("Unable to get logs from docker.")
+            logging.debug(f"Unable to get logs from docker: {e}.")
         raise Exception("Cannot wait RabbitMQ container")
 
     def wait_nats_is_available(self, max_retries=5):
