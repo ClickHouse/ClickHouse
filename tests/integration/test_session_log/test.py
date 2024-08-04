@@ -5,6 +5,7 @@ import pytest
 import random
 import sys
 import threading
+import time
 
 from helpers.cluster import ClickHouseCluster, run_and_check
 
@@ -115,6 +116,19 @@ def mysql_query(query, user_, pass_, raise_exception):
         cursor.fetchall()
     except Exception:
         assert raise_exception
+
+
+def wait_for_corresponding_login_succecss_and_logout(user, expected_login_count):
+    # The client can exit sooner than the server records its disconnection and closes the session.
+    # When the client disconnects, two processes happen at the same time and are in the race condition:
+    # - the client application exits and returns control to the shell;
+    # - the server closes the session and records the logout event to the session log.
+    # We cannot expect that after the control is returned to the shell, the server records the logout event.
+    sql = f"SELECT COUNT(*) FROM (SELECT {SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = '{user}' AND type = 'LoginSuccess' INTERSECT SELECT {SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = '{user}' AND type = 'Logout')"
+    logins_and_logouts = instance.query(sql)
+    while int(logins_and_logouts) != expected_login_count:
+        time.sleep(0.1)
+        logins_and_logouts = instance.query(sql)
 
 
 @pytest.fixture(scope="module")
@@ -276,10 +290,7 @@ def test_parallel_sessions(started_cluster):
     )
     assert postgres_sessions == "30\n"
 
-    logins_and_logouts = instance.query(
-        f"SELECT COUNT(*) FROM (SELECT {SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = 'parallel_user' AND type = 'LoginSuccess' INTERSECT SELECT {SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = 'parallel_user' AND type = 'Logout')"
-    )
-    assert logins_and_logouts == "30\n"
+    wait_for_corresponding_login_succecss_and_logout("parallel_user", 30)
 
     logout_failure_sessions = instance.query(
         f"SELECT COUNT(*) FROM system.session_log  WHERE user = 'parallel_user' AND type = 'LoginFailure'"
