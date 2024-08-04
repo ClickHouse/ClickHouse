@@ -3,6 +3,12 @@
 # shellcheck disable=SC1091
 source /setup_export_logs.sh
 
+# shellcheck source=../stateless/stress_tests.lib
+source /stress_tests.lib
+
+# Avoid overlaps with previous runs
+dmesg --clear
+
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
@@ -419,5 +425,8 @@ if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
     tar -chf /test_output/coordination1.tar /var/lib/clickhouse1/coordination ||:
 fi
+
+# Grep logs for sanitizer asserts, crashes and other critical errors
+check_logs_for_critical_errors
 
 collect_core_dumps
