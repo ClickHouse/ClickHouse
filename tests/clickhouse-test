@@ -2218,7 +2218,6 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
                         args, test_suite, client_options, server_logs_level
                     )
                     test_result = test_case.process_result(test_result, MESSAGES)
-                    break
                 except TimeoutError:
                     break
                 finally:
