@@ -1232,6 +1232,9 @@ class TestCase:
         ):
             return FailureReason.SKIP
 
+        elif "no-flaky-check" in tags and (args.test_runs > 1):
+            return FailureReason.SKIP
+
         elif tags:
             for build_flag in args.build_flags:
                 if "no-" + build_flag in tags:
