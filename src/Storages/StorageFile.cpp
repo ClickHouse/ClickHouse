@@ -25,6 +25,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/IArchiveReader.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <Disks/IO/IOUringReader.h>
@@ -2207,7 +2208,11 @@ void registerStorageFile(StorageFactory & factory)
                 else if (type == Field::Types::UInt64)
                     source_fd = static_cast<int>(literal->value.get<UInt64>());
                 else if (type == Field::Types::String)
-                    StorageFile::parseFileSource(literal->value.get<String>(), source_path, storage_args.path_to_archive);
+                    StorageFile::parseFileSource(
+                        literal->value.get<String>(),
+                        source_path,
+                        storage_args.path_to_archive,
+                        factory_args.getLocalContext()->getSettingsRef().allow_archive_path_syntax);
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
             }
@@ -2234,8 +2239,14 @@ SchemaCache & StorageFile::getSchemaCache(const ContextPtr & context)
     return schema_cache;
 }
 
-void StorageFile::parseFileSource(String source, String & filename, String & path_to_archive)
+void StorageFile::parseFileSource(String source, String & filename, String & path_to_archive, bool allow_archive_path_syntax)
 {
+    if (!allow_archive_path_syntax)
+    {
+        filename = std::move(source);
+        return;
+    }
+
     size_t pos = source.find("::");
     if (pos == String::npos)
     {
@@ -2247,18 +2258,21 @@ void StorageFile::parseFileSource(String source, String & filename, String & pat
     while (path_to_archive_view.ends_with(' '))
         path_to_archive_view.remove_suffix(1);
 
-    if (path_to_archive_view.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path to archive is empty");
-
-    path_to_archive = path_to_archive_view;
-
     std::string_view filename_view = std::string_view{source}.substr(pos + 2);
-    while (filename_view.front() == ' ')
+    while (filename_view.starts_with(' '))
         filename_view.remove_prefix(1);
 
-    if (filename_view.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filename is empty");
+    /// possible situations when the first part can be archive is only if one of the following is true:
+    /// - it contains supported extension
+    /// - it contains characters that could mean glob expression
+    if (filename_view.empty() || path_to_archive_view.empty()
+        || (!hasSupportedArchiveExtension(path_to_archive_view) && path_to_archive_view.find_first_of("*?{") == std::string_view::npos))
+    {
+        filename = std::move(source);
+        return;
+    }
 
+    path_to_archive = path_to_archive_view;
     filename = filename_view;
 }
 
