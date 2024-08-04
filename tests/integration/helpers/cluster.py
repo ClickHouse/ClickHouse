@@ -2371,7 +2371,7 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=30):
+    def wait_rabbitmq_to_start(self, timeout=60):
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
@@ -2399,7 +2399,7 @@ class ClickHouseCluster:
                 )
             rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
         except Exception as e:
-            logging.debug("Unable to get logs from docker.")
+            logging.debug(f"Unable to get logs from docker: {e}.")
         raise Exception("Cannot wait RabbitMQ container")
 
     def wait_nats_is_available(self, max_retries=5):
