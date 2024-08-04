@@ -1232,7 +1232,7 @@ class TestCase:
         ):
             return FailureReason.SKIP
 
-        elif "no-flaky-check" in tags and (args.test_runs > 1):
+        elif "no-flaky-check" in tags and (1 == int(os.environ.get("IS_FLAKY_CHECK", 0))):
             return FailureReason.SKIP
 
         elif tags:
