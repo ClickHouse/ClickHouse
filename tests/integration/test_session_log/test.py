@@ -118,7 +118,7 @@ def mysql_query(query, user_, pass_, raise_exception):
         assert raise_exception
 
 
-def wait_for_corresponding_login_succecss_and_logout(user, expected_login_count):
+def wait_for_corresponding_login_success_and_logout(user, expected_login_count):
     # The client can exit sooner than the server records its disconnection and closes the session.
     # When the client disconnects, two processes happen at the same time and are in the race condition:
     # - the client application exits and returns control to the shell;
@@ -290,7 +290,7 @@ def test_parallel_sessions(started_cluster):
     )
     assert postgres_sessions == "30\n"
 
-    wait_for_corresponding_login_succecss_and_logout("parallel_user", 30)
+    wait_for_corresponding_login_success_and_logout("parallel_user", 30)
 
     logout_failure_sessions = instance.query(
         f"SELECT COUNT(*) FROM system.session_log  WHERE user = 'parallel_user' AND type = 'LoginFailure'"
