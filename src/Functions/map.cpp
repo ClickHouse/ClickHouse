@@ -32,11 +32,18 @@ class FunctionMap : public IFunction
 public:
     static constexpr auto name = "map";
 
-    explicit FunctionMap(bool use_variant_as_common_type_) : use_variant_as_common_type(use_variant_as_common_type_) {}
+    explicit FunctionMap(ContextPtr context_)
+        : context(std::move(context_))
+        , use_variant_as_common_type(
+              context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type)
+        , function_array(FunctionFactory::instance().get("array", context))
+        , function_map_from_arrays(FunctionFactory::instance().get("mapFromArrays", context))
+    {
+    }
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionMap>(context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type);
+        return std::make_shared<FunctionMap>(std::move(context));
     }
 
     String getName() const override
@@ -97,7 +104,36 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         size_t num_elements = arguments.size();
+        if (num_elements == 0)
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
+        ColumnsWithTypeAndName key_args;
+        ColumnsWithTypeAndName value_args;
+        for (size_t i = 0; i < num_elements; i += 2)
+        {
+            key_args.emplace_back(arguments[i]);
+            value_args.emplace_back(arguments[i+1]);
+        }
+
+        const auto & result_type_map = static_cast<const DataTypeMap &>(*result_type);
+        const DataTypePtr & key_type = result_type_map.getKeyType();
+        const DataTypePtr & value_type = result_type_map.getValueType();
+        const DataTypePtr & key_array_type = std::make_shared<DataTypeArray>(key_type);
+        const DataTypePtr & value_array_type = std::make_shared<DataTypeArray>(value_type);
+
+        /// key_array = array(args[0], args[2]...)
+        ColumnPtr key_array = function_array->build(key_args)->execute(key_args, key_array_type, input_rows_count);
+        /// value_array = array(args[1], args[3]...)
+        ColumnPtr value_array = function_array->build(value_args)->execute(value_args, value_array_type, input_rows_count);
+
+        /// result = mapFromArrays(key_array, value_array)
+        ColumnsWithTypeAndName map_args{{key_array, key_array_type, ""}, {value_array, value_array_type, ""}};
+        return function_map_from_arrays->build(map_args)->execute(map_args, result_type, input_rows_count);
+    }
+    /*
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        size_t num_elements = arguments.size();
         if (num_elements == 0)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
@@ -164,9 +200,13 @@ public:
 
         return ColumnMap::create(nested_column);
     }
+    */
 
 private:
+    ContextPtr context;
     bool use_variant_as_common_type = false;
+    FunctionOverloadResolverPtr function_array;
+    FunctionOverloadResolverPtr function_map_from_arrays;
 };
 
 /// mapFromArrays(keys, values) is a function that allows you to make key-value pair from a pair of arrays
