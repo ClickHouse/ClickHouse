@@ -2371,7 +2371,7 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=30):
+    def wait_rabbitmq_to_start(self, timeout=60):
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
