@@ -1673,12 +1673,12 @@ class TestCase:
         if self.ext == ".sql" and args.cloud:
             # Get at least some logs, because we don't have access to system.text_log and pods...
             pattern = (
-                "{client} --send_logs_level={logs_level} {secure} --multiquery {options}"
+                "{client} --send_logs_level={logs_level} {secure} {options}"
                 " --send_logs_level=trace < {test} > {stdout}  2>> /test_output/some_logs_from_server.log"
             )
         elif self.ext == ".sql" and not args.cloud:
             pattern = (
-                "{client} --send_logs_level={logs_level} {secure} --multiquery {options} < "
+                "{client} --send_logs_level={logs_level} {secure} {options} < "
                 + pattern
             )
 
