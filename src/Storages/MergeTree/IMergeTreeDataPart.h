@@ -690,9 +690,6 @@ private:
 
     virtual void appendFilesOfIndexGranularity(Strings & files) const;
 
-    /// Loads the index file.
-    void loadIndex() const TSA_REQUIRES(index_mutex);
-
     void appendFilesOfIndex(Strings & files) const;
 
     /// Load rows count for this part from disk (for the newer storage format version).
