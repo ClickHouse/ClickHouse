@@ -54,7 +54,7 @@ public:
     FileCacheDataPtr getByName(const std::string & cache_name);
 
     void updateSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
-
+    void remove(FileCachePtr cache);
     void clear();
 
 private:
