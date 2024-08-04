@@ -31,8 +31,6 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
         {"database_shard_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database shard (for clusters that belong to a `Replicated` database)."},
         {"database_replica_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database replica (for clusters that belong to a `Replicated` database)."},
         {"is_active", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "The status of the Replicated database replica (for clusters that belong to a Replicated database): 1 means 'replica is online', 0 means 'replica is offline', NULL means 'unknown'."},
-        {"replication_lag", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>()), "The replication lag of the `Replicated` database replica (for clusters that belong to a Replicated database)."},
-        {"recovery_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The recovery time of the `Replicated` database replica (for clusters that belong to a Replicated database), in milliseconds."},
     };
 
     description.setAliases({
@@ -48,30 +46,31 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
         writeCluster(res_columns, name_and_cluster, {});
 
     const auto databases = DatabaseCatalog::instance().getDatabases();
-    for (const auto & [database_name, database] : databases)
+    for (const auto & name_and_database : databases)
     {
-        if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(database.get()))
+        if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(name_and_database.second.get()))
         {
+
             if (auto database_cluster = replicated->tryGetCluster())
-                writeCluster(res_columns, {database_name, database_cluster},
-                             replicated->tryGetReplicasInfo(database_cluster));
+                writeCluster(res_columns, {name_and_database.first, database_cluster},
+                             replicated->tryGetAreReplicasActive(database_cluster));
 
             if (auto database_cluster = replicated->tryGetAllGroupsCluster())
-                writeCluster(res_columns, {DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX + database_name, database_cluster},
-                             replicated->tryGetReplicasInfo(database_cluster));
+                writeCluster(res_columns, {DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX + name_and_database.first, database_cluster},
+                             replicated->tryGetAreReplicasActive(database_cluster));
         }
     }
 }
 
 void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const NameAndCluster & name_and_cluster,
-                                         const ReplicasInfo & replicas_info)
+                                         const std::vector<UInt8> & is_active)
 {
     const String & cluster_name = name_and_cluster.first;
     const ClusterPtr & cluster = name_and_cluster.second;
     const auto & shards_info = cluster->getShardsInfo();
     const auto & addresses_with_failover = cluster->getShardsAddresses();
 
-    size_t global_replica_idx = 0;
+    size_t replica_idx = 0;
     for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
     {
         const auto & shard_info = shards_info[shard_index];
@@ -100,24 +99,10 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const Nam
             res_columns[i++]->insert(pool_status[replica_index].estimated_recovery_time.count());
             res_columns[i++]->insert(address.database_shard_name);
             res_columns[i++]->insert(address.database_replica_name);
-            if (replicas_info.empty())
-            {
+            if (is_active.empty())
                 res_columns[i++]->insertDefault();
-                res_columns[i++]->insertDefault();
-                res_columns[i++]->insertDefault();
-            }
             else
-            {
-                const auto & replica_info = replicas_info[global_replica_idx];
-                res_columns[i++]->insert(replica_info.is_active);
-                res_columns[i++]->insert(replica_info.replication_lag);
-                if (replica_info.recovery_time != 0)
-                    res_columns[i++]->insert(replica_info.recovery_time);
-                else
-                    res_columns[i++]->insertDefault();
-            }
-
-            ++global_replica_idx;
+                res_columns[i++]->insert(is_active[replica_idx++]);
         }
     }
 }

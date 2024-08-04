@@ -1019,7 +1019,9 @@ def _get_ext_check_name(check_name: str) -> str:
     return check_name_with_group
 
 
-def _cancel_pr_wf(s3: S3Helper, pr_number: int, cancel_sync: bool = False) -> None:
+def _cancel_pr_workflow(
+    s3: S3Helper, pr_number: int, cancel_sync: bool = False
+) -> None:
     wf_data = CiMetadata(s3, pr_number).fetch_meta()
     if not cancel_sync:
         if not wf_data.run_id:
@@ -1368,12 +1370,12 @@ def main() -> int:
         assert indata, "Run config must be provided via --infile"
         _update_gh_statuses_action(indata=indata, s3=s3)
 
-    ### CANCEL PREVIOUS WORKFLOW RUN
+    ### CANCEL THE PREVIOUS WORKFLOW RUN
     elif args.cancel_previous_run:
         if pr_info.is_merge_queue:
-            _cancel_pr_wf(s3, pr_info.merged_pr)
+            _cancel_pr_workflow(s3, pr_info.merged_pr)
         elif pr_info.is_pr:
-            _cancel_pr_wf(s3, pr_info.number, cancel_sync=True)
+            _cancel_pr_workflow(s3, pr_info.number, cancel_sync=True)
         else:
             assert False, "BUG! Not supported scenario"
 
