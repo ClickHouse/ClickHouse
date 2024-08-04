@@ -410,6 +410,7 @@ def test_no_credentials(started_cluster):
     simple_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
+    node.query("drop table if exists simple_mongo_table_2")
     node.query(
         "create table simple_mongo_table_2(key UInt64, data String) engine = MongoDB('mongo2:27017', 'test', 'simple_table', '', '')"
     )
@@ -439,10 +440,13 @@ def test_auth_source(started_cluster):
     simple_mongo_table.insert_many(data)
 
     node = started_cluster.instances["node"]
+    node.query("drop table if exists simple_mongo_table_fail")
     node.query(
         "create table simple_mongo_table_fail(key UInt64, data String) engine = MongoDB('mongo2:27017', 'test', 'simple_table', 'root', 'clickhouse')"
     )
     node.query_and_get_error("SELECT count() FROM simple_mongo_table_fail")
+
+    node.query("drop table if exists simple_mongo_table_ok")
     node.query(
         "create table simple_mongo_table_ok(key UInt64, data String) engine = MongoDB('mongo2:27017', 'test', 'simple_table', 'root', 'clickhouse', 'authSource=admin')"
     )
