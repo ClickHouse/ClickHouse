@@ -1,5 +1,5 @@
--- Tags: no-tsan, no-msan, long
--- too long.
+-- Tags: long, no-tsan, no-msan, no-distributed-cache
+-- Too long for TSan and MSan
 
 set enable_filesystem_cache=0;
 set enable_filesystem_cache_on_write_operations=0;
