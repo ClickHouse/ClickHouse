@@ -17,6 +17,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/AccurateComparison.h>
+#include <Core/Settings.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
@@ -5223,7 +5224,7 @@ REGISTER_FUNCTION(Conversion)
     /// MySQL compatibility alias. Cannot be registered as alias,
     /// because we don't want it to be normalized to toDate in queries,
     /// otherwise CREATE DICTIONARY query breaks.
-    factory.registerFunction("DATE", &FunctionToDate::create, {}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction("DATE", &FunctionToDate::create, {}, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionToDate32>();
     factory.registerFunction<FunctionToDateTime>();

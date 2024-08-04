@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>

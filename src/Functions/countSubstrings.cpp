@@ -19,6 +19,6 @@ using FunctionCountSubstrings = FunctionsStringSearch<CountSubstringsImpl<NameCo
 
 REGISTER_FUNCTION(CountSubstrings)
 {
-    factory.registerFunction<FunctionCountSubstrings>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionCountSubstrings>({}, FunctionFactory::Case::Insensitive);
 }
 }

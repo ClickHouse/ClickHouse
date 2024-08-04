@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2758
+personal_ws-1.1 en 2942 
 AArch
 ACLs
 ALTERs
@@ -449,7 +449,7 @@ Kahan
 Kaser
 KeeperAliveConnections
 KeeperMap
-KeeperOutstandingRequets
+KeeperOutstandingRequests
 Kerberos
 Khanna
 KittenHouse
@@ -467,7 +467,7 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 LOONGARCH
-Lemir
+Lemire
 Levenshtein
 Liao
 LibFuzzer
@@ -745,6 +745,7 @@ PromQL
 Promql
 Promtail
 Protobuf
+ProtobufList
 ProtobufSingle
 ProxySQL
 Punycode
@@ -761,6 +762,7 @@ QueryCacheMisses
 QueryPreempted
 QueryThread
 QuickAssist
+QuickSight
 QuoteMeta
 RBAC
 RClickHouse
@@ -1319,6 +1321,12 @@ cfg
 cgroup
 cgroups
 chadmin
+changeDay
+changeHour
+changeMinute
+changeMonth
+changeSecond
+changeYear
 changelog
 changelogs
 charset
@@ -1614,6 +1622,7 @@ filesystem
 filesystemAvailable
 filesystemCapacity
 filesystemFree
+filesystemUnreserved
 filesystems
 finalizeAggregation
 fips
@@ -1646,6 +1655,7 @@ formated
 formatschema
 formatter
 formatters
+fqdn
 frac
 freezed
 fromDaysSinceYearZero
@@ -1658,9 +1668,9 @@ fsync
 func
 fuzzBits
 fuzzJSON
+fuzzQuery
 fuzzer
 fuzzers
-fuzzQuery
 gRPC
 gccMurmurHash
 gcem
@@ -1723,6 +1733,7 @@ groupBitmap
 groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
+groupConcat
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1739,6 +1750,7 @@ groupbitmapor
 groupbitmapxor
 groupbitor
 groupbitxor
+groupconcat
 groupuniqarray
 grpc
 grpcio
@@ -1856,9 +1868,11 @@ jdbc
 jemalloc
 jeprof
 joinGet
+joinGetOrNull
 json
 jsonMergePatch
 jsonasstring
+jsonasobject
 jsoncolumns
 jsoncolumnsmonoblock
 jsoncompact
@@ -1900,11 +1914,13 @@ kurtosis
 kurtpop
 kurtsamp
 laion
+lagInFrame
 lang
 laravel
 largestTriangleThreeBuckets
 latencies
 ldap
+leadInFrame
 leftPad
 leftPadUTF
 leftUTF
@@ -2000,6 +2016,7 @@ maxMap
 maxintersections
 maxintersectionsposition
 maxmap
+minMappedArrays
 maxmind
 mdadm
 meanZTest
@@ -2017,6 +2034,7 @@ metrica
 metroHash
 mfedotov
 minMap
+minMappedArrays
 minSampleSizeContinuous
 minSampleSizeConversion
 mindsdb
@@ -2124,8 +2142,10 @@ noaa
 nonNegativeDerivative
 noop
 normalizeQuery
+normalizeQueryKeepNames
 normalizeUTF
 normalizedQueryHash
+normalizedQueryHashKeepNames
 notEmpty
 notEquals
 notILike
@@ -2188,6 +2208,8 @@ parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
+partitionId
+partitionID
 pathFull
 pclmulqdq
 pcre
@@ -2270,6 +2292,7 @@ prometheus
 proportionsZTest
 proto
 protobuf
+protobuflist
 protobufsingle
 protocol
 proxied
@@ -2523,6 +2546,7 @@ sqlite
 sqrt
 src
 srcReplicas
+sshkey
 stackoverflow
 stacktrace
 stacktraces
@@ -2799,6 +2823,7 @@ tupleModulo
 tupleModuloByNumber
 tupleMultiply
 tupleMultiplyByNumber
+tupleNames
 tupleNegate
 tuplePlus
 tupleToNameValuePairs

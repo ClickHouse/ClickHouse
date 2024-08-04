@@ -616,7 +616,7 @@ void registerCSVSchemaReader(FormatFactory & factory)
             {
                 String result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::CSV);
                 if (!with_names)
-                    result += fmt::format(", column_names_for_schema_inference={}, try_detect_header={}", settings.column_names_for_schema_inference, settings.csv.try_detect_header);
+                    result += fmt::format(", column_names_for_schema_inference={}, try_detect_header={}, skip_first_lines={}", settings.column_names_for_schema_inference, settings.csv.try_detect_header, settings.csv.skip_first_lines);
                 return result;
             });
         }
