@@ -1,14 +1,15 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
-#include "Columns/ColumnFixedString.h"
-#include "Columns/ColumnNullable.h"
 
 
 namespace DB

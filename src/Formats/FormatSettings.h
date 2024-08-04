@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Core/Names.h>
 #include <Core/Defines.h>
+#include <Core/Names.h>
 #include <base/types.h>
 #include <base/unit.h>
-#include <Core/SettingsFields.h>
 
 namespace DB
 {
@@ -106,8 +105,6 @@ struct FormatSettings
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
-    UInt64 max_binary_string_size = 1_GiB;
-    UInt64 max_binary_array_size = 1_GiB;
     UInt64 client_protocol_version = 0;
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
@@ -120,6 +117,14 @@ struct FormatSettings
         LZ4_FRAME,
         ZSTD
     };
+
+    struct
+    {
+        UInt64 max_binary_string_size = 1_GiB;
+        UInt64 max_binary_array_size = 1_GiB;
+        bool encode_types_in_binary_format = false;
+        bool decode_types_in_binary_format = false;
+    } binary{};
 
     struct
     {
@@ -228,7 +233,7 @@ struct FormatSettings
         bool infer_incomplete_types_as_strings = true;
         bool throw_on_bad_escape_sequence = true;
         bool ignore_unnecessary_fields = true;
-        bool ignore_key_case = false;
+        bool case_insensitive_column_matching = false;
     } json{};
 
     struct
@@ -287,7 +292,8 @@ struct FormatSettings
         UInt64 max_value_width = 10000;
         UInt64 max_value_width_apply_for_single_value = false;
         bool highlight_digit_groups = true;
-        SettingFieldUInt64Auto color{"auto"};
+        /// Set to 2 for auto
+        UInt64 color = 2;
 
         bool output_format_pretty_row_numbers = false;
         UInt64 output_format_pretty_single_large_number_tip_threshold = 1'000'000;
@@ -403,7 +409,7 @@ struct FormatSettings
         bool use_fast_decoder = true;
         bool filter_push_down = true;
         UInt64 output_row_index_stride = 10'000;
-        bool read_use_writer_time_zone = false;
+        String reader_time_zone_name = "GMT";
     } orc{};
 
     /// For capnProto format we should determine how to
@@ -459,6 +465,8 @@ struct FormatSettings
     struct
     {
         bool allow_types_conversion = true;
+        bool encode_types_in_binary_format = false;
+        bool decode_types_in_binary_format = false;
     } native{};
 
     struct

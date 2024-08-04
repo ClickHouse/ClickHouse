@@ -16,6 +16,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Core/ExternalTable.h>
+#include <Core/Settings.h>
 #include <Poco/Net/MessageHeader.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ParserCreateQuery.h>

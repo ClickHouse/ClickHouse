@@ -8,6 +8,7 @@
 #include <Core/MySQL/PacketsPreparedStatements.h>
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Settings.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
@@ -472,7 +473,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
 
         /// --- Workaround for Bug 56173. Can be removed when the analyzer is on by default.
-        auto settings = query_context->getSettings();
+        auto settings = query_context->getSettingsCopy();
         settings.prefer_column_name_to_alias = true;
         query_context->setSettings(settings);
 

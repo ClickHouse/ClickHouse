@@ -38,7 +38,7 @@ $CLICKHOUSE_CLIENT -nq "
     ENGINE = Merge(currentDatabase(), 't*');"
 
 query_id="${CLICKHOUSE_DATABASE}_merge_engine_set_index_$RANDOM$RANDOM"
-$CLICKHOUSE_CLIENT --query_id="$query_id" --multiquery -q "
+$CLICKHOUSE_CLIENT --query_id="$query_id" -q "
 SELECT
     a,
     b

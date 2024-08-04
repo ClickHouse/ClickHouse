@@ -1358,11 +1358,24 @@ Connection pool size for PostgreSQL table engine and database engine.
 
 Default value: 16
 
+## postgresql_connection_attempt_timeout {#postgresql-connection-attempt-timeout}
+
+Connection timeout in seconds of a single attempt to connect PostgreSQL end-point.
+The value is passed as a `connect_timeout` parameter of the connection URL.
+
+Default value: `2`.
+
 ## postgresql_connection_pool_wait_timeout {#postgresql-connection-pool-wait-timeout}
 
 Connection pool push/pop timeout on empty pool for PostgreSQL table engine and database engine. By default it will block on empty pool.
 
 Default value: 5000
+
+## postgresql_connection_pool_retries {#postgresql-connection-pool-retries}
+
+The maximum number of retries to establish a connection with the PostgreSQL end-point.
+
+Default value: `2`.
 
 ## postgresql_connection_pool_auto_close_connection {#postgresql-connection-pool-auto-close-connection}
 
@@ -5595,3 +5608,9 @@ Default value: `10000000`.
 Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 
 Default value: `1GiB`.
+
+## disable_insertion_and_mutation
+
+Disable all insert and mutations (alter table update / alter table delete / alter table drop partition). Set to true, can make this node focus on reading queries.
+
+Default value: `false`.

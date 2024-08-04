@@ -2,6 +2,7 @@
 
 #include <Common/thread_local_rng.h>
 #include <Core/Protocol.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Operators.h>
@@ -141,13 +142,12 @@ void MultiplexedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold = 0;
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
+    }
 
-        if (replica_info)
-        {
-            client_info.collaborate_with_initiator = true;
-            client_info.count_participating_replicas = replica_info->all_replicas_count;
-            client_info.number_of_current_replica = replica_info->number_of_current_replica;
-        }
+    if (replica_info)
+    {
+        client_info.collaborate_with_initiator = true;
+        client_info.number_of_current_replica = replica_info->number_of_current_replica;
     }
 
     /// FIXME: Remove once we will make `allow_experimental_analyzer` obsolete setting.
