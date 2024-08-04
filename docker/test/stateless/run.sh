@@ -260,7 +260,7 @@ function run_tests()
     | ts '%Y-%m-%d %H:%M:%S' \
     | tee -a test_output/test_result.txt
     set -e
-    DURATION=$((START_TIME - SECONDS))
+    DURATION=$((SECONDS - START_TIME))
 
     echo "Elapsed ${DURATION} seconds."
     if [[ $DURATION -ge $TIMEOUT ]]
