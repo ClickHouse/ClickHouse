@@ -1635,9 +1635,17 @@ def test_alter_with_merge_work(started_cluster, name, engine, positive):
         optimize_table(20)
 
         if positive:
-            assert check_used_disks_with_retry(node1, name, set(["external"]))
+            assert check_used_disks_with_retry(
+                node1, name, set(["external"])
+            ), "Parts: " + node1.query(
+                f"SELECT disk_name, name FROM system.parts WHERE table = '{name}' AND active = 1"
+            )
         else:
-            assert check_used_disks_with_retry(node1, name, set(["jbod1", "jbod2"]))
+            assert check_used_disks_with_retry(
+                node1, name, set(["jbod1", "jbod2"])
+            ), "Parts: " + node1.query(
+                f"SELECT disk_name, name FROM system.parts WHERE table = '{name}' AND active = 1"
+            )
 
         time.sleep(5)
 
