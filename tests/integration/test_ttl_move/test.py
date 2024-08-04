@@ -76,7 +76,7 @@ def get_used_disks_for_table(node, table_name, partition=None):
     )
 
 
-def check_used_disks_with_retry(node, table_name, expected_disks, retries):
+def check_used_disks_with_retry(node, table_name, expected_disks, retries=1):
     for _ in range(retries):
         used_disks = get_used_disks_for_table(node, table_name)
         if set(used_disks).issubset(expected_disks):
@@ -1635,9 +1635,9 @@ def test_alter_with_merge_work(started_cluster, name, engine, positive):
         optimize_table(20)
 
         if positive:
-            assert check_used_disks_with_retry(node1, name, set(["external"]), 100)
+            assert check_used_disks_with_retry(node1, name, set(["external"]))
         else:
-            assert check_used_disks_with_retry(node1, name, set(["jbod1", "jbod2"]), 50)
+            assert check_used_disks_with_retry(node1, name, set(["jbod1", "jbod2"]))
 
         time.sleep(5)
 
