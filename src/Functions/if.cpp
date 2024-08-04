@@ -686,6 +686,10 @@ private:
             return std::make_pair(ColumnArray::create(keys, offsets), ColumnArray::create(values, offsets));
         };
 
+        /// Likely variant, fallback to generic implementation.
+        if (result_type->getTypeId() != TypeIndex::Map)
+            return nullptr;
+
         /// Extract keys and values from both arguments
         Columns key_cols(2);
         Columns value_cols(2);
