@@ -316,14 +316,36 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
     return result;
 }
 
-std::vector<FileSegment::Range> FileCache::splitRange(size_t offset, size_t size)
+std::vector<FileSegment::Range> FileCache::splitRange(size_t offset, size_t size, size_t aligned_size)
 {
-    assert(size > 0);
+    chassert(size > 0);
+    chassert(size <= aligned_size);
+
+    /// Consider this example to understand why we need to account here for both `size` and `aligned_size`.
+    /// [________________]__________________] <-- requested range
+    ///                  ^                  ^
+    ///                right offset         aligned_right_offset
+    /// [_________]                           <-- last cached file segment, e.g. we have uncovered suffix of the requested range
+    /// [________________]
+    ///        size
+    /// [____________________________________]
+    ///        aligned_size
+    ///
+    /// So it is possible that we split this hole range into sub-segments by `max_file_segment_size`
+    /// and get something like this:
+    ///
+    /// [________________________]
+    ///                  ^             ^
+    ///              right_offset   right_offset + max_file_segment_size
+    /// e.g. there is no need to create sub-segment for range (right_offset + max_file_segment_size, aligned_right_offset].
+    /// Because its left offset would be bigger than right_offset.
+    /// Therefore, we set end_pos_non_included as offset+size, but remaining_size as aligned_size.
+
     std::vector<FileSegment::Range> ranges;
 
     size_t current_pos = offset;
     size_t end_pos_non_included = offset + size;
-    size_t remaining_size = size;
+    size_t remaining_size = aligned_size;
 
     FileSegments file_segments;
     const size_t max_size = max_file_segment_size.load();
@@ -339,43 +361,30 @@ std::vector<FileSegment::Range> FileCache::splitRange(size_t offset, size_t size
     return ranges;
 }
 
-FileSegments FileCache::splitRangeIntoFileSegments(
+FileSegments FileCache::createFileSegmentsFromRanges(
     LockedKey & locked_key,
-    size_t offset,
-    size_t size,
-    FileSegment::State state,
+    const std::vector<FileSegment::Range> & ranges,
+    size_t & file_segments_count,
     size_t file_segments_limit,
     const CreateFileSegmentSettings & create_settings)
 {
-    assert(size > 0);
-
-    auto current_pos = offset;
-    auto end_pos_non_included = offset + size;
-
-    size_t current_file_segment_size;
-    size_t remaining_size = size;
-
-    FileSegments file_segments;
-    const size_t max_size = max_file_segment_size.load();
-    while (current_pos < end_pos_non_included && (!file_segments_limit || file_segments.size() < file_segments_limit))
+    FileSegments result;
+    for (const auto & r : ranges)
     {
-        current_file_segment_size = std::min(remaining_size, max_size);
-        remaining_size -= current_file_segment_size;
-
-        auto file_segment_metadata_it = addFileSegment(
-            locked_key, current_pos, current_file_segment_size, state, create_settings, nullptr);
-        file_segments.push_back(file_segment_metadata_it->second->file_segment);
-
-        current_pos += current_file_segment_size;
+        if (file_segments_limit && file_segments_count >= file_segments_limit)
+            break;
+        auto metadata_it = addFileSegment(locked_key, r.left, r.size(), FileSegment::State::EMPTY, create_settings, nullptr);
+        result.push_back(metadata_it->second->file_segment);
+        ++file_segments_count;
     }
-
-    return file_segments;
+    return result;
 }
 
 void FileCache::fillHolesWithEmptyFileSegments(
     LockedKey & locked_key,
     FileSegments & file_segments,
     const FileSegment::Range & range,
+    size_t non_aligned_right_offset,
     size_t file_segments_limit,
     bool fill_with_detached_file_segments,
     const CreateFileSegmentSettings & create_settings)
@@ -442,18 +451,9 @@ void FileCache::fillHolesWithEmptyFileSegments(
         }
         else
         {
-            auto ranges = splitRange(current_pos, hole_size);
-            FileSegments hole;
-            for (const auto & r : ranges)
-            {
-                auto metadata_it = addFileSegment(locked_key, r.left, r.size(), FileSegment::State::EMPTY, create_settings, nullptr);
-                hole.push_back(metadata_it->second->file_segment);
-                ++processed_count;
-
-                if (is_limit_reached())
-                    break;
-            }
-            file_segments.splice(it, std::move(hole));
+            const auto ranges = splitRange(current_pos, hole_size, hole_size);
+            auto hole_segments = createFileSegmentsFromRanges(locked_key, ranges, processed_count, file_segments_limit, create_settings);
+            file_segments.splice(it, std::move(hole_segments));
         }
 
         if (is_limit_reached())
@@ -479,7 +479,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
 
     chassert(!file_segments_limit || file_segments.size() < file_segments_limit);
 
-    if (current_pos <= range.right)
+    if (current_pos <= non_aligned_right_offset)
     {
         ///   ________]     -- requested range
         ///   _____]
@@ -487,28 +487,20 @@ void FileCache::fillHolesWithEmptyFileSegments(
         /// segmentN
 
         auto hole_size = range.right - current_pos + 1;
+        auto non_aligned_hole_size = non_aligned_right_offset - current_pos + 1;
 
         if (fill_with_detached_file_segments)
         {
             auto file_segment = std::make_shared<FileSegment>(
-                locked_key.getKey(), current_pos, hole_size, FileSegment::State::DETACHED, create_settings);
+                locked_key.getKey(), current_pos, non_aligned_hole_size, FileSegment::State::DETACHED, create_settings);
 
             file_segments.insert(file_segments.end(), file_segment);
         }
         else
         {
-            auto ranges = splitRange(current_pos, hole_size);
-            FileSegments hole;
-            for (const auto & r : ranges)
-            {
-                auto metadata_it = addFileSegment(locked_key, r.left, r.size(), FileSegment::State::EMPTY, create_settings, nullptr);
-                hole.push_back(metadata_it->second->file_segment);
-                ++processed_count;
-
-                if (is_limit_reached())
-                    break;
-            }
-            file_segments.splice(it, std::move(hole));
+            const auto ranges = splitRange(current_pos, non_aligned_hole_size, hole_size);
+            auto hole_segments = createFileSegmentsFromRanges(locked_key, ranges, processed_count, file_segments_limit, create_settings);
+            file_segments.splice(it, std::move(hole_segments));
 
             if (is_limit_reached())
                 erase_unprocessed();
@@ -541,8 +533,9 @@ FileSegmentsHolderPtr FileCache::set(
     }
     else
     {
-        file_segments = splitRangeIntoFileSegments(
-            *locked_key, offset, size, FileSegment::State::EMPTY, /* file_segments_limit */0, create_settings);
+        const auto ranges = splitRange(offset, size, size);
+        size_t file_segments_count = 0;
+        file_segments = createFileSegmentsFromRanges(*locked_key, ranges, file_segments_count, /* file_segments_limit */0, create_settings);
     }
 
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
@@ -562,23 +555,27 @@ FileCache::getOrSet(
 
     assertInitialized();
 
-    FileSegment::Range range(offset, offset + size - 1);
+    FileSegment::Range initial_range(offset, offset + size - 1);
+    /// result_range is initial range, which will be adjusted according to
+    /// 1. aligned offset, alighed_end_offset
+    /// 2. max_file_segments_limit
+    FileSegment::Range result_range = initial_range;
 
-    const auto aligned_offset = roundDownToMultiple(range.left, boundary_alignment);
-    auto aligned_end_offset = std::min(roundUpToMultiple(offset + size, boundary_alignment), file_size) - 1;
+    const auto aligned_offset = roundDownToMultiple(initial_range.left, boundary_alignment);
+    auto aligned_end_offset = std::min(roundUpToMultiple(initial_range.right + 1, boundary_alignment), file_size) - 1;
 
-    chassert(aligned_offset <= range.left);
-    chassert(aligned_end_offset >= range.right);
+    chassert(aligned_offset <= initial_range.left);
+    chassert(aligned_end_offset >= initial_range.right);
 
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY, user);
     /// Get all segments which intersect with the given range.
-    auto file_segments = getImpl(*locked_key, range, file_segments_limit);
+    auto file_segments = getImpl(*locked_key, initial_range, file_segments_limit);
 
     if (file_segments_limit)
     {
         chassert(file_segments.size() <= file_segments_limit);
         if (file_segments.size() == file_segments_limit)
-            range.right = aligned_end_offset = file_segments.back()->range().right;
+            result_range.right = aligned_end_offset = file_segments.back()->range().right;
     }
 
     /// Check case if we have uncovered prefix, e.g.
@@ -590,11 +587,11 @@ FileCache::getOrSet(
     ///   [    ]
     ///   ^----^
     ///   uncovered prefix.
-    const bool has_uncovered_prefix = file_segments.empty() || range.left < file_segments.front()->range().left;
+    const bool has_uncovered_prefix = file_segments.empty() || result_range.left < file_segments.front()->range().left;
 
-    if (aligned_offset < range.left && has_uncovered_prefix)
+    if (aligned_offset < result_range.left && has_uncovered_prefix)
     {
-        auto prefix_range = FileSegment::Range(aligned_offset, file_segments.empty() ? range.left - 1 : file_segments.front()->range().left - 1);
+        auto prefix_range = FileSegment::Range(aligned_offset, file_segments.empty() ? result_range.left - 1 : file_segments.front()->range().left - 1);
         auto prefix_file_segments = getImpl(*locked_key, prefix_range, /* file_segments_limit */0);
 
         if (prefix_file_segments.empty())
@@ -603,7 +600,7 @@ FileCache::getOrSet(
             ///   ^                     ^               ^
             ///   aligned_offset        range.left      range.right
             ///                             [___] [__________]         <-- current cache (example)
-            range.left = aligned_offset;
+            result_range.left = aligned_offset;
         }
         else
         {
@@ -614,10 +611,10 @@ FileCache::getOrSet(
             ///                  ^
             ///                  prefix_file_segments.back().right
 
-            chassert(prefix_file_segments.back()->range().right < range.left);
+            chassert(prefix_file_segments.back()->range().right < result_range.left);
             chassert(prefix_file_segments.back()->range().right >= aligned_offset);
 
-            range.left = prefix_file_segments.back()->range().right + 1;
+            result_range.left = prefix_file_segments.back()->range().right + 1;
         }
     }
 
@@ -630,11 +627,11 @@ FileCache::getOrSet(
     ///                   [___]
     ///                   ^---^
     ///                    uncovered_suffix
-    const bool has_uncovered_suffix = file_segments.empty() || file_segments.back()->range().right < range.right;
+    const bool has_uncovered_suffix = file_segments.empty() || file_segments.back()->range().right < result_range.right;
 
-    if (range.right < aligned_end_offset && has_uncovered_suffix)
+    if (result_range.right < aligned_end_offset && has_uncovered_suffix)
     {
-        auto suffix_range = FileSegment::Range(range.right, aligned_end_offset);
+        auto suffix_range = FileSegment::Range(result_range.right, aligned_end_offset);
         /// We need to get 1 file segment, so file_segments_limit = 1 here.
         auto suffix_file_segments = getImpl(*locked_key, suffix_range, /* file_segments_limit */1);
 
@@ -645,7 +642,7 @@ FileCache::getOrSet(
             ///   range.left         range.right              aligned_end_offset
             ///      [___]   [___]                                    <-- current cache (example)
 
-            range.right = aligned_end_offset;
+            result_range.right = aligned_end_offset;
         }
         else
         {
@@ -655,31 +652,33 @@ FileCache::getOrSet(
             ///      [___]   [___]          [_________]               <-- current cache (example)
             ///                             ^
             ///                             suffix_file_segments.front().left
-            range.right = suffix_file_segments.front()->range().left - 1;
+            result_range.right = suffix_file_segments.front()->range().left - 1;
         }
     }
 
     if (file_segments.empty())
     {
-        file_segments = splitRangeIntoFileSegments(*locked_key, range.left, range.size(), FileSegment::State::EMPTY, file_segments_limit, create_settings);
+        auto ranges = splitRange(result_range.left, initial_range.size() + (initial_range.left - result_range.left), result_range.size());
+        size_t file_segments_count = file_segments.size();
+        file_segments.splice(file_segments.end(), createFileSegmentsFromRanges(*locked_key, ranges, file_segments_count, file_segments_limit, create_settings));
     }
     else
     {
-        chassert(file_segments.front()->range().right >= range.left);
-        chassert(file_segments.back()->range().left <= range.right);
+        chassert(file_segments.front()->range().right >= result_range.left);
+        chassert(file_segments.back()->range().left <= result_range.right);
 
         fillHolesWithEmptyFileSegments(
-            *locked_key, file_segments, range, file_segments_limit, /* fill_with_detached */false, create_settings);
+            *locked_key, file_segments, result_range, offset + size - 1, file_segments_limit, /* fill_with_detached */false, create_settings);
 
-        if (!file_segments.front()->range().contains(offset))
+        if (!file_segments.front()->range().contains(result_range.left))
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} to include {} "
                             "(end offset: {}, aligned offset: {}, aligned end offset: {})",
-                            file_segments.front()->range().toString(), offset, range.right, aligned_offset, aligned_end_offset);
+                            file_segments.front()->range().toString(), offset, result_range.right, aligned_offset, aligned_end_offset);
         }
     }
 
-    chassert(file_segments_limit ? file_segments.back()->range().left <= range.right : file_segments.back()->range().contains(range.right));
+    chassert(file_segments_limit ? file_segments.back()->range().left <= result_range.right : file_segments.back()->range().contains(result_range.right));
     chassert(!file_segments_limit || file_segments.size() <= file_segments_limit);
 
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
@@ -713,7 +712,7 @@ FileSegmentsHolderPtr FileCache::get(
             }
 
             fillHolesWithEmptyFileSegments(
-                *locked_key, file_segments, range, file_segments_limit, /* fill_with_detached */true, CreateFileSegmentSettings{});
+                *locked_key, file_segments, range, offset + size - 1, file_segments_limit, /* fill_with_detached */true, CreateFileSegmentSettings{});
 
             chassert(!file_segments_limit || file_segments.size() <= file_segments_limit);
             return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
