@@ -299,22 +299,22 @@ stop_logs_replication
 failed_to_save_logs=0
 for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log
 do
-    err=$(clickhouse-client -q "select * from system.$table into outfile '/test_output/$table.tsv.gz' format TSVWithNamesAndTypes")
-    echo "$err"
-    [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
+    if ! clickhouse-client -q "select * from system.$table into outfile '/test_output/$table.tsv.zst' format TSVWithNamesAndTypes"; then
+        failed_to_save_logs=1
+    fi
     if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        err=$( { clickhouse-client --port 19000 -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst; } 2>&1 )
-        echo "$err"
-        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
-        err=$( { clickhouse-client --port 29000 -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst; } 2>&1 )
-        echo "$err"
-        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
+        if ! clickhouse-client --port 19000 -q "select * from system.$table into outfile '/test_output/$table.1.tsv.zst' format TSVWithNamesAndTypes"; then
+            failed_to_save_logs=1
+        fi
+        if ! clickhouse-client --port 29000 -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"; then
+            failed_to_save_logs=1
+        fi
     fi
 
     if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
-        err=$( { clickhouse-client --port 19000 -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst; } 2>&1 )
-        echo "$err"
-        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
+        if ! clickhouse-client --port 29000 -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"; then
+            failed_to_save_logs=1
+        fi
     fi
 done
 
