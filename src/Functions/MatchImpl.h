@@ -131,11 +131,11 @@ struct MatchImpl
         size_t input_rows_count)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
+        chassert(!res_null);
 
-        assert(res.size() == haystack_offsets.size());
-        assert(res.size() == input_rows_count);
-        assert(start_pos_ == nullptr);
+        chassert(res.size() == haystack_offsets.size());
+        chassert(res.size() == input_rows_count);
+        chassert(start_pos_ == nullptr);
 
         if (input_rows_count == 0)
             return;
@@ -295,10 +295,10 @@ struct MatchImpl
         size_t input_rows_count)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
+        chassert(!res_null);
 
-        assert(res.size() == haystack.size() / N);
-        assert(res.size() == input_rows_count);
+        chassert(res.size() == haystack.size() / N);
+        chassert(res.size() == input_rows_count);
 
         if (input_rows_count == 0)
             return;
@@ -468,12 +468,12 @@ struct MatchImpl
         size_t input_rows_count)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
+        chassert(!res_null);
 
-        assert(haystack_offsets.size() == needle_offset.size());
-        assert(res.size() == haystack_offsets.size());
-        assert(res.size() == input_rows_count);
-        assert(start_pos_ == nullptr);
+        chassert(haystack_offsets.size() == needle_offset.size());
+        chassert(res.size() == haystack_offsets.size());
+        chassert(res.size() == input_rows_count);
+        chassert(start_pos_ == nullptr);
 
         if (input_rows_count == 0)
             return;
@@ -577,12 +577,12 @@ struct MatchImpl
         size_t input_rows_count)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
+        chassert(!res_null);
 
-        assert(res.size() == input_rows_count);
-        assert(res.size() == haystack.size() / N);
-        assert(res.size() == needle_offset.size());
-        assert(start_pos_ == nullptr);
+        chassert(res.size() == input_rows_count);
+        chassert(res.size() == haystack.size() / N);
+        chassert(res.size() == needle_offset.size());
+        chassert(start_pos_ == nullptr);
 
         if (haystack.empty())
             return;
