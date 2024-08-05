@@ -337,7 +337,7 @@ std::vector<FileSegment::Range> FileCache::splitRange(size_t offset, size_t size
     /// and get something like this:
     ///
     /// [________________________]
-    ///          ^               ^ 
+    ///          ^               ^
     ///          |               last_file_segment_right_offset + max_file_segment_size
     ///          last_file_segment_right_offset
     /// e.g. there is no need to create sub-segment for range (last_file_segment_right_offset + max_file_segment_size, aligned_right_offset].
