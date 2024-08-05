@@ -632,11 +632,6 @@ private:
 
     ColumnPtr executeTuple(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
-        /// For different Tuples the result type can be Variant with this Tuples if use_variant_as_common_type=1.
-        /// In this case we should use generic implementation.
-        if (!isTuple(result_type))
-            return nullptr;
-
         /// Calculate function for each corresponding elements of tuples.
 
         const ColumnWithTypeAndName & arg1 = arguments[1];
@@ -682,11 +677,6 @@ private:
 
     ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
-        /// For different Maps the result type can be Variant with this Maps if use_variant_as_common_type=1.
-        /// In this case we should use generic implementation.
-        if (!isMap(result_type))
-            return nullptr;
-
         auto extract_kv_from_map = [](const ColumnMap * map)
         {
             const ColumnTuple & tuple = map->getNestedData();
@@ -1242,6 +1232,12 @@ public:
         if (!cond_col)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}. "
                 "Must be ColumnUInt8 or ColumnConstUInt8.", arg_cond.column->getName(), getName());
+
+        /// If result is Variant, always use generic implementation.
+        /// Using typed implementations may lead to incorrect result column type when
+        /// resulting Variant is created by use_variant_when_no_common_type.
+        if (isVariant(result_type))
+            return executeGeneric(cond_col, arguments, input_rows_count, use_variant_when_no_common_type);
 
         auto call = [&](const auto & types) -> bool
         {
