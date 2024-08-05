@@ -6,11 +6,6 @@
 #include <Common/Base64.h>
 #include <DataTypes/FieldToDataType.h>
 
-using bsoncxx::builder::basic::array;
-using bsoncxx::builder::basic::document;
-using bsoncxx::builder::basic::kvp;
-using bsoncxx::builder::basic::make_document;
-
 namespace DB
 {
 
@@ -22,6 +17,11 @@ extern const int NOT_IMPLEMENTED;
 
 namespace BSONCXXHelper
 {
+
+using bsoncxx::builder::basic::array;
+using bsoncxx::builder::basic::document;
+using bsoncxx::builder::basic::kvp;
+using bsoncxx::builder::basic::make_document;
 
 static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, const DataTypePtr & type)
 {
