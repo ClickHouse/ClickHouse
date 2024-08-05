@@ -567,49 +567,68 @@ void ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
 
     std::stack<Frame> stack;
 
-    for (const auto * root : roots)
+    enum class VisitStage { NonDeterministic, Required };
+
+    for (auto stage : {VisitStage::NonDeterministic, VisitStage::Required})
     {
-        if (!required_nodes.contains(root))
-        {
-            required_nodes.insert(root);
-            stack.push({.node = root});
-        }
+        required_nodes.clear();
 
-        while (!stack.empty())
+        for (const auto * root : roots)
         {
-            auto & frame = stack.top();
-            auto * node = const_cast<Node *>(frame.node);
-
-            while (frame.next_child_to_visit < node->children.size())
+            if (!required_nodes.contains(root))
             {
-                const auto * child = node->children[frame.next_child_to_visit];
-                ++frame.next_child_to_visit;
-
-                if (!required_nodes.contains(child))
-                {
-                    required_nodes.insert(child);
-                    stack.push({.node = child});
-                    break;
-                }
-
-                if (non_deterministic_nodes.contains(child))
-                    non_deterministic_nodes.insert(node);
+                required_nodes.insert(root);
+                stack.push({.node = root});
             }
 
-            if (stack.top().node != node)
-                continue;
-
-            if (!node->isDeterministic())
-                non_deterministic_nodes.insert(node);
-
-            stack.pop();
-
-            /// Constant folding.
-            if (allow_constant_folding && !node->children.empty()
-                && node->column && isColumnConst(*node->column) && !non_deterministic_nodes.contains(node))
+            while (!stack.empty())
             {
-                node->type = ActionsDAG::ActionType::COLUMN;
-                node->children.clear();
+                auto & frame = stack.top();
+                auto * node = const_cast<Node *>(frame.node);
+
+                while (frame.next_child_to_visit < node->children.size())
+                {
+                    const auto * child = node->children[frame.next_child_to_visit];
+                    ++frame.next_child_to_visit;
+
+                    if (!required_nodes.contains(child))
+                    {
+                        required_nodes.insert(child);
+                        stack.push({.node = child});
+                        break;
+                    }
+                }
+
+                if (stack.top().node != node)
+                    continue;
+
+                stack.pop();
+
+                if (stage == VisitStage::Required)
+                    continue;
+
+                if (!node->isDeterministic())
+                    non_deterministic_nodes.insert(node);
+                else
+                {
+                    for (const auto * child : node->children)
+                    {
+                        if (non_deterministic_nodes.contains(child))
+                        {
+                            non_deterministic_nodes.insert(node);
+                            break;
+                        }
+                    }
+                }
+
+                /// Constant folding.
+                if (allow_constant_folding && !node->children.empty()
+                    && node->column && isColumnConst(*node->column))
+                {
+                    node->type = ActionsDAG::ActionType::COLUMN;
+                    node->children.clear();
+                    node->is_deterministic_constant = !non_deterministic_nodes.contains(node);
+                }
             }
         }
     }
