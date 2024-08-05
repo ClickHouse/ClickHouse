@@ -39,11 +39,6 @@
 #    include <Access/KerberosInit.h>
 #endif // USE_KRB5
 
-namespace CurrentMetrics
-{
-extern const Metric KafkaLibrdkafkaThreads;
-}
-
 namespace ProfileEvents
 {
 extern const Event KafkaConsumerErrors;
