@@ -341,7 +341,7 @@ public:
             value[i] = Node::read(buf, arena);
     }
 
-    std::optional<size_t> getBaseIndex(Data & data) const
+    inline std::optional<size_t> getBaseIndex(Data & data) const
     {
         if (data.value.size() == 0)
             return {};
@@ -414,6 +414,7 @@ public:
                         break;
                 return (i == events_size) ? base - i : unmatched_idx;
         }
+        UNREACHABLE();
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

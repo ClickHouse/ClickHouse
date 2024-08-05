@@ -17,7 +17,6 @@ ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=18
 
 RUN apt-get update \
     && apt-get install \
-        sudo \
         apt-transport-https \
         apt-utils \
         ca-certificates \

@@ -428,17 +428,19 @@ struct Processor
     {}
 
     template <typename FromColumnType, typename ToColumnType>
-    void NO_INLINE vectorConstant(const FromColumnType & col_from, ToColumnType & col_to, Int64 delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
+    void NO_INLINE vectorConstant(const FromColumnType & col_from, ToColumnType & col_to, Int64 delta, const DateLUTImpl & time_zone, UInt16 scale) const
     {
         static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
 
         if constexpr (std::is_same_v<FromColumnType, ColumnString>)
         {
+            const auto & offsets_from = col_from.getOffsets();
             auto & vec_to = col_to.getData();
 
-            vec_to.resize(input_rows_count);
+            size_t size = offsets_from.size();
+            vec_to.resize(size);
 
-            for (size_t i = 0 ; i < input_rows_count; ++i)
+            for (size_t i = 0 ; i < size; ++i)
             {
                 std::string_view from = col_from.getDataAt(i).toView();
                 vec_to[i] = transform.execute(from, checkOverflow(delta), time_zone, utc_time_zone, scale);
@@ -449,31 +451,32 @@ struct Processor
             const auto & vec_from = col_from.getData();
             auto & vec_to = col_to.getData();
 
-            vec_to.resize(input_rows_count);
+            size_t size = vec_from.size();
+            vec_to.resize(size);
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
                 vec_to[i] = transform.execute(vec_from[i], checkOverflow(delta), time_zone, utc_time_zone, scale);
         }
     }
 
     template <typename FromColumnType, typename ToColumnType>
-    void vectorVector(const FromColumnType & col_from, ToColumnType & col_to, const IColumn & delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
+    void vectorVector(const FromColumnType & col_from, ToColumnType & col_to, const IColumn & delta, const DateLUTImpl & time_zone, UInt16 scale) const
     {
         castTypeToEither<
             ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
             ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
             ColumnFloat32, ColumnFloat64>(
-            &delta, [&](const auto & column){ vectorVector(col_from, col_to, column, time_zone, scale, input_rows_count); return true; });
+            &delta, [&](const auto & column){ vectorVector(col_from, col_to, column, time_zone, scale); return true; });
     }
 
     template <typename FromType, typename ToColumnType>
-    void constantVector(const FromType & from, ToColumnType & col_to, const IColumn & delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
+    void constantVector(const FromType & from, ToColumnType & col_to, const IColumn & delta, const DateLUTImpl & time_zone, UInt16 scale) const
     {
         castTypeToEither<
             ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
             ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
             ColumnFloat32, ColumnFloat64>(
-            &delta, [&](const auto & column){ constantVector(from, col_to, column, time_zone, scale, input_rows_count); return true; });
+            &delta, [&](const auto & column){ constantVector(from, col_to, column, time_zone, scale); return true; });
     }
 
 private:
@@ -488,17 +491,19 @@ private:
 
     template <typename FromColumnType, typename ToColumnType, typename DeltaColumnType>
     NO_INLINE NO_SANITIZE_UNDEFINED void vectorVector(
-        const FromColumnType & col_from, ToColumnType & col_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
+        const FromColumnType & col_from, ToColumnType & col_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, UInt16 scale) const
     {
         static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
 
         if constexpr (std::is_same_v<FromColumnType, ColumnString>)
         {
+            const auto & offsets_from = col_from.getOffsets();
             auto & vec_to = col_to.getData();
 
-            vec_to.resize(input_rows_count);
+            size_t size = offsets_from.size();
+            vec_to.resize(size);
 
-            for (size_t i = 0 ; i < input_rows_count; ++i)
+            for (size_t i = 0 ; i < size; ++i)
             {
                 std::string_view from = col_from.getDataAt(i).toView();
                 vec_to[i] = transform.execute(from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale);
@@ -509,24 +514,26 @@ private:
             const auto & vec_from = col_from.getData();
             auto & vec_to = col_to.getData();
 
-            vec_to.resize(input_rows_count);
+            size_t size = vec_from.size();
+            vec_to.resize(size);
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
                 vec_to[i] = transform.execute(vec_from[i], checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale);
         }
     }
 
     template <typename FromType, typename ToColumnType, typename DeltaColumnType>
     NO_INLINE NO_SANITIZE_UNDEFINED void constantVector(
-        const FromType & from, ToColumnType & col_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
+        const FromType & from, ToColumnType & col_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, UInt16 scale) const
     {
         static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
 
         auto & vec_to = col_to.getData();
 
-        vec_to.resize(input_rows_count);
+        size_t size = delta.size();
+        vec_to.resize(size);
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < size; ++i)
             vec_to[i] = transform.execute(from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale);
     }
 };
@@ -535,7 +542,7 @@ private:
 template <typename FromDataType, typename ToDataType, typename Transform>
 struct DateTimeAddIntervalImpl
 {
-    static ColumnPtr execute(Transform transform, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, UInt16 scale, size_t input_rows_count)
+    static ColumnPtr execute(Transform transform, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, UInt16 scale)
     {
         using FromValueType = typename FromDataType::FieldType;
         using FromColumnType = typename FromDataType::ColumnType;
@@ -554,15 +561,15 @@ struct DateTimeAddIntervalImpl
         if (const auto * sources = checkAndGetColumn<FromColumnType>(&source_column))
         {
             if (const auto * delta_const_column = typeid_cast<const ColumnConst *>(&delta_column))
-                processor.vectorConstant(*sources, *col_to, delta_const_column->getInt(0), time_zone, scale, input_rows_count);
+                processor.vectorConstant(*sources, *col_to, delta_const_column->getInt(0), time_zone, scale);
             else
-                processor.vectorVector(*sources, *col_to, delta_column, time_zone, scale, input_rows_count);
+                processor.vectorVector(*sources, *col_to, delta_column, time_zone, scale);
         }
         else if (const auto * sources_const = checkAndGetColumnConst<FromColumnType>(&source_column))
         {
             processor.constantVector(
                 sources_const->template getValue<FromValueType>(),
-                *col_to, delta_column, time_zone, scale, input_rows_count);
+                *col_to, delta_column, time_zone, scale);
         }
         else
         {
@@ -701,25 +708,25 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         WhichDataType which(from_type);
 
         if (which.isDate())
-            return DateTimeAddIntervalImpl<DataTypeDate, TransformResultDataType<DataTypeDate>, Transform>::execute(Transform{}, arguments, result_type, 0, input_rows_count);
+            return DateTimeAddIntervalImpl<DataTypeDate, TransformResultDataType<DataTypeDate>, Transform>::execute(Transform{}, arguments, result_type, 0);
         else if (which.isDate32())
-            return DateTimeAddIntervalImpl<DataTypeDate32, TransformResultDataType<DataTypeDate32>, Transform>::execute(Transform{}, arguments, result_type, 0, input_rows_count);
+            return DateTimeAddIntervalImpl<DataTypeDate32, TransformResultDataType<DataTypeDate32>, Transform>::execute(Transform{}, arguments, result_type, 0);
         else if (which.isDateTime())
-            return DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(Transform{}, arguments, result_type, 0, input_rows_count);
+            return DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(Transform{}, arguments, result_type, 0);
         else if (which.isDateTime64())
         {
             const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(from_type);
             auto from_scale = datetime64_type->getScale();
-            return DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(Transform{}, arguments, result_type, from_scale, input_rows_count);
+            return DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(Transform{}, arguments, result_type, from_scale);
         }
         else if (which.isString())
-            return DateTimeAddIntervalImpl<DataTypeString, DataTypeDateTime64, Transform>::execute(Transform{}, arguments, result_type, 3, input_rows_count);
+            return DateTimeAddIntervalImpl<DataTypeString, DataTypeDateTime64, Transform>::execute(Transform{}, arguments, result_type, 3);
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}", arguments[0].type->getName(), getName());
     }

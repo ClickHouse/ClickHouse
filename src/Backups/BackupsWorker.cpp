@@ -26,7 +26,6 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/ThreadPool.h>
-#include <Core/Settings.h>
 
 #include <boost/range/adaptor/map.hpp>
 
@@ -384,7 +383,6 @@ BackupsWorker::BackupsWorker(ContextMutablePtr global_context, size_t num_backup
     , allow_concurrent_backups(global_context->getConfigRef().getBool("backups.allow_concurrent_backups", true))
     , allow_concurrent_restores(global_context->getConfigRef().getBool("backups.allow_concurrent_restores", true))
     , remove_backup_files_after_failure(global_context->getConfigRef().getBool("backups.remove_backup_files_after_failure", true))
-    , test_randomize_order(global_context->getConfigRef().getBool("backups.test_randomize_order", false))
     , test_inject_sleep(global_context->getConfigRef().getBool("backups.test_inject_sleep", false))
     , log(getLogger("BackupsWorker"))
     , backup_log(global_context->getBackupLog())
@@ -714,25 +712,14 @@ void BackupsWorker::writeBackupEntries(
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
     auto & thread_pool = getThreadPool(ThreadPoolId::BACKUP_COPY_FILES);
 
-    std::vector<size_t> writing_order;
-    if (test_randomize_order)
-    {
-        /// Randomize the order in which we write backup entries to the backup.
-        writing_order.resize(backup_entries.size());
-        std::iota(writing_order.begin(), writing_order.end(), 0);
-        std::shuffle(writing_order.begin(), writing_order.end(), thread_local_rng);
-    }
-
     ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "BackupWorker");
     for (size_t i = 0; i != backup_entries.size(); ++i)
     {
         if (failed)
             break;
 
-        size_t index = !writing_order.empty() ? writing_order[i] : i;
-
-        auto & entry = backup_entries[index].second;
-        const auto & file_info = file_infos[index];
+        auto & entry = backup_entries[i].second;
+        const auto & file_info = file_infos[i];
 
         auto job = [&]()
         {

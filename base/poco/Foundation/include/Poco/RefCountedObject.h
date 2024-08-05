@@ -21,8 +21,6 @@
 #include "Poco/AtomicCounter.h"
 #include "Poco/Foundation.h"
 
-#include <atomic>
-
 
 namespace Poco
 {

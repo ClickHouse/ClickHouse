@@ -49,16 +49,17 @@ void MergingSortedAlgorithm::addInput()
 
 void MergingSortedAlgorithm::initialize(Inputs inputs)
 {
-    removeConstAndSparse(inputs);
     merged_data.initialize(header, inputs);
     current_inputs = std::move(inputs);
 
     for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
     {
         auto & chunk = current_inputs[source_num].chunk;
+
         if (!chunk)
             continue;
 
+        convertToFullIfConst(chunk);
         cursors[source_num] = SortCursorImpl(header, chunk.getColumns(), description, source_num);
     }
 
@@ -82,7 +83,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
 
 void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
-    removeConstAndSparse(input);
+    convertToFullIfConst(input.chunk);
     current_inputs[source_num].swap(input);
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), header);
 

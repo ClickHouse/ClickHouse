@@ -11,6 +11,20 @@ namespace
 
 /* Bit layouts of UUIDv7
 
+without counter:
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                           unix_ts_ms                          |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|          unix_ts_ms           |  ver  |       rand_a          |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|var|                        rand_b                             |
+├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
+|                            rand_b                             |
+└─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
+
+with counter:
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 ├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
@@ -59,6 +73,20 @@ void setVariant(UUID & uuid)
     UUIDHelpers::getLowBytes(uuid) = (UUIDHelpers::getLowBytes(uuid) & rand_b_bits_mask) | variant_2_mask;
 }
 
+struct FillAllRandomPolicy
+{
+    static constexpr auto name = "generateUUIDv7NonMonotonic";
+    static constexpr auto doc_description = R"(Generates a UUID of version 7. The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits), and a random field (74 bit, including a 2-bit variant field "2") to distinguish UUIDs within a millisecond. This function is the fastest generateUUIDv7* function but it gives no monotonicity guarantees within a timestamp.)";
+    struct Data
+    {
+        void generate(UUID & uuid, uint64_t ts)
+        {
+            setTimestampAndVersion(uuid, ts);
+            setVariant(uuid);
+        }
+    };
+};
+
 struct CounterFields
 {
     uint64_t last_timestamp = 0;
@@ -105,21 +133,44 @@ struct CounterFields
 };
 
 
-struct Data
+struct GlobalCounterPolicy
 {
+    static constexpr auto name = "generateUUIDv7";
+    static constexpr auto doc_description = R"(Generates a UUID of version 7. The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits), a counter (42 bit, including a variant field "2", 2 bit) to distinguish UUIDs within a millisecond, and a random field (32 bits). For any given timestamp (unix_ts_ms), the counter starts at a random value and is incremented by 1 for each new UUID until the timestamp changes. In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to a random new start value. Function generateUUIDv7 guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.)";
+
     /// Guarantee counter monotonicity within one timestamp across all threads generating UUIDv7 simultaneously.
-    static inline CounterFields fields;
-    static inline SharedMutex mutex; /// works a little bit faster than std::mutex here
-    std::lock_guard<SharedMutex> guard;
-
-    Data()
-        : guard(mutex)
-    {}
-
-    void generate(UUID & uuid, uint64_t timestamp)
+    struct Data
     {
-        fields.generate(uuid, timestamp);
-    }
+        static inline CounterFields fields;
+        static inline SharedMutex mutex; /// works a little bit faster than std::mutex here
+        std::lock_guard<SharedMutex> guard;
+
+        Data()
+            : guard(mutex)
+        {}
+
+        void generate(UUID & uuid, uint64_t timestamp)
+        {
+            fields.generate(uuid, timestamp);
+        }
+    };
+};
+
+struct ThreadLocalCounterPolicy
+{
+    static constexpr auto name = "generateUUIDv7ThreadMonotonic";
+    static constexpr auto doc_description = R"(Generates a UUID of version 7. The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits), a counter (42 bit, including a variant field "2", 2 bit) to distinguish UUIDs within a millisecond, and a random field (32 bits). For any given timestamp (unix_ts_ms), the counter starts at a random value and is incremented by 1 for each new UUID until the timestamp changes. In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to a random new start value. This function behaves like generateUUIDv7 but gives no guarantee on counter monotony across different simultaneous requests. Monotonicity within one timestamp is guaranteed only within the same thread calling this function to generate UUIDs.)";
+
+    /// Guarantee counter monotonicity within one timestamp within the same thread. Faster than GlobalCounterPolicy if a query uses multiple threads.
+    struct Data
+    {
+        static inline thread_local CounterFields fields;
+
+        void generate(UUID & uuid, uint64_t timestamp)
+        {
+            fields.generate(uuid, timestamp);
+        }
+    };
 };
 
 }
@@ -130,12 +181,12 @@ DECLARE_AVX2_SPECIFIC_CODE(__VA_ARGS__)
 
 DECLARE_SEVERAL_IMPLEMENTATIONS(
 
-class FunctionGenerateUUIDv7Base : public IFunction
+template <typename FillPolicy>
+class FunctionGenerateUUIDv7Base : public IFunction, public FillPolicy
 {
 public:
-    static constexpr auto name = "generateUUIDv7";
+    String getName() const final {  return FillPolicy::name; }
 
-    String getName() const final {  return name; }
     size_t getNumberOfArguments() const final { return 0; }
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const final { return false; }
@@ -147,9 +198,9 @@ public:
     {
         FunctionArgumentDescriptors mandatory_args;
         FunctionArgumentDescriptors optional_args{
-            {"expr", nullptr, nullptr, "Arbitrary expression"}
+            {"expr", nullptr, nullptr, "Arbitrary Expression"}
         };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeUUID>();
     }
@@ -171,7 +222,7 @@ public:
             uint64_t timestamp = getTimestampMillisecond();
             for (UUID & uuid : vec_to)
             {
-                Data data;
+                typename FillPolicy::Data data;
                 data.generate(uuid, timestamp);
             }
         }
@@ -181,18 +232,19 @@ public:
 ) // DECLARE_SEVERAL_IMPLEMENTATIONS
 #undef DECLARE_SEVERAL_IMPLEMENTATIONS
 
-class FunctionGenerateUUIDv7Base : public TargetSpecific::Default::FunctionGenerateUUIDv7Base
+template <typename FillPolicy>
+class FunctionGenerateUUIDv7Base : public TargetSpecific::Default::FunctionGenerateUUIDv7Base<FillPolicy>
 {
 public:
-    using Self = FunctionGenerateUUIDv7Base;
-    using Parent = TargetSpecific::Default::FunctionGenerateUUIDv7Base;
+    using Self = FunctionGenerateUUIDv7Base<FillPolicy>;
+    using Parent = TargetSpecific::Default::FunctionGenerateUUIDv7Base<FillPolicy>;
 
     explicit FunctionGenerateUUIDv7Base(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default, Parent>();
 
 #if USE_MULTITARGET_CODE
-        using ParentAVX2 = TargetSpecific::AVX2::FunctionGenerateUUIDv7Base;
+        using ParentAVX2 = TargetSpecific::AVX2::FunctionGenerateUUIDv7Base<FillPolicy>;
         selector.registerImplementation<TargetArch::AVX2, ParentAVX2>();
 #endif
     }
@@ -211,16 +263,27 @@ private:
     ImplementationSelector<IFunction> selector;
 };
 
-REGISTER_FUNCTION(GenerateUUIDv7)
+template<typename FillPolicy>
+void registerUUIDv7Generator(auto& factory)
 {
-    FunctionDocumentation::Description description = R"(Generates a UUID of version 7. The generated UUID contains the current Unix timestamp in milliseconds (48 bits), followed by version "7" (4 bits), a counter (42 bit, including a variant field "2", 2 bit) to distinguish UUIDs within a millisecond, and a random field (32 bits). For any given timestamp (unix_ts_ms), the counter starts at a random value and is incremented by 1 for each new UUID until the timestamp changes. In case the counter overflows, the timestamp field is incremented by 1 and the counter is reset to a random new start value. Function generateUUIDv7 guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.)";
-    FunctionDocumentation::Syntax syntax = "SELECT generateUUIDv7()";
-    FunctionDocumentation::Arguments arguments = {{"expression", "The expression is used to bypass common subexpression elimination if the function is called multiple times in a query but otherwise ignored. Optional."}};
-    FunctionDocumentation::ReturnedValue returned_value = "A value of type UUID version 7.";
-    FunctionDocumentation::Examples examples = {{"single", "SELECT generateUUIDv7()", ""}, {"multiple", "SELECT generateUUIDv7(1), generateUUIDv7(2)", ""}};
-    FunctionDocumentation::Categories categories = {"UUID"};
+    static constexpr auto doc_syntax_format = "{}([expression])";
+    static constexpr auto example_format = "SELECT {}()";
+    static constexpr auto multiple_example_format = "SELECT {f}(1), {f}(2)";
 
-    factory.registerFunction<FunctionGenerateUUIDv7Base>({description, syntax, arguments, returned_value, examples, categories});
+    FunctionDocumentation::Description doc_description = FillPolicy::doc_description;
+    FunctionDocumentation::Syntax doc_syntax = fmt::format(doc_syntax_format, FillPolicy::name);
+    FunctionDocumentation::Arguments doc_arguments = {{"expression", "The expression is used to bypass common subexpression elimination if the function is called multiple times in a query but otherwise ignored. Optional."}};
+    FunctionDocumentation::ReturnedValue doc_returned_value = "A value of type UUID version 7.";
+    FunctionDocumentation::Examples doc_examples = {{"uuid", fmt::format(example_format, FillPolicy::name), ""}, {"multiple", fmt::format(multiple_example_format, fmt::arg("f", FillPolicy::name)), ""}};
+    FunctionDocumentation::Categories doc_categories = {"UUID"};
+
+    factory.template registerFunction<FunctionGenerateUUIDv7Base<FillPolicy>>({doc_description, doc_syntax, doc_arguments, doc_returned_value, doc_examples, doc_categories}, FunctionFactory::CaseInsensitive);
 }
 
+REGISTER_FUNCTION(GenerateUUIDv7)
+{
+    registerUUIDv7Generator<GlobalCounterPolicy>(factory);
+    registerUUIDv7Generator<ThreadLocalCounterPolicy>(factory);
+    registerUUIDv7Generator<FillAllRandomPolicy>(factory);
+}
 }

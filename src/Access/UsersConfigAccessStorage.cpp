@@ -1,5 +1,4 @@
 #include <Access/UsersConfigAccessStorage.h>
-#include <Access/Common/SSLCertificateSubjects.h>
 #include <Access/Quota.h>
 #include <Access/RowPolicy.h>
 #include <Access/User.h>
@@ -195,23 +194,18 @@ namespace
             /// Fill list of allowed certificates.
             Poco::Util::AbstractConfiguration::Keys keys;
             config.keys(certificates_config, keys);
+            boost::container::flat_set<String> common_names;
             for (const String & key : keys)
             {
                 if (key.starts_with("common_name"))
                 {
                     String value = config.getString(certificates_config + "." + key);
-                    user->auth_data.addSSLCertificateSubject(SSLCertificateSubjects::Type::CN, std::move(value));
-                }
-                else if (key.starts_with("subject_alt_name"))
-                {
-                    String value = config.getString(certificates_config + "." + key);
-                    if (value.empty())
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ssl_certificates.subject_alt_name to not be empty");
-                    user->auth_data.addSSLCertificateSubject(SSLCertificateSubjects::Type::SAN, std::move(value));
+                    common_names.insert(std::move(value));
                 }
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown certificate pattern type: {}", key);
             }
+            user->auth_data.setSSLCertificateCommonNames(std::move(common_names));
         }
         else if (has_ssh_keys)
         {
@@ -886,7 +880,8 @@ void UsersConfigAccessStorage::load(
             Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);
             parseFromConfig(*new_config);
             access_control.getChangesNotifier().sendNotifications();
-        });
+        },
+        /* already_loaded = */ false);
 }
 
 void UsersConfigAccessStorage::startPeriodicReloading()
