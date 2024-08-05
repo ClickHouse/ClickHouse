@@ -533,7 +533,7 @@ protected:
     }
 
     /// Increase the size of the buffer.
-    void __attribute__((preserve_most)) resize(size_t for_num_elems = 0, size_t for_buf_size = 0)
+    void PRESERVE_MOST resize(size_t for_num_elems = 0, size_t for_buf_size = 0)
     {
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
         Stopwatch watch;

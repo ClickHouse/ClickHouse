@@ -141,7 +141,7 @@ protected:
     }
 
     template <typename... TAllocatorParams>
-    void __attribute__((preserve_most)) realloc(size_t bytes, TAllocatorParams &&... allocator_params)
+    void PRESERVE_MOST realloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
         if (c_start == null)
         {
@@ -178,7 +178,7 @@ protected:
     }
 
     template <typename... TAllocatorParams>
-    void __attribute__((preserve_most)) reserveForNextSize(TAllocatorParams &&... allocator_params)
+    void PRESERVE_MOST reserveForNextSize(TAllocatorParams &&... allocator_params)
     {
         if (empty())
         {
