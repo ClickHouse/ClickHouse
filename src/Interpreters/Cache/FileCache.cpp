@@ -560,7 +560,7 @@ FileCache::getOrSet(
 
     FileSegment::Range initial_range(offset, offset + size - 1);
     /// result_range is initial range, which will be adjusted according to
-    /// 1. aligned offset, alighed_end_offset
+    /// 1. aligned_offset, aligned_end_offset
     /// 2. max_file_segments_limit
     FileSegment::Range result_range = initial_range;
 
