@@ -150,6 +150,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         NamesAndTypesList full_requested_columns;
 
         /// Convert columns list to block. And convert subcolumns to full columns.
+        /// Defaults should be executed on full columns to get correct values for subcolumns.
         /// TODO: rewrite with columns interface. It will be possible after changes in ExpressionActions.
 
         auto it = original_requested_columns.begin();

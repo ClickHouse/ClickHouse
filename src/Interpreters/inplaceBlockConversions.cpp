@@ -309,6 +309,7 @@ static bool hasDefault(const StorageMetadataPtr & metadata_snapshot, const NameA
 
 static String removeTupleElementsFromSubcolumn(String subcolumn_name, const Names & tuple_elements)
 {
+    /// Add a dot to the end of name for convenience.
     subcolumn_name += ".";
     for (const auto & elem : tuple_elements)
     {
@@ -396,19 +397,23 @@ void fillMissingColumns(
             Names tuple_elements;
             auto serialization = IDataType::getSerialization(*requested_column);
 
+            /// For Nested columns collect names of tuple elements and skip them while getting the base type of array.
             IDataType::forEachSubcolumn([&](const auto & path, const auto &, const auto &)
             {
                 if (path.back().type == ISerialization::Substream::TupleElement)
                     tuple_elements.push_back(path.back().name_of_substream);
             }, ISerialization::SubstreamData(serialization));
 
+            /// The number of dimensions that belongs to the array itself but not shared in Nested column.
+            /// For example for column "n Nested(a UInt64, b Array(UInt64))" this value is 0 for `n.a` and 1 for `n.b`.
             size_t num_empty_dimensions = num_dimensions - current_offsets.size();
+
             auto base_type = getBaseTypeOfArray(requested_column->getTypeInStorage(), tuple_elements);
             auto scalar_type = createArrayOfType(base_type, num_empty_dimensions);
-
             size_t data_size = assert_cast<const ColumnUInt64 &>(*current_offsets.back()).getData().back();
-            auto subcolumn_name = removeTupleElementsFromSubcolumn(requested_column->getSubcolumnName(), tuple_elements);
 
+            /// Remove names of tuple elements because they are already processed by 'getBaseTypeOfArray'.
+            auto subcolumn_name = removeTupleElementsFromSubcolumn(requested_column->getSubcolumnName(), tuple_elements);
             res_columns[i] = createColumnWithDefaultValue(*scalar_type, subcolumn_name, data_size);
 
             for (auto it = current_offsets.rbegin(); it != current_offsets.rend(); ++it)
