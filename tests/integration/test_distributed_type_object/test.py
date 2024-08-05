@@ -31,6 +31,9 @@ def started_cluster():
 
 
 def test_distributed_type_object(started_cluster):
+    node1.query("TRUNCATE TABLE local_table")
+    node2.query("TRUNCATE TABLE local_table")
+
     node1.query(
         'INSERT INTO local_table FORMAT JSONEachRow {"id": 1, "data": {"k1": 10}}'
     )
