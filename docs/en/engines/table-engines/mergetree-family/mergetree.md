@@ -1007,6 +1007,19 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
     [Count-min](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
 
+#### Supported Data Types {#supported-data-types}
+
+| Data Type / Statistics  | count_min | minmax | tdigest | uniq |
+|-------------------------|-----------|--------|---------|------|
+| Integer types           | ✔         | ✔      | ✔       | ✔    |
+| Floating-point numbers  | ✔         | ✔      | ✔       | ✔    |
+| Boolean                 | ✔         | ✔      | ✔       | ✔    |
+| Strings                 | ✔         | ✗      | ✗       | ✔    |
+| Dates                   | ✔         | ✔      | ✔       | ✔    |
+
+You can also add `LowCardinality` and `Nullable` modifiers to the data types.
+
+
 ## Column-level Settings {#column-level-settings}
 
 Certain MergeTree settings can be override at column level:
