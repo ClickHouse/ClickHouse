@@ -118,7 +118,7 @@ then
     # far in the future and have unrelated test changes.
     base=$(git -C right/ch merge-base pr origin/master)
     git -C right/ch diff --name-only "$base" pr -- . | tee all-changed-files.txt
-    git -C right/ch diff --name-only "$base" pr -- tests/performance/*.xml | tee changed-test-definitions.txt
+    git -C right/ch diff --name-only --diff-filter=d "$base" pr -- tests/performance/*.xml | tee changed-test-definitions.txt
     git -C right/ch diff --name-only "$base" pr -- :!tests/performance/*.xml :!docker/test/performance-comparison | tee other-changed-files.txt
 fi
 
