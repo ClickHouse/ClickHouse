@@ -23,7 +23,7 @@ ${CLICKHOUSE_CLIENT} --ignore-error --multiquery --query "select * from data_025
 
 # we cannot use OPTIMIZE, this will attach query context, so let's wait
 for _ in {1..100}; do
-    $CLICKHOUSE_CLIENT -q "select * from data_02572;" | grep -q "1" && echo 'OK' && break
+    ${CLICKHOUSE_CLIENT} -q "select * from data_02572;" | grep -q "1" && echo 'OK' && break
     sleep 0.5
 done
 
