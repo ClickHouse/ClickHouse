@@ -200,3 +200,7 @@ def test_drop_distributed_table(start_cluster):
             f"SELECT count(table) FROM system.detached_tables WHERE table='{test_table_name}'"
         ).rstrip()
     )
+
+    replica1.query(
+        "DROP TABLE aux_table_for_dist SYNC"
+    )
