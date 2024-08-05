@@ -1,0 +1,26 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_with_keeper>
+                <type>s3_with_keeper</type>
+                <endpoint>http://minio1:9001/root/test/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </s3_with_keeper>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3_with_keeper</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+
+    <shared_merge_tree>
+      <storage_policy>s3</storage_policy>
+      <max_part_removal_threads>128</max_part_removal_threads>
+    </shared_merge_tree>
+</clickhouse>
