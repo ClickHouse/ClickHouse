@@ -35,7 +35,7 @@ def delete_if_exists(file_path):
     "query, expected_result",
     {
         (
-            "SElECT number, number+1 FROM system.numbers LIMIT 100 "
+            "SELECT number, number+1 FROM system.numbers LIMIT 100 "
             "INTO OUTFILE '{file_name}' FORMAT Parquet "
             "SETTINGS output_format_parquet_use_custom_encoder = false, "
             "output_format_parquet_write_page_index = true;",
