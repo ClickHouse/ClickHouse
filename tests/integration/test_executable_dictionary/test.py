@@ -235,7 +235,6 @@ def test_executable_implicit_input_signalled_python(started_cluster):
     )
 
 
-@pytest.mark.repeat(50)
 def test_executable_input_slow_python(started_cluster):
     skip_test_msan(node)
     assert node.query_and_get_error(
@@ -246,7 +245,6 @@ def test_executable_input_slow_python(started_cluster):
     )
 
 
-@pytest.mark.repeat(50)
 def test_executable_implicit_input_slow_python(started_cluster):
     skip_test_msan(node)
     assert node.query_and_get_error(

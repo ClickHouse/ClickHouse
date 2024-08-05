@@ -239,7 +239,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
     LOG_TRACE(
         getLogger(),
-        "Started shell command '{}' with pid {} and file descriptors: read {}, write {}",
+        "Started shell command '{}' with pid {} and file descriptors: out {}, err {}",
         filename,
         pid,
         res->out.getFD(),
