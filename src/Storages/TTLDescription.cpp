@@ -172,19 +172,19 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
     /// with subqueries it's possible that new analyzer will be enabled in ::read method
     /// of underlying storage when all other parts of infra are not ready for it
     /// (built with old analyzer).
-    context_copy->setSetting("allow_experimental_analyzer", Field{0});
+    context_copy->setSetting("allow_experimental_analyzer", false);
     auto syntax_analyzer_result = TreeRewriter(context_copy).analyze(ast, columns);
     ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context_copy);
     auto dag = analyzer.getActionsDAG(false);
 
-    const auto * col = &dag->findInOutputs(ast->getColumnName());
+    const auto * col = &dag.findInOutputs(ast->getColumnName());
     if (col->result_name != ttl_string)
-        col = &dag->addAlias(*col, ttl_string);
+        col = &dag.addAlias(*col, ttl_string);
 
-    dag->getOutputs() = {col};
-    dag->removeUnusedActions();
+    dag.getOutputs() = {col};
+    dag.removeUnusedActions();
 
-    result.expression = std::make_shared<ExpressionActions>(dag, ExpressionActionsSettings::fromContext(context_copy));
+    result.expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context_copy));
     result.sets = analyzer.getPreparedSets();
 
     return result;

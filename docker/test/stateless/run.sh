@@ -3,6 +3,12 @@
 # shellcheck disable=SC1091
 source /setup_export_logs.sh
 
+# shellcheck source=../stateless/stress_tests.lib
+source /stress_tests.lib
+
+# Avoid overlaps with previous runs
+dmesg --clear
+
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
@@ -212,6 +218,10 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--shared-catalog')
     fi
 
+    if [[ "$USE_DISTRIBUTED_CACHE" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--distributed-cache')
+    fi
+
     if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--replicated-database')
         # Too many tests fail for DatabaseReplicated in parallel.
@@ -247,12 +257,22 @@ function run_tests()
 
     try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
 
+    TIMEOUT=$((MAX_RUN_TIME - 800 > 8400 ? 8400 : MAX_RUN_TIME - 800))
+    START_TIME=${SECONDS}
     set +e
-    timeout -k 60m -s TERM --preserve-status 140m  clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
-         --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
+    timeout --preserve-status --signal TERM --kill-after 60m ${TIMEOUT}s \
+        clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
+            --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
     | ts '%Y-%m-%d %H:%M:%S' \
     | tee -a test_output/test_result.txt
     set -e
+    DURATION=$((START_TIME - SECONDS))
+
+    echo "Elapsed ${DURATION} seconds."
+    if [[ $DURATION -ge $TIMEOUT ]]
+    then
+        echo "It looks like the command is terminated by the timeout, which is ${TIMEOUT} seconds."
+    fi
 }
 
 export -f run_tests
@@ -264,7 +284,7 @@ if [ "$NUM_TRIES" -gt "1" ]; then
     # We don't run tests with Ordinary database in PRs, only in master.
     # So run new/changed tests with Ordinary at least once in flaky check.
     timeout_with_logging "$TIMEOUT" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
-      | sed 's/All tests have finished//' | sed 's/No tests were run//' ||:
+      | sed 's/All tests have finished/Redacted: a message about tests finish is deleted/' | sed 's/No tests were run/Redacted: a message about no tests run is deleted/' ||:
 fi
 
 timeout_with_logging "$TIMEOUT" bash -c run_tests ||:
@@ -285,22 +305,22 @@ stop_logs_replication
 failed_to_save_logs=0
 for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log
 do
-    err=$(clickhouse-client -q "select * from system.$table into outfile '/test_output/$table.tsv.gz' format TSVWithNamesAndTypes")
-    echo "$err"
-    [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
+    if ! clickhouse-client -q "select * from system.$table into outfile '/test_output/$table.tsv.zst' format TSVWithNamesAndTypes"; then
+        failed_to_save_logs=1
+    fi
     if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        err=$( { clickhouse-client --port 19000 -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst; } 2>&1 )
-        echo "$err"
-        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
-        err=$( { clickhouse-client --port 29000 -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst; } 2>&1 )
-        echo "$err"
-        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
+        if ! clickhouse-client --port 19000 -q "select * from system.$table into outfile '/test_output/$table.1.tsv.zst' format TSVWithNamesAndTypes"; then
+            failed_to_save_logs=1
+        fi
+        if ! clickhouse-client --port 29000 -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"; then
+            failed_to_save_logs=1
+        fi
     fi
 
     if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
-        err=$( { clickhouse-client --port 19000 -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst; } 2>&1 )
-        echo "$err"
-        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
+        if ! clickhouse-client --port 29000 -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"; then
+            failed_to_save_logs=1
+        fi
     fi
 done
 
@@ -405,5 +425,8 @@ if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
     tar -chf /test_output/coordination1.tar /var/lib/clickhouse1/coordination ||:
 fi
+
+# Grep logs for sanitizer asserts, crashes and other critical errors
+check_logs_for_critical_errors
 
 collect_core_dumps

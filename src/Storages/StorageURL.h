@@ -185,7 +185,7 @@ public:
 
     String getName() const override { return name; }
 
-    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override
+    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override
     {
         setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
     }
@@ -228,12 +228,12 @@ private:
     bool need_only_count;
     size_t total_rows_in_file = 0;
 
+    Poco::Net::HTTPBasicCredentials credentials;
+
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
-
-    Poco::Net::HTTPBasicCredentials credentials;
 };
 
 class StorageURLSink : public SinkToStorage
