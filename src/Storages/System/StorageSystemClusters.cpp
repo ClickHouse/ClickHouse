@@ -40,10 +40,10 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
     return description;
 }
 
-void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const
 {
     for (const auto & name_and_cluster : context->getClusters())
-        writeCluster(res_columns, name_and_cluster, {});
+        writeCluster(res_columns, columns_mask, name_and_cluster, /* replicated= */ nullptr);
 
     const auto databases = DatabaseCatalog::instance().getDatabases();
     for (const auto & name_and_database : databases)
@@ -52,18 +52,15 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
         {
 
             if (auto database_cluster = replicated->tryGetCluster())
-                writeCluster(res_columns, {name_and_database.first, database_cluster},
-                             replicated->tryGetAreReplicasActive(database_cluster));
+                writeCluster(res_columns, columns_mask, {name_and_database.first, database_cluster}, replicated);
 
             if (auto database_cluster = replicated->tryGetAllGroupsCluster())
-                writeCluster(res_columns, {DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX + name_and_database.first, database_cluster},
-                             replicated->tryGetAreReplicasActive(database_cluster));
+                writeCluster(res_columns, columns_mask, {DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX + name_and_database.first, database_cluster}, replicated);
         }
     }
 }
 
-void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const NameAndCluster & name_and_cluster,
-                                         const std::vector<UInt8> & is_active)
+void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std::vector<UInt8> & columns_mask, const NameAndCluster & name_and_cluster, const DatabaseReplicated * replicated)
 {
     const String & cluster_name = name_and_cluster.first;
     const ClusterPtr & cluster = name_and_cluster.second;
@@ -79,30 +76,55 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const Nam
 
         for (size_t replica_index = 0; replica_index < shard_addresses.size(); ++replica_index)
         {
-            size_t i = 0;
+            size_t src_index = 0, res_index = 0;
             const auto & address = shard_addresses[replica_index];
 
-            res_columns[i++]->insert(cluster_name);
-            res_columns[i++]->insert(shard_info.shard_num);
-            res_columns[i++]->insert(shard_info.weight);
-            res_columns[i++]->insert(shard_info.has_internal_replication);
-            res_columns[i++]->insert(replica_index + 1);
-            res_columns[i++]->insert(address.host_name);
-            auto resolved = address.getResolvedAddress();
-            res_columns[i++]->insert(resolved ? resolved->host().toString() : String());
-            res_columns[i++]->insert(address.port);
-            res_columns[i++]->insert(address.is_local);
-            res_columns[i++]->insert(address.user);
-            res_columns[i++]->insert(address.default_database);
-            res_columns[i++]->insert(pool_status[replica_index].error_count);
-            res_columns[i++]->insert(pool_status[replica_index].slowdown_count);
-            res_columns[i++]->insert(pool_status[replica_index].estimated_recovery_time.count());
-            res_columns[i++]->insert(address.database_shard_name);
-            res_columns[i++]->insert(address.database_replica_name);
-            if (is_active.empty())
-                res_columns[i++]->insertDefault();
-            else
-                res_columns[i++]->insert(is_active[replica_idx++]);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(cluster_name);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(shard_info.shard_num);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(shard_info.weight);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(shard_info.has_internal_replication);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(replica_index + 1);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(address.host_name);
+            if (columns_mask[src_index++])
+            {
+                auto resolved = address.getResolvedAddress();
+                res_columns[res_index++]->insert(resolved ? resolved->host().toString() : String());
+            }
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(address.port);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(address.is_local);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(address.user);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(address.default_database);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(pool_status[replica_index].error_count);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(pool_status[replica_index].slowdown_count);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(pool_status[replica_index].estimated_recovery_time.count());
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(address.database_shard_name);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(address.database_replica_name);
+            if (columns_mask[src_index++])
+            {
+                std::vector<UInt8> is_active;
+                if (replicated)
+                    is_active = replicated->tryGetAreReplicasActive(name_and_cluster.second);
+
+                if (is_active.empty())
+                    res_columns[res_index++]->insertDefault();
+                else
+                    res_columns[res_index++]->insert(is_active[replica_idx++]);
+            }
         }
     }
 }

@@ -849,7 +849,7 @@ try
 #endif
 
 #if defined(SANITIZER)
-    LOG_INFO(log, "Query Profiler disabled because they cannot work under sanitizers"
+    LOG_INFO(log, "Query Profiler is disabled because it cannot work under sanitizers"
         " when two different stack unwinding methods will interfere with each other.");
 #endif
 
@@ -1042,6 +1042,11 @@ try
         max_database_replicated_create_table_thread_pool_size,
         0, // We don't need any threads once all the tables will be created
         max_database_replicated_create_table_thread_pool_size);
+
+    getDatabaseCatalogDropTablesThreadPool().initialize(
+        server_settings.database_catalog_drop_table_concurrency,
+        0, // We don't need any threads if there are no DROP queries.
+        server_settings.database_catalog_drop_table_concurrency);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
