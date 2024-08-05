@@ -187,9 +187,6 @@ namespace
                 else
                     throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected String/UUID, got type id = {} for column {}",
                                         toString(value.type()), name);
-
-                String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
-                return parse<UUID>(string);
             };
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Type conversion to {} is not supported", nested->getName());
