@@ -340,7 +340,7 @@ std::vector<FileSegment::Range> FileCache::splitRange(size_t offset, size_t size
     ///          ^               ^ 
     ///          |               last_file_segment_right_offset + max_file_segment_size
     ///          last_file_segment_right_offset
-    /// e.g. there is no need to create sub-segment for range (right_offset + max_file_segment_size, aligned_right_offset].
+    /// e.g. there is no need to create sub-segment for range (last_file_segment_right_offset + max_file_segment_size, aligned_right_offset].
     /// Because its left offset would be bigger than right_offset.
     /// Therefore, we set end_pos_non_included as offset+size, but remaining_size as aligned_size.
 
