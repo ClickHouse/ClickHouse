@@ -78,11 +78,15 @@ public:
 
     void removeRecursive(const String & path) override { removeSharedRecursive(path, false, {}); }
 
+    void removeRecursiveWithLimit(const String & path) override { removeSharedRecursiveWithLimit(path, false, {}); }
+
     void removeSharedFile(const String & path, bool delete_metadata_only) override;
 
     void removeSharedFileIfExists(const String & path, bool delete_metadata_only) override;
 
     void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
+
+    void removeSharedRecursiveWithLimit(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only);
 
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 

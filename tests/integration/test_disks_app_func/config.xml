@@ -15,7 +15,7 @@
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
-                <remove_shared_recursive_file_limit>3</remove_shared_recursive_file_limit>
+                <remove_shared_recursive_file_limit>4</remove_shared_recursive_file_limit>
             </test3>
         </disks>
         <policies>

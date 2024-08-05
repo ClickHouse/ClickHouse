@@ -63,21 +63,17 @@ protected:
 
     DiskObjectStorageOperations operations_to_execute;
 
-    UInt64 remove_shared_recursive_file_limit;
-
     DiskObjectStorageTransaction(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
         DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
-        MetadataTransactionPtr metadata_transaction_,
-        UInt64 remove_shared_recursive_file_limit);
+        MetadataTransactionPtr metadata_transaction_);
 
 public:
     DiskObjectStorageTransaction(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
-        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
-        UInt64 remove_shared_recursive_file_limit);
+        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_);
 
     void commit() override;
     void undo() override;
@@ -140,8 +136,7 @@ struct MultipleDisksObjectStorageTransaction final : public DiskObjectStorageTra
         IMetadataStorage & metadata_storage_,
         IObjectStorage& destination_object_storage,
         IMetadataStorage& destination_metadata_storage,
-        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
-        UInt64 remove_shared_recursive_file_limit_);
+        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_);
 
     void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
 };

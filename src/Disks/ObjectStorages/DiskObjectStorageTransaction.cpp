@@ -30,26 +30,22 @@ namespace ErrorCodes
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     IObjectStorage & object_storage_,
     IMetadataStorage & metadata_storage_,
-    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
-    UInt64 remove_shared_recursive_file_limit_)
+    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_)
     : object_storage(object_storage_)
     , metadata_storage(metadata_storage_)
     , metadata_transaction(metadata_storage.createTransaction())
     , metadata_helper(metadata_helper_)
-    , remove_shared_recursive_file_limit(remove_shared_recursive_file_limit_)
 {}
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     IObjectStorage & object_storage_,
     IMetadataStorage & metadata_storage_,
     DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
-    MetadataTransactionPtr metadata_transaction_,
-    UInt64 remove_shared_recursive_file_limit_)
+    MetadataTransactionPtr metadata_transaction_)
     : object_storage(object_storage_)
     , metadata_storage(metadata_storage_)
     , metadata_transaction(metadata_transaction_)
     , metadata_helper(metadata_helper_)
-    , remove_shared_recursive_file_limit(remove_shared_recursive_file_limit_)
 {}
 
 MultipleDisksObjectStorageTransaction::MultipleDisksObjectStorageTransaction(
@@ -57,9 +53,8 @@ MultipleDisksObjectStorageTransaction::MultipleDisksObjectStorageTransaction(
     IMetadataStorage & metadata_storage_,
     IObjectStorage& destination_object_storage_,
     IMetadataStorage& destination_metadata_storage_,
-    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
-    UInt64 remove_shared_recursive_file_limit_)
-    : DiskObjectStorageTransaction(object_storage_, metadata_storage_, metadata_helper_, destination_metadata_storage_.createTransaction(), remove_shared_recursive_file_limit_)
+    DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_)
+    : DiskObjectStorageTransaction(object_storage_, metadata_storage_, metadata_helper_, destination_metadata_storage_.createTransaction())
     , destination_object_storage(destination_object_storage_)
     , destination_metadata_storage(destination_metadata_storage_)
 {}
@@ -296,7 +291,6 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
     const bool keep_all_batch_data;
     /// paths inside the 'this->path'
     const NameSet file_names_remove_metadata_only;
-    const UInt64 limit;
 
     /// map from local_path to its remote objects with hardlinks counter
     /// local_path is the path inside 'this->path'
@@ -307,13 +301,11 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
         IMetadataStorage & metadata_storage_,
         const std::string & path_,
         bool keep_all_batch_data_,
-        const NameSet & file_names_remove_metadata_only_,
-        UInt64 limit_)
+        const NameSet & file_names_remove_metadata_only_)
         : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
         , path(path_)
         , keep_all_batch_data(keep_all_batch_data_)
         , file_names_remove_metadata_only(file_names_remove_metadata_only_)
-        , limit(limit_)
     {}
 
     std::string getInfoForLog() const override
@@ -321,51 +313,9 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
         return fmt::format("RemoveRecursiveObjectStorageOperation (path: {})", path);
     }
 
-    bool checkLimitReached() const
-    {
-        return limit > 0 && objects_to_remove_by_path.size() == limit;
-    }
-
-    void removeObjects()
-    {
-        if (!keep_all_batch_data)
-        {
-            std::vector<String> total_removed_paths;
-            total_removed_paths.reserve(objects_to_remove_by_path.size());
-
-            StoredObjects remove_from_remote;
-            for (auto && [local_path, objects_to_remove] : objects_to_remove_by_path)
-            {
-                chassert(!file_names_remove_metadata_only.contains(local_path));
-                if (objects_to_remove.unlink_outcome->num_hardlinks == 0)
-                {
-                    std::move(objects_to_remove.objects.begin(), objects_to_remove.objects.end(), std::back_inserter(remove_from_remote));
-                    total_removed_paths.push_back(local_path);
-                }
-            }
-
-            /// Read comment inside RemoveObjectStorageOperation class
-            /// TL;DR Don't pay any attention to 404 status code
-            object_storage.removeObjectsIfExist(remove_from_remote);
-
-            objects_to_remove_by_path.clear();
-
-            LOG_DEBUG(
-                getLogger("RemoveRecursiveObjectStorageOperation"),
-                "Recursively remove path {}: "
-                "metadata and objects were removed for [{}], "
-                "only metadata were removed for [{}].",
-                path,
-                boost::algorithm::join(total_removed_paths, ", "),
-                boost::algorithm::join(file_names_remove_metadata_only, ", "));
-        }
-    }
-
     void removeMetadataRecursive(MetadataTransactionPtr tx, const std::string & path_to_remove)
     {
         checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
-        if (checkLimitReached())
-            removeObjects();
 
         if (metadata_storage.isFile(path_to_remove))
         {
@@ -407,11 +357,8 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
         else
         {
             for (auto it = metadata_storage.iterateDirectory(path_to_remove); it->isValid(); it->next())
-            {
                 removeMetadataRecursive(tx, it->path());
-                if (checkLimitReached())
-                    removeObjects();
-            }
+
             tx->removeDirectory(path_to_remove);
         }
     }
@@ -429,7 +376,35 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
 
     void finalize() override
     {
-        removeObjects();
+        if (!keep_all_batch_data)
+        {
+            std::vector<String> total_removed_paths;
+            total_removed_paths.reserve(objects_to_remove_by_path.size());
+
+            StoredObjects remove_from_remote;
+            for (auto && [local_path, objects_to_remove] : objects_to_remove_by_path)
+            {
+                chassert(!file_names_remove_metadata_only.contains(local_path));
+                if (objects_to_remove.unlink_outcome->num_hardlinks == 0)
+                {
+                    std::move(objects_to_remove.objects.begin(), objects_to_remove.objects.end(), std::back_inserter(remove_from_remote));
+                    total_removed_paths.push_back(local_path);
+                }
+            }
+
+            /// Read comment inside RemoveObjectStorageOperation class
+            /// TL;DR Don't pay any attention to 404 status code
+            object_storage.removeObjectsIfExist(remove_from_remote);
+
+            LOG_DEBUG(
+                getLogger("RemoveRecursiveObjectStorageOperation"),
+                "Recursively remove path {}: "
+                "metadata and objects were removed for [{}], "
+                "only metadata were removed for [{}].",
+                path,
+                boost::algorithm::join(total_removed_paths, ", "),
+                boost::algorithm::join(file_names_remove_metadata_only, ", "));
+        }
     }
 };
 
@@ -707,7 +682,7 @@ void DiskObjectStorageTransaction::removeSharedRecursive(
     const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only)
 {
     auto operation = std::make_unique<RemoveRecursiveObjectStorageOperation>(
-        object_storage, metadata_storage, path, keep_all_shared_data, file_names_remove_metadata_only, remove_shared_recursive_file_limit);
+        object_storage, metadata_storage, path, keep_all_shared_data, file_names_remove_metadata_only);
     operations_to_execute.emplace_back(std::move(operation));
 }
 

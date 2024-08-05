@@ -40,7 +40,7 @@ public:
             }
             else
             {
-                disk.getDisk()->removeRecursive(path);
+                disk.getDisk()->removeRecursiveWithLimit(path);
             }
         }
         else

@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Common/checkStackSize.h>
 #include <Common/formatReadable.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
@@ -41,8 +42,7 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
     return std::make_shared<DiskObjectStorageTransaction>(
         *object_storage,
         *metadata_storage,
-        send_metadata ? metadata_helper.get() : nullptr,
-        remove_shared_recursive_file_limit);
+        send_metadata ? metadata_helper.get() : nullptr);
 }
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk)
@@ -52,8 +52,7 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDis
         *metadata_storage,
         *to_disk.getObjectStorage(),
         *to_disk.getMetadataStorage(),
-        send_metadata ? metadata_helper.get() : nullptr,
-        remove_shared_recursive_file_limit);
+        send_metadata ? metadata_helper.get() : nullptr);
 }
 
 
@@ -379,6 +378,61 @@ void DiskObjectStorage::removeSharedRecursive(
     auto transaction = createObjectStorageTransaction();
     transaction->removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
     transaction->commit();
+}
+
+void DiskObjectStorage::removeSharedRecursiveWithLimit(
+    const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
+{
+    if (remove_shared_recursive_file_limit == 0)
+        return removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
+
+    RemoveBatchRequest local_paths;
+    std::vector<std::string> directories;
+
+    auto check_limit_reached = [&]()
+    {
+        const auto path_count = local_paths.size() + directories.size();
+        chassert(path_count <= this->remove_shared_recursive_file_limit);
+        return local_paths.size() + directories.size() == this->remove_shared_recursive_file_limit;
+    };
+
+    auto remove = [&]()
+    {
+        auto transaction = createObjectStorageTransaction();
+        if (!local_paths.empty())
+            transaction->removeSharedFiles(local_paths, keep_all_batch_data, file_names_remove_metadata_only);
+        for (auto & directory : directories)
+            transaction->removeDirectory(directory);
+        transaction->commit();
+        local_paths.clear();
+        directories.clear();
+    };
+
+    std::function<void(const std::string &)> traverse_metadata_recursive = [&](const std::string & path_to_remove)
+    {
+        checkStackSize();
+        if (check_limit_reached())
+            remove();
+
+        if (metadata_storage->isFile(path_to_remove))
+        {
+            chassert(path_to_remove.starts_with(path));
+            local_paths.emplace_back(path_to_remove);
+        }
+        else
+        {
+            for (auto it = metadata_storage->iterateDirectory(path_to_remove); it->isValid(); it->next())
+            {
+                traverse_metadata_recursive(it->path());
+                if (check_limit_reached())
+                    remove();
+            }
+            directories.push_back(path_to_remove);
+        }
+    };
+
+    traverse_metadata_recursive(path);
+    remove();
 }
 
 bool DiskObjectStorage::tryReserve(UInt64 bytes)
