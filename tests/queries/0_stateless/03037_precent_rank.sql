@@ -1,4 +1,3 @@
-set allow_experimental_analyzer=1;
 drop table if exists product_groups;
 drop table if exists products;
 
