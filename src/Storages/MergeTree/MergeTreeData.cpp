@@ -474,7 +474,7 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 }
 
 ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByPredicate(
-    const StorageSnapshotPtr & storage_snapshot, const ActionsDAGPtr & filter_dag, ContextPtr local_context) const
+    const StorageSnapshotPtr & storage_snapshot, const ActionsDAG * filter_dag, ContextPtr local_context) const
 {
     if (!local_context->getSettingsRef().allow_statistics_optimize)
         return {};
@@ -750,7 +750,7 @@ ExpressionActionsPtr MergeTreeData::getMinMaxExpr(const KeyDescription & partiti
     if (!partition_key.column_names.empty())
         partition_key_columns = partition_key.expression->getRequiredColumnsWithTypes();
 
-    return std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(partition_key_columns), settings);
+    return std::make_shared<ExpressionActions>(ActionsDAG(partition_key_columns), settings);
 }
 
 Names MergeTreeData::getMinMaxColumnsNames(const KeyDescription & partition_key)
@@ -1138,7 +1138,7 @@ Block MergeTreeData::getBlockWithVirtualsForFilter(
 
 
 std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
-    const ActionsDAGPtr & filter_actions_dag, ContextPtr local_context, const DataPartsVector & parts) const
+    const ActionsDAG & filter_actions_dag, ContextPtr local_context, const DataPartsVector & parts) const
 {
     if (parts.empty())
         return 0;
@@ -1146,7 +1146,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, {parts[0]});
 
-    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), nullptr, /*allow_non_deterministic_functions=*/ false);
+    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag.getOutputs().at(0), nullptr, /*allow_non_deterministic_functions=*/ false);
     if (!filter_dag)
         return {};
 
@@ -1156,7 +1156,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
         if (!virtual_columns_block.has(input->result_name))
             valid = false;
 
-    PartitionPruner partition_pruner(metadata_snapshot, filter_dag, local_context, true /* strict */);
+    PartitionPruner partition_pruner(metadata_snapshot, &*filter_dag, local_context, true /* strict */);
     if (partition_pruner.isUseless() && !valid)
         return {};
 
@@ -1164,7 +1164,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     if (valid)
     {
         virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, parts);
-        VirtualColumnUtils::filterBlockWithDAG(filter_dag, virtual_columns_block, local_context);
+        VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*filter_dag), local_context), virtual_columns_block);
         part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
             return 0;
@@ -4405,25 +4405,25 @@ bool MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
 
 size_t MergeTreeData::getTotalActiveSizeInBytes() const
 {
-    return total_active_size_bytes.load(std::memory_order_acquire);
+    return total_active_size_bytes.load();
 }
 
 
 size_t MergeTreeData::getTotalActiveSizeInRows() const
 {
-    return total_active_size_rows.load(std::memory_order_acquire);
+    return total_active_size_rows.load();
 }
 
 
 size_t MergeTreeData::getActivePartsCount() const
 {
-    return total_active_size_parts.load(std::memory_order_acquire);
+    return total_active_size_parts.load();
 }
 
 
 size_t MergeTreeData::getOutdatedPartsCount() const
 {
-    return total_outdated_parts_count.load(std::memory_order_relaxed);
+    return total_outdated_parts_count.load();
 }
 
 size_t MergeTreeData::getNumberOfOutdatedPartsWithExpiredRemovalTime() const
@@ -5557,12 +5557,16 @@ public:
         auto it = temp_part_dirs.find(part_name);
         if (it == temp_part_dirs.end())
         {
-            auto temp_part_dir = std::make_shared<TemporaryFileOnDisk>(disk, fs::path{storage->getRelativeDataPath()} / ("tmp_restore_" + part_name + "-"));
+            auto temp_dir_deleter = std::make_unique<TemporaryFileOnDisk>(disk, fs::path{storage->getRelativeDataPath()} / ("tmp_restore_" + part_name + "-"));
+            auto temp_part_dir = fs::path{temp_dir_deleter->getRelativePath()}.filename();
             /// Attaching parts will rename them so it's expected for a temporary part directory not to exist anymore in the end.
-            temp_part_dir->setShowWarningIfRemoved(false);
-            it = temp_part_dirs.emplace(part_name, temp_part_dir).first;
+            temp_dir_deleter->setShowWarningIfRemoved(false);
+            /// The following holder is needed to prevent clearOldTemporaryDirectories() from clearing `temp_part_dir` before we attach the part.
+            auto temp_dir_holder = storage->getTemporaryPartDirectoryHolder(temp_part_dir);
+            it = temp_part_dirs.emplace(part_name,
+                                        std::make_pair(std::move(temp_dir_deleter), std::move(temp_dir_holder))).first;
         }
-        return it->second->getRelativePath();
+        return it->second.first->getRelativePath();
     }
 
 private:
@@ -5588,7 +5592,7 @@ private:
     size_t num_parts = 0;
     size_t num_broken_parts = 0;
     MutableDataPartsVector parts;
-    std::map<String /* part_name*/, std::shared_ptr<TemporaryFileOnDisk>> temp_part_dirs;
+    std::map<String /* part_name*/, std::pair<std::unique_ptr<TemporaryFileOnDisk>, scope_guard>> temp_part_dirs;
     mutable std::mutex mutex;
 };
 
@@ -6839,7 +6843,7 @@ using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 Block MergeTreeData::getMinMaxCountProjectionBlock(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & required_columns,
-    const ActionsDAGPtr & filter_dag,
+    const ActionsDAG * filter_dag,
     const DataPartsVector & parts,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     ContextPtr query_context) const
@@ -7078,7 +7082,7 @@ ActionDAGNodes MergeTreeData::getFiltersForPrimaryKeyAnalysis(const InterpreterS
 
     ActionDAGNodes filter_nodes;
     if (auto additional_filter_info = select.getAdditionalQueryInfo())
-        filter_nodes.nodes.push_back(&additional_filter_info->actions->findInOutputs(additional_filter_info->column_name));
+        filter_nodes.nodes.push_back(&additional_filter_info->actions.findInOutputs(additional_filter_info->column_name));
 
     if (before_where)
         filter_nodes.nodes.push_back(&before_where->dag.findInOutputs(where_column_name));
@@ -8184,16 +8188,16 @@ void MergeTreeData::removePartContributionToDataVolume(const DataPartPtr & part)
 
 void MergeTreeData::increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts)
 {
-    total_active_size_bytes.fetch_add(bytes, std::memory_order_acq_rel);
-    total_active_size_rows.fetch_add(rows, std::memory_order_acq_rel);
-    total_active_size_parts.fetch_add(parts, std::memory_order_acq_rel);
+    total_active_size_bytes.fetch_add(bytes);
+    total_active_size_rows.fetch_add(rows);
+    total_active_size_parts.fetch_add(parts);
 }
 
 void MergeTreeData::setDataVolume(size_t bytes, size_t rows, size_t parts)
 {
-    total_active_size_bytes.store(bytes, std::memory_order_release);
-    total_active_size_rows.store(rows, std::memory_order_release);
-    total_active_size_parts.store(parts, std::memory_order_release);
+    total_active_size_bytes.store(bytes);
+    total_active_size_rows.store(rows);
+    total_active_size_parts.store(parts);
 }
 
 bool MergeTreeData::insertQueryIdOrThrow(const String & query_id, size_t max_queries) const
