@@ -92,6 +92,12 @@ void QueryMetricLogElement::appendToBlock(MutableColumns & columns) const
         columns[column_idx++]->insert(profile_events[i]);
 }
 
+void QueryMetricLog::shutdown()
+{
+    stopCollect();
+    SystemLog<QueryMetricLogElement>::shutdown();
+}
+
 void QueryMetricLog::stopCollect()
 {
     std::lock_guard lock(queries_mutex);

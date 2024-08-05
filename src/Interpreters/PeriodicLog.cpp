@@ -1,4 +1,4 @@
-#include "Common/setThreadName.h"
+#include <Common/setThreadName.h>
 #include <Common/SystemLogBase.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
@@ -33,7 +33,7 @@ template <typename LogElement>
 void PeriodicLog<LogElement>::shutdown()
 {
     stopCollect();
-    this->stopFlushThread();
+    SystemLog<LogElement>::shutdown();
 }
 
 template <typename LogElement>

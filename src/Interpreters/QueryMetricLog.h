@@ -47,6 +47,8 @@ class QueryMetricLog : public SystemLog<QueryMetricLogElement>
     using TimePoint = std::chrono::system_clock::time_point;
 
 public:
+    void shutdown() final;
+
     void stopCollect();
 
     // Both startQuery and finishQuery are called from the thread that executes the query
