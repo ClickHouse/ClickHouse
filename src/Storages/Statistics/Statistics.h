@@ -25,19 +25,19 @@ public:
     explicit IStatistics(const SingleStatisticsDescription & stat_);
     virtual ~IStatistics() = default;
 
+    virtual void update(const ColumnPtr & column) = 0;
+
+    virtual void serialize(WriteBuffer & buf) = 0;
+    virtual void deserialize(ReadBuffer & buf) = 0;
+
     /// Estimate the cardinality of the column.
     /// Throws if the statistics object is not able to do a meaningful estimation.
     virtual UInt64 estimateCardinality() const;
 
     /// Per-value estimations.
-    /// Throws if the statistics object is not able to do a meaningful estimation.
+    /// Throws a LOGICAL_ERROR if the statistics object is not able to do a meaningful estimation.
     virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
     virtual Float64 estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
-
-    virtual void update(const ColumnPtr & column) = 0;
-
-    virtual void serialize(WriteBuffer & buf) = 0;
-    virtual void deserialize(ReadBuffer & buf) = 0;
 
 protected:
     SingleStatisticsDescription stat;

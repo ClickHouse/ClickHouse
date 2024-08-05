@@ -1,4 +1,3 @@
-
 #include <Storages/Statistics/StatisticsCountMinSketch.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -25,32 +24,11 @@ extern const int ILLEGAL_STATISTICS;
 static constexpr auto num_hashes = 7uz;
 static constexpr auto num_buckets = 2718uz;
 
-StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & stat_, DataTypePtr data_type_)
-    : IStatistics(stat_)
+StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & statistics_description, DataTypePtr data_type_)
+    : IStatistics(statistics_description)
     , sketch(num_hashes, num_buckets)
     , data_type(data_type_)
 {
-}
-
-Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
-{
-    /// Try to convert field to data_type. Converting string to proper data types such as: number, date, datetime, IPv4, Decimal etc.
-    /// Return null if val larger than the range of data_type
-    ///
-    /// For example: if data_type is Int32:
-    ///     1. For 1.0, 1, '1', return Field(1)
-    ///     2. For 1.1, max_value_int64, return null
-    Field val_converted = convertFieldToType(val, *data_type);
-    if (val_converted.isNull())
-        return 0;
-
-    if (data_type->isValueRepresentedByNumber())
-        return sketch.get_estimate(&val_converted, data_type->getSizeOfValueInMemory());
-
-    if (isStringOrFixedString(data_type))
-        return sketch.get_estimate(val.get<String>());
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'count_min' does not support estimate data type of {}", data_type->getName());
 }
 
 void StatisticsCountMinSketch::update(const ColumnPtr & column)
@@ -83,8 +61,28 @@ void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
     sketch = Sketch::deserialize(bytes.data(), size);
 }
 
+Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
+{
+    /// Try to convert field to data_type. Converting string to proper data types such as: number, date, datetime, IPv4, Decimal etc.
+    /// Return null if val larger than the range of data_type
+    ///
+    /// For example: if data_type is Int32:
+    ///     1. For 1.0, 1, '1', return Field(1)
+    ///     2. For 1.1, max_value_int64, return null
+    Field val_converted = convertFieldToType(val, *data_type);
+    if (val_converted.isNull())
+        return 0;
 
-void countMinSketchStatisticsValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
+    if (data_type->isValueRepresentedByNumber())
+        return sketch.get_estimate(&val_converted, data_type->getSizeOfValueInMemory());
+
+    if (isStringOrFixedString(data_type))
+        return sketch.get_estimate(val.get<String>());
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'count_min' does not support estimate data type of {}", data_type->getName());
+}
+
+void countMinSketchStatisticsValidator(const SingleStatisticsDescription & /*statistics_description*/, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
     data_type = removeLowCardinalityAndNullable(data_type);
@@ -92,9 +90,9 @@ void countMinSketchStatisticsValidator(const SingleStatisticsDescription &, Data
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'count_min' does not support type {}", data_type->getName());
 }
 
-StatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
+StatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & statistics_description, DataTypePtr data_type)
 {
-    return std::make_shared<StatisticsCountMinSketch>(stat, data_type);
+    return std::make_shared<StatisticsCountMinSketch>(statistics_description, data_type);
 }
 
 }

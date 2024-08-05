@@ -993,7 +993,7 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
 - `MinMax`
 
-    MinMax statistics allows to estimate selectivity of range condition for numeric columns.
+    The minimum and maximum column value which allows to estimate the selectivity of range filters on numeric columns.
 
 - `TDigest`
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/Statistics/Statistics.h>
+#include <DataTypes/IDataType.h>
 
 #include "config.h"
 
@@ -14,14 +15,14 @@ namespace DB
 class StatisticsCountMinSketch : public IStatistics
 {
 public:
-    StatisticsCountMinSketch(const SingleStatisticsDescription & stat_, DataTypePtr data_type_);
-
-    Float64 estimateEqual(const Field & val) const override;
+    StatisticsCountMinSketch(const SingleStatisticsDescription & statistics_description, DataTypePtr data_type_);
 
     void update(const ColumnPtr & column) override;
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;
+
+    Float64 estimateEqual(const Field & val) const override;
 
 private:
     using Sketch = datasketches::count_min_sketch<UInt64>;
@@ -31,8 +32,8 @@ private:
 };
 
 
-void countMinSketchStatisticsValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
-StatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & stat, DataTypePtr);
+void countMinSketchStatisticsValidator(const SingleStatisticsDescription & statistics_description, DataTypePtr data_type);
+StatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & statistics_description, DataTypePtr);
 
 }
 

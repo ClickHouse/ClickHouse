@@ -11,8 +11,9 @@ namespace ErrorCodes
 extern const int ILLEGAL_STATISTICS;
 }
 
-StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & stat_, DataTypePtr data_type_)
-    : IStatistics(stat_), data_type(data_type_)
+StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & statistics_description, DataTypePtr data_type_)
+    : IStatistics(statistics_description)
+    , data_type(data_type_)
 {
 }
 
@@ -58,7 +59,7 @@ Float64 StatisticsTDigest::estimateEqual(const Field & val) const
     return t_digest.getCountEqual(val_as_float);
 }
 
-void tdigestStatisticsValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
+void tdigestStatisticsValidator(const SingleStatisticsDescription & /*statistics_description*/, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
     data_type = removeLowCardinalityAndNullable(data_type);
@@ -66,9 +67,9 @@ void tdigestStatisticsValidator(const SingleStatisticsDescription &, DataTypePtr
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'tdigest' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
+StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & statistics_description, DataTypePtr data_type)
 {
-    return std::make_shared<StatisticsTDigest>(stat, data_type);
+    return std::make_shared<StatisticsTDigest>(statistics_description, data_type);
 }
 
 }

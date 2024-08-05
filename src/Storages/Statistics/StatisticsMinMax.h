@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/Statistics/Statistics.h>
+#include <DataTypes/IDataType.h>
 
 
 namespace DB
@@ -9,14 +10,14 @@ namespace DB
 class StatisticsMinMax : public IStatistics
 {
 public:
-    StatisticsMinMax(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type_);
-
-    Float64 estimateLess(const Field & val) const override;
+    StatisticsMinMax(const SingleStatisticsDescription & statistics_description, const DataTypePtr & data_type_);
 
     void update(const ColumnPtr & column) override;
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;
+
+    Float64 estimateLess(const Field & val) const override;
 
 private:
     Float64 min = std::numeric_limits<Float64>::max();
@@ -26,7 +27,7 @@ private:
     DataTypePtr data_type;
 };
 
-void minMaxStatisticsValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
-StatisticsPtr minMaxStatisticsCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type);
+void minMaxStatisticsValidator(const SingleStatisticsDescription & statistics_description, DataTypePtr data_type);
+StatisticsPtr minMaxStatisticsCreator(const SingleStatisticsDescription & statistics_description, DataTypePtr data_type);
 
 }

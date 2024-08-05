@@ -62,14 +62,17 @@ Float64 IStatistics::estimateLess(const Field & /*val*/) const
 }
 
 /// -------------------------------------
-/// Implementation of the estimation:
-/// Note: Each statistics object supports certain types predicates natively, e.g.
-/// - TDigest: '< X' (less-than predicates)
-/// - Count-min sketches: '= X' (equal predicates)
-/// - Uniq (HyperLogLog): 'count distinct(*)' (column cardinality)
-/// If multiple statistics objects are available per column, it is sometimes also possible to combine them in a clever way.
-/// For that reason, all estimation are performed in a central place (here), and we don't simply pass the predicate to the first statistics
-/// object that supports it natively.
+/// Notes:
+/// - Statistics object usually only support estimation for certain types of predicates, e.g.
+///    - TDigest: '< X' (less-than predicates)
+///    - Count-min sketches: '= X' (equal predicates)
+///    - Uniq (HyperLogLog): 'count distinct(*)' (column cardinality)
+///
+/// If multiple statistics objects in a column support estimating a predicate, we want to try statistics in order of descending accuracy
+/// (e.g. MinMax statistics are simpler than TDigest statistics and thus worse for estimating 'less' predicates).
+///
+/// Sometimes, it is possible to combine multiple statistics in a clever way. For that reason, all estimation are performed in a central
+/// place (here), and we don't simply pass the predicate to the first statistics object that supports it natively.
 
 Float64 ColumnStatistics::estimateLess(const Field & val) const
 {
@@ -102,8 +105,7 @@ Float64 ColumnStatistics::estimateEqual(const Field & val) const
         UInt64 cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
         if (cardinality == 0)
             return 0;
-        /// Assume that the value is uniformly distributed among the unique values.
-        return 1.0 / cardinality * rows;
+        return 1.0 / cardinality * rows; /// assume uniform distribution
     }
 
     return rows * ConditionSelectivityEstimator::default_cond_equal_factor;
