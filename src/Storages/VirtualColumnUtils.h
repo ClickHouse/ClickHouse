@@ -20,15 +20,14 @@ namespace VirtualColumnUtils
 
 /// The filtering functions are tricky to use correctly.
 /// There are 2 ways:
-///  1. Call filterBlockWithPredicate() or filterBlockWithDAG() inside SourceStepWithFilter::applyFilters().
+///  1. Call filterBlockWithPredicate() or filterBlockWithExpression() inside SourceStepWithFilter::applyFilters().
 ///  2. Call splitFilterDagForAllowedInputs() and buildSetsForDAG() inside SourceStepWithFilter::applyFilters().
-///     Then call filterBlockWithPredicate() or filterBlockWithDAG() in initializePipeline().
+///     Then call filterBlockWithPredicate() or filterBlockWithExpression() in initializePipeline().
 ///
 /// Otherwise calling filter*() outside applyFilters() will throw "Not-ready Set is passed"
 /// if there are subqueries.
 
-/// Similar to filterBlockWithQuery, but uses ActionsDAG as a predicate.
-/// Basically it is filterBlockWithDAG(splitFilterDagForAllowedInputs).
+/// Similar to filterBlockWithExpression(buildFilterExpression(splitFilterDagForAllowedInputs(...))).
 void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context);
 
 /// Just filters block. Block should contain all the required columns.

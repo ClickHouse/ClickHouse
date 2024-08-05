@@ -45,7 +45,7 @@ public:
 private:
     std::shared_ptr<IStorageSystemOneBlock> storage;
     std::vector<UInt8> columns_mask;
-    ActionsDAGPtr filter;
+    std::optional<ActionsDAG> filter;
 };
 
 void IStorageSystemOneBlock::read(
@@ -106,7 +106,7 @@ void ReadFromSystemOneBlock::applyFilters(ActionDAGNodes added_filter_nodes)
 
     /// Must prepare sets here, initializePipeline() would be too late, see comment on FutureSetFromSubquery.
     if (filter)
-        VirtualColumnUtils::buildSetsForDAG(filter, context);
+        VirtualColumnUtils::buildSetsForDAG(*filter, context);
 }
 
 }

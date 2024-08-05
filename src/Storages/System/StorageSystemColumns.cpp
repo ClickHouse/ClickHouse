@@ -338,7 +338,7 @@ private:
     std::shared_ptr<StorageSystemColumns> storage;
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
-    ActionsDAGPtr virtual_columns_filter;
+    std::optional<ActionsDAG> virtual_columns_filter;
 };
 
 void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -355,7 +355,7 @@ void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
 
         /// Must prepare sets here, initializePipeline() would be too late, see comment on FutureSetFromSubquery.
         if (virtual_columns_filter)
-            VirtualColumnUtils::buildSetsForDAG(virtual_columns_filter, context);
+            VirtualColumnUtils::buildSetsForDAG(*virtual_columns_filter, context);
     }
 }
 
@@ -468,7 +468,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 
     /// Filter block with `database` and `table` columns.
     if (virtual_columns_filter)
-        VirtualColumnUtils::filterBlockWithDAG(virtual_columns_filter, block_to_filter, context);
+        VirtualColumnUtils::filterBlockWithPredicate(virtual_columns_filter->getOutputs().at(0), block_to_filter, context);
 
     if (!block_to_filter.rows())
     {
