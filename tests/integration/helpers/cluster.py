@@ -2440,7 +2440,7 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=30):
+    def wait_rabbitmq_to_start(self, timeout=60):
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
@@ -2468,7 +2468,7 @@ class ClickHouseCluster:
                 )
             rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
         except Exception as e:
-            logging.debug("Unable to get logs from docker.")
+            logging.debug(f"Unable to get logs from docker: {e}.")
         raise Exception("Cannot wait RabbitMQ container")
 
     def wait_nats_is_available(self, max_retries=5):
@@ -2817,11 +2817,13 @@ class ClickHouseCluster:
             images_pull_cmd = self.base_cmd + ["pull"]
             # sometimes dockerhub/proxy can be flaky
 
-            retry(
-                log_function=lambda exception: logging.info(
-                    "Got exception pulling images: %s", exception
-                ),
-            )(run_and_check)(images_pull_cmd)
+            def logging_pulling_images(**kwargs):
+                if "exception" in kwargs:
+                    logging.info(
+                        "Got exception pulling images: %s", kwargs["exception"]
+                    )
+
+            retry(log_function=logging_pulling_images)(run_and_check)(images_pull_cmd)
 
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")
@@ -3094,11 +3096,17 @@ class ClickHouseCluster:
                     "Trying to create Azurite instance by command %s",
                     " ".join(map(str, azurite_start_cmd)),
                 )
-                retry(
-                    log_function=lambda exception: logging.info(
+
+                def logging_azurite_initialization(exception, retry_number, sleep_time):
+                    logging.info(
                         f"Azurite initialization failed with error: {exception}"
-                    ),
-                )(run_and_check)(azurite_start_cmd)
+                    )
+
+                retry(
+                    log_function=logging_azurite_initialization,
+                )(
+                    run_and_check
+                )(azurite_start_cmd)
                 self.up_called = True
                 logging.info("Trying to connect to Azurite")
                 self.wait_azurite_to_start()
