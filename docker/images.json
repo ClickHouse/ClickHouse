@@ -7,10 +7,6 @@
         "name": "clickhouse/cctools",
         "dependent": []
     },
-    "docker/packager/gdb": {
-        "name": "clickhouse/gdb",
-        "dependent": []
-    },
     "docker/test/compatibility/centos": {
         "name": "clickhouse/test-old-centos",
         "dependent": []
