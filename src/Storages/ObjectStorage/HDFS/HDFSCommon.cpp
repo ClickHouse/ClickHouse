@@ -192,7 +192,7 @@ String getNameNodeCluster(const String &hdfs_url)
 void checkHDFSURL(const String & url)
 {
     if (!re2::RE2::FullMatch(url, std::string(HDFS_URL_REGEXP)))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}. It should have structure 'hdfs://<host_name>:<port>/<path>'", url);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS URL: {}. It should have structure 'hdfs://<host_name>:<port>/<path>'", url);
 }
 
 }
