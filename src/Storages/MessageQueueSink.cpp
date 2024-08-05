@@ -46,6 +46,8 @@ void MessageQueueSink::consume(Chunk & chunk)
     if (columns.empty())
         return;
 
+    /// The formatter might hold pointers to buffer (e.g. if PeekableWriteBuffer is used), which means the formatter
+    /// needs to be reset after buffer might reallocate its memory. In this exact case after restarting the buffer.
     if (row_format)
     {
         size_t row = 0;
@@ -77,6 +79,4 @@ void MessageQueueSink::consume(Chunk & chunk)
         format->resetFormatter();
     }
 }
-
-
 }

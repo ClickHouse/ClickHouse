@@ -5098,7 +5098,7 @@ def test_multiple_read_in_materialized_views(kafka_cluster, max_retries=15):
 
 
 def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
-    # reproduction of #https://github.com/ClickHouse/ClickHouse/issues/61060 with validating the written messages
+    # reproduction of #61060 with validating the written messages
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
