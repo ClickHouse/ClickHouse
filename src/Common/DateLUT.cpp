@@ -272,8 +272,9 @@ void DateLUT::setPreferSystemTZData()
                                                    const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> & fallback
                                                    ) -> std::unique_ptr<cctz::ZoneInfoSource>
     {
-        if (auto tz_source = fallback(name))
-            return tz_source;
+	auto system_tz_source = fallback(name);
+        if (system_tz_source)
+            return system_tz_source;
 
         std::string_view tz_file = ::getTimeZone(name.data());
 
@@ -281,6 +282,6 @@ void DateLUT::setPreferSystemTZData()
             return std::make_unique<cctz_extension::Source>(tz_file.data(), tz_file.size());
 
         /// If not found in system AND in built-in, let fallback() handle this.
-        return fallback(name);
+        return system_tz_source;
     };
 }
