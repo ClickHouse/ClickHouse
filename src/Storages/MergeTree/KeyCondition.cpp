@@ -1200,7 +1200,7 @@ bool KeyCondition::tryPrepareSetIndex(
       */
     auto set_columns = prepared_set->getSetElements();
     auto set_types = future_set->getTypes();
-        {
+    {
         Columns new_columns;
         DataTypes new_types;
         while (set_columns.size() < left_args_count) /// If we have an unpacked tuple inside, we unpack it
