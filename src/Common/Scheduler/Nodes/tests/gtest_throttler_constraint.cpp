@@ -10,7 +10,7 @@ using namespace DB;
 
 using ResourceTest = ResourceTestClass;
 
-/// Test disabled because of leaks in the test themselves: https://github.com/ClickHouse/ClickHouse/issues/67678
+/// Tests disabled because of leaks in the test themselves: https://github.com/ClickHouse/ClickHouse/issues/67678
 
 TEST(DISABLED_SchedulerThrottlerConstraint, LeakyBucketConstraint)
 {
