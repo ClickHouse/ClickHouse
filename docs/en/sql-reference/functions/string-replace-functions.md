@@ -223,3 +223,75 @@ SELECT translateUTF8('Münchener Straße', 'üß', 'us') AS res;
 │ Munchener Strase │
 └──────────────────┘
 ```
+
+## overlay
+
+Replace the string `s` with the string `replace` starting from the 1-based `position` for `length` bytes. If `length` is omitted or negative, then it defaults to the length of `replace`.
+
+**Syntax**
+
+```sql
+overlay(s, replace, position[, length])
+```
+
+**Parameters**
+
+- `s`: A string type [String](../data-types/string.md).
+- `replace`: A string type [String](../data-types/string.md).
+- `position`: An integer type [Int](../data-types/int.md).
+- `length`: Optional. An integer type [Int](../data-types/int.md).
+
+**Returned value**
+
+- A [String](../data-types/string.md) data type value. If `position` is negative the position is counted starting from the back. `length` specifies the length of the snippet within input to be replaced.
+
+**Example**
+
+```sql
+SELECT overlay('Spark SQL', 'CORE', 7) AS res;
+```
+
+Result:
+
+```text
+ ┌─res────────┐
+ │ Spark CORE │
+ └────────────┘
+```
+
+## overlayUTF8
+
+Replace the string `s` with the string `replace` starting from the 1-based `position` for `length` UTF-8 characters. If `length` is omitted or negative, then it defaults to the length of `replace`.
+
+Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+
+**Syntax**
+
+```sql
+overlayUTF8(s, replace, position[, length])
+```
+
+**Parameters**
+
+- `s`: A string type [String](../data-types/string.md).
+- `replace`: A string type [String](../data-types/string.md).
+- `position`: An integer type [Int](../data-types/int.md).
+- `length`: Optional. An integer type [Int](../data-types/int.md).
+
+**Returned value**
+
+- A [String](../data-types/string.md) data type value. If `position` is negative the position is counted starting from the back. `length` specifies the length of the snippet within input to be replaced.
+
+**Example**
+
+```sql
+SELECT overlayUTF8('ClickHouse是一款OLAP数据库', '开源', 12, 2) AS res;
+```
+
+Result:
+
+```text
+┌─res────────────────────────┐
+│ ClickHouse是开源OLAP数据库   │
+└────────────────────────────┘
+```
