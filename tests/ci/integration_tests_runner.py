@@ -30,7 +30,8 @@ CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-odbc-bridge"
 CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-library-bridge"
 
 FLAKY_TRIES_COUNT = 10  # run whole pytest several times
-FLAKY_REPEAT_COUNT = 5  # runs test case in single module several times
+# Disable repeat of changed tests for flaky check because it doesn't support per-file runs
+FLAKY_REPEAT_COUNT = 0  # runs test case in single module several times
 MAX_TIME_SECONDS = 3600
 
 MAX_TIME_IN_SANDBOX = 20 * 60  # 20 minutes
@@ -643,7 +644,11 @@ class ClickhouseIntegrationTestsRunner:
 
             test_cmd = " ".join([shlex.quote(test) for test in sorted(test_names)])
             parallel_cmd = f" --parallel {num_workers} " if num_workers > 0 else ""
-            repeat_cmd = f" --count {repeat_count} " if repeat_count > 0 else ""
+
+            repeat_cmd = ""
+            if repeat_count:
+                repeat_cmd = f"--count {repeat_count} " if repeat_count > 0 else ""
+
             # -r -- show extra test summary:
             # -f -- (f)ailed
             # -E -- (E)rror
