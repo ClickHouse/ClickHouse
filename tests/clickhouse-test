@@ -682,7 +682,6 @@ class FailureReason(enum.Enum):
     BUILD = "not running for current build"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
     SHARED_MERGE_TREE = "no-shared-merge-tree"
-    DISTRIBUTED_CACHE = "distributed-cache"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -1071,7 +1070,6 @@ class TestCase:
         return description + "\n"
 
     def apply_random_settings_limits(self, random_settings):
-        print("Random settings limits:", self.random_settings_limits)
         for setting in random_settings:
             if setting in self.random_settings_limits:
                 min = self.random_settings_limits[setting][0]
@@ -1211,9 +1209,6 @@ class TestCase:
         elif tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
-        elif tags and ("no-distributed-cache" in tags) and args.distributed_cache:
-            return FailureReason.DISTRIBUTED_CACHE
-
         elif (
             tags
             and ("atomic-database" in tags)
@@ -1248,11 +1243,6 @@ class TestCase:
 
         elif "no-batch" in tags and (
             args.run_by_hash_num is not None or args.run_by_hash_total is not None
-        ):
-            return FailureReason.SKIP
-
-        elif "no-flaky-check" in tags and (
-            1 == int(os.environ.get("IS_FLAKY_CHECK", 0))
         ):
             return FailureReason.SKIP
 
@@ -2295,6 +2285,7 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
                         args, test_suite, client_options, server_logs_level
                     )
                     test_result = test_case.process_result(test_result, MESSAGES)
+                    break
                 except TimeoutError:
                     break
                 finally:
@@ -3279,12 +3270,6 @@ def parse_args():
         action="store_true",
         default=False,
         help="Run tests over s3 storage",
-    )
-    parser.add_argument(
-        "--distributed-cache",
-        action="store_true",
-        default=False,
-        help="Run tests with enabled distributed cache",
     )
     parser.add_argument(
         "--azure-blob-storage",
