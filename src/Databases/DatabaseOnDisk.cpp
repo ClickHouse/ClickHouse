@@ -313,7 +313,7 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
         std::lock_guard lock(mutex);
         if (const auto it = snapshot_detached_tables.find(table_name); it == snapshot_detached_tables.end())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Snapshot doesn't contain info about detached table={}", table_name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Snapshot doesn't contain info about detached table `{}`", table_name);
         }
         else
         {
