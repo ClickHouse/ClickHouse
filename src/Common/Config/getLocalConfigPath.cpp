@@ -1,4 +1,4 @@
-#include <Common/Config/getClientConfigPath.h>
+#include <Common/Config/getLocalConfigPath.h>
 
 #include <filesystem>
 #include <vector>
@@ -9,15 +9,15 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-std::optional<std::string> getClientConfigPath(const std::string & home_path)
+std::optional<std::string> getLocalConfigPath(const std::string & home_path)
 {
     std::string config_path;
 
     std::vector<std::string> names;
-    names.emplace_back("./clickhouse-client");
+    names.emplace_back("./clickhouse-local");
     if (!home_path.empty())
-        names.emplace_back(home_path + "/.clickhouse-client/config");
-    names.emplace_back("/etc/clickhouse-client/config");
+        names.emplace_back(home_path + "/.clickhouse-local/config");
+    names.emplace_back("/etc/clickhouse-local/config");
 
     for (const auto & name : names)
     {
