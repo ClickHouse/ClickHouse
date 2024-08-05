@@ -498,7 +498,6 @@ ConditionSelectivityEstimator MergeTreeData::getConditionSelectivityEstimatorByP
         try
         {
             auto stats = part->loadStatistics();
-            /// TODO: We only have one stats file for every part.
             result.addRows(part->rows_count);
             for (const auto & stat : stats)
                 result.merge(part->info.getPartNameV1(), stat);

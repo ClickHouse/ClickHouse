@@ -1,5 +1,6 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
@@ -14,6 +15,34 @@ void ConditionSelectivityEstimator::ColumnSelectivityEstimator::merge(String par
     if (part_statistics.contains(part_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "part {} has been added in column {}", part_name, stats->columnName());
     part_statistics[part_name] = stats;
+    stats->setTargetType(statistics_target_types);
+}
+
+bool ConditionSelectivityEstimator::ColumnSelectivityEstimator::convertToTargetType(Field & val, const String & op) const
+{
+    auto tdigest_type_it = statistics_target_types.find(StatisticsType::TDigest);
+    auto cmsketch_type_it = statistics_target_types.find(StatisticsType::CountMinSketch);
+
+    if (op == "less" || op == "lessOrEquals" || op == "greater" || op == "greaterOrEquals")
+    {
+        if (tdigest_type_it == statistics_target_types.end())
+            return false;
+        val = convertFieldToType(val, *(tdigest_type_it->second));
+    }
+    else if (op == "equals")
+    {
+        if (cmsketch_type_it != statistics_target_types.end())
+            val = convertFieldToType(val, *(cmsketch_type_it)->second);
+        else if (tdigest_type_it != statistics_target_types.end())
+            val = convertFieldToType(val, *(tdigest_type_it)->second);
+        else
+            return false;
+    }
+    else
+        return false;
+    if (val.isNull())
+        return false;
+    return true;
 }
 
 Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(const Field & val, Float64 rows) const
@@ -37,16 +66,6 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreat
 
 Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(const Field & val, Float64 rows) const
 {
-    if (part_statistics.empty())
-    {
-        auto float_val = StatisticsUtils::tryConvertToFloat64(val);
-        if (!float_val)
-            return default_unknown_cond_factor * rows;
-        else if (float_val.value() < - threshold || float_val.value() > threshold)
-            return default_normal_cond_factor * rows;
-        else
-            return default_good_cond_factor * rows;
-    }
     Float64 result = 0;
     Float64 partial_cnt = 0;
     for (const auto & [key, estimator] : part_statistics)
@@ -148,6 +167,9 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
         dummy = true;
 
     auto [op, val] = extractBinaryOp(node, col);
+
+    if (!estimator.convertToTargetType(val, op))
+        dummy = true;
 
     if (op == "equals")
     {

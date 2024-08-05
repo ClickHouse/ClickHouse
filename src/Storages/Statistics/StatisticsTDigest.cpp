@@ -1,5 +1,6 @@
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
@@ -43,18 +44,19 @@ void StatisticsTDigest::deserialize(ReadBuffer & buf)
 
 Float64 StatisticsTDigest::estimateLess(const Field & val) const
 {
-    auto val_as_float = StatisticsUtils::tryConvertToFloat64(val);
-    if (val_as_float)
-        return t_digest.getCountLessThan(*val_as_float);
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'tdigest' does not support estimating value of type {}", val.getTypeName());
+    auto val_as_float = val.get<Float64>();
+    return t_digest.getCountLessThan(val_as_float);
 }
 
 Float64 StatisticsTDigest::estimateEqual(const Field & val) const
 {
-    auto val_as_float = StatisticsUtils::tryConvertToFloat64(val);
-    if (val_as_float)
-        return t_digest.getCountEqual(*val_as_float);
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'tdigest' does not support estimating value of type {}", val.getTypeName());
+    auto val_as_float = val.get<Float64>();
+    return t_digest.getCountEqual(val_as_float);
+}
+
+DataTypePtr StatisticsTDigest::getTargeType() const
+{
+    return std::make_shared<DataTypeFloat64>();
 }
 
 void tdigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type)

@@ -50,13 +50,6 @@ std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & field)
     }
 }
 
-std::optional<String> StatisticsUtils::tryConvertToString(const DB::Field & field)
-{
-    if (field.getType() == Field::Types::String)
-        return field.get<String>();
-    return {};
-}
-
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
     : stat(stat_)
 {
@@ -188,6 +181,12 @@ const String & ColumnStatistics::columnName() const
 UInt64 ColumnStatistics::rowCount() const
 {
     return rows;
+}
+
+void ColumnStatistics::setTargetType(std::map<StatisticsType, DataTypePtr> & statistics_target_type) const
+{
+    for (const auto & [stats_type, stats_ptr] : stats)
+        statistics_target_type[stats_type] = stats_ptr->getTargeType();
 }
 
 void MergeTreeStatisticsFactory::registerCreator(StatisticsType stats_type, Creator creator)

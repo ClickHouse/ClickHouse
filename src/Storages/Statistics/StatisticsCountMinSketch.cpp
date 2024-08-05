@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/convertFieldToType.h>
 
 #if USE_DATASKETCHES
 
@@ -34,18 +33,8 @@ StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescrip
 
 Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
 {
-    /// Try to convert field to data_type. Converting string to proper data types such as: number, date, datetime, IPv4, Decimal etc.
-    /// Return null if val larger than the range of data_type
-    ///
-    /// For example: if data_type is Int32:
-    ///     1. For 1.0, 1, '1', return Field(1)
-    ///     2. For 1.1, max_value_int64, return null
-    Field val_converted = convertFieldToType(val, *data_type);
-    if (val_converted.isNull())
-        return 0;
-
     if (data_type->isValueRepresentedByNumber())
-        return sketch.get_estimate(&val_converted, data_type->getSizeOfValueInMemory());
+        return sketch.get_estimate(&val, data_type->getSizeOfValueInMemory());
 
     if (isStringOrFixedString(data_type))
         return sketch.get_estimate(val.get<String>());

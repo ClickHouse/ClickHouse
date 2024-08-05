@@ -2,6 +2,7 @@
 
 #include <Storages/Statistics/Statistics.h>
 #include <Core/Field.h>
+#include "Storages/StatisticsDescription.h"
 
 namespace DB
 {
@@ -26,8 +27,12 @@ private:
         /// We store the part_name and part_statistics.
         /// then simply get selectivity for every part_statistics and combine them.
         std::map<String, ColumnStatisticsPtr> part_statistics;
+        /// We need to convert the constant value to a target type to estimate.
+        std::map<StatisticsType, DataTypePtr> statistics_target_types;
 
         void merge(String part_name, ColumnStatisticsPtr stats);
+
+        bool convertToTargetType(Field & value, const String & op) const;
 
         Float64 estimateLess(const Field & val, Float64 rows) const;
 
