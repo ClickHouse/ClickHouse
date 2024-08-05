@@ -81,18 +81,18 @@ public:
         //File name to drop is escaped_db_name.escaped_table_name.uuid.sql
         //File name to create is table_name.sql
         auto max_to_create = static_cast<size_t>(max_create_length)  - suffix.length();
-        IColumn * col = arguments[0].column.get();
+        IColumn * col;
 
-        if (!isColumnConst(*col))
+        if (!isColumnConst(*arguments[0].column.get()))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be constant.", getName());
 
         String database_name;
         WhichDataType which(arguments[0].type);
 
         if (which.isString())
-            col = checkAndGetColumn<ColumnString>(col);
+            col = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         else
-            col = checkAndGetColumn<ColumnFixedString>(col);
+            col = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get());
 
         database_name = col->getDataAt(1).toString();
 
