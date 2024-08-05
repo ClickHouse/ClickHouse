@@ -2,12 +2,9 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-
-#include <Core/Settings.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -43,15 +40,13 @@ public:
         if (lower_name.ends_with("if"))
             return;
 
-        const auto & function_arguments_nodes = function_node->getArguments().getNodes();
+        auto & function_arguments_nodes = function_node->getArguments().getNodes();
         if (function_arguments_nodes.size() != 1)
             return;
 
         auto * if_node = function_arguments_nodes[0]->as<FunctionNode>();
         if (!if_node || if_node->getFunctionName() != "if")
             return;
-
-        FunctionNodePtr replaced_node;
 
         auto if_arguments_nodes = if_node->getArguments().getNodes();
         auto * first_const_node = if_arguments_nodes[1]->as<ConstantNode>();
@@ -78,11 +73,9 @@ public:
                     new_arguments[0] = std::move(if_arguments_nodes[1]);
 
                 new_arguments[1] = std::move(if_arguments_nodes[0]);
-
-                replaced_node = std::make_shared<FunctionNode>(function_node->getFunctionName() + "If");
-                replaced_node->getArguments().getNodes() = std::move(new_arguments);
-                replaced_node->getParameters().getNodes() = function_node->getParameters().getNodes();
-                resolveAggregateFunctionNodeByName(*replaced_node, replaced_node->getFunctionName());
+                function_arguments_nodes = std::move(new_arguments);
+                resolveAsAggregateFunctionWithIf(
+                    *function_node, {function_arguments_nodes[0]->getResultType(), function_arguments_nodes[1]->getResultType()});
             }
         }
         else if (first_const_node)
@@ -110,26 +103,27 @@ public:
                     FunctionFactory::instance().get("not", getContext())->build(not_function->getArgumentColumns()));
                 new_arguments[1] = std::move(not_function);
 
-                replaced_node = std::make_shared<FunctionNode>(function_node->getFunctionName() + "If");
-                replaced_node->getArguments().getNodes() = std::move(new_arguments);
-                replaced_node->getParameters().getNodes() = function_node->getParameters().getNodes();
-                resolveAggregateFunctionNodeByName(*replaced_node, replaced_node->getFunctionName());
+                function_arguments_nodes = std::move(new_arguments);
+                resolveAsAggregateFunctionWithIf(
+                    *function_node, {function_arguments_nodes[0]->getResultType(), function_arguments_nodes[1]->getResultType()});
             }
         }
+    }
 
-        if (!replaced_node)
-            return;
+private:
+    static inline void resolveAsAggregateFunctionWithIf(FunctionNode & function_node, const DataTypes & argument_types)
+    {
+        auto result_type = function_node.getResultType();
 
-        auto prev_type = function_node->getResultType();
-        auto curr_type = replaced_node->getResultType();
-        if (!prev_type->equals(*curr_type))
-            return;
+        AggregateFunctionProperties properties;
+        auto aggregate_function = AggregateFunctionFactory::instance().get(
+            function_node.getFunctionName() + "If",
+            function_node.getNullsAction(),
+            argument_types,
+            function_node.getAggregateFunction()->getParameters(),
+            properties);
 
-        /// Just in case, CAST compatible aggregate function states.
-        if (WhichDataType(prev_type).isAggregateFunction() && !DataTypeAggregateFunction::strictEquals(prev_type, curr_type))
-            node = createCastFunction(std::move(replaced_node), prev_type, getContext());
-        else
-            node = std::move(replaced_node);
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
 };
 

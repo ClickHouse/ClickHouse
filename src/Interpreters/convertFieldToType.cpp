@@ -17,7 +17,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeDynamic.h>
 
 #include <Core/AccurateComparison.h>
 
@@ -356,7 +355,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             for (size_t i = 0; i < src_arr_size; ++i)
             {
                 res[i] = convertFieldToType(src_arr[i], element_type);
-                if (res[i].isNull() && !canContainNull(element_type))
+                if (res[i].isNull() && !element_type.isNullable())
                 {
                     // See the comment for Tuples below.
                     have_unconvertible_element = true;
@@ -384,25 +383,25 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
                 res[i] = convertFieldToType(src_tuple[i], element_type);
-                if (res[i].isNull() && !canContainNull(element_type))
-                {
-                    /*
-                     * Either the source element was Null, or the conversion did not
-                     * succeed, because the source and the requested types of the
-                     * element are compatible, but the value is not convertible
-                     * (e.g. trying to convert -1 from Int8 to UInt8). In these
-                     * cases, consider the whole tuple also compatible but not
-                     * convertible. According to the specification of this function,
-                     * we must return Null in this case.
-                     *
-                     * The following elements might be not even compatible, so it
-                     * makes sense to check them to detect user errors. Remember
-                     * that there is an unconvertible element, and try to process
-                     * the remaining ones. The convertFieldToType for each element
-                     * will throw if it detects incompatibility.
-                     */
-                    have_unconvertible_element = true;
-                }
+                if (!res[i].isNull() || element_type.isNullable())
+                    continue;
+
+                /*
+                 * Either the source element was Null, or the conversion did not
+                 * succeed, because the source and the requested types of the
+                 * element are compatible, but the value is not convertible
+                 * (e.g. trying to convert -1 from Int8 to UInt8). In these
+                 * cases, consider the whole tuple also compatible but not
+                 * convertible. According to the specification of this function,
+                 * we must return Null in this case.
+                 *
+                 * The following elements might be not even compatible, so it
+                 * makes sense to check them to detect user errors. Remember
+                 * that there is an unconvertible element, and try to process
+                 * the remaining ones. The convertFieldToType for each element
+                 * will throw if it detects incompatibility.
+                 */
+                have_unconvertible_element = true;
             }
 
             return have_unconvertible_element ? Field(Null()) : Field(res);
@@ -433,11 +432,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 updated_entry[0] = convertFieldToType(key, key_type);
 
-                if (updated_entry[0].isNull() && !canContainNull(key_type))
+                if (updated_entry[0].isNull() && !key_type.isNullable())
                     have_unconvertible_element = true;
 
                 updated_entry[1] = convertFieldToType(value, value_type);
-                if (updated_entry[1].isNull() && !canContainNull(value_type))
+                if (updated_entry[1].isNull() && !value_type.isNullable())
                     have_unconvertible_element = true;
 
                 res[i] = updated_entry;
@@ -505,7 +504,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     else if (const DataTypeVariant * type_variant = typeid_cast<const DataTypeVariant *>(&type))
     {
         /// If we have type hint and Variant contains such type, no need to convert field.
-        if (from_type_hint && type_variant->tryGetVariantDiscriminator(from_type_hint->getName()))
+        if (from_type_hint && type_variant->tryGetVariantDiscriminator(*from_type_hint))
             return src;
 
         /// Create temporary column and check if we can insert this field to the variant.
@@ -513,11 +512,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         auto col = type_variant->createColumn();
         if (col->tryInsert(src))
             return src;
-    }
-    else if (isDynamic(type))
-    {
-        /// We can insert any field to Dynamic column.
-        return src;
     }
 
     /// Conversion from string by parsing.
@@ -545,7 +539,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         catch (Exception & e)
         {
             if (e.code() == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string '{}' to type {}", src.get<String>(), type.getName());
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string {} to type {}", src.get<String>(), type.getName());
 
             e.addMessage(fmt::format("while converting '{}' to {}", src.get<String>(), type.getName()));
             throw;
@@ -592,7 +586,7 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
 Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint)
 {
     bool is_null = from_value.isNull();
-    if (is_null && !canContainNull(to_type))
+    if (is_null && !to_type.isNullable() && !to_type.isLowCardinalityNullable())
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert NULL to {}", to_type.getName());
 
     Field converted = convertFieldToType(from_value, to_type, from_type_hint);
@@ -615,9 +609,9 @@ static bool decimalEqualsFloat(Field field, Float64 float_value)
     return decimal_to_float == float_value;
 }
 
-std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & from_type, const IDataType & to_type)
+std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & to_type)
 {
-    Field result_value = convertFieldToType(from_value, to_type, &from_type);
+    Field result_value = convertFieldToType(from_value, to_type);
 
     if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
     {

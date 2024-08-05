@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Coordination/KeeperFeatureFlags.h>
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
@@ -28,7 +27,7 @@ ColumnsDescription StorageSystemZooKeeperConnection::getColumnsDescription()
         /* 0 */ {"name", std::make_shared<DataTypeString>(), "ZooKeeper cluster's name."},
         /* 1 */ {"host", std::make_shared<DataTypeString>(), "The hostname/IP of the ZooKeeper node that ClickHouse connected to."},
         /* 2 */ {"port", std::make_shared<DataTypeUInt16>(), "The port of the ZooKeeper node that ClickHouse connected to."},
-        /* 3 */ {"index", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "The index of the ZooKeeper node that ClickHouse connected to. The index is from ZooKeeper config. If not connected, this column is NULL."},
+        /* 3 */ {"index", std::make_shared<DataTypeUInt8>(), "The index of the ZooKeeper node that ClickHouse connected to. The index is from ZooKeeper config."},
         /* 4 */ {"connected_time", std::make_shared<DataTypeDateTime>(), "When the connection was established."},
         /* 5 */ {"session_uptime_elapsed_seconds", std::make_shared<DataTypeUInt64>(), "Seconds elapsed since the connection was established."},
         /* 6 */ {"is_expired", std::make_shared<DataTypeUInt8>(), "Is the current connection expired."},
@@ -37,8 +36,7 @@ ColumnsDescription StorageSystemZooKeeperConnection::getColumnsDescription()
         /* 9 */ {"xid", std::make_shared<DataTypeInt32>(), "XID of the current session."},
         /* 10*/ {"enabled_feature_flags", std::make_shared<DataTypeArray>(std::move(feature_flags_enum)),
             "Feature flags which are enabled. Only applicable to ClickHouse Keeper."
-        },
-        /* 11*/ {"availability_zone", std::make_shared<DataTypeString>(), "Availability zone"},
+        }
     };
 }
 
@@ -65,7 +63,7 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
     /// For read-only snapshot type functionality, it's acceptable even though 'getZooKeeper' may cause data inconsistency.
     auto fill_data = [&](const String & name, const zkutil::ZooKeeperPtr zookeeper, MutableColumns & columns)
     {
-        auto index = zookeeper->getConnectedHostIdx();
+        Int8 index = zookeeper->getConnectedHostIdx();
         String host_port = zookeeper->getConnectedHostPort();
         if (index != -1 && !host_port.empty())
         {
@@ -79,10 +77,7 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
             columns[0]->insert(name);
             columns[1]->insert(host);
             columns[2]->insert(port);
-            if (index)
-                columns[3]->insert(*index);
-            else
-                columns[3]->insertDefault();
+            columns[3]->insert(index);
             columns[4]->insert(connected_time);
             columns[5]->insert(uptime);
             columns[6]->insert(zookeeper->expired());
@@ -90,7 +85,6 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
             columns[8]->insert(zookeeper->getClientID());
             columns[9]->insert(zookeeper->getConnectionXid());
             add_enabled_feature_flags(zookeeper);
-            columns[11]->insert(zookeeper->getConnectedHostAvailabilityZone());
         }
     };
 

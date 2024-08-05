@@ -31,15 +31,7 @@ struct UnlinkMetadataFileOperationOutcome
     UInt32 num_hardlinks = std::numeric_limits<UInt32>::max();
 };
 
-struct TruncateFileOperationOutcome
-{
-    StoredObjects objects_to_remove;
-};
-
-
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
-using TruncateFileOperationOutcomePtr = std::shared_ptr<TruncateFileOperationOutcome>;
-
 
 /// Tries to provide some "transactions" interface, which allow
 /// to execute (commit) operations simultaneously. We don't provide
@@ -151,14 +143,9 @@ public:
         return nullptr;
     }
 
-    virtual TruncateFileOperationOutcomePtr truncateFile(const std::string & /* path */, size_t /* size */)
-    {
-        throwNotImplemented();
-    }
-
     virtual ~IMetadataTransaction() = default;
 
-protected:
+private:
     [[noreturn]] static void throwNotImplemented()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation is not implemented");
@@ -242,7 +229,7 @@ public:
     /// object_storage_path is absolute.
     virtual StoredObjects getStorageObjects(const std::string & path) const = 0;
 
-protected:
+private:
     [[noreturn]] static void throwNotImplemented()
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation is not implemented");

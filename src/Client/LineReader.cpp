@@ -23,6 +23,14 @@ void trim(String & s)
     s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) { return !std::isspace(ch); }).base(), s.end());
 }
 
+/// Check if multi-line query is inserted from the paste buffer.
+/// Allows delaying the start of query execution until the entirety of query is inserted.
+bool hasInputData()
+{
+    pollfd fd{STDIN_FILENO, POLLIN, 0};
+    return poll(&fd, 1, 0) == 1;
+}
+
 struct NoCaseCompare
 {
     bool operator()(const std::string & str1, const std::string & str2)
@@ -54,14 +62,6 @@ void addNewWords(Words & to, const Words & from, Compare comp)
 
 namespace DB
 {
-
-/// Check if multi-line query is inserted from the paste buffer.
-/// Allows delaying the start of query execution until the entirety of query is inserted.
-bool LineReader::hasInputData() const
-{
-    pollfd fd{in_fd, POLLIN, 0};
-    return poll(&fd, 1, 0) == 1;
-}
 
 replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length, const char * word_break_characters)
 {
@@ -131,22 +131,11 @@ void LineReader::Suggest::addWords(Words && new_words) // NOLINT(cppcoreguidelin
     }
 }
 
-LineReader::LineReader(
-    const String & history_file_path_,
-    bool multiline_,
-    Patterns extenders_,
-    Patterns delimiters_,
-    std::istream & input_stream_,
-    std::ostream & output_stream_,
-    int in_fd_
-)
+LineReader::LineReader(const String & history_file_path_, bool multiline_, Patterns extenders_, Patterns delimiters_)
     : history_file_path(history_file_path_)
     , multiline(multiline_)
     , extenders(std::move(extenders_))
     , delimiters(std::move(delimiters_))
-    , input_stream(input_stream_)
-    , output_stream(output_stream_)
-    , in_fd(in_fd_)
 {
     /// FIXME: check extender != delimiter
 }
@@ -223,9 +212,9 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
     input.clear();
 
     {
-        output_stream << prompt;
-        std::getline(input_stream, input);
-        if (!input_stream.good())
+        std::cout << prompt;
+        std::getline(std::cin, input);
+        if (!std::cin.good())
             return ABORT;
     }
 

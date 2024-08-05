@@ -95,7 +95,7 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
                 it->name, it->type->getName(), virtual_column->type->getName());
         }
 
-        if (MergeTreeRangeReader::virtuals_to_fill.contains(it->name))
+        if (it->name == "_part_offset")
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Virtual column {} must be filled by range reader", it->name);
 
         Field field;
@@ -163,8 +163,8 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         if (dag)
         {
             dag->addMaterializingOutputActions();
-            auto actions = std::make_shared<ExpressionActions>(
-                std::move(*dag),
+            auto actions = std::make_shared<
+                ExpressionActions>(std::move(dag),
                 ExpressionActionsSettings::fromSettings(data_part_info_for_read->getContext()->getSettingsRef()));
             actions->execute(additional_columns);
         }

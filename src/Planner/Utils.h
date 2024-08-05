@@ -40,6 +40,9 @@ ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node);
 /// Build context for subquery execution
 ContextPtr buildSubqueryContext(const ContextPtr & context);
 
+/// Update mutable context for subquery execution
+void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
+
 /// Build limits for storage
 StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptions & options);
 
@@ -47,7 +50,7 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
   * Inputs are not used for actions dag outputs.
   * Only root query tree expression node is used as actions dag output.
   */
-ActionsDAG buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
+ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context);
 
@@ -73,6 +76,11 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map = nullptr);
 
+/// Build subquery to read specified columns from table expression
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & context);
+
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context);
 
 /// Build filter for specific table_expression
@@ -87,8 +95,5 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
         NameSet table_expression_required_names_without_filter = {});
 
 ASTPtr parseAdditionalResultFilter(const Settings & settings);
-
-using UsefulSets = std::unordered_set<FutureSetPtr>;
-void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 
 }

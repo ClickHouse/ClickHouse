@@ -598,7 +598,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
     {
         auto key_type = fuzzDataType(type_map->getKeyType());
         auto value_type = fuzzDataType(type_map->getValueType());
-        if (!DataTypeMap::isValidKeyType(key_type))
+        if (!DataTypeMap::checkKeyType(key_type))
             key_type = type_map->getKeyType();
 
         return std::make_shared<DataTypeMap>(key_type, value_type);
@@ -1242,9 +1242,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * explain_query = typeid_cast<ASTExplainQuery *>(ast.get()))
     {
-        const auto & explained_query = explain_query->getExplainedQuery();
         /// Fuzzing EXPLAIN query to SELECT query randomly
-        if (explained_query && explained_query->getQueryKind() == IAST::QueryKind::Select && fuzz_rand() % 20 == 0)
+        if (fuzz_rand() % 20 == 0 && explain_query->getExplainedQuery()->getQueryKind() == IAST::QueryKind::Select)
         {
             auto select_query = explain_query->getExplainedQuery()->clone();
             fuzz(select_query);

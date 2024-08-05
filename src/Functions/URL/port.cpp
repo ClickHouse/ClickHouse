@@ -1,11 +1,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Functions/URL/domain.h>
+#include "domain.h"
 
 
 namespace DB
@@ -46,7 +46,7 @@ struct FunctionPortImpl : public IFunction
     }
 
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         UInt16 default_port = 0;
         if (arguments.size() == 2)
@@ -64,7 +64,7 @@ struct FunctionPortImpl : public IFunction
             typename ColumnVector<UInt16>::Container & vec_res = col_res->getData();
             vec_res.resize(url_column->size());
 
-            vector(default_port, url_strs->getChars(), url_strs->getOffsets(), vec_res, input_rows_count);
+            vector(default_port, url_strs->getChars(), url_strs->getOffsets(), vec_res);
             return col_res;
         }
         else
@@ -73,10 +73,12 @@ struct FunctionPortImpl : public IFunction
 }
 
 private:
-    static void vector(UInt16 default_port, const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt16> & res, size_t input_rows_count)
+    static void vector(UInt16 default_port, const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt16> & res)
     {
+        size_t size = offsets.size();
+
         ColumnString::Offset prev_offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < size; ++i)
         {
             res[i] = extractPort(default_port, data, prev_offset, offsets[i] - prev_offset - 1);
             prev_offset = offsets[i];

@@ -3,7 +3,6 @@
 #include <memory>
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/Operators.h>
@@ -134,6 +133,7 @@ AggregatingStep::AggregatingStep(
     {
         output_stream->sort_description = group_by_sort_description;
         output_stream->sort_scope = DataStream::SortScope::Global;
+        output_stream->has_single_port = true;
     }
 }
 
@@ -146,6 +146,7 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     {
         output_stream->sort_description = group_by_sort_description;
         output_stream->sort_scope = DataStream::SortScope::Global;
+        output_stream->has_single_port = true;
     }
 
     explicit_sorting_required_for_aggregation_in_order = false;
@@ -301,15 +302,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 const auto & header = ports[set_counter]->getHeader();
 
                 /// Here we create a DAG which fills missing keys and adds `__grouping_set` column
-                ActionsDAG dag(header.getColumnsWithTypeAndName());
+                auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
                 ActionsDAG::NodeRawConstPtrs outputs;
                 outputs.reserve(output_header.columns() + 1);
 
                 auto grouping_col = ColumnConst::create(ColumnUInt64::create(1, set_counter), 0);
-                const auto * grouping_node = &dag.addColumn(
+                const auto * grouping_node = &dag->addColumn(
                     {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
 
-                grouping_node = &dag.materializeNode(*grouping_node);
+                grouping_node = &dag->materializeNode(*grouping_node);
                 outputs.push_back(grouping_node);
 
                 const auto & missing_columns = grouping_sets_params[set_counter].missing_keys;
@@ -330,22 +331,22 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                         column_with_default->finalize();
 
                         auto column = ColumnConst::create(std::move(column_with_default), 0);
-                        const auto * node = &dag.addColumn({ColumnPtr(std::move(column)), col.type, col.name});
-                        node = &dag.materializeNode(*node);
+                        const auto * node = &dag->addColumn({ColumnPtr(std::move(column)), col.type, col.name});
+                        node = &dag->materializeNode(*node);
                         outputs.push_back(node);
                     }
                     else
                     {
-                        const auto * column_node = dag.getOutputs()[header.getPositionByName(col.name)];
+                        const auto * column_node = dag->getOutputs()[header.getPositionByName(col.name)];
                         if (used_it != used_keys.end() && group_by_use_nulls && column_node->result_type->canBeInsideNullable())
-                            outputs.push_back(&dag.addFunction(to_nullable_function, { column_node }, col.name));
+                            outputs.push_back(&dag->addFunction(to_nullable_function, { column_node }, col.name));
                         else
                             outputs.push_back(column_node);
                     }
                 }
 
-                dag.getOutputs().swap(outputs);
-                auto expression = std::make_shared<ExpressionActions>(std::move(dag), settings.getActionsSettings());
+                dag->getOutputs().swap(outputs);
+                auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
                 auto transform = std::make_shared<ExpressionTransform>(header, expression);
 
                 connect(*ports[set_counter], transform->getInputPort());

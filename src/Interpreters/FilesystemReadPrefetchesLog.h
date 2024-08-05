@@ -10,7 +10,7 @@
 namespace DB
 {
 
-enum class FilesystemPrefetchState : uint8_t
+enum class FilesystemPrefetchState
 {
     USED,
     CANCELLED_WITH_SEEK,

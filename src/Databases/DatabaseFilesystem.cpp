@@ -1,7 +1,6 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseFilesystem.h>
 
-#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -230,7 +229,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseFilesystem::getTablesForBacku
  * Returns an empty iterator because the database does not have its own tables
  * But only caches them for quick access
  */
-DatabaseTablesIteratorPtr DatabaseFilesystem::getTablesIterator(ContextPtr, const FilterByNameFunction &, bool) const
+DatabaseTablesIteratorPtr DatabaseFilesystem::getTablesIterator(ContextPtr, const FilterByNameFunction &) const
 {
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }

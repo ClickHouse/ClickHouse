@@ -94,7 +94,7 @@ protected:
     void removeConstColumns(Chunk & chunk);
     void enrichChunkWithConstants(Chunk & chunk);
 
-    enum class Stage : uint8_t
+    enum class Stage
     {
         Consume = 0,
         Generate,

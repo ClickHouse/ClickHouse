@@ -1,13 +1,14 @@
 #pragma once
 
-#include <Core/TypeId.h>
-#include <base/StringRef.h>
 #include <Common/COW.h>
-#include <Common/Exception.h>
 #include <Common/PODArray_fwd.h>
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <base/StringRef.h>
+#include <Core/TypeId.h>
 
 #include "config.h"
+
 
 class SipHash;
 class Collator;
@@ -35,19 +36,11 @@ class Field;
 class WeakHash32;
 class ColumnConst;
 
-/// A range of column values between row indexes `from` and `to`. The name "equal range" is due to table sorting as its main use case: With
-/// a PRIMARY KEY (c_pk1, c_pk2, ...), the first PK column is fully sorted. The second PK column is sorted within equal-value runs of the
-/// first PK column, and so on. The number of runs (ranges) per column increases from one primary key column to the next. An "equal range"
-/// is a run in a previous column, within the values of the current column can be sorted.
-struct EqualRange
-{
-    size_t from;   /// inclusive
-    size_t to;     /// exclusive
-    EqualRange(size_t from_, size_t to_) : from(from_), to(to_) { chassert(from <= to); }
-    size_t size() const { return to - from; }
-};
-
-using EqualRanges = std::vector<EqualRange>;
+/*
+ * Represents a set of equal ranges in previous column to perform sorting in current column.
+ * Used in sorting by tuples.
+ * */
+using EqualRanges = std::vector<std::pair<size_t, size_t> >;
 
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
@@ -179,42 +172,18 @@ public:
 
     /// Appends n-th element from other column with the same type.
     /// Is used in merge-sort and merges. It could be implemented in inherited classes more optimally than default implementation.
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     virtual void insertFrom(const IColumn & src, size_t n);
-#else
-    void insertFrom(const IColumn & src, size_t n)
-    {
-        assertTypeEquality(src);
-        doInsertFrom(src, n);
-    }
-#endif
 
     /// Appends range of elements from other column with the same type.
     /// Could be used to concatenate columns.
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     virtual void insertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
-#else
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length)
-    {
-        assertTypeEquality(src);
-        doInsertRangeFrom(src, start, length);
-    }
-#endif
 
     /// Appends one element from other column with the same type multiple times.
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     virtual void insertManyFrom(const IColumn & src, size_t position, size_t length)
     {
         for (size_t i = 0; i < length; ++i)
             insertFrom(src, position);
     }
-#else
-    void insertManyFrom(const IColumn & src, size_t position, size_t length)
-    {
-        assertTypeEquality(src);
-        doInsertManyFrom(src, position, length);
-    }
-#endif
 
     /// Appends one field multiple times. Can be optimized in inherited classes.
     virtual void insertMany(const Field & field, size_t length)
@@ -345,15 +314,7 @@ public:
       *
       * For non Nullable and non floating point types, nan_direction_hint is ignored.
       */
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     [[nodiscard]] virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
-#else
-    [[nodiscard]] int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
-    {
-        assertTypeEquality(rhs);
-        return doCompareAt(n, m, rhs, nan_direction_hint);
-    }
-#endif
 
 #if USE_EMBEDDED_COMPILER
 
@@ -437,9 +398,6 @@ public:
                         "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
                         "or for Array or Tuple, containing them.");
     }
-
-    /// Estimate the cardinality (number of unique values) of the values in 'equal_range' after permutation, formally: |{ column[permutation[r]] : r in equal_range }|.
-    virtual size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const;
 
     /** Copies each element according offsets parameter.
       * (i-th element should be copied offsets[i] - offsets[i - 1] times.)
@@ -576,11 +534,6 @@ public:
         return res;
     }
 
-    /// Checks if column has dynamic subcolumns.
-    virtual bool hasDynamicStructure() const { return false; }
-    /// For columns with dynamic subcolumns this method takes dynamic structure from source columns
-    /// and creates proper resulting dynamic structure in advance for merge of these source columns.
-    virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/) {}
 
     /** Some columns can contain another columns inside.
       * So, we have a tree of columns. But not all combinations are possible.
@@ -641,8 +594,6 @@ public:
 
     [[nodiscard]] virtual bool isSparse() const { return false; }
 
-    [[nodiscard]] virtual bool isConst() const { return false; }
-
     [[nodiscard]] virtual bool isCollationSupported() const { return false; }
 
     virtual ~IColumn() = default;
@@ -666,29 +617,6 @@ protected:
         Equals equals,
         Sort full_sort,
         PartialSort partial_sort) const;
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    virtual void doInsertFrom(const IColumn & src, size_t n);
-
-    virtual void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
-
-    virtual void doInsertManyFrom(const IColumn & src, size_t position, size_t length)
-    {
-        for (size_t i = 0; i < length; ++i)
-            insertFrom(src, position);
-    }
-
-    virtual int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
-
-private:
-    void assertTypeEquality(const IColumn & rhs) const
-    {
-        /// For Sparse and Const columns, we can compare only internal types. It is considered normal to e.g. insert from normal vector column to a sparse vector column.
-        /// This case is specifically handled in ColumnSparse implementation. Similar situation with Const column.
-        /// For the rest of column types we can compare the types directly.
-        chassert((isConst() || isSparse()) ? getDataType() == rhs.getDataType() : typeid(*this) == typeid(rhs));
-    }
-#endif
 };
 
 using ColumnPtr = IColumn::Ptr;
@@ -712,16 +640,12 @@ template <>
 struct IsMutableColumns<> { static const bool value = true; };
 
 
-/// Throws LOGICAL_ERROR if the type doesn't match.
 template <typename Type>
-const Type & checkAndGetColumn(const IColumn & column)
+const Type * checkAndGetColumn(const IColumn & column)
 {
-    return typeid_cast<const Type &>(column);
+    return typeid_cast<const Type *>(&column);
 }
 
-/// Returns nullptr if the type doesn't match.
-/// If you're going to dereference the returned pointer without checking for null, use the
-/// `const IColumn &` overload above instead.
 template <typename Type>
 const Type * checkAndGetColumn(const IColumn * column)
 {

@@ -44,27 +44,27 @@ class DefaultJSONStringSerializer
 public:
     explicit DefaultJSONStringSerializer(ColumnString & col_str_) : col_str(col_str_) { }
 
-    void addRawData(const char * ptr, size_t len)
+    inline void addRawData(const char * ptr, size_t len)
     {
         out << std::string_view(ptr, len);
     }
 
-    void addRawString(std::string_view str)
+    inline void addRawString(std::string_view str)
     {
         out << str;
     }
 
     /// serialize the json element into stringstream
-    void addElement(const Element & element)
+    inline void addElement(const Element & element)
     {
         out << element.getElement();
     }
-    void commit()
+    inline void commit()
     {
         auto out_str = out.str();
         col_str.insertData(out_str.data(), out_str.size());
     }
-    void rollback() {}
+    inline void rollback() {}
 private:
     ColumnString & col_str;
     std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -82,27 +82,27 @@ public:
         prev_offset = offsets.empty() ? 0 : offsets.back();
     }
     /// Put the data into column's buffer directly.
-    void addRawData(const char * ptr, size_t len)
+    inline void addRawData(const char * ptr, size_t len)
     {
         chars.insert(ptr, ptr + len);
     }
 
-    void addRawString(std::string_view str)
+    inline void addRawString(std::string_view str)
     {
         chars.insert(str.data(), str.data() + str.size());
     }
 
     /// serialize the json element into column's buffer directly
-    void addElement(const Element & element)
+    inline void addElement(const Element & element)
     {
         formatter.append(element.getElement());
     }
-    void commit()
+    inline void commit()
     {
         chars.push_back(0);
         offsets.push_back(chars.size());
     }
-    void rollback()
+    inline void rollback()
     {
         chars.resize(prev_offset);
     }

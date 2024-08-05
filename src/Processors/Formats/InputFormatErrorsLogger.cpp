@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/filesystemHelpers.h>
-#include <Core/Settings.h>
 
 
 namespace DB

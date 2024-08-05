@@ -1,4 +1,7 @@
-#include <fmt/ranges.h>
+// Needs to go first because its partial specialization of fmt::formatter
+// should be defined before any instantiation
+#include <fmt/ostream.h>
+
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <IO/ReadBufferFromMemory.h>
 
