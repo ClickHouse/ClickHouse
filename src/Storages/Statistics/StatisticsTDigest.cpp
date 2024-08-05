@@ -53,7 +53,7 @@ Float64 StatisticsTDigest::estimateEqual(const Field & val) const
     return t_digest.getCountEqual(val_as_float);
 }
 
-DataTypePtr StatisticsTDigest::getTargeType() const
+DataTypePtr StatisticsTDigest::getTargetType() const
 {
     return std::make_shared<DataTypeFloat64>();
 }

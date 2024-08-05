@@ -23,7 +23,7 @@ public:
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;
 
-    DataTypePtr getTargeType() const override { return data_type; }
+    DataTypePtr getTargetType() const override { return data_type; }
 
 private:
     using Sketch = datasketches::count_min_sketch<UInt64>;

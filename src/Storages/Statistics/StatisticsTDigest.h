@@ -19,7 +19,7 @@ public:
     Float64 estimateLess(const Field & val) const override;
     Float64 estimateEqual(const Field & val) const override;
 
-    DataTypePtr getTargeType() const override;
+    DataTypePtr getTargetType() const override;
 
 private:
     QuantileTDigest<Float64> t_digest;

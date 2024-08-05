@@ -45,7 +45,7 @@ public:
     virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
     virtual Float64 estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
 
-    virtual DataTypePtr getTargeType() const { return nullptr; }
+    virtual DataTypePtr getTargetType() const { return nullptr; }
 
 protected:
     SingleStatisticsDescription stat;
