@@ -19,7 +19,7 @@ $CLICKHOUSE_CLIENT --query "SHOW TABLES" || echo "Failed"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM system.tables WHERE database = currentDatabase() FORMAT Null" || echo "Failed"
 
 # Multi queries are ok:
-$CLICKHOUSE_LOCAL --multiquery "SELECT 1; SELECT 2;" || echo "Failed"
+$CLICKHOUSE_LOCAL "SELECT 1; SELECT 2;" || echo "Failed"
 
 # It can run in interactive mode:
 function run()
@@ -45,9 +45,4 @@ expect eof
 EOF
 }
 
-run "$CLICKHOUSE_LOCAL --disable_suggestion"
-# Suggestions are off because the suggestion feature initializes itself by reading all available function
-# names from "system.functions". Getting the value for field "is_obsolete" occasionally throws (e.g. for
-# certain dictionary functions when dictionaries are not set up yet). Exceptions are properly handled, but
-# they exist for a short time. This, in combination with CLICKHOUSE_TERMINATE_ON_ANY_EXCEPTION, terminates
-# clickhouse-local and clickhouse-client when run in interactive mode *with* suggestions.
+run "$CLICKHOUSE_LOCAL"

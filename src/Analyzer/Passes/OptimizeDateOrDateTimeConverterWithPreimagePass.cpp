@@ -9,6 +9,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Core/Settings.h>
 
 namespace DB
 {

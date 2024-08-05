@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -17,6 +18,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
@@ -41,6 +43,7 @@
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace DB
 {
@@ -1197,7 +1200,7 @@ void MutationsInterpreter::Source::read(
         const auto & names = first_stage.filter_column_names;
         size_t num_filters = names.size();
 
-        ActionsDAGPtr filter;
+        std::optional<ActionsDAG> filter;
         if (!first_stage.filter_column_names.empty())
         {
             ActionsDAG::NodeRawConstPtrs nodes(num_filters);
@@ -1211,7 +1214,7 @@ void MutationsInterpreter::Source::read(
             MergeTreeSequentialSourceType::Mutation,
             plan, *data, storage_snapshot,
             part, required_columns,
-            apply_deleted_mask_, filter, context_,
+            apply_deleted_mask_, std::move(filter), context_,
             getLogger("MutationsInterpreter"));
     }
     else
@@ -1280,17 +1283,17 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag->appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
+                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), dag, stage.filter_column_names[i], false));
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), std::move(dag), stage.filter_column_names[i], false));
             }
             else
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag->appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
+                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), dag));
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(dag)));
             }
         }
 
