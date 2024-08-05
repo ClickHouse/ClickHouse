@@ -58,6 +58,8 @@ public:
         TABLE_ENGINE,
         DATABASE_ENGINE,
         BACKUP_NAME,
+        CODEC,
+        STATISTICS,
     };
     Kind kind = Kind::ORDINARY_FUNCTION;
 
