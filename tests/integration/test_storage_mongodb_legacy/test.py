@@ -58,8 +58,8 @@ def test_uuid(started_cluster):
 
     assert node.query("SELECT COUNT() FROM uuid_mongo_table") == "1\n"
     assert (
-            node.query("SELECT data from uuid_mongo_table where key = 0")
-            == "f0e77736-91d1-48ce-8f01-15123ca1c7ed\n"
+        node.query("SELECT data from uuid_mongo_table where key = 0")
+        == "f0e77736-91d1-48ce-8f01-15123ca1c7ed\n"
     )
     node.query("DROP TABLE uuid_mongo_table")
     mongo_table.drop()
@@ -83,13 +83,13 @@ def test_simple_select(started_cluster):
 
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
     assert (
-            node.query("SELECT sum(key) FROM simple_mongo_table")
-            == str(sum(range(0, 100))) + "\n"
+        node.query("SELECT sum(key) FROM simple_mongo_table")
+        == str(sum(range(0, 100))) + "\n"
     )
 
     assert (
-            node.query("SELECT data from simple_mongo_table where key = 42")
-            == hex(42 * 42) + "\n"
+        node.query("SELECT data from simple_mongo_table where key = 42")
+        == hex(42 * 42) + "\n"
     )
     node.query("DROP TABLE simple_mongo_table")
     simple_mongo_table.drop()
@@ -116,13 +116,13 @@ def test_simple_select_from_view(started_cluster):
 
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
     assert (
-            node.query("SELECT sum(key) FROM simple_mongo_table")
-            == str(sum(range(0, 100))) + "\n"
+        node.query("SELECT sum(key) FROM simple_mongo_table")
+        == str(sum(range(0, 100))) + "\n"
     )
 
     assert (
-            node.query("SELECT data from simple_mongo_table where key = 42")
-            == hex(42 * 42) + "\n"
+        node.query("SELECT data from simple_mongo_table where key = 42")
+        == hex(42 * 42) + "\n"
     )
     node.query("DROP TABLE simple_mongo_table")
     simple_mongo_table_view.drop()
@@ -214,68 +214,68 @@ def test_arrays(started_cluster):
 
     for column_name in ["arr_int64", "arr_int32", "arr_int16", "arr_int8"]:
         assert (
-                node.query(f"SELECT {column_name} FROM arrays_mongo_table WHERE key = 42")
-                == "[-43,-44,-45]\n"
+            node.query(f"SELECT {column_name} FROM arrays_mongo_table WHERE key = 42")
+            == "[-43,-44,-45]\n"
         )
 
     for column_name in ["arr_uint64", "arr_uint32", "arr_uint16", "arr_uint8"]:
         assert (
-                node.query(f"SELECT {column_name} FROM arrays_mongo_table WHERE key = 42")
-                == "[43,44,45]\n"
+            node.query(f"SELECT {column_name} FROM arrays_mongo_table WHERE key = 42")
+            == "[43,44,45]\n"
         )
 
     for column_name in ["arr_float32", "arr_float64"]:
         assert (
-                node.query(f"SELECT {column_name} FROM arrays_mongo_table WHERE key = 42")
-                == "[43.125,44.5,45.75]\n"
+            node.query(f"SELECT {column_name} FROM arrays_mongo_table WHERE key = 42")
+            == "[43.125,44.5,45.75]\n"
         )
 
     assert (
-            node.query(f"SELECT arr_date FROM arrays_mongo_table WHERE key = 42")
-            == "['2002-10-27','2024-01-08']\n"
+        node.query(f"SELECT arr_date FROM arrays_mongo_table WHERE key = 42")
+        == "['2002-10-27','2024-01-08']\n"
     )
 
     assert (
-            node.query(f"SELECT arr_datetime FROM arrays_mongo_table WHERE key = 42")
-            == "['2023-03-31 06:03:12','1999-02-28 12:46:34']\n"
+        node.query(f"SELECT arr_datetime FROM arrays_mongo_table WHERE key = 42")
+        == "['2023-03-31 06:03:12','1999-02-28 12:46:34']\n"
     )
 
     assert (
-            node.query(f"SELECT arr_string FROM arrays_mongo_table WHERE key = 42")
-            == "['43','44','45']\n"
+        node.query(f"SELECT arr_string FROM arrays_mongo_table WHERE key = 42")
+        == "['43','44','45']\n"
     )
 
     assert (
-            node.query(f"SELECT arr_uuid FROM arrays_mongo_table WHERE key = 42")
-            == "['f0e77736-91d1-48ce-8f01-15123ca1c7ed','93376a07-c044-4281-a76e-ad27cf6973c5']\n"
+        node.query(f"SELECT arr_uuid FROM arrays_mongo_table WHERE key = 42")
+        == "['f0e77736-91d1-48ce-8f01-15123ca1c7ed','93376a07-c044-4281-a76e-ad27cf6973c5']\n"
     )
 
     assert (
-            node.query(f"SELECT arr_mongo_uuid FROM arrays_mongo_table WHERE key = 42")
-            == "['f0e77736-91d1-48ce-8f01-15123ca1c7ed','93376a07-c044-4281-a76e-ad27cf6973c5']\n"
+        node.query(f"SELECT arr_mongo_uuid FROM arrays_mongo_table WHERE key = 42")
+        == "['f0e77736-91d1-48ce-8f01-15123ca1c7ed','93376a07-c044-4281-a76e-ad27cf6973c5']\n"
     )
 
     assert (
-            node.query(f"SELECT arr_arr_bool FROM arrays_mongo_table WHERE key = 42")
-            == "[[true,false,true],[true],[],[],[false],[false]]\n"
+        node.query(f"SELECT arr_arr_bool FROM arrays_mongo_table WHERE key = 42")
+        == "[[true,false,true],[true],[],[],[false],[false]]\n"
     )
 
     assert (
-            node.query(f"SELECT arr_empty FROM arrays_mongo_table WHERE key = 42") == "[]\n"
+        node.query(f"SELECT arr_empty FROM arrays_mongo_table WHERE key = 42") == "[]\n"
     )
 
     assert (
-            node.query(f"SELECT arr_null FROM arrays_mongo_table WHERE key = 42") == "[]\n"
+        node.query(f"SELECT arr_null FROM arrays_mongo_table WHERE key = 42") == "[]\n"
     )
 
     assert (
-            node.query(f"SELECT arr_arr_null FROM arrays_mongo_table WHERE key = 42")
-            == "[]\n"
+        node.query(f"SELECT arr_arr_null FROM arrays_mongo_table WHERE key = 42")
+        == "[]\n"
     )
 
     assert (
-            node.query(f"SELECT arr_nullable FROM arrays_mongo_table WHERE key = 42")
-            == "[]\n"
+        node.query(f"SELECT arr_nullable FROM arrays_mongo_table WHERE key = 42")
+        == "[]\n"
     )
 
     # Test INSERT SELECT
@@ -306,13 +306,13 @@ def test_complex_data_type(started_cluster):
 
     assert node.query("SELECT COUNT() FROM incomplete_mongo_table") == "100\n"
     assert (
-            node.query("SELECT sum(key) FROM incomplete_mongo_table")
-            == str(sum(range(0, 100))) + "\n"
+        node.query("SELECT sum(key) FROM incomplete_mongo_table")
+        == str(sum(range(0, 100))) + "\n"
     )
 
     assert (
-            node.query("SELECT data from incomplete_mongo_table where key = 42")
-            == hex(42 * 42) + "\n"
+        node.query("SELECT data from incomplete_mongo_table where key = 42")
+        == hex(42 * 42) + "\n"
     )
     node.query("DROP TABLE incomplete_mongo_table")
     incomplete_mongo_table.drop()
@@ -367,13 +367,13 @@ def test_secure_connection(started_cluster):
 
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
     assert (
-            node.query("SELECT sum(key) FROM simple_mongo_table")
-            == str(sum(range(0, 100))) + "\n"
+        node.query("SELECT sum(key) FROM simple_mongo_table")
+        == str(sum(range(0, 100))) + "\n"
     )
 
     assert (
-            node.query("SELECT data from simple_mongo_table where key = 42")
-            == hex(42 * 42) + "\n"
+        node.query("SELECT data from simple_mongo_table where key = 42")
+        == hex(42 * 42) + "\n"
     )
     node.query("DROP TABLE simple_mongo_table")
     simple_mongo_table.drop()
@@ -490,13 +490,13 @@ def test_simple_insert_select(started_cluster):
     )
 
     assert (
-            node.query("SELECT data from simple_mongo_table where key = 7").strip()
-            == "kek7"
+        node.query("SELECT data from simple_mongo_table where key = 7").strip()
+        == "kek7"
     )
     node.query("INSERT INTO simple_mongo_table(key) SELECT 12")
     assert int(node.query("SELECT count() from simple_mongo_table")) == 11
     assert (
-            node.query("SELECT data from simple_mongo_table where key = 12").strip() == ""
+        node.query("SELECT data from simple_mongo_table where key = 12").strip() == ""
     )
 
     node.query("DROP TABLE simple_mongo_table")
