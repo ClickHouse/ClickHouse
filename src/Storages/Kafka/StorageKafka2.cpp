@@ -652,12 +652,10 @@ void StorageKafka2::dropReplica()
         return;
     }
 
-    {
-        my_keeper->tryRemoveChildrenRecursive(replica_path);
+    my_keeper->tryRemoveChildrenRecursive(replica_path);
 
-        if (my_keeper->tryRemove(replica_path) != Coordination::Error::ZOK)
-            LOG_ERROR(log, "Replica was not completely removed from Keeper, {} still exists and may contain some garbage.", replica_path);
-    }
+    if (my_keeper->tryRemove(replica_path) != Coordination::Error::ZOK)
+        LOG_ERROR(log, "Replica was not completely removed from Keeper, {} still exists and may contain some garbage.", replica_path);
 
     /// Check that `zookeeper_path` exists: it could have been deleted by another replica after execution of previous line.
     Strings replicas;
