@@ -991,9 +991,10 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
 #### Available Types of Column Statistics {#available-types-of-column-statistics}
 
-- `min_max`
+- `MinMax`
 
-    min_max statistics allows to estimate selectivity of range condition for numeric columns.
+    MinMax statistics allows to estimate selectivity of range condition for numeric columns.
+
 - `TDigest`
 
     [TDigest](https://github.com/tdunning/t-digest) sketches which allow to compute approximate percentiles (e.g. the 90th percentile) for numeric columns.

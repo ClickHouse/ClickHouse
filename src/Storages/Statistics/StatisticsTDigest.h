@@ -24,7 +24,7 @@ private:
     DataTypePtr data_type;
 };
 
-void tdigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
-StatisticsPtr tdigestCreator(const SingleStatisticsDescription & stat, DataTypePtr);
+void tdigestStatisticsValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
+StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & stat, DataTypePtr);
 
 }

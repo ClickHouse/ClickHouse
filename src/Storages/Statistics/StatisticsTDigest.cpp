@@ -58,7 +58,7 @@ Float64 StatisticsTDigest::estimateEqual(const Field & val) const
     return t_digest.getCountEqual(val_as_float);
 }
 
-void tdigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
+void tdigestStatisticsValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
     data_type = removeLowCardinalityAndNullable(data_type);
@@ -66,7 +66,7 @@ void tdigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'tdigest' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr tdigestCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
+StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
 {
     return std::make_shared<StatisticsTDigest>(stat, data_type);
 }

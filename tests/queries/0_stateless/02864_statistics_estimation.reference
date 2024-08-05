@@ -1,5 +1,5 @@
-CREATE TABLE default.tab\n(\n    `a` String,\n    `b` UInt64,\n    `c` Int64,\n    `d` DateTime64(3),\n    `pk` String\n)\nENGINE = MergeTree\nORDER BY pk\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
-Test statistics min_max:
+CREATE TABLE default.tab\n(\n    `a` String,\n    `b` UInt64,\n    `c` Int64,\n    `d` DateTime,\n    `pk` String\n)\nENGINE = MergeTree\nORDER BY pk\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
+Test statistics minmax:
         Prewhere info
           Prewhere filter
           Prewhere filter column: and(greater(d, _CAST(9998_DateTime(\'UTC\'), \'DateTime(\'UTC\')\')), less(c, -1), greater(b, 0)) (removed)
@@ -28,5 +28,3 @@ Test estimating equals condition:
         Prewhere info
           Prewhere filter
           Prewhere filter column: and(equals(a, \'0\'), equals(b, 10)) (removed)
-Test LowCardinality and Nullable data type:
-tab2

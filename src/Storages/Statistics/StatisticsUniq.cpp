@@ -52,7 +52,7 @@ UInt64 StatisticsUniq::estimateCardinality() const
     return column->getUInt(0);
 }
 
-void uniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
+void uniqStatisticsValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
     data_type = removeLowCardinalityAndNullable(data_type);
@@ -60,7 +60,7 @@ void uniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'uniq' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr uniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
+StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
 {
     return std::make_shared<StatisticsUniq>(stat, data_type);
 }

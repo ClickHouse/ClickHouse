@@ -84,7 +84,7 @@ void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
 }
 
 
-void countMinSketchValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
+void countMinSketchStatisticsValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
     data_type = removeLowCardinalityAndNullable(data_type);
@@ -92,7 +92,7 @@ void countMinSketchValidator(const SingleStatisticsDescription &, DataTypePtr da
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'count_min' does not support type {}", data_type->getName());
 }
 
-StatisticsPtr countMinSketchCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
+StatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
 {
     return std::make_shared<StatisticsCountMinSketch>(stat, data_type);
 }

@@ -19,9 +19,6 @@ extern const int ILLEGAL_STATISTICS;
 
 StatisticsMinMax::StatisticsMinMax(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type_)
     : IStatistics(stat_)
-    , min(std::numeric_limits<Float64>::max())
-    , max(std::numeric_limits<Float64>::min())
-    , row_count(0)
     , data_type(data_type_)
 {
 }
@@ -41,7 +38,7 @@ Float64 StatisticsMinMax::estimateLess(const Field & val) const
         return row_count;
 
     if (max == min)
-        return row_count;
+        return (val_as_float < max) ? 0 : row_count;
 
     return ((val_as_float - min) / (max - min)) * row_count;
 }
@@ -53,9 +50,9 @@ void StatisticsMinMax::update(const ColumnPtr & column)
         if (column->isNullAt(row))
             continue;
 
-        auto data = column->getFloat64(row);
-        min = std::min(data, min);
-        max = std::max(data, max);
+        auto value = column->getFloat64(row);
+        min = std::min(value, min);
+        max = std::max(value, max);
     }
     row_count += column->size();
 }
@@ -75,15 +72,15 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf)
 }
 
 
-void minMaxValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
+void minMaxStatisticsValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
     data_type = removeLowCardinalityAndNullable(data_type);
     if (!data_type->isValueRepresentedByNumber())
-        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'min_max' do not support type {}", data_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'minmax' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr minMaxCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
+StatisticsPtr minMaxStatisticsCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
 {
     return std::make_shared<StatisticsMinMax>(stat, data_type);
 }

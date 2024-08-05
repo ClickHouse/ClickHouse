@@ -4,9 +4,9 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/StatisticsCountMinSketch.h>
+#include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/StatisticsUniq.h>
-#include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -99,11 +99,11 @@ Float64 ColumnStatistics::estimateEqual(const Field & val) const
 #endif
     if (stats.contains(StatisticsType::Uniq))
     {
-        auto cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
+        UInt64 cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
         if (cardinality == 0)
             return 0;
         /// Assume that the value is uniformly distributed among the unique values.
-        return static_cast<Float64>(1) / stats.at(StatisticsType::Uniq)->estimateCardinality() * rows;
+        return 1.0 / cardinality * rows;
     }
 
     return rows * ConditionSelectivityEstimator::default_cond_equal_factor;
@@ -183,18 +183,18 @@ void MergeTreeStatisticsFactory::registerValidator(StatisticsType stats_type, Va
 
 MergeTreeStatisticsFactory::MergeTreeStatisticsFactory()
 {
-    registerValidator(StatisticsType::MinMax, minMaxValidator);
-    registerCreator(StatisticsType::MinMax, minMaxCreator);
+    registerValidator(StatisticsType::MinMax, minMaxStatisticsValidator);
+    registerCreator(StatisticsType::MinMax, minMaxStatisticsCreator);
 
-    registerValidator(StatisticsType::TDigest, tdigestValidator);
-    registerCreator(StatisticsType::TDigest, tdigestCreator);
+    registerValidator(StatisticsType::TDigest, tdigestStatisticsValidator);
+    registerCreator(StatisticsType::TDigest, tdigestStatisticsCreator);
 
-    registerValidator(StatisticsType::Uniq, uniqValidator);
-    registerCreator(StatisticsType::Uniq, uniqCreator);
+    registerValidator(StatisticsType::Uniq, uniqStatisticsValidator);
+    registerCreator(StatisticsType::Uniq, uniqStatisticsCreator);
 
 #if USE_DATASKETCHES
-    registerValidator(StatisticsType::CountMinSketch, countMinSketchValidator);
-    registerCreator(StatisticsType::CountMinSketch, countMinSketchCreator);
+    registerValidator(StatisticsType::CountMinSketch, countMinSketchStatisticsValidator);
+    registerCreator(StatisticsType::CountMinSketch, countMinSketchStatisticsCreator);
 #endif
 }
 
@@ -222,7 +222,7 @@ ColumnStatisticsPtr MergeTreeStatisticsFactory::get(const ColumnStatisticsDescri
     {
         auto it = creators.find(type);
         if (it == creators.end())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'min_max', 'tdigest' 'uniq' and 'count_min'", type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'. Available types: 'count_min', 'minmax', 'tdigest' and 'uniq'", type);
         auto stat_ptr = (it->second)(desc, stats.data_type);
         column_stat->stats[type] = stat_ptr;
     }
