@@ -12,26 +12,24 @@ SELECT 'Test create statistics:';
 
 CREATE TABLE tab
 (
-    a LowCardinality(Int64) STATISTICS(count_min, minmax, uniq),
-    b Nullable(Int64),
-    c LowCardinality(Nullable(Int64)) STATISTICS(minmax, count_min),
+    a LowCardinality(Int64) STATISTICS(count_min, minmax, tdigest, uniq),
+    b LowCardinality(Nullable(String)) STATISTICS(count_min, uniq),
+    c LowCardinality(Nullable(Int64)) STATISTICS(count_min, minmax, tdigest, uniq),
     d DateTime STATISTICS(count_min, minmax, tdigest, uniq),
     pk String,
 ) Engine = MergeTree() ORDER BY pk;
 
+INSERT INTO tab select number, number, number, toDateTime(number), generateUUIDv4() FROM system.numbers LIMIT 10000;
 SHOW CREATE TABLE tab;
-
-SELECT name FROM system.tables WHERE name = 'tab' AND database = currentDatabase();
-INSERT INTO tab select number, number, number, toDateTime(number, 'UTC'), generateUUIDv4() FROM system.numbers LIMIT 10000;
 
 
 SELECT 'Test materialize and drop statistics:';
-
-ALTER TABLE tab ADD STATISTICS b TYPE count_min, minmax, tdigest, uniq;
+ALTER TABLE tab DROP STATISTICS a, b, c, d;
+ALTER TABLE tab ADD STATISTICS b TYPE count_min, uniq;
 ALTER TABLE tab MATERIALIZE STATISTICS b;
 SHOW CREATE TABLE tab;
 
-ALTER TABLE tab DROP STATISTICS a, b, c, d;
+ALTER TABLE tab DROP STATISTICS b;
 SHOW CREATE TABLE tab;
 
 DROP TABLE IF EXISTS tab SYNC;

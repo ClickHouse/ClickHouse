@@ -1,30 +1,24 @@
 CREATE TABLE default.tab\n(\n    `a` String,\n    `b` UInt64,\n    `c` Int64,\n    `d` DateTime,\n    `pk` String\n)\nENGINE = MergeTree\nORDER BY pk\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
-Test statistics minmax:
-        Prewhere info
-          Prewhere filter
-          Prewhere filter column: and(greater(d, _CAST(9998_DateTime(\'UTC\'), \'DateTime(\'UTC\')\')), less(c, -1), greater(b, 0)) (removed)
 Test statistics count_min:
         Prewhere info
           Prewhere filter
           Prewhere filter column: and(equals(a, \'0\'), equals(b, 0), equals(c, 0)) (removed)
+Test statistics minmax:
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: and(greater(d, _CAST(9998, \'DateTime\')), less(c, -1), greater(b, 0)) (removed)
+Test statistics tdigest:
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: and(greater(d, _CAST(9998, \'DateTime\')), less(c, -1), greater(b, 0)) (removed)
+Test statistics uniq:
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: and(equals(a, \'0\'), equals(d, _CAST(1, \'DateTime\')), equals(b, 0), equals(c, 0)) (removed)
 Test statistics multi-types:
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(equals(a, \'0\'), less(c, -90), greater(b, 900)) (removed)
+          Prewhere filter column: and(equals(a, \'0\'), equals(d, _CAST(1, \'DateTime\')), less(c, -90), greater(b, 900)) (removed)
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(equals(a, \'10000\'), equals(b, 0), less(c, 0)) (removed)
-Test estimating range condition:
-        Prewhere info
-          Prewhere filter
-          Prewhere filter column: and(less(b, 10), less(c, 0)) (removed)
-        Prewhere info
-          Prewhere filter
-          Prewhere filter column: and(less(b, 10), less(c, 0)) (removed)
-Test estimating equals condition:
-        Prewhere info
-          Prewhere filter
-          Prewhere filter column: and(equals(a, \'0\'), equals(b, 10)) (removed)
-        Prewhere info
-          Prewhere filter
-          Prewhere filter column: and(equals(a, \'0\'), equals(b, 10)) (removed)
+          Prewhere filter column: and(equals(a, \'10000\'), equals(b, 0), less(c, 0), greater(d, _CAST(1, \'DateTime\'))) (removed)
