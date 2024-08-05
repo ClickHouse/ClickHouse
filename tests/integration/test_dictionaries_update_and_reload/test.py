@@ -37,7 +37,7 @@ def get_status(dictionary_name):
     ).rstrip("\n")
 
 
-def get_status_retry(dictionary_name, expect, retry_count=10, sleep_time=0.5):
+def get_status_retry(dictionary_name, expect, retry_count=50, sleep_time=0.5):
     for _ in range(retry_count):
         res = get_status(dictionary_name)
         if res == expect:
@@ -284,6 +284,11 @@ def test_reload_after_fail_by_timer(started_cluster):
     )
     instance.query("SYSTEM RELOAD DICTIONARY no_file_2")
     instance.query("SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))") == "10\n"
+    if (
+        instance.is_built_with_sanitizer()
+        and get_status("no_file_2") == "LOADED_AND_RELOADING"
+    ):
+        get_status_retry("no_file_2", expect="LOADED")
     assert get_status("no_file_2") == "LOADED"
 
     # Removing the file source should not spoil the loaded dictionary.
@@ -292,6 +297,11 @@ def test_reload_after_fail_by_timer(started_cluster):
     )
     time.sleep(6)
     instance.query("SELECT dictGetInt32('no_file_2', 'a', toUInt64(9))") == "10\n"
+    if (
+        instance.is_built_with_sanitizer()
+        and get_status("no_file_2") == "LOADED_AND_RELOADING"
+    ):
+        get_status_retry("no_file_2", expect="LOADED")
     assert get_status("no_file_2") == "LOADED"
 
 
