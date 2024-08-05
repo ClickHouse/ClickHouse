@@ -165,16 +165,18 @@ QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, con
             const auto & dict_key = dict_struct.key->at(i);
             WhichDataType type(dict_key.type);
 
-            if (type.isInt())
-                key.append(make_document(kvp(dict_key.name, key_columns[i]->getInt(row))));
+            if (isBool(dict_key.type))
+                key.append(make_document(kvp(dict_key.name, key_columns[i]->getBool(row))));
             else if (type.isUInt())
                 key.append(make_document(kvp(dict_key.name, static_cast<Int64>(key_columns[i]->getUInt(row)))));
             else if (type.isFloat64())
                 key.append(make_document(kvp(dict_key.name, key_columns[i]->getFloat64(row))));
-            else if (isBool(dict_key.type))
-                key.append(make_document(kvp(dict_key.name, key_columns[i]->getBool(row))));
+            else if (type.isInt())
+                key.append(make_document(kvp(dict_key.name, key_columns[i]->getInt(row))));
+            else if (type.isString())
+                key.append(make_document(kvp(dict_key.name, key_columns[i]->getDataAt(row).toString())));
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of key in MongoDB dictionary");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type '{}' of key in MongoDB dictionary", dict_key.type->getName());
         }
         keys.append(make_document(kvp("$and", key)));
     }
