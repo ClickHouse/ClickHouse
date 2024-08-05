@@ -3460,16 +3460,17 @@ def signal_handler(signal, frame):
 
 
 if __name__ == "__main__":
+    # Move to a new process group and kill it at exit so that we don't have any
+    # infinite tests processes left
+    # (new process group is required to avoid killing some parent processes)
+    os.setpgid(0, 0)
+
     stop_time = None
     exit_code = multiprocessing.Value("i", 0)
     server_died = multiprocessing.Event()
     multiprocessing_manager = multiprocessing.Manager()
     restarted_tests = multiprocessing_manager.list()
 
-    # Move to a new process group and kill it at exit so that we don't have any
-    # infinite tests processes left
-    # (new process group is required to avoid killing some parent processes)
-    os.setpgid(0, 0)
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGHUP, signal_handler)
