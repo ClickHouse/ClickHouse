@@ -1,4 +1,5 @@
 #include "NativeORCBlockInputFormat.h"
+#include "Columns/ColumnsCommon.h"
 
 #if USE_ORC
 #    include <Columns/ColumnDecimal.h>
