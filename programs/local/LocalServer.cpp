@@ -486,18 +486,18 @@ try
         Poco::ErrorHandler::set(&error_handler);
     }
 
-    processConfig();
-
     registerInterpreters();
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions(global_context->getServerSettings().use_legacy_mongodb_integration);
+    registerTableFunctions(server_settings.use_legacy_mongodb_integration);
     registerDatabases();
-    registerStorages(global_context->getServerSettings().use_legacy_mongodb_integration);
-    registerDictionaries(global_context->getServerSettings().use_legacy_mongodb_integration);
+    registerStorages(server_settings.use_legacy_mongodb_integration);
+    registerDictionaries(server_settings.use_legacy_mongodb_integration);
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
+
+    processConfig();
 
     SCOPE_EXIT({ cleanup(); });
 
