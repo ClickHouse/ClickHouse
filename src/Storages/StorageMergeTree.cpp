@@ -263,7 +263,7 @@ std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
     return getTotalActiveSizeInRows();
 }
 
-std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr local_context) const
+std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
 {
     auto parts = getVisibleDataPartsVector(local_context);
     return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, parts);
@@ -505,18 +505,18 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
         additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
     }
 
-    Int64 version;
+    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+    Int64 version = increment.get();
+    entry.commit(version);
+    String mutation_id = entry.file_name;
+    if (txn)
+        txn->addMutation(shared_from_this(), mutation_id);
+
+    bool alter_conversions_mutations_updated = updateAlterConversionsMutations(entry.commands, alter_conversions_mutations, /* remove= */ false);
+
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
-        version = increment.get();
-        entry.commit(version);
-        String mutation_id = entry.file_name;
-        if (txn)
-            txn->addMutation(shared_from_this(), mutation_id);
-
-        bool alter_conversions_mutations_updated = updateAlterConversionsMutations(entry.commands, alter_conversions_mutations, /* remove= */ false);
         bool inserted = current_mutations_by_version.try_emplace(version, std::move(entry)).second;
         if (!inserted)
         {
@@ -527,9 +527,9 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
             }
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
         }
-
-        LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
     }
+
+    LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
     background_operations_assignee.trigger();
     return version;
 }

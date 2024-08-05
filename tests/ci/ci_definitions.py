@@ -67,10 +67,10 @@ class WorkflowStages(metaclass=WithIter):
     BUILDS_2 = "Builds_2"
     # all tests required for merge
     TESTS_1 = "Tests_1"
-    # not used atm
-    TESTS_2 = "Tests_2"
+    # used in woolenwolfdog mode
+    TESTS_2_WW = "Tests_2_ww"
     # all tests not required for merge
-    TESTS_3 = "Tests_3"
+    TESTS_2 = "Tests_2"
 
 
 class Runners(metaclass=WithIter):
@@ -104,6 +104,15 @@ class Tags(metaclass=WithIter):
     CI_SET_BUILDS = "ci_set_builds"
 
     libFuzzer = "libFuzzer"
+
+
+class WorkFlowNames(metaclass=WithIter):
+    """
+    CI WorkFlow Names for custom CI runs
+    """
+
+    JEPSEN = "JepsenWorkflow"
+    CreateRelease = "CreateRelease"
 
 
 class BuildNames(metaclass=WithIter):
@@ -546,7 +555,7 @@ class CommonJobConfigs:
         run_command="sqllogic_test.py",
         timeout=10800,
         release_only=True,
-        runner_type=Runners.STYLE_CHECKER,
+        runner_type=Runners.FUNC_TESTER,
     )
     SQL_TEST = JobConfig(
         job_name_keyword="sqltest",
@@ -570,10 +579,11 @@ class CommonJobConfigs:
     DOCKER_SERVER = JobConfig(
         job_name_keyword="docker",
         required_on_release_branch=True,
-        run_command='docker_server.py --check-name "$CHECK_NAME" --release-type head --allow-build-reuse',
+        run_command='docker_server.py --check-name "$CHECK_NAME" --tag-type head --allow-build-reuse',
         digest=DigestConfig(
             include_paths=[
                 "tests/ci/docker_server.py",
+                "tests/ci/docker_images_helper.py",
                 "./docker/server",
             ]
         ),

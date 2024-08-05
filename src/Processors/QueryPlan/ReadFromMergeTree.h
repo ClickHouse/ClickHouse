@@ -23,7 +23,7 @@ struct MergeTreeDataSelectSamplingData
     bool read_nothing = false;
     Float64 used_sample_factor = 1.0;
     std::shared_ptr<ASTFunction> filter_function;
-    ActionsDAGPtr filter_expression;
+    std::shared_ptr<const ActionsDAG> filter_expression;
 };
 
 struct UsefulSkipIndexes
@@ -243,9 +243,9 @@ private:
     Pipe readFromPoolParallelReplicas(RangesInDataParts parts_with_range, Names required_columns, PoolSettings pool_settings);
     Pipe readInOrder(RangesInDataParts parts_with_ranges, Names required_columns, PoolSettings pool_settings, ReadType read_type, UInt64 limit);
 
-    Pipe spreadMarkRanges(RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, ActionsDAGPtr & result_projection);
+    Pipe spreadMarkRanges(RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, std::optional<ActionsDAG> & result_projection);
 
-    Pipe groupStreamsByPartition(AnalysisResult & result, ActionsDAGPtr & result_projection);
+    Pipe groupStreamsByPartition(AnalysisResult & result, std::optional<ActionsDAG> & result_projection);
 
     Pipe spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names);
 
@@ -253,13 +253,13 @@ private:
         RangesInDataParts && parts_with_ranges,
         size_t num_streams,
         const Names & column_names,
-        ActionsDAGPtr & out_projection,
+        std::optional<ActionsDAG> & out_projection,
         const InputOrderInfoPtr & input_order_info);
 
     bool doNotMergePartsAcrossPartitionsFinal() const;
 
     Pipe spreadMarkRangesAmongStreamsFinal(
-        RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection);
+        RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, std::optional<ActionsDAG> & out_projection);
 
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
 
