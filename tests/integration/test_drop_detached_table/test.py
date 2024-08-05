@@ -201,6 +201,4 @@ def test_drop_distributed_table(start_cluster):
         ).rstrip()
     )
 
-    replica1.query(
-        "DROP TABLE aux_table_for_dist SYNC"
-    )
+    replica1.query("DROP TABLE aux_table_for_dist SYNC")
