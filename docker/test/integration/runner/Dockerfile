@@ -47,7 +47,7 @@ RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
     && add-apt-repository "deb https://download.docker.com/linux/ubuntu $(lsb_release -c -s) ${DOCKER_CHANNEL}" \
     && apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
-        docker-ce="5:27.0.3*" \
+        docker-ce \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
