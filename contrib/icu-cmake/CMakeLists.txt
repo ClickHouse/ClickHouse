@@ -4,9 +4,7 @@ else ()
     option(ENABLE_ICU "Enable ICU" 0)
 endif ()
 
-# Temporarily disabled s390x because the ICU build links a blob (icudt71b_dat.S) and our friends from IBM did not explain how they generated
-# the blob on s390x: https://github.com/ClickHouse/icudata/pull/2#issuecomment-2226957255
-if (NOT ENABLE_ICU OR ARCH_S390X)
+if (NOT ENABLE_ICU)
     message(STATUS "Not using ICU")
     return()
 endif()

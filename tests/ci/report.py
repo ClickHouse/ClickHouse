@@ -293,9 +293,9 @@ class JobReport:
     start_time: str
     duration: float
     additional_files: Union[Sequence[str], Sequence[Path]]
-    # clickhouse version, build job only
+    # ClickHouse version, build job only
     version: str = ""
-    # checkname to set in commit status, set if differs from jjob name
+    # check_name to be set in commit status, set it if it differs from the job name
     check_name: str = ""
     # directory with artifacts to upload on s3
     build_dir_for_upload: Union[Path, str] = ""
@@ -667,11 +667,7 @@ ColorTheme = Tuple[str, str, str]
 def _format_header(
     header: str, branch_name: str, branch_url: Optional[str] = None
 ) -> str:
-    # Following line does not lower CI->Ci and SQLancer->Sqlancer. It only
-    # capitalizes the first letter and doesn't touch the rest of the word
-    result = " ".join([w[0].upper() + w[1:] for w in header.split(" ") if w])
-    result = result.replace("Clickhouse", "ClickHouse")
-    result = result.replace("clickhouse", "ClickHouse")
+    result = header
     if "ClickHouse" not in result:
         result = f"ClickHouse {result}"
     if branch_url:
