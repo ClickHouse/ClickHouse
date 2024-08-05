@@ -1,5 +1,5 @@
 
-SET lightweight_deletes_sync = 2, alter_sync = 2;
+SET max_threads = 1, lightweight_deletes_sync = 2, alter_sync = 2;
 
 DROP TABLE IF EXISTS users_compact;
 
