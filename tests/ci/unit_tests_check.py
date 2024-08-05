@@ -197,6 +197,11 @@ def main():
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {TEMP_PATH}", shell=True)
 
     state, description, test_results = process_results(test_output)
+    if retcode != 0 and state == SUCCESS:
+        # The process might have failed without reporting it in the test_output (e.g. LeakSanitizer)
+        state = FAILURE
+        description = "Invalid return code. Check run.log"
+
     additional_files = [run_log_path] + [
         p for p in test_output.iterdir() if not p.is_dir()
     ]
