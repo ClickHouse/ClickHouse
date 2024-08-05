@@ -20,6 +20,7 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
@@ -565,11 +566,11 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 
     auto syntax_result = TreeRewriter(getContext()).analyze(filter_function, builder.getHeader().getNamesAndTypesList());
     auto filter_expression = ExpressionAnalyzer(filter_function, syntax_result, getContext()).getActionsDAG(false);
+    auto filter_actions = std::make_shared<ExpressionActions>(std::move(filter_expression));
 
     builder.addSimpleTransform([&](const Block & header)
     {
-        return std::make_shared<FilterTransform>(
-            header, std::make_shared<ExpressionActions>(filter_expression), filter_function->getColumnName(), true);
+        return std::make_shared<FilterTransform>(header, filter_actions, filter_function->getColumnName(), true);
     });
 
     /// Adding window column
@@ -594,7 +595,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
         new_header.getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name);
     auto actions = std::make_shared<ExpressionActions>(
-        convert_actions_dag, ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
+        std::move(convert_actions_dag), ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<ExpressionTransform>(stream_header, actions);
@@ -708,7 +709,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
             getTargetTable()->getInMemoryMetadataPtr()->getColumns(),
             getContext(),
             getContext()->getSettingsRef().insert_null_as_default);
-        auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(adding_missing_defaults_dag);
+        auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, adding_missing_defaults_actions);
@@ -719,7 +720,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
             block_io.pipeline.getHeader().getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position);
         auto actions = std::make_shared<ExpressionActions>(
-            convert_actions_dag,
+            std::move(convert_actions_dag),
             ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
@@ -805,7 +806,7 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
     {
         auto column_window = std::make_shared<ASTColumnDeclaration>();
         column_window->name = window_id_name;
-        column_window->type = std::make_shared<ASTIdentifier>("UInt32");
+        column_window->type = makeASTDataType("UInt32");
         columns_list->children.push_back(column_window);
     }
 
@@ -1139,7 +1140,7 @@ void StorageWindowView::read(
         {
             auto converting_actions = ActionsDAG::makeConvertingActions(
                 target_header.getColumnsWithTypeAndName(), wv_header.getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
-            auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), converting_actions);
+            auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(converting_actions));
             converting_step->setStepDescription("Convert Target table structure to WindowView structure");
             query_plan.addStep(std::move(converting_step));
         }
@@ -1188,6 +1189,7 @@ StorageWindowView::StorageWindowView(
     ContextPtr context_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
+    const String & comment,
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -1206,11 +1208,15 @@ StorageWindowView::StorageWindowView(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     /// If the target table is not set, use inner target table
-    has_inner_target_table = query.to_table_id.empty();
-    if (has_inner_target_table && !query.storage)
+    auto to_table_id = query.getTargetTableID(ViewTarget::To);
+    has_inner_target_table = to_table_id.empty();
+    auto to_table_engine = query.getTargetInnerEngine(ViewTarget::To);
+
+    if (has_inner_target_table && !to_table_engine)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
                         "You must specify where to save results of a WindowView query: "
                         "either ENGINE or an existing table in a TO clause");
@@ -1225,12 +1231,12 @@ StorageWindowView::StorageWindowView(
 
     auto inner_query = initInnerQuery(query.select->list_of_selects->children.at(0)->as<ASTSelectQuery &>(), context_);
 
-    if (query.inner_storage)
-        inner_table_engine = query.inner_storage->clone();
+    if (auto inner_storage = query.getTargetInnerEngine(ViewTarget::Inner))
+        inner_table_engine = inner_storage->clone();
     inner_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()));
     inner_fetch_query = generateInnerFetchQuery(inner_table_id);
 
-    target_table_id = has_inner_target_table ? StorageID(table_id_.database_name, generateTargetTableName(table_id_)) : query.to_table_id;
+    target_table_id = has_inner_target_table ? StorageID(table_id_.database_name, generateTargetTableName(table_id_)) : to_table_id;
 
     if (is_proctime)
         next_fire_signal = getWindowUpperBound(now());
@@ -1255,7 +1261,7 @@ StorageWindowView::StorageWindowView(
             new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
 
             target_create_query->set(target_create_query->columns_list, new_columns_list);
-            target_create_query->set(target_create_query->storage, query.storage->ptr());
+            target_create_query->set(target_create_query->storage, to_table_engine);
 
             InterpreterCreateQuery create_interpreter_(target_create_query, create_context_);
             create_interpreter_.setInternal(true);
@@ -1484,7 +1490,7 @@ void StorageWindowView::writeIntoWindowView(
         pipe.addSimpleTransform([&](const Block & header_)
         {
             return std::make_shared<FilterTransform>(
-                header_, std::make_shared<ExpressionActions>(filter_expression),
+                header_, std::make_shared<ExpressionActions>(std::move(filter_expression)),
                 filter_function->getColumnName(), true);
         });
     }
@@ -1623,7 +1629,7 @@ void StorageWindowView::writeIntoWindowView(
             output->getHeader().getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
         auto convert_actions = std::make_shared<ExpressionActions>(
-            convert_actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+            std::move(convert_actions_dag), ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
 
         builder.addSimpleTransform([&](const Block & header_) { return std::make_shared<ExpressionTransform>(header_, convert_actions); });
     }
@@ -1761,7 +1767,7 @@ void registerStorageWindowView(StorageFactory & factory)
                             "Experimental WINDOW VIEW feature "
                             "is not enabled (the setting 'allow_experimental_window_view')");
 
-        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.mode);
+        return std::make_shared<StorageWindowView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.comment, args.mode);
     });
 }
 

@@ -6,9 +6,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -n --query="
-    set allow_deprecated_database_ordinary=1;
     DROP DATABASE IF EXISTS 01280_db;
-    CREATE DATABASE 01280_db Engine = Ordinary;
+    CREATE DATABASE 01280_db;
     DROP TABLE IF EXISTS 01280_db.table_for_dict;
     CREATE TABLE 01280_db.table_for_dict
     (

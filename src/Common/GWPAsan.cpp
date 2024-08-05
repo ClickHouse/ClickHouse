@@ -217,6 +217,13 @@ void printReport([[maybe_unused]] uintptr_t fault_address)
         reinterpret_cast<void **>(trace.data()), 0, trace_length, [&](const auto line) { LOG_FATAL(logger, fmt::runtime(line)); });
 }
 
+std::atomic<bool> init_finished = false;
+
+void initFinished()
+{
+    init_finished.store(true, std::memory_order_relaxed);
+}
+
 std::atomic<double> force_sample_probability = 0.0;
 
 void setForceSampleProbability(double value)

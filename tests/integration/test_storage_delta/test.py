@@ -8,6 +8,8 @@ import os
 import json
 import time
 import glob
+import random
+import string
 
 import pyspark
 import delta
@@ -50,6 +52,11 @@ def get_spark():
     )
 
     return builder.master("local").getOrCreate()
+
+
+def randomize_table_name(table_name, random_suffix_length=10):
+    letters = string.ascii_letters + string.digits
+    return f"{table_name}{''.join(random.choice(letters) for _ in range(random_suffix_length))}"
 
 
 @pytest.fixture(scope="module")
@@ -151,7 +158,7 @@ def test_single_log_file(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = "test_single_log_file"
+    TABLE_NAME = randomize_table_name("test_single_log_file")
 
     inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(100)"
     parquet_data_path = create_initial_data_file(
@@ -175,7 +182,7 @@ def test_partition_by(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = "test_partition_by"
+    TABLE_NAME = randomize_table_name("test_partition_by")
 
     write_delta_from_df(
         spark,
@@ -197,7 +204,7 @@ def test_checkpoint(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = "test_checkpoint"
+    TABLE_NAME = randomize_table_name("test_checkpoint")
 
     write_delta_from_df(
         spark,
@@ -272,7 +279,7 @@ def test_multiple_log_files(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = "test_multiple_log_files"
+    TABLE_NAME = randomize_table_name("test_multiple_log_files")
 
     write_delta_from_df(
         spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
@@ -310,7 +317,7 @@ def test_metadata(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = "test_metadata"
+    TABLE_NAME = randomize_table_name("test_metadata")
 
     parquet_data_path = create_initial_data_file(
         started_cluster,
@@ -339,9 +346,9 @@ def test_metadata(started_cluster):
 
 
 def test_types(started_cluster):
-    TABLE_NAME = "test_types"
+    TABLE_NAME = randomize_table_name("test_types")
     spark = started_cluster.spark_session
-    result_file = f"{TABLE_NAME}_result_2"
+    result_file = randomize_table_name(f"{TABLE_NAME}_result_2")
 
     delta_table = (
         DeltaTable.create(spark)
@@ -415,7 +422,7 @@ def test_restart_broken(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = "broken"
-    TABLE_NAME = "test_restart_broken"
+    TABLE_NAME = randomize_table_name("test_restart_broken")
 
     if not minio_client.bucket_exists(bucket):
         minio_client.make_bucket(bucket)
@@ -452,6 +459,18 @@ def test_restart_broken(started_cluster):
         f"SELECT count() FROM {TABLE_NAME}"
     )
 
+    s3_disk_no_key_errors_metric_value = int(
+        instance.query(
+            """
+            SELECT value
+            FROM system.metrics
+            WHERE metric = 'S3DiskNoKeyErrors'
+            """
+        ).strip()
+    )
+
+    assert s3_disk_no_key_errors_metric_value == 0
+
     minio_client.make_bucket(bucket)
 
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
@@ -464,7 +483,7 @@ def test_restart_broken_table_function(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = "broken2"
-    TABLE_NAME = "test_restart_broken_table_function"
+    TABLE_NAME = randomize_table_name("test_restart_broken_table_function")
 
     if not minio_client.bucket_exists(bucket):
         minio_client.make_bucket(bucket)
@@ -518,7 +537,7 @@ def test_partition_columns(started_cluster):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = "test_partition_columns"
+    TABLE_NAME = randomize_table_name("test_partition_columns")
     result_file = f"{TABLE_NAME}"
     partition_columns = ["b", "c", "d", "e"]
 

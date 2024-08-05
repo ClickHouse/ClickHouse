@@ -211,7 +211,7 @@ class TestCIConfig(unittest.TestCase):
                 else:
                     self.assertTrue(
                         CI.get_job_ci_stage(job)
-                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_3),
+                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_2),
                         msg=f"Stage for [{job}] is not correct",
                     )
 
@@ -242,7 +242,7 @@ class TestCIConfig(unittest.TestCase):
                 else:
                     self.assertTrue(
                         CI.get_job_ci_stage(job, non_blocking_ci=True)
-                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_2),
+                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_2_WW),
                         msg=f"Stage for [{job}] is not correct",
                     )
 
@@ -419,6 +419,32 @@ class TestCIConfig(unittest.TestCase):
         ]
         self.assertCountEqual(expected_jobs_to_do, actual_jobs_to_do)
 
+    def test_ci_py_for_specific_workflow(self):
+        """
+        checks ci.py job configuration
+        """
+        settings = CiSettings()
+        settings.no_ci_cache = True
+        pr_info = PRInfo(github_event=_TEST_EVENT_JSON)
+        # make it merge_queue
+        pr_info.event_type = EventType.SCHEDULE
+        assert pr_info.number == 0 and not pr_info.is_merge_queue and not pr_info.is_pr
+        ci_cache = CIPY._configure_jobs(
+            S3Helper(),
+            pr_info,
+            settings,
+            skip_jobs=False,
+            dry_run=True,
+            workflow_name=CI.WorkFlowNames.JEPSEN,
+        )
+        actual_jobs_to_do = list(ci_cache.jobs_to_do)
+        expected_jobs_to_do = [
+            CI.BuildNames.BINARY_RELEASE,
+            CI.JobNames.JEPSEN_KEEPER,
+            CI.JobNames.JEPSEN_SERVER,
+        ]
+        self.assertCountEqual(expected_jobs_to_do, actual_jobs_to_do)
+
     def test_ci_py_await(self):
         """
         checks ci.py job configuration
@@ -452,6 +478,7 @@ class TestCIConfig(unittest.TestCase):
         pr_info = PRInfo(github_event=_TEST_EVENT_JSON)
         pr_info.event_type = EventType.PUSH
         pr_info.number = 0
+        pr_info.head_ref = "24.12345"
         assert pr_info.is_release and not pr_info.is_merge_queue
         ci_cache = CIPY._configure_jobs(
             S3Helper(), pr_info, settings, skip_jobs=False, dry_run=True
@@ -587,11 +614,11 @@ class TestCIConfig(unittest.TestCase):
         for job, job_config in ci_cache.jobs_to_do.items():
             if job in MOCK_AFFECTED_JOBS:
                 MOCK_REQUIRED_BUILDS += job_config.required_builds
-            elif job not in MOCK_AFFECTED_JOBS:
+            elif job not in MOCK_AFFECTED_JOBS and not job_config.disable_await:
                 ci_cache.jobs_to_wait[job] = job_config
 
         for job, job_config in ci_cache.jobs_to_do.items():
-            if job_config.reference_job_name:
+            if job_config.reference_job_name or job_config.disable_await:
                 # jobs with reference_job_name in config are not supposed to have records in the cache - continue
                 continue
             if job in MOCK_AFFECTED_JOBS:
@@ -624,11 +651,76 @@ class TestCIConfig(unittest.TestCase):
             + MOCK_AFFECTED_JOBS
             + MOCK_REQUIRED_BUILDS
         )
+        self.assertTrue(
+            CI.JobNames.BUILD_CHECK not in ci_cache.jobs_to_wait,
+            "We must never await on Builds Report",
+        )
         self.assertCountEqual(
             list(ci_cache.jobs_to_wait),
-            [
-                CI.JobNames.BUILD_CHECK,
-            ]
-            + MOCK_REQUIRED_BUILDS,
+            MOCK_REQUIRED_BUILDS,
+        )
+        self.assertCountEqual(list(ci_cache.jobs_to_do), expected_to_do)
+
+    def test_ci_py_filters_not_affected_jobs_in_prs_no_builds(self):
+        """
+        checks ci.py filters not affected jobs in PRs, no builds required
+        """
+        settings = CiSettings()
+        settings.no_ci_cache = True
+        pr_info = PRInfo(github_event=_TEST_EVENT_JSON)
+        pr_info.event_type = EventType.PULL_REQUEST
+        pr_info.number = 123
+        assert pr_info.is_pr
+        ci_cache = CIPY._configure_jobs(
+            S3Helper(), pr_info, settings, skip_jobs=False, dry_run=True
+        )
+        self.assertTrue(not ci_cache.jobs_to_skip, "Must be no jobs in skip list")
+        assert not ci_cache.jobs_to_wait
+        assert not ci_cache.jobs_to_skip
+
+        MOCK_AFFECTED_JOBS = [
+            CI.JobNames.FAST_TEST,
+        ]
+        MOCK_REQUIRED_BUILDS = []
+
+        # pretend there are pending jobs that we need to wait
+        for job, job_config in ci_cache.jobs_to_do.items():
+            if job in MOCK_AFFECTED_JOBS:
+                if job_config.required_builds:
+                    MOCK_REQUIRED_BUILDS += job_config.required_builds
+            elif job not in MOCK_AFFECTED_JOBS and not job_config.disable_await:
+                ci_cache.jobs_to_wait[job] = job_config
+
+        for job, job_config in ci_cache.jobs_to_do.items():
+            if job_config.reference_job_name or job_config.disable_await:
+                # jobs with reference_job_name in config are not supposed to have records in the cache - continue
+                continue
+            if job in MOCK_AFFECTED_JOBS:
+                continue
+            for batch in range(job_config.num_batches):
+                # add any record into cache
+                record = CiCache.Record(
+                    record_type=random.choice(
+                        [
+                            CiCache.RecordType.FAILED,
+                            CiCache.RecordType.PENDING,
+                            CiCache.RecordType.SUCCESSFUL,
+                        ]
+                    ),
+                    job_name=job,
+                    job_digest=ci_cache.job_digests[job],
+                    batch=batch,
+                    num_batches=job_config.num_batches,
+                    release_branch=True,
+                )
+                for record_t_, records_ in ci_cache.records.items():
+                    if record_t_.value == CiCache.RecordType.FAILED.value:
+                        records_[record.to_str_key()] = record
+
+        ci_cache.filter_out_not_affected_jobs()
+        expected_to_do = MOCK_AFFECTED_JOBS + MOCK_REQUIRED_BUILDS
+        self.assertCountEqual(
+            list(ci_cache.jobs_to_wait),
+            MOCK_REQUIRED_BUILDS,
         )
         self.assertCountEqual(list(ci_cache.jobs_to_do), expected_to_do)

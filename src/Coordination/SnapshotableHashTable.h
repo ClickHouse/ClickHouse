@@ -212,9 +212,9 @@ private:
         updateDataSize(INSERT_OR_REPLACE, key.size, new_value_size, old_value_size, !snapshot_mode);
     }
 
-
 public:
 
+    using Node = V;
     using iterator = typename List::iterator;
     using const_iterator = typename List::const_iterator;
     using ValueUpdater = std::function<void(V & value)>;
@@ -364,6 +364,7 @@ public:
     {
         auto map_it = map.find(key);
         if (map_it != map.end())
+            /// return std::make_shared<KVPair>(KVPair{map_it->getMapped()->key, map_it->getMapped()->value});
             return map_it->getMapped();
         return list.end();
     }
