@@ -1,7 +1,6 @@
 #include <Storages/Statistics/StatisticsUniq.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -52,15 +51,14 @@ UInt64 StatisticsUniq::estimateCardinality() const
     return column->getUInt(0);
 }
 
-void uniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
+void UniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
-    data_type = removeLowCardinalityAndNullable(data_type);
     if (!data_type->isValueRepresentedByNumber())
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'uniq' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr uniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
+StatisticsPtr UniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
 {
     return std::make_shared<StatisticsUniq>(stat, data_type);
 }

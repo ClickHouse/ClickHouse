@@ -28,7 +28,7 @@ ORDER BY tuple();
 
 INSERT INTO t_01411_num (num) SELECT number % 1000 FROM numbers(100000);
 
-create table lc_dict_reading (val UInt64, str LowCardinality(String), pat String) engine = MergeTree order by val;
+create table lc_dict_reading (val UInt64, str StringWithDictionary, pat String) engine = MergeTree order by val;
 insert into lc_dict_reading select number, if(number < 8192 * 4, number % 100, number) as s, s from system.numbers limit 100000;
 """
 

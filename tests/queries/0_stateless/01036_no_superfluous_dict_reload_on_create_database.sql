@@ -1,6 +1,3 @@
--- Tags: no-parallel
--- Does not allow if other tests do SYSTEM RELOAD DICTIONARIES at the same time.
-
 CREATE TABLE dict_data (key UInt64, val UInt64) Engine=Memory();
 CREATE DICTIONARY dict
 (

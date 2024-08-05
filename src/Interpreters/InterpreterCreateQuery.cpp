@@ -959,40 +959,12 @@ namespace
         engine_ast->no_empty_args = true;
         storage.set(storage.engine, engine_ast);
     }
-
-    void setNullTableEngine(ASTStorage & storage)
-    {
-        auto engine_ast = std::make_shared<ASTFunction>();
-        engine_ast->name = "Null";
-        engine_ast->no_empty_args = true;
-        storage.set(storage.engine, engine_ast);
-    }
-
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.as_table_function)
-    {
-        if (getContext()->getSettingsRef().restore_replace_external_table_functions_to_null)
-        {
-            const auto & factory = TableFunctionFactory::instance();
-
-            auto properties = factory.tryGetProperties(create.as_table_function->as<ASTFunction>()->name);
-            if (properties && properties->allow_readonly)
-                return;
-            if (!create.storage)
-            {
-                auto storage_ast = std::make_shared<ASTStorage>();
-                create.set(create.storage, storage_ast);
-            }
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage should not be created yet, it's a bug.");
-            create.as_table_function = nullptr;
-            setNullTableEngine(*create.storage);
-        }
         return;
-    }
 
     if (create.is_dictionary || create.is_ordinary_view || create.is_live_view || create.is_window_view)
         return;
@@ -1042,13 +1014,6 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         {
             /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
             setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
-        }
-        /// For external tables with restore_replace_external_engine_to_null setting we replace external engines to
-        /// Null table engine.
-        else if (getContext()->getSettingsRef().restore_replace_external_engines_to_null)
-        {
-            if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type != AccessType::NONE)
-                setNullTableEngine(*create.storage);
         }
         return;
     }
@@ -1408,8 +1373,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
-    bool allow_heavy_populate = getContext()->getSettingsRef().database_replicated_allow_heavy_create && create.is_populate;
-    if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
+    bool allow_heavy_create = getContext()->getSettingsRef().database_replicated_allow_heavy_create;
+    if (!allow_heavy_create && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
     {
         bool is_storage_replicated = false;
 
@@ -1427,18 +1392,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         const bool allow_create_select_for_replicated = (create.isView() && !create.is_populate) || create.is_create_empty || !is_storage_replicated;
         if (!allow_create_select_for_replicated)
-        {
-            /// POPULATE can be enabled with setting, provide hint in error message
-            if (create.is_populate)
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "CREATE with POPULATE is not supported with Replicated databases. Consider using separate CREATE and INSERT queries. "
-                    "Alternatively, you can enable 'database_replicated_allow_heavy_create' setting to allow this operation, use with caution");
-
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "CREATE AS SELECT is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
-        }
+                "CREATE AS SELECT and POPULATE is not supported with Replicated databases. Consider using separate CREATE and INSERT queries. "
+                "Alternatively, you can enable 'database_replicated_allow_heavy_create' setting to allow this operation, use with caution");
     }
 
     if (database && database->shouldReplicateQuery(getContext(), query_ptr))

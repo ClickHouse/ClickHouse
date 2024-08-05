@@ -104,9 +104,6 @@ class GHActions:
                 res = json.load(json_file)
             except json.JSONDecodeError as e:
                 print(f"ERROR: json decoder exception {e}")
-                json_file.seek(0)
-                print("    File content:")
-                print(json_file.read())
                 return {}
         return res
 
@@ -212,7 +209,7 @@ class Shell:
         return res.stdout.strip()
 
     @classmethod
-    def run(cls, command, check=False, dry_run=False, **kwargs):
+    def run(cls, command, check=False, dry_run=False):
         if dry_run:
             print(f"Dry-ryn. Would run command [{command}]")
             return ""
@@ -225,7 +222,6 @@ class Shell:
             stderr=subprocess.PIPE,
             text=True,
             check=False,
-            **kwargs,
         )
         if result.returncode == 0:
             print(f"stdout: {result.stdout.strip()}")

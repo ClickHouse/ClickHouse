@@ -254,7 +254,6 @@ def check_system_tables(backup_query_id=None):
         ("disk_s3_cache", "ObjectStorage", "S3", "Local"),
         ("disk_s3_other_bucket", "ObjectStorage", "S3", "Local"),
         ("disk_s3_plain", "ObjectStorage", "S3", "Plain"),
-        ("disk_s3_plain_rewritable", "ObjectStorage", "S3", "PlainRewritable"),
         ("disk_s3_restricted_user", "ObjectStorage", "S3", "Local"),
     )
     assert len(expected_disks) == len(disks)
@@ -420,15 +419,25 @@ def test_backup_to_s3_multipart():
     assert "ReadBufferFromS3RequestsErrors" not in restore_events
 
 
-@pytest.mark.parametrize(
-    "storage_policy",
-    [
-        "policy_s3",
-        "policy_s3_other_bucket",
-        "policy_s3_plain_rewritable",
-    ],
-)
-def test_backup_to_s3_native_copy(storage_policy):
+def test_backup_to_s3_native_copy():
+    storage_policy = "policy_s3"
+    backup_name = new_backup_name()
+    backup_destination = (
+        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
+    )
+    (backup_events, restore_events) = check_backup_and_restore(
+        storage_policy, backup_destination
+    )
+    # single part upload
+    assert backup_events["S3CopyObject"] > 0
+    assert restore_events["S3CopyObject"] > 0
+    assert node.contains_in_log(
+        f"copyS3File: Single operation copy has completed. Bucket: root, Key: data/backups/{backup_name}"
+    )
+
+
+def test_backup_to_s3_native_copy_other_bucket():
+    storage_policy = "policy_s3_other_bucket"
     backup_name = new_backup_name()
     backup_destination = (
         f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"

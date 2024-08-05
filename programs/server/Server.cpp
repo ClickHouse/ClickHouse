@@ -22,7 +22,6 @@
 #include <base/coverage.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/safeExit.h>
-#include <base/Numa.h>
 #include <Common/PoolId.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ClickHouseRevision.h>
@@ -140,7 +139,6 @@
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
 #   include <azure/core/diagnostics/logger.hpp>
 #endif
-
 
 #include <incbin.h>
 /// A minimal file used when the server is run without installation
@@ -754,12 +752,6 @@ try
         const String config_path = config().getString("config-file", "config.xml");
         const auto config_dir = std::filesystem::path{config_path}.replace_filename("openssl.conf");
         setenv("OPENSSL_CONF", config_dir.c_str(), true); /// NOLINT
-    }
-
-    if (auto total_numa_memory = getNumaNodesTotalMemory(); total_numa_memory.has_value())
-    {
-        LOG_INFO(
-            log, "ClickHouse is bound to a subset of NUMA nodes. Total memory of all available nodes: {}", ReadableSize(*total_numa_memory));
     }
 
     registerInterpreters();
