@@ -349,7 +349,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 
         for (const auto & column_attrs : table.physical_columns->attributes)
         {
-            if (column_attrs.second.attgenerated != 's')
+            if (column_attrs.second.attgenerated != 's') /// e.g. not a generated column
             {
                 continue;
             }
