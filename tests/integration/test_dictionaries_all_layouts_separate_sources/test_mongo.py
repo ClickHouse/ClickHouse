@@ -98,7 +98,7 @@ def started_cluster(
         "MongoDB",
         "localhost",
         27017,
-        'mongo_secure' if secure_connection else 'mongo1',
+        "mongo_secure" if secure_connection else "mongo1",
         27017,
         "root",
         "clickhouse",
@@ -137,7 +137,9 @@ def test_simple(secure_connection, legacy, started_cluster, layout_name, simple_
 @pytest.mark.parametrize("secure_connection", [False], indirect=["secure_connection"])
 @pytest.mark.parametrize("legacy", [False, True], indirect=["legacy"])
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_COMPLEX))
-def test_complex(secure_connection, legacy, started_cluster, layout_name, complex_tester):
+def test_complex(
+    secure_connection, legacy, started_cluster, layout_name, complex_tester
+):
     complex_tester.execute(layout_name, started_cluster.instances["node"])
 
 
@@ -151,5 +153,7 @@ def test_ranged(secure_connection, legacy, started_cluster, layout_name, ranged_
 @pytest.mark.parametrize("secure_connection", [True], indirect=["secure_connection"])
 @pytest.mark.parametrize("legacy", [False, True], indirect=["legacy"])
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_SIMPLE))
-def test_simple_ssl(secure_connection, legacy, started_cluster, layout_name, simple_tester):
+def test_simple_ssl(
+    secure_connection, legacy, started_cluster, layout_name, simple_tester
+):
     simple_tester.execute(layout_name, started_cluster.instances["node"])
