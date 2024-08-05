@@ -173,7 +173,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
     size_t prev_tables_count = metadata.parsed_tables.size();
     size_t prev_total_dictionaries = metadata.total_dictionaries;
 
-    auto process_metadata = [&metadata, is_startup, this](const String & file_name)
+    auto process_metadata = [&metadata, is_startup, local_context, this](const String & file_name)
     {
         fs::path path(getMetadataPath());
         fs::path file_path(file_name);
