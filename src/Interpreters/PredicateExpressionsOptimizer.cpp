@@ -1,6 +1,5 @@
 #include <Interpreters/PredicateExpressionsOptimizer.h>
 
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExtractExpressionInfoVisitor.h>
 #include <Interpreters/PredicateRewriteVisitor.h>

@@ -1,8 +1,11 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
+#include <unordered_set>
+
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/IAST_fwd.h>
+
+#include <Core/Settings.h>
 
 namespace DB
 {

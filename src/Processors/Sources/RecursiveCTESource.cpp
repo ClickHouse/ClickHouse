@@ -17,8 +17,6 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/TableNode.h>
 
-#include <Core/Settings.h>
-
 namespace DB
 {
 

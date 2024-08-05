@@ -8,7 +8,6 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
-#include <Common/Logger.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/config_version.h>
@@ -39,19 +38,10 @@ namespace ErrorCodes
     extern const int CANNOT_MREMAP;
 }
 
-void abortOnFailedAssertion(const String & description, void * const * trace, size_t trace_offset, size_t trace_size)
-{
-    auto & logger = Poco::Logger::root();
-    LOG_FATAL(&logger, "Logical error: '{}'.", description);
-    if (trace)
-        LOG_FATAL(&logger, "Stack trace (when copying this message, always include the lines below):\n\n{}", StackTrace::toString(trace, trace_offset, trace_size));
-    abort();
-}
-
 void abortOnFailedAssertion(const String & description)
 {
-    StackTrace st;
-    abortOnFailedAssertion(description, st.getFramePointers().data(), st.getOffset(), st.getSize());
+    LOG_FATAL(&Poco::Logger::root(), "Logical error: '{}'.", description);
+    abort();
 }
 
 bool terminate_on_any_exception = false;
@@ -65,10 +55,10 @@ void handle_error_code(const std::string & msg, int code, bool remote, const Exc
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifdef ABORT_ON_LOGICAL_ERROR
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
-        abortOnFailedAssertion(msg, trace.data(), 0, trace.size());
+        abortOnFailedAssertion(msg);
     }
 #endif
 
@@ -101,7 +91,7 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
 {
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
-    capture_thread_frame_pointers = getThreadFramePointers();
+    capture_thread_frame_pointers = thread_frame_pointers;
     handle_error_code(msg_masked.msg, code, remote, getStackFramePointers());
 }
 
@@ -111,7 +101,7 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
 {
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
-    capture_thread_frame_pointers = getThreadFramePointers();
+    capture_thread_frame_pointers = thread_frame_pointers;
     handle_error_code(message(), code, remote, getStackFramePointers());
 }
 
@@ -120,7 +110,7 @@ Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
 {
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
-    capture_thread_frame_pointers = getThreadFramePointers();
+    capture_thread_frame_pointers = thread_frame_pointers;
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = exc.get_stack_trace_frames();
     auto stack_trace_size = exc.get_stack_trace_size();
@@ -134,7 +124,7 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
 {
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
-    capture_thread_frame_pointers = getThreadFramePointers();
+    capture_thread_frame_pointers = thread_frame_pointers;
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = exc.get_stack_trace_frames();
     auto stack_trace_size = exc.get_stack_trace_size();
@@ -224,38 +214,10 @@ Exception::FramePointers Exception::getStackFramePointers() const
 }
 
 thread_local bool Exception::enable_job_stack_trace = false;
-thread_local bool Exception::can_use_thread_frame_pointers = false;
-thread_local Exception::ThreadFramePointers Exception::thread_frame_pointers;
-
-Exception::ThreadFramePointers::ThreadFramePointers()
-{
-    can_use_thread_frame_pointers = true;
-}
-
-Exception::ThreadFramePointers::~ThreadFramePointers()
-{
-    can_use_thread_frame_pointers = false;
-}
-
-Exception::ThreadFramePointersBase Exception::getThreadFramePointers()
-{
-    if (can_use_thread_frame_pointers)
-        return thread_frame_pointers.frame_pointers;
-
-    return {};
-}
-
-void Exception::setThreadFramePointers(ThreadFramePointersBase frame_pointers)
-{
-    if (can_use_thread_frame_pointers)
-        thread_frame_pointers.frame_pointers = std::move(frame_pointers);
-}
+thread_local std::vector<StackTrace::FramePointers> Exception::thread_frame_pointers = {};
 
 static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message)
 {
-    if (!isLoggingEnabled())
-        return;
-
     try
     {
         PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
@@ -271,9 +233,6 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
 {
-    if (!isLoggingEnabled())
-        return;
-
     /// Under high memory pressure, new allocations throw a
     /// MEMORY_LIMIT_EXCEEDED exception.
     ///
@@ -475,7 +434,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
         }
         catch (...) {} // NOLINT(bugprone-empty-catch)
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifdef ABORT_ON_LOGICAL_ERROR
         try
         {
             throw;

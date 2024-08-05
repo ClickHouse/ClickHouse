@@ -50,7 +50,6 @@ struct WindowTransformBlock
 {
     Columns original_input_columns;
     Columns input_columns;
-    Columns casted_columns;
     MutableColumns output_columns;
 
     size_t rows = 0;

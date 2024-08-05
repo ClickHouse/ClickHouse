@@ -34,8 +34,10 @@ import urllib.parse
 # for crc32
 import zlib
 from argparse import ArgumentParser
+from contextlib import closing
 from datetime import datetime, timedelta
 from errno import ESRCH
+from queue import Full
 from subprocess import PIPE, Popen
 from time import sleep, time
 from typing import Dict, List, Optional, Set, Tuple, Union
@@ -67,7 +69,7 @@ TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
 
 VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
-TEST_MAX_RUN_TIME_IN_SECONDS = 180
+TEST_MAX_RUN_TIME_IN_SECONDS = 120
 
 
 class SharedEngineReplacer:
@@ -358,14 +360,37 @@ def clickhouse_execute_json(
     return rows
 
 
+class Terminated(KeyboardInterrupt):
+    pass
+
+
+def signal_handler(sig, frame):
+    raise Terminated(f"Terminated with {sig} signal")
+
+
 def stop_tests():
-    # send signal to all processes in group to avoid hung check triggering
-    # (to avoid terminating clickhouse-test itself, the signal should be ignored)
-    print("Sending signals")
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    os.killpg(os.getpgid(os.getpid()), signal.SIGTERM)
-    signal.signal(signal.SIGTERM, signal.SIG_DFL)
-    print("Sending signals DONE")
+    global stop_tests_triggered_lock
+    global stop_tests_triggered
+    global restarted_tests
+
+    with stop_tests_triggered_lock:
+        print("Stopping tests")
+        if not stop_tests_triggered.is_set():
+            stop_tests_triggered.set()
+
+            # materialize multiprocessing.Manager().list() object before
+            # sending SIGTERM since this object is a proxy, that requires
+            # communicating with manager thread, but after SIGTERM will be
+            # send, this thread will die, and you will get
+            # ConnectionRefusedError error for any access to "restarted_tests"
+            # variable.
+            restarted_tests = [*restarted_tests]
+
+            # send signal to all processes in group to avoid hung check triggering
+            # (to avoid terminating clickhouse-test itself, the signal should be ignored)
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            os.killpg(os.getpgid(os.getpid()), signal.SIGTERM)
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
 
 def get_db_engine(args, database_name):
@@ -675,9 +700,7 @@ class FailureReason(enum.Enum):
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
     NON_ATOMIC_DB = "database engine not Atomic"
-    OBJECT_STORAGE = "object-storage"
     S3_STORAGE = "s3-storage"
-    AZURE_BLOB_STORAGE = "azure-blob-storage"
     BUILD = "not running for current build"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
     SHARED_MERGE_TREE = "no-shared-merge-tree"
@@ -712,7 +735,7 @@ def get_localzone():
 class SettingsRandomizer:
     settings = {
         "max_insert_threads": lambda: (
-            12 if random.random() < 0.03 else random.randint(1, 3)
+            0 if random.random() < 0.5 else random.randint(1, 16)
         ),
         "group_by_two_level_threshold": threshold_generator(0.2, 0.2, 1, 1000000),
         "group_by_two_level_threshold_bytes": threshold_generator(
@@ -729,7 +752,7 @@ class SettingsRandomizer:
         "prefer_localhost_replica": lambda: random.randint(0, 1),
         "max_block_size": lambda: random.randint(8000, 100000),
         "max_joined_block_size_rows": lambda: random.randint(8000, 100000),
-        "max_threads": lambda: 32 if random.random() < 0.03 else random.randint(1, 3),
+        "max_threads": lambda: random.randint(1, 64),
         "optimize_append_index": lambda: random.randint(0, 1),
         "optimize_if_chain_to_multiif": lambda: random.randint(0, 1),
         "optimize_if_transform_strings_to_enum": lambda: random.randint(0, 1),
@@ -821,10 +844,7 @@ class SettingsRandomizer:
                 get_localzone(),
             ]
         ),
-        # This setting affect part names and their content which can be read from tables in tests.
-        # We have a lot of tests which relies on part names, so it's very unsafe to enable randomization
-        # of this setting
-        # "prefer_warmed_unmerged_parts_seconds": lambda: random.randint(0, 10),
+        "prefer_warmed_unmerged_parts_seconds": lambda: random.randint(0, 10),
         "use_page_cache_for_disks_without_file_cache": lambda: random.random() < 0.7,
         "page_cache_inject_eviction": lambda: random.random() < 0.5,
         "merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability": lambda: round(
@@ -835,7 +855,6 @@ class SettingsRandomizer:
         "cross_join_min_bytes_to_compress": lambda: random.choice([0, 1, 100000000]),
         "min_external_table_block_size_bytes": lambda: random.choice([0, 1, 100000000]),
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
-        "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
     }
 
     @staticmethod
@@ -1207,26 +1226,13 @@ class TestCase:
 
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
-        elif tags and ("no-azure-blob-storage" in tags) and args.azure_blob_storage:
-            return FailureReason.AZURE_BLOB_STORAGE
         elif (
             tags
-            and ("no-object-storage" in tags)
-            and (args.azure_blob_storage or args.s3_storage)
-        ):
-            return FailureReason.OBJECT_STORAGE
-        elif (
-            tags
-            and "no-object-storage-with-slow-build" in tags
-            and (args.s3_storage or args.azure_blob_storage)
+            and "no-s3-storage-with-slow-build" in tags
+            and args.s3_storage
             and BuildFlags.RELEASE not in args.build_flags
         ):
-            return FailureReason.OBJECT_STORAGE
-
-        elif "no-batch" in tags and (
-            args.run_by_hash_num is not None or args.run_by_hash_total is not None
-        ):
-            return FailureReason.SKIP
+            return FailureReason.S3_STORAGE
 
         elif tags:
             for build_flag in args.build_flags:
@@ -1458,7 +1464,8 @@ class TestCase:
         description_full = messages[result.status]
         description_full += self.print_test_time(result.total_time)
         if result.reason is not None:
-            description_full += f"\nReason: {result.reason.value} "
+            description_full += " - "
+            description_full += result.reason.value
 
         description_full += result.description
 
@@ -1529,15 +1536,6 @@ class TestCase:
         start_time = args.testcase_start_time
         database = args.testcase_database
 
-        if args.client_log:
-            log_opt = " --client_logs_file=" + args.client_log + " "
-            client_options += log_opt
-            os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-                os.environ["CLICKHOUSE_CLIENT_OPT"]
-                if "CLICKHOUSE_CLIENT_OPT" in os.environ
-                else ""
-            ) + log_opt
-
         # This is for .sh tests
         os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
 
@@ -1594,11 +1592,10 @@ class TestCase:
         # pylint:disable-next=consider-using-with; TODO: fix
         proc = Popen(command, shell=True, env=os.environ, start_new_session=True)
 
-        try:
-            proc.wait(args.timeout)
-        except subprocess.TimeoutExpired:
-            # Whether the test timed out will be decided later
-            pass
+        while (
+            datetime.now() - start_time
+        ).total_seconds() < args.timeout and proc.poll() is None:
+            sleep(0.01)
 
         debug_log = ""
         if os.path.exists(self.testcase_args.debug_log_file):
@@ -1619,44 +1616,6 @@ class TestCase:
 
         # Normalize hostname in stdout file.
         replace_in_file(self.stdout_file, socket.gethostname(), "localhost")
-
-        if os.environ.get("CLICKHOUSE_PORT_TCP"):
-            replace_in_file(
-                self.stdout_file,
-                f"PORT {os.environ['CLICKHOUSE_PORT_TCP']}",
-                "PORT 9000",
-            )
-            replace_in_file(
-                self.stdout_file,
-                f"localhost	{os.environ['CLICKHOUSE_PORT_TCP']}",
-                "localhost	9000",
-            )
-
-        if os.environ.get("CLICKHOUSE_PORT_TCP_SECURE"):
-            replace_in_file(
-                self.stdout_file,
-                f"PORT {os.environ['CLICKHOUSE_PORT_TCP_SECURE']}",
-                "PORT 9440",
-            )
-            replace_in_file(
-                self.stdout_file,
-                f"localhost	{os.environ['CLICKHOUSE_PORT_TCP_SECURE']}",
-                "localhost	9440",
-            )
-
-        if os.environ.get("CLICKHOUSE_PATH"):
-            replace_in_file(
-                self.stdout_file,
-                os.environ["CLICKHOUSE_PATH"],
-                "/var/lib/clickhouse",
-            )
-
-        if os.environ.get("CLICKHOUSE_PORT_HTTPS"):
-            replace_in_file(
-                self.stdout_file,
-                f"https://localhost:{os.environ['CLICKHOUSE_PORT_HTTPS']}/",
-                "https://localhost:8443/",
-            )
 
         stdout = ""
         if os.path.exists(self.stdout_file):
@@ -1763,7 +1722,7 @@ class TestCase:
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
-                FailureReason.TIMEOUT,
+                FailureReason.INTERNAL_QUERY_FAIL,
                 total_time,
                 self.add_info_about_settings(
                     self.get_description_from_exception_info(sys.exc_info())
@@ -2102,25 +2061,15 @@ class TestSuite:
 stop_time = None
 exit_code = None
 server_died = None
+stop_tests_triggered_lock = None
+stop_tests_triggered = None
+queue = None
 multiprocessing_manager = None
 restarted_tests = None
 
 
-class ServerDied(Exception):
-    pass
-
-
-class GlobalTimeout(Exception):
-    pass
-
-
-def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool]):
-    (
-        all_tests,
-        num_tests,
-        test_suite,
-        is_concurrent,
-    ) = all_tests_with_params
+def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
+    all_tests, num_tests, test_suite = all_tests_with_params
     global stop_time
     global exit_code
     global server_died
@@ -2163,68 +2112,56 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
     failures_chain = 0
     start_time = datetime.now()
 
+    is_concurrent = multiprocessing.current_process().name != "MainProcess"
+
     client_options = get_additional_client_options(args)
 
     if num_tests > 0:
         about = "about " if is_concurrent else ""
         proc_name = multiprocessing.current_process().name
-        print(f"Running {about}{num_tests} {test_suite.suite} tests ({proc_name}).")
+        print(f"\nRunning {about}{num_tests} {test_suite.suite} tests ({proc_name}).\n")
 
     while True:
-        if all_tests:
-            try:
-                case = all_tests.pop(0)
-            except IndexError:
+        if is_concurrent:
+            case = queue.get(timeout=args.timeout * 1.1)
+            if not case:
                 break
         else:
-            break
+            if all_tests:
+                case = all_tests.pop(0)
+            else:
+                break
 
         if server_died.is_set():
             stop_tests()
-            raise ServerDied("Server died")
+            break
 
         if stop_time and time() > stop_time:
             print("\nStop tests run because global time limit is exceeded.\n")
             stop_tests()
-            raise GlobalTimeout("Stop tests run because global time limit is exceeded")
+            break
 
         test_case = TestCase(test_suite, case, args, is_concurrent)
 
         try:
             description = ""
-            test_case_name = removesuffix(test_case.name, ".gen", ".sql") + ": "
-
-            if is_concurrent:
-                description = f"{test_case_name:72}"
-            else:
+            test_cace_name = removesuffix(test_case.name, ".gen", ".sql") + ": "
+            if not is_concurrent:
                 sys.stdout.flush()
-                sys.stdout.write(f"{test_case_name:72}")
+                sys.stdout.write(f"{test_cace_name:72}")
                 # This flush is needed so you can see the test name of the long
                 # running test before it will finish. But don't do it in parallel
                 # mode, so that the lines don't mix.
                 sys.stdout.flush()
+            else:
+                description = f"{test_cace_name:72}"
 
             while True:
-                # This is the upper level timeout
-                # It helps with completely frozen processes, like in case of gdb errors
-                def timeout_handler(signum, frame):
-                    raise TimeoutError("Test execution timed out")
-
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(int(args.timeout * 1.1))
-                test_result = None
-                try:
-                    test_result = test_case.run(
-                        args, test_suite, client_options, server_logs_level
-                    )
-                    test_result = test_case.process_result(test_result, MESSAGES)
-                    break
-                except TimeoutError:
-                    break
-                finally:
-                    signal.alarm(0)
-
-                if not test_result or not test_result.need_retry:
+                test_result = test_case.run(
+                    args, test_suite, client_options, server_logs_level
+                )
+                test_result = test_case.process_result(test_result, MESSAGES)
+                if not test_result.need_retry:
                     break
                 restarted_tests.append(test_result)
 
@@ -2244,9 +2181,8 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
                 failures_total += 1
                 failures_chain += 1
                 if test_result.reason == FailureReason.SERVER_DIED:
-                    stop_tests()
                     server_died.set()
-                    raise ServerDied("Server died")
+                    stop_tests()
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
 
@@ -2257,7 +2193,7 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
 
         if failures_chain >= args.max_failures_chain:
             stop_tests()
-            raise ServerDied("Max failures chain")
+            break
 
     if failures_total > 0:
         print(
@@ -2454,11 +2390,7 @@ def extract_key(key: str) -> str:
     )[1]
 
 
-def run_tests_process(*args, **kwargs):
-    return run_tests_array(*args, **kwargs)
-
-
-def do_run_tests(jobs, test_suite: TestSuite):
+def do_run_tests(jobs, test_suite: TestSuite, parallel):
     if jobs > 1 and len(test_suite.parallel_tests) > 0:
         print(
             "Found",
@@ -2467,8 +2399,19 @@ def do_run_tests(jobs, test_suite: TestSuite):
             len(test_suite.sequential_tests),
             "sequential tests",
         )
+        run_n, run_total = parallel.split("/")
+        run_n = float(run_n)
+        run_total = float(run_total)
         tests_n = len(test_suite.parallel_tests)
+        run_total = min(run_total, tests_n)
+
         jobs = min(jobs, tests_n)
+        run_total = max(jobs, run_total)
+
+        batch_size = max(1, len(test_suite.parallel_tests) // jobs)
+        parallel_tests_array = []
+        for _ in range(jobs):
+            parallel_tests_array.append((None, batch_size, test_suite))
 
         # If we don't do random shuffling then there will be always
         # nearly the same groups of test suites running concurrently.
@@ -2481,71 +2424,33 @@ def do_run_tests(jobs, test_suite: TestSuite):
         # of failures will be nearly the same for all tests from the group.
         random.shuffle(test_suite.parallel_tests)
 
-        batch_size = len(test_suite.parallel_tests) // jobs
-        manager = multiprocessing.Manager()
-        parallel_tests = manager.list()
-        parallel_tests.extend(test_suite.parallel_tests)
+        try:
+            with closing(multiprocessing.Pool(processes=jobs)) as pool:
+                pool.map_async(run_tests_array, parallel_tests_array)
 
-        processes = []
-        for _ in range(jobs):
-            process = multiprocessing.Process(
-                target=run_tests_process,
-                args=((parallel_tests, batch_size, test_suite, True),),
+                for suit in test_suite.parallel_tests:
+                    queue.put(suit, timeout=args.timeout * 1.1)
+
+                for _ in range(jobs):
+                    queue.put(None, timeout=args.timeout * 1.1)
+
+                queue.close()
+        except Full:
+            print(
+                "Couldn't put test to the queue within timeout. Server probably hung."
             )
-            processes.append(process)
-            process.start()
+            print_stacktraces()
+            queue.close()
 
-        while processes:
-            sys.stdout.flush()
-            # Periodically check the server for hangs
-            # and stop all processes in this case
-            try:
-                clickhouse_execute(
-                    args,
-                    query="SELECT 1 /*hang up check*/",
-                    max_http_retries=5,
-                    timeout=20,
-                )
-            except Exception:
-                print("Hang up check failed")
-                server_died.set()
-
-            if server_died.is_set():
-                print("Server died, terminating all processes...")
-                kill_gdb_if_any()
-                # Wait for test results
-                sleep(args.timeout)
-                for p in processes:
-                    if p.is_alive():
-                        p.terminate()
-                break
-
-            for p in processes[:]:
-                if not p.is_alive():
-                    processes.remove(p)
-
-            sleep(5)
+        pool.join()
 
         run_tests_array(
-            (
-                test_suite.sequential_tests,
-                len(test_suite.sequential_tests),
-                test_suite,
-                False,
-            )
+            (test_suite.sequential_tests, len(test_suite.sequential_tests), test_suite)
         )
-
         return len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
     else:
         num_tests = len(test_suite.all_tests)
-        run_tests_array(
-            (
-                test_suite.all_tests,
-                num_tests,
-                test_suite,
-                False,
-            )
-        )
+        run_tests_array((test_suite.all_tests, num_tests, test_suite))
         return num_tests
 
 
@@ -2850,7 +2755,6 @@ def main(args):
                     f"{get_db_engine(args, db_name)}",
                     settings=get_create_database_settings(args, None),
                 )
-                break
             except HTTPError as e:
                 total_time = (datetime.now() - start_time).total_seconds()
                 if not need_retry(args, e.message, e.message, total_time):
@@ -2903,7 +2807,7 @@ def main(args):
 
         test_suite.cloud_skip_list = cloud_skip_list
         test_suite.private_skip_list = private_skip_list
-        total_tests_run += do_run_tests(args.jobs, test_suite)
+        total_tests_run += do_run_tests(args.jobs, test_suite, args.parallel)
 
     if server_died.is_set():
         exit_code.value = 1
@@ -2960,15 +2864,6 @@ def main(args):
             exit_code.value = 1
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
-
-    if args.client_log:
-        if os.path.exists(args.client_log):
-            with open(args.client_log, "rb") as stream:
-                content = stream.read().decode()
-                if len(content):
-                    print("Has fatal logs from client:\n")
-                    print(content)
-            os.remove(args.client_log)
 
     if len(restarted_tests) > 0:
         print("\nSome tests were restarted:\n")
@@ -3205,12 +3100,6 @@ def parse_args():
         help="Run tests over s3 storage",
     )
     parser.add_argument(
-        "--azure-blob-storage",
-        action="store_true",
-        default=False,
-        help="Run tests over azure blob storage",
-    )
-    parser.add_argument(
         "--no-random-settings",
         action="store_true",
         default=False,
@@ -3362,36 +3251,26 @@ def parse_args():
     parser.add_argument(
         "--replace-replicated-with-shared",
         action="store_true",
-        default=os.environ.get("REPLACE_RMT_WITH_SMT", False),
+        default=os.environ.get("USE_META_IN_KEEPER_FOR_MERGE_TREE", False),
         help="Replace ReplicatedMergeTree engine with SharedMergeTree",
     )
     parser.add_argument(
         "--replace-non-replicated-with-shared",
         action="store_true",
-        default=os.environ.get("REPLACE_MT_WITH_SMT", False),
+        default=False,
         help="Replace ordinary MergeTree engine with SharedMergeTree",
-    )
-    parser.add_argument(
-        "--client-log",
-        default="./client.fatal.log",
-        help="Path to file for fatal logs from client",
     )
 
     return parser.parse_args()
-
-
-class Terminated(KeyboardInterrupt):
-    pass
-
-
-def signal_handler(sig, frame):
-    raise Terminated(f"Terminated with {sig} signal")
 
 
 if __name__ == "__main__":
     stop_time = None
     exit_code = multiprocessing.Value("i", 0)
     server_died = multiprocessing.Event()
+    stop_tests_triggered_lock = multiprocessing.Lock()
+    stop_tests_triggered = multiprocessing.Event()
+    queue = multiprocessing.Queue(maxsize=1)
     multiprocessing_manager = multiprocessing.Manager()
     restarted_tests = multiprocessing_manager.list()
 

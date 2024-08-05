@@ -47,7 +47,7 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
   * Inputs are not used for actions dag outputs.
   * Only root query tree expression node is used as actions dag output.
   */
-ActionsDAG buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
+ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context);
 
@@ -87,8 +87,5 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
         NameSet table_expression_required_names_without_filter = {});
 
 ASTPtr parseAdditionalResultFilter(const Settings & settings);
-
-using UsefulSets = std::unordered_set<FutureSetPtr>;
-void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 
 }

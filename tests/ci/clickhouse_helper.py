@@ -197,10 +197,6 @@ def get_instance_id():
     return _query_imds("latest/meta-data/instance-id")
 
 
-def get_instance_lifecycle():
-    return _query_imds("latest/meta-data/instance-life-cycle")
-
-
 def prepare_tests_results_for_clickhouse(
     pr_info: PRInfo,
     test_results: TestResults,
@@ -237,7 +233,7 @@ def prepare_tests_results_for_clickhouse(
         "head_ref": head_ref,
         "head_repo": head_repo,
         "task_url": pr_info.task_url,
-        "instance_type": ",".join([get_instance_type(), get_instance_lifecycle()]),
+        "instance_type": get_instance_type(),
         "instance_id": get_instance_id(),
     }
 
