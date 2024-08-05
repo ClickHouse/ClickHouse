@@ -8,7 +8,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_STATISTICS;
-extern const int LOGICAL_ERROR;
 }
 
 StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & stat_)
