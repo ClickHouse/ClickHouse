@@ -71,6 +71,8 @@ function configure
 {
     # Use the new config for both servers, so that we can change it in a PR.
     rm right/config/config.d/text_log.xml ||:
+    # backups disk uses absolute path, and this overlaps between servers, that could lead to errors
+    rm right/config/config.d/backups.xml ||:
     cp -rv right/config left ||:
 
     # Start a temporary server to rename the tables

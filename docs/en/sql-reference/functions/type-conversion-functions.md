@@ -4922,13 +4922,13 @@ This function is the opposite operation of function [formatDateTime](../function
 **Syntax**
 
 ``` sql
-parseDateTime(str, format[, timezone])
+parseDateTime(str[, format[, timezone]])
 ```
 
 **Arguments**
 
-- `str` — the String to be parsed
-- `format` — the format string
+- `str` — The String to be parsed
+- `format` — The format string. Optional. `%Y-%m-%d %H:%i:%s` if not specified.
 - `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). Optional.
 
 **Returned value(s)**
@@ -4971,13 +4971,13 @@ This function is the opposite operation of function [formatDateTimeInJodaSyntax]
 **Syntax**
 
 ``` sql
-parseDateTimeInJodaSyntax(str, format[, timezone])
+parseDateTimeInJodaSyntax(str[, format[, timezone]])
 ```
 
 **Arguments**
 
-- `str` — the String to be parsed
-- `format` — the format string
+- `str` — The String to be parsed
+- `format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
 - `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). Optional.
 
 **Returned value(s)**

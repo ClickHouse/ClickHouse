@@ -491,7 +491,16 @@ public:
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
-            return it->second;
+        {
+            /// It is possible that ActionsDAG already has an input with the same name as constant.
+            /// In this case, prefer constant to input.
+            /// Constatns affect function return type, which should be consistent with QueryTree.
+            /// Query example:
+            /// SELECT materialize(toLowCardinality('b')) || 'a' FROM remote('127.0.0.{1,2}', system, one) GROUP BY 'a'
+            bool materialized_input = it->second->type == ActionsDAG::ActionType::INPUT && !it->second->column;
+            if (!materialized_input)
+                return it->second;
+        }
 
         const auto * node = &actions_dag.addColumn(column);
         node_name_to_node[node->result_name] = node;
