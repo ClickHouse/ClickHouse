@@ -1733,6 +1733,7 @@ groupBitmap
 groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
+groupConcat
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1749,6 +1750,7 @@ groupbitmapor
 groupbitmapxor
 groupbitor
 groupbitxor
+groupconcat
 groupuniqarray
 grpc
 grpcio
@@ -1870,6 +1872,7 @@ joinGetOrNull
 json
 jsonMergePatch
 jsonasstring
+jsonasobject
 jsoncolumns
 jsoncolumnsmonoblock
 jsoncompact
@@ -2279,6 +2282,7 @@ prettyspacemonoblock
 prettyspacenoescapes
 prettyspacenoescapesmonoblock
 prewhere
+printf
 privateKeyFile
 privateKeyPassphraseHandler
 prlimit
