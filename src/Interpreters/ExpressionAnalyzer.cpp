@@ -171,7 +171,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     PreparedSetsPtr prepared_sets_,
     bool is_create_parameterized_view_)
     : WithContext(context_)
-    , query(query_), settings(getContext()->getSettings())
+    , query(query_), settings(getContext()->getSettingsRef())
     , subquery_depth(subquery_depth_)
     , syntax(syntax_analyzer_result_)
     , is_create_parameterized_view(is_create_parameterized_view_)
@@ -984,7 +984,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
-        const auto & settings = context->getSettings();
+        const auto & settings = context->getSettingsRef();
 
         if (analyzed_join->allowParallelHashJoin())
             return std::make_shared<ConcurrentHashJoin>(

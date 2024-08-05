@@ -34,7 +34,8 @@ class CI:
     from ci_definitions import Runners as Runners
     from ci_utils import Envs as Envs
     from ci_utils import Utils as Utils
-    from ci_utils import GHActions as GHActions
+    from ci_utils import GH as GH
+    from ci_utils import Shell as Shell
     from ci_definitions import Labels as Labels
     from ci_definitions import TRUSTED_CONTRIBUTORS as TRUSTED_CONTRIBUTORS
     from ci_definitions import WorkFlowNames as WorkFlowNames
@@ -519,10 +520,10 @@ class CI:
             runner_type=Runners.STYLE_CHECKER,
         ),
         JobNames.DOCKER_SERVER: CommonJobConfigs.DOCKER_SERVER.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE]
+            required_builds=[BuildNames.PACKAGE_RELEASE, BuildNames.PACKAGE_AARCH64]
         ),
         JobNames.DOCKER_KEEPER: CommonJobConfigs.DOCKER_SERVER.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE]
+            required_builds=[BuildNames.PACKAGE_RELEASE, BuildNames.PACKAGE_AARCH64]
         ),
         JobNames.DOCS_CHECK: JobConfig(
             digest=DigestConfig(
