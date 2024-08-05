@@ -4,6 +4,7 @@
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
+#include "Common/Logger.h"
 #include <Common/AsyncLoader.h>
 #include <Common/PoolId.h>
 #include <Common/SensitiveDataMasker.h>
@@ -4395,6 +4396,15 @@ DiskPtr Context::getDisk(const String & name) const
     return disk_selector->get(name);
 }
 
+DiskPtr Context::tryGetDisk(const String & name) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto disk_selector = getDiskSelector(lock);
+
+    return disk_selector->tryGet(name);
+}
+
 DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
@@ -4422,9 +4432,11 @@ StoragePolicyPtr Context::getStoragePolicy(const String & name) const
 
 StoragePolicyPtr Context::getStoragePolicyFromDisk(const String & disk_name) const
 {
+    LOG_DEBUG(getLogger("StoragePolicy"), "getStoragePolicyFromDisk disk_name {}", disk_name);
+
     std::lock_guard lock(shared->storage_policies_mutex);
 
-    const std::string storage_policy_name = StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX + disk_name;
+    const std::string storage_policy_name = disk_name.starts_with(DiskSelector::CUSTOM_DISK_PREFIX) ? disk_name : StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX + disk_name;
     auto storage_policy_selector = getStoragePolicySelector(lock);
     StoragePolicyPtr storage_policy = storage_policy_selector->tryGet(storage_policy_name);
 

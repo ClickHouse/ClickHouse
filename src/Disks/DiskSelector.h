@@ -6,6 +6,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <map>
+#include <sstream>
+#include <string_view>
 
 namespace DB
 {
@@ -18,7 +20,7 @@ using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 class DiskSelector
 {
 public:
-    static constexpr auto TMP_INTERNAL_DISK_PREFIX = "__tmp_internal_";
+    static constexpr auto CUSTOM_DISK_PREFIX = "__";
 
     explicit DiskSelector(std::unordered_set<String> skip_types_ = {}) : skip_types(skip_types_) { }
     DiskSelector(const DiskSelector & from) = default;

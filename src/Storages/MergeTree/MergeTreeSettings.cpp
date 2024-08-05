@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Disks/getOrCreateDiskFromAST.h>
+#include <Disks/DiskFomAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -64,9 +64,13 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr conte
                         auto ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
                         if (ast && isDiskFunction(ast))
                         {
-                            auto disk_name = getOrCreateDiskFromDiskAST(ast, context, is_attach);
-                            LOG_TRACE(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
+                            auto disk_name = DiskFomAST::createCustomDisk(ast, context, is_attach);
+                            LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
                             value = disk_name;
+                        }
+                        else
+                        {
+                            value = DiskFomAST::getConfigDefinedDisk(value.safeGet<String>(), context);
                         }
                     }
 
