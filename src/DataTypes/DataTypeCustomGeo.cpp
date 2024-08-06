@@ -24,7 +24,7 @@ void registerDataTypeDomainGeo(DataTypeFactory & factory)
             std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeLineStringName>()));
     });
 
-    // Custom type for mulitple lines stored as Array(LineString)
+    // Custom type for multiple lines stored as Array(LineString)
     factory.registerSimpleDataTypeCustom("MultiLineString", []
     {
         return std::make_pair(DataTypeFactory::instance().get("Array(LineString)"),

@@ -2086,6 +2086,7 @@ multiSearchFirstPositionUTF
 multibyte
 multidirectory
 multiline
+multilinestring
 multiplyDecimal
 multipolygon
 multisearchany
