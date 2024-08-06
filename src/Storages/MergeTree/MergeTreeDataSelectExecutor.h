@@ -159,7 +159,7 @@ public:
 
     /// If possible, construct optional key condition from predicates containing _part_offset column.
     static void buildKeyConditionFromPartOffset(
-        std::optional<KeyCondition> & part_offset_condition, const ActionsDAGPtr & filter_dag, ContextPtr context);
+        std::optional<KeyCondition> & part_offset_condition, const ActionsDAG * filter_dag, ContextPtr context);
 
     /// If possible, filter using expression on virtual columns.
     /// Example: SELECT count() FROM table WHERE _part = 'part_name'
@@ -168,7 +168,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
         const MergeTreeData::DataPartsVector & parts,
-        const ActionsDAGPtr & filter_dag,
+        const ActionsDAG * filter_dag,
         ContextPtr context);
 
     /// Filter parts using minmax index and partition key.

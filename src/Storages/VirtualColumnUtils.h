@@ -18,12 +18,21 @@ class NamesAndTypesList;
 namespace VirtualColumnUtils
 {
 
-/// Similar to filterBlockWithQuery, but uses ActionsDAG as a predicate.
-/// Basically it is filterBlockWithDAG(splitFilterDagForAllowedInputs).
+/// The filtering functions are tricky to use correctly.
+/// There are 2 ways:
+///  1. Call filterBlockWithPredicate() or filterBlockWithExpression() inside SourceStepWithFilter::applyFilters().
+///  2. Call splitFilterDagForAllowedInputs() and buildSetsForDAG() inside SourceStepWithFilter::applyFilters().
+///     Then call filterBlockWithPredicate() or filterBlockWithExpression() in initializePipeline().
+///
+/// Otherwise calling filter*() outside applyFilters() will throw "Not-ready Set is passed"
+/// if there are subqueries.
+
+/// Similar to filterBlockWithExpression(buildFilterExpression(splitFilterDagForAllowedInputs(...))).
 void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context);
 
 /// Just filters block. Block should contain all the required columns.
-void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context);
+ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context);
+void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block);
 
 /// Builds sets used by ActionsDAG inplace.
 void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
@@ -32,15 +41,7 @@ void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 
 /// Extract a part of predicate that can be evaluated using only columns from input_names.
-/// When allow_non_deterministic_functions is true then even if the predicate contains non-deterministic
-/// functions, we still allow to extract a part of the predicate, otherwise we return nullptr.
-/// allow_non_deterministic_functions must be false when we are going to use the result to filter parts in
-/// MergeTreeData::totalRowsByPartitionPredicateImp. For example, if the query is
-/// `SELECT count() FROM table  WHERE _partition_id = '0' AND rowNumberInBlock() = 1`
-/// The predicate will be `_partition_id = '0' AND rowNumberInBlock() = 1`, and `rowNumberInBlock()` is
-/// non-deterministic. If we still extract the part `_partition_id = '0'` for filtering parts, then trivial
-/// count optimization will be mistakenly applied to the query.
-ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, bool allow_non_deterministic_functions = true);
+std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs);
 
 /// Extract from the input stream a set of `name` column values
 template <typename T>
@@ -57,14 +58,14 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
 NameSet getVirtualNamesForFileLikeStorage();
 VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns);
 
-ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
+std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
 
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ActionsDAGPtr & dag, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
+ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns);
 
 template <typename T>
-void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & paths, const ActionsDAGPtr & dag, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns)
 {
-    auto indexes_column = getFilterByPathAndFileIndexes(paths, dag, virtual_columns, context);
+    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns);
     const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
     if (indexes.size() == sources.size())
         return;

@@ -226,6 +226,9 @@ add_object_library(clickhouse_storages_windowview Storages/WindowView)
 add_object_library(clickhouse_storages_s3queue Storages/ObjectStorageQueue)
 add_object_library(clickhouse_storages_materializedview Storages/MaterializedView)
 add_object_library(clickhouse_client Client)
+# Always compile this file with the highest possible level of optimizations, even in Debug builds.
+# https://github.com/ClickHouse/ClickHouse/issues/65745
+set_source_files_properties(Client/ClientBaseOptimizedParts.cpp PROPERTIES COMPILE_FLAGS "-O3")
 add_object_library(clickhouse_bridge BridgeHelper)
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
