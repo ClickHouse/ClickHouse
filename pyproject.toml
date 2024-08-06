@@ -39,6 +39,8 @@ disable = '''
           no-else-return,
           global-statement,
           f-string-without-interpolation,
+          consider-using-with,
+          use-maxsplit-arg,
           '''
 
 [tool.pylint.SIMILARITIES]

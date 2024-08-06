@@ -41,6 +41,14 @@ ColumnsDescription StorageSystemRocksDB::getColumnsDescription()
 }
 
 
+Block StorageSystemRocksDB::getFilterSampleBlock() const
+{
+    return {
+        { {}, std::make_shared<DataTypeString>(), "database" },
+        { {}, std::make_shared<DataTypeString>(), "table" },
+    };
+}
+
 void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
