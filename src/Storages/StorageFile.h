@@ -128,7 +128,7 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
-    static void parseFileSource(String source, String & filename, String & path_to_archive);
+    static void parseFileSource(String source, String & filename, String & path_to_archive, bool allow_archive_path_syntax);
 
     static ArchiveInfo getArchiveInfo(
         const std::string & path_to_archive,
