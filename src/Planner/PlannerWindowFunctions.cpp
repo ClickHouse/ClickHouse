@@ -12,27 +12,27 @@
 
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerSorting.h>
+#include <Planner/Utils.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int NOT_IMPLEMENTED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
 {
 
-WindowDescription extractWindowDescriptionFromWindowNode(const FunctionNode & func_node, const PlannerContext & planner_context)
+WindowDescription extractWindowDescriptionFromWindowNode(const QueryTreeNodePtr & func_node_, const PlannerContext & planner_context)
 {
+    const auto & func_node = func_node_->as<FunctionNode &>();
     auto node = func_node.getWindowNode();
     auto & window_node = node->as<WindowNode &>();
 
-    auto get_window_frame = [&]() { return extractWindowFrame(func_node); };
-
     WindowDescription window_description;
-    window_description.window_name = calculateWindowNodeActionName(node, planner_context, get_window_frame);
+    window_description.window_name = calculateWindowNodeActionName(func_node_, node, planner_context);
 
     for (const auto & partition_by_node : window_node.getPartitionBy().getNodes())
     {
@@ -49,7 +49,7 @@ WindowDescription extractWindowDescriptionFromWindowNode(const FunctionNode & fu
         window_description.full_sort_description.end(), window_description.order_by.begin(), window_description.order_by.end());
 
     /// WINDOW frame is validated during query analysis stage
-    auto window_frame = get_window_frame();
+    auto window_frame = extractWindowFrame(func_node);
     window_description.frame = window_frame ? *window_frame : window_node.getWindowFrame();
     auto node_frame = window_node.getWindowFrame();
 
@@ -82,7 +82,7 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
     {
         auto & window_function_node_typed = window_function_node->as<FunctionNode &>();
 
-        auto function_window_description = extractWindowDescriptionFromWindowNode(window_function_node_typed, planner_context);
+        auto function_window_description = extractWindowDescriptionFromWindowNode(window_function_node, planner_context);
 
         auto frame_type = function_window_description.frame.type;
         if (frame_type != WindowFrame::FrameType::ROWS && frame_type != WindowFrame::FrameType::RANGE)

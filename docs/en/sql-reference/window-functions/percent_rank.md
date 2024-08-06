@@ -15,12 +15,12 @@ Alias: `percentRank` (case-sensitive)
 ```sql
 percent_rank (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [RANGE RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
 ```
 
-The default and required window frame definition is `RANGE RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
+The default and required window frame definition is `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
 
 For more detail on window function syntax see: [Window Functions - Syntax](./index.md/#syntax).
 

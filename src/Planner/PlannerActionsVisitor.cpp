@@ -237,9 +237,8 @@ public:
 
                 if (function_node.isWindowFunction())
                 {
-                    auto get_window_frame = [&]() { return extractWindowFrame(function_node); };
                     buffer << " OVER (";
-                    buffer << calculateWindowNodeActionName(function_node.getWindowNode(), get_window_frame);
+                    buffer << calculateWindowNodeActionName(node, function_node.getWindowNode());
                     buffer << ')';
                 }
 
@@ -300,21 +299,22 @@ public:
         return calculateConstantActionNodeName(constant_literal, applyVisitor(FieldToDataType(), constant_literal));
     }
 
-    String calculateWindowNodeActionName(const QueryTreeNodePtr & node, std::function<std::optional<WindowFrame>()> get_window_frame)
+    String calculateWindowNodeActionName(const QueryTreeNodePtr & function_nodew_node_, const QueryTreeNodePtr & window_node_)
     {
-        auto & window_node = node->as<WindowNode &>();
+        const auto & function_node = function_nodew_node_->as<const FunctionNode&>();
+        const auto & window_node = window_node_->as<const WindowNode &>();
         WriteBufferFromOwnString buffer;
 
         if (window_node.hasPartitionBy())
         {
             buffer << "PARTITION BY ";
 
-            auto & partition_by_nodes = window_node.getPartitionBy().getNodes();
+            const auto & partition_by_nodes = window_node.getPartitionBy().getNodes();
             size_t partition_by_nodes_size = partition_by_nodes.size();
 
             for (size_t i = 0; i < partition_by_nodes_size; ++i)
             {
-                auto & partition_by_node = partition_by_nodes[i];
+                const auto & partition_by_node = partition_by_nodes[i];
                 buffer << calculateActionNodeName(partition_by_node);
                 if (i + 1 != partition_by_nodes_size)
                     buffer << ", ";
@@ -328,7 +328,7 @@ public:
 
             buffer << "ORDER BY ";
 
-            auto & order_by_nodes = window_node.getOrderBy().getNodes();
+            const auto & order_by_nodes = window_node.getOrderBy().getNodes();
             size_t order_by_nodes_size = order_by_nodes.size();
 
             for (size_t i = 0; i < order_by_nodes_size; ++i)
@@ -366,7 +366,7 @@ public:
             }
         }
 
-        auto window_frame_opt = get_window_frame();
+        auto window_frame_opt = extractWindowFrame(function_node);
         if (window_frame_opt)
         {
             auto & window_frame = *window_frame_opt;
@@ -1028,27 +1028,11 @@ String calculateConstantActionNodeName(const Field & constant_literal)
     return ActionNodeNameHelper::calculateConstantActionNodeName(constant_literal);
 }
 
-std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node)
-{
-    if (!node.isWindowFunction())
-        return {};
-    auto & window_node = node.getWindowNode()->as<WindowNode &>();
-    const auto & window_frame = window_node.getWindowFrame();
-    if (!window_frame.is_default)
-        return window_frame;
-    auto aggregate_function = node.getAggregateFunction();
-    if (const auto * win_func = dynamic_cast<const IWindowFunction *>(aggregate_function.get()))
-    {
-        return win_func->getDefaultFrame();
-    }
-    return {};
-}
-
-String calculateWindowNodeActionName(const QueryTreeNodePtr & node, const PlannerContext & planner_context, std::function<std::optional<WindowFrame>()> get_window_frame, bool use_column_identifier_as_action_node_name)
+String calculateWindowNodeActionName(const QueryTreeNodePtr & function_node, const QueryTreeNodePtr & window_node, const PlannerContext & planner_context, bool use_column_identifier_as_action_node_name)
 {
     QueryTreeNodeToName empty_map;
     ActionNodeNameHelper helper(empty_map, planner_context, use_column_identifier_as_action_node_name);
-    return helper.calculateWindowNodeActionName(node, get_window_frame);
+    return helper.calculateWindowNodeActionName(function_node, window_node);
 }
 
 }
