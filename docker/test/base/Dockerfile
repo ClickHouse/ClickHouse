@@ -35,7 +35,9 @@ ENV UBSAN_OPTIONS='print_stacktrace=1 max_allocation_size_mb=32768'
 ENV MSAN_OPTIONS='abort_on_error=1 poison_in_dtor=1 max_allocation_size_mb=32768'
 ENV LSAN_OPTIONS='max_allocation_size_mb=32768'
 
-# for external_symbolizer_path
+# for external_symbolizer_path, and also ensure that llvm-symbolizer really
+# exists (since you don't want to fallback to addr2line, it is very slow)
+RUN test -f /usr/bin/llvm-symbolizer-${LLVM_VERSION}
 RUN ln -s /usr/bin/llvm-symbolizer-${LLVM_VERSION} /usr/bin/llvm-symbolizer
 
 RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen en_US.UTF-8
