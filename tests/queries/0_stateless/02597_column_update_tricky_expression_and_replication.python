@@ -15,7 +15,8 @@ client = ClickHouseClient()
 
 
 client.query("DROP TABLE IF EXISTS test SYNC")
-client.query("""
+client.query(
+    """
 CREATE TABLE test
 (
     c_id String,
@@ -24,7 +25,8 @@ CREATE TABLE test
 )
 Engine = ReplicatedMergeTree()
 ORDER BY (c_id, p_id)
-""")
+"""
+)
 
 
 def attempt_mutation(q):

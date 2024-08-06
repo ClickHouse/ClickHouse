@@ -19,7 +19,12 @@ class ClickHouseClient:
         self.host = host
 
     def query(
-        self, query, connection_timeout=500, settings=dict(), binary_result=False, with_retries=True
+        self,
+        query,
+        connection_timeout=500,
+        settings=dict(),
+        binary_result=False,
+        with_retries=True,
     ):
         NUMBER_OF_TRIES = 30 if with_retries else 1
         DELAY = 10
