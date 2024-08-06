@@ -56,6 +56,7 @@ public:
     /// This method is used to select best projection for table.
     ReadFromMergeTree::AnalysisResultPtr estimateNumMarksToRead(
         MergeTreeData::DataPartsVector parts,
+        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,

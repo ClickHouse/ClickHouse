@@ -105,7 +105,6 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
         column_names_,
         settings_,
         context_)
-    , WithContext(context_)
     , prefetch_threadpool(getContext()->getPrefetchThreadpool())
     , log(getLogger("MergeTreePrefetchedReadPool(" + (parts_ranges.empty() ? "" : parts_ranges.front().data_part->storage.getStorageID().getNameForLogs()) + ")"))
 {

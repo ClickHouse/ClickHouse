@@ -320,6 +320,7 @@ private:
 
         MutationCommands getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
+        NameSet getAllUpdatedColumns() const override;
     };
 
     MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;

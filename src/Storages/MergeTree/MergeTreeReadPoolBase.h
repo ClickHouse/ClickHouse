@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class MergeTreeReadPoolBase : public IMergeTreeReadPool
+class MergeTreeReadPoolBase : public IMergeTreeReadPool, protected WithContext
 {
 public:
     using MutationsSnapshotPtr = MergeTreeData::MutationsSnapshotPtr;

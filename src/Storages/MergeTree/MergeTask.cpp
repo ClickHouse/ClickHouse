@@ -301,7 +301,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
             infos.add(part_infos);
         }
 
-        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot));
+        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->metadata_snapshot, global_ctx->context));
     }
 
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;

@@ -426,6 +426,7 @@ public:
 
         MutationCommands getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
+        NameSet getAllUpdatedColumns() const override;
     };
 
     /// Return mutation commands for part which could be not applied to

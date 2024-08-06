@@ -154,6 +154,7 @@ public:
 
     static AnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
+        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,

@@ -950,7 +950,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 {
                     const auto commands = entry.commands;
                     it = mutations_by_znode.erase(it);
-                    decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands, state_lock);
+                    decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands);
                 }
                 else
                     it = mutations_by_znode.erase(it);
@@ -1000,7 +1000,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
             for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
             {
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version)).first->second;
-                incrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, entry->commands, lock);
+                incrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, entry->commands);
 
                 NOEXCEPT_SCOPE({
                     for (const auto & pair : entry->block_numbers)
@@ -1961,6 +1961,23 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getAlterMutationCo
     return result;
 }
 
+NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getAllUpdatedColumns() const
+{
+    if (!params.need_data_mutations)
+        return {};
+
+    NameSet res;
+    for (const auto & [partition_id, mutations] : mutations_by_partition)
+    {
+        for (const auto & [version, entry] : mutations)
+        {
+            auto names = entry->commands.getAllUpdatedColumns();
+            std::move(names.begin(), names.end(), std::inserter(res, res.end()));
+        }
+    }
+    return res;
+}
+
 MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapshot(const MutationsSnapshot::Params & params) const
 {
     std::lock_guard lock(state_mutex);
@@ -2122,7 +2139,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                     mutation.parts_to_do.clear();
                 }
 
-                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, mutation.entry->commands, lock);
+                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, mutation.entry->commands);
             }
             else if (mutation.parts_to_do.size() == 0)
             {
@@ -2179,7 +2196,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                     LOG_TRACE(log, "Finishing data alter with version {} for entry {}", entry->alter_version, entry->znode_name);
                     alter_sequence.finishDataAlter(entry->alter_version, lock);
                 }
-                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, entry->commands, lock);
+                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, entry->commands);
             }
         }
     }

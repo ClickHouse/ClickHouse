@@ -7137,11 +7137,11 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
     ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
 {
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
-    const auto & parts = snapshot_data.parts;
 
     MergeTreeDataSelectExecutor reader(*this);
     auto result_ptr = reader.estimateNumMarksToRead(
-        parts,
+        snapshot_data.parts,
+        snapshot_data.mutations_snapshot,
         storage_snapshot->getMetadataForQuery()->getColumns().getAll().getNames(),
         storage_snapshot->metadata,
         query_info,
@@ -8162,10 +8162,12 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 
 AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     const MergeTreeDataPartPtr & part,
-    const MutationsSnapshotPtr & snapshot)
+    const MutationsSnapshotPtr & mutations,
+    const StorageMetadataPtr & metadata,
+    const ContextPtr & query_context)
 {
-    auto commands = snapshot->getAlterMutationCommandsForPart(part);
-    auto result = std::make_shared<AlterConversions>();
+    auto commands = mutations->getAlterMutationCommandsForPart(part);
+    auto result = std::make_shared<AlterConversions>(metadata, query_context);
 
     for (const auto & command : commands | std::views::reverse)
         result->addMutationCommand(command);
@@ -8758,8 +8760,7 @@ static void updateMutationsCounters(
 void incrementMutationsCounters(
     Int64 & num_data_mutations_to_apply,
     Int64 & num_metadata_mutations_to_apply,
-    const MutationCommands & commands,
-    std::lock_guard<std::mutex> & /*lock*/)
+    const MutationCommands & commands)
 {
     return updateMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands, 1);
 }
@@ -8767,8 +8768,7 @@ void incrementMutationsCounters(
 void decrementMutationsCounters(
     Int64 & num_data_mutations_to_apply,
     Int64 & num_metadata_mutations_to_apply,
-    const MutationCommands & commands,
-    std::lock_guard<std::mutex> & /*lock*/)
+    const MutationCommands & commands)
 {
     return updateMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands, -1);
 }

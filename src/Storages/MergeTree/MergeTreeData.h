@@ -475,6 +475,8 @@ public:
         /// @return list of mutation commands, in *reverse* order (newest to oldest)
         virtual MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
         virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
+        virtual NameSet getAllUpdatedColumns() const = 0;
+
         bool hasDataMutations() const { return params.need_data_mutations && info.num_data_mutations > 0; }
 
         virtual ~IMutationsSnapshot() = default;
@@ -975,7 +977,9 @@ public:
     /// Return alter conversions for part which must be applied on fly.
     static AlterConversionsPtr getAlterConversionsForPart(
         const MergeTreeDataPartPtr & part,
-        const MutationsSnapshotPtr & snapshot);
+        const MutationsSnapshotPtr & mutations,
+        const StorageMetadataPtr & metadata,
+        const ContextPtr & query_context);
 
     /// Returns destination disk or volume for the TTL rule according to current storage policy.
     SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl) const;
@@ -1769,17 +1773,14 @@ struct CurrentlySubmergingEmergingTagger
 };
 
 /// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
-/// Return true if the counter had been updated
 void incrementMutationsCounters(
     Int64 & num_data_mutations_to_apply,
     Int64 & num_metadata_mutations_to_apply,
-    const MutationCommands & commands,
-    std::lock_guard<std::mutex> & lock);
+    const MutationCommands & commands);
 
 void decrementMutationsCounters(
     Int64 & num_data_mutations_to_apply,
     Int64 & num_metadata_mutations_to_apply,
-    const MutationCommands & commands,
-    std::lock_guard<std::mutex> & lock);
+    const MutationCommands & commands);
 
 }

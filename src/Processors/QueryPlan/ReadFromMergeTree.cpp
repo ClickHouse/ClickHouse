@@ -1373,6 +1373,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Merge
 {
     return selectRangesToRead(
         std::move(parts),
+        mutations_snapshot,
         metadata_for_reading,
         query_info,
         context,
@@ -1390,9 +1391,11 @@ static void buildIndexes(
     const ActionsDAG * filter_actions_dag,
     const MergeTreeData & data,
     const MergeTreeData::DataPartsVector & parts,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
     const SelectQueryInfo & query_info,
-    const StorageMetadataPtr & metadata_snapshot)
+    const StorageMetadataPtr & metadata_snapshot,
+    const LoggerPtr & log)
 {
     indexes.reset();
 
@@ -1418,17 +1421,19 @@ static void buildIndexes(
         indexes->partition_pruner.emplace(metadata_snapshot, filter_actions_dag, context, false /* strict */);
     }
 
-    indexes->part_values
-        = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_actions_dag, context);
+    indexes->part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_actions_dag, context);
     MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(indexes->part_offset_condition, filter_actions_dag, context);
 
     indexes->use_skip_indexes = settings.use_skip_indexes;
-    bool final = query_info.isFinal();
-
-    if (final && !settings.use_skip_indexes_if_final)
+    if (query_info.isFinal() && !settings.use_skip_indexes_if_final)
         indexes->use_skip_indexes = false;
 
     if (!indexes->use_skip_indexes)
+        return;
+
+    const auto & all_indexes = metadata_snapshot->getSecondaryIndices();
+
+    if (all_indexes.empty())
         return;
 
     std::unordered_set<std::string> ignored_index_names;
@@ -1455,49 +1460,68 @@ static void buildIndexes(
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse ignore_data_skipping_indices ('{}')", indices);
     }
 
+    auto all_updated_columns = mutations_snapshot->getAllUpdatedColumns();
+
     UsefulSkipIndexes skip_indexes;
     using Key = std::pair<String, size_t>;
     std::map<Key, size_t> merged;
 
-    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+    for (const auto & index : all_indexes)
     {
-        if (!ignored_index_names.contains(index.name))
+        if (ignored_index_names.contains(index.name))
+            continue;
+
+        auto index_helper = MergeTreeIndexFactory::instance().get(index);
+
+        if (!all_updated_columns.empty())
         {
-            auto index_helper = MergeTreeIndexFactory::instance().get(index);
-            if (index_helper->isMergeable())
+            auto required_columns = index_helper->getColumnsRequiredForIndexCalc();
+            auto it = std::ranges::find_if(required_columns, [&](const auto & column_name)
             {
-                auto [it, inserted] = merged.emplace(Key{index_helper->index.type, index_helper->getGranularity()}, skip_indexes.merged_indices.size());
-                if (inserted)
-                {
-                    skip_indexes.merged_indices.emplace_back();
-                    skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot);
-                }
+                return all_updated_columns.contains(column_name);
+            });
 
-                skip_indexes.merged_indices[it->second].addIndex(index_helper);
-            }
-            else
+            if (it != required_columns.end())
             {
-                MergeTreeIndexConditionPtr condition;
-                if (index_helper->isVectorSearch())
-                {
-#ifdef ENABLE_ANNOY
-                    if (const auto * annoy = typeid_cast<const MergeTreeIndexAnnoy *>(index_helper.get()))
-                        condition = annoy->createIndexCondition(query_info, context);
-#endif
-#ifdef ENABLE_USEARCH
-                    if (const auto * usearch = typeid_cast<const MergeTreeIndexUSearch *>(index_helper.get()))
-                        condition = usearch->createIndexCondition(query_info, context);
-#endif
-                    if (!condition)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
-                }
-                else
-                    condition = index_helper->createIndexCondition(filter_actions_dag, context);
-
-                if (!condition->alwaysUnknownOrTrue())
-                    skip_indexes.useful_indices.emplace_back(index_helper, condition);
+                LOG_TRACE(log, "Index {} is not used because it depends on column {} which will be updated on fly", index.name, *it);
+                continue;
             }
         }
+
+        if (index_helper->isMergeable())
+        {
+            auto [it, inserted] = merged.emplace(Key{index_helper->index.type, index_helper->getGranularity()}, skip_indexes.merged_indices.size());
+            if (inserted)
+            {
+                skip_indexes.merged_indices.emplace_back();
+                skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(query_info, metadata_snapshot);
+            }
+
+            skip_indexes.merged_indices[it->second].addIndex(index_helper);
+            continue;
+        }
+
+        MergeTreeIndexConditionPtr condition;
+        if (index_helper->isVectorSearch())
+        {
+#ifdef ENABLE_ANNOY
+            if (const auto * annoy = typeid_cast<const MergeTreeIndexAnnoy *>(index_helper.get()))
+                condition = annoy->createIndexCondition(query_info, context);
+#endif
+#ifdef ENABLE_USEARCH
+            if (const auto * usearch = typeid_cast<const MergeTreeIndexUSearch *>(index_helper.get()))
+                condition = usearch->createIndexCondition(query_info, context);
+#endif
+            if (!condition)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
+        }
+        else
+        {
+            condition = index_helper->createIndexCondition(filter_actions_dag, context);
+        }
+
+        if (!condition->alwaysUnknownOrTrue())
+            skip_indexes.useful_indices.emplace_back(index_helper, condition);
     }
 
     // move minmax indices to first positions, so they will be applied first as cheapest ones
@@ -1535,14 +1559,17 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             query_info.filter_actions_dag.get(),
             data,
             prepared_parts,
+            mutations_snapshot,
             context,
             query_info,
-            metadata_for_reading);
+            metadata_for_reading,
+            log);
     }
 }
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     MergeTreeData::DataPartsVector parts,
+    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info_,
     ContextPtr context_,
@@ -1573,7 +1600,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const Names & primary_key_column_names = primary_key.column_names;
 
     if (!indexes)
-        buildIndexes(indexes, query_info_.filter_actions_dag.get(), data, parts, context_, query_info_, metadata_snapshot);
+        buildIndexes(indexes, query_info_.filter_actions_dag.get(), data, parts, mutations_snapshot, context_, query_info_, metadata_snapshot, log);
 
     if (indexes->part_values && indexes->part_values->empty())
         return std::make_shared<AnalysisResult>(std::move(result));

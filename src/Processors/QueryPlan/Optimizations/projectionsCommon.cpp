@@ -243,6 +243,7 @@ bool analyzeProjectionCandidate(
 
     auto projection_result_ptr = reader.estimateNumMarksToRead(
         std::move(projection_parts),
+        reading.getMutationsSnapshot()->cloneEmpty(),
         required_column_names,
         candidate.projection->metadata,
         projection_query_info,

@@ -2125,7 +2125,7 @@ bool MutateTask::prepare()
     };
 
     auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);
-    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot);
+    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->context);
 
     auto context_for_reading = Context::createCopy(ctx->context);
 

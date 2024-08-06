@@ -884,6 +884,7 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
 
 ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     MergeTreeData::DataPartsVector parts,
+    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const Names & column_names_to_return,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -898,6 +899,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     std::optional<ReadFromMergeTree::Indexes> indexes;
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
+        mutations_snapshot,
         metadata_snapshot,
         query_info,
         context,
