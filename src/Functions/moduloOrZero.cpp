@@ -15,7 +15,7 @@ struct ModuloOrZeroImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static Result apply(A a, B b)
     {
         if constexpr (std::is_floating_point_v<ResultType>)
         {

@@ -1,12 +1,12 @@
 #include <IO/S3/URI.h>
-#include <Poco/URI.h>
-#include "Common/Macros.h"
 #include <Interpreters/Context.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include "Common/Macros.h"
 #if USE_AWS_S3
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
+#include <IO/Archives/ArchiveUtils.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -30,7 +30,7 @@ namespace ErrorCodes
 namespace S3
 {
 
-URI::URI(const std::string & uri_)
+URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
 {
     /// Case when bucket name represented in domain name of S3 URL.
     /// E.g. (https://bucket-name.s3.region.amazonaws.com/key)
@@ -55,7 +55,12 @@ URI::URI(const std::string & uri_)
     static constexpr auto OSS = "OSS";
     static constexpr auto EOS = "EOS";
 
-    uri = Poco::URI(uri_);
+    if (allow_archive_path_syntax)
+        std::tie(uri_str, archive_pattern) = getURIAndArchivePattern(uri_);
+    else
+        uri_str = uri_;
+
+    uri = Poco::URI(uri_str);
 
     std::unordered_map<std::string, std::string> mapper;
     auto context = Context::getGlobalContextInstance();
@@ -126,9 +131,10 @@ URI::URI(const std::string & uri_)
         boost::to_upper(name);
         /// For S3Express it will look like s3express-eun1-az1, i.e. contain region and AZ info
         if (name != S3 && !name.starts_with(S3EXPRESS) && name != COS && name != OBS && name != OSS && name != EOS)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Object storage system name is unrecognized in virtual hosted style S3 URI: {}",
-                            quoteString(name));
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Object storage system name is unrecognized in virtual hosted style S3 URI: {}",
+                quoteString(name));
 
         if (name == COS)
             storage_name = COSN;
@@ -156,10 +162,45 @@ void URI::validateBucket(const String & bucket, const Poco::URI & uri)
     /// S3 specification requires at least 3 and at most 63 characters in bucket name.
     /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
     if (bucket.length() < 3 || bucket.length() > 63)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI: {}{}",
-                        quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Bucket name length is out of bounds in virtual hosted style S3 URI: {}{}",
+            quoteString(bucket),
+            !uri.empty() ? " (" + uri.toString() + ")" : "");
 }
 
+std::pair<std::string, std::optional<std::string>> URI::getURIAndArchivePattern(const std::string & source)
+{
+    size_t pos = source.find("::");
+    if (pos == String::npos)
+        return {source, std::nullopt};
+
+    std::string_view path_to_archive_view = std::string_view{source}.substr(0, pos);
+    bool contains_spaces_around_operator = false;
+    while (path_to_archive_view.ends_with(' '))
+    {
+        contains_spaces_around_operator = true;
+        path_to_archive_view.remove_suffix(1);
+    }
+
+    std::string_view archive_pattern_view = std::string_view{source}.substr(pos + 2);
+    while (archive_pattern_view.starts_with(' '))
+    {
+        contains_spaces_around_operator = true;
+        archive_pattern_view.remove_prefix(1);
+    }
+
+    /// possible situations when the first part can be archive is only if one of the following is true:
+    /// - it contains supported extension
+    /// - it contains spaces after or before :: (URI cannot contain spaces)
+    /// - it contains characters that could mean glob expression
+    if (archive_pattern_view.empty() || path_to_archive_view.empty()
+        || (!contains_spaces_around_operator && !hasSupportedArchiveExtension(path_to_archive_view)
+            && path_to_archive_view.find_first_of("*?{") == std::string_view::npos))
+        return {source, std::nullopt};
+
+    return std::pair{std::string{path_to_archive_view}, std::string{archive_pattern_view}};
+}
 }
 
 }

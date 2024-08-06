@@ -74,7 +74,8 @@ static auto createPingHandlerFactory(IServer & server)
     auto creator = [&server]() -> std::unique_ptr<StaticRequestHandler>
     {
         constexpr auto ping_response_expression = "Ok.\n";
-        return std::make_unique<StaticRequestHandler>(server, ping_response_expression);
+        return std::make_unique<StaticRequestHandler>(
+            server, ping_response_expression, parseHTTPResponseHeaders("text/html; charset=UTF-8"));
     };
     return std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(std::move(creator));
 }
@@ -214,7 +215,8 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     auto root_creator = [&server]() -> std::unique_ptr<StaticRequestHandler>
     {
         constexpr auto root_response_expression = "config://http_server_default_response";
-        return std::make_unique<StaticRequestHandler>(server, root_response_expression);
+        return std::make_unique<StaticRequestHandler>(
+            server, root_response_expression, parseHTTPResponseHeaders("text/html; charset=UTF-8"));
     };
     auto root_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(std::move(root_creator));
     root_handler->attachStrictPath("/");

@@ -55,7 +55,7 @@ void StorageSystemQueryCache::fillData(MutableColumns & res_columns, ContextPtr 
         res_columns[3]->insert(key.is_shared);
         res_columns[4]->insert(key.is_compressed);
         res_columns[5]->insert(std::chrono::system_clock::to_time_t(key.expires_at));
-        res_columns[6]->insert(key.ast->getTreeHash(/*ignore_aliases=*/ false).low64); /// query cache considers aliases (issue #56258)
+        res_columns[6]->insert(key.ast_hash.low64); /// query cache considers aliases (issue #56258)
     }
 }
 

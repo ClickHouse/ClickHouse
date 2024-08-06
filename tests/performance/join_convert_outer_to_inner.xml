@@ -1,0 +1,22 @@
+<test>
+    <settings>
+        <join_algorithm>hash</join_algorithm>
+    </settings>
+
+    <create_query>CREATE TABLE test_table_1(id UInt64, value String) ENGINE=MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE test_table_2(id UInt64, value String) ENGINE=MergeTree ORDER BY id</create_query>
+
+    <fill_query>INSERT INTO test_table_1 SELECT (rand64() % 5000000) AS key, toString(key) FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO test_table_2 SELECT (rand64() % 5000000) AS key, toString(key) FROM numbers(5000000)</fill_query>
+
+    <query>SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE rhs.value != '' FORMAT Null</query>
+    <query>SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE rhs.value != '' AND rhs.id = 5 FORMAT Null</query>
+
+    <query>SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs RIGHT JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE lhs.value != '' FORMAT Null</query>
+    <query>SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs RIGHT JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE lhs.value != '' AND lhs.id = 5 FORMAT Null</query>
+
+    <query>SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs FULL JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE lhs.value != '' AND rhs.value != ''</query>
+
+    <drop_query>DROP TABLE test_table_1</drop_query>
+    <drop_query>DROP TABLE test_table_2</drop_query>
+</test>

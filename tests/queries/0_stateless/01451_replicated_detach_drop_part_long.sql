@@ -13,7 +13,7 @@ INSERT INTO replica1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES
 INSERT INTO replica1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES (1);
 INSERT INTO replica1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES (2);
 
-ALTER TABLE replica1 DETACH PART 'all_100_100_0'; -- { serverError 232 }
+ALTER TABLE replica1 DETACH PART 'all_100_100_0'; -- { serverError NO_SUCH_DATA_PART }
 
 SELECT v FROM replica1 ORDER BY v;
 
@@ -35,7 +35,7 @@ SELECT '-- drop part --';
 
 ALTER TABLE replica1 DROP PART 'all_3_3_0';
 
-ALTER TABLE replica1 ATTACH PART 'all_3_3_0'; -- { serverError 233 }
+ALTER TABLE replica1 ATTACH PART 'all_3_3_0'; -- { serverError BAD_DATA_PART_NAME }
 
 SELECT v FROM replica1 ORDER BY v;
 

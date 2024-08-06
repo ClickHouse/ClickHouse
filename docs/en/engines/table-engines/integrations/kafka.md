@@ -170,52 +170,41 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
   <kafka>
     <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
-    <auto_offset_reset>smallest</auto_offset_reset>
-	<statistics_interval_ms>600</statistics_interval_ms>
-
-    <!-- Configuration specific to topics "logs" and "stats" -->
+    <statistics_interval_ms>3000</statistics_interval_ms>
 
     <kafka_topic>
-      <name>logs</name>
-      <retry_backoff_ms>250</retry_backoff_ms>
-      <fetch_min_bytes>100000</fetch_min_bytes>
+        <name>logs</name>
+        <statistics_interval_ms>4000</statistics_interval_ms>
     </kafka_topic>
 
-    <kafka_topic>
-      <name>stats</name>
-      <retry_backoff_ms>400</retry_backoff_ms>
-      <fetch_min_bytes>50000</fetch_min_bytes>
-    </kafka_topic>
+    <!-- Settings for consumer -->
+    <consumer>
+        <auto_offset_reset>smallest</auto_offset_reset>
+        <kafka_topic>
+            <name>logs</name>
+            <fetch_min_bytes>100000</fetch_min_bytes>
+        </kafka_topic>
+
+        <kafka_topic>
+            <name>stats</name>
+            <fetch_min_bytes>50000</fetch_min_bytes>
+        </kafka_topic>
+    </consumer>
+
+    <!-- Settings for producer -->
+    <producer>
+        <kafka_topic>
+            <name>logs</name>
+            <retry_backoff_ms>250</retry_backoff_ms>
+        </kafka_topic>
+
+        <kafka_topic>
+            <name>stats</name>
+            <retry_backoff_ms>400</retry_backoff_ms>
+        </kafka_topic>
+    </producer>
   </kafka>
-
 ```
-
-<details markdown="1">
-
-<summary>Example in deprecated syntax</summary>
-
-``` xml
-  <kafka>
-    <!-- Global configuration options for all tables of Kafka engine type -->
-    <debug>cgrp</debug>
-    <auto_offset_reset>smallest</auto_offset_reset>
-  </kafka>
-
-  <!-- Configuration specific to topics "logs" and "stats" -->
-  <!-- Does NOT support periods in topic names, e.g. "logs.security"> -->
-
-  <kafka_logs>
-    <retry_backoff_ms>250</retry_backoff_ms>
-    <fetch_min_bytes>100000</fetch_min_bytes>
-  </kafka_logs>
-
-  <kafka_stats>
-    <retry_backoff_ms>400</retry_backoff_ms>
-    <fetch_min_bytes>50000</fetch_min_bytes>
-  </kafka_stats>
-```
-
-</details>
 
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.

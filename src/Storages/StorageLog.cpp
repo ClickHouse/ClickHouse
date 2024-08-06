@@ -1,9 +1,11 @@
 #include <Storages/StorageLog.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageLogSettings.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 
@@ -21,7 +23,6 @@
 #include <DataTypes/NestedUtils.h>
 
 #include <Interpreters/Context.h>
-#include "StorageLogSettings.h"
 #include <Processors/Sources/NullSource.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
@@ -254,7 +255,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     if (!deserialize_states.contains(name))
     {
         settings.getter = create_stream_getter(true);
-        serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
+        serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name], nullptr);
     }
 
     settings.getter = create_stream_getter(false);
@@ -322,6 +323,10 @@ public:
                 /// Rollback partial writes.
 
                 /// No more writing.
+                for (auto & [_, stream] : streams)
+                {
+                    stream.cancel();
+                }
                 streams.clear();
 
                 /// Truncate files to the older sizes.
@@ -337,7 +342,7 @@ public:
         }
     }
 
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     void onFinish() override;
 
 private:
@@ -373,6 +378,12 @@ private:
             plain->next();
             plain->finalize();
         }
+
+        void cancel()
+        {
+            compressed.cancel();
+            plain->cancel();
+        }
     };
 
     using FileStreams = std::map<String, Stream>;
@@ -388,9 +399,9 @@ private:
 };
 
 
-void LogSink::consume(Chunk chunk)
+void LogSink::consume(Chunk & chunk)
 {
-    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+    auto block = getHeader().cloneWithColumns(chunk.getColumns());
     metadata_snapshot->check(block, true);
 
     for (auto & stream : streams | boost::adaptors::map_values)
@@ -833,8 +844,7 @@ Pipe StorageLog::read(
     size_t num_marks = marks_with_real_row_count.size();
 
     size_t max_streams = use_marks_file ? num_marks : 1;
-    if (num_streams > max_streams)
-        num_streams = max_streams;
+    num_streams = std::min(num_streams, max_streams);
 
     std::vector<size_t> offsets;
     offsets.resize(num_data_files, 0);

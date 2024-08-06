@@ -239,7 +239,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 
 std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
 {
-    return scheduleFromThreadPool<MarkCache::MappedPtr>(
+    return scheduleFromThreadPoolUnsafe<MarkCache::MappedPtr>(
         [this]() -> MarkCache::MappedPtr
         {
             ProfileEvents::increment(ProfileEvents::BackgroundLoadingMarksTasks);

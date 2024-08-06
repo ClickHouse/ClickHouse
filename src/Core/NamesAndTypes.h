@@ -111,6 +111,9 @@ public:
     /// Leave only the columns whose names are in the `names`. In `names` there can be superfluous columns.
     NamesAndTypesList filter(const Names & names) const;
 
+    /// Leave only the columns whose names are not in the `names`.
+    NamesAndTypesList eraseNames(const NameSet & names) const;
+
     /// Unlike `filter`, returns columns in the order in which they go in `names`.
     NamesAndTypesList addTypes(const Names & names) const;
 

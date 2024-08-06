@@ -25,6 +25,15 @@ WITH ((1, 2), (2, 3)) AS liter_prepared_set SELECT COUNT() FROM single_column_bl
 WITH ((1, 1), (2, 2)) AS liter_prepared_set SELECT COUNT() FROM single_column_bloom_filter WHERE (i32, i64) IN liter_prepared_set SETTINGS max_rows_to_read = 6;
 WITH ((1, (1, 1)), (2, (2, 2))) AS liter_prepared_set SELECT COUNT() FROM single_column_bloom_filter WHERE (i64, (i64, i32)) IN liter_prepared_set SETTINGS max_rows_to_read = 6;
 
+-- Check that indexHint() works (but it doesn't work with COUNT()).
+SELECT SUM(ignore(*) + 1) FROM single_column_bloom_filter WHERE indexHint(i32 in (3, 15, 50));
+
+-- The index doesn't understand expressions like these, but it shouldn't break the query.
+SELECT COUNT() FROM single_column_bloom_filter WHERE (i32 = 200) = (i32 = 200);
+SELECT SUM(ignore(*) + 1) FROM single_column_bloom_filter WHERE indexHint((i32 = 200) != (i32 = 200));
+SELECT COUNT() FROM single_column_bloom_filter WHERE indexOf([10, 20, 30], i32) != 0;
+SELECT COUNT() FROM single_column_bloom_filter WHERE has([100, 200, 300], 200);
+
 DROP TABLE IF EXISTS single_column_bloom_filter;
 
 

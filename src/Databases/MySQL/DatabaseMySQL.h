@@ -27,7 +27,7 @@ namespace DB
 
 class Context;
 
-enum class MySQLDataTypesSupport;
+enum class MySQLDataTypesSupport : uint8_t;
 
 /** Real-time access to table list and table structure from remote MySQL
  *  It doesn't make any manipulations with filesystem.

@@ -39,9 +39,10 @@
 
 #include <Parsers/IAST_fwd.h>
 
-#include <Interpreters/AggregationMethod.h>
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregatedDataVariants.h>
+#include <Interpreters/AggregationMethod.h>
+#include <Interpreters/HashTablesStatistics.h>
 
 namespace DB
 {
@@ -127,24 +128,6 @@ public:
         bool optimize_group_by_constant_keys;
 
         const double min_hit_rate_to_use_consecutive_keys_optimization;
-
-        struct StatsCollectingParams
-        {
-            StatsCollectingParams();
-
-            StatsCollectingParams(
-                const ASTPtr & select_query_,
-                bool collect_hash_table_stats_during_aggregation_,
-                size_t max_entries_for_hash_table_stats_,
-                size_t max_size_to_preallocate_for_aggregation_);
-
-            bool isCollectionAndUseEnabled() const { return key != 0; }
-            void disable() { key = 0; }
-
-            UInt64 key = 0;
-            const size_t max_entries_for_hash_table_stats = 0;
-            const size_t max_size_to_preallocate_for_aggregation = 0;
-        };
 
         StatsCollectingParams stats_collecting_params;
 
@@ -674,6 +657,7 @@ private:
         Arena * arena);
 };
 
+UInt64 calculateCacheKey(const DB::ASTPtr & select_query);
 
 /** Get the aggregation variant by its type. */
 template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);
@@ -685,13 +669,4 @@ APPLY_FOR_AGGREGATED_VARIANTS(M)
 
 #undef M
 
-
-struct HashTablesCacheStatistics
-{
-    size_t entries = 0;
-    size_t hits = 0;
-    size_t misses = 0;
-};
-
-std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics();
 }
