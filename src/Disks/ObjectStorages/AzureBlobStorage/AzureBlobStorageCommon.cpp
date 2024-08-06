@@ -268,7 +268,7 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
     catch (const Azure::Storage::StorageException & e)
     {
         /// If container_already_exists is not set (in config), ignore already exists error. Conflict - The specified container already exists.
-        /// To avoid race with creation of container handle this error despite that we have already checked the existence of container.
+        /// To avoid race with creation of container, handle this error despite that we have already checked the existence of container.
         if (!params.endpoint.container_already_exists.has_value() && e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
             return params.createForContainer();
         throw;
