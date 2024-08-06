@@ -150,20 +150,27 @@ void WriteBufferValidUTF8::finalizeImpl()
     nextImpl();
 
     /// Handle remaining bytes if we have an incomplete sequence
-    if (working_buffer.begin() != memory.data()) {
+    if (working_buffer.begin() != memory.data())
+    {
         char * p = memory.data();
 
-        while (p < pos) {
+        while (p < pos)
+        {
             UInt8 len = length_of_utf8_sequence[static_cast<unsigned char>(*p)];
-            if (p + len > pos) {
+            if (p + len > pos)
+            {
                 // Incomplete sequence. Skip one byte.
                 putReplacement();
                 ++p;
-            } else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<unsigned char *>(p), len)) {
+            }
+            else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<unsigned char *>(p), len))
+            {
                 // Valid sequence
                 putValid(p, len);
                 p += len;
-            } else {
+            }
+            else
+            {
                 // Invalid sequence, skip first byte.
                 putReplacement();
                 ++p;
