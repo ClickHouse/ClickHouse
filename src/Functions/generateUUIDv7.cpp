@@ -55,13 +55,13 @@ uint64_t getRandomCounter()
     return thread_local_rng() & ((1ull << bits_in_counter) - 1);
 }
 
-struct UUIDv7VarParts
+struct UUIDv7
 {
     uint64_t timestamp;
     uint64_t counter;
 };
 
-void setParts(UUID & uuid, UUIDv7VarParts & parts)
+void setParts(const UUIDv7 & parts, UUID & uuid)
 {
     const uint64_t high = (parts.timestamp << 16) | 0x7000 | (parts.counter >> counter_low_bits_count);
 
@@ -72,10 +72,10 @@ void setParts(UUID & uuid, UUIDv7VarParts & parts)
     UUIDHelpers::getLowBytes(uuid) = low;
 }
 
-struct UUIDRange
+struct UUIDv7Range
 {
-    UUIDv7VarParts begin; /// inclusive
-    UUIDv7VarParts end;   /// exclusive
+    UUIDv7 begin; /// inclusive
+    UUIDv7 end;   /// exclusive
     uint64_t capacity;
 };
 
@@ -83,10 +83,10 @@ struct UUIDRange
 /// 1. calculate UUIDv7 by current timestamp (`now`) and a random counter
 /// 2. `begin = max(available, now)`
 /// 3. calculate the capacity of the range, which could be lower than `input_rows_count`
-UUIDRange getRangeOfAvailableParts(const UUIDv7VarParts & available, size_t input_rows_count)
+UUIDv7Range getRangeOfAvailableParts(const UUIDv7 & available, size_t input_rows_count)
 {
     /// 1. `now`
-    UUIDv7VarParts begin = {.timestamp = getTimestampMillisecond(), .counter = getRandomCounter()};
+    UUIDv7 begin = {.timestamp = getTimestampMillisecond(), .counter = getRandomCounter()};
 
     /// 2. `begin`
     bool available_is_now_or_later = begin.timestamp <= available.timestamp;
@@ -98,7 +98,7 @@ UUIDRange getRangeOfAvailableParts(const UUIDv7VarParts & available, size_t inpu
     }
 
     /// 3. `capacity`
-    UUIDv7VarParts end;
+    UUIDv7 end;
     const uint64_t counter_nums_in_current_timestamp_left = (counter_limit - begin.counter);
     uint64_t capacity = input_rows_count;
 
@@ -122,7 +122,7 @@ UUIDRange getRangeOfAvailableParts(const UUIDv7VarParts & available, size_t inpu
 struct Data
 {
     /// Guarantee counter monotonicity within one timestamp across all threads generating UUIDv7 simultaneously.
-    static inline UUIDv7VarParts lowest_available_parts;
+    static inline UUIDv7 lowest_available_parts;
     static inline SharedMutex mutex; /// works a little bit faster than std::mutex here
     std::lock_guard<SharedMutex> guard;
 
@@ -130,9 +130,9 @@ struct Data
         : guard(mutex)
     {}
 
-    UUIDRange reserveRange(size_t input_rows_count)
+    UUIDv7Range reserveRange(size_t input_rows_count)
     {
-        UUIDRange range = getRangeOfAvailableParts(lowest_available_parts, input_rows_count);
+        UUIDv7Range range = getRangeOfAvailableParts(lowest_available_parts, input_rows_count);
 
         lowest_available_parts = range.end;
 
@@ -176,36 +176,35 @@ public:
     {
         auto col_res = ColumnVector<UUID>::create();
         typename ColumnVector<UUID>::Container & vec_to = col_res->getData();
+        vec_to.resize(input_rows_count);
 
         if (input_rows_count)
         {
-            vec_to.resize(input_rows_count);
-
             /// Not all random bytes produced here are required for the UUIDv7 but it's the simplest way to get the required number of them by using RandImpl
             RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UUID));
 
-            UUIDRange range;
-            UUIDv7VarParts available_part;
+            UUIDv7Range uuid_range;
+            UUIDv7 available_uuid;
             size_t done = 0;
 
             while (done != input_rows_count)
             {
                 {
                     Data data;
-                    range = data.reserveRange(input_rows_count - done);
+                    uuid_range = data.reserveRange(input_rows_count - done);
                 }
-                available_part = range.begin;
+                available_uuid = uuid_range.begin;
 
                 auto begin = vec_to.begin() + done;
-                auto end = vec_to.begin() + done + range.capacity;
+                auto end = vec_to.begin() + done + uuid_range.capacity;
 
                 for (auto uuid_it = begin; uuid_it != end; ++uuid_it)
                 {
-                    setParts(*uuid_it, available_part);
-                    ++available_part.counter;
+                    setParts(available_uuid, *uuid_it);
+                    ++available_uuid.counter;
                 }
 
-                done += range.capacity;
+                done += uuid_range.capacity;
             }
         }
         return col_res;
