@@ -19,6 +19,7 @@
 #include <base/getMemoryAmount.h>
 #include <base/scope_guard.h>
 #include <base/safeExit.h>
+#include <base/Numa.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/TCPServerParams.h>
 #include <Poco/Net/TCPServer.h>
@@ -50,6 +51,10 @@
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #    include <Server/CertificateReloader.h>
+#endif
+
+#if USE_GWP_ASAN
+#    include <Common/GWPAsan.h>
 #endif
 
 #include <Server/ProtocolServerAdapter.h>
@@ -306,6 +311,12 @@ try
     UseSSL use_ssl;
 
     MainThreadStatus::getInstance();
+
+    if (auto total_numa_memory = getNumaNodesTotalMemory(); total_numa_memory.has_value())
+    {
+        LOG_INFO(
+            log, "Keeper is bound to a subset of NUMA nodes. Total memory of all available nodes: {}", ReadableSize(*total_numa_memory));
+    }
 
 #if !defined(NDEBUG) || !defined(__OPTIMIZE__)
     LOG_WARNING(log, "Keeper was built in debug mode. It will work slowly.");
@@ -638,6 +649,10 @@ try
     {
         tryLogCurrentException(log, "Disabling cgroup memory observer because of an error during initialization");
     }
+
+#if USE_GWP_ASAN
+    GWPAsan::initFinished();
+#endif
 
 
     LOG_INFO(log, "Ready for connections.");

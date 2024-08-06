@@ -1,6 +1,7 @@
 #include "LocalServer.h"
 
 #include <sys/resource.h>
+#include <Common/Config/getLocalConfigPath.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Core/UUID.h>
@@ -80,7 +81,7 @@ namespace ErrorCodes
 
 void applySettingsOverridesForLocal(ContextMutablePtr context)
 {
-    Settings settings = context->getSettings();
+    Settings settings = context->getSettingsCopy();
 
     settings.allow_introspection_functions = true;
     settings.storage_file_read_method = LocalFSReadMethod::mmap;
@@ -127,10 +128,21 @@ void LocalServer::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
 
+    const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
+    if (home_path_cstr)
+        home_path = home_path_cstr;
+
     /// Load config files if exists
-    if (getClientConfiguration().has("config-file") || fs::exists("config.xml"))
+    std::string config_path;
+    if (getClientConfiguration().has("config-file"))
+        config_path = getClientConfiguration().getString("config-file");
+    else if (config_path.empty() && fs::exists("config.xml"))
+        config_path = "config.xml";
+    else if (config_path.empty())
+        config_path = getLocalConfigPath(home_path).value_or("");
+
+    if (fs::exists(config_path))
     {
-        const auto config_path = getClientConfiguration().getString("config-file", "config.xml");
         ConfigProcessor config_processor(config_path, false, true);
         ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
@@ -184,6 +196,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
         cleanup_threads,
         0, // We don't need any threads one all the parts will be deleted
         cleanup_threads);
+
+    getDatabaseCatalogDropTablesThreadPool().initialize(
+        server_settings.database_catalog_drop_table_concurrency,
+        0, // We don't need any threads if there are no DROP queries.
+        server_settings.database_catalog_drop_table_concurrency);
 }
 
 
@@ -294,6 +311,8 @@ void LocalServer::cleanup()
         /// We should reset it before resetting global_context.
         if (suggest)
             suggest.reset();
+
+        client_context.reset();
 
         if (global_context)
         {
@@ -423,6 +442,7 @@ void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(getClientConfiguration(), "localhost");
 
+    /// This is needed for table function input(...).
     ReadBuffer * in;
     auto table_file = getClientConfiguration().getString("table-file", "-");
     if (table_file == "-" || table_file == "stdin")
@@ -435,7 +455,7 @@ void LocalServer::connect()
         in = input.get();
     }
     connection = LocalConnection::createConnection(
-        connection_parameters, global_context, in, need_render_progress, need_render_profile_events, server_display_name);
+        connection_parameters, client_context, in, need_render_progress, need_render_profile_events, server_display_name);
 }
 
 
@@ -496,8 +516,6 @@ try
     initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")));
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
-    applyCmdSettings(global_context);
-
     /// try to load user defined executable functions, throw on error and die
     try
     {
@@ -508,6 +526,11 @@ try
         tryLogCurrentException(&logger(), "Caught exception while loading user defined executable functions.");
         throw;
     }
+
+    /// Must be called after we stopped initializing the global context and changing its settings.
+    /// After this point the global context must be stayed almost unchanged till shutdown,
+    /// and all necessary changes must be made to the client context instead.
+    createClientContext();
 
     if (is_interactive)
     {
@@ -562,9 +585,6 @@ void LocalServer::processConfig()
 {
     if (!queries.empty() && getClientConfiguration().has("queries-file"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
-
-    if (getClientConfiguration().has("multiquery"))
-        is_multiquery = true;
 
     pager = getClientConfiguration().getString("pager", "");
 
@@ -734,6 +754,9 @@ void LocalServer::processConfig()
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(getClientConfiguration());
 
+    /// Command-line parameters can override settings from the default profile.
+    applyCmdSettings(global_context);
+
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
@@ -777,10 +800,6 @@ void LocalServer::processConfig()
 
     server_display_name = getClientConfiguration().getString("display_name", "");
     prompt_by_server_display_name = getClientConfiguration().getRawString("prompt_by_server_display_name.default", ":) ");
-
-    global_context->setQueryKindInitial();
-    global_context->setQueryKind(query_kind);
-    global_context->setQueryParameters(query_parameters);
 }
 
 
@@ -859,6 +878,16 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 }
 
 
+void LocalServer::createClientContext()
+{
+    /// In case of clickhouse-local it's necessary to use a separate context for client-related purposes.
+    /// We can't just change the global context because it is used in background tasks (for example, in merges)
+    /// which don't expect that the global context can suddenly change.
+    client_context = Context::createCopy(global_context);
+    initClientContext();
+}
+
+
 void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &, const std::vector<Arguments> &)
 {
     if (options.count("table"))
@@ -920,13 +949,6 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
                 /// param_name=value
                 query_parameters.emplace(param_continuation.substr(0, equal_pos), param_continuation.substr(equal_pos + 1));
             }
-        }
-        else if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
-        {
-            /// Transform the abbreviated syntax '--multiquery <SQL>' into the full syntax '--multiquery -q <SQL>'
-            ++arg_num;
-            arg = argv[arg_num];
-            addMultiquery(arg, common_arguments);
         }
         else
         {

@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 
 -- { echoOn }
 SELECT number, number % 2, sum(number) AS val
@@ -83,3 +83,48 @@ GROUP BY
     )
 ORDER BY 1, tuple(val)
 SETTINGS group_by_use_nulls = 1, max_bytes_before_external_sort=10;
+
+CREATE TABLE test
+ENGINE = ReplacingMergeTree
+PRIMARY KEY id
+AS SELECT number AS id FROM numbers(100);
+
+SELECT id
+FROM test
+GROUP BY id
+    WITH CUBE
+HAVING id IN (
+    SELECT id
+    FROM test
+)
+FORMAT `NUll`
+SETTINGS allow_experimental_analyzer = 1, group_by_use_nulls = true;
+
+SELECT id
+FROM test
+FINAL
+GROUP BY id
+    WITH CUBE
+HAVING id IN (
+    SELECT DISTINCT id
+    FROM test
+    FINAL
+)
+FORMAT `NUll`
+SETTINGS allow_experimental_analyzer = 1, group_by_use_nulls = true;
+
+SELECT id
+FROM test
+FINAL
+GROUP BY
+    GROUPING SETS ((id))
+ORDER BY
+    id IN (
+        SELECT DISTINCT id
+        FROM test
+        FINAL
+        LIMIT 4
+    ) ASC
+LIMIT 256 BY id
+FORMAT `NUll`
+SETTINGS allow_experimental_analyzer = 1, group_by_use_nulls=true;
