@@ -22,6 +22,7 @@ from typing import (
 
 from build_download_helper import get_gh_api
 from ci_config import CI
+from ci_utils import normalize_string
 from env_helper import REPORT_PATH, GITHUB_WORKSPACE
 
 logger = logging.getLogger(__name__)
@@ -124,7 +125,7 @@ html {{ min-height: 100%; font-family: "DejaVu Sans", "Noto Sans", Arial, sans-s
 h1 {{ margin-left: 10px; }}
 th, td {{ padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; border: 1px solid var(--table-border-color); }}
 td {{ background: var(--td-background); }}
-th {{ background: var(--th-background); white-space: nowrap; }}
+th {{ background: var(--th-background); }}
 a {{ color: var(--link-color); text-decoration: none; }}
 a:hover, a:active {{ color: var(--link-hover-color); text-decoration: none; }}
 table {{ box-shadow: 0 8px 25px -5px rgba(0, 0, 0, var(--shadow-intensity)); border-collapse: collapse; border-spacing: 0; }}
@@ -134,7 +135,6 @@ th {{ cursor: pointer; }}
 tr:hover {{ filter: var(--tr-hover-filter); }}
 .expandable {{ cursor: pointer; }}
 .expandable-content {{ display: none; }}
-pre {{ white-space: pre-wrap; }}
 #fish {{ display: none; float: right; position: relative; top: -20em; right: 2vw; margin-bottom: -20em; width: 30vw; filter: brightness(7%); z-index: -1; }}
 
 .themes {{
@@ -292,9 +292,9 @@ class JobReport:
     start_time: str
     duration: float
     additional_files: Union[Sequence[str], Sequence[Path]]
-    # ClickHouse version, build job only
+    # clickhouse version, build job only
     version: str = ""
-    # check_name to be set in commit status, set it if it differs from the job name
+    # checkname to set in commit status, set if differs from jjob name
     check_name: str = ""
     # directory with artifacts to upload on s3
     build_dir_for_upload: Union[Path, str] = ""
@@ -621,7 +621,7 @@ class BuildResult:
 
     def write_json(self, directory: Union[Path, str] = REPORT_PATH) -> Path:
         path = Path(directory) / self.get_report_name(
-            self.build_name, self.pr_number or CI.Utils.normalize_string(self.head_ref)
+            self.build_name, self.pr_number or normalize_string(self.head_ref)
         )
         path.write_text(
             json.dumps(
@@ -666,7 +666,11 @@ ColorTheme = Tuple[str, str, str]
 def _format_header(
     header: str, branch_name: str, branch_url: Optional[str] = None
 ) -> str:
-    result = header
+    # Following line does not lower CI->Ci and SQLancer->Sqlancer. It only
+    # capitalizes the first letter and doesn't touch the rest of the word
+    result = " ".join([w[0].upper() + w[1:] for w in header.split(" ") if w])
+    result = result.replace("Clickhouse", "ClickHouse")
+    result = result.replace("clickhouse", "ClickHouse")
     if "ClickHouse" not in result:
         result = f"ClickHouse {result}"
     if branch_url:

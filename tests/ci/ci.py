@@ -16,7 +16,7 @@ import upload_result_helper
 from build_check import get_release_or_pr
 from ci_config import CI
 from ci_metadata import CiMetadata
-from ci_utils import GH, Utils
+from ci_utils import GHActions, normalize_string, Utils
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
@@ -94,12 +94,6 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         "--configure",
         action="store_true",
         help="Action that configures ci run. Calculates digests, checks job to be executed, generates json output",
-    )
-    parser.add_argument(
-        "--workflow",
-        default="",
-        type=str,
-        help="Workflow Name, to be provided with --configure for workflow-specific CI runs",
     )
     parser.add_argument(
         "--update-gh-statuses",
@@ -293,10 +287,7 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
     # for release/master branches reports must be from the same branch
     report_prefix = ""
     if pr_info.is_master or pr_info.is_release:
-        # do not set report prefix for scheduled or dispatched wf (in case it started from feature branch while
-        #   testing), otherwise reports won't be found
-        if not (pr_info.is_scheduled or pr_info.is_dispatched):
-            report_prefix = Utils.normalize_string(pr_info.head_ref)
+        report_prefix = normalize_string(pr_info.head_ref)
     print(
         f"Use report prefix [{report_prefix}], pr_num [{pr_info.number}], head_ref [{pr_info.head_ref}]"
     )
@@ -368,7 +359,7 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
                 )
                 to_be_skipped = True
                 # skip_status = SUCCESS already there
-                GH.print_in_group("Commit Status Data", job_status)
+                GHActions.print_in_group("Commit Status Data", job_status)
 
     # create pre report
     jr = JobReport.create_pre_report(status=skip_status, job_skipped=to_be_skipped)
@@ -529,7 +520,6 @@ def _configure_jobs(
     pr_info: PRInfo,
     ci_settings: CiSettings,
     skip_jobs: bool,
-    workflow_name: str = "",
     dry_run: bool = False,
 ) -> CiCache:
     """
@@ -547,27 +537,18 @@ def _configure_jobs(
             is_docs_only=pr_info.has_changes_in_documentation_only(),
             is_master=pr_info.is_master,
             is_pr=pr_info.is_pr,
-            workflow_name=workflow_name,
         )
     else:
         job_configs = {}
 
-    if not workflow_name:
-        # filter jobs in accordance with ci settings
-        job_configs = ci_settings.apply(
-            job_configs,
-            pr_info.is_release,
-            is_pr=pr_info.is_pr,
-            is_mq=pr_info.is_merge_queue,
-            labels=pr_info.labels,
-        )
-
-    # add all job batches to job's to_do batches
-    for _job, job_config in job_configs.items():
-        batches = []
-        for batch in range(job_config.num_batches):
-            batches.append(batch)
-        job_config.batches = batches
+    # filter jobs in accordance with ci settings
+    job_configs = ci_settings.apply(
+        job_configs,
+        pr_info.is_release,
+        is_pr=pr_info.is_pr,
+        is_mq=pr_info.is_merge_queue,
+        labels=pr_info.labels,
+    )
 
     # check jobs in ci cache
     ci_cache = CiCache.calc_digests_and_create(
@@ -718,7 +699,7 @@ def _upload_build_artifacts(
         (
             get_release_or_pr(pr_info, get_version_from_repo())[1],
             pr_info.sha,
-            Utils.normalize_string(build_name),
+            normalize_string(build_name),
             "performance.tar.zst",
         )
     )
@@ -1019,9 +1000,7 @@ def _get_ext_check_name(check_name: str) -> str:
     return check_name_with_group
 
 
-def _cancel_pr_workflow(
-    s3: S3Helper, pr_number: int, cancel_sync: bool = False
-) -> None:
+def _cancel_pr_wf(s3: S3Helper, pr_number: int, cancel_sync: bool = False) -> None:
     wf_data = CiMetadata(s3, pr_number).fetch_meta()
     if not cancel_sync:
         if not wf_data.run_id:
@@ -1125,7 +1104,6 @@ def main() -> int:
             pr_info,
             ci_settings,
             args.skip_jobs,
-            args.workflow,
         )
 
         ci_cache.print_status()
@@ -1135,7 +1113,7 @@ def main() -> int:
 
         if IS_CI and not pr_info.is_merge_queue:
 
-            if pr_info.is_release and pr_info.is_push_event:
+            if pr_info.is_release:
                 print("Release/master: CI Cache add pending records for all todo jobs")
                 ci_cache.push_pending_all(pr_info.is_release)
 
@@ -1250,7 +1228,7 @@ def main() -> int:
                     (
                         get_release_or_pr(pr_info, get_version_from_repo())[0],
                         pr_info.sha,
-                        Utils.normalize_string(
+                        normalize_string(
                             job_report.check_name or _get_ext_check_name(args.job_name)
                         ),
                     )
@@ -1370,12 +1348,12 @@ def main() -> int:
         assert indata, "Run config must be provided via --infile"
         _update_gh_statuses_action(indata=indata, s3=s3)
 
-    ### CANCEL THE PREVIOUS WORKFLOW RUN
+    ### CANCEL PREVIOUS WORKFLOW RUN
     elif args.cancel_previous_run:
         if pr_info.is_merge_queue:
-            _cancel_pr_workflow(s3, pr_info.merged_pr)
+            _cancel_pr_wf(s3, pr_info.merged_pr)
         elif pr_info.is_pr:
-            _cancel_pr_workflow(s3, pr_info.number, cancel_sync=True)
+            _cancel_pr_wf(s3, pr_info.number, cancel_sync=True)
         else:
             assert False, "BUG! Not supported scenario"
 

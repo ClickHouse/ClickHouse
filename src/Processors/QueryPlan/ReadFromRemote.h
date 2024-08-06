@@ -70,6 +70,7 @@ public:
         ASTPtr query_ast_,
         ClusterPtr cluster_,
         const StorageID & storage_id_,
+        ParallelReplicasReadingCoordinatorPtr coordinator_,
         Block header_,
         QueryProcessingStage::Enum stage_,
         ContextMutablePtr context_,

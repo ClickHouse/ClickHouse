@@ -205,7 +205,6 @@ struct FormatSettings
 
     struct JSON
     {
-        size_t max_depth = 1000;
         bool array_of_rows = false;
         bool quote_64bit_integers = true;
         bool quote_64bit_floats = false;

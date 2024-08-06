@@ -403,7 +403,7 @@ public:
     Block getMinMaxCountProjectionBlock(
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
-        const ActionsDAG * filter_dag,
+        const ActionsDAGPtr & filter_dag,
         const DataPartsVector & parts,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
@@ -426,7 +426,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const override;
+    ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAGPtr &, ContextPtr) const override;
 
     bool supportsFinal() const override;
 
@@ -1227,7 +1227,7 @@ protected:
         boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns);
 
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
-        const ActionsDAG & filter_actions_dag, ContextPtr context, const DataPartsVector & parts) const;
+        const ActionsDAGPtr & filter_actions_dag, ContextPtr context, const DataPartsVector & parts) const;
 
     static decltype(auto) getStateModifier(DataPartState state)
     {
@@ -1473,7 +1473,7 @@ protected:
     /// Restores the parts of this table from backup.
     void restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
     void restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> restored_parts_holder, const MergeTreePartInfo & part_info, const String & part_path_in_backup, bool detach_if_broken) const;
-    MutableDataPartPtr loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const;
+    MutableDataPartPtr loadPartRestoredFromBackup(const DiskPtr & disk, const String & temp_dir, const String & part_name, bool detach_if_broken) const;
 
     /// Attaches restored parts to the storage.
     virtual void attachRestoredParts(MutableDataPartsVector && parts) = 0;

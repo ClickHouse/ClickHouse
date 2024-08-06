@@ -40,7 +40,6 @@ public:
         const StorageID & table_id_,
         ContextPtr context_,
         const ColumnsDescription & columns_,
-        const String & comment,
         std::unique_ptr<KafkaSettings> kafka_settings_,
         const String & collection_name_);
 

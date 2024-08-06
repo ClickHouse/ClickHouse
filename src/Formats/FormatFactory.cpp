@@ -123,7 +123,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.import_nested_json = settings.input_format_import_nested_json;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
-    format_settings.json.max_depth = settings.input_format_json_max_depth;
     format_settings.json.array_of_rows = settings.output_format_json_array_of_rows;
     format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;
     format_settings.json.write_named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
@@ -216,6 +215,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.tsv.allow_variable_number_of_columns = settings.input_format_tsv_allow_variable_number_of_columns;
     format_settings.tsv.crlf_end_of_line_input = settings.input_format_tsv_crlf_end_of_line;
     format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
+    format_settings.values.allow_data_after_semicolon = settings.input_format_values_allow_data_after_semicolon;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
     format_settings.values.escape_quote_with_quote = settings.output_format_values_escape_quote_with_quote;
@@ -253,7 +253,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.msgpack.number_of_columns = settings.input_format_msgpack_number_of_columns;
     format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
-    format_settings.max_bytes_to_read_for_schema_inference = settings.input_format_max_bytes_to_read_for_schema_inference;
+    format_settings.max_bytes_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
     format_settings.schema_inference_hints = settings.schema_inference_hints;
     format_settings.schema_inference_make_columns_nullable = settings.schema_inference_make_columns_nullable;

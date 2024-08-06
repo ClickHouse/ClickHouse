@@ -1,4 +1,3 @@
-#include <optional>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include "Common/Exception.h"
 
@@ -118,8 +117,7 @@ AzureObjectStorage::AzureObjectStorage(
 {
 }
 
-ObjectStorageKey
-AzureObjectStorage::generateObjectKeyForPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
+ObjectStorageKey AzureObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
 {
     return ObjectStorageKey::createAsRelative(getRandomASCIIString(32));
 }

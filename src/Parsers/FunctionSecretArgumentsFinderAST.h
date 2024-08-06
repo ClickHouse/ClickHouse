@@ -33,9 +33,7 @@ public:
         {
             case ASTFunction::Kind::ORDINARY_FUNCTION: findOrdinaryFunctionSecretArguments(); break;
             case ASTFunction::Kind::WINDOW_FUNCTION: break;
-            case ASTFunction::Kind::LAMBDA_FUNCTION: break;
-            case ASTFunction::Kind::CODEC: break;
-            case ASTFunction::Kind::STATISTICS: break;
+            case ASTFunction::Kind::LAMBDA_FUNCTION:  break;
             case ASTFunction::Kind::TABLE_ENGINE: findTableEngineSecretArguments(); break;
             case ASTFunction::Kind::DATABASE_ENGINE: findDatabaseEngineSecretArguments(); break;
             case ASTFunction::Kind::BACKUP_NAME: findBackupNameSecretArguments(); break;

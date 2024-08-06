@@ -22,7 +22,7 @@ public:
 };
 
 
-template <typename Derived>
+template<class Derived>
 class ChunkInfoCloneable : public ChunkInfo
 {
 public:

@@ -1333,7 +1333,16 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
     def get_count(node, table_name):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
 
-    def print_debug_info():
+    for _ in range(30):
+        if (
+            get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
+        ) == total_rows:
+            break
+        time.sleep(1)
+
+    if (
+        get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
+    ) != total_rows:
         processed_files = (
             node.query(
                 f"""
@@ -1360,7 +1369,7 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeep
         )
 
         count = get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
-        logging.debug(f"Processed rows: {count}/{total_rows}")
+        logging.debug(f"Processed rows: {count}/{files_to_generate}")
 
         info = node.query(
             f"""
@@ -1397,18 +1406,6 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeep
 
         logging.debug(f"Intersecting files: {intersection(files1, files2)}")
 
-    for _ in range(30):
-        if (
-            get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
-        ) == total_rows:
-            break
-        time.sleep(1)
-
-    if (
-        get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
-    ) != total_rows:
-        print_debug_info()
-
         assert False
 
     get_query = f"SELECT column1, column2, column3 FROM {dst_table_name}"
@@ -1416,12 +1413,6 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeep
     res2 = [
         list(map(int, l.split())) for l in run_query(node_2, get_query).splitlines()
     ]
-
-    if len(res1) + len(res2) != total_rows or len(res1) <= 0 or len(res2) <= 0 or True:
-        logging.debug(
-            f"res1 size: {len(res1)}, res2 size: {len(res2)}, total_rows: {total_rows}"
-        )
-        print_debug_info()
 
     assert len(res1) + len(res2) == total_rows
 

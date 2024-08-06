@@ -1,16 +1,14 @@
 #pragma once
 
-#include <Client/ClientApplicationBase.h>
+#include <Client/ClientBase.h>
 
 
 namespace DB
 {
 
-class Client : public ClientApplicationBase
+class Client : public ClientBase
 {
 public:
-    using Arguments = ClientApplicationBase::Arguments;
-
     Client() = default;
 
     void initialize(Poco::Util::Application & self) override;
@@ -18,6 +16,7 @@ public:
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
+
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;
 
     bool processWithFuzzing(const String & full_query) override;

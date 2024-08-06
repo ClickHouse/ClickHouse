@@ -624,12 +624,12 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
         std::move(new_client), std::move(new_s3_settings), new_uri, s3_capabilities, key_generator, disk_name);
 }
 
-ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const
+ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path) const
 {
     if (!key_generator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
 
-    return key_generator->generate(path, /* is_directory */ false, key_prefix);
+    return key_generator->generate(path, /* is_directory */ false);
 }
 
 std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()
