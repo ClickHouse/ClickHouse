@@ -1,8 +1,13 @@
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
 
-if (NOT USE_MONGODB)
+if(NOT USE_MONGODB)
     message(STATUS "Not using mongocxx and bsoncxx")
     return()
+endif()
+
+if(USE_MUSL)
+    message(WARNING "libmongoc and libbson cannot be used with Musl")
+    set(USE_MONGODB 0)
 endif()
 
 set(BSONCXX_SOURCES_DIR "${ClickHouse_SOURCE_DIR}/contrib/mongo-cxx-driver/src/bsoncxx")
@@ -157,9 +162,9 @@ set(MONGOCXX_COMPILER_VERSION "${CMAKE_CXX_COMPILER_VERSION}")
 set(MONGOCXX_COMPILER_ID "${CMAKE_CXX_COMPILER_ID}")
 set(MONGOCXX_LINK_WITH_STATIC_MONGOC 1)
 set(MONGOCXX_BUILD_STATIC 1)
-if (ENABLE_SSL)
+if(ENABLE_SSL)
     set(MONGOCXX_ENABLE_SSL 1)
-endif ()
+endif()
 
 configure_file(
         ${MONGOCXX_SOURCES_DIR}/lib/mongocxx/v_noabi/mongocxx/config/config.hpp.in
