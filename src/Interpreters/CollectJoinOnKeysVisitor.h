@@ -17,7 +17,7 @@ class TableJoin;
 
 namespace ASOF
 {
-    enum class Inequality : uint8_t;
+    enum class Inequality;
 }
 
 namespace ErrorCodes
@@ -25,7 +25,7 @@ namespace ErrorCodes
     extern const int INVALID_JOIN_ON_EXPRESSION;
 }
 
-enum class JoinIdentifierPos : uint8_t
+enum class JoinIdentifierPos
 {
     /// Position can't be established, identifier not resolved
     Unknown,

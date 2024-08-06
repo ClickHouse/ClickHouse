@@ -1,9 +1,10 @@
+#include <memory>
+#include <mutex>
 #include <Columns/ColumnSparse.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -14,20 +15,10 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/parseQuery.h>
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/ThreadPool.h>
 #include <Common/WeakHash.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-
-namespace CurrentMetrics
-{
-extern const Metric ConcurrentHashJoinPoolThreads;
-extern const Metric ConcurrentHashJoinPoolThreadsActive;
-extern const Metric ConcurrentHashJoinPoolThreadsScheduled;
-}
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -45,82 +36,20 @@ static UInt32 toPowerOfTwo(UInt32 x)
     return static_cast<UInt32>(1) << (32 - std::countl_zero(x - 1));
 }
 
-ConcurrentHashJoin::ConcurrentHashJoin(
-    ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & right_sample_block, bool any_take_last_row_)
+ConcurrentHashJoin::ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & right_sample_block, bool any_take_last_row_)
     : context(context_)
     , table_join(table_join_)
     , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
-    , pool(std::make_unique<ThreadPool>(
-          CurrentMetrics::ConcurrentHashJoinPoolThreads,
-          CurrentMetrics::ConcurrentHashJoinPoolThreadsActive,
-          CurrentMetrics::ConcurrentHashJoinPoolThreadsScheduled,
-          slots))
 {
-    hash_joins.resize(slots);
-
-    try
+    for (size_t i = 0; i < slots; ++i)
     {
-        for (size_t i = 0; i < slots; ++i)
-        {
-            pool->scheduleOrThrow(
-                [&, idx = i, thread_group = CurrentThread::getGroup()]()
-                {
-                    SCOPE_EXIT_SAFE({
-                        if (thread_group)
-                            CurrentThread::detachFromGroupIfNotDetached();
-                    });
+        auto inner_hash_join = std::make_shared<InternalHashJoin>();
 
-                    if (thread_group)
-                        CurrentThread::attachToGroupIfDetached(thread_group);
-                    setThreadName("ConcurrentJoin");
-
-                    auto inner_hash_join = std::make_shared<InternalHashJoin>();
-                    inner_hash_join->data = std::make_unique<HashJoin>(
-                        table_join_, right_sample_block, any_take_last_row_, 0, fmt::format("concurrent{}", idx));
-                    /// Non zero `max_joined_block_rows` allows to process block partially and return not processed part.
-                    /// TODO: It's not handled properly in ConcurrentHashJoin case, so we set it to 0 to disable this feature.
-                    inner_hash_join->data->setMaxJoinedBlockRows(0);
-                    hash_joins[idx] = std::move(inner_hash_join);
-                });
-        }
-        pool->wait();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        pool->wait();
-        throw;
-    }
-}
-
-ConcurrentHashJoin::~ConcurrentHashJoin()
-{
-    try
-    {
-        for (size_t i = 0; i < slots; ++i)
-        {
-            // Hash tables destruction may be very time-consuming.
-            // Without the following code, they would be destroyed in the current thread (i.e. sequentially).
-            // `InternalHashJoin` is moved here and will be destroyed in the destructor of the lambda function.
-            pool->scheduleOrThrow(
-                [join = std::move(hash_joins[i]), thread_group = CurrentThread::getGroup()]()
-                {
-                    SCOPE_EXIT_SAFE({
-                        if (thread_group)
-                            CurrentThread::detachFromGroupIfNotDetached();
-                    });
-
-                    if (thread_group)
-                        CurrentThread::attachToGroupIfDetached(thread_group);
-                    setThreadName("ConcurrentJoin");
-                });
-        }
-        pool->wait();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        pool->wait();
+        inner_hash_join->data = std::make_unique<HashJoin>(table_join_, right_sample_block, any_take_last_row_, 0, fmt::format("concurrent{}", i));
+        /// Non zero `max_joined_block_rows` allows to process block partially and return not processed part.
+        /// TODO: It's not handled properly in ConcurrentHashJoin case, so we set it to 0 to disable this feature.
+        inner_hash_join->data->setMaxJoinedBlockRows(0);
+        hash_joins.emplace_back(std::move(inner_hash_join));
     }
 }
 
@@ -271,7 +200,7 @@ IColumn::Selector ConcurrentHashJoin::selectDispatchBlock(const Strings & key_co
     {
         const auto & key_col = from_block.getByName(key_name).column->convertToFullColumnIfConst();
         const auto & key_col_no_lc = recursiveRemoveLowCardinality(recursiveRemoveSparse(key_col));
-        key_col_no_lc->updateWeakHash32(hash);
+        hash.update(key_col_no_lc->getWeakHash32());
     }
     return hashToSelector(hash, num_shards);
 }

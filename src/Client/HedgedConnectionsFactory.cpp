@@ -82,7 +82,7 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
         }
         case PoolMode::GET_MANY:
         {
-            max_entries = std::min(max_parallel_replicas, shuffled_pools.size());
+            max_entries = max_parallel_replicas;
             break;
         }
     }

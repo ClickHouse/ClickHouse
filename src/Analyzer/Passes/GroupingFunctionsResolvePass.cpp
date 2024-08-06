@@ -24,7 +24,7 @@ namespace ErrorCodes
 namespace
 {
 
-enum class GroupByKind : uint8_t
+enum class GroupByKind
 {
     ORDINARY,
     ROLLUP,
@@ -256,3 +256,4 @@ void GroupingFunctionsResolvePass::run(QueryTreeNodePtr & query_tree_node, Conte
 }
 
 }
+

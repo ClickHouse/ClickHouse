@@ -85,23 +85,22 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     if (index_definition->name.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index must have name in definition.");
 
-    auto index_type = index_definition->getType();
-    if (!index_type)
+    if (!index_definition->type)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TYPE is required for index");
 
-    if (index_type->parameters && !index_type->parameters->children.empty())
+    if (index_definition->type->parameters && !index_definition->type->parameters->children.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Index type cannot have parameters");
 
     IndexDescription result;
     result.definition_ast = index_definition->clone();
     result.name = index_definition->name;
-    result.type = Poco::toLower(index_type->name);
+    result.type = Poco::toLower(index_definition->type->name);
     result.granularity = index_definition->granularity;
 
     ASTPtr expr_list;
-    if (auto index_expression = index_definition->getExpression())
+    if (index_definition->expr)
     {
-        expr_list = extractKeyExpressionList(index_expression);
+        expr_list = extractKeyExpressionList(index_definition->expr->clone());
 
         ReplaceAliasToExprVisitor::Data data{columns};
         ReplaceAliasToExprVisitor{data}.visit(expr_list);
@@ -126,11 +125,12 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
         result.data_types.push_back(elem.type);
     }
 
-    if (index_type && index_type->arguments)
+    const auto & definition_arguments = index_definition->type->arguments;
+    if (definition_arguments)
     {
-        for (size_t i = 0; i < index_type->arguments->children.size(); ++i)
+        for (size_t i = 0; i < definition_arguments->children.size(); ++i)
         {
-            const auto * argument = index_type->arguments->children[i]->as<ASTLiteral>();
+            const auto * argument = definition_arguments->children[i]->as<ASTLiteral>();
             if (!argument)
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only literals can be skip index arguments");
             result.arguments.emplace_back(argument->value);

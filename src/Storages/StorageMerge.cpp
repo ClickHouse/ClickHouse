@@ -368,6 +368,14 @@ void StorageMerge::read(
     /// What will be result structure depending on query processed stage in source tables?
     Block common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
 
+    if (local_context->getSettingsRef().allow_experimental_analyzer && processed_stage == QueryProcessingStage::Complete)
+    {
+        /// Remove constants.
+        /// For StorageDistributed some functions like `hostName` that are constants only for local queries.
+        for (auto & column : common_header)
+            column.column = column.column->convertToFullColumnIfConst();
+    }
+
     auto step = std::make_unique<ReadFromMerge>(
         column_names,
         query_info,
@@ -463,7 +471,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     {
         size_t tables_count = selected_tables.size();
         Float64 num_streams_multiplier = std::min(
-            tables_count,
+            static_cast<size_t>(tables_count),
             std::max(1UL, static_cast<size_t>(context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
         size_t num_streams = static_cast<size_t>(requested_num_streams * num_streams_multiplier);
 
@@ -510,7 +518,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier
-        = std::min(tables_count, std::max(1UL, static_cast<size_t>(context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
+        = std::min(static_cast<size_t>(tables_count), std::max(1UL, static_cast<size_t>(context->getSettingsRef().max_streams_multiplier_for_merge_tables)));
     size_t num_streams = static_cast<size_t>(requested_num_streams * num_streams_multiplier);
     size_t remaining_streams = num_streams;
 
@@ -1611,9 +1619,9 @@ std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(cons
     return {false, ast};
 }
 
-bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr ctx) const
+bool StorageMerge::supportsTrivialCountOptimization() const
 {
-    return getFirstTable([&](const auto & table) { return !table->supportsTrivialCountOptimization(storage_snapshot, ctx); }) == nullptr;
+    return getFirstTable([&](const auto & table) { return !table->supportsTrivialCountOptimization(); }) == nullptr;
 }
 
 std::optional<UInt64> StorageMerge::totalRows(const Settings & settings) const

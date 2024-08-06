@@ -45,8 +45,7 @@ public:
         ContextPtr context_,
         // special flag to determine the ALTER TABLE ATTACH PART without the query context,
         // needed to set the special LogEntryType::ATTACH_PART
-        bool is_attach_ = false,
-        bool allow_attach_while_readonly_ = false);
+        bool is_attach_ = false);
 
     ~ReplicatedMergeTreeSinkImpl() override;
 
@@ -94,7 +93,8 @@ private:
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const BlockIDsType & block_id,
-        size_t replicas_num);
+        size_t replicas_num,
+        bool writing_existing_part);
 
 
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
@@ -123,7 +123,6 @@ private:
     UInt64 cache_version = 0;
 
     bool is_attach = false;
-    bool allow_attach_while_readonly = false;
     bool quorum_parallel = false;
     const bool deduplicate = true;
     bool last_block_is_duplicate = false;

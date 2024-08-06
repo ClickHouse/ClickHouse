@@ -16,6 +16,8 @@ SELECT __getScalar(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT __getScalar(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT __getScalar(materialize('1')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+WITH ( SELECT (1,1) ) as a SELECT materialize(a), __getScalar('17789833925953107877_7493841889429261611') SETTINGS allow_experimental_analyzer = 1;
+
 SELECT __scalarSubqueryResult('1');
 SELECT 'a' || __scalarSubqueryResult(a), materialize('1') as a;
 SELECT __scalarSubqueryResult(a, a), materialize('1') as a; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

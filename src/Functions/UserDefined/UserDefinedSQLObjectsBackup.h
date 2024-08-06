@@ -8,7 +8,7 @@ namespace DB
 {
 class BackupEntriesCollector;
 class RestorerFromBackup;
-enum class UserDefinedSQLObjectType : uint8_t;
+enum class UserDefinedSQLObjectType;
 class IBackupEntry;
 using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
 

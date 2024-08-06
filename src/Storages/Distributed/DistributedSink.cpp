@@ -173,10 +173,7 @@ void DistributedSink::writeAsync(const Block & block)
     else
     {
         if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
-        {
-            writeSplitAsync(block);
-            return;
-        }
+            return writeSplitAsync(block);
 
         writeAsyncImpl(block);
         ++inserted_blocks;
@@ -376,7 +373,11 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /// NOTE: INSERT will also take into account max_replica_delay_for_distributed_queries
                     /// (anyway fallback_to_stale_replicas_for_distributed_queries=true by default)
                     auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-                    job.connection_entry = std::move(results.front().entry);
+                    auto result = results.front();
+                    if (shard_info.pool->isTryResultInvalid(result, settings.distributed_insert_skip_read_only_replicas))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got an invalid connection result");
+
+                    job.connection_entry = std::move(result.entry);
                 }
                 else
                 {
@@ -439,10 +440,6 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 
 void DistributedSink::writeSync(const Block & block)
 {
-    std::lock_guard lock(execution_mutex);
-    if (isCancelled())
-        return;
-
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
     const Settings & settings = context->getSettingsRef();
@@ -544,10 +541,6 @@ void DistributedSink::onFinish()
         LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
     };
 
-    std::lock_guard lock(execution_mutex);
-    if (isCancelled())
-        return;
-
     /// Pool finished means that some exception had been thrown before,
     /// and scheduling new jobs will return "Cannot schedule a task" error.
     if (insert_sync && pool && !pool->finished())
@@ -598,7 +591,6 @@ void DistributedSink::onFinish()
 
 void DistributedSink::onCancel()
 {
-    std::lock_guard lock(execution_mutex);
     if (pool && !pool->finished())
     {
         try
@@ -625,7 +617,7 @@ IColumn::Selector DistributedSink::createSelector(const Block & source_block) co
 
     const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
 
-    return StorageDistributed::createSelector(cluster, key_column);
+    return storage.createSelector(cluster, key_column);
 }
 
 

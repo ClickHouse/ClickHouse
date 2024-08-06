@@ -5,10 +5,9 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
-#include <Common/BinStringDecodeHelper.h>
-#include <Common/PODArray.h>
-#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/BinStringDecodeHelper.h>
 #include "Parsers/CommonParsers.h"
 
 #include <Parsers/DumpASTNode.h>
@@ -170,17 +169,9 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// Identifier in backquotes or in double quotes or in English-style Unicode double quotes
+    /// Identifier in backquotes or in double quotes
     if (pos->type == TokenType::QuotedIdentifier)
     {
-        /// The case of Unicode quotes. No escaping is supported. Assuming UTF-8.
-        if (*pos->begin == '\xE2' && pos->size() > 6) /// Empty identifiers are not allowed.
-        {
-            node = std::make_shared<ASTIdentifier>(String(pos->begin + 3, pos->end - 3));
-            ++pos;
-            return true;
-        }
-
         ReadBufferFromMemory buf(pos->begin, pos->size());
         String s;
 
@@ -286,7 +277,7 @@ bool ParserTableAsStringLiteralIdentifier::parseImpl(Pos & pos, ASTPtr & node, E
 bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr id_list;
-    if (!ParserList(std::make_unique<ParserIdentifier>(allow_query_parameter, highlight_type), std::make_unique<ParserToken>(TokenType::Dot), false)
+    if (!ParserList(std::make_unique<ParserIdentifier>(allow_query_parameter), std::make_unique<ParserToken>(TokenType::Dot), false)
              .parse(pos, id_list, expected))
         return false;
 
@@ -363,16 +354,6 @@ bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (!parser_closing_bracket.ignore(pos, expected))
     {
         return false;
-    }
-
-    if (function.name == "count")
-    {
-        /// Remove child from function.arguments if it's '*' because countIf(*) is not supported.
-        /// See https://github.com/ClickHouse/ClickHouse/issues/61004
-        std::erase_if(function.arguments->children, [] (const ASTPtr & child)
-        {
-            return typeid_cast<const ASTAsterisk *>(child.get()) || typeid_cast<const ASTQualifiedAsterisk *>(child.get());
-        });
     }
 
     function.name += "If";
@@ -703,7 +684,7 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-bool ParserStatisticsType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserStatisticType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserList stat_type_parser(std::make_unique<ParserIdentifierWithOptionalParameters>(),
         std::make_unique<ParserToken>(TokenType::Comma), false);
@@ -722,7 +703,7 @@ bool ParserStatisticsType::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ++pos;
 
     auto function_node = std::make_shared<ASTFunction>();
-    function_node->name = "STATISTICS";
+    function_node->name = "STATISTIC";
     function_node->arguments = stat_type;
     function_node->children.push_back(function_node->arguments);
 
@@ -1129,11 +1110,11 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
 
     if (hex)
     {
-        hexStringDecode(str_begin, str_end, res_pos);
+        hexStringDecode(str_begin, str_end, res_pos, word_size);
     }
     else
     {
-        binStringDecode(str_begin, str_end, res_pos);
+        binStringDecode(str_begin, str_end, res_pos, word_size);
     }
 
     return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), (res_pos - res_begin - 1)));
@@ -1148,24 +1129,16 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
     if (pos->type == TokenType::StringLiteral)
     {
-        char first_char = *pos->begin;
-
-        if (first_char == 'x' || first_char == 'X')
+        if (*pos->begin == 'x' || *pos->begin == 'X')
         {
             constexpr size_t word_size = 2;
             return makeHexOrBinStringLiteral(pos, node, true, word_size);
         }
 
-        if (first_char == 'b' || first_char == 'B')
+        if (*pos->begin == 'b' || *pos->begin == 'B')
         {
             constexpr size_t word_size = 8;
             return makeHexOrBinStringLiteral(pos, node, false, word_size);
-        }
-
-        /// The case of Unicode quotes. No escaping is supported. Assuming UTF-8.
-        if (first_char == '\xE2' && pos->size() >= 6)
-        {
-            return makeStringLiteral(pos, node, String(pos->begin + 3, pos->end - 3));
         }
 
         ReadBufferFromMemory in(pos->begin, pos->size());
@@ -1507,7 +1480,6 @@ const char * ParserAlias::restricted_keywords[] =
     "USING",
     "WHERE",
     "WINDOW",
-    "QUALIFY",
     "WITH",
     "INTERSECT",
     "EXCEPT",
@@ -1518,7 +1490,7 @@ const char * ParserAlias::restricted_keywords[] =
 bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_as(Keyword::AS);
-    ParserIdentifier id_p(false, Highlight::alias);
+    ParserIdentifier id_p;
 
     bool has_as_word = s_as.ignore(pos, expected);
     if (!allow_alias_without_as_keyword && !has_as_word)
@@ -2101,28 +2073,28 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     int direction = 1;
 
-    if (descending.ignore(pos, expected) || desc.ignore(pos, expected))
+    if (descending.ignore(pos) || desc.ignore(pos))
         direction = -1;
     else
-        ascending.ignore(pos, expected) || asc.ignore(pos, expected);
+        ascending.ignore(pos) || asc.ignore(pos);
 
     int nulls_direction = direction;
     bool nulls_direction_was_explicitly_specified = false;
 
-    if (nulls.ignore(pos, expected))
+    if (nulls.ignore(pos))
     {
         nulls_direction_was_explicitly_specified = true;
 
-        if (first.ignore(pos, expected))
+        if (first.ignore(pos))
             nulls_direction = -direction;
-        else if (last.ignore(pos, expected))
+        else if (last.ignore(pos))
             ;
         else
             return false;
     }
 
     ASTPtr locale_node;
-    if (collate.ignore(pos, expected))
+    if (collate.ignore(pos))
     {
         if (!collate_locale_parser.parse(pos, locale_node, expected))
             return false;
@@ -2133,16 +2105,16 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ASTPtr fill_from;
     ASTPtr fill_to;
     ASTPtr fill_step;
-    if (with_fill.ignore(pos, expected))
+    if (with_fill.ignore(pos))
     {
         has_with_fill = true;
-        if (from.ignore(pos, expected) && !exp_parser.parse(pos, fill_from, expected))
+        if (from.ignore(pos) && !exp_parser.parse(pos, fill_from, expected))
             return false;
 
-        if (to.ignore(pos, expected) && !exp_parser.parse(pos, fill_to, expected))
+        if (to.ignore(pos) && !exp_parser.parse(pos, fill_to, expected))
             return false;
 
-        if (step.ignore(pos, expected) && !exp_parser.parse(pos, fill_step, expected))
+        if (step.ignore(pos) && !exp_parser.parse(pos, fill_step, expected))
             return false;
     }
 
@@ -2270,27 +2242,27 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     DataDestinationType destination_type = DataDestinationType::DELETE;
     String destination_name;
 
-    if (s_to_disk.ignore(pos, expected))
+    if (s_to_disk.ignore(pos))
     {
         mode = TTLMode::MOVE;
         destination_type = DataDestinationType::DISK;
     }
-    else if (s_to_volume.ignore(pos, expected))
+    else if (s_to_volume.ignore(pos))
     {
         mode = TTLMode::MOVE;
         destination_type = DataDestinationType::VOLUME;
     }
-    else if (s_group_by.ignore(pos, expected))
+    else if (s_group_by.ignore(pos))
     {
         mode = TTLMode::GROUP_BY;
     }
-    else if (s_recompress.ignore(pos, expected))
+    else if (s_recompress.ignore(pos))
     {
         mode = TTLMode::RECOMPRESS;
     }
     else
     {
-        s_delete.ignore(pos, expected);
+        s_delete.ignore(pos);
         mode = TTLMode::DELETE;
     }
 
@@ -2302,7 +2274,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (mode == TTLMode::MOVE)
     {
-        if (s_if_exists.ignore(pos, expected))
+        if (s_if_exists.ignore(pos))
             if_exists = true;
 
         ASTPtr ast_space_name;
@@ -2316,7 +2288,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parser_keys_list.parse(pos, group_by_key, expected))
             return false;
 
-        if (s_set.ignore(pos, expected))
+        if (s_set.ignore(pos))
         {
             ParserList parser_assignment_list(
                 std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma));
@@ -2325,14 +2297,14 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
     }
-    else if (mode == TTLMode::DELETE && s_where.ignore(pos, expected))
+    else if (mode == TTLMode::DELETE && s_where.ignore(pos))
     {
         if (!parser_exp.parse(pos, where_expr, expected))
             return false;
     }
     else if (mode == TTLMode::RECOMPRESS)
     {
-        if (!s_codec.ignore(pos, expected))
+        if (!s_codec.ignore(pos))
             return false;
 
         if (!parser_codec.parse(pos, recompression_codec, expected))

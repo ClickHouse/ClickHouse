@@ -3,6 +3,7 @@
 #include <optional>
 #include <Core/Field.h>
 #include <Columns/IColumn.h>
+#include <Common/WeakHash.h>
 #include <IO/BufferWithOwnMemory.h>
 
 
@@ -94,7 +95,7 @@ public:
     const char * deserializeAndInsertFromArena(const char *) override { throwMustBeDecompressed(); }
     const char * skipSerializedInArena(const char *) const override { throwMustBeDecompressed(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeDecompressed(); }
-    void updateWeakHash32(WeakHash32 &) const override { throwMustBeDecompressed(); }
+    WeakHash32 getWeakHash32() const override { throwMustBeDecompressed(); }
     void updateHashFast(SipHash &) const override { throwMustBeDecompressed(); }
     ColumnPtr filter(const Filter &, ssize_t) const override { throwMustBeDecompressed(); }
     void expand(const Filter &, bool) override { throwMustBeDecompressed(); }
@@ -121,9 +122,6 @@ public:
     double getRatioOfDefaultRows(double) const override { throwMustBeDecompressed(); }
     UInt64 getNumberOfDefaultRows() const override { throwMustBeDecompressed(); }
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeDecompressed(); }
-
-    bool hasDynamicStructure() const override { throwMustBeDecompressed(); }
-    void takeDynamicStructureFromSourceColumns(const Columns &) override { throwMustBeDecompressed(); }
 
 protected:
     size_t rows;

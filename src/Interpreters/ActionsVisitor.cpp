@@ -1071,7 +1071,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     auto current_context = data.getContext();
 
-    if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context)) /// NOLINT(readability-static-accessed-through-instance)
+    if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context))
     {
         Array parameters;
         if (node.parameters)
@@ -1087,7 +1087,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             }
         }
 
-        function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters); /// NOLINT(readability-static-accessed-through-instance)
+        function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters);
     }
 
     if (!function_builder)
@@ -1323,9 +1323,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     Data & data)
 {
     DataTypePtr type;
-    if (literal.custom_type)
-        type = literal.custom_type;
-    else if (data.getContext()->getSettingsRef().allow_experimental_variant_type && data.getContext()->getSettingsRef().use_variant_as_common_type)
+    if (data.getContext()->getSettingsRef().allow_experimental_variant_type && data.getContext()->getSettingsRef().use_variant_as_common_type)
         type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), literal.value);
     else
         type = applyVisitor(FieldToDataType(), literal.value);

@@ -75,14 +75,13 @@ private:
         bool finalized = false;
 
         bool exception_is_written = false;
-        std::function<void(WriteBuffer &, const String &)> exception_writer;
 
-        bool hasDelayed() const
+        inline bool hasDelayed() const
         {
             return out_maybe_delayed_and_compressed != out_maybe_compressed.get();
         }
 
-        void finalize()
+        inline void finalize()
         {
             if (finalized)
                 return;
@@ -94,7 +93,7 @@ private:
                 out->finalize();
         }
 
-        bool isFinalized() const
+        inline bool isFinalized() const
         {
             return finalized;
         }

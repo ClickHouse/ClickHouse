@@ -5,7 +5,6 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
 #include <Common/Arena.h>
-#include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
@@ -104,13 +103,10 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
     return res;
 }
 
-void ColumnString::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnString::getWeakHash32() const
 {
     auto s = offsets.size();
-
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
+    WeakHash32 hash(s);
 
     const UInt8 * pos = chars.data();
     UInt32 * hash_data = hash.getData().data();
@@ -126,6 +122,8 @@ void ColumnString::updateWeakHash32(WeakHash32 & hash) const
         prev_offset = offset;
         ++hash_data;
     }
+
+    return hash;
 }
 
 
@@ -482,23 +480,6 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, Per
             DefaultPartialSort());
 }
 
-size_t ColumnString::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const
-{
-    const size_t range_size = equal_range.size();
-    if (range_size <= 1)
-        return range_size;
-
-    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
-    StringHashSet elements;
-    bool inserted = false;
-    for (size_t i = equal_range.from; i < equal_range.to; ++i)
-    {
-        size_t permuted_i = permutation[i];
-        StringRef value = getDataAt(permuted_i);
-        elements.emplace(value, inserted);
-    }
-    return elements.size();
-}
 
 ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 {

@@ -49,11 +49,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_clear_index(Keyword::CLEAR_INDEX);
     ParserKeyword s_materialize_index(Keyword::MATERIALIZE_INDEX);
 
-    ParserKeyword s_add_statistics(Keyword::ADD_STATISTICS);
-    ParserKeyword s_drop_statistics(Keyword::DROP_STATISTICS);
-    ParserKeyword s_modify_statistics(Keyword::MODIFY_STATISTICS);
-    ParserKeyword s_clear_statistics(Keyword::CLEAR_STATISTICS);
-    ParserKeyword s_materialize_statistics(Keyword::MATERIALIZE_STATISTICS);
+    ParserKeyword s_add_statistic(Keyword::ADD_STATISTIC);
+    ParserKeyword s_drop_statistic(Keyword::DROP_STATISTIC);
+    ParserKeyword s_clear_statistic(Keyword::CLEAR_STATISTIC);
+    ParserKeyword s_materialize_statistic(Keyword::MATERIALIZE_STATISTIC);
 
     ParserKeyword s_add_constraint(Keyword::ADD_CONSTRAINT);
     ParserKeyword s_drop_constraint(Keyword::DROP_CONSTRAINT);
@@ -127,8 +126,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserIdentifier parser_remove_property;
     ParserCompoundColumnDeclaration parser_col_decl;
     ParserIndexDeclaration parser_idx_decl;
-    ParserStatisticsDeclaration parser_stat_decl;
-    ParserStatisticsDeclarationWithoutTypes parser_stat_decl_without_types;
+    ParserStatisticDeclaration parser_stat_decl;
     ParserConstraintDeclaration parser_constraint_decl;
     ParserProjectionDeclaration parser_projection_decl;
     ParserCompoundColumnDeclaration parser_modify_col_decl(false, false, true);
@@ -156,7 +154,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_constraint;
     ASTPtr command_projection_decl;
     ASTPtr command_projection;
-    ASTPtr command_statistics_decl;
+    ASTPtr command_statistic_decl;
     ASTPtr command_partition;
     ASTPtr command_predicate;
     ASTPtr command_update_assignments;
@@ -370,43 +368,36 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                         return false;
                 }
             }
-            else if (s_add_statistics.ignore(pos, expected))
+            else if (s_add_statistic.ignore(pos, expected))
             {
                 if (s_if_not_exists.ignore(pos, expected))
                     command->if_not_exists = true;
 
-                if (!parser_stat_decl.parse(pos, command_statistics_decl, expected))
+                if (!parser_stat_decl.parse(pos, command_statistic_decl, expected))
                     return false;
 
-                command->type = ASTAlterCommand::ADD_STATISTICS;
+                command->type = ASTAlterCommand::ADD_STATISTIC;
             }
-            else if (s_modify_statistics.ignore(pos, expected))
-            {
-                if (!parser_stat_decl.parse(pos, command_statistics_decl, expected))
-                    return false;
-
-                command->type = ASTAlterCommand::MODIFY_STATISTICS;
-            }
-            else if (s_drop_statistics.ignore(pos, expected))
+            else if (s_drop_statistic.ignore(pos, expected))
             {
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
+                if (!parser_stat_decl.parse(pos, command_statistic_decl, expected))
                     return false;
 
-                command->type = ASTAlterCommand::DROP_STATISTICS;
+                command->type = ASTAlterCommand::DROP_STATISTIC;
             }
-            else if (s_clear_statistics.ignore(pos, expected))
+            else if (s_clear_statistic.ignore(pos, expected))
             {
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
+                if (!parser_stat_decl.parse(pos, command_statistic_decl, expected))
                     return false;
 
-                command->type = ASTAlterCommand::DROP_STATISTICS;
-                command->clear_statistics = true;
+                command->type = ASTAlterCommand::DROP_STATISTIC;
+                command->clear_statistic = true;
                 command->detach = false;
 
                 if (s_in_partition.ignore(pos, expected))
@@ -415,15 +406,15 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                         return false;
                 }
             }
-            else if (s_materialize_statistics.ignore(pos, expected))
+            else if (s_materialize_statistic.ignore(pos, expected))
             {
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
+                if (!parser_stat_decl.parse(pos, command_statistic_decl, expected))
                     return false;
 
-                command->type = ASTAlterCommand::MATERIALIZE_STATISTICS;
+                command->type = ASTAlterCommand::MATERIALIZE_STATISTIC;
                 command->detach = false;
 
                 if (s_in_partition.ignore(pos, expected))
@@ -504,11 +495,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 command->type = ASTAlterCommand::MOVE_PARTITION;
                 command->part = true;
 
-                if (s_to_disk.ignore(pos, expected))
+                if (s_to_disk.ignore(pos))
                     command->move_destination_type = DataDestinationType::DISK;
-                else if (s_to_volume.ignore(pos, expected))
+                else if (s_to_volume.ignore(pos))
                     command->move_destination_type = DataDestinationType::VOLUME;
-                else if (s_to_shard.ignore(pos, expected))
+                else if (s_to_shard.ignore(pos))
                 {
                     command->move_destination_type = DataDestinationType::SHARD;
                 }
@@ -528,11 +519,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 command->type = ASTAlterCommand::MOVE_PARTITION;
 
-                if (s_to_disk.ignore(pos, expected))
+                if (s_to_disk.ignore(pos))
                     command->move_destination_type = DataDestinationType::DISK;
-                else if (s_to_volume.ignore(pos, expected))
+                else if (s_to_volume.ignore(pos))
                     command->move_destination_type = DataDestinationType::VOLUME;
-                else if (s_to_table.ignore(pos, expected))
+                else if (s_to_table.ignore(pos))
                 {
                     if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
                         return false;
@@ -593,7 +584,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!parser_partition.parse(pos, command_partition, expected))
                     return false;
 
-                if (s_from.ignore(pos, expected))
+                if (s_from.ignore(pos))
                 {
                     if (!parseDatabaseAndTableName(pos, expected, command->from_database, command->from_table))
                         return false;
@@ -940,8 +931,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->projection_decl = command->children.emplace_back(std::move(command_projection_decl)).get();
     if (command_projection)
         command->projection = command->children.emplace_back(std::move(command_projection)).get();
-    if (command_statistics_decl)
-        command->statistics_decl = command->children.emplace_back(std::move(command_statistics_decl)).get();
+    if (command_statistic_decl)
+        command->statistic_decl = command->children.emplace_back(std::move(command_statistic_decl)).get();
     if (command_partition)
         command->partition = command->children.emplace_back(std::move(command_partition)).get();
     if (command_predicate)

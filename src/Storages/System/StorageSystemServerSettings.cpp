@@ -23,7 +23,7 @@ namespace CurrentMetrics
 namespace DB
 {
 
-enum class ChangeableWithoutRestart : uint8_t
+enum class ChangeableWithoutRestart
 {
     No,
     IncreaseOnly,

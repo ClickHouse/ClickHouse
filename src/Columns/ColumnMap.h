@@ -64,7 +64,7 @@ public:
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
     void insertFrom(const IColumn & src_, size_t n) override;
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
@@ -104,9 +104,6 @@ public:
     ColumnTuple & getNestedData() { return assert_cast<ColumnTuple &>(getNestedColumn().getData()); }
 
     ColumnPtr compress() const override;
-
-    bool hasDynamicStructure() const override { return nested->hasDynamicStructure(); }
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 };
 
 }

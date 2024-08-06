@@ -25,7 +25,7 @@ namespace ErrorCodes
 }
 
 
-enum class ExtractAllGroupsResultKind : uint8_t
+enum class ExtractAllGroupsResultKind
 {
     VERTICAL,
     HORIZONTAL

@@ -30,7 +30,7 @@ namespace ProfileEvents
     class Timer
     {
     public:
-        enum class Resolution : UInt32
+        enum class Resolution : UInt64
         {
             Nanoseconds = 1,
             Microseconds = 1000,

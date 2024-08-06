@@ -89,7 +89,7 @@ def test_aggregate_states(start_cluster):
                 logging.info("Skipping %s", aggregate_function)
                 skipped += 1
                 continue
-            logging.exception("Failed %s", aggregate_function)
+            logging.exception("Failed %s", function)
             failed += 1
             continue
 

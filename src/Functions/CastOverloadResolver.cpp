@@ -100,11 +100,7 @@ protected:
         validateDataType(type, data_type_validation_settings);
 
         if (cast_type == CastType::accurateOrNull)
-        {
-            /// Variant handles NULLs by itself during conversions.
-            if (!isVariant(type))
-                return makeNullable(type);
-        }
+            return makeNullable(type);
 
         if (internal)
             return type;

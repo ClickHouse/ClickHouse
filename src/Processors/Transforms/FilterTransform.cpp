@@ -179,22 +179,26 @@ static std::unique_ptr<IFilterDescription> combineFilterAndIndices(
 }
 
 Block FilterTransform::transformHeader(
-    const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column)
+    Block header,
+    const ActionsDAG * expression,
+    const String & filter_column_name,
+    bool remove_filter_column)
 {
-    Block result = expression ? expression->updateHeader(header) : header;
+    if (expression)
+        header = expression->updateHeader(std::move(header));
 
-    auto filter_type = result.getByName(filter_column_name).type;
+    auto filter_type = header.getByName(filter_column_name).type;
     if (!filter_type->onlyNull() && !isUInt8(removeNullable(removeLowCardinality(filter_type))))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Illegal type {} of column {} for filter. Must be UInt8 or Nullable(UInt8).",
             filter_type->getName(), filter_column_name);
 
     if (remove_filter_column)
-        result.erase(filter_column_name);
+        header.erase(filter_column_name);
     else
-        replaceFilterToConstant(result, filter_column_name);
+        replaceFilterToConstant(header, filter_column_name);
 
-    return result;
+    return header;
 }
 
 FilterTransform::FilterTransform(

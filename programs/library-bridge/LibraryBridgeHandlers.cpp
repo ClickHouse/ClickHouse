@@ -284,6 +284,7 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
         else if (method == "extDict_loadIds")
         {
             LOG_DEBUG(log, "Getting diciontary ids for dictionary with id: {}", dictionary_id);
+            String ids_string;
             std::vector<uint64_t> ids = parseIdsFromBinary(request.getStream());
 
             auto library_handler = ExternalDictionaryLibraryHandlerFactory::instance().get(dictionary_id);

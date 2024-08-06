@@ -13,7 +13,7 @@ PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 TABLE 'dict1'))
 LAYOUT(DIRECT());
 
-SELECT * FROM dict1; --{serverError BAD_ARGUMENTS}
+SELECT * FROM dict1; --{serverError 36}
 
 DROP DICTIONARY dict1;
 
@@ -27,7 +27,7 @@ PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 DATABASE '01780_db' TABLE 'dict2'))
 LAYOUT(DIRECT());
 
-SELECT * FROM 01780_db.dict2; --{serverError BAD_ARGUMENTS}
+SELECT * FROM 01780_db.dict2; --{serverError 36}
 DROP DICTIONARY 01780_db.dict2;
 
 DROP TABLE IF EXISTS 01780_db.dict3_source;

@@ -1,4 +1,5 @@
 #include <Poco/Logger.h>
+#include <algorithm>
 #include <optional>
 
 #include <Poco/DirectoryIterator.h>
@@ -15,9 +16,11 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <Poco/Net/NetException.h>
 
+#if USE_AZURE_BLOB_STORAGE
+#include <azure/core/http/http.hpp>
+#endif
 
 namespace CurrentMetrics
 {
@@ -63,28 +66,33 @@ bool isRetryableException(std::exception_ptr exception_ptr)
 #if USE_AWS_S3
     catch (const S3Exception & s3_exception)
     {
-        return s3_exception.isRetryableError();
+        if (s3_exception.isRetryableError())
+            return true;
     }
 #endif
 #if USE_AZURE_BLOB_STORAGE
-    catch (const Azure::Core::RequestFailedException & e)
+    catch (const Azure::Core::RequestFailedException &)
     {
-        return isRetryableAzureException(e);
+        return true;
     }
 #endif
     catch (const ErrnoException & e)
     {
-        return e.getErrno() == EMFILE;
+        if (e.getErrno() == EMFILE)
+            return true;
     }
-    catch (const Coordination::Exception & e)
+    catch (const Coordination::Exception  & e)
     {
-        return Coordination::isHardwareError(e.code);
+        if (Coordination::isHardwareError(e.code))
+            return true;
     }
     catch (const Exception & e)
     {
-        return isNotEnoughMemoryErrorCode(e.code())
-            || e.code() == ErrorCodes::NETWORK_ERROR
-            || e.code() == ErrorCodes::SOCKET_TIMEOUT;
+        if (isNotEnoughMemoryErrorCode(e.code()))
+            return true;
+
+        if (e.code() == ErrorCodes::NETWORK_ERROR || e.code() == ErrorCodes::SOCKET_TIMEOUT)
+            return true;
     }
     catch (const Poco::Net::NetException &)
     {
@@ -94,12 +102,10 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     {
         return true;
     }
-    catch (...)
-    {
-        /// In fact, there can be other similar situations.
-        /// But it is OK, because there is a safety guard against deleting too many parts.
-        return false;
-    }
+
+    /// In fact, there can be other similar situations.
+    /// But it is OK, because there is a safety guard against deleting too many parts.
+    return false;
 }
 
 
@@ -219,7 +225,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
                 auto file_name = *stream_name + ".bin";
                 checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
-            }, column.type, data_part->getColumnSample(column));
+            });
         }
     }
     else
@@ -250,7 +256,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             continue;
         }
 
-        /// Exclude files written by full-text index from check. No correct checksums are available for them currently.
+        /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
         if (isGinFile(file_name))
             continue;
 
@@ -279,6 +285,11 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             return {};
 
         auto projection_file = name + ".proj";
+        if (!throw_on_broken_projection && projection->is_broken)
+        {
+            projections_on_disk.erase(projection_file);
+            checksums_txt.remove(projection_file);
+        }
 
         IMergeTreeDataPart::Checksums projection_checksums;
         try
@@ -295,19 +306,13 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             if (isRetryableException(std::current_exception()))
                 throw;
 
-            is_broken_projection = true;
-            projections_on_disk.erase(projection_file);
-            checksums_txt.remove(projection_file);
-
-            const auto exception_message = getCurrentExceptionMessage(true);
-
             if (!projection->is_broken)
             {
-                LOG_WARNING(log, "Marking projection {} as broken ({}). Reason: {}",
-                            name, projection_file, exception_message);
-                projection->setBrokenReason(exception_message, getCurrentExceptionCode());
+                LOG_TEST(log, "Marking projection {} as broken ({})", name, projection_file);
+                projection->setBrokenReason(getCurrentExceptionMessage(false), getCurrentExceptionCode());
             }
 
+            is_broken_projection = true;
             if (throw_on_broken_projection)
             {
                 if (!broken_projections_message.empty())
@@ -315,10 +320,12 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
                 broken_projections_message += fmt::format(
                     "Part {} has a broken projection {} (error: {})",
-                    data_part->name, name, exception_message);
+                    data_part->name, name, getCurrentExceptionMessage(false));
+                continue;
             }
 
-            continue;
+            projections_on_disk.erase(projection_file);
+            checksums_txt.remove(projection_file);
         }
 
         checksums_data.files[projection_file] = IMergeTreeDataPart::Checksums::Checksum(
@@ -344,7 +351,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         return {};
 
     if (require_checksums || !checksums_txt.files.empty())
-        checksums_txt.checkEqual(checksums_data, check_uncompressed, data_part->name);
+        checksums_txt.checkEqual(checksums_data, check_uncompressed);
 
     return checksums_data;
 }

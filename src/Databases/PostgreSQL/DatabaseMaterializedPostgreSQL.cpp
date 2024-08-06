@@ -5,7 +5,6 @@
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
@@ -456,6 +455,8 @@ void DatabaseMaterializedPostgreSQL::shutdown()
 
 void DatabaseMaterializedPostgreSQL::stopReplication()
 {
+    stopLoading();
+
     std::lock_guard lock(handler_mutex);
     if (replication_handler)
         replication_handler->shutdown();
@@ -483,10 +484,10 @@ void DatabaseMaterializedPostgreSQL::drop(ContextPtr local_context)
 
 
 DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
-    ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
+    ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
 {
     /// Modify context into nested_context and pass query to Atomic database.
-    return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name, skip_not_loaded);
+    return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name);
 }
 
 void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)

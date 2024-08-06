@@ -190,7 +190,7 @@ public:
         data->updateHashWithValue(0, hash);
     }
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override
     {
@@ -306,8 +306,6 @@ public:
     T getValue() const { return static_cast<T>(getField().safeGet<T>()); }
 
     bool isCollationSupported() const override { return data->isCollationSupported(); }
-
-    bool hasDynamicStructure() const override { return data->hasDynamicStructure(); }
 };
 
 ColumnConst::Ptr createColumnConst(const ColumnPtr & column, Field value);

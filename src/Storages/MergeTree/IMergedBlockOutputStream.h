@@ -1,12 +1,10 @@
 #pragma once
 
-#include <Storages/MergeTree/IDataPartStorage.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
+#include "Storages/MergeTree/IDataPartStorage.h"
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
-#include <Common/Logger.h>
 
 namespace DB
 {
@@ -15,8 +13,7 @@ class IMergedBlockOutputStream
 {
 public:
     IMergedBlockOutputStream(
-        const MergeTreeSettingsPtr & storage_settings_,
-        MutableDataPartStoragePtr data_part_storage_,
+        const MergeTreeMutableDataPartPtr & data_part,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list,
         bool reset_columns_);
@@ -42,13 +39,11 @@ protected:
         SerializationInfoByName & serialization_infos,
         MergeTreeData::DataPart::Checksums & checksums);
 
-    MergeTreeSettingsPtr storage_settings;
-    LoggerPtr log;
-
+    const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
 
     MutableDataPartStoragePtr data_part_storage;
-    MergeTreeDataPartWriterPtr writer;
+    IMergeTreeDataPart::MergeTreeWriterPtr writer;
 
     bool reset_columns = false;
     SerializationInfoByName new_serialization_infos;

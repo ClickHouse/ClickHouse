@@ -8,6 +8,7 @@
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/iota.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <algorithm>
 #include <bit>
@@ -322,9 +323,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 
     size_t res_offset = 0;
     auto offset_it = begin();
-    /// Replace the `++offset_it` with `offset_it.increaseCurrentRow()` and `offset_it.increaseCurrentOffset()`,
-    /// to remove the redundant `isDefault()` in `++` of `Interator` and reuse the following `isDefault()`.
-    for (size_t i = 0; i < _size; ++i, offset_it.increaseCurrentRow())
+    for (size_t i = 0; i < _size; ++i, ++offset_it)
     {
         if (!offset_it.isDefault())
         {
@@ -339,7 +338,6 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
             {
                 values_filter.push_back(0);
             }
-            offset_it.increaseCurrentOffset();
         }
         else
         {
@@ -348,7 +346,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
     }
 
     auto res_values = values->filter(values_filter, values_result_size_hint);
-    return create(res_values, std::move(res_offsets), res_offset);
+    return this->create(res_values, std::move(res_offsets), res_offset);
 }
 
 void ColumnSparse::expand(const Filter & mask, bool inverted)
@@ -579,7 +577,7 @@ void ColumnSparse::getPermutation(IColumn::PermutationSortDirection direction, I
         return;
     }
 
-    getPermutationImpl(direction, stability, limit, null_direction_hint, res, nullptr);
+    return getPermutationImpl(direction, stability, limit, null_direction_hint, res, nullptr);
 }
 
 void ColumnSparse::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -592,7 +590,7 @@ void ColumnSparse::updatePermutation(IColumn::PermutationSortDirection direction
 void ColumnSparse::getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                 size_t limit, int null_direction_hint, Permutation & res) const
 {
-    getPermutationImpl(direction, stability, limit, null_direction_hint, res, &collator);
+    return getPermutationImpl(direction, stability, limit, null_direction_hint, res, &collator);
 }
 
 void ColumnSparse::updatePermutationWithCollation(
@@ -666,20 +664,22 @@ void ColumnSparse::updateHashWithValue(size_t n, SipHash & hash) const
     values->updateHashWithValue(getValueIndex(n), hash);
 }
 
-void ColumnSparse::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnSparse::getWeakHash32() const
 {
-    if (hash.getData().size() != _size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-        "column size is {}, hash size is {}", _size, hash.getData().size());
+    WeakHash32 values_hash = values->getWeakHash32();
+    WeakHash32 hash(size());
+
+    auto & hash_data = hash.getData();
+    auto & values_hash_data = values_hash.getData();
 
     auto offset_it = begin();
-    auto & hash_data = hash.getData();
     for (size_t i = 0; i < _size; ++i, ++offset_it)
     {
         size_t value_index = offset_it.getValueIndex();
-        auto data_ref = values->getDataAt(value_index);
-        hash_data[i] = ::updateWeakHash32(reinterpret_cast<const UInt8 *>(data_ref.data), data_ref.size, hash_data[i]);
+        hash_data[i] = values_hash_data[value_index];
     }
+
+    return hash;
 }
 
 void ColumnSparse::updateHashFast(SipHash & hash) const
@@ -803,15 +803,6 @@ ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const
     return Iterator(offsets_data, _size, current_offset, n);
 }
 
-void ColumnSparse::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
-{
-    Columns values_source_columns;
-    values_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-        values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
-    values->takeDynamicStructureFromSourceColumns(values_source_columns);
-}
-
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
 {
     if (!column)
@@ -820,9 +811,6 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
     if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
     {
         auto columns = column_tuple->getColumns();
-        if (columns.empty())
-            return column;
-
         for (auto & element : columns)
             element = recursiveRemoveSparse(element);
 

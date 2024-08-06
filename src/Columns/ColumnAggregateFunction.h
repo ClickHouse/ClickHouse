@@ -1,9 +1,17 @@
 #pragma once
 
-#include <AggregateFunctions/IAggregateFunction_fwd.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+
 #include <Columns/IColumn.h>
-#include <Core/Field.h>
 #include <Common/PODArray.h>
+
+#include <Core/Field.h>
+
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+
+#include <Functions/FunctionHelpers.h>
 
 namespace DB
 {
@@ -17,12 +25,6 @@ class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using ConstArenaPtr = std::shared_ptr<const Arena>;
 using ConstArenas = std::vector<ConstArenaPtr>;
-
-class Context;
-using ContextPtr = std::shared_ptr<const Context>;
-
-struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 
 /** Column of states of aggregate functions.
@@ -119,7 +121,7 @@ public:
     /// This method is made static and receive MutableColumnPtr object to explicitly destroy it.
     static MutableColumnPtr convertToValues(MutableColumnPtr column);
 
-    std::string getName() const override;
+    std::string getName() const override { return "AggregateFunction(" + func->getName() + ")"; }
     const char * getFamilyName() const override { return "AggregateFunction"; }
     TypeIndex getDataType() const override { return TypeIndex::AggregateFunction; }
 
@@ -170,7 +172,7 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override;
 
