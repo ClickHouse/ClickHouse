@@ -3063,7 +3063,7 @@ Supported arguments:
 - Values of type (U)Int8/16/32/64/128/256.
 - String representations of (U)Int8/16/32/128/256.
 - Values of type Float32/64, including `NaN` and `Inf`.
-- String representations of Float32/64, including `NaN` and `Inf`.
+- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
 
 Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toFloat32('0xc0fe');`.
@@ -3081,7 +3081,7 @@ SELECT
     toFloat32(42.7),
     toFloat32('42.7'),
     toFloat32('NaN')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -3128,11 +3128,11 @@ Unsupported arguments (return `0`):
 
 Query:
 
-``` sql
+```sql
 SELECT
     toFloat32OrZero('42.7'),
     toFloat32OrZero('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -3178,11 +3178,11 @@ Unsupported arguments (return `\N`):
 
 Query:
 
-``` sql
+```sql
 SELECT
     toFloat32OrNull('42.7'),
     toFloat32OrNull('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -3219,8 +3219,8 @@ toFloat32OrDefault(expr[, default])
 Supported arguments:
 - Values of type (U)Int8/16/32/64/128/256.
 - String representations of (U)Int8/16/32/128/256.
-- Values of type Float32/64.
-- String representations of Float32/64.
+- Values of type Float32/64, including `NaN` and `Inf`.
+- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
 
 Arguments for which the default value is returned:
 - String representations of binary and hexadecimal values, e.g. `SELECT toFloat32OrDefault('0xc0fe', CAST('0', 'Float32'));`.
@@ -3233,11 +3233,11 @@ Arguments for which the default value is returned:
 
 Query:
 
-``` sql
+```sql
 SELECT
     toFloat32OrDefault('8', CAST('0', 'Float32')),
     toFloat32OrDefault('abc', CAST('0', 'Float32'))
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -3273,7 +3273,7 @@ Supported arguments:
 - Values of type (U)Int8/16/32/64/128/256.
 - String representations of (U)Int8/16/32/128/256.
 - Values of type Float32/64, including `NaN` and `Inf`.
-- String representations of type Float32/64, including `NaN` and `Inf`.
+- String representations of type Float32/64, including `NaN` and `Inf` (case-insensitive).
 
 Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toFloat64('0xc0fe');`.
@@ -3291,7 +3291,7 @@ SELECT
     toFloat64(42.7),
     toFloat64('42.7'),
     toFloat64('NaN')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -3338,11 +3338,11 @@ Unsupported arguments (return `0`):
 
 Query:
 
-``` sql
+```sql
 SELECT
     toFloat64OrZero('42.7'),
     toFloat64OrZero('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -3388,11 +3388,11 @@ Unsupported arguments (return `\N`):
 
 Query:
 
-``` sql
+```sql
 SELECT
     toFloat64OrNull('42.7'),
     toFloat64OrNull('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -3429,8 +3429,8 @@ toFloat64OrDefault(expr[, default])
 Supported arguments:
 - Values of type (U)Int8/16/32/64/128/256.
 - String representations of (U)Int8/16/32/128/256.
-- Values of type Float32/64.
-- String representations of Float32/64.
+- Values of type Float32/64, including `NaN` and `Inf`.
+- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
 
 Arguments for which the default value is returned:
 - String representations of binary and hexadecimal values, e.g. `SELECT toFloat64OrDefault('0xc0fe', CAST('0', 'Float64'));`.
@@ -3443,11 +3443,11 @@ Arguments for which the default value is returned:
 
 Query:
 
-``` sql
+```sql
 SELECT
     toFloat64OrDefault('8', CAST('0', 'Float64')),
     toFloat64OrDefault('abc', CAST('0', 'Float64'))
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
