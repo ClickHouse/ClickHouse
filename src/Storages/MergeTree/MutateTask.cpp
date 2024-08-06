@@ -659,10 +659,8 @@ static NameSet collectFilesToSkip(
     const Block & updated_header,
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     const String & mrk_extension,
-    const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc,
-    const std::set<ColumnStatisticsPtr> & stats_to_recalc,
-    const StorageMetadataPtr & metadata_snapshot,
-    bool skip_all_projections)
+    const std::set<ProjectionDescriptionRawPtr> & projections_to_skip,
+    const std::set<ColumnStatisticsPtr> & stats_to_recalc)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
@@ -686,16 +684,8 @@ static NameSet collectFilesToSkip(
         }
     }
 
-    if (skip_all_projections)
-    {
-        for (const auto & projection : metadata_snapshot->getProjections())
-            files_to_skip.insert(projection.getDirectoryName());
-    }
-    else
-    {
-        for (const auto & projection : projections_to_recalc)
-            files_to_skip.insert(projection->getDirectoryName());
-    }
+    for (const auto & projection : projections_to_skip)
+        files_to_skip.insert(projection->getDirectoryName());
 
     for (const auto & stat : stats_to_recalc)
         files_to_skip.insert(stat->getFileName() + STATS_FILE_SUFFIX);
@@ -2325,6 +2315,9 @@ bool MutateTask::prepare()
             lightweight_mutation_projection_mode == LightweightMutationProjectionMode::DROP
             || lightweight_mutation_projection_mode == LightweightMutationProjectionMode::THROW;
 
+        std::set<ProjectionDescriptionRawPtr> projections_to_skip_container;
+        auto * projections_to_skip = &projections_to_skip_container;
+
         bool should_create_projections = !(lightweight_delete_mode && lightweight_delete_drops_projections);
         /// Under lightweight delete mode, if option is drop, projections_to_recalc should be empty.
         if (should_create_projections)
@@ -2333,6 +2326,13 @@ bool MutateTask::prepare()
                 ctx->source_part,
                 ctx->metadata_snapshot,
                 ctx->materialized_projections);
+
+            projections_to_skip = &ctx->projections_to_recalc;
+        }
+        else
+        {
+            for (const auto & projection : ctx->metadata_snapshot->getProjections())
+                projections_to_skip->insert(&projection);
         }
 
         ctx->stats_to_recalc = MutationHelpers::getStatisticsToRecalculate(ctx->metadata_snapshot, ctx->materialized_statistics);
@@ -2343,10 +2343,8 @@ bool MutateTask::prepare()
             ctx->updated_header,
             ctx->indices_to_recalc,
             ctx->mrk_extension,
-            ctx->projections_to_recalc,
-            ctx->stats_to_recalc,
-            ctx->metadata_snapshot,
-            !should_create_projections);
+            *projections_to_skip,
+            ctx->stats_to_recalc);
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->source_part,

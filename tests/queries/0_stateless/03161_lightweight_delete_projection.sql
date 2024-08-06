@@ -67,7 +67,7 @@ WHERE (database = currentDatabase()) AND (`table` = 'users_compact') AND (active
 SELECT
     name, parent_name
 FROM system.projection_parts
-WHERE (database = currentDatabase()) AND (`table` = 'users_compact') AND (active = 1);
+WHERE (database = currentDatabase()) AND (`table` = 'users_compact') AND (active = 1) AND parent_name like 'all_3_3%';
 
 -- { echoOff }
 
@@ -136,7 +136,7 @@ WHERE (database = currentDatabase()) AND (`table` = 'users_wide') AND (active = 
 SELECT
     name, parent_name
 FROM system.projection_parts
-WHERE (database = currentDatabase()) AND (`table` = 'users_wide') AND (active = 1);
+WHERE (database = currentDatabase()) AND (`table` = 'users_wide') AND (active = 1) AND parent_name like 'all_3_3%';
 
 -- { echoOff }
 
