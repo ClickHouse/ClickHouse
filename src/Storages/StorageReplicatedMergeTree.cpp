@@ -3653,25 +3653,22 @@ void StorageReplicatedMergeTree::updateMovePartTask( const LogEntry & logEntry, 
     auto zookeeper = getZooKeeper();
     String value;
     Coordination::Stat stat;
+    if(!result){
+        LOG_DEBUG(log, "Task {} failed to execute {} on replica {} ", logEntry.task_name, logEntry.typeToString(), replica_name);
+        return;
+    }
     
     while (zookeeper->tryGet(fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name , value, &stat)){
         PartMovesBetweenShardsOrchestrator::Entry entry;
         entry.fromString(value);
-        if(result){
-            if(entry.replicas_failed.find(replica_name) != entry.replicas_failed.end())
-                entry.replicas_failed.erase(replica_name);
-            entry.replicas_success.insert(replica_name);
-        }
-        else{
-            entry.replicas_failed.insert(replica_name);
-        }
+        entry.replicas.push_back(replica_name);
 
         Coordination::Requests ops;
         Coordination::Responses responses;
 
         ops.emplace_back(zkutil::makeSetRequest(fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name, entry.toString(), stat.version));
 
-        if(entry.replicas_success.size() + entry.replicas_failed.size() == entry.required_number_of_replicas){
+        if(entry.replicas.size() == entry.required_number_of_replicas){
             ops.emplace_back(zkutil::makeCreateRequest(fs::path(logEntry.task_entry_zk_path) / "task_queue" / logEntry.task_name, replica_name, zkutil::CreateMode::Persistent, true));
         }
 
@@ -3733,7 +3730,6 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
               * The thread that performs this action will sleep a few seconds after the exception.
               * See `queue.processEntry` function.
               */
-            updateMovePartTask(*entry_to_process, false);
             throw;
         }
         catch (...)
@@ -8709,27 +8705,6 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     if (src_pins.part_uuids.contains(part->uuid) || dst_pins.part_uuids.contains(part->uuid))
         throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part {} has it's uuid ({}) already pinned.", part_name, part->uuid);
 
-    /// check if all the replicas of the shard are active
-    Strings replicas = zookeeper->getChildren( fs::path(zookeeper_path) / "replicas");
-    Strings exists_paths;
-    exists_paths.reserve(replicas.size());
-    for (const auto & replica : replicas)
-        if (replica != replica_name)
-            exists_paths.emplace_back(fs::path(zookeeper_path) / "replicas" / replica / "is_active");
-
-    auto exists_result = zookeeper->exists(exists_paths);
-
-    const auto storage_settings_ptr = getSettings();
-    
-    if(!getSettings()->disable_quorum_check_move_parts){
-        for (size_t i = 0; i < exists_paths.size(); ++i)
-        {
-            auto error = exists_result[i].error;
-            if (error != Coordination::Error::ZOK)
-                throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "replica {} is inactive", replicas[i]);
-        }
-    }
-
     src_pins.part_uuids.insert(part->uuid);
     dst_pins.part_uuids.insert(part->uuid);
 
@@ -8741,7 +8716,6 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     part_move_entry.part_name = part->name;
     part_move_entry.part_uuid = part->uuid;
     part_move_entry.to_shard = to;
-    part_move_entry.required_number_of_replicas = replicas.size();
 
     String task_name = "task-"+ toString(part_move_entry.task_uuid);
 
@@ -8756,8 +8730,6 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     Coordination::Responses responses;
     Coordination::Error rc = zookeeper->tryMulti(ops, responses);
     zkutil::KeeperMultiException::check(rc, ops, responses);
-
-
 
     String task_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
     LOG_DEBUG(log, "Created task for part movement between shards at {}", task_znode_path);

@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int NO_AVAILABLE_REPLICA;
 }
 
 PartMovesBetweenShardsOrchestrator::PartMovesBetweenShardsOrchestrator(StorageReplicatedMergeTree & storage_)
@@ -151,39 +152,32 @@ void PartMovesBetweenShardsOrchestrator::step(Entry & entry)
               entry.rollback,
               entry.num_tries);
     
-    bool failed = false;
     if(!entry.rollback){
         EntryState state = getNextState(entry);
 
         if(state.value == entry.state.value)
         {
-            entry.num_tries += 1;
-            entry.last_exception_msg = "Some replicas have failed processed event, will be re-tried";
-            failed = true;
+           throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process the step entry with out quorum success for state {}", state.value);
         } else{
             entry.num_tries = 0;
             entry.state = state;
-            entry.replicas_success.clear();
+            entry.replicas.clear();
         }
     }
     
     Coordination::Requests ops;
 
-    if(failed){
-        /// If some replicas failed executing the log, Queue will take care of re-trying them, so ignore the signal and wait for the next one.
-        ops.emplace_back(zkutil::makeRemoveRequest(entries_znode_path + "/task_queue/" + entry.znode_name, -1));
-    } else {
-         try
-        {
-            stepEntry(entry,zk);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-            entry.last_exception_msg = getCurrentExceptionMessage(false);
-            entry.num_tries += 1;
-        }
+    try
+    {
+        stepEntry(entry);
     }
+    catch (...)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        entry.last_exception_msg = getCurrentExceptionMessage(false);
+        entry.num_tries += 1;
+    }
+
     entry.update_time = std::time(nullptr);
     ops.emplace_back(zkutil::makeSetRequest(entry.znode_path, entry.toString(), entry.version));
     ops.emplace_back(zkutil::makeRemoveRequest(entry.znode_path+ "/replica", -1));
@@ -194,15 +188,16 @@ void PartMovesBetweenShardsOrchestrator::step(Entry & entry)
 
 PartMovesBetweenShardsOrchestrator::EntryState PartMovesBetweenShardsOrchestrator::getNextState(Entry & entry) const
 {
-    if(entry.state.value == EntryState::TODO  || entry.replicas_success.size() == entry.required_number_of_replicas ){
+    if(entry.state.value == EntryState::TODO  || entry.replicas.size() == entry.required_number_of_replicas ){
         return EntryState::nextState(entry.state.value);
     }
 
     return entry.state;
 }
 
-void PartMovesBetweenShardsOrchestrator::stepEntry(Entry & entry, zkutil::ZooKeeperPtr zk)
+void PartMovesBetweenShardsOrchestrator::stepEntry(Entry & entry)
 {
+    auto zk = storage.getZooKeeper();
     switch (entry.state.value)
     {
         case EntryState::DONE: [[fallthrough]];
@@ -230,6 +225,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(Entry & entry, zkutil::ZooKee
             }
             else
             {
+                entry.required_number_of_replicas = getQuorum(zookeeper_path);
                 ReplicatedMergeTreeLogEntryData sync_source_log_entry;
 
                /// Log entry.
@@ -263,6 +259,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(Entry & entry, zkutil::ZooKee
             }
             else
             {
+                entry.required_number_of_replicas = getQuorum(entry.to_shard);
                 ReplicatedMergeTreeLogEntryData sync_destination_log_entry;
 
                 /// Log entry.
@@ -304,6 +301,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(Entry & entry, zkutil::ZooKee
             else
             {
                 /// Note: Table structure shouldn't be changed while there are part movements in progress.
+                entry.required_number_of_replicas = getQuorum(entry.to_shard);
 
                 ReplicatedMergeTreeLogEntryData fetch_log_entry;
 
@@ -411,8 +409,8 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(Entry & entry, zkutil::ZooKee
             }
             else
             {
+                entry.required_number_of_replicas = getQuorum(entry.to_shard);
                 /// There is a chance that attach on destination will fail and this task will be left in the queue forever.
-
                 Coordination::Requests ops;
                 ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
 
@@ -464,6 +462,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(Entry & entry, zkutil::ZooKee
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "It is not possible to rollback from this state. This is a bug.");
             else
             {
+                entry.required_number_of_replicas = getQuorum(zookeeper_path);
                 // Can't use dropPartImpl directly as we need additional zk ops to remember the log entry
                 // for subsequent retries.
 
@@ -615,21 +614,7 @@ String PartMovesBetweenShardsOrchestrator::Entry::toString() const
     json.set(JSON_KEY_LAST_EX_MSG, last_exception_msg);
     json.set(JSON_KEY_NUM_TRIES, DB::toString(num_tries));
     json.set(JSON_KEY_REQUIRED_NUM_REPLICAS, DB::toString(required_number_of_replicas));
-    std::vector<String> temp_replicas_success;
-    temp_replicas_success.reserve(replicas_success.size());
-    
-    for( const String & replica : replicas_success ){
-        temp_replicas_success.push_back(replica);
-    }
-    json.set(JSON_KEY_REPLICAS_SUCCESS, DB::toString(temp_replicas_success));
-
-    std::vector<String> temp_replicas_failed;
-    temp_replicas_failed.reserve(replicas_failed.size());
-    
-    for( const String & replica :  replicas_failed){
-        temp_replicas_failed.push_back(replica);
-    }
-    json.set(JSON_KEY_REPLICAS_FAILED, DB::toString(temp_replicas_failed));
+    json.set(JSON_KEY_REPLICAS, DB::toString(replicas));
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -659,16 +644,25 @@ void PartMovesBetweenShardsOrchestrator::Entry::fromString(const String & buf)
     last_exception_msg = json->getValue<std::string>(JSON_KEY_LAST_EX_MSG);
     num_tries = json->getValue<UInt64>(JSON_KEY_NUM_TRIES);
     required_number_of_replicas = json->getValue<UInt64>(JSON_KEY_REQUIRED_NUM_REPLICAS);
-
-    std::vector<String> temp_replicas_success = parseFromString<std::vector<String>>(json->getValue<std::string>(JSON_KEY_REPLICAS_SUCCESS));
-    for( const String & replica :  temp_replicas_success){
-        replicas_success.insert(replica);
-    }
-
-    std::vector<String> temp_replicas_failed = parseFromString<std::vector<String>>(json->getValue<std::string>(JSON_KEY_REPLICAS_FAILED));
-    for( const String & replica :  temp_replicas_failed){
-        replicas_failed.insert(replica);
-    }
+    replicas = parseFromString<std::vector<String>>(json->getValue<std::string>(JSON_KEY_REPLICAS));
 }
 
+UInt64 PartMovesBetweenShardsOrchestrator::getQuorum(String zk_path){
+    auto zk = storage.getZooKeeper();
+    Strings replicas = zk->getChildren( fs::path(zk_path) / "replicas");
+    Strings exists_paths;
+    exists_paths.reserve(replicas.size());
+    for (const auto & replica : replicas)
+        exists_paths.emplace_back(fs::path(zk_path) / "replicas" / replica / "is_active");
+
+    auto exists_result = zk->exists(exists_paths);
+
+    for (size_t i = 0; i < exists_paths.size(); ++i)
+    {
+        auto error = exists_result[i].error;
+        if (error != Coordination::Error::ZOK)
+            throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "Replica {} is inactive", replicas[i]);
+    }
+    return replicas.size();
+}
 }

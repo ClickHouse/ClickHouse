@@ -1,10 +1,9 @@
 #pragma once
 
-#include <set>
+
 #include <vector>
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include "Core/Types.h"
 #include <Core/UUID.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <IO/WriteHelpers.h>
@@ -133,8 +132,7 @@ public:
         String dst_part_name;
 
         UInt64 required_number_of_replicas;
-        std::set<String> replicas_success;
-        std::set<String> replicas_failed;
+        std::vector<String> replicas;
 
         EntryState state;
         bool rollback = false;
@@ -169,8 +167,7 @@ private:
     static constexpr auto JSON_KEY_LAST_EX_MSG = "last_exception";
     static constexpr auto JSON_KEY_NUM_TRIES = "num_tries";
     static constexpr auto JSON_KEY_REQUIRED_NUM_REPLICAS = "required_number_of_replicas";
-    static constexpr auto JSON_KEY_REPLICAS_SUCCESS = "replicas_success";
-    static constexpr auto JSON_KEY_REPLICAS_FAILED = "replicas_failed";
+    static constexpr auto JSON_KEY_REPLICAS = "replicas";
 
 public:
     explicit PartMovesBetweenShardsOrchestrator(StorageReplicatedMergeTree & storage_);
@@ -186,7 +183,7 @@ public:
 private:
     void run();
     void step(Entry & entry);
-    void stepEntry(Entry & entry, zkutil::ZooKeeperPtr zk);
+    void stepEntry(Entry & entry);
 
     Entry getEntryByUUID(const UUID & task_uuid);
     void removePins(Entry & entry,zkutil::ZooKeeperPtr zk);
@@ -194,6 +191,7 @@ private:
     std::optional<PartMovesBetweenShardsOrchestrator::Entry> selectEntryFromZk();
 
     EntryState getNextState(Entry & entry) const;
+    UInt64 getQuorum(String zk_path);
 
     StorageReplicatedMergeTree & storage;
 
