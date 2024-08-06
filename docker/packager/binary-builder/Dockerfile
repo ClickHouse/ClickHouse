@@ -6,11 +6,6 @@ ENV CXX=clang++-${LLVM_VERSION}
 
 # If the cctools is updated, then first build it in the CI, then update here in a different commit
 COPY --from=clickhouse/cctools:d9e3596e706b /cctools /cctools
-# TODO: same for gdb and in other places as well
-#
-# NOTE: here it will add circular dependency but it will be fixed after [1]
-#
-#  [1]: https://github.com/ClickHouse/ClickHouse/issues/66493
 
 # Rust toolchain and libraries
 ENV RUSTUP_HOME=/rust/rustup
