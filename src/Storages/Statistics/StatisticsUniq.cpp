@@ -52,15 +52,15 @@ UInt64 StatisticsUniq::estimateCardinality() const
     return column->getUInt(0);
 }
 
-void uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/, DataTypePtr data_type)
+void uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
-    data_type = removeNullable(data_type);
-    data_type = removeLowCardinalityAndNullable(data_type);
-    if (!data_type->isValueRepresentedByNumber())
+    DataTypePtr inner_data_type = removeNullable(data_type);
+    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
+    if (!inner_data_type->isValueRepresentedByNumber())
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'uniq' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, DataTypePtr data_type)
+StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
 {
     return std::make_shared<StatisticsUniq>(description, data_type);
 }

@@ -87,10 +87,10 @@ class MergeTreeStatisticsFactory : private boost::noncopyable
 public:
     static MergeTreeStatisticsFactory & instance();
 
-    void validate(const ColumnStatisticsDescription & stats, DataTypePtr data_type) const;
+    void validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
 
-    using Validator = std::function<void(const SingleStatisticsDescription & stats, DataTypePtr data_type)>;
-    using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, DataTypePtr data_type)>;
+    using Validator = std::function<void(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
+    using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
 
     ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats) const;
     ColumnsStatistics getMany(const ColumnsDescription & columns) const;

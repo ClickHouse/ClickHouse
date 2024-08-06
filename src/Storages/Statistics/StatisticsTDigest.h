@@ -23,7 +23,7 @@ private:
     QuantileTDigest<Float64> t_digest;
 };
 
-void tdigestStatisticsValidator(const SingleStatisticsDescription & description, DataTypePtr data_type);
-StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & description, DataTypePtr data_type);
+void tdigestStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 
 }

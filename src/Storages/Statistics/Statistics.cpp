@@ -224,7 +224,7 @@ MergeTreeStatisticsFactory & MergeTreeStatisticsFactory::instance()
     return instance;
 }
 
-void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & stats, DataTypePtr data_type) const
+void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const
 {
     for (const auto & [type, desc] : stats.types_to_desc)
     {

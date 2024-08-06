@@ -57,15 +57,15 @@ Float64 StatisticsTDigest::estimateEqual(const Field & val) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'tdigest' does not support estimating value of type {}", val.getTypeName());
 }
 
-void tdigestStatisticsValidator(const SingleStatisticsDescription & /*description*/, DataTypePtr data_type)
+void tdigestStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
-    data_type = removeNullable(data_type);
-    data_type = removeLowCardinalityAndNullable(data_type);
-    if (!data_type->isValueRepresentedByNumber())
+    DataTypePtr inner_data_type = removeNullable(data_type);
+    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
+    if (!inner_data_type->isValueRepresentedByNumber())
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'tdigest' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & description, DataTypePtr /*data_type*/)
+StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & /*data_type*/)
 {
     return std::make_shared<StatisticsTDigest>(description);
 }
