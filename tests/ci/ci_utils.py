@@ -44,9 +44,10 @@ class GH:
         FAILURE = "failure"
         PENDING = "pending"
         SUCCESS = "success"
+        SKIPPED = "skipped"
 
     @classmethod
-    def _get_workflow_results(cls):
+    def get_workflow_results(cls):
         if not Path(Envs.WORKFLOW_RESULT_FILE).exists():
             print(
                 f"ERROR: Failed to get workflow results from file [{Envs.WORKFLOW_RESULT_FILE}]"
@@ -65,13 +66,13 @@ class GH:
 
     @classmethod
     def print_workflow_results(cls):
-        res = cls._get_workflow_results()
+        res = cls.get_workflow_results()
         results = [f"{job}: {data['result']}" for job, data in res.items()]
         cls.print_in_group("Workflow results", results)
 
     @classmethod
     def is_workflow_ok(cls) -> bool:
-        res = cls._get_workflow_results()
+        res = cls.get_workflow_results()
         for _job, data in res.items():
             if data["result"] == "failure":
                 return False
@@ -79,7 +80,7 @@ class GH:
 
     @classmethod
     def get_workflow_job_result(cls, wf_job_name: str) -> Optional[str]:
-        res = cls._get_workflow_results()
+        res = cls.get_workflow_results()
         if wf_job_name in res:
             return res[wf_job_name]["result"]  # type: ignore
         else:
