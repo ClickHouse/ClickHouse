@@ -648,10 +648,8 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
-void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join)
+void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize)
 {
-    if (shrink_blocks)
-        return; /// Already shrunk
 
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
     Int64 query_memory_usage_delta = current_memory_usage - memory_usage_before_adding_blocks;
@@ -659,15 +657,21 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join)
 
     auto max_total_bytes_in_join = table_join->sizeLimits().max_bytes;
 
-    /** If accounted data size is more than half of `max_bytes_in_join`
-      * or query memory consumption growth from the beginning of adding blocks (estimation of memory consumed by join using memory tracker)
-      * is bigger than half of all memory available for query,
-      * then shrink stored blocks to fit.
-      */
-    shrink_blocks = (max_total_bytes_in_join && total_bytes_in_join > max_total_bytes_in_join / 2) ||
-                    (max_total_bytes_for_query && query_memory_usage_delta > max_total_bytes_for_query / 2);
-    if (!shrink_blocks)
-        return;
+    if (!force_optimize)
+    {
+        if (shrink_blocks)
+            return; /// Already shrunk
+
+        /** If accounted data size is more than half of `max_bytes_in_join`
+        * or query memory consumption growth from the beginning of adding blocks (estimation of memory consumed by join using memory tracker)
+        * is bigger than half of all memory available for query,
+        * then shrink stored blocks to fit.
+        */
+        shrink_blocks = (max_total_bytes_in_join && total_bytes_in_join > max_total_bytes_in_join / 2) ||
+                        (max_total_bytes_for_query && query_memory_usage_delta > max_total_bytes_for_query / 2);
+        if (!shrink_blocks)
+            return;
+    }
 
     LOG_DEBUG(log, "Shrinking stored blocks, memory consumption is {} {} calculated by join, {} {} by memory tracker",
         ReadableSize(total_bytes_in_join), max_total_bytes_in_join ? fmt::format("/ {}", ReadableSize(max_total_bytes_in_join)) : "",
