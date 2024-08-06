@@ -246,7 +246,7 @@ void KeeperServer::enterRecoveryMode(nuraft::raft_params & params)
 {
     LOG_WARNING(
         log,
-        "This instance is in recovery mode. Until the quorum is restored, no requests should be sent to any "
+       "This instance is in recovery mode. Until the quorum is restored, no requests should be sent to any "
         "of the cluster instances. This instance will start accepting requests only when the recovery is finished.");
 
     auto latest_config = state_manager->load_config();
@@ -319,8 +319,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     nuraft::asio_service::options asio_opts{};
 
-    asio_opts.thread_pool_size_ = getNumberOfPhysicalCPUCores();
-
+    asio_opts.thread_pool_size_ = std::max(16U, getNumberOfPhysicalCPUCores());
     if (state_manager->isSecure())
     {
 #if USE_SSL
