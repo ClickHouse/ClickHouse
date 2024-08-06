@@ -1163,6 +1163,9 @@ class TestCase:
         elif args.cloud and ("no-replicated-database" in tags):
             return FailureReason.REPLICATED_DB
 
+        elif tags and ("no-distributed-cache" in tags) and args.distributed_cache:
+            return FailureReason.DISTRIBUTED_CACHE
+
         elif args.cloud and self.name in suite.cloud_skip_list:
             return FailureReason.NOT_SUPPORTED_IN_CLOUD
 
@@ -1243,6 +1246,11 @@ class TestCase:
 
         elif "no-batch" in tags and (
             args.run_by_hash_num is not None or args.run_by_hash_total is not None
+        ):
+            return FailureReason.SKIP
+
+        elif "no-flaky-check" in tags and (
+                1 == int(os.environ.get("IS_FLAKY_CHECK", 0))
         ):
             return FailureReason.SKIP
 
@@ -2274,7 +2282,6 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
                         args, test_suite, client_options, server_logs_level
                     )
                     test_result = test_case.process_result(test_result, MESSAGES)
-                    break
                 except TimeoutError:
                     break
                 finally:
@@ -3259,6 +3266,12 @@ def parse_args():
         action="store_true",
         default=False,
         help="Run tests over s3 storage",
+    )
+    parser.add_argument(
+        "--distributed-cache",
+        action="store_true",
+        default=False,
+        help="Run tests with enabled distributed cache",
     )
     parser.add_argument(
         "--azure-blob-storage",
