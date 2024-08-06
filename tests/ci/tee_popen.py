@@ -2,6 +2,8 @@
 
 import logging
 import os
+import signal
+import subprocess
 import sys
 from io import TextIOWrapper
 from pathlib import Path
@@ -30,20 +32,35 @@ class TeePopen:
         self._process = None  # type: Optional[Popen]
         self.timeout = timeout
         self.timeout_exceeded = False
+        self.terminated_by_sigterm = False
+        self.terminated_by_sigkill = False
+        self.pid = 0
 
     def _check_timeout(self) -> None:
         if self.timeout is None:
             return
         sleep(self.timeout)
+        logging.warning(
+            "Timeout exceeded. Send SIGTERM to process %s, timeout %s",
+            self.process.pid,
+            self.timeout,
+        )
+        self.send_signal(signal.SIGTERM)
+        time_wait = 0
+        self.terminated_by_sigterm = True
         self.timeout_exceeded = True
+        while self.process.poll() is None and time_wait < 100:
+            print("wait...")
+            wait = 5
+            sleep(wait)
+            time_wait += wait
         while self.process.poll() is None:
-            logging.warning(
-                "Killing process %s, timeout %s exceeded",
-                self.process.pid,
-                self.timeout,
+            logging.error(
+                "Process is still running. Send SIGKILL",
             )
-            os.killpg(self.process.pid, 9)
-            sleep(10)
+            self.send_signal(signal.SIGKILL)
+            self.terminated_by_sigkill = True
+            sleep(5)
 
     def __enter__(self) -> "TeePopen":
         self.process = Popen(
@@ -57,6 +74,9 @@ class TeePopen:
             bufsize=1,
             errors="backslashreplace",
         )
+        sleep(1)
+        self.pid = self._get_child_pid()
+        print(f"Subprocess started, pid [{self.process.pid}], child pid [{self.pid}]")
         if self.timeout is not None and self.timeout > 0:
             t = Thread(target=self._check_timeout)
             t.daemon = True  # does not block the program from exit
@@ -77,6 +97,22 @@ class TeePopen:
 
         self.log_file.close()
 
+    def _get_child_pid(self):
+        # linux only
+        ps_command = f"ps --ppid {self.process.pid} -o pid="
+        res = "NA"
+        try:
+            result = subprocess.run(
+                ps_command, shell=True, capture_output=True, text=True
+            )
+            res = result.stdout.strip()
+            pid = int(res)
+            return pid
+        except Exception as e:
+            print(f"Failed to get child's pid, command [{ps_command}], result [{res}]")
+            print(f"ERROR: getting Python subprocess PID: {e}")
+            return self.process.pid
+
     def wait(self) -> int:
         if self.process.stdout is not None:
             for line in self.process.stdout:
@@ -84,6 +120,15 @@ class TeePopen:
                 self.log_file.write(line)
 
         return self.process.wait()
+
+    def poll(self):
+        return self.process.poll()
+
+    def send_signal(self, signal_num):
+        if self.pid:
+            os.kill(self.pid, signal_num)
+        else:
+            print("ERROR: no process to send signal")
 
     @property
     def process(self) -> Popen:
