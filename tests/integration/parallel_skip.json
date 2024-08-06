@@ -94,11 +94,6 @@
   "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_setting_in_query",
   "test_profile_max_sessions_for_user/test.py::test_profile_max_sessions_for_user_client_suggestions_load",
 
-  "test_session_log/test.py::test_grpc_session",
-  "test_session_log/test.py::test_mysql_session",
-  "test_session_log/test.py::test_postgres_session",
-  "test_session_log/test.py::test_parallel_sessions",
-
   "test_ttl_move/test.py::TestCancelBackgroundMoving::test_cancel_background_moving_on_stop_moves_query",
   "test_ttl_move/test.py::TestCancelBackgroundMoving::test_cancel_background_moving_on_table_detach",
   "test_ttl_move/test.py::TestCancelBackgroundMoving::test_cancel_background_moving_on_zookeeper_disconnect",
