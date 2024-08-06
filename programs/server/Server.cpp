@@ -814,10 +814,11 @@ try
 
     const size_t physical_server_memory = getMemoryAmount();
 
-    LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
+    LOG_INFO(log, "Available RAM: {}; logical cores: {}; used cores: {}.",
         formatReadableSizeWithBinarySuffix(physical_server_memory),
-        getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
-        std::thread::hardware_concurrency());
+        std::thread::hardware_concurrency(),
+        getNumberOfPhysicalCPUCores()  // on ARM processors it can show only enabled at current moment cores
+        );
 
 #if defined(__x86_64__)
     String cpu_info;
