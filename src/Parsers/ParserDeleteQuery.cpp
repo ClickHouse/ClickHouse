@@ -62,6 +62,7 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
         return false;
+    
     if (query->partition)
         query->children.push_back(query->partition);
 
