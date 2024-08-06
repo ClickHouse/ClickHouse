@@ -24,7 +24,9 @@ message(STATUS "Intel QPL version: ${QPL_VERSION}")
 # which are then combined into static or shared qpl.
 # Output ch_contrib::qpl by linking with 8 library targets.
 
-# Note, qpl submodule comes with its own version of isal that is not compatible with upstream isal (e.g., ch_contrib::isal).
+# Note, QPL has integrated a customized version of ISA-L to meet specific needs.
+# This version has been significantly modified and there are no plans to maintain compatibility with the upstream version
+# or upgrade the current copy.
 
 ## cmake/CompileOptions.cmake and automatic wrappers generation
 
@@ -732,10 +734,6 @@ target_compile_definitions(_qpl
 
 target_link_libraries(_qpl
         PRIVATE ch_contrib::accel-config)
-
-# C++ filesystem library requires additional linking for older GNU/Clang
-target_link_libraries(_qpl PRIVATE $<$<AND:$<CXX_COMPILER_ID:GNU>,$<VERSION_LESS:$<CXX_COMPILER_VERSION>,9.1>>:stdc++fs>)
-target_link_libraries(_qpl PRIVATE $<$<AND:$<CXX_COMPILER_ID:Clang>,$<VERSION_LESS:$<CXX_COMPILER_VERSION>,9.0>>:c++fs>)
 
 target_include_directories(_qpl SYSTEM BEFORE
         PUBLIC "${QPL_PROJECT_DIR}/include"
