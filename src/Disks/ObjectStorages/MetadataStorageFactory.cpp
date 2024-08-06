@@ -35,7 +35,7 @@ std::string MetadataStorageFactory::getCompatibilityMetadataTypeHint(const Objec
 {
     switch (type)
     {
-        case ObjectStorageType::Ceph:
+        case ObjectStorageType::Rados:
         case ObjectStorageType::S3:
         case ObjectStorageType::HDFS:
         case ObjectStorageType::Local:

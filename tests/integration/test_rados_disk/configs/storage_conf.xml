@@ -3,7 +3,7 @@
     <storage_configuration>
         <disks>
             <ceph0>
-                <type>ceph</type>
+                <type>rados</type>
                 <user>admin</user>
                 <pool>clickhouse</pool>
                 <namespace>integration_test</namespace>

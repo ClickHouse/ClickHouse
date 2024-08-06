@@ -147,7 +147,7 @@ public:
 
     std::string getName() const override { return "RadosObjectStorage"; }
 
-    ObjectStorageType getType() const override { return ObjectStorageType::Ceph; }
+    ObjectStorageType getType() const override { return ObjectStorageType::Rados; }
 
     bool exists(const StoredObject & object) const override;
 
