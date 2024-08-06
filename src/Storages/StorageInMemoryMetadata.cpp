@@ -260,7 +260,7 @@ bool StorageInMemoryMetadata::hasAnyTableTTL() const
     return hasAnyMoveTTL() || hasRowsTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL();
 }
 
-bool StorageInMemoryMetadata::isRowsTTLTheOnlyTTL() const
+bool StorageInMemoryMetadata::hasOnlyRowsTTL() const
 {
     bool has_any_other_ttl = hasAnyMoveTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL() || hasAnyColumnTTL();
     return hasRowsTTL() && !has_any_other_ttl;
