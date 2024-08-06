@@ -58,7 +58,7 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 for i in "${!queries_without_preallocation[@]}"; do
   $CLICKHOUSE_CLIENT --param_query_id="${queries_without_preallocation[$i]}" -q "
     -- the old analyzer is not supported
-    SELECT sum(if(getSetting('allow_experimental_analyzer'), ProfileEvents['HashJoinPreallocatedElementsInHashTables'] = 0, 1))
+    SELECT sum(if(getSetting('enable_analyzer'), ProfileEvents['HashJoinPreallocatedElementsInHashTables'] = 0, 1))
       FROM system.query_log
      WHERE event_date >= yesterday() AND query_id = {query_id:String} AND current_database = currentDatabase() AND type = 'QueryFinish'
   "
@@ -67,7 +67,7 @@ done
 for i in "${!queries_with_preallocation[@]}"; do
   $CLICKHOUSE_CLIENT --param_query_id="${queries_with_preallocation[$i]}" -q "
     -- the old analyzer is not supported
-    SELECT sum(if(getSetting('allow_experimental_analyzer'), ProfileEvents['HashJoinPreallocatedElementsInHashTables'] > 0, 1))
+    SELECT sum(if(getSetting('enable_analyzer'), ProfileEvents['HashJoinPreallocatedElementsInHashTables'] > 0, 1))
       FROM system.query_log
      WHERE event_date >= yesterday() AND query_id = {query_id:String} AND current_database = currentDatabase() AND type = 'QueryFinish'
   "
