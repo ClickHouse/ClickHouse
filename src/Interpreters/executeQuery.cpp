@@ -796,10 +796,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             catch (const Exception & e)
             {
                 if (e.code() == ErrorCodes::SYNTAX_ERROR)
-                    /// Don't print the original query text because it may contain sensitive data.
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting: the query:\n{}\ncannot parse.",
-                        formatted1);
+                        "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
+                        formatted1, std::string_view(begin, end-begin));
                 else
                     throw;
             }
