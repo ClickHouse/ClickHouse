@@ -88,6 +88,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/cache/sharded_cache.cc
     ${ROCKSDB_SOURCE_DIR}/cache/tiered_secondary_cache.cc
     ${ROCKSDB_SOURCE_DIR}/db/arena_wrapped_db_iter.cc
+    ${ROCKSDB_SOURCE_DIR}/db/attribute_group_iterator_impl.cc
     ${ROCKSDB_SOURCE_DIR}/db/blob/blob_contents.cc
     ${ROCKSDB_SOURCE_DIR}/db/blob/blob_fetcher.cc
     ${ROCKSDB_SOURCE_DIR}/db/blob/blob_file_addition.cc
@@ -104,6 +105,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/db/blob/prefetch_buffer_collection.cc
     ${ROCKSDB_SOURCE_DIR}/db/builder.cc
     ${ROCKSDB_SOURCE_DIR}/db/c.cc
+    ${ROCKSDB_SOURCE_DIR}/db/coalescing_iterator.cc
     ${ROCKSDB_SOURCE_DIR}/db/column_family.cc
     ${ROCKSDB_SOURCE_DIR}/db/compaction/compaction.cc
     ${ROCKSDB_SOURCE_DIR}/db/compaction/compaction_iterator.cc
@@ -150,7 +152,6 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/db/memtable_list.cc
     ${ROCKSDB_SOURCE_DIR}/db/merge_helper.cc
     ${ROCKSDB_SOURCE_DIR}/db/merge_operator.cc
-    ${ROCKSDB_SOURCE_DIR}/db/multi_cf_iterator.cc
     ${ROCKSDB_SOURCE_DIR}/db/output_validator.cc
     ${ROCKSDB_SOURCE_DIR}/db/periodic_task_scheduler.cc
     ${ROCKSDB_SOURCE_DIR}/db/range_del_aggregator.cc
@@ -389,6 +390,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/write_prepared_txn_db.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/write_unprepared_txn.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/write_unprepared_txn_db.cc
+    ${ROCKSDB_SOURCE_DIR}/utilities/types_util.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/ttl/db_ttl_impl.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/wal_filter.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/write_batch_with_index/write_batch_with_index.cc
@@ -419,10 +421,12 @@ if(HAS_ARMV8_CRC)
 endif(HAS_ARMV8_CRC)
 
 list(APPEND SOURCES
-    "${ROCKSDB_SOURCE_DIR}/port/port_posix.cc"
-    "${ROCKSDB_SOURCE_DIR}/env/env_posix.cc"
-    "${ROCKSDB_SOURCE_DIR}/env/fs_posix.cc"
-    "${ROCKSDB_SOURCE_DIR}/env/io_posix.cc")
+    ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_follower.cc
+    ${ROCKSDB_SOURCE_DIR}/port/port_posix.cc
+    ${ROCKSDB_SOURCE_DIR}/env/env_posix.cc
+    ${ROCKSDB_SOURCE_DIR}/env/fs_on_demand.cc
+    ${ROCKSDB_SOURCE_DIR}/env/fs_posix.cc
+    ${ROCKSDB_SOURCE_DIR}/env/io_posix.cc)
 
 add_library(_rocksdb ${SOURCES})
 add_library(ch_contrib::rocksdb ALIAS _rocksdb)
