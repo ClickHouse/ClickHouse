@@ -24,6 +24,7 @@
 
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 
 #include <Core/Settings.h>
@@ -41,6 +42,11 @@ namespace ProfileEvents
 
     extern const Event S3Clients;
     extern const Event TinyS3Clients;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric S3DiskNoKeyErrors;
 }
 
 namespace DB
@@ -381,7 +387,7 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
     /// The next call is NOT a recurcive call
     /// This is a virtuall call Aws::S3::S3Client::HeadObject(const Model::HeadObjectRequest&)
-    return enrichErrorMessage(
+    return processRequestResult(
         HeadObject(static_cast<const Model::HeadObjectRequest&>(request)));
 }
 
@@ -402,7 +408,7 @@ Model::ListObjectsOutcome Client::ListObjects(ListObjectsRequest & request) cons
 
 Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
 {
-    return enrichErrorMessage(
+    return processRequestResult(
         doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); }));
 }
 
@@ -689,10 +695,13 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 }
 
 template <typename RequestResult>
-RequestResult Client::enrichErrorMessage(RequestResult && outcome) const
+RequestResult Client::processRequestResult(RequestResult && outcome) const
 {
     if (outcome.IsSuccess() || !isClientForDisk())
         return std::forward<RequestResult>(outcome);
+
+    if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+        CurrentMetrics::add(CurrentMetrics::S3DiskNoKeyErrors);
 
     String enriched_message = fmt::format(
         "{} {}",
