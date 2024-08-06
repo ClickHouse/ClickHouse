@@ -78,6 +78,8 @@ void USearchIndexWithSerialization<Metric>::deserialize(ReadBuffer & istr)
     };
 
     Base::load_from_stream(callback);
+    if (!try_reserve(limits()))
+        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for usearch index");
 }
 
 template <unum::usearch::metric_kind_t Metric>
