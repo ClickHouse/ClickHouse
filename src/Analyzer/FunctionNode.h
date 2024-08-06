@@ -92,6 +92,15 @@ public:
     /// Get arguments node
     QueryTreeNodePtr & getArgumentsNode() { return children[arguments_child_index]; }
 
+    /// Returns true if function has BY or TOTALS clause, false otherwise
+    bool hasByClause() const { return children[by_columns_child_index] != nullptr; }
+
+    /// Get BY columns node
+    const QueryTreeNodePtr & getByColumnsNode() const { return children[by_columns_child_index]; }
+
+    /// Get BY columns node
+    QueryTreeNodePtr & getByColumnsNode() { return children[by_columns_child_index]; }
+
     /// Get argument types
     const DataTypes & getArgumentTypes() const;
 
@@ -229,7 +238,8 @@ private:
     static constexpr size_t parameters_child_index = 0;
     static constexpr size_t arguments_child_index = 1;
     static constexpr size_t window_child_index = 2;
-    static constexpr size_t children_size = window_child_index + 1;
+    static constexpr size_t by_columns_child_index = 3;
+    static constexpr size_t children_size = by_columns_child_index + 1;
 };
 
 }
