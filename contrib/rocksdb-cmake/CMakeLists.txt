@@ -150,6 +150,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/db/memtable_list.cc
     ${ROCKSDB_SOURCE_DIR}/db/merge_helper.cc
     ${ROCKSDB_SOURCE_DIR}/db/merge_operator.cc
+    ${ROCKSDB_SOURCE_DIR}/db/multi_cf_iterator.cc
     ${ROCKSDB_SOURCE_DIR}/db/output_validator.cc
     ${ROCKSDB_SOURCE_DIR}/db/periodic_task_scheduler.cc
     ${ROCKSDB_SOURCE_DIR}/db/range_del_aggregator.cc
