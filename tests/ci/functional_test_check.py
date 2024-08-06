@@ -5,10 +5,11 @@ import csv
 import logging
 import os
 import re
+import signal
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import CiLogsCredentials
@@ -25,6 +26,7 @@ from report import (
     TestResults,
     read_test_results,
     FAILURE,
+    TestResult,
 )
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -113,7 +115,6 @@ def get_run_command(
 
     if flaky_check:
         envs.append("-e NUM_TRIES=50")
-        envs.append("-e MAX_RUN_TIME=2800")
 
     envs += [f"-e {e}" for e in additional_envs]
 
@@ -195,7 +196,7 @@ def process_results(
     state, description = status[0][0], status[0][1]
     if ret_code != 0:
         state = ERROR
-        description += " (but script exited with an error)"
+        description = f"Job failed, exit code: {ret_code}. " + description
 
     try:
         results_path = result_directory / "test_results.tsv"
@@ -237,7 +238,25 @@ def parse_args():
     return parser.parse_args()
 
 
+test_process = None  # type: Optional[TeePopen]
+timeout_exceeded = False
+
+
+def handle_sigterm(signum, _frame):
+    print(f"WARNING: Received signal {signum}")
+    global timeout_exceeded
+    timeout_exceeded = True
+    if (
+        test_process and test_process.poll() is None
+    ):  # Check if the process is still running
+        print(
+            f"WARNING: Send SIGKILL signal to job's subprocess, pid [{test_process.process.pid}]"
+        )
+        test_process.send_signal(signal.SIGKILL)
+
+
 def main():
+    signal.signal(signal.SIGTERM, handle_sigterm)
     logging.basicConfig(level=logging.INFO)
     for handler in logging.root.handlers:
         # pylint: disable=protected-access
@@ -325,11 +344,13 @@ def main():
         logging.info("Going to run func tests: %s", run_command)
 
         with TeePopen(run_command, run_log_path) as process:
+            global test_process
+            test_process = process
             retcode = process.wait()
             if retcode == 0:
                 logging.info("Run successfully")
             else:
-                logging.info("Run failed")
+                logging.info("Run failed, exit code %s", retcode)
 
         try:
             subprocess.check_call(
@@ -345,6 +366,11 @@ def main():
         state, description, test_results, additional_logs = process_results(
             retcode, result_path, server_log_path
         )
+        if timeout_exceeded:
+            test_results.insert(
+                0, TestResult.create_check_timeout_expired(stopwatch.duration_seconds)
+            )
+
     else:
         print(
             "This is validate bugfix or flaky check run, but no changes test to run - skip with success"

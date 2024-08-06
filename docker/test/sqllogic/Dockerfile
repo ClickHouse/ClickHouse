@@ -35,7 +35,6 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
 
 
 ENV TZ=Europe/Amsterdam
-ENV MAX_RUN_TIME=9000
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ARG sqllogic_test_repo="https://github.com/gregrahn/sqllogictest.git"
