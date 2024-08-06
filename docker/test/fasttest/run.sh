@@ -41,7 +41,7 @@ export FASTTEST_WORKSPACE
 export FASTTEST_SOURCE
 export FASTTEST_BUILD
 export FASTTEST_DATA
-export FASTTEST_OUT
+export FASTTEST_OUTPUT
 export PATH
 
 function ccache_status
