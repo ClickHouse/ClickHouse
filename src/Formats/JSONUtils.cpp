@@ -3,10 +3,7 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/PeekableReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
-#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -311,8 +308,8 @@ namespace JSONUtils
                 return true;
             };
 
-            if (!format_settings.json.empty_as_default  || in.eof() || *in.position() != EMPTY_STRING[0])
-                return do_deserialize(column, in, [](ReadBuffer &) { return false; }, deserialize_impl);
+            if (!format_settings.json.empty_as_default || in.eof() || *in.position() != EMPTY_STRING[0])
+                return deserialize_impl(column, in);
 
             if (in.available() >= EMPTY_STRING_LENGTH)
             {
@@ -322,11 +319,8 @@ namespace JSONUtils
                     auto * pos = buf_.position();
                     if (checkString(EMPTY_STRING, buf_))
                         return true;
-                    else
-                    {
-                        buf_.position() = pos;
-                        return false;
-                    }
+                    buf_.position() = pos;
+                    return false;
                 };
 
                 return do_deserialize(column, in, check_for_empty_string, deserialize_impl);
@@ -343,22 +337,17 @@ namespace JSONUtils
                 SCOPE_EXIT(peekable_buf.dropCheckpoint());
                 if (checkString(EMPTY_STRING, peekable_buf))
                     return true;
-                else
-                {
-                    peekable_buf.rollbackToCheckpoint();
-                    return false;
-                }
+                peekable_buf.rollbackToCheckpoint();
+                return false;
             };
 
             auto deserialize_impl_with_check = [&deserialize_impl](IColumn & column_, ReadBuffer & buf_) -> bool
             {
                 auto & peekable_buf = assert_cast<PeekableReadBuffer &>(buf_);
-
-                if (!deserialize_impl(column_, peekable_buf))
-                    return false;
-                if (likely(!peekable_buf.hasUnreadData()))
-                    return true;
-                return false;
+                bool res = deserialize_impl(column_, peekable_buf);
+                if (unlikely(peekable_buf.hasUnreadData()))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect state while parsing JSON: PeekableReadBuffer has unread data in own memory: {}", String(peekable_buf.position(), peekable_buf.available()));
+                return res;
             };
 
             PeekableReadBuffer peekable_buf(in, true);

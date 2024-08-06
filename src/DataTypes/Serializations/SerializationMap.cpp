@@ -6,9 +6,9 @@
 #include <Columns/ColumnMap.h>
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/JSONUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <IO/PeekableReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -319,103 +319,16 @@ void SerializationMap::serializeTextJSONPretty(const IColumn & column, size_t ro
 template <typename ReturnType>
 ReturnType SerializationMap::deserializeTextJSONMapImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    static constexpr auto throw_exception = std::is_same_v<ReturnType, void>;
-
-    static constexpr auto EMPTY_STRING = "\"\"";
-    static constexpr auto EMPTY_STRING_LENGTH = std::string_view(EMPTY_STRING).length();
-
-    auto do_deserialize_subcolumn = [](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn, auto && check_for_empty_string, auto && deserialize) -> ReturnType
+    auto deserializer = [this](IColumn & column_, ReadBuffer & istr_, auto && deserialize_nested) -> ReturnType
     {
-        if (check_for_empty_string(buf))
+        auto adapter = [&deserialize_nested](ReadBuffer & buf, const SerializationPtr & nested_column_serialization, IColumn & nested_column) -> ReturnType
         {
-            subcolumn.insertDefault();
-            return ReturnType(true);
-        }
-        return deserialize(buf, subcolumn_serialization, subcolumn);
-    };
-
-    auto deserialize_subcolumn_impl = [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn) -> ReturnType
-    {
-        if constexpr (throw_exception)
-        {
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
-            else
-                subcolumn_serialization->deserializeTextJSON(subcolumn, buf, settings);
-        }
-        else
-        {
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
-            else
-                return subcolumn_serialization->tryDeserializeTextJSON(subcolumn, buf, settings);
-        }
-    };
-
-    auto deserialize_subcolumn = [&settings, &do_deserialize_subcolumn, &deserialize_subcolumn_impl](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn) -> ReturnType
-    {
-        if (!settings.json.empty_as_default || buf.eof() || *buf.position() != EMPTY_STRING[0])
-            return do_deserialize_subcolumn(buf, subcolumn_serialization, subcolumn, [](ReadBuffer &){ return false; }, deserialize_subcolumn_impl);
-
-        if (buf.available() >= EMPTY_STRING_LENGTH)
-        {
-            /// We have enough data in buffer to check if we have an empty string.
-            auto check_for_empty_string = [](ReadBuffer & buf_) -> bool
-            {
-                auto * pos = buf_.position();
-                if (checkString(EMPTY_STRING, buf_))
-                    return true;
-                else
-                {
-                    buf_.position() = pos;
-                    return false;
-                }
-            };
-
-            return do_deserialize_subcolumn(buf, subcolumn_serialization, subcolumn, check_for_empty_string, deserialize_subcolumn_impl);
-        }
-
-        /// We don't have enough data in buffer to check if we have an empty string.
-        /// Use PeekableReadBuffer to make a checkpoint before checking for an
-        /// empty string and rollback if check was failed.
-
-        auto check_for_empty_string = [](ReadBuffer & buf_) -> bool
-        {
-            auto & peekable_buf = assert_cast<PeekableReadBuffer &>(buf_);
-            peekable_buf.setCheckpoint();
-            SCOPE_EXIT(peekable_buf.dropCheckpoint());
-            if (checkString(EMPTY_STRING, peekable_buf))
-                return true;
-            else
-            {
-                peekable_buf.rollbackToCheckpoint();
-                return false;
-            }
+            return deserialize_nested(nested_column, buf, nested_column_serialization);
         };
-
-        auto deserialize_subcolumn_impl_with_check = [&deserialize_subcolumn_impl](ReadBuffer & buf_, const SerializationPtr & subcolumn_serialization_, IColumn & subcolumn_) -> ReturnType
-        {
-            auto & peekable_buf = assert_cast<PeekableReadBuffer &>(buf_);
-            if constexpr (throw_exception)
-            {
-                deserialize_subcolumn_impl(peekable_buf, subcolumn_serialization_, subcolumn_);
-                assert(!peekable_buf.hasUnreadData());
-            }
-            else
-            {
-                if (!deserialize_subcolumn_impl(peekable_buf, subcolumn_serialization_, subcolumn_))
-                    return false;
-                if (likely(!peekable_buf.hasUnreadData()))
-                    return true;
-                return false;
-            }
-        };
-
-        PeekableReadBuffer peekable_buf(buf, true);
-        return do_deserialize_subcolumn(peekable_buf, subcolumn_serialization, subcolumn, check_for_empty_string, deserialize_subcolumn_impl_with_check);
+        return this->deserializeTextImpl<ReturnType>(column_, istr_, adapter);
     };
 
-    return deserializeTextImpl<ReturnType>(column, istr, deserialize_subcolumn);
+    return JSONUtils::deserializeEmpyStringAsDefaultOrNested<ReturnType>(column, istr, settings, deserializer);
 }
 
 void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
