@@ -170,8 +170,6 @@ def test_disks_app_func_ls(started_cluster):
 def test_disks_app_func_cp(started_cluster):
     source = cluster.instances["disks_app_test"]
 
-    init_data(source)
-
     write(source, "test1", "path1")
 
     source.exec_in_container(
@@ -227,8 +225,6 @@ def test_disks_app_func_ln(started_cluster):
 def test_disks_app_func_rm(started_cluster):
     source = cluster.instances["disks_app_test"]
 
-    init_data(source)
-
     write(source, "test2", "path3")
 
     out = ls(source, "test2", ".")
@@ -270,6 +266,8 @@ def test_disks_app_func_rm_shared_recursive(started_cluster):
     out = ls(source, "test3", ". --recursive")
     assert out == ".:\n\n"
 
+    remove(source, "test3", ". --recursive")
+
 
 def test_disks_app_func_mv(started_cluster):
     source = cluster.instances["disks_app_test"]
@@ -298,6 +296,8 @@ def test_disks_app_func_mv(started_cluster):
     files = out.split("\n")
     assert "old_store" in files
     assert "store" not in files
+
+    remove(source, "test1", "./old_store --recursive")
 
 
 def test_disks_app_func_read_write(started_cluster):
