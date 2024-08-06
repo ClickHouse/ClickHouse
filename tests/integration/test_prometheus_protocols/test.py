@@ -144,6 +144,11 @@ def test_inner_engines():
 
 
 def test_external_tables():
+    node.query("DROP TABLE IF EXISTS mydata")
+    node.query("DROP TABLE IF EXISTS mytags")
+    node.query("DROP TABLE IF EXISTS mymetrics")
+    node.query("DROP TABLE IF EXISTS prometheus")
+
     node.query(
         "CREATE TABLE mydata (id UUID, timestamp DateTime64(3), value Float64) "
         "ENGINE=MergeTree ORDER BY (id, timestamp)"
