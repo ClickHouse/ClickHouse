@@ -994,22 +994,26 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 - `MinMax`
 
     The minimum and maximum column value which allows to estimate the selectivity of range filters on numeric columns.
+
     Supported data types: (U)Int*, Float*, Decimal(*), Boolean and Date*.
 
 - `TDigest`
 
     [TDigest](https://github.com/tdunning/t-digest) sketches which allow to compute approximate percentiles (e.g. the 90th percentile) for numeric columns.
+
     Supported data types: (U)Int*, Float*, Decimal(*), Boolean and Date*.
 
 - `Uniq`
 
     [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) sketches which provide an estimation how many distinct values a column contains.
-    Supported data types: (U)Int*, Float*, Decimal(*), Boolean, Date* and (Fixed)String.
+
+    Supported data types: (U)Int*, Float*, Decimal*, Boolean, Date* and (Fixed)String.
 
 - `count_min`
 
     [Count-min](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
-    Supported data types: (U)Int*, Float*, Decimal(*), Boolean, Date* and (Fixed)String.
+
+    Supported data types: (U)Int*, Float*, Decimal*, Boolean, Date* and (Fixed)String.
 
 Note that all statistics types support `LowCardinality` and `Nullable` modifiers to data types.
 
@@ -1022,7 +1026,7 @@ Note that all statistics types support `LowCardinality` and `Nullable` modifiers
 | TDigest   | ✔       | ✔     |
 | Uniq      | ✔       | ✗     |
 
-Please note that operation range represents >, >=, <, <=.
+Please note that operation `Range` represents >, >=, < or <=.
 
 
 

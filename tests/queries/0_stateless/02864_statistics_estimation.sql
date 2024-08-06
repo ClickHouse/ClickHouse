@@ -80,6 +80,12 @@ SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String|_DateTi
 FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE d > cast(1, 'DateTime')/*9999*/ and c < 0/*9900*/ and b = 0/*10*/ and a = '10000'/*0*/)
 WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 
+
+SELECT 'Test statistics implicitly type conversion:';
+SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String|_DateTime', '')
+FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE d = '2024-08-06 09:58:09'/*0*/ and c = '0'/*100*/ and b > 0/*9990*/ and a = '10000'/*0*/)
+WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
+
 ALTER TABLE tab DROP STATISTICS a, b, c, d;
 
 
