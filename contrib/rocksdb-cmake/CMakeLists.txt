@@ -126,6 +126,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_write.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_compaction_flush.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_files.cc
+    ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_follower.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_open.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_debug.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_experimental.cc
@@ -183,6 +184,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/env/env_encryption.cc
     ${ROCKSDB_SOURCE_DIR}/env/file_system.cc
     ${ROCKSDB_SOURCE_DIR}/env/file_system_tracer.cc
+    ${ROCKSDB_SOURCE_DIR}/env/fs_on_demand.cc
     ${ROCKSDB_SOURCE_DIR}/env/fs_remap.cc
     ${ROCKSDB_SOURCE_DIR}/env/mock_env.cc
     ${ROCKSDB_SOURCE_DIR}/env/unique_id_gen.cc
@@ -370,6 +372,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/utilities/persistent_cache/volatile_tier_impl.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/simulator_cache/cache_simulator.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/simulator_cache/sim_cache.cc
+    ${ROCKSDB_SOURCE_DIR}/utilities/table_properties_collectors/compact_for_tiering_collector.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/table_properties_collectors/compact_on_deletion_collector.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/trace/file_trace_reader_writer.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/trace/replayer_impl.cc
@@ -421,10 +424,8 @@ if(HAS_ARMV8_CRC)
 endif(HAS_ARMV8_CRC)
 
 list(APPEND SOURCES
-    ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_follower.cc
     ${ROCKSDB_SOURCE_DIR}/port/port_posix.cc
     ${ROCKSDB_SOURCE_DIR}/env/env_posix.cc
-    ${ROCKSDB_SOURCE_DIR}/env/fs_on_demand.cc
     ${ROCKSDB_SOURCE_DIR}/env/fs_posix.cc
     ${ROCKSDB_SOURCE_DIR}/env/io_posix.cc)
 
