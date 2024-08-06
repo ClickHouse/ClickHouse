@@ -1086,7 +1086,7 @@ class TestCase:
         self.random_settings_limits = (
             suite.all_random_settings_limits[case]
             if case in suite.all_random_settings_limits
-            else dict()
+            else {}
         )
 
         for tag in os.getenv("GLOBAL_TAGS", "").split(","):
