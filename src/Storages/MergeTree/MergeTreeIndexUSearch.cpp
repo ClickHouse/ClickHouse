@@ -206,7 +206,7 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
             index = std::make_shared<USearchIndexWithSerialization<Metric>>(dimension, scalar_kind);
 
         /// Add all rows of block
-        if (!index->reserve(unum::usearch::ceil2(index->size() + num_rows)))
+        if (!index->try_reserve(unum::usearch::ceil2(index->size() + num_rows)))
             throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for usearch index");
 
         for (size_t current_row = 0; current_row < num_rows; ++current_row)
@@ -237,7 +237,7 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
         if (!index)
             index = std::make_shared<USearchIndexWithSerialization<Metric>>(data[0].size(), scalar_kind);
 
-        if (!index->reserve(unum::usearch::ceil2(index->size() + data.size())))
+        if (!index->try_reserve(unum::usearch::ceil2(index->size() + data.size())))
             throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for usearch index");
 
         for (const auto & item : data)
