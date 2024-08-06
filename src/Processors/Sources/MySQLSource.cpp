@@ -2,7 +2,9 @@
 
 #if USE_MYSQL
 #include <vector>
+
 #include <Core/MySQL/MySQLReplication.h>
+#include <Core/Settings.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>

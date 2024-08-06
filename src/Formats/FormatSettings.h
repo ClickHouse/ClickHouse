@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Core/Names.h>
 #include <Core/Defines.h>
+#include <Core/Names.h>
 #include <base/types.h>
 #include <base/unit.h>
-#include <Core/SettingsFields.h>
 
 namespace DB
 {
@@ -206,6 +205,7 @@ struct FormatSettings
 
     struct JSON
     {
+        size_t max_depth = 1000;
         bool array_of_rows = false;
         bool quote_64bit_integers = true;
         bool quote_64bit_floats = false;
@@ -234,7 +234,6 @@ struct FormatSettings
         bool infer_incomplete_types_as_strings = true;
         bool throw_on_bad_escape_sequence = true;
         bool ignore_unnecessary_fields = true;
-        bool ignore_key_case = false;
     } json{};
 
     struct
@@ -293,7 +292,8 @@ struct FormatSettings
         UInt64 max_value_width = 10000;
         UInt64 max_value_width_apply_for_single_value = false;
         bool highlight_digit_groups = true;
-        SettingFieldUInt64Auto color{"auto"};
+        /// Set to 2 for auto
+        UInt64 color = 2;
 
         bool output_format_pretty_row_numbers = false;
         UInt64 output_format_pretty_single_large_number_tip_threshold = 1'000'000;
@@ -409,7 +409,7 @@ struct FormatSettings
         bool use_fast_decoder = true;
         bool filter_push_down = true;
         UInt64 output_row_index_stride = 10'000;
-        bool read_use_writer_time_zone = false;
+        String reader_time_zone_name = "GMT";
     } orc{};
 
     /// For capnProto format we should determine how to

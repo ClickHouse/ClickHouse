@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 
 #include <Storages/IStorage.h>
@@ -61,7 +62,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
       *  which are checked separately (in the Set, Join objects).
       */
     auto subquery_context = Context::createCopy(context);
-    Settings subquery_settings = context->getSettings();
+    Settings subquery_settings = context->getSettingsCopy();
     subquery_settings.max_result_rows = 0;
     subquery_settings.max_result_bytes = 0;
     /// The calculation of `extremes` does not make sense and is not necessary (if you do it, then the `extremes` of the subquery can be taken instead of the whole query).
