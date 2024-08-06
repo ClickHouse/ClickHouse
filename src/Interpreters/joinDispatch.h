@@ -3,7 +3,7 @@
 #include <array>
 #include <base/constexpr_helpers.h>
 
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin.h>
 
 
 /** Used in implementation of Join to process different data structures.

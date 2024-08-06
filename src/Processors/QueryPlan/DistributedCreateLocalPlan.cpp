@@ -1,7 +1,8 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 
+#include <Common/config_version.h>
 #include <Common/checkStackSize.h>
-#include <Core/Settings.h>
+#include <Core/ProtocolDefines.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -33,7 +34,7 @@ void addConvertingActions(QueryPlan & plan, const Block & header, bool has_missi
     };
 
     auto convert_actions_dag = get_converting_dag(plan.getCurrentDataStream().header, header);
-    auto converting = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(convert_actions_dag));
+    auto converting = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), convert_actions_dag);
     plan.addStep(std::move(converting));
 }
 

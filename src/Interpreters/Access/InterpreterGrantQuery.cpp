@@ -118,7 +118,7 @@ namespace
     /// Checks if the current user has enough access rights granted with grant option to grant or revoke specified access rights.
     void checkGrantOption(
         const AccessControl & access_control,
-        const ContextAccessWrapper & current_user_access,
+        const ContextAccess & current_user_access,
         const std::vector<UUID> & grantees_from_query,
         bool & need_check_grantees_are_allowed,
         const AccessRightsElements & elements_to_grant,
@@ -200,7 +200,7 @@ namespace
     /// Checks if the current user has enough roles granted with admin option to grant or revoke specified roles.
     void checkAdminOption(
         const AccessControl & access_control,
-        const ContextAccessWrapper & current_user_access,
+        const ContextAccess & current_user_access,
         const std::vector<UUID> & grantees_from_query,
         bool & need_check_grantees_are_allowed,
         const std::vector<UUID> & roles_to_grant,
@@ -277,7 +277,7 @@ namespace
     /// This function is less accurate than checkAdminOption() because it cannot use any information about
     /// granted roles the grantees currently have (due to those grantees are located on multiple nodes,
     /// we just don't have the full information about them).
-    void checkAdminOptionForExecutingOnCluster(const ContextAccessWrapper & current_user_access,
+    void checkAdminOptionForExecutingOnCluster(const ContextAccess & current_user_access,
                                                const std::vector<UUID> roles_to_grant,
                                                const RolesOrUsersSet & roles_to_revoke)
     {
@@ -376,7 +376,7 @@ namespace
     /// Calculates all available rights to grant with current user intersection.
     void calculateCurrentGrantRightsWithIntersection(
         AccessRights & rights,
-        std::shared_ptr<const ContextAccessWrapper> current_user_access,
+        std::shared_ptr<const ContextAccess> current_user_access,
         const AccessRightsElements & elements_to_grant)
     {
         AccessRightsElements current_user_grantable_elements;

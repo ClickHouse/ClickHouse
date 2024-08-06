@@ -9,7 +9,6 @@
 #include <Access/ContextAccess.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>

@@ -5,7 +5,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
-#include <Core/SettingsEnums.h>
 
 namespace DB
 {
@@ -29,7 +28,7 @@ TotalsHavingStep::TotalsHavingStep(
     const DataStream & input_stream_,
     const AggregateDescriptions & aggregates_,
     bool overflow_row_,
-    std::optional<ActionsDAG> actions_dag_,
+    const ActionsDAGPtr & actions_dag_,
     const std::string & filter_column_,
     bool remove_filter_,
     TotalsMode totals_mode_,
@@ -39,7 +38,7 @@ TotalsHavingStep::TotalsHavingStep(
         input_stream_,
         TotalsHavingTransform::transformHeader(
             input_stream_.header,
-            actions_dag_ ? &*actions_dag_ : nullptr,
+            actions_dag_.get(),
             filter_column_,
             remove_filter_,
             final_,
@@ -47,7 +46,7 @@ TotalsHavingStep::TotalsHavingStep(
         getTraits(!filter_column_.empty()))
     , aggregates(aggregates_)
     , overflow_row(overflow_row_)
-    , actions_dag(std::move(actions_dag_))
+    , actions_dag(actions_dag_)
     , filter_column_name(filter_column_)
     , remove_filter(remove_filter_)
     , totals_mode(totals_mode_)
@@ -58,7 +57,7 @@ TotalsHavingStep::TotalsHavingStep(
 
 void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto expression_actions = actions_dag ? std::make_shared<ExpressionActions>(std::move(*actions_dag), settings.getActionsSettings()) : nullptr;
+    auto expression_actions = actions_dag ? std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings()) : nullptr;
 
     auto totals_having = std::make_shared<TotalsHavingTransform>(
         pipeline.getHeader(),
@@ -87,6 +86,8 @@ static String totalsModeToString(TotalsMode totals_mode, double auto_include_thr
         case TotalsMode::AFTER_HAVING_AUTO:
             return "after_having_auto threshold " + std::to_string(auto_include_threshold);
     }
+
+    UNREACHABLE();
 }
 
 void TotalsHavingStep::describeActions(FormatSettings & settings) const
@@ -101,16 +102,13 @@ void TotalsHavingStep::describeActions(FormatSettings & settings) const
     if (actions_dag)
     {
         bool first = true;
-        if (actions_dag)
+        auto expression = std::make_shared<ExpressionActions>(actions_dag);
+        for (const auto & action : expression->getActions())
         {
-            auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
-            for (const auto & action : expression->getActions())
-            {
-                settings.out << prefix << (first ? "Actions: "
-                                                : "         ");
-                first = false;
-                settings.out << action.toString() << '\n';
-            }
+            settings.out << prefix << (first ? "Actions: "
+                                             : "         ");
+            first = false;
+            settings.out << action.toString() << '\n';
         }
     }
 }
@@ -121,11 +119,8 @@ void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
     if (actions_dag)
     {
         map.add("Filter column", filter_column_name);
-        if (actions_dag)
-        {
-            auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
-            map.add("Expression", expression->toTree());
-        }
+        auto expression = std::make_shared<ExpressionActions>(actions_dag);
+        map.add("Expression", expression->toTree());
     }
 }
 
@@ -135,7 +130,7 @@ void TotalsHavingStep::updateOutputStream()
         input_streams.front(),
         TotalsHavingTransform::transformHeader(
             input_streams.front().header,
-            getActions(),
+            actions_dag.get(),
             filter_column_name,
             remove_filter,
             final,

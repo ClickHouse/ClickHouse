@@ -70,7 +70,6 @@ StorageRabbitMQ::StorageRabbitMQ(
         const StorageID & table_id_,
         ContextPtr context_,
         const ColumnsDescription & columns_,
-        const String & comment,
         std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
         LoadingStrictnessLevel mode)
         : IStorage(table_id_)
@@ -146,7 +145,6 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals(rabbitmq_settings->rabbitmq_handle_error_mode));
 
@@ -1131,13 +1129,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     }
 
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(
-        insert,
-        rabbitmq_context,
-        /* allow_materialized */ false,
-        /* no_squash */ true,
-        /* no_destination */ true,
-        /* async_isnert */ false);
+    InterpreterInsertQuery interpreter(insert, rabbitmq_context, /* allow_materialized_ */ false, /* no_squash_ */ true, /* no_destination_ */ true);
     auto block_io = interpreter.execute();
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
@@ -1290,7 +1282,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         if (!rabbitmq_settings->rabbitmq_format.changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `rabbitmq_format` setting");
 
-        return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, args.comment, std::move(rabbitmq_settings), args.mode);
+        return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, std::move(rabbitmq_settings), args.mode);
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

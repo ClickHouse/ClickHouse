@@ -181,7 +181,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -205,9 +205,10 @@ public:
 
             const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             typename ColumnVector<T>::Container & vec_to = col_to->getData();
-            vec_to.resize(input_rows_count);
+            size_t size = vec_from.size();
+            vec_to.resize(size);
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(vec_from[i], dict);
 
             return col_to;
@@ -272,7 +273,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -302,9 +303,10 @@ public:
             const typename ColumnVector<T>::Container & vec_from1 = col_vec1->getData();
             const typename ColumnVector<T>::Container & vec_from2 = col_vec2->getData();
             typename ColumnUInt8::Container & vec_to = col_to->getData();
-            vec_to.resize(input_rows_count);
+            size_t size = vec_from1.size();
+            vec_to.resize(size);
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(vec_from1[i], vec_from2[i], dict);
 
             return col_to;
@@ -316,9 +318,10 @@ public:
             const typename ColumnVector<T>::Container & vec_from1 = col_vec1->getData();
             const T const_from2 = col_const2->template getValue<T>();
             typename ColumnUInt8::Container & vec_to = col_to->getData();
-            vec_to.resize(input_rows_count);
+            size_t size = vec_from1.size();
+            vec_to.resize(size);
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(vec_from1[i], const_from2, dict);
 
             return col_to;
@@ -330,9 +333,10 @@ public:
             const T const_from1 = col_const1->template getValue<T>();
             const typename ColumnVector<T>::Container & vec_from2 = col_vec2->getData();
             typename ColumnUInt8::Container & vec_to = col_to->getData();
-            vec_to.resize(input_rows_count);
+            size_t size = vec_from2.size();
+            vec_to.resize(size);
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(const_from1, vec_from2[i], dict);
 
             return col_to;
@@ -401,7 +405,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -428,10 +432,11 @@ public:
             auto & res_values = col_values->getData();
 
             const typename ColumnVector<T>::Container & vec_from = col_from->getData();
-            res_offsets.resize(input_rows_count);
-            res_values.reserve(input_rows_count * 4);
+            size_t size = vec_from.size();
+            res_offsets.resize(size);
+            res_values.reserve(size * 4);
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 T cur = vec_from[i];
                 for (size_t depth = 0; cur && depth < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++depth)

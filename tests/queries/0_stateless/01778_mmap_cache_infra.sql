@@ -1,4 +1,3 @@
--- Tags: no-parallel
 -- We check the existence of queries and metrics and don't check the results (a smoke test).
 
 SYSTEM DROP MMAP CACHE;
