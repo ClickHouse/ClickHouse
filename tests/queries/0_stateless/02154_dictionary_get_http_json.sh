@@ -32,7 +32,7 @@ $CLICKHOUSE_CLIENT -q """
 
 echo """
     SELECT dictGet(02154_test_dictionary, 'value', toUInt64(0)), dictGet(02154_test_dictionary, 'value', toUInt64(1))
-    SETTINGS allow_experimental_analyzer = 1
+    SETTINGS enable_analyzer = 1
     FORMAT JSON
 """ | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}&wait_end_of_query=1&output_format_write_statistics=0" -d @-
 
