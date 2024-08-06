@@ -72,18 +72,18 @@ struct SnowflakeId
     uint64_t machine_seq_num;
 };
 
-SnowflakeId toSnowflakeId(uint64_t snowflake)
+SnowflakeId toComponents(uint64_t snowflake)
 {
     return {.timestamp = (snowflake >> (machine_id_bits_count + machine_seq_num_bits_count)),
             .machine_id = ((snowflake & machine_id_mask) >> machine_seq_num_bits_count),
             .machine_seq_num = (snowflake & machine_seq_num_mask)};
 }
 
-uint64_t fromSnowflakeId(SnowflakeId components)
+uint64_t fromComponents(SnowflakeId snowflake)
 {
-    return (components.timestamp << (machine_id_bits_count + machine_seq_num_bits_count) |
-            components.machine_id << (machine_seq_num_bits_count) |
-            components.machine_seq_num);
+    return (snowflake.timestamp << (machine_id_bits_count + machine_seq_num_bits_count) |
+            snowflake.machine_id << (machine_seq_num_bits_count) |
+            snowflake.machine_seq_num);
 }
 
 struct SnowflakeIdRange
@@ -97,7 +97,6 @@ struct SnowflakeIdRange
 /// 2. `begin = max(available, now)`
 /// 3. Calculate `end = begin + input_rows_count` handling `machine_seq_num` overflow
 SnowflakeIdRange getRangeOfAvailableIds(const SnowflakeId & available, uint64_t machine_id, size_t input_rows_count)
-
 {
     /// 1. `now`
     SnowflakeId begin = {.timestamp = getTimestamp(), .machine_id = machine_id, .machine_seq_num = 0};
@@ -135,9 +134,9 @@ struct Data
         SnowflakeIdRange range;
         do
         {
-            range = getRangeOfAvailableIds(toSnowflakeId(available_snowflake_id), machine_id, input_rows_count);
+            range = getRangeOfAvailableIds(toComponents(available_snowflake_id), machine_id, input_rows_count);
         }
-        while (!lowest_available_snowflake_id.compare_exchange_weak(available_snowflake_id, fromSnowflakeId(range.end)));
+        while (!lowest_available_snowflake_id.compare_exchange_weak(available_snowflake_id, fromComponents(range.end)));
         /// CAS failed --> another thread updated `lowest_available_snowflake_id` and we re-try
         ///     else --> our thread reserved ID range [begin, end) and return the beginning of the range
 
@@ -195,7 +194,7 @@ public:
 
             for (UInt64 & to_row : vec_to)
             {
-                to_row = fromSnowflakeId(snowflake_id);
+                to_row = fromComponents(snowflake_id);
                 if (snowflake_id.machine_seq_num == max_machine_seq_num)
                 {
                     /// handle overflow
