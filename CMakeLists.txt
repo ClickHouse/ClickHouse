@@ -430,7 +430,10 @@ endif()
 
 if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE)
     # Slightly more efficient code can be generated
-    # Disabled for Android, because otherwise ClickHouse cannot run on Android.
+    # Using '-no-pie' builds executables with fixed addresses, resulting in slightly more efficient code
+    # and keeping binary addresses constant even with ASLR enabled.
+    # Disabled on Android as it requires PIE: https://source.android.com/docs/security/enhancements#android-5
+    # Disabled on IBM S390X due to build issues with 'no-pie'
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
     set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
