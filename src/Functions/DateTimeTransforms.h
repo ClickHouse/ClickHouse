@@ -24,7 +24,7 @@ namespace DB
 
 static constexpr auto millisecond_multiplier = 1'000;
 static constexpr auto microsecond_multiplier = 1'000'000;
-static constexpr auto nanosecond_multiplier  = 1'000'000'000;
+static constexpr auto nanosecond_multiplier = 1'000'000'000;
 
 static constexpr FormatSettings::DateTimeOverflowBehavior default_date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
 
@@ -381,11 +381,13 @@ struct ToStartOfWeekImpl
 
     static UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+        const int res = time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+        return std::max(res, 0);
     }
     static UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+        const int res = time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+        return std::max(res, 0);
     }
     static UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {

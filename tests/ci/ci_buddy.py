@@ -8,7 +8,7 @@ import requests
 from botocore.exceptions import ClientError
 
 from pr_info import PRInfo
-from ci_utils import Shell, GHActions
+from ci_config import CI
 
 
 class CIBuddy:
@@ -31,10 +31,19 @@ class CIBuddy:
         self.sha = pr_info.sha[:10]
 
     def check_workflow(self):
-        GHActions.print_workflow_results()
-        res = GHActions.get_workflow_job_result(GHActions.ActionsNames.RunConfig)
-        if res != GHActions.ActionStatuses.SUCCESS:
-            self.post_job_error("Workflow Configuration Failed", critical=True)
+        CI.GH.print_workflow_results()
+        if CI.Envs.GITHUB_WORKFLOW == CI.WorkFlowNames.CreateRelease:
+            if not CI.GH.is_workflow_ok():
+                self.post_job_error(
+                    f"{CI.Envs.GITHUB_WORKFLOW} Workflow Failed", critical=True
+                )
+        else:
+            res = CI.GH.get_workflow_job_result(CI.GH.ActionsNames.RunConfig)
+            if res != CI.GH.ActionStatuses.SUCCESS:
+                print(f"ERROR: RunConfig status is [{res}] - post report to slack")
+                self.post_job_error(
+                    f"{CI.Envs.GITHUB_WORKFLOW} Workflow Failed", critical=True
+                )
 
     @staticmethod
     def _get_webhooks():
@@ -74,10 +83,13 @@ class CIBuddy:
         message = title
         if isinstance(body, dict):
             for name, value in body.items():
-                if "commit_sha" in name:
+                if "sha" in name and value and len(value) == 40:
                     value = (
                         f"<https://github.com/{self.repo}/commit/{value}|{value[:8]}>"
                     )
+                elif isinstance(value, str) and value.startswith("https://github.com/"):
+                    value_shorten = value.split("/")[-1]
+                    value = f"<{value}|{value_shorten}>"
                 message += f"      *{name}*:    {value}\n"
         else:
             message += body + "\n"
@@ -120,8 +132,12 @@ class CIBuddy:
     ) -> None:
         instance_id, instance_type = "unknown", "unknown"
         if with_instance_info:
-            instance_id = Shell.run("ec2metadata --instance-id") or instance_id
-            instance_type = Shell.run("ec2metadata --instance-type") or instance_type
+            instance_id = (
+                CI.Shell.get_output("ec2metadata --instance-id") or instance_id
+            )
+            instance_type = (
+                CI.Shell.get_output("ec2metadata --instance-type") or instance_type
+            )
         if not job_name:
             job_name = os.getenv("CHECK_NAME", "unknown")
         sign = ":red_circle:" if not critical else ":black_circle:"

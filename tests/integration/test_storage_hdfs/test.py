@@ -157,7 +157,7 @@ def test_bad_hdfs_uri(started_cluster):
         )
     except Exception as ex:
         print(ex)
-        assert "Bad hdfs url" in str(ex)
+        assert "Bad HDFS URL" in str(ex)
     try:
         node1.query(
             "create table BadStorage2 (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs100500:9000/other_storage', 'TSV')"
