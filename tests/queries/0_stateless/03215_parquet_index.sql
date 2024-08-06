@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 -- default settings.
 DROP TABLE IF EXISTS test_parquet;
 CREATE TABLE test_parquet (col1 int, col2 String) ENGINE=File(Parquet);
