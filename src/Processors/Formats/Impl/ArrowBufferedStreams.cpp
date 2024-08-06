@@ -4,6 +4,7 @@
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 #include <Common/assert_cast.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
@@ -11,6 +12,7 @@
 #include <arrow/util/future.h>
 #include <arrow/io/memory.h>
 #include <arrow/result.h>
+#include <arrow/memory_pool_internal.h>
 #include <Core/Settings.h>
 
 #include <sys/stat.h>
@@ -41,9 +43,18 @@ arrow::Result<int64_t> ArrowBufferedOutputStream::Tell() const
 
 arrow::Status ArrowBufferedOutputStream::Write(const void * data, int64_t length)
 {
-    out.write(reinterpret_cast<const char *>(data), length);
-    total_length += length;
-    return arrow::Status::OK();
+    try
+    {
+        out.write(reinterpret_cast<const char *>(data), length);
+        total_length += length;
+        return arrow::Status::OK();
+    }
+    catch (...)
+    {
+        auto message = getCurrentExceptionMessage(false);
+        LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while writing to arrow stream: {}", message);
+        return arrow::Status::IOError(message);
+    }
 }
 
 RandomAccessFileFromSeekableReadBuffer::RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_, std::optional<off_t> file_size_, bool avoid_buffering_)
@@ -74,14 +85,23 @@ arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Tell() const
 
 arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbytes, void * out)
 {
-    if (avoid_buffering)
-        in.setReadUntilPosition(seekable_in.getPosition() + nbytes);
-    return in.readBig(reinterpret_cast<char *>(out), nbytes);
+    try
+    {
+        if (avoid_buffering)
+            in.setReadUntilPosition(seekable_in.getPosition() + nbytes);
+        return in.readBig(reinterpret_cast<char *>(out), nbytes);
+    }
+    catch (...)
+    {
+        auto message = getCurrentExceptionMessage(false);
+        LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while reading from arrow stream: {}", message);
+        return arrow::Status::IOError(message);
+    }
 }
 
 arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbytes)
 {
-    ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(nbytes))
+    ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(nbytes, ArrowMemoryPool::instance()))
     ARROW_ASSIGN_OR_RAISE(int64_t bytes_read, Read(nbytes, buffer->mutable_data()))
 
     if (bytes_read < nbytes)
@@ -98,14 +118,23 @@ arrow::Future<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromSeekableReadBu
 
 arrow::Status RandomAccessFileFromSeekableReadBuffer::Seek(int64_t position)
 {
-    if (avoid_buffering)
+    try
     {
-        // Seeking to a position above a previous setReadUntilPosition() confuses some of the
-        // ReadBuffer implementations.
-        in.setReadUntilEnd();
+        if (avoid_buffering)
+        {
+            // Seeking to a position above a previous setReadUntilPosition() confuses some of the
+            // ReadBuffer implementations.
+            in.setReadUntilEnd();
+        }
+        seekable_in.seek(position, SEEK_SET);
+        return arrow::Status::OK();
     }
-    seekable_in.seek(position, SEEK_SET);
-    return arrow::Status::OK();
+    catch (...)
+    {
+        auto message = getCurrentExceptionMessage(false);
+        LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while seeking arrow file: {}", message);
+        return arrow::Status::IOError(message);
+    }
 }
 
 
@@ -115,12 +144,21 @@ ArrowInputStreamFromReadBuffer::ArrowInputStreamFromReadBuffer(ReadBuffer & in_)
 
 arrow::Result<int64_t> ArrowInputStreamFromReadBuffer::Read(int64_t nbytes, void * out)
 {
-    return in.readBig(reinterpret_cast<char *>(out), nbytes);
+    try
+    {
+        return in.readBig(reinterpret_cast<char *>(out), nbytes);
+    }
+    catch (...)
+    {
+        auto message = getCurrentExceptionMessage(false);
+        LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while reading from arrow stream: {}", message);
+        return arrow::Status::IOError(message);
+    }
 }
 
 arrow::Result<std::shared_ptr<arrow::Buffer>> ArrowInputStreamFromReadBuffer::Read(int64_t nbytes)
 {
-    ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(nbytes))
+    ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(nbytes, ArrowMemoryPool::instance()))
     ARROW_ASSIGN_OR_RAISE(int64_t bytes_read, Read(nbytes, buffer->mutable_data()))
 
     if (bytes_read < nbytes)
@@ -154,12 +192,22 @@ arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::GetSize()
 
 arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::ReadAt(int64_t position, int64_t nbytes, void* out)
 {
-    return in.readBigAt(reinterpret_cast<char*>(out), nbytes, position, nullptr);
+    try
+    {
+        int64_t r = in.readBigAt(reinterpret_cast<char *>(out), nbytes, position, nullptr);
+        return r;
+    }
+    catch (...)
+    {
+        auto message = getCurrentExceptionMessage(false);
+        LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while reading from arrow stream: {}", message);
+        return arrow::Status::IOError(message);
+    }
 }
 
 arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromRandomAccessReadBuffer::ReadAt(int64_t position, int64_t nbytes)
 {
-    ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(nbytes))
+    ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(nbytes, ArrowMemoryPool::instance()))
     ARROW_ASSIGN_OR_RAISE(int64_t bytes_read, ReadAt(position, nbytes, buffer->mutable_data()))
 
     if (bytes_read < nbytes)
@@ -184,6 +232,71 @@ arrow::Status RandomAccessFileFromRandomAccessReadBuffer::Seek(int64_t) { return
 arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::Tell() const { return arrow::Status::NotImplemented(""); }
 arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::Read(int64_t, void*) { return arrow::Status::NotImplemented(""); }
 arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromRandomAccessReadBuffer::Read(int64_t) { return arrow::Status::NotImplemented(""); }
+
+ArrowMemoryPool * ArrowMemoryPool::instance()
+{
+    static ArrowMemoryPool x;
+    return &x;
+}
+
+arrow::Status ArrowMemoryPool::Allocate(int64_t size, int64_t alignment, uint8_t ** out)
+{
+    if (size == 0)
+    {
+        *out = arrow::memory_pool::internal::kZeroSizeArea;
+        return arrow::Status::OK();
+    }
+
+    try // is arrow exception-safe? idk, let's avoid throwing, just in case
+    {
+        void * p = Allocator<false>().alloc(size_t(size), size_t(alignment));
+        *out = reinterpret_cast<uint8_t*>(p);
+    }
+    catch (...)
+    {
+        return arrow::Status::OutOfMemory("allocation of size ", size, " failed");
+    }
+
+    return arrow::Status::OK();
+}
+
+arrow::Status ArrowMemoryPool::Reallocate(int64_t old_size, int64_t new_size, int64_t alignment, uint8_t ** ptr)
+{
+    if (old_size == 0)
+    {
+        chassert(*ptr == arrow::memory_pool::internal::kZeroSizeArea);
+        return Allocate(new_size, alignment, ptr);
+    }
+    if (new_size == 0)
+    {
+        Free(*ptr, old_size, alignment);
+        *ptr = arrow::memory_pool::internal::kZeroSizeArea;
+        return arrow::Status::OK();
+    }
+
+    try
+    {
+        void * p = Allocator<false>().realloc(*ptr, size_t(old_size), size_t(new_size), size_t(alignment));
+        *ptr = reinterpret_cast<uint8_t*>(p);
+    }
+    catch (...)
+    {
+        return arrow::Status::OutOfMemory("reallocation of size ", new_size, " failed");
+    }
+
+    return arrow::Status::OK();
+}
+
+void ArrowMemoryPool::Free(uint8_t * buffer, int64_t size, int64_t /*alignment*/)
+{
+    if (size == 0)
+    {
+        chassert(buffer == arrow::memory_pool::internal::kZeroSizeArea);
+        return;
+    }
+
+    Allocator<false>().free(buffer, size_t(size));
+}
 
 
 std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(

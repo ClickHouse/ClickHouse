@@ -15,7 +15,7 @@ struct LeastBaseImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static Result apply(A a, B b)
     {
         /** gcc 4.9.2 successfully vectorizes a loop from this function. */
         return static_cast<Result>(a) < static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
@@ -24,7 +24,7 @@ struct LeastBaseImpl
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = true;
 
-    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
     {
         if (!left->getType()->isIntegerTy())
         {
@@ -46,7 +46,7 @@ struct LeastSpecialImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static Result apply(A a, B b)
     {
         static_assert(std::is_same_v<Result, ResultType>, "ResultType != Result");
         return accurate::lessOp(a, b) ? static_cast<Result>(a) : static_cast<Result>(b);
@@ -65,7 +65,7 @@ using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 
 REGISTER_FUNCTION(Least)
 {
-    factory.registerFunction<LeastGreatestOverloadResolver<LeastGreatest::Least, FunctionLeast>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<LeastGreatestOverloadResolver<LeastGreatest::Least, FunctionLeast>>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

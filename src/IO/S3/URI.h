@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 
 #include "config.h"
@@ -17,6 +18,7 @@ namespace DB::S3
  * The following patterns are allowed:
  * s3://bucket/key
  * http(s)://endpoint/bucket/key
+ * http(s)://bucket.<vpce_endpoint_id>.s3.<region>.vpce.amazonaws.com<:port_number>/bucket_name/key
  */
 struct URI
 {
@@ -27,14 +29,20 @@ struct URI
     std::string key;
     std::string version_id;
     std::string storage_name;
+    /// Path (or path pattern) in archive if uri is an archive.
+    std::optional<std::string> archive_pattern;
+    std::string uri_str;
 
     bool is_virtual_hosted_style;
 
     URI() = default;
-    explicit URI(const std::string & uri_);
+    explicit URI(const std::string & uri_, bool allow_archive_path_syntax = false);
     void addRegionToURI(const std::string & region);
 
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
+
+private:
+    std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(const std::string & source);
 };
 
 }

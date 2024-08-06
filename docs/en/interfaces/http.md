@@ -325,6 +325,39 @@ $ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&
 
 Use buffering to avoid situations where a query processing error occurred after the response code and HTTP headers were sent to the client. In this situation, an error message is written at the end of the response body, and on the client-side, the error can only be detected at the parsing stage.
 
+## Setting a role with query parameters {#setting-role-with-query-parameters}
+
+This is a new feature added in ClickHouse 24.4.
+
+In specific scenarios, setting the granted role first might be required before executing the statement itself.
+However, it is not possible to send `SET ROLE` and the statement together, as multi-statements are not allowed:
+
+```
+curl -sS "http://localhost:8123" --data-binary "SET ROLE my_role;SELECT * FROM my_table;"
+```
+
+Which will result in an error:
+
+```
+Code: 62. DB::Exception: Syntax error (Multi-statements are not allowed)
+```
+
+To overcome this limitation, you could use the `role` query parameter instead:
+
+```
+curl -sS "http://localhost:8123?role=my_role" --data-binary "SELECT * FROM my_table;"
+```
+
+This will be the equivalent of executing `SET ROLE my_role` before the statement.
+
+Additionally, it is possible to specify multiple `role` query parameters:
+
+```
+curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "SELECT * FROM my_table;"
+```
+
+In this case, `?role=my_role&role=my_other_role` works similarly to executing `SET ROLE my_role, my_other_role` before the statement.
+
 ## HTTP response codes caveats {#http_response_codes_caveats}
 
 Because of limitation of HTTP protocol, HTTP 200 response code does not guarantee that a query was successful.
@@ -475,7 +508,7 @@ Now `rule` can configure `method`, `headers`, `url`, `handler`:
 
 - `headers` are responsible for matching the header part of the HTTP request. It is compatible with RE2’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the header portion of the HTTP request.
 
-- `handler` contains the main processing part. Now `handler` can configure `type`, `status`, `content_type`, `response_content`, `query`, `query_param_name`.
+- `handler` contains the main processing part. Now `handler` can configure `type`, `status`, `content_type`, `http_response_headers`, `response_content`, `query`, `query_param_name`.
     `type` currently supports three types: [predefined_query_handler](#predefined_query_handler), [dynamic_query_handler](#dynamic_query_handler), [static](#static).
 
     - `query` — use with `predefined_query_handler` type, executes query when the handler is called.
@@ -485,6 +518,8 @@ Now `rule` can configure `method`, `headers`, `url`, `handler`:
     - `status` — use with `static` type, response status code.
 
     - `content_type` — use with any type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
+
+    - `http_response_headers` — use with any type, response headers map. Could be used to set content type as well.
 
     - `response_content` — use with `static` type, response content sent to client, when using the prefix ‘file://’ or ‘config://’, find the content from the file or configuration sends to client.
 
@@ -507,16 +542,18 @@ Example:
 ``` xml
 <http_handlers>
     <rule>
-        <url><![CDATA[/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
+        <url><![CDATA[regex:/query_param_with_url/(?P<name_1>[^/]+)]]></url>
         <methods>GET</methods>
         <headers>
             <XXX>TEST_HEADER_VALUE</XXX>
-            <PARAMS_XXX><![CDATA[(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></PARAMS_XXX>
+            <PARAMS_XXX><![CDATA[regex:(?P<name_2>[^/]+)]]></PARAMS_XXX>
         </headers>
         <handler>
             <type>predefined_query_handler</type>
-            <query>SELECT value FROM system.settings WHERE name = {name_1:String}</query>
-            <query>SELECT name, value FROM system.settings WHERE name = {name_2:String}</query>
+            <query>
+                SELECT name, value FROM system.settings
+                WHERE name IN ({name_1:String}, {name_2:String})
+            </query>
         </handler>
     </rule>
     <defaults/>
@@ -524,13 +561,13 @@ Example:
 ```
 
 ``` bash
-$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_final_threads?max_threads=1&max_final_threads=2'
-1
-max_final_threads   2
+$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_final_threads' 'http://localhost:8123/query_param_with_url/max_threads?max_threads=1&max_final_threads=2'
+max_final_threads	2
+max_threads	1
 ```
 
 :::note
-In one `predefined_query_handler` only supports one `query` of an insert type.
+In one `predefined_query_handler` only one `query` is supported.
 :::
 
 ### dynamic_query_handler {#dynamic_query_handler}
@@ -581,6 +618,33 @@ Return a message.
                 <type>static</type>
                 <status>402</status>
                 <content_type>text/html; charset=UTF-8</content_type>
+                <http_response_headers>
+                    <Content-Language>en</Content-Language>
+                    <X-My-Custom-Header>43</X-My-Custom-Header>
+                </http_response_headers>
+                <response_content>Say Hi!</response_content>
+            </handler>
+        </rule>
+        <defaults/>
+</http_handlers>
+```
+
+`http_response_headers` could be used to set content type instead of `content_type`.
+
+``` xml
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/hi</url>
+            <handler>
+                <type>static</type>
+                <status>402</status>
+                <http_response_headers>
+                    <Content-Type>text/html; charset=UTF-8</Content-Type>
+                    <Content-Language>en</Content-Language>
+                    <X-My-Custom-Header>43</X-My-Custom-Header>
+                </http_response_headers>
                 <response_content>Say Hi!</response_content>
             </handler>
         </rule>
@@ -661,6 +725,9 @@ Find the content from the file send to client.
             <handler>
                 <type>static</type>
                 <content_type>text/html; charset=UTF-8</content_type>
+                <http_response_headers>
+                    <ETag>737060cd8c284d8af7ad3082f209582d</ETag>
+                </http_response_headers>
                 <response_content>file:///absolute_path_file.html</response_content>
             </handler>
         </rule>
@@ -671,6 +738,9 @@ Find the content from the file send to client.
             <handler>
                 <type>static</type>
                 <content_type>text/html; charset=UTF-8</content_type>
+                <http_response_headers>
+                    <ETag>737060cd8c284d8af7ad3082f209582d</ETag>
+                </http_response_headers>
                 <response_content>file://./relative_path_file.html</response_content>
             </handler>
         </rule>

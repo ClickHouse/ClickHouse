@@ -6,6 +6,7 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/QueryLog.h>
+#include <IO/SharedThreadPools.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -14,6 +15,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
 #include "config.h"
@@ -116,7 +118,7 @@ BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
     return res;
 }
 
-BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
+BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
 {
     /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
     auto table_id = StorageID(query);
@@ -162,6 +164,19 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Table {} is not a Dictionary",
                 table_id.getNameForLogs());
+
+        if (settings.ignore_drop_queries_probability != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= settings.ignore_drop_queries_probability)
+        {
+            ast_drop_query.sync = false;
+            if (table->storesDataOnDisk())
+            {
+                LOG_TEST(getLogger("InterpreterDropQuery"), "Ignore DROP TABLE query for table {}.{}", table_id.database_name, table_id.table_name);
+                return {};
+            }
+
+            LOG_TEST(getLogger("InterpreterDropQuery"), "Replace DROP TABLE query to TRUNCATE TABLE for table {}.{}", table_id.database_name, table_id.table_name);
+            ast_drop_query.kind = ASTDropQuery::Truncate;
+        }
 
         /// Now get UUID, so we can wait for table data to be finally dropped
         table_id.uuid = database->tryGetTableUUID(table_id.table_name);
@@ -385,9 +400,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             if (query.if_empty)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP IF EMPTY is not implemented for databases");
 
-            if (database->hasReplicationThread())
+            if (!truncate && database->hasReplicationThread())
                 database->stopReplication();
-
 
             if (database->shouldBeEmptyOnDetach())
             {
@@ -411,17 +425,29 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 auto table_context = Context::createCopy(getContext());
                 table_context->setInternalQuery(true);
                 /// Do not hold extra shared pointers to tables
-                std::vector<std::pair<String, bool>> tables_to_drop;
+                std::vector<std::pair<StorageID, bool>> tables_to_drop;
+                // NOTE: This means we wait for all tables to be loaded inside getTablesIterator() call in case of `async_load_databases = true`.
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
                     auto table_ptr = iterator->table();
-                    table_ptr->flushAndPrepareForShutdown();
-                    tables_to_drop.push_back({iterator->name(), table_ptr->isDictionary()});
+                    tables_to_drop.push_back({table_ptr->getStorageID(), table_ptr->isDictionary()});
                 }
+
+                /// Prepare tables for shutdown in parallel.
+                ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), "DropTables");
+                for (const auto & [name, _] : tables_to_drop)
+                {
+                    auto table_ptr = DatabaseCatalog::instance().getTable(name, table_context);
+                    runner([my_table_ptr = std::move(table_ptr)]()
+                    {
+                        my_table_ptr->flushAndPrepareForShutdown();
+                    });
+                }
+                runner.waitForAllToFinishAndRethrowFirstError();
 
                 for (const auto & table : tables_to_drop)
                 {
-                    query_for_table.setTable(table.first);
+                    query_for_table.setTable(table.first.getTableName());
                     query_for_table.is_dictionary = table.second;
                     DatabasePtr db;
                     UUID table_to_wait = UUIDHelpers::Nil;
@@ -557,7 +583,7 @@ bool InterpreterDropQuery::supportsTransactions() const
     return drop.cluster.empty()
             && !drop.temporary
             && drop.kind == ASTDropQuery::Kind::Truncate
-            && drop.database_and_tables;
+            && drop.table;
 }
 
 void registerInterpreterDropQuery(InterpreterFactory & factory)

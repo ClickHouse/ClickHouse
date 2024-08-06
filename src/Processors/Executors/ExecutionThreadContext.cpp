@@ -64,11 +64,12 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
             }
         }
     }
-    catch (Exception & exception)
+    catch (Exception exception) /// NOLINT
     {
+        /// Copy exception before modifying it because multiple threads can rethrow the same exception
         if (checkCanAddAdditionalInfoToException(exception))
             exception.addMessage("While executing " + node->processor->getName());
-        throw;
+        throw exception;
     }
 }
 
@@ -102,10 +103,10 @@ bool ExecutionThreadContext::executeTask()
 
     if (profile_processors)
     {
-        UInt64 elapsed_microseconds =  execution_time_watch->elapsedMicroseconds();
-        node->processor->elapsed_us += elapsed_microseconds;
+        UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
+        node->processor->elapsed_ns += elapsed_ns;
         if (trace_processors)
-            span->addAttribute("execution_time_ms", elapsed_microseconds);
+            span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
     }
 #ifndef NDEBUG
     execution_time_ns += execution_time_watch->elapsed();

@@ -9,6 +9,7 @@ Columns:
 
 - `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Date of the entry.
+- `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time of the entry.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Time of the entry with microseconds precision.
 - `id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the backup or restore operation.
 - `name` ([String](../../sql-reference/data-types/string.md)) — Name of the backup storage (the contents of the `FROM` or `TO` clause).
@@ -67,6 +68,7 @@ Row 2:
 ──────
 hostname:                clickhouse.eu-central1.internal
 event_date:              2023-08-19
+event_time:              2023-08-19 11:08:56
 event_time_microseconds: 2023-08-19 11:08:56.916192
 id:                      e5b74ecb-f6f1-426a-80be-872f90043885
 name:                    Disk('backups_disk', '1.zip')

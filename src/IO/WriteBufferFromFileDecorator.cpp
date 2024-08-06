@@ -28,6 +28,12 @@ void WriteBufferFromFileDecorator::finalizeImpl()
     }
 }
 
+void WriteBufferFromFileDecorator::cancelImpl() noexcept
+{
+    SwapHelper swap(*this, *impl);
+    impl->cancel();
+}
+
 WriteBufferFromFileDecorator::~WriteBufferFromFileDecorator()
 {
     /// It is not a mistake that swap is called here

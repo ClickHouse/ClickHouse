@@ -202,7 +202,10 @@ uint64_t readU64(std::string_view & sp)
 {
     SAFE_CHECK(sp.size() >= N, "underflow");
     uint64_t x = 0;
-    memcpy(&x, sp.data(), N);
+    if constexpr (std::endian::native == std::endian::little)
+        memcpy(&x, sp.data(), N);
+    else
+        memcpy(reinterpret_cast<char*>(&x) + sizeof(uint64_t) - N, sp.data(), N);
     sp.remove_prefix(N);
     return x;
 }
@@ -1556,8 +1559,7 @@ bool Dwarf::isAddrInRangeList(const CompilationUnit & cu,
                     auto sp_start = addr_.substr(*cu.addr_base + index_start * sizeof(uint64_t));
                     auto start = read<uint64_t>(sp_start);
 
-                    auto sp_end = addr_.substr(*cu.addr_base + index_start * sizeof(uint64_t) + length);
-                    auto end = read<uint64_t>(sp_end);
+                    auto end = start + length;
                     if (start != end && address >= start && address < end)
                     {
                         return true;

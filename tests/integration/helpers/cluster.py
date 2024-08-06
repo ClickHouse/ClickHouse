@@ -52,6 +52,7 @@ from helpers.client import QueryRuntimeException
 import docker
 
 from .client import Client
+from .retry_decorator import retry
 
 from .config_cluster import *
 
@@ -73,7 +74,7 @@ CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.lo
 # Minimum version we use in integration tests to check compatibility with old releases
 # Keep in mind that we only support upgrading between releases that are at most 1 year different.
 # This means that this minimum need to be, at least, 1 year older than the current release
-CLICKHOUSE_CI_MIN_TESTED_VERSION = "22.8"
+CLICKHOUSE_CI_MIN_TESTED_VERSION = "23.3"
 
 
 # to create docker-compose env file
@@ -132,6 +133,52 @@ def get_free_port():
     with socket.socket() as s:
         s.bind(("", 0))
         return s.getsockname()[1]
+
+
+def is_port_free(port: int) -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("", port))
+            return True
+    except socket.error:
+        return False
+
+
+class PortPoolManager:
+    """
+    This class is used for distribution of ports allocated to single pytest-xdist worker
+    It can be used by multiple ClickHouseCluster instances
+    """
+
+    # Shared between instances
+    all_ports = None
+    free_ports = None
+
+    def __init__(self):
+        self.used_ports = []
+
+        if self.all_ports is None:
+            worker_ports = os.getenv("WORKER_FREE_PORTS")
+            ports = [int(p) for p in worker_ports.split(" ")]
+
+            # Static vars
+            PortPoolManager.all_ports = ports
+            PortPoolManager.free_ports = ports
+
+    def get_port(self):
+        for port in self.free_ports:
+            if is_port_free(port):
+                self.free_ports.remove(port)
+                self.used_ports.append(port)
+                return port
+
+        raise Exception(
+            f"No free ports: {self.all_ports}",
+        )
+
+    def return_used_ports(self):
+        self.free_ports.extend(self.used_ports)
+        self.used_ports.clear()
 
 
 def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
@@ -247,7 +294,7 @@ def check_rabbitmq_is_available(rabbitmq_id, cookie):
         ),
         stdout=subprocess.PIPE,
     )
-    p.communicate()
+    p.wait(timeout=60)
     return p.returncode == 0
 
 
@@ -434,6 +481,11 @@ class ClickHouseCluster:
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
         self.project_name = re.sub(r"[^a-z0-9]", "", project_name.lower())
         self.instances_dir_name = get_instances_dir(self.name)
+        xdist_worker = os.getenv("PYTEST_XDIST_WORKER")
+        if xdist_worker:
+            self.project_name += f"_{xdist_worker}"
+            self.instances_dir_name += f"_{xdist_worker}"
+
         self.instances_dir = p.join(self.base_dir, self.instances_dir_name)
         self.docker_logs_path = p.join(self.instances_dir, "docker.log")
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
@@ -513,6 +565,7 @@ class ClickHouseCluster:
         self.minio_redirect_host = "proxy1"
         self.minio_redirect_ip = None
         self.minio_redirect_port = 8080
+        self.minio_docker_id = self.get_instance_docker_id(self.minio_host)
 
         self.spark_session = None
 
@@ -709,61 +762,66 @@ class ClickHouseCluster:
                 .stop()
             )
 
+        self.port_pool = PortPoolManager()
+
     @property
     def kafka_port(self):
         if self._kafka_port:
             return self._kafka_port
-        self._kafka_port = get_free_port()
+        self._kafka_port = self.port_pool.get_port()
         return self._kafka_port
 
     @property
     def schema_registry_port(self):
         if self._schema_registry_port:
             return self._schema_registry_port
-        self._schema_registry_port = get_free_port()
+        self._schema_registry_port = self.port_pool.get_port()
         return self._schema_registry_port
 
     @property
     def schema_registry_auth_port(self):
         if self._schema_registry_auth_port:
             return self._schema_registry_auth_port
-        self._schema_registry_auth_port = get_free_port()
+        self._schema_registry_auth_port = self.port_pool.get_port()
         return self._schema_registry_auth_port
 
     @property
     def kerberized_kafka_port(self):
         if self._kerberized_kafka_port:
             return self._kerberized_kafka_port
-        self._kerberized_kafka_port = get_free_port()
+        self._kerberized_kafka_port = self.port_pool.get_port()
         return self._kerberized_kafka_port
 
     @property
     def azurite_port(self):
         if self._azurite_port:
             return self._azurite_port
-        self._azurite_port = get_free_port()
+        self._azurite_port = self.port_pool.get_port()
         return self._azurite_port
 
     @property
     def mongo_port(self):
         if self._mongo_port:
             return self._mongo_port
-        self._mongo_port = get_free_port()
+        self._mongo_port = self.port_pool.get_port()
         return self._mongo_port
 
     @property
     def mongo_no_cred_port(self):
         if self._mongo_no_cred_port:
             return self._mongo_no_cred_port
-        self._mongo_no_cred_port = get_free_port()
+        self._mongo_no_cred_port = self.port_pool.get_port()
         return self._mongo_no_cred_port
 
     @property
     def redis_port(self):
         if self._redis_port:
             return self._redis_port
-        self._redis_port = get_free_port()
+        self._redis_port = self.port_pool.get_port()
         return self._redis_port
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.port_pool.return_used_ports()
 
     def print_all_docker_pieces(self):
         res_networks = subprocess.check_output(
@@ -1453,9 +1511,9 @@ class ClickHouseCluster:
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_azurite = True
         env_variables["AZURITE_PORT"] = str(self.azurite_port)
-        env_variables[
-            "AZURITE_STORAGE_ACCOUNT_URL"
-        ] = f"http://azurite1:{env_variables['AZURITE_PORT']}/devstoreaccount1"
+        env_variables["AZURITE_STORAGE_ACCOUNT_URL"] = (
+            f"http://azurite1:{env_variables['AZURITE_PORT']}/devstoreaccount1"
+        )
         env_variables["AZURITE_CONNECTION_STRING"] = (
             f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
             f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
@@ -1601,7 +1659,7 @@ class ClickHouseCluster:
         with_jdbc_bridge=False,
         with_hive=False,
         with_coredns=False,
-        use_old_analyzer=False,
+        use_old_analyzer=None,
         hostname=None,
         env_variables=None,
         instance_env_variables=False,
@@ -1652,9 +1710,9 @@ class ClickHouseCluster:
 
         # Code coverage files will be placed in database directory
         # (affect only WITH_COVERAGE=1 build)
-        env_variables[
-            "LLVM_PROFILE_FILE"
-        ] = "/var/lib/clickhouse/server_%h_%p_%m.profraw"
+        env_variables["LLVM_PROFILE_FILE"] = (
+            "/var/lib/clickhouse/server_%h_%p_%m.profraw"
+        )
 
         clickhouse_start_command = CLICKHOUSE_START_COMMAND
         if clickhouse_log_file:
@@ -1667,9 +1725,9 @@ class ClickHouseCluster:
             cluster=self,
             base_path=self.base_dir,
             name=name,
-            base_config_dir=base_config_dir
-            if base_config_dir
-            else self.base_config_dir,
+            base_config_dir=(
+                base_config_dir if base_config_dir else self.base_config_dir
+            ),
             custom_main_configs=main_configs or [],
             custom_user_configs=user_configs or [],
             custom_dictionaries=dictionaries or [],
@@ -2313,7 +2371,7 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=30):
+    def wait_rabbitmq_to_start(self, timeout=60):
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
@@ -2341,7 +2399,7 @@ class ClickHouseCluster:
                 )
             rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
         except Exception as e:
-            logging.debug("Unable to get logs from docker.")
+            logging.debug(f"Unable to get logs from docker: {e}.")
         raise Exception("Cannot wait RabbitMQ container")
 
     def wait_nats_is_available(self, max_retries=5):
@@ -2639,7 +2697,9 @@ class ClickHouseCluster:
                     [
                         "bash",
                         "-c",
-                        f"/opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_host}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org",
+                        f"/opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_host}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org"
+                        f'| grep -c -E "member: cn=j(ohn|ane)doe"'
+                        f"| grep 2 >> /dev/null",
                     ],
                     user="root",
                 )
@@ -2687,15 +2747,14 @@ class ClickHouseCluster:
 
             images_pull_cmd = self.base_cmd + ["pull"]
             # sometimes dockerhub/proxy can be flaky
-            for i in range(5):
-                try:
-                    run_and_check(images_pull_cmd)
-                    break
-                except Exception as ex:
-                    if i == 4:
-                        raise ex
-                    logging.info("Got exception pulling images: %s", ex)
-                    time.sleep(i * 3)
+
+            def logging_pulling_images(**kwargs):
+                if "exception" in kwargs:
+                    logging.info(
+                        "Got exception pulling images: %s", kwargs["exception"]
+                    )
+
+            retry(log_function=logging_pulling_images)(run_and_check)(images_pull_cmd)
 
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")
@@ -2968,7 +3027,17 @@ class ClickHouseCluster:
                     "Trying to create Azurite instance by command %s",
                     " ".join(map(str, azurite_start_cmd)),
                 )
-                run_and_check(azurite_start_cmd)
+
+                def logging_azurite_initialization(exception, retry_number, sleep_time):
+                    logging.info(
+                        f"Azurite initialization failed with error: {exception}"
+                    )
+
+                retry(
+                    log_function=logging_azurite_initialization,
+                )(
+                    run_and_check
+                )(azurite_start_cmd)
                 self.up_called = True
                 logging.info("Trying to connect to Azurite")
                 self.wait_azurite_to_start()
@@ -3912,7 +3981,11 @@ class ClickHouseInstance:
         )
 
     def contains_in_log(
-        self, substring, from_host=False, filename="clickhouse-server.log"
+        self,
+        substring,
+        from_host=False,
+        filename="clickhouse-server.log",
+        exclusion_substring="",
     ):
         if from_host:
             # We check fist file exists but want to look for all rotated logs as well
@@ -3920,7 +3993,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f {self.logs_dir}/{filename} ] && zgrep -aH "{substring}" {self.logs_dir}/{filename}* || true',
+                    f'[ -f {self.logs_dir}/{filename} ] && zgrep -aH "{substring}" {self.logs_dir}/{filename}* | ( [ -z "{exclusion_substring}" ] && cat || grep -v "${exclusion_substring}" ) || true',
                 ]
             )
         else:
@@ -3928,7 +4001,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -aH "{substring}" /var/log/clickhouse-server/{filename} || true',
+                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -aH "{substring}" /var/log/clickhouse-server/{filename} | ( [ -z "{exclusion_substring}" ] && cat || grep -v "${exclusion_substring}" ) || true',
                 ]
             )
         return len(result) > 0
@@ -4294,6 +4367,9 @@ class ClickHouseInstance:
         )
         return xml_str
 
+    def get_machine_name(self):
+        return platform.machine()
+
     @property
     def odbc_drivers(self):
         if self.odbc_ini_path:
@@ -4301,12 +4377,12 @@ class ClickHouseInstance:
                 "SQLite3": {
                     "DSN": "sqlite3_odbc",
                     "Database": "/tmp/sqliteodbc",
-                    "Driver": "/usr/lib/x86_64-linux-gnu/odbc/libsqlite3odbc.so",
-                    "Setup": "/usr/lib/x86_64-linux-gnu/odbc/libsqlite3odbc.so",
+                    "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libsqlite3odbc.so",
+                    "Setup": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libsqlite3odbc.so",
                 },
                 "MySQL": {
                     "DSN": "mysql_odbc",
-                    "Driver": "/usr/lib/x86_64-linux-gnu/odbc/libmyodbc.so",
+                    "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libmyodbc.so",
                     "Database": odbc_mysql_db,
                     "Uid": odbc_mysql_uid,
                     "Pwd": odbc_mysql_pass,
@@ -4323,8 +4399,8 @@ class ClickHouseInstance:
                     "ReadOnly": "No",
                     "RowVersioning": "No",
                     "ShowSystemTables": "No",
-                    "Driver": "/usr/lib/x86_64-linux-gnu/odbc/psqlodbca.so",
-                    "Setup": "/usr/lib/x86_64-linux-gnu/odbc/libodbcpsqlS.so",
+                    "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/psqlodbca.so",
+                    "Setup": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libodbcpsqlS.so",
                     "ConnSettings": "",
                 },
             }
@@ -4405,8 +4481,18 @@ class ClickHouseInstance:
             )
 
         write_embedded_config("0_common_instance_users.xml", users_d_dir)
-        if self.use_old_analyzer:
-            write_embedded_config("0_common_enable_analyzer.xml", users_d_dir)
+
+        use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
+        # If specific version was used there can be no
+        # allow_experimental_analyzer setting, so do this only if it was
+        # explicitly requested.
+        if self.tag:
+            use_old_analyzer = False
+        # Prefer specified in the test option:
+        if self.use_old_analyzer is not None:
+            use_old_analyzer = self.use_old_analyzer
+        if use_old_analyzer:
+            write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)
 
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)

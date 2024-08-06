@@ -10,12 +10,6 @@
 50
 50	50	50	1	0
 50
-SELECT sumIf(123, (number % 2) = 0)
-FROM numbers(100)
-SELECT sum(if((number % 2) = 0, 123, 0))
-FROM numbers(100)
-SELECT sum(if((number % 2) = 0, 0, 123))
-FROM numbers(100)
 0
 0	0	1
 0
@@ -28,12 +22,6 @@ FROM numbers(100)
 50
 50	50	50	1	0
 50
-SELECT 123 * countIf((number % 2) = 0)
-FROM numbers(100)
-SELECT 123 * countIf((number % 2) = 0)
-FROM numbers(100)
-SELECT 123 * countIf(NOT ((number % 2) = 0))
-FROM numbers(100)
 QUERY id: 0
   PROJECTION COLUMNS
     sumIf(123, equals(modulo(number, 2), 0)) UInt64

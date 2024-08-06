@@ -4,8 +4,8 @@ CREATE TABLE rename_table_multiple (key Int32, value1 String, value2 Int32) ENGI
 
 INSERT INTO rename_table_multiple VALUES (1, 2, 3);
 
-ALTER TABLE rename_table_multiple RENAME COLUMN value1 TO value1_string, MODIFY COLUMN value1_string String; --{serverError 48}
-ALTER TABLE rename_table_multiple MODIFY COLUMN value1 String, RENAME COLUMN value1 to value1_string; --{serverError 48}
+ALTER TABLE rename_table_multiple RENAME COLUMN value1 TO value1_string, MODIFY COLUMN value1_string String; --{serverError NOT_IMPLEMENTED}
+ALTER TABLE rename_table_multiple MODIFY COLUMN value1 String, RENAME COLUMN value1 to value1_string; --{serverError NOT_IMPLEMENTED}
 
 ALTER TABLE rename_table_multiple RENAME COLUMN value1 TO value1_string;
 ALTER TABLE rename_table_multiple MODIFY COLUMN value1_string String;
@@ -38,8 +38,8 @@ CREATE TABLE rename_table_multiple_compact (key Int32, value1 String, value2 Int
 
 INSERT INTO rename_table_multiple_compact VALUES (1, 2, 3);
 
-ALTER TABLE rename_table_multiple_compact RENAME COLUMN value1 TO value1_string, MODIFY COLUMN value1_string String; --{serverError 48}
-ALTER TABLE rename_table_multiple_compact MODIFY COLUMN value1 String, RENAME COLUMN value1 to value1_string; --{serverError 48}
+ALTER TABLE rename_table_multiple_compact RENAME COLUMN value1 TO value1_string, MODIFY COLUMN value1_string String; --{serverError NOT_IMPLEMENTED}
+ALTER TABLE rename_table_multiple_compact MODIFY COLUMN value1 String, RENAME COLUMN value1 to value1_string; --{serverError NOT_IMPLEMENTED}
 
 ALTER TABLE rename_table_multiple_compact RENAME COLUMN value1 TO value1_string;
 ALTER TABLE rename_table_multiple_compact MODIFY COLUMN value1_string String;

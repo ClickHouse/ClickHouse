@@ -9,7 +9,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
@@ -922,7 +922,16 @@ private:
         if (enable_async_loading)
         {
             /// Put a job to the thread pool for the loading.
-            auto thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
+            ThreadFromGlobalPool thread;
+            try
+            {
+                thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
+            }
+            catch (...)
+            {
+                cancelLoading(info);
+                throw;
+            }
             loading_threads.try_emplace(loading_id, std::move(thread));
         }
         else
@@ -1187,7 +1196,7 @@ private:
         else
         {
             auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-            LOG_TRACE(log, "Supposed update time for unspecified object is {} (backoff, {} errors.", to_string(result), error_count);
+            LOG_TRACE(log, "Supposed update time for unspecified object is {} (backoff, {} errors)", to_string(result), error_count);
             return result;
         }
     }

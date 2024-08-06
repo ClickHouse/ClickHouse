@@ -17,7 +17,7 @@ INSERT INTO test_table(timestamp, value) SELECT toDateTime('2020-01-01 12:00:00'
 INSERT INTO test_table(timestamp, value) SELECT toDateTime('2020-01-02 12:00:00'), 1 FROM numbers(10);
 INSERT INTO test_table(timestamp, value) SELECT toDateTime('2020-01-03 12:00:00'), 1 FROM numbers(10);
 
-set optimize_respect_aliases = 1, optimize_monotonous_functions_in_order_by = 1;
+set optimize_respect_aliases = 1;
 SELECT 'test-partition-prune';
 
 SELECT COUNT() = 10 FROM test_table WHERE day = '2020-01-01' SETTINGS max_rows_to_read = 10;

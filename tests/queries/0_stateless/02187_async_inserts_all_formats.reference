@@ -28,6 +28,9 @@ NDJSON
 Native
 ORC
 Parquet
+Raw
+RawWithNames
+RawWithNamesAndTypes
 RowBinary
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes

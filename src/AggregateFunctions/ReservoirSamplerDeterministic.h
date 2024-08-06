@@ -50,7 +50,7 @@ namespace detail
 }
 
 /// What if there is not a single value - throw an exception, or return 0 or NaN in the case of double?
-enum class ReservoirSamplerDeterministicOnEmpty
+enum class ReservoirSamplerDeterministicOnEmpty : uint8_t
 {
     THROW,
     RETURN_NAN_OR_ZERO,
@@ -161,8 +161,7 @@ public:
         readBinaryLittleEndian(total_values, buf);
 
         /// Compatibility with old versions.
-        if (size > total_values)
-            size = total_values;
+        size = std::min(size, total_values);
 
         static constexpr size_t MAX_RESERVOIR_SIZE = 1_GiB;
         if (unlikely(size > MAX_RESERVOIR_SIZE))

@@ -57,6 +57,8 @@ public:
     QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_);
     ~QueryProfilerBase();
 
+    void setPeriod(UInt32 period_);
+
 private:
     void cleanup();
 

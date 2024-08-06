@@ -1,5 +1,5 @@
 #include <Parsers/formatSettingName.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <base/find_symbols.h>
 #include <IO/Operators.h>

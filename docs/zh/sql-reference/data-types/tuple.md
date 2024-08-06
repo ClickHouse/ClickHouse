@@ -1,7 +1,7 @@
 ---
 slug: /zh/sql-reference/data-types/tuple
 ---
-# Tuple(T1, T2, …) {#tuplet1-t2}
+# Tuple(T1, T2, ...) {#tuplet1-t2}
 
 元组，其中每个元素都有单独的 [类型](index.md#data_types)。
 

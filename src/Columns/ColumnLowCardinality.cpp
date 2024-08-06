@@ -3,9 +3,11 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/NumberTraits.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
+#include <base/types.h>
 #include <base/sort.h>
 #include <base/scope_guard.h>
 
@@ -156,7 +158,11 @@ void ColumnLowCardinality::insertDefault()
     idx.insertPosition(getDictionary().getDefaultValueIndex());
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnLowCardinality::insertFrom(const IColumn & src, size_t n)
+#else
+void ColumnLowCardinality::doInsertFrom(const IColumn & src, size_t n)
+#endif
 {
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
@@ -184,7 +190,11 @@ void ColumnLowCardinality::insertFromFullColumn(const IColumn & src, size_t n)
     idx.insertPosition(getDictionary().uniqueInsertFrom(src, n));
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnLowCardinality::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
@@ -309,19 +319,10 @@ const char * ColumnLowCardinality::skipSerializedInArena(const char * pos) const
     return getDictionary().skipSerializedInArena(pos);
 }
 
-void ColumnLowCardinality::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnLowCardinality::getWeakHash32() const
 {
-    auto s = size();
-
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
-
-    const auto & dict = getDictionary().getNestedColumn();
-    WeakHash32 dict_hash(dict->size());
-    dict->updateWeakHash32(dict_hash);
-
-    idx.updateWeakHash(hash, dict_hash);
+    WeakHash32 dict_hash = getDictionary().getNestedColumn()->getWeakHash32();
+    return idx.getWeakHash(dict_hash);
 }
 
 void ColumnLowCardinality::updateHashFast(SipHash & hash) const
@@ -361,7 +362,11 @@ int ColumnLowCardinality::compareAtImpl(size_t n, size_t m, const IColumn & rhs,
     return getDictionary().compareAt(n_index, m_index, low_cardinality_column.getDictionary(), nan_direction_hint);
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnLowCardinality::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#else
+int ColumnLowCardinality::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+#endif
 {
     return compareAtImpl(n, m, rhs, nan_direction_hint);
 }
@@ -484,6 +489,21 @@ void ColumnLowCardinality::updatePermutationWithCollation(const Collator & colla
     };
 
     updatePermutationImpl(limit, res, equal_ranges, comparator, equal_comparator, DefaultSort(), DefaultPartialSort());
+}
+
+size_t ColumnLowCardinality::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const
+{
+    const size_t range_size = equal_range.size();
+    if (range_size <= 1)
+        return range_size;
+
+    HashSet<UInt64> elements;
+    for (size_t i = equal_range.from; i < equal_range.to; ++i)
+    {
+        UInt64 index = getIndexes().getUInt(permutation[i]);
+        elements.insert(index);
+    }
+    return elements.size();
 }
 
 std::vector<MutableColumnPtr> ColumnLowCardinality::scatter(ColumnIndex num_columns, const Selector & selector) const
@@ -802,10 +822,11 @@ bool ColumnLowCardinality::Index::containsDefault() const
     return contains;
 }
 
-void ColumnLowCardinality::Index::updateWeakHash(WeakHash32 & hash, WeakHash32 & dict_hash) const
+WeakHash32 ColumnLowCardinality::Index::getWeakHash(const WeakHash32 & dict_hash) const
 {
+    WeakHash32 hash(positions->size());
     auto & hash_data = hash.getData();
-    auto & dict_hash_data = dict_hash.getData();
+    const auto & dict_hash_data = dict_hash.getData();
 
     auto update_weak_hash = [&](auto x)
     {
@@ -814,10 +835,11 @@ void ColumnLowCardinality::Index::updateWeakHash(WeakHash32 & hash, WeakHash32 &
         auto size = data.size();
 
         for (size_t i = 0; i < size; ++i)
-            hash_data[i] = static_cast<UInt32>(intHashCRC32(dict_hash_data[data[i]], hash_data[i]));
+            hash_data[i] = dict_hash_data[data[i]];
     };
 
     callForType(std::move(update_weak_hash), size_of_type);
+    return hash;
 }
 
 void ColumnLowCardinality::Index::collectSerializedValueSizes(
@@ -903,7 +925,7 @@ ColumnPtr ColumnLowCardinality::cloneWithDefaultOnNull() const
 
 bool isColumnLowCardinalityNullable(const IColumn & column)
 {
-    if (const auto * lc_column = checkAndGetColumn<ColumnLowCardinality>(column))
+    if (const auto * lc_column = checkAndGetColumn<ColumnLowCardinality>(&column))
         return lc_column->nestedIsNullable();
     return false;
 }

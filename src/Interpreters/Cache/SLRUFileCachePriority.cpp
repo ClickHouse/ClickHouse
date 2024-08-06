@@ -209,8 +209,13 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     {
         return false;
     }
-    else
-        chassert(downgrade_candidates->size() > 0);
+
+    /// We can have no downgrade candidates because cache size could
+    /// reduce concurrently because of lock-free cache entries invalidation.
+    if (downgrade_candidates->size() == 0)
+    {
+        return true;
+    }
 
     if (!probationary_queue.collectCandidatesForEviction(
             downgrade_stat.total_stat.releasable_size, downgrade_stat.total_stat.releasable_count,
@@ -251,6 +256,62 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     return true;
 }
 
+IFileCachePriority::CollectStatus SLRUFileCachePriority::collectCandidatesForEviction(
+    size_t desired_size,
+    size_t desired_elements_count,
+    size_t max_candidates_to_evict,
+    FileCacheReserveStat & stat,
+    EvictionCandidates & res,
+    const CachePriorityGuard::Lock & lock)
+{
+    const auto desired_probationary_size = getRatio(desired_size, 1 - size_ratio);
+    const auto desired_probationary_elements_num = getRatio(desired_elements_count, 1 - size_ratio);
+
+    FileCacheReserveStat probationary_stat;
+    const auto probationary_desired_size_status = probationary_queue.collectCandidatesForEviction(
+        desired_probationary_size, desired_probationary_elements_num,
+        max_candidates_to_evict, probationary_stat, res, lock);
+
+    stat += probationary_stat;
+
+    LOG_TEST(log, "Collected {} to evict from probationary queue "
+             "with total size: {} (result: {}). "
+             "Desired size: {}, desired elements count: {}, current state: {}",
+             probationary_stat.total_stat.releasable_count,
+             probationary_stat.total_stat.releasable_size, res.size(),
+             desired_probationary_size, desired_probationary_elements_num,
+             probationary_queue.getStateInfoForLog(lock));
+
+    chassert(!max_candidates_to_evict || res.size() <= max_candidates_to_evict);
+    chassert(res.size() == stat.total_stat.releasable_count);
+
+    if (probationary_desired_size_status == CollectStatus::REACHED_MAX_CANDIDATES_LIMIT)
+        return probationary_desired_size_status;
+
+    const auto desired_protected_size = getRatio(desired_size, size_ratio);
+    const auto desired_protected_elements_num = getRatio(desired_elements_count, size_ratio);
+
+    FileCacheReserveStat protected_stat;
+    const auto protected_desired_size_status = protected_queue.collectCandidatesForEviction(
+        desired_protected_size, desired_protected_elements_num,
+        max_candidates_to_evict - res.size(), protected_stat, res, lock);
+
+    stat += protected_stat;
+
+    LOG_TEST(log, "Collected {} to evict from protected queue "
+             "with total size: {} (result: {}). "
+             "Desired size: {}, desired elements count: {}, current state: {}",
+             protected_stat.total_stat.releasable_count,
+             protected_stat.total_stat.releasable_size, res.size(),
+             desired_protected_size, desired_protected_elements_num,
+             protected_queue.getStateInfoForLog(lock));
+
+    if (probationary_desired_size_status == CollectStatus::SUCCESS)
+        return protected_desired_size_status;
+    else
+        return probationary_desired_size_status;
+}
+
 void SLRUFileCachePriority::downgrade(IteratorPtr iterator, const CachePriorityGuard::Lock & lock)
 {
     auto * candidate_it = assert_cast<SLRUIterator *>(iterator.get());
@@ -267,7 +328,7 @@ void SLRUFileCachePriority::downgrade(IteratorPtr iterator, const CachePriorityG
                         candidate_it->getEntry()->toString());
     }
 
-    const size_t entry_size = candidate_it->entry->size;
+    const size_t entry_size = candidate_it->getEntry()->size;
     if (!probationary_queue.canFit(entry_size, 1, lock))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -425,7 +486,10 @@ SLRUFileCachePriority::SLRUIterator::SLRUIterator(
 
 SLRUFileCachePriority::EntryPtr SLRUFileCachePriority::SLRUIterator::getEntry() const
 {
-    return entry;
+    auto entry_ptr = entry.lock();
+    if (!entry_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Entry pointer expired");
+    return entry_ptr;
 }
 
 size_t SLRUFileCachePriority::SLRUIterator::increasePriority(const CachePriorityGuard::Lock & lock)

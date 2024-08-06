@@ -1,5 +1,6 @@
 
 #include <Access/ContextAccess.h>
+#include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -25,7 +26,7 @@ namespace ErrorCodes
 
 BlockIO InterpreterCreateIndexQuery::execute()
 {
-    FunctionNameNormalizer().visit(query_ptr.get());
+    FunctionNameNormalizer::visit(query_ptr.get());
     auto current_context = getContext();
     const auto & create_index = query_ptr->as<ASTCreateIndexQuery &>();
 

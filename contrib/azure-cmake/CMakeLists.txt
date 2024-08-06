@@ -10,6 +10,7 @@ set(AZURE_SDK_LIBRARY_DIR "${AZURE_DIR}/sdk")
 
 file(GLOB AZURE_SDK_SRC
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/*.cpp"
+    "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/credentials/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/cryptography/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/http/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/http/curl/*.cpp"

@@ -190,7 +190,7 @@ sidebar_label: "\u53D8\u66F4\u65E5\u5FD7"
 -   如果在获取系统数据时发生了zookeeper异常。副本，将其显示在单独的列中。 这实现了 [#9137](https://github.com/ClickHouse/ClickHouse/issues/9137) [#9138](https://github.com/ClickHouse/ClickHouse/pull/9138) ([阿列克谢-米洛维多夫](https://github.com/alexey-milovidov))
 -   原子删除destroy上的MergeTree数据部分。 [#8402](https://github.com/ClickHouse/ClickHouse/pull/8402) ([Vladimir Chebotarev](https://github.com/excitoon))
 -   支持分布式表的行级安全性。 [#8926](https://github.com/ClickHouse/ClickHouse/pull/8926) ([伊万](https://github.com/abyss7))
--   Now we recognize suffix (like KB, KiB…) in settings values. [#8072](https://github.com/ClickHouse/ClickHouse/pull/8072) ([米哈伊尔\*科罗托夫](https://github.com/millb))
+-   Now we recognize suffix (like KB, KiB...) in settings values. [#8072](https://github.com/ClickHouse/ClickHouse/pull/8072) ([米哈伊尔\*科罗托夫](https://github.com/millb))
 -   在构建大型连接的结果时防止内存不足。 [#8637](https://github.com/ClickHouse/ClickHouse/pull/8637) ([Artem Zuikov](https://github.com/4ertus2))
 -   在交互模式下为建议添加群集名称 `clickhouse-client`. [#8709](https://github.com/ClickHouse/ClickHouse/pull/8709) ([阿列克谢-米洛维多夫](https://github.com/alexey-milovidov))
 -   Initialize query profiler for all threads in a group, e.g. it allows to fully profile insert-queries [#8820](https://github.com/ClickHouse/ClickHouse/pull/8820) ([伊万](https://github.com/abyss7))
@@ -252,7 +252,7 @@ sidebar_label: "\u53D8\u66F4\u65E5\u5FD7"
 -   抑制MSan下的一些测试失败。 [#8780](https://github.com/ClickHouse/ClickHouse/pull/8780) ([Alexander Kuzmenkov](https://github.com/akuzm))
 -   加速 “exception while insert” 测试 此测试通常在具有复盖率的调试版本中超时。 [#8711](https://github.com/ClickHouse/ClickHouse/pull/8711) ([阿列克谢-米洛维多夫](https://github.com/alexey-milovidov))
 -   更新 `libcxx` 和 `libcxxabi` 为了主人 在准备 [#9304](https://github.com/ClickHouse/ClickHouse/issues/9304) [#9308](https://github.com/ClickHouse/ClickHouse/pull/9308) ([阿列克谢-米洛维多夫](https://github.com/alexey-milovidov))
--   修复flacky测试 `00910_zookeeper_test_alter_compression_codecs`. [#9525](https://github.com/ClickHouse/ClickHouse/pull/9525) ([阿列克谢-米洛维多夫](https://github.com/alexey-milovidov))
+-   修复flaky测试 `00910_zookeeper_test_alter_compression_codecs`. [#9525](https://github.com/ClickHouse/ClickHouse/pull/9525) ([阿列克谢-米洛维多夫](https://github.com/alexey-milovidov))
 -   清理重复的链接器标志。 确保链接器不会查找意想不到的符号。 [#9433](https://github.com/ClickHouse/ClickHouse/pull/9433) ([阿莫斯鸟](https://github.com/amosbird))
 -   添加 `clickhouse-odbc` 驱动程序进入测试图像。 这允许通过自己的ODBC驱动程序测试ClickHouse与ClickHouse的交互。 [#9348](https://github.com/ClickHouse/ClickHouse/pull/9348) ([filimonov](https://github.com/filimonov))
 -   修复单元测试中的几个错误。 [#9047](https://github.com/ClickHouse/ClickHouse/pull/9047) ([阿利沙平](https://github.com/alesapin))
@@ -356,7 +356,7 @@ sidebar_label: "\u53D8\u66F4\u65E5\u5FD7"
 
 #### 新功能 {#new-feature-1}
 
--   添加 `deduplicate_blocks_in_dependent_materialized_views` 用于控制具有实例化视图的表中幂等插入的行为的选项。 这个新功能是由Altinity的特殊要求添加到错误修正版本中的。
+-   添加 `deduplicate_blocks_in_dependent_materialized_views` 用于控制具有实例化视图的表中幂等插入的行为的选项。
     [#9070](https://github.com/ClickHouse/ClickHouse/pull/9070) [(urykhy)](https://github.com/urykhy)
 
 ### ClickHouse版本v20.1.2.4,2020-01-22 {#clickhouse-release-v20-1-2-4-2020-01-22}
@@ -523,7 +523,7 @@ sidebar_label: "\u53D8\u66F4\u65E5\u5FD7"
 -   现在后台在磁盘之间移动，运行它的seprate线程池。 [#7670](https://github.com/ClickHouse/ClickHouse/pull/7670) ([Vladimir Chebotarev](https://github.com/excitoon))
 -   `SYSTEM RELOAD DICTIONARY` 现在同步执行。 [#8240](https://github.com/ClickHouse/ClickHouse/pull/8240) ([维塔利\*巴拉诺夫](https://github.com/vitlibar))
 -   堆栈跟踪现在显示物理地址（对象文件中的偏移量），而不是虚拟内存地址（加载对象文件的位置）。 这允许使用 `addr2line` 当二进制独立于位置并且ASLR处于活动状态时。 这修复 [#8360](https://github.com/ClickHouse/ClickHouse/issues/8360). [#8387](https://github.com/ClickHouse/ClickHouse/pull/8387) ([阿列克谢-米洛维多夫](https://github.com/alexey-milovidov))
--   支持行级安全筛选器的新语法: `<table name='table_name'>…</table>`. 修复 [#5779](https://github.com/ClickHouse/ClickHouse/issues/5779). [#8381](https://github.com/ClickHouse/ClickHouse/pull/8381) ([伊万](https://github.com/abyss7))
+-   支持行级安全筛选器的新语法: `<table name='table_name'>...</table>`. 修复 [#5779](https://github.com/ClickHouse/ClickHouse/issues/5779). [#8381](https://github.com/ClickHouse/ClickHouse/pull/8381) ([伊万](https://github.com/abyss7))
 -   现在 `cityHash` 功能可以与工作 `Decimal` 和 `UUID` 类型。 修复 [#5184](https://github.com/ClickHouse/ClickHouse/issues/5184). [#7693](https://github.com/ClickHouse/ClickHouse/pull/7693) ([米哈伊尔\*科罗托夫](https://github.com/millb))
 -   从系统日志中删除了固定的索引粒度（它是1024），因为它在实现自适应粒度之后已经过时。 [#7698](https://github.com/ClickHouse/ClickHouse/pull/7698) ([阿列克谢-米洛维多夫](https://github.com/alexey-milovidov))
 -   当ClickHouse在没有SSL的情况下编译时，启用MySQL兼容服务器。 [#7852](https://github.com/ClickHouse/ClickHouse/pull/7852) ([尤里\*巴拉诺夫](https://github.com/yurriy))

@@ -12,7 +12,7 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
     if (key_columns.size() == 1)
     {
         auto & column = key_columns[0];
-        if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(*column))
+        if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&*column))
         {
             null_map_holder = column_nullable->getNullMapColumnPtr();
             null_map = &column_nullable->getNullMapData();
@@ -23,7 +23,7 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
     {
         for (auto & column : key_columns)
         {
-            if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(*column))
+            if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&*column))
             {
                 column = &column_nullable->getNestedColumn();
 

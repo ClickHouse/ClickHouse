@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -136,7 +137,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
 
 ColumnsDescription TableFunctionExplain::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    Block sample_block = getInterpreter(context).getSampleBlock(query->as<ASTExplainQuery>()->getKind());
+    Block sample_block = getInterpreter(context).getSampleBlock(query->as<ASTExplainQuery>()->getKind()); /// NOLINT(readability-static-accessed-through-instance)
     ColumnsDescription columns_description;
     for (const auto & column : sample_block.getColumnsWithTypeAndName())
         columns_description.add(ColumnDescription(column.name, column.type));

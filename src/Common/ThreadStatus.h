@@ -307,6 +307,8 @@ public:
 
     void flushUntrackedMemory();
 
+    void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
+
 private:
     void applyGlobalSettings();
     void applyQuerySettings();

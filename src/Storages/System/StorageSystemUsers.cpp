@@ -17,6 +17,13 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <Poco/JSONString.h>
+
+#include <Access/Common/SSLCertificateSubjects.h>
+
+#include <base/types.h>
+#include <base/range.h>
+
 #include <sstream>
 
 
@@ -142,10 +149,19 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
             }
             else if (auth_data.getType() == AuthenticationType::SSL_CERTIFICATE)
             {
-                Poco::JSON::Array::Ptr arr = new Poco::JSON::Array();
-                for (const auto & common_name : auth_data.getSSLCertificateCommonNames())
-                    arr->add(common_name);
-                auth_params_json.set("common_names", arr);
+                Poco::JSON::Array::Ptr common_names = new Poco::JSON::Array();
+                Poco::JSON::Array::Ptr subject_alt_names = new Poco::JSON::Array();
+
+                const auto & subjects = auth_data.getSSLCertificateSubjects();
+                for (const String & subject : subjects.at(SSLCertificateSubjects::Type::CN))
+                    common_names->add(subject);
+                for (const String & subject : subjects.at(SSLCertificateSubjects::Type::SAN))
+                    subject_alt_names->add(subject);
+
+                if (common_names->size() > 0)
+                    auth_params_json.set("common_names", common_names);
+                if (subject_alt_names->size() > 0)
+                    auth_params_json.set("subject_alt_names", subject_alt_names);
             }
 
             std::ostringstream oss;         // STYLE_CHECK_ALLOW_STD_STRING_STREAM

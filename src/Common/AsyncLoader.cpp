@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int ASYNC_LOAD_CYCLE;
     extern const int ASYNC_LOAD_FAILED;
     extern const int ASYNC_LOAD_CANCELED;
+    extern const int ASYNC_LOAD_WAIT_FAILED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -48,6 +49,7 @@ void logAboutProgress(LoggerPtr log, size_t processed, size_t total, AtomicStopw
 AsyncLoader::Pool::Pool(const AsyncLoader::PoolInitializer & init)
     : name(init.name)
     , priority(init.priority)
+    , max_threads(init.max_threads > 0 ? init.max_threads : getNumberOfPhysicalCPUCores())
     , thread_pool(std::make_unique<ThreadPool>(
         init.metric_threads,
         init.metric_active_threads,
@@ -55,17 +57,16 @@ AsyncLoader::Pool::Pool(const AsyncLoader::PoolInitializer & init)
         /* max_threads = */ std::numeric_limits<size_t>::max(), // Unlimited number of threads, we do worker management ourselves
         /* max_free_threads = */ 0, // We do not require free threads
         /* queue_size = */0)) // Unlimited queue to avoid blocking during worker spawning
-    , max_threads(init.max_threads > 0 ? init.max_threads : getNumberOfPhysicalCPUCores())
 {}
 
 AsyncLoader::Pool::Pool(Pool&& o) noexcept
     : name(o.name)
     , priority(o.priority)
-    , thread_pool(std::move(o.thread_pool))
     , ready_queue(std::move(o.ready_queue))
     , max_threads(o.max_threads)
     , workers(o.workers)
     , suspended_workers(o.suspended_workers.load()) // All these constructors are needed because std::atomic is neither copy-constructible, nor move-constructible. We never move pools after init, so it is safe.
+    , thread_pool(std::move(o.thread_pool))
 {}
 
 void cancelOnDependencyFailure(const LoadJobPtr & self, const LoadJobPtr & dependency, std::exception_ptr & cancel)
@@ -217,20 +218,27 @@ AsyncLoader::~AsyncLoader()
 {
     // All `LoadTask` objects should be destructed before AsyncLoader destruction because they hold a reference.
     // To make sure we check for all pending jobs to be finished.
-    std::unique_lock lock{mutex};
-    if (scheduled_jobs.empty() && finished_jobs.empty())
-        return;
+    {
+        std::unique_lock lock{mutex};
+        if (!scheduled_jobs.empty() || !finished_jobs.empty())
+        {
+            std::vector<String> scheduled;
+            std::vector<String> finished;
+            scheduled.reserve(scheduled_jobs.size());
+            finished.reserve(finished_jobs.size());
+            for (const auto & [job, _] : scheduled_jobs)
+                scheduled.push_back(job->name);
+            for (const auto & job : finished_jobs)
+                finished.push_back(job->name);
+            LOG_ERROR(log, "Bug. Destruction with pending ({}) and finished ({}) load jobs.", fmt::join(scheduled, ", "), fmt::join(finished, ", "));
+            abort();
+        }
+    }
 
-    std::vector<String> scheduled;
-    std::vector<String> finished;
-    scheduled.reserve(scheduled_jobs.size());
-    finished.reserve(finished_jobs.size());
-    for (const auto & [job, _] : scheduled_jobs)
-        scheduled.push_back(job->name);
-    for (const auto & job : finished_jobs)
-        finished.push_back(job->name);
-    LOG_ERROR(log, "Bug. Destruction with pending ({}) and finished ({}) load jobs.", fmt::join(scheduled, ", "), fmt::join(finished, ", "));
-    abort();
+    // When all jobs are done we could still have finalizing workers.
+    // These workers could call updateCurrentPriorityAndSpawn() that scans all pools.
+    // We need to stop all of them before destructing any of them.
+    stop();
 }
 
 void AsyncLoader::start()
@@ -433,7 +441,7 @@ void AsyncLoader::wait(const LoadJobPtr & job, bool no_throw)
     std::unique_lock job_lock{job->mutex};
     wait(job_lock, job);
     if (!no_throw && job->load_exception)
-        std::rethrow_exception(job->load_exception);
+        throw Exception(ErrorCodes::ASYNC_LOAD_WAIT_FAILED, "Waited job failed: {}", getExceptionMessage(job->load_exception, /* with_stacktrace = */ false));
 }
 
 void AsyncLoader::remove(const LoadJobSet & jobs)
@@ -873,6 +881,7 @@ void AsyncLoader::spawn(Pool & pool, std::unique_lock<std::mutex> & lock)
         ALLOW_ALLOCATIONS_IN_SCOPE;
         if (log_events)
             LOG_DEBUG(log, "Spawn loader worker #{} in {}", pool.workers, pool.name);
+        auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
         pool.thread_pool->scheduleOrThrowOnError([this, &pool] { worker(pool); });
     });
 }

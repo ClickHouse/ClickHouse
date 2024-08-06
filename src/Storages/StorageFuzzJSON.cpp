@@ -437,7 +437,7 @@ void fuzzJSONObject(
         bool first = true;
         for (const auto & ptr : node_list)
         {
-            if (node_count >= config.value_number_limit)
+            if (node_count >= StorageFuzzJSON::Configuration::value_number_limit)
                 break;
 
             WriteBufferFromOwnString child_out;
@@ -458,7 +458,7 @@ void fuzzJSONObject(
 void fuzzJSONObject(std::shared_ptr<JSONNode> n, WriteBuffer & out, const StorageFuzzJSON::Configuration & config, pcg64 & rnd)
 {
     size_t node_count = 0;
-    return fuzzJSONObject(n, out, config, rnd, /*depth*/ 0, node_count);
+    fuzzJSONObject(n, out, config, rnd, /*depth*/ 0, node_count);
 }
 
 class FuzzJSONSource : public ISource

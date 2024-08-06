@@ -18,6 +18,7 @@
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/UserInfo.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <filesystem>
 
 
@@ -78,6 +79,8 @@ public:
     ~FileCache();
 
     void initialize();
+
+    bool isInitialized() const;
 
     const String & getBasePath() const;
 
@@ -186,6 +189,8 @@ public:
 
     void applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings);
 
+    void freeSpaceRatioKeepingThreadFunc();
+
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
@@ -194,6 +199,11 @@ private:
     const size_t boundary_alignment;
     size_t load_metadata_threads;
     const bool write_cache_per_user_directory;
+
+    BackgroundSchedulePool::TaskHolder keep_up_free_space_ratio_task;
+    const double keep_current_size_to_max_ratio;
+    const double keep_current_elements_to_max_ratio;
+    const size_t keep_up_free_space_remove_batch;
 
     LoggerPtr log;
 
@@ -253,17 +263,12 @@ private:
 
     /// Split range into subranges by max_file_segment_size,
     /// each subrange size must be less or equal to max_file_segment_size.
-    std::vector<FileSegment::Range> splitRange(size_t offset, size_t size);
+    std::vector<FileSegment::Range> splitRange(size_t offset, size_t size, size_t aligned_size);
 
-    /// Split range into subranges by max_file_segment_size (same as in splitRange())
-    /// and create a new file segment for each subrange.
-    /// If `file_segments_limit` > 0, create no more than first file_segments_limit
-    /// file segments.
-    FileSegments splitRangeIntoFileSegments(
+    FileSegments createFileSegmentsFromRanges(
         LockedKey & locked_key,
-        size_t offset,
-        size_t size,
-        FileSegment::State state,
+        const std::vector<FileSegment::Range> & ranges,
+        size_t & file_segments_count,
         size_t file_segments_limit,
         const CreateFileSegmentSettings & create_settings);
 
@@ -271,6 +276,7 @@ private:
         LockedKey & locked_key,
         FileSegments & file_segments,
         const FileSegment::Range & range,
+        size_t non_aligned_right_offset,
         size_t file_segments_limit,
         bool fill_with_detached_file_segments,
         const CreateFileSegmentSettings & settings);

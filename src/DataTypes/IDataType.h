@@ -11,6 +11,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+
 class ReadBuffer;
 class WriteBuffer;
 
@@ -311,8 +317,13 @@ public:
     /// Strings, Numbers, Date, DateTime, Nullable
     virtual bool canBeInsideLowCardinality() const { return false; }
 
-    /// Object, Array(Object), Tuple(..., Object, ...)
-    virtual bool hasDynamicSubcolumns() const { return false; }
+    /// Checks for deprecated Object type usage recursively: Object, Array(Object), Tuple(..., Object, ...)
+    virtual bool hasDynamicSubcolumnsDeprecated() const { return false; }
+
+    /// Checks if column has dynamic subcolumns.
+    virtual bool hasDynamicSubcolumns() const;
+    /// Checks if column can create dynamic subcolumns data and getDynamicSubcolumnData can be called.
+    virtual bool hasDynamicSubcolumnsData() const { return false; }
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
@@ -329,16 +340,25 @@ protected:
     mutable SerializationPtr custom_serialization;
 
 public:
+    bool hasCustomName() const { return static_cast<bool>(custom_name.get()); }
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
 
-private:
-    template <typename Ptr>
-    Ptr getForSubcolumn(
+protected:
+    static std::unique_ptr<SubstreamData> getSubcolumnData(
         std::string_view subcolumn_name,
         const SubstreamData & data,
-        Ptr SubstreamData::*member,
-        bool throw_if_null) const;
+        bool throw_if_null);
+
+    virtual std::unique_ptr<SubstreamData> getDynamicSubcolumnData(
+        std::string_view /*subcolumn_name*/,
+        const SubstreamData & /*data*/,
+        bool throw_if_null) const
+    {
+        if (throw_if_null)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData() is not implemented for type {}", getName());
+        return nullptr;
+    }
 };
 
 
@@ -423,6 +443,7 @@ struct WhichDataType
     constexpr bool isLowCardinality() const { return idx == TypeIndex::LowCardinality; }
 
     constexpr bool isVariant() const { return idx == TypeIndex::Variant; }
+    constexpr bool isDynamic() const { return idx == TypeIndex::Dynamic; }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
@@ -483,6 +504,7 @@ bool isMap(TYPE data_type); \
 bool isInterval(TYPE data_type); \
 bool isObject(TYPE data_type); \
 bool isVariant(TYPE data_type); \
+bool isDynamic(TYPE data_type); \
 bool isNothing(TYPE data_type); \
 \
 bool isColumnedAsNumber(TYPE data_type); \
@@ -521,6 +543,7 @@ template <typename DataType> constexpr bool IsDataTypeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
 template <typename DataType> constexpr bool IsDataTypeDate = false;
 template <typename DataType> constexpr bool IsDataTypeEnum = false;
+template <typename DataType> constexpr bool IsDataTypeStringOrFixedString = false;
 
 template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
 
@@ -534,6 +557,8 @@ class DataTypeDate;
 class DataTypeDate32;
 class DataTypeDateTime;
 class DataTypeDateTime64;
+class DataTypeString;
+class DataTypeFixedString;
 
 template <is_decimal T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
 
@@ -549,6 +574,9 @@ template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate32> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
+
+template <> inline constexpr bool IsDataTypeStringOrFixedString<DataTypeString> = true;
+template <> inline constexpr bool IsDataTypeStringOrFixedString<DataTypeFixedString> = true;
 
 template <typename T>
 class DataTypeEnum;
@@ -601,7 +629,7 @@ struct fmt::formatter<DB::DataTypePtr>
     }
 
     template <typename FormatContext>
-    auto format(const DB::DataTypePtr & type, FormatContext & ctx)
+    auto format(const DB::DataTypePtr & type, FormatContext & ctx) const
     {
         return fmt::format_to(ctx.out(), "{}", type->getName());
     }

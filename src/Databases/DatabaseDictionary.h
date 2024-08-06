@@ -34,7 +34,7 @@ public:
 
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     bool empty() const override;
 

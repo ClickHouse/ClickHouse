@@ -11,7 +11,7 @@ class NetException : public Exception
 public:
     template <typename T>
     requires std::is_convertible_v<T, String>
-    NetException(int code, T && message) : Exception(std::forward<T>(message), code)
+    NetException(int code, T && message) : Exception(message, code)
     {
         message_format_string = tryGetStaticFormatString(message);
     }

@@ -47,11 +47,12 @@ namespace ErrorCodes
 namespace
 {
 
-enum class GroupArraySortedStrategy
+enum class GroupArraySortedStrategy : uint8_t
 {
     heap,
     sort
 };
+
 
 constexpr size_t group_array_sorted_sort_strategy_max_elements_threshold = 1000000;
 
@@ -207,6 +208,14 @@ struct GroupArraySortedData
 
             for (size_t i = 0; i < values.size(); ++i)
                 result_array_data[result_array_data_insert_begin + i] = values[i];
+        }
+    }
+
+    ~GroupArraySortedData()
+    {
+        for (auto & value : values)
+        {
+            value.~T();
         }
     }
 };
@@ -365,10 +374,10 @@ AggregateFunctionPtr createWithNumericOrTimeType(const IDataType & argument_type
 template <template <typename> class AggregateFunctionTemplate, typename ... TArgs>
 inline AggregateFunctionPtr createAggregateFunctionGroupArraySortedImpl(const DataTypePtr & argument_type, const Array & parameters, TArgs ... args)
 {
-    if (auto res = createWithNumericOrTimeType<AggregateFunctionTemplate>(*argument_type, argument_type, parameters, std::forward<TArgs>(args)...))
+    if (auto res = createWithNumericOrTimeType<AggregateFunctionTemplate>(*argument_type, argument_type, parameters, args...))
         return AggregateFunctionPtr(res);
 
-    return std::make_shared<AggregateFunctionTemplate<Field>>(argument_type, parameters, std::forward<TArgs>(args)...);
+    return std::make_shared<AggregateFunctionTemplate<Field>>(argument_type, parameters, args...);
 }
 
 AggregateFunctionPtr createAggregateFunctionGroupArray(

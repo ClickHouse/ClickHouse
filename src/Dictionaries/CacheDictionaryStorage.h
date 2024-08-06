@@ -189,7 +189,6 @@ private:
         const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
         size_t fetched_columns_index = 0;
-        size_t fetched_columns_index_without_default = 0;
         size_t keys_size = keys.size();
 
         PaddedPODArray<FetchedKey> fetched_keys;
@@ -211,14 +210,9 @@ private:
 
             result.expired_keys_size += static_cast<size_t>(key_state == KeyState::expired);
 
-            result.key_index_to_state[key_index] = {key_state,
-                default_mask ? fetched_columns_index_without_default : fetched_columns_index};
+            result.key_index_to_state[key_index] = {key_state, fetched_columns_index};
             fetched_keys[fetched_columns_index] = FetchedKey(cell.element_index, cell.is_default);
-
             ++fetched_columns_index;
-
-            if (!cell.is_default)
-                ++fetched_columns_index_without_default;
 
             result.key_index_to_state[key_index].setDefaultValue(cell.is_default);
             result.default_keys_size += cell.is_default;
@@ -233,8 +227,7 @@ private:
 
             auto & attribute = attributes[attribute_index];
             auto & fetched_column = *result.fetched_columns[attribute_index];
-            fetched_column.reserve(default_mask ? fetched_columns_index_without_default :
-                                                  fetched_columns_index);
+            fetched_column.reserve(fetched_columns_index);
 
             if (!default_mask)
             {
@@ -689,7 +682,11 @@ private:
             auto fetched_key = fetched_keys[fetched_key_index];
 
             if (unlikely(fetched_key.is_default))
+            {
                 default_mask[fetched_key_index] = 1;
+                auto v = ValueType{};
+                value_setter(v);
+            }
             else
             {
                 default_mask[fetched_key_index] = 0;
@@ -754,7 +751,7 @@ private:
 
     std::vector<Attribute> attributes;
 
-    inline void setCellDeadline(Cell & cell, TimePoint now)
+    void setCellDeadline(Cell & cell, TimePoint now)
     {
         if (configuration.lifetime.min_sec == 0 && configuration.lifetime.max_sec == 0)
         {
@@ -774,7 +771,7 @@ private:
         cell.deadline = std::chrono::system_clock::to_time_t(deadline);
     }
 
-    inline size_t getCellIndex(const KeyType key) const
+    size_t getCellIndex(const KeyType key) const
     {
         const size_t hash = DefaultHash<KeyType>()(key);
         const size_t index = hash & size_overlap_mask;
@@ -783,7 +780,7 @@ private:
 
     using KeyStateAndCellIndex = std::pair<KeyState::State, size_t>;
 
-    inline KeyStateAndCellIndex getKeyStateAndCellIndex(const KeyType key, const time_t now) const
+    KeyStateAndCellIndex getKeyStateAndCellIndex(const KeyType key, const time_t now) const
     {
         size_t place_value = getCellIndex(key);
         const size_t place_value_end = place_value + max_collision_length;
@@ -810,7 +807,7 @@ private:
         return std::make_pair(KeyState::not_found, place_value & size_overlap_mask);
     }
 
-    inline size_t getCellIndexForInsert(const KeyType & key) const
+    size_t getCellIndexForInsert(const KeyType & key) const
     {
         size_t place_value = getCellIndex(key);
         const size_t place_value_end = place_value + max_collision_length;

@@ -192,8 +192,7 @@ void ExecutorTasks::fill(Queue & queue)
 void ExecutorTasks::upscale(size_t use_threads_)
 {
     std::lock_guard lock(mutex);
-    if (use_threads < use_threads_)
-        use_threads = use_threads_;
+    use_threads = std::max(use_threads, use_threads_);
 }
 
 void ExecutorTasks::processAsyncTasks()
@@ -205,6 +204,8 @@ void ExecutorTasks::processAsyncTasks()
         while (auto task = async_task_queue.wait(lock))
         {
             auto * node = static_cast<ExecutingGraph::Node *>(task.data);
+            node->processor->onAsyncJobReady();
+
             executor_contexts[task.thread_num]->pushAsyncTask(node);
             ++num_waiting_async_tasks;
 

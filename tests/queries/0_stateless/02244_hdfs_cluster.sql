@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel, no-cpu-aarch64
+-- Tags: no-fasttest, no-parallel
 -- Tag no-fasttest: Depends on Java
 
 insert into table function hdfs('hdfs://localhost:12222/test_1.tsv', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32') select 1, 2, 3 settings hdfs_truncate_on_insert=1;

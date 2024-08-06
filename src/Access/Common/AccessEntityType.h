@@ -7,7 +7,7 @@ namespace DB
 {
 
 /// Represents the type of an access entity (see the IAccessEntity class).
-enum class AccessEntityType
+enum class AccessEntityType : uint8_t
 {
     USER,
     ROLE,

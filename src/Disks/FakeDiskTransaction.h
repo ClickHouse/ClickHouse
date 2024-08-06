@@ -2,9 +2,15 @@
 
 #include <Disks/IDiskTransaction.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 /// Fake disk transaction implementation.
 /// Just execute all operations immediately, commit is noop operation.
@@ -132,6 +138,11 @@ public:
     void createHardLink(const std::string & src_path, const std::string & dst_path) override
     {
         disk.createHardLink(src_path, dst_path);
+    }
+
+    void truncateFile(const std::string & /* src_path */, size_t /* target_size */) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Operation `truncateFile` is not implemented");
     }
 
 private:

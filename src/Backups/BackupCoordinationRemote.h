@@ -41,23 +41,23 @@ public:
     Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) override;
 
     void addReplicatedPartNames(
-        const String & table_shared_id,
+        const String & table_zk_path,
         const String & table_name_for_logs,
         const String & replica_name,
         const std::vector<PartNameAndChecksum> & part_names_and_checksums) override;
 
-    Strings getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const override;
+    Strings getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const override;
 
     void addReplicatedMutations(
-        const String & table_shared_id,
+        const String & table_zk_path,
         const String & table_name_for_logs,
         const String & replica_name,
         const std::vector<MutationInfo> & mutations) override;
 
-    std::vector<MutationInfo> getReplicatedMutations(const String & table_shared_id, const String & replica_name) const override;
+    std::vector<MutationInfo> getReplicatedMutations(const String & table_zk_path, const String & replica_name) const override;
 
-    void addReplicatedDataPath(const String & table_shared_id, const String & data_path) override;
-    Strings getReplicatedDataPaths(const String & table_shared_id) const override;
+    void addReplicatedDataPath(const String & table_zk_path, const String & data_path) override;
+    Strings getReplicatedDataPaths(const String & table_zk_path) const override;
 
     void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & file_path) override;
     Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type) const override;

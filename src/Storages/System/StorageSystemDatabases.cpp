@@ -102,7 +102,7 @@ static ColumnPtr getFilteredDatabases(const Databases & databases, const Actions
 void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const
 {
     const auto access = context->getAccess();
-    const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
+    const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
     const auto databases = DatabaseCatalog::instance().getDatabases();
     ColumnPtr filtered_databases_column = getFilteredDatabases(databases, predicate, context);
@@ -111,7 +111,7 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
     {
         auto database_name = filtered_databases_column->getDataAt(i).toString();
 
-        if (check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
+        if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
             continue;
 
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
