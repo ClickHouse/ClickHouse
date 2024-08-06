@@ -44,7 +44,8 @@ protected:
         const NameAndTypePair & name_and_type,
         ColumnPtr & column,
         size_t rows_to_read,
-        const InputStreamGetter & getter);
+        const InputStreamGetter & getter,
+        ISerialization::SubstreamsCache & cache);
 
     void readPrefix(
         const NameAndTypePair & name_and_type,

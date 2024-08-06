@@ -147,7 +147,8 @@ void MergeTreeReaderCompact::readData(
     const NameAndTypePair & name_and_type,
     ColumnPtr & column,
     size_t rows_to_read,
-    const InputStreamGetter & getter)
+    const InputStreamGetter & getter,
+    ISerialization::SubstreamsCache & cache)
 {
     try
     {
@@ -157,6 +158,13 @@ void MergeTreeReaderCompact::readData(
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.getter = getter;
         deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
+
+        auto it = cache.find(name);
+        if (it != cache.end() && it->second != nullptr)
+        {
+            column = it->second;
+            return;
+        }
 
         if (name_and_type.isSubcolumn())
         {
@@ -180,6 +188,8 @@ void MergeTreeReaderCompact::readData(
             auto serialization = getSerializationInPart(name_and_type);
             serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], nullptr);
         }
+
+        cache.emplace(name, column);
 
         size_t read_rows_in_column = column->size() - column_size_before_reading;
         if (read_rows_in_column != rows_to_read)

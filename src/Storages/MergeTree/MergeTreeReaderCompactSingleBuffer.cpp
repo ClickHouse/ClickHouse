@@ -22,6 +22,10 @@ try
     checkNumberOfColumns(num_columns);
     createColumnsForReading(res_columns);
 
+    /// Use cache to avoid reading the column with the same name twice.
+    /// It may happen if there are empty array Nested in the part.
+    std::unordered_map<String, ISerialization::SubstreamsCache> caches;
+
     while (read_rows < max_rows_to_read)
     {
         size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
@@ -32,6 +36,7 @@ try
                 continue;
 
             auto & column = res_columns[pos];
+            auto & cache = caches[columns_to_read[pos].name];
 
             stream->adjustRightMark(current_task_last_mark); /// Must go before seek.
             stream->seekToMarkAndColumn(from_mark, *column_positions[pos]);
@@ -52,7 +57,7 @@ try
             };
 
             readPrefix(columns_to_read[pos], buffer_getter, buffer_getter_for_prefix, columns_for_offsets[pos]);
-            readData(columns_to_read[pos], column, rows_to_read, buffer_getter);
+            readData(columns_to_read[pos], column, rows_to_read, buffer_getter, cache);
         }
 
         ++from_mark;
