@@ -24,6 +24,7 @@ ColumnsDescription BackupLogElement::getColumnsDescription()
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
         {"event_date", std::make_shared<DataTypeDate>(), "Date of the entry."},
+        {"event_time", std::make_shared<DataTypeDateTime>(), "Time of the entry."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Time of the entry with microseconds precision."},
         {"id", std::make_shared<DataTypeString>(), "Identifier of the backup or restore operation."},
         {"name", std::make_shared<DataTypeString>(), "Name of the backup storage (the contents of the FROM or TO clause)."},
@@ -48,6 +49,7 @@ void BackupLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
     columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(std::chrono::system_clock::to_time_t(event_time)).toUnderType());
+    columns[i++]->insert(std::chrono::system_clock::to_time_t(event_time));
     columns[i++]->insert(event_time_usec);
     columns[i++]->insert(info.id);
     columns[i++]->insert(info.name);

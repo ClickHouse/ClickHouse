@@ -115,18 +115,18 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("set", setIndexCreator);
     registerValidator("set", setIndexValidator);
 
-    registerCreator("ngrambf_v1", bloomFilterIndexCreator);
-    registerValidator("ngrambf_v1", bloomFilterIndexValidator);
+    registerCreator("ngrambf_v1", bloomFilterIndexTextCreator);
+    registerValidator("ngrambf_v1", bloomFilterIndexTextValidator);
 
-    registerCreator("tokenbf_v1", bloomFilterIndexCreator);
-    registerValidator("tokenbf_v1", bloomFilterIndexValidator);
+    registerCreator("tokenbf_v1", bloomFilterIndexTextCreator);
+    registerValidator("tokenbf_v1", bloomFilterIndexTextValidator);
 
-    registerCreator("bloom_filter", bloomFilterIndexCreatorNew);
-    registerValidator("bloom_filter", bloomFilterIndexValidatorNew);
+    registerCreator("bloom_filter", bloomFilterIndexCreator);
+    registerValidator("bloom_filter", bloomFilterIndexValidator);
 
     registerCreator("hypothesis", hypothesisIndexCreator);
-    registerValidator("hypothesis", hypothesisIndexValidator);
 
+    registerValidator("hypothesis", hypothesisIndexValidator);
 #ifdef ENABLE_ANNOY
     registerCreator("annoy", annoyIndexCreator);
     registerValidator("annoy", annoyIndexValidator);
@@ -137,9 +137,16 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerValidator("usearch", usearchIndexValidator);
 #endif
 
-    registerCreator("inverted", invertedIndexCreator);
-    registerValidator("inverted", invertedIndexValidator);
+    registerCreator("inverted", fullTextIndexCreator);
+    registerValidator("inverted", fullTextIndexValidator);
 
+    /// ------
+    /// TODO: remove this block at the end of 2024.
+    /// Index type 'inverted' was renamed to 'full_text' in May 2024.
+    /// To support loading tables with old indexes during a transition period, register full-text indexes under their old name.
+    registerCreator("full_text", fullTextIndexCreator);
+    registerValidator("full_text", fullTextIndexValidator);
+    /// ------
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

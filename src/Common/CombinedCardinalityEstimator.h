@@ -16,7 +16,12 @@ namespace ErrorCodes
 namespace details
 {
 
-enum class ContainerType : uint8_t { SMALL = 1, MEDIUM = 2, LARGE = 3 };
+enum class ContainerType : uint8_t
+{
+    SMALL = 1,
+    MEDIUM = 2,
+    LARGE = 3
+};
 
 static inline ContainerType max(const ContainerType & lhs, const ContainerType & rhs)
 {
@@ -287,13 +292,13 @@ private:
     }
 
     template <typename T>
-    inline T & getContainer()
+    T & getContainer()
     {
         return *reinterpret_cast<T *>(address & mask);
     }
 
     template <typename T>
-    inline const T & getContainer() const
+    const T & getContainer() const
     {
         return *reinterpret_cast<T *>(address & mask);
     }
@@ -304,7 +309,7 @@ private:
         address |= static_cast<UInt8>(t);
     }
 
-    inline details::ContainerType getContainerType() const
+    details::ContainerType getContainerType() const
     {
         return static_cast<details::ContainerType>(address & ~mask);
     }

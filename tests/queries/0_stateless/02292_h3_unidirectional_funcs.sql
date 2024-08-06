@@ -23,7 +23,7 @@ SELECT h3GetUnidirectionalEdgesFromHexagon(stringToH3('85283473ffffff'));
 
 select h3GetUnidirectionalEdge(stringToH3('85283473fffffff'), stringToH3('85283477fffffff'));
 select h3GetUnidirectionalEdge(stringToH3('85283473fffffff'), stringToH3('85283473fffffff'));
-SELECT h3GetUnidirectionalEdge(stringToH3('85283473ffffff'), stringToH3('852\03477fffffff')); -- { serverError 43 }
+SELECT h3GetUnidirectionalEdge(stringToH3('85283473ffffff'), stringToH3('852\03477fffffff')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT h3UnidirectionalEdgeIsValid(1248204388774707199) as edge;
 SELECT h3UnidirectionalEdgeIsValid(1248204388774707197) as edge;

@@ -23,5 +23,5 @@ LAYOUT(DIRECT());
 
 SELECT * FROM dictionary('table_function_dictionary_test_dictionary');
 
-DROP TABLE table_function_dictionary_source_table;
 DROP DICTIONARY table_function_dictionary_test_dictionary;
+DROP TABLE table_function_dictionary_source_table;

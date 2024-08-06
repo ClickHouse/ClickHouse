@@ -78,4 +78,4 @@ SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wi
 
 INSERT INTO table_one SELECT intDiv(number, 10), number   FROM numbers(100);
 
-ALTER TABLE table_two REPLACE PARTITION 0 FROM table_one; -- { serverError 36 }
+ALTER TABLE table_two REPLACE PARTITION 0 FROM table_one; -- { serverError BAD_ARGUMENTS }

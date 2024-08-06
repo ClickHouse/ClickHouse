@@ -38,7 +38,7 @@ bool isAllArgumentsContiguousInMemory(const DataTypes & argument_types);
 template <>
 struct UniqVariadicHash<false, false>
 {
-    static inline UInt64 apply(size_t num_args, const IColumn ** columns, size_t row_num)
+    static UInt64 apply(size_t num_args, const IColumn ** columns, size_t row_num)
     {
         UInt64 hash;
 
@@ -65,7 +65,7 @@ struct UniqVariadicHash<false, false>
 template <>
 struct UniqVariadicHash<false, true>
 {
-    static inline UInt64 apply(size_t num_args, const IColumn ** columns, size_t row_num)
+    static UInt64 apply(size_t num_args, const IColumn ** columns, size_t row_num)
     {
         UInt64 hash;
 
@@ -94,7 +94,7 @@ struct UniqVariadicHash<false, true>
 template <>
 struct UniqVariadicHash<true, false>
 {
-    static inline UInt128 apply(size_t num_args, const IColumn ** columns, size_t row_num)
+    static UInt128 apply(size_t num_args, const IColumn ** columns, size_t row_num)
     {
         const IColumn ** column = columns;
         const IColumn ** columns_end = column + num_args;
@@ -114,7 +114,7 @@ struct UniqVariadicHash<true, false>
 template <>
 struct UniqVariadicHash<true, true>
 {
-    static inline UInt128 apply(size_t num_args, const IColumn ** columns, size_t row_num)
+    static UInt128 apply(size_t num_args, const IColumn ** columns, size_t row_num)
     {
         const auto & tuple_columns = assert_cast<const ColumnTuple *>(columns[0])->getColumns();
 

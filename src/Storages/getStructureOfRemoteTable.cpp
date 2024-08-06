@@ -1,4 +1,5 @@
 #include "getStructureOfRemoteTable.h"
+#include <Core/Settings.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -64,7 +65,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     /// Ignore limit for result number of rows (that could be set during handling CSE/CTE),
     /// since this is a service query and should not lead to query failure.
     {
-        Settings new_settings = new_context->getSettings();
+        Settings new_settings = new_context->getSettingsCopy();
         new_settings.max_result_rows = 0;
         new_settings.max_result_bytes = 0;
         new_context->setSettings(new_settings);
@@ -210,7 +211,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
                 auto type_name = type_col[i].get<const String &>();
 
                 auto storage_column = storage_columns.tryGetPhysical(name);
-                if (storage_column && storage_column->type->hasDynamicSubcolumns())
+                if (storage_column && storage_column->type->hasDynamicSubcolumnsDeprecated())
                     res.add(ColumnDescription(std::move(name), DataTypeFactory::instance().get(type_name)));
             }
         }

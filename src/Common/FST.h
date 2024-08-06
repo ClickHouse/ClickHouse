@@ -11,6 +11,7 @@
 #include <base/types.h>
 #include <absl/container/flat_hash_map.h>
 
+
 namespace DB
 {
 /// Finite State Transducer is an efficient way to represent term dictionary.
@@ -70,7 +71,7 @@ class State
 {
 public:
     static constexpr size_t MAX_ARCS_IN_SEQUENTIAL_METHOD = 32;
-    enum class EncodingMethod
+    enum class EncodingMethod : uint8_t
     {
         /// Serialize arcs sequentially
         Sequential = 0,

@@ -27,15 +27,8 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         response.setContentType("text/plain; version=0.0.4; charset=UTF-8");
 
         WriteBufferFromHTTPServerResponse wb(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, write_event);
-        try
-        {
-            metrics_writer->write(wb);
-            wb.finalize();
-        }
-        catch (...)
-        {
-            wb.finalize();
-        }
+        metrics_writer->write(wb);
+        wb.finalize();
     }
     catch (...)
     {

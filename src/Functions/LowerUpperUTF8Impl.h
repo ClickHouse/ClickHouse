@@ -1,8 +1,10 @@
 #pragma once
 #include <Columns/ColumnString.h>
-#include <Poco/UTF8Encoding.h>
-#include <Common/UTF8Helpers.h>
+#include <Functions/LowerUpperImpl.h>
 #include <base/defines.h>
+#include <Poco/UTF8Encoding.h>
+#include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -88,16 +90,25 @@ struct LowerUpperUTF8Impl
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         if (data.empty())
             return;
-        res_data.resize(data.size());
+
+        bool all_ascii = isAllASCII(data.data(), data.size());
+        if (all_ascii)
+        {
+            LowerUpperImpl<not_case_lower_bound, not_case_upper_bound>::vector(data, offsets, res_data, res_offsets, input_rows_count);
+            return;
+        }
+
+        res_data.resize_exact(data.size());
         res_offsets.assign(offsets);
         array(data.data(), data.data() + data.size(), offsets, res_data.data());
     }
 
-    static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Functions lowerUTF8 and upperUTF8 cannot work with FixedString argument");
     }

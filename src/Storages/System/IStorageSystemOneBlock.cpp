@@ -91,7 +91,8 @@ void ReadFromSystemOneBlock::initializePipeline(QueryPipelineBuilder & pipeline,
 
 void ReadFromSystemOneBlock::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 }

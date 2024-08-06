@@ -2,7 +2,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/parseAddress.h>
 #include <Common/randomSeed.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
@@ -392,10 +392,10 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     config_prefix += ".";
 
     secret = config.getString(config_prefix + "secret", "");
-    boost::range::remove_erase(config_keys, "secret");
+    std::erase(config_keys, "secret");
 
     allow_distributed_ddl_queries = config.getBool(config_prefix + "allow_distributed_ddl_queries", true);
-    boost::range::remove_erase(config_keys, "allow_distributed_ddl_queries");
+    std::erase(config_keys, "allow_distributed_ddl_queries");
 
     if (config_keys.empty())
         throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "No cluster elements (shard, node) specified in config at path {}", config_prefix);

@@ -853,7 +853,7 @@ Please note that the functions listed below only take constant parameters for no
 ## KQL() function
 
  - create table  
-  `CREATE TABLE kql_table4 ENGINE = Memory AS select *, now() as new_column From kql(Customers | project LastName,Age);`  
+  `CREATE TABLE kql_table4 ENGINE = Memory AS select *, now() as new_column From kql($$Customers | project LastName,Age$$);`  
    verify the content of `kql_table`  
     `select * from kql_table`
    
@@ -867,12 +867,12 @@ Please note that the functions listed below only take constant parameters for no
         Age Nullable(UInt8)
     ) ENGINE = Memory;
     ```
-    `INSERT INTO temp select * from kql(Customers|project FirstName,LastName,Age);`  
+    `INSERT INTO temp select * from kql($$Customers|project FirstName,LastName,Age$$);`  
     verify the content of `temp`   
         `select * from temp`
 
- - Select from kql()  
-    `Select * from kql(Customers|project FirstName)`
+ - Select from kql(...)  
+    `Select * from kql($$Customers|project FirstName$$)`
 
 ## KQL operators:
  - Tabular expression statements  
@@ -993,4 +993,3 @@ Please note that the functions listed below only take constant parameters for no
  - dcount()
  - dcountif()
  - bin
- 

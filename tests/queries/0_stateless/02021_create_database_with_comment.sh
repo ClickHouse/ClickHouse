@@ -34,5 +34,4 @@ test_db_comments "Ordinary"
 test_db_comments "Lazy(1)"
 # test_db_comments "MySQL('127.0.0.1:9004', 'default', 'default', '')" # fails due to CH internal reasons
 # test_db_comments "SQLite('dummy_sqlitedb')"
-## needs to be explicitly enabled with `SET allow_experimental_database_replicated=1`
 # test_db_comments "Replicated('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX', '1') ORDER BY k"

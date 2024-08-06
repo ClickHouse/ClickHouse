@@ -105,17 +105,17 @@ std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_nam
 
 void BackupWriterFile::removeFile(const String & file_name)
 {
-    fs::remove(root_path / file_name);
+    (void)fs::remove(root_path / file_name);
     if (fs::is_directory(root_path) && fs::is_empty(root_path))
-        fs::remove(root_path);
+        (void)fs::remove(root_path);
 }
 
 void BackupWriterFile::removeFiles(const Strings & file_names)
 {
     for (const auto & file_name : file_names)
-        fs::remove(root_path / file_name);
+        (void)fs::remove(root_path / file_name);
     if (fs::is_directory(root_path) && fs::is_empty(root_path))
-        fs::remove(root_path);
+        (void)fs::remove(root_path);
 }
 
 void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,

@@ -160,7 +160,8 @@ WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
 {
     try
     {
-        finalize();
+        if (!canceled)
+            finalize();
     }
     catch (...)
     {

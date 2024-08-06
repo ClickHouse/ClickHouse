@@ -235,6 +235,7 @@ void DatabasesOverlay::createTableRestoredFromBackup(
     /// Creates a tables by executing a "CREATE TABLE" query.
     InterpreterCreateQuery interpreter{create_table_query, local_context};
     interpreter.setInternal(true);
+    interpreter.setIsRestoreFromBackup(true);
     interpreter.execute();
 }
 

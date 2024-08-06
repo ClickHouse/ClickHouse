@@ -23,6 +23,9 @@ void BlobStorageLogWriter::addEvent(
     if (!log)
         return;
 
+    if (log->shouldIgnorePath(local_path_.empty() ? local_path : local_path_))
+        return;
+
     if (!time_now.time_since_epoch().count())
         time_now = std::chrono::system_clock::now();
 
@@ -53,7 +56,6 @@ void BlobStorageLogWriter::addEvent(
 
 BlobStorageLogWriterPtr BlobStorageLogWriter::create(const String & disk_name)
 {
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD /// Keeper standalone build doesn't have a context
     if (auto blob_storage_log = Context::getGlobalContextInstance()->getBlobStorageLog())
     {
         auto log_writer = std::make_shared<BlobStorageLogWriter>(std::move(blob_storage_log));
@@ -64,7 +66,6 @@ BlobStorageLogWriterPtr BlobStorageLogWriter::create(const String & disk_name)
 
         return log_writer;
     }
-#endif
     return {};
 }
 

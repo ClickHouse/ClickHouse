@@ -6,7 +6,7 @@ sidebar_label: GRANT
 
 # GRANT Statement
 
-- Grants [privileges](#grant-privileges) to ClickHouse user accounts or roles.
+- Grants [privileges](#privileges) to ClickHouse user accounts or roles.
 - Assigns roles to user accounts or to the other roles.
 
 To revoke privileges, use the [REVOKE](../../sql-reference/statements/revoke.md) statement. Also you can list granted privileges with the [SHOW GRANTS](../../sql-reference/statements/show.md#show-grants) statement.
@@ -33,7 +33,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 - `role` — ClickHouse user role.
 - `user` — ClickHouse user account.
 
-The `WITH ADMIN OPTION` clause grants [ADMIN OPTION](#admin-option-privilege) privilege to `user` or `role`.
+The `WITH ADMIN OPTION` clause grants [ADMIN OPTION](#admin-option) privilege to `user` or `role`.
 The `WITH REPLACE OPTION` clause replace old roles by new role for the `user` or `role`, if is not specified it appends roles.
 
 ## Grant Current Grants Syntax
@@ -82,9 +82,9 @@ Privileges have a hierarchical structure. A set of permitted queries depends on 
 
 Hierarchy of privileges:
 
-- [SELECT](#grant-select)
-- [INSERT](#grant-insert)
-- [ALTER](#grant-alter)
+- [SELECT](#select)
+- [INSERT](#insert)
+- [ALTER](#alter)
     - `ALTER TABLE`
         - `ALTER UPDATE`
         - `ALTER DELETE`
@@ -115,7 +115,7 @@ Hierarchy of privileges:
         - `ALTER VIEW REFRESH`
         - `ALTER VIEW MODIFY QUERY`
         - `ALTER VIEW MODIFY SQL SECURITY`
-- [CREATE](#grant-create)
+- [CREATE](#create)
     - `CREATE DATABASE`
     - `CREATE TABLE`
         - `CREATE ARBITRARY TEMPORARY TABLE`
@@ -123,21 +123,21 @@ Hierarchy of privileges:
     - `CREATE VIEW`
     - `CREATE DICTIONARY`
     - `CREATE FUNCTION`
-- [DROP](#grant-drop)
+- [DROP](#drop)
     - `DROP DATABASE`
     - `DROP TABLE`
     - `DROP VIEW`
     - `DROP DICTIONARY`
     - `DROP FUNCTION`
-- [TRUNCATE](#grant-truncate)
-- [OPTIMIZE](#grant-optimize)
-- [SHOW](#grant-show)
+- [TRUNCATE](#truncate)
+- [OPTIMIZE](#optimize)
+- [SHOW](#show)
     - `SHOW DATABASES`
     - `SHOW TABLES`
     - `SHOW COLUMNS`
     - `SHOW DICTIONARIES`
-- [KILL QUERY](#grant-kill-query)
-- [ACCESS MANAGEMENT](#grant-access-management)
+- [KILL QUERY](#kill-query)
+- [ACCESS MANAGEMENT](#access-management)
     - `CREATE USER`
     - `ALTER USER`
     - `DROP USER`
@@ -160,7 +160,7 @@ Hierarchy of privileges:
         - `SHOW_QUOTAS`
         - `SHOW_SETTINGS_PROFILES`
     - `ROLE ADMIN`
-- [SYSTEM](#grant-system)
+- [SYSTEM](#system)
     - `SYSTEM SHUTDOWN`
     - `SYSTEM DROP CACHE`
         - `SYSTEM DROP DNS CACHE`
@@ -186,12 +186,12 @@ Hierarchy of privileges:
         - `SYSTEM FLUSH DISTRIBUTED`
         - `SYSTEM FLUSH LOGS`
     - `CLUSTER` (see also `access_control_improvements.on_cluster_queries_require_cluster_grant` configuration directive)
-- [INTROSPECTION](#grant-introspection)
+- [INTROSPECTION](#introspection)
     - `addressToLine`
     - `addressToLineWithInlines`
     - `addressToSymbol`
     - `demangle`
-- [SOURCES](#grant-sources)
+- [SOURCES](#sources)
     - `FILE`
     - `URL`
     - `REMOTE`
@@ -200,15 +200,16 @@ Hierarchy of privileges:
     - `JDBC`
     - `HDFS`
     - `S3`
-- [dictGet](#grant-dictget)
-- [displaySecretsInShowAndSelect](#grant-display-secrets)
-- [NAMED COLLECTION ADMIN](#grant-named-collection-admin)
+- [dictGet](#dictget)
+- [displaySecretsInShowAndSelect](#displaysecretsinshowandselect)
+- [NAMED COLLECTION ADMIN](#named-collection-admin)
     - `CREATE NAMED COLLECTION`
     - `DROP NAMED COLLECTION`
     - `ALTER NAMED COLLECTION`
     - `SHOW NAMED COLLECTIONS`
     - `SHOW NAMED COLLECTIONS SECRETS`
     - `NAMED COLLECTION`
+- [TABLE ENGINE](#table-engine)
 
 Examples of how this hierarchy is treated:
 
@@ -237,11 +238,11 @@ Examples of disallowed syntax:
 - `GRANT CREATE USER(x) ON db.table TO user`
 - `GRANT CREATE USER ON db.* TO user`
 
-The special privilege [ALL](#grant-all) grants all the privileges to a user account or a role.
+The special privilege [ALL](#all) grants all the privileges to a user account or a role.
 
 By default, a user account or a role has no privileges.
 
-If a user or a role has no privileges, it is displayed as [NONE](#grant-none) privilege.
+If a user or a role has no privileges, it is displayed as [NONE](#none) privilege.
 
 Some queries by their implementation require a set of privileges. For example, to execute the [RENAME](../../sql-reference/statements/optimize.md) query you need the following privileges: `SELECT`, `CREATE TABLE`, `INSERT` and `DROP TABLE`.
 
@@ -325,8 +326,8 @@ Examples of how this hierarchy is treated:
 **Notes**
 
 - The `MODIFY SETTING` privilege allows modifying table engine settings. It does not affect settings or server configuration parameters.
-- The `ATTACH` operation needs the [CREATE](#grant-create) privilege.
-- The `DETACH` operation needs the [DROP](#grant-drop) privilege.
+- The `ATTACH` operation needs the [CREATE](#create) privilege.
+- The `DETACH` operation needs the [DROP](#drop) privilege.
 - To stop mutation by the [KILL MUTATION](../../sql-reference/statements/kill.md#kill-mutation) query, you need to have a privilege to start this mutation. For example, if you want to stop the `ALTER UPDATE` query, you need the `ALTER UPDATE`, `ALTER TABLE`, or `ALTER` privilege.
 
 ### CREATE
@@ -343,7 +344,7 @@ Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [A
 
 **Notes**
 
-- To delete the created table, a user needs [DROP](#grant-drop).
+- To delete the created table, a user needs [DROP](#drop).
 
 ### DROP
 
@@ -497,13 +498,14 @@ Privilege level: `DICTIONARY`.
 - `GRANT dictGet ON mydictionary TO john`
 
 
-### displaySecretsInShowAndSelect {#grant-display-secrets}
+### displaySecretsInShowAndSelect
 
 Allows a user to view secrets in `SHOW` and `SELECT` queries if both
 [`display_secrets_in_show_and_select` server setting](../../operations/server-configuration-parameters/settings#display_secrets_in_show_and_select)
 and
 [`format_display_secrets_in_show_and_select` format setting](../../operations/settings/formats#format_display_secrets_in_show_and_select)
 are turned on.
+
 
 ### NAMED COLLECTION ADMIN
 
@@ -523,6 +525,17 @@ Unlike all other grants (CREATE, DROP, ALTER, SHOW) grant NAMED COLLECTION was a
 
 Assuming a named collection is called abc, we grant privilege CREATE NAMED COLLECTION to user john.
 - `GRANT CREATE NAMED COLLECTION ON abc TO john`
+
+
+### TABLE ENGINE
+
+Allows using a specified table engine when creating a table. Applies to [table engines](../../engines/table-engines/index.md).
+
+**Examples**
+
+- `GRANT TABLE ENGINE ON * TO john`
+- `GRANT TABLE ENGINE ON TinyLog TO john`
+
 
 ### ALL
 

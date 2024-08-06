@@ -16,7 +16,7 @@ ALTER TABLE test UPDATE d = d || toString(sleepEachRow(0.3)) where 1;
 
 ALTER TABLE test ADD PROJECTION d_order ( SELECT min(c_id) GROUP BY `d`);
 ALTER TABLE test MATERIALIZE PROJECTION d_order;
-ALTER TABLE test DROP PROJECTION d_order SETTINGS mutations_sync = 2; --{serverError 36}
+ALTER TABLE test DROP PROJECTION d_order SETTINGS mutations_sync = 2; --{serverError BAD_ARGUMENTS}
 
 -- just to wait prev mutation
 ALTER TABLE test DELETE where d = 'Hello' SETTINGS mutations_sync = 2;

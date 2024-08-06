@@ -367,9 +367,9 @@ namespace
 }
 
 
-bool isMongoDBWireProtocolOld(Poco::MongoDB::Connection & connection_)
+bool isMongoDBWireProtocolOld(Poco::MongoDB::Connection & connection_, const std::string & database_name_)
 {
-    Poco::MongoDB::Database db("config");
+    Poco::MongoDB::Database db(database_name_);
     Poco::MongoDB::Document::Ptr doc = db.queryServerHello(connection_, false);
 
     if (doc->exists("maxWireVersion"))
@@ -395,7 +395,7 @@ MongoDBCursor::MongoDBCursor(
     const Block & sample_block_to_select,
     const Poco::MongoDB::Document & query,
     Poco::MongoDB::Connection & connection)
-    : is_wire_protocol_old(isMongoDBWireProtocolOld(connection))
+    : is_wire_protocol_old(isMongoDBWireProtocolOld(connection, database))
 {
     Poco::MongoDB::Document projection;
 

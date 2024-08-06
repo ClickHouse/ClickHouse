@@ -107,7 +107,7 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
         }
 
         if (lhs_node_to_compare->getNodeType() != rhs_node_to_compare->getNodeType() ||
-            !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare))
+            !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare, compare_options))
             return false;
 
         if (compare_options.compare_aliases && lhs_node_to_compare->alias != rhs_node_to_compare->alias)
@@ -207,7 +207,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
             hash_state.update(node_to_process->alias);
         }
 
-        node_to_process->updateTreeHashImpl(hash_state);
+        node_to_process->updateTreeHashImpl(hash_state, compare_options);
 
         hash_state.update(node_to_process->children.size());
 

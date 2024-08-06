@@ -1,8 +1,6 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
-#include <Parsers/ASTLiteral.h>
-#include <DataTypes/DataTypeFactory.h>
 
 
 namespace DB
@@ -15,8 +13,6 @@ ASTPtr ASTColumnDeclaration::clone() const
 
     if (type)
     {
-        // Type may be an ASTFunction (e.g. `create table t (a Decimal(9,0))`),
-        // so we have to clone it properly as well.
         res->type = type->clone();
         res->children.push_back(res->type);
     }
@@ -39,10 +35,10 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->children.push_back(res->codec);
     }
 
-    if (stat_type)
+    if (statistics_desc)
     {
-        res->stat_type = stat_type->clone();
-        res->children.push_back(res->stat_type);
+        res->statistics_desc = statistics_desc->clone();
+        res->children.push_back(res->statistics_desc);
     }
 
     if (ttl)
@@ -111,10 +107,10 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & format_settings, Fo
         codec->formatImpl(format_settings, state, frame);
     }
 
-    if (stat_type)
+    if (statistics_desc)
     {
         format_settings.ostr << ' ';
-        stat_type->formatImpl(format_settings, state, frame);
+        statistics_desc->formatImpl(format_settings, state, frame);
     }
 
     if (ttl)

@@ -84,7 +84,7 @@ FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV', 'name String, value U
 
 **示例**
 
-从名为 `file000`, `file001`, … , `file999`的文件中查询数据:
+从名为 `file000`, `file001`, ... , `file999`的文件中查询数据:
 
 ``` sql
 SELECT count(*)

@@ -27,7 +27,7 @@ class ZstdDeflatingAppendableWriteBuffer : public BufferWithOwnMemory<WriteBuffe
 public:
     using ZSTDLastBlock = const std::array<char, 3>;
     /// Frame end block. If we read non-empty file and see no such flag we should add it.
-    static inline constexpr ZSTDLastBlock ZSTD_CORRECT_TERMINATION_LAST_BLOCK = {0x01, 0x00, 0x00};
+    static constexpr ZSTDLastBlock ZSTD_CORRECT_TERMINATION_LAST_BLOCK = {0x01, 0x00, 0x00};
 
     ZstdDeflatingAppendableWriteBuffer(
         std::unique_ptr<WriteBufferFromFileBase> out_,

@@ -137,7 +137,7 @@ struct Dictionary
     template <typename Value> using ContainerType = Value[];
     template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
 
-    enum class AttributeUnderlyingTypeTest
+    enum class AttributeUnderlyingTypeTest : uint8_t
     {
         UInt8,
         UInt16,

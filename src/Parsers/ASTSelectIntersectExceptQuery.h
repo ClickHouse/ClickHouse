@@ -14,7 +14,7 @@ public:
 
     ASTPtr clone() const override;
 
-    enum class Operator
+    enum class Operator : uint8_t
     {
         UNKNOWN,
         EXCEPT_ALL,

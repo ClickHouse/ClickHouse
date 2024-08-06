@@ -25,7 +25,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [ORDER BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
-[SETTINGS name=value, clean_deleted_rows=value, ...]
+[SETTINGS name=value, ...]
 ```
 
 For a description of request parameters, see [statement description](../../../sql-reference/statements/create/table.md).
@@ -45,7 +45,7 @@ When merging, `ReplacingMergeTree` from all the rows with the same sorting key l
    - The last in the selection, if `ver` not set. A selection is a set of rows in a set of parts participating in the merge. The most recently created part (the last insert) will be the last one in the selection. Thus, after deduplication, the very last row from the most recent insert will remain for each unique sorting key.
    - With the maximum version, if `ver` specified. If `ver` is the same for several rows, then it will use "if `ver` is not specified" rule for them, i.e. the most recent inserted row will remain.
 
-Example: 
+Example:
 
 ```sql
 -- without ver - the last inserted 'wins'
@@ -90,14 +90,14 @@ SELECT * FROM mySecondReplacingMT FINAL;
 
 ### is_deleted
 
-`is_deleted` —  Name of a column used during a merge to determine whether the data in this row represents the state or is to be deleted; `1` is a “deleted“ row, `0` is a “state“ row.
+`is_deleted` —  Name of a column used during a merge to determine whether the data in this row represents the state or is to be deleted; `1` is a "deleted" row, `0` is a "state" row.
 
   Column data type — `UInt8`.
 
 :::note
 `is_deleted` can only be enabled when `ver` is used.
 
-The row is deleted when `OPTIMIZE ... FINAL CLEANUP` or `OPTIMIZE ... FINAL` is used, or if the engine setting `clean_deleted_rows` has been set to `Always`.
+The row is deleted only when `OPTIMIZE ... FINAL CLEANUP`. This `CLEANUP` special keyword is not allowed by default unless `allow_experimental_replacing_merge_with_cleanup` MergeTree setting is enabled.
 
 No matter the operation on the data, the version must be increased. If two inserted rows have the same version number, the last inserted row is the one kept.
 
@@ -114,21 +114,22 @@ CREATE OR REPLACE TABLE myThirdReplacingMT
     `is_deleted` UInt8
 )
 ENGINE = ReplacingMergeTree(eventTime, is_deleted)
-ORDER BY key;
+ORDER BY key
+SETTINGS allow_experimental_replacing_merge_with_cleanup = 1;
 
 INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 01:01:01', 0);
-INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 01:01:01', 1); 
+INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 01:01:01', 1);
 
 select * from myThirdReplacingMT final;
 
 0 rows in set. Elapsed: 0.003 sec.
 
 -- delete rows with is_deleted
-OPTIMIZE TABLE myThirdReplacingMT FINAL CLEANUP; 
+OPTIMIZE TABLE myThirdReplacingMT FINAL CLEANUP;
 
 INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 00:00:00', 0);
 
-select * from myThirdReplacingMT final; 
+select * from myThirdReplacingMT final;
 
 ┌─key─┬─someCol─┬───────────eventTime─┬─is_deleted─┐
 │   1 │ first   │ 2020-01-01 00:00:00 │          0 │

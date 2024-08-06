@@ -1,10 +1,11 @@
 #include <Common/ProxyConfigurationResolverProvider.h>
 
 #include <Common/EnvironmentProxyConfigurationResolver.h>
+#include <Common/proxyConfigurationToPocoProxyConfig.h>
 #include <Common/Exception.h>
 #include <Common/ProxyListConfigurationResolver.h>
 #include <Common/RemoteProxyConfigurationResolver.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -17,6 +18,11 @@ namespace ErrorCodes
 
 namespace
 {
+    std::string getNoProxyHosts(const Poco::Util::AbstractConfiguration & configuration)
+    {
+        return configuration.getString("proxy.no_proxy", "");
+    }
+
     bool isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(
         const Poco::Util::AbstractConfiguration & configuration)
     {
@@ -43,12 +49,14 @@ namespace
             endpoint,
             proxy_scheme,
             proxy_port,
-            cache_ttl
+            std::chrono::seconds {cache_ttl}
         };
 
         return std::make_shared<RemoteProxyConfigurationResolver>(
             server_configuration,
             request_protocol,
+            buildPocoNonProxyHosts(getNoProxyHosts(configuration)),
+            std::make_shared<RemoteProxyHostFetcherImpl>(),
             isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
     }
 
@@ -87,7 +95,11 @@ namespace
 
         return uris.empty()
             ? nullptr
-            : std::make_shared<ProxyListConfigurationResolver>(uris, request_protocol, isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
+            : std::make_shared<ProxyListConfigurationResolver>(
+                  uris,
+                  request_protocol,
+                  buildPocoNonProxyHosts(getNoProxyHosts(configuration)),
+                  isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
     }
 
     bool hasRemoteResolver(const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)

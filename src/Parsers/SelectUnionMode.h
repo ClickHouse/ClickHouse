@@ -5,7 +5,7 @@
 
 namespace DB
 {
-enum class SelectUnionMode
+enum class SelectUnionMode : uint8_t
 {
     UNION_DEFAULT,
     UNION_ALL,

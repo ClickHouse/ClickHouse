@@ -82,8 +82,7 @@ int main(int, char **)
             if (in_range)
             {
                 sum_merged_size += parts[i].size;
-                if (parts[i].level > max_level)
-                    max_level = parts[i].level;
+                max_level = std::max(parts[i].level, max_level);
             }
 
             if (parts[i].data == selected_parts.back().data)
