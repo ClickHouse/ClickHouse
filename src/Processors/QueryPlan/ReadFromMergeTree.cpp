@@ -119,8 +119,10 @@ bool restorePrewhereInputs(PrewhereInfo & info, const NameSet & inputs)
 namespace ProfileEvents
 {
     extern const Event SelectedParts;
+    extern const Event SelectedPartsTotal;
     extern const Event SelectedRanges;
     extern const Event SelectedMarks;
+    extern const Event SelectedMarksTotal;
     extern const Event SelectQueriesWithPrimaryKeyUsage;
 }
 
@@ -1970,8 +1972,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     }
 
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
+    ProfileEvents::increment(ProfileEvents::SelectedPartsTotal, result.total_parts);
     ProfileEvents::increment(ProfileEvents::SelectedRanges, result.selected_ranges);
     ProfileEvents::increment(ProfileEvents::SelectedMarks, result.selected_marks);
+    ProfileEvents::increment(ProfileEvents::SelectedMarksTotal, result.total_marks_pk);
 
     auto query_id_holder = MergeTreeDataSelectExecutor::checkLimits(data, result, context);
 

@@ -4051,7 +4051,7 @@ Rewrite aggregate functions with if expression as argument when logically equiva
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
 
 :::note
-Supported only with experimental analyzer (`allow_experimental_analyzer = 1`).
+Supported only with experimental analyzer (`enable_analyzer = 1`).
 :::
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
@@ -5620,3 +5620,9 @@ Default value: `False`
 For testing purposes. Replaces all external table functions to Null to not initiate external connections.
 
 Default value: `False`
+
+## disable_insertion_and_mutation
+
+Disable all insert and mutations (alter table update / alter table delete / alter table drop partition). Set to true, can make this node focus on reading queries.
+
+Default value: `false`.
