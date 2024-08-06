@@ -429,7 +429,6 @@ if (NOT SANITIZE)
 endif()
 
 if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE)
-    # Slightly more efficient code can be generated
     # Using '-no-pie' builds executables with fixed addresses, resulting in slightly more efficient code
     # and keeping binary addresses constant even with ASLR enabled.
     # Disabled on Android as it requires PIE: https://source.android.com/docs/security/enhancements#android-5
