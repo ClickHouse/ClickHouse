@@ -19,6 +19,7 @@ services:
                 ldapsearch -x -H ldap://localhost:$$LDAP_PORT_NUMBER -D $$LDAP_ADMIN_DN -w $$LDAP_ADMIN_PASSWORD -b $$LDAP_ROOT
                 | grep -c -E "member: cn=j(ohn|ane)doe"
                 | grep 2 >> /dev/null
+                && cat /run/slapd/slapd.pid
             interval: 10s
             retries: 10
             timeout: 2s
