@@ -1172,3 +1172,106 @@ def test_no_fail_on_unsupported_clauses(started_cluster):
 
     node.query("DROP TABLE unsupported_clauses")
     unsupported_clauses_table.drop()
+
+
+def test_password_masking(started_cluster):
+    node = started_cluster.instances["node"]
+
+    node.query(
+        """
+        CREATE OR REPLACE TABLE mongodb_uri_password_masking (_id String)
+        ENGINE = MongoDB('mongodb://testuser:mypassword@127.0.0.1:27017/example', 'test_clickhouse');
+        """
+    )
+    assert (
+        node.query(
+            """
+                SELECT replaceAll(create_table_query, currentDatabase(), 'default') FROM system.tables
+                WHERE table = 'mongodb_uri_password_masking' AND database = currentDatabase();
+                """
+        )
+        == "CREATE TABLE default.mongodb_uri_password_masking (`_id` String) ENGINE = MongoDB(\\'mongodb://testuser:[HIDDEN]@127.0.0.1:27017/example\\', \\'test_clickhouse\\')\n"
+    )
+    assert (
+        node.query(
+            """
+        SELECT replaceAll(engine_full, currentDatabase(), 'default') FROM system.tables
+        WHERE table = 'mongodb_uri_password_masking' AND database = currentDatabase();
+        """
+        )
+        == "MongoDB(\\'mongodb://testuser:[HIDDEN]@127.0.0.1:27017/example\\', \\'test_clickhouse\\')\n"
+    )
+    node.query("DROP TABLE IF EXISTS mongodb_uri_password_masking;")
+
+    node.query(
+        """
+        CREATE OR REPLACE DICTIONARY mongodb_dictionary_uri_password_masking (_id String)
+        PRIMARY KEY _id
+        SOURCE(MONGODB(uri 'mongodb://testuser:mypassword@127.0.0.1:27017/example' collection 'test_clickhouse'))
+        LAYOUT(FLAT())
+        LIFETIME(0);
+        """
+    )
+    assert (
+        node.query(
+            """
+        SELECT replaceAll(create_table_query, currentDatabase(), 'default') FROM system.tables
+        WHERE table = 'mongodb_dictionary_uri_password_masking' AND database = currentDatabase();"""
+        )
+        == "CREATE DICTIONARY default.mongodb_dictionary_uri_password_masking (`_id` String) PRIMARY KEY _id SOURCE(MONGODB(URI \\'mongodb://testuser:[HIDDEN]@127.0.0.1:27017/example\\' COLLECTION \\'test_clickhouse\\')) LIFETIME(MIN 0 MAX 0) LAYOUT(FLAT())\n"
+    )
+    node.query("DROP DICTIONARY IF EXISTS mongodb_dictionary_uri_password_masking;")
+
+    node.query(
+        """
+        CREATE TABLE mongodb_password_masking (_id String)
+        ENGINE = MongoDB('127.0.0.1:27017', 'example', 'test_clickhouse', 'testuser', 'mypassword');
+        """
+    )
+    assert (
+        node.query(
+            """
+        SELECT replaceAll(create_table_query, currentDatabase(), 'default') FROM system.tables
+        WHERE table = 'mongodb_password_masking' AND database = currentDatabase();
+        """
+        )
+        == "CREATE TABLE default.mongodb_password_masking (`_id` String) ENGINE = MongoDB(\\'127.0.0.1:27017\\', \\'example\\', \\'test_clickhouse\\', \\'testuser\\', \\'[HIDDEN]\\')\n"
+    )
+    assert (
+        node.query(
+            """
+        SELECT replaceAll(engine_full, currentDatabase(), 'default') FROM system.tables
+        WHERE table = 'mongodb_password_masking' AND database = currentDatabase();
+        """
+        )
+        == "MongoDB(\\'127.0.0.1:27017\\', \\'example\\', \\'test_clickhouse\\', \\'testuser\\', \\'[HIDDEN]\\')\n"
+    )
+    node.query("DROP TABLE IF EXISTS mongodb_password_masking;")
+
+    node.query(
+        """
+        CREATE OR REPLACE DICTIONARY mongodb_dictionary_password_masking (_id String)
+        PRIMARY KEY _id
+        SOURCE(MONGODB(
+            host '127.0.0.1'
+            port 27017
+            user 'testuser'
+            password 'mypassword'
+            db 'example'
+            collection 'test_clickhouse'
+            options 'ssl=true'
+           ))
+        LAYOUT(FLAT())
+        LIFETIME(0);
+        """
+    )
+    assert (
+        node.query(
+            """
+        SELECT replaceAll(create_table_query, currentDatabase(), 'default') FROM system.tables
+        WHERE table = 'mongodb_dictionary_password_masking' AND database = currentDatabase();
+        """
+        )
+        == "CREATE DICTIONARY default.mongodb_dictionary_password_masking (`_id` String) PRIMARY KEY _id SOURCE(MONGODB(HOST \\'127.0.0.1\\' PORT 27017 USER \\'testuser\\' PASSWORD \\'[HIDDEN]\\' DB \\'example\\' COLLECTION \\'test_clickhouse\\' OPTIONS \\'ssl=true\\')) LIFETIME(MIN 0 MAX 0) LAYOUT(FLAT())\n"
+    )
+    node.query("DROP DICTIONARY IF EXISTS mongodb_dictionary_password_masking;")
