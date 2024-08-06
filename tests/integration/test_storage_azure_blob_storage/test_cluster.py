@@ -71,7 +71,8 @@ def test_select_all(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',"
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', 'key UInt64, data String') "
-        f"VALUES (1, 'a'), (2, 'b') SETTINGS azure_truncate_on_insert=1",
+        f"VALUES (1, 'a'), (2, 'b')",
+        settings={"azure_truncate_on_insert": 1},
     )
     print(get_azure_file_content("test_cluster_select_all.csv", port))
 
@@ -100,7 +101,8 @@ def test_count(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_count.csv', 'devstoreaccount1', "
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', "
-        f"'auto', 'key UInt64') VALUES (1), (2) SETTINGS azure_truncate_on_insert=1",
+        f"'auto', 'key UInt64') VALUES (1), (2)",
+        settings={"azure_truncate_on_insert": 1},
     )
     print(get_azure_file_content("test_cluster_count.csv", port))
 
@@ -128,7 +130,8 @@ def test_union_all(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_parquet_union_all', 'devstoreaccount1', "
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet', "
-        f"'auto', 'a Int32, b String') VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd') SETTINGS azure_truncate_on_insert=1",
+        f"'auto', 'a Int32, b String') VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     pure_azure = azure_query(
@@ -179,7 +182,8 @@ def test_skip_unavailable_shards(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_skip_unavailable.csv', 'devstoreaccount1', "
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', "
-        f"'auto', 'a UInt64') VALUES (1), (2) SETTINGS azure_truncate_on_insert=1",
+        f"'auto', 'a UInt64') VALUES (1), (2)",
+        settings={"azure_truncate_on_insert": 1},
     )
     result = azure_query(
         node,
@@ -199,7 +203,8 @@ def test_unset_skip_unavailable_shards(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_unset_skip_unavailable.csv', 'devstoreaccount1', "
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', "
-        f"'auto', 'a UInt64') VALUES (1), (2) SETTINGS azure_truncate_on_insert=1",
+        f"'auto', 'a UInt64') VALUES (1), (2)",
+        settings={"azure_truncate_on_insert": 1},
     )
     result = azure_query(
         node,
@@ -217,7 +222,8 @@ def test_cluster_with_named_collection(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_with_named_collection.csv', 'devstoreaccount1', "
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', "
-        f"'auto', 'a UInt64') VALUES (1), (2) SETTINGS azure_truncate_on_insert=1",
+        f"'auto', 'a UInt64') VALUES (1), (2)",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     pure_azure = azure_query(
@@ -248,7 +254,8 @@ def test_partition_parallel_reading_with_cluster(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', '{filename}', 'devstoreaccount1', "
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', '{table_format}') "
-        f"PARTITION BY {partition_by} VALUES {values} SETTINGS azure_truncate_on_insert=1",
+        f"PARTITION BY {partition_by} VALUES {values}",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     assert "1,2,3\n" == get_azure_file_content("test_tf_3.csv", port)

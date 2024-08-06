@@ -341,7 +341,7 @@ def test_virtual_columns(started_cluster):
         )
         == expected
     )
-    node1.query("DROP TABLE virual_cols")
+    node1.query("DROP TABLE virtual_cols")
 
 
 def test_read_files_with_spaces(started_cluster):
@@ -675,9 +675,7 @@ def test_virtual_columns_2(started_cluster):
     table_function = (
         f"hdfs('hdfs://hdfs1:9000/parquet_2', 'Parquet', 'a Int32, b String')"
     )
-    node1.query(
-        f"insert into table function {table_function} SELECT 1, 'kek' SETTINGS hdfs_truncate_on_insert=1"
-    )
+    node1.query(f"insert into table function {table_function} SELECT 1, 'kek' SETTINGS hdfs_truncate_on_insert=1")
 
     result = node1.query(f"SELECT _path FROM {table_function}")
     assert result.strip() == "parquet_2"
@@ -685,9 +683,7 @@ def test_virtual_columns_2(started_cluster):
     table_function = (
         f"hdfs('hdfs://hdfs1:9000/parquet_3', 'Parquet', 'a Int32, _path String')"
     )
-    node1.query(
-        f"insert into table function {table_function} SELECT 1, 'kek' SETTINGS hdfs_truncate_on_insert=1"
-    )
+    node1.query(f"insert into table function {table_function} SELECT 1, 'kek' SETTINGS hdfs_truncate_on_insert=1")
 
     result = node1.query(f"SELECT _path FROM {table_function}")
     assert result.strip() == "kek"

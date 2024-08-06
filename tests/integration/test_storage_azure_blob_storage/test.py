@@ -635,7 +635,8 @@ def test_simple_write_named_collection_2_table_function(cluster):
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" container='cont', blob_path='test_simple_write_named_2_tf.csv', format='CSV', structure='key UInt64, data String') VALUES (1, 'a') SETTINGS azure_truncate_on_insert=1",
+        f" container='cont', blob_path='test_simple_write_named_2_tf.csv', format='CSV', structure='key UInt64, data String') VALUES (1, 'a')",
+        settings={"azure_truncate_on_insert": 1},
     )
     print(get_azure_file_content("test_simple_write_named_2_tf.csv", port))
     assert get_azure_file_content("test_simple_write_named_2_tf.csv", port) == '1,"a"\n'
@@ -658,7 +659,8 @@ def test_put_get_with_globs_tf(cluster):
             azure_query(
                 node,
                 f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-                f" container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values} SETTINGS azure_truncate_on_insert=1",
+                f" container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values}",
+                settings={"azure_truncate_on_insert": 1},
             )
     query = (
         f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, "
@@ -710,9 +712,9 @@ def test_schema_inference_from_globs_tf(cluster):
 
             query = (
                 f"insert into table function azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', "
-                f"container='cont', blob_path='{path}', format='CSVWithNames', structure='{table_format}') VALUES {values} SETTINGS azure_truncate_on_insert=1"
+                f"container='cont', blob_path='{path}', format='CSVWithNames', structure='{table_format}') VALUES {values}"
             )
-            azure_query(node, query)
+            azure_query(node, query, settings={"azure_truncate_on_insert": 1})
 
     query = (
         f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, "
@@ -738,7 +740,8 @@ def test_partition_by_tf(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', "
         f"'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', "
-        f"'CSV', 'auto', '{table_format}') PARTITION BY {partition_by} VALUES {values} SETTINGS azure_truncate_on_insert=1",
+        f"'CSV', 'auto', '{table_format}') PARTITION BY {partition_by} VALUES {values}",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     assert "1,2,3\n" == get_azure_file_content("test_partition_tf_3.csv", port)
@@ -757,7 +760,8 @@ def test_filter_using_file(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', 'cont', '{filename}', "
         f"'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', "
-        f"'{table_format}') PARTITION BY {partition_by} VALUES {values} SETTINGS azure_truncate_on_insert=1",
+        f"'{table_format}') PARTITION BY {partition_by} VALUES {values}",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     query = (
@@ -855,7 +859,8 @@ def test_function_signatures(cluster):
     account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
     azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'column1 UInt32') VALUES (1),(2),(3)  SETTINGS azure_truncate_on_insert=1",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_signature.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'column1 UInt32') VALUES (1),(2),(3)",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     # " - connection_string, container_name, blobpath\n"
@@ -969,12 +974,14 @@ def test_union_schema_inference_mode(cluster):
     account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
     azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference1.jsonl', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'a UInt32') VALUES (1)  SETTINGS azure_truncate_on_insert=1",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference1.jsonl', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'a UInt32') VALUES (1)",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference2.jsonl', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'b UInt32') VALUES (2) SETTINGS azure_truncate_on_insert=1",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference2.jsonl', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'b UInt32') VALUES (2)",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     node.query("system drop schema cache for azure")
@@ -1011,7 +1018,8 @@ def test_union_schema_inference_mode(cluster):
     assert result == "a\tNullable(Int64)\n" "b\tNullable(Int64)\n"
     azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference3.jsonl', '{account_name}', '{account_key}', 'CSV', 'auto', 's String') VALUES ('Error') SETTINGS azure_truncate_on_insert=1",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference3.jsonl', '{account_name}', '{account_key}', 'CSV', 'auto', 's String') VALUES ('Error')",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     error = azure_query(
@@ -1505,7 +1513,8 @@ def test_hive_partitioning_with_one_parameter(cluster):
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values} SETTINGS azure_truncate_on_insert=1",
+        f" container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values}",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     query = (
@@ -1542,7 +1551,8 @@ def test_hive_partitioning_with_two_parameters(cluster):
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2} SETTINGS azure_truncate_on_insert=1",
+        f" container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     query = (
@@ -1588,7 +1598,8 @@ def test_hive_partitioning_without_setting(cluster):
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2} SETTINGS azure_truncate_on_insert=1",
+        f" container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     query = (
