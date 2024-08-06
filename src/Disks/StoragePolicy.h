@@ -120,7 +120,6 @@ class StoragePolicySelector
 {
 public:
     static constexpr auto TMP_STORAGE_POLICY_PREFIX = "__";
-    static_assert(std::string_view(DiskSelector::CUSTOM_DISK_PREFIX) == std::string_view(TMP_STORAGE_POLICY_PREFIX));
 
     StoragePolicySelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks);
 

@@ -4,7 +4,6 @@
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
-#include "Common/Logger.h"
 #include <Common/AsyncLoader.h>
 #include <Common/PoolId.h>
 #include <Common/SensitiveDataMasker.h>
@@ -4432,11 +4431,9 @@ StoragePolicyPtr Context::getStoragePolicy(const String & name) const
 
 StoragePolicyPtr Context::getStoragePolicyFromDisk(const String & disk_name) const
 {
-    LOG_DEBUG(getLogger("StoragePolicy"), "getStoragePolicyFromDisk disk_name {}", disk_name);
-
     std::lock_guard lock(shared->storage_policies_mutex);
 
-    const std::string storage_policy_name = disk_name.starts_with(DiskSelector::CUSTOM_DISK_PREFIX) ? disk_name : StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX + disk_name;
+    const std::string storage_policy_name = StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX + disk_name;
     auto storage_policy_selector = getStoragePolicySelector(lock);
     StoragePolicyPtr storage_policy = storage_policy_selector->tryGet(storage_policy_name);
 
