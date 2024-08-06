@@ -341,6 +341,9 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
 std::vector<UInt8> DatabaseReplicated::tryGetAreReplicasActive(const ClusterPtr & cluster_) const
 {
     Strings paths;
+
+    paths.emplace_back(fs::path(zookeeper_path) / "max_log_ptr");
+
     const auto & addresses_with_failover = cluster_->getShardsAddresses();
     const auto & shards_info = cluster_->getShardsInfo();
     for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
@@ -349,24 +352,44 @@ std::vector<UInt8> DatabaseReplicated::tryGetAreReplicasActive(const ClusterPtr 
         {
             String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name);
             paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "active");
+            paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "log_ptr");
         }
     }
 
     try
     {
         auto current_zookeeper = getZooKeeper();
-        auto res = current_zookeeper->exists(paths);
+        auto zk_res = current_zookeeper->tryGet(paths);
 
-        std::vector<UInt8> statuses;
-        statuses.resize(paths.size());
+        auto max_log_ptr_zk = zk_res[0];
+        if (max_log_ptr_zk.error != Coordination::Error::ZOK)
+            throw Coordination::Exception(max_log_ptr_zk.error);
 
-        for (size_t i = 0; i < res.size(); ++i)
-            if (res[i].error == Coordination::Error::ZOK)
-                statuses[i] = 1;
+        UInt32 max_log_ptr = parse<UInt32>(max_log_ptr_zk.data);
 
-        return statuses;
-    }
-    catch (...)
+        ReplicasInfo replicas_info;
+        replicas_info.resize((zk_res.size() - 1) / 2);
+
+        size_t global_replica_index = 0;
+        for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
+        {
+            for (const auto & replica : addresses_with_failover[shard_index])
+            {
+                auto replica_active = zk_res[2 * global_replica_index + 1];
+                auto replica_log_ptr = zk_res[2 * global_replica_index + 2];
+
+                replicas_info[global_replica_index] = ReplicaInfo{
+                    .is_active = replica_active.error == Coordination::Error::ZOK,
+                    .replication_lag = replica_log_ptr.error != Coordination::Error::ZNONODE ? max_log_ptr - parse<UInt32>(replica_log_ptr.data) : std::nullopt,
+                    .recovery_time = replica.is_local && ddl_worker ? ddl_worker->getCurrentInitializationDurationMs() : 0,
+                };
+
+                ++global_replica_index;
+            }
+        }
+
+        return replicas_info;
+    } catch (...)
     {
         tryLogCurrentException(log);
         return {};

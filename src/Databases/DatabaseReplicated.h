@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -16,6 +18,14 @@ using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
+
+struct ReplicaInfo
+{
+    bool is_active;
+    std::optional<UInt32> replication_lag;
+    UInt64 recovery_time;
+};
+using ReplicasInfo = std::vector<ReplicaInfo>;
 
 class DatabaseReplicated : public DatabaseAtomic
 {
