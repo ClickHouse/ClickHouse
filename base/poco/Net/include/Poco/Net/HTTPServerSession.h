@@ -57,10 +57,10 @@ namespace Net
         /// Returns the server's address.
 
         void setKeepAliveTimeout(Poco::Timespan keepAliveTimeout);
- 
+
         size_t getKeepAliveTimeout() const { return _keepAliveTimeout.totalSeconds(); }
 
-        size_t getMaxKeepAliveRequests() const { return _maxKeepAliveRequests; } 
+        size_t getMaxKeepAliveRequests() const { return _maxKeepAliveRequests; }
 
     private:
         bool _firstRequest;
