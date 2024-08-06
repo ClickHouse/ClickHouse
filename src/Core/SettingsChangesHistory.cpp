@@ -80,6 +80,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"allow_archive_path_syntax", true, true, "Added new setting to allow disabling archive path syntax."},
             {"input_format_try_infer_variants", false, false, "Try to infer Variant type in text formats when there is more than one possible type for column/array elements"},
             {"input_format_json_ignore_key_case", false, false, "Ignore json key case while read json field from string."},        
+            {"enable_analyzer", 1, 1, "Added an alias to a setting `allow_experimental_analyzer`."},
         }
     },
     {"24.7",
