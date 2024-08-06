@@ -100,14 +100,14 @@ For `.sh` tests limits are written as a comment on the line next to tags or on t
 ```bash
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# Random settings limits: max_block_size=(1000, 10000), index_granularity=(100, None)
+# Random settings limits: max_block_size=(1000, 10000); index_granularity=(100, None)
 ```
 
 For `.sql` tests tags are placed as a SQL comment in the line next to tags or in the first line:
 
 ```sql
 -- Tags: no-fasttest
--- Random settings limits: max_block_size=(1000, 10000), index_granularity=(100, None)
+-- Random settings limits: max_block_size=(1000, 10000); index_granularity=(100, None)
 SELECT 1
 ```
 

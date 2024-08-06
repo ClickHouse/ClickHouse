@@ -1964,13 +1964,13 @@ class TestSuite:
             if not random_settings_limits_str.startswith(random_settings_limits_prefix):
                 return {}
             random_settings_limits_str = random_settings_limits_str[len(random_settings_limits_prefix) :]  # noqa: ignore E203
-            # limits are specified in a form 'setting1=(min, max), setting2=(min,max), ...'
-            random_settings_limits = re.findall(
-                "([^=, ]+) *= *(\([^=]+\))", random_settings_limits_str
-            )
-            random_settings_limits = {
-                pair[0]: make_tuple(pair[1]) for pair in random_settings_limits
-            }
+            # limits are specified in a form 'setting1=(min, max); setting2=(min,max); ...'
+            random_settings_limits = {}
+            for setting_and_limit in random_settings_limits_str.split(';'):
+                setting_and_limit = setting_and_limit.split('=')
+                random_settings_limits[setting_and_limit[0].strip()] = make_tuple(
+                    setting_and_limit[1]
+                )
             return random_settings_limits
 
         def is_shebang(line: str) -> bool:
