@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
 
 DROP TABLE IF EXISTS test_table_1;

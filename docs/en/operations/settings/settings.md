@@ -4051,7 +4051,7 @@ Rewrite aggregate functions with if expression as argument when logically equiva
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
 
 :::note
-Supported only with experimental analyzer (`allow_experimental_analyzer = 1`).
+Supported only with experimental analyzer (`enable_analyzer = 1`).
 :::
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
@@ -5609,14 +5609,8 @@ Minimal size of block to compress in CROSS JOIN. Zero value means - disable this
 
 Default value: `1GiB`.
 
-## restore_replace_external_engines_to_null
+## disable_insertion_and_mutation
 
-For testing purposes. Replaces all external engines to Null to not initiate external connections.
+Disable all insert and mutations (alter table update / alter table delete / alter table drop partition). Set to true, can make this node focus on reading queries.
 
-Default value: `False`
-
-## restore_replace_external_table_functions_to_null
-
-For testing purposes. Replaces all external table functions to Null to not initiate external connections.
-
-Default value: `False`
+Default value: `false`.
