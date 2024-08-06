@@ -232,9 +232,8 @@ private:
 
     std::unique_ptr<ReadBufferFromFileBase> readObjectsImpl( /// NOLINT
         const StoredObjects & objects,
-        const ReadSettings & read_settings = ReadSettings{},
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const;
+        const ReadSettings & read_settings,
+        bool with_cache) const;
 
     StoredObjects getRadosObjects(const StoredObjects & objects, bool if_exists, bool with_size) const;
 

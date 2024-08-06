@@ -29,6 +29,7 @@ public:
         bool use_external_buffer_ = false,
         size_t offset_ = 0,
         size_t read_until_position_ = 0,
+        bool restricted_seek_ = false,
         std::optional<size_t> file_size_ = std::nullopt);
 
     ReadBufferFromRados(
@@ -38,6 +39,7 @@ public:
         bool use_external_buffer_ = false,
         size_t offset_ = 0,
         size_t read_until_position_ = 0,
+        bool restricted_seek_ = false,
         std::optional<size_t> file_size_ = std::nullopt);
 
     ~ReadBufferFromRados() override;
@@ -61,8 +63,17 @@ public:
 
 private:
 
-    std::unique_ptr<Impl> impl;
+    size_t readImpl(char * to, size_t len, off_t begin) const;
+
+    LoggerPtr log = getLogger("ReadBufferFromRados");
+    // std::unique_ptr<Impl> impl;
+    std::shared_ptr<RadosIOContext> io_ctx;
+    String object_id;
+    ReadSettings read_settings;
+    std::atomic<off_t> file_offset = 0;
+    std::atomic<off_t> read_until_position = 0;
     bool use_external_buffer;
+    bool restricted_seek;
 };
 
 }

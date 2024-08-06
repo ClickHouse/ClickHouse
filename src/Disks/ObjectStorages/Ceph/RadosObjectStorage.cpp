@@ -119,8 +119,7 @@ std::unique_ptr<ReadBufferFromFileBase> RadosObjectStorage::readObjects( /// NOL
     Strings names;
     for (const auto & object : rados_objects_to_read)
         names.push_back(object.remote_path);
-    LOG_TEST(log, "Reading objects from Ceph: ({})", fmt::join(names, ", "));
-    return readObjectsImpl(rados_objects_to_read, read_settings);
+    return readObjectsImpl(rados_objects_to_read, read_settings, true);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> RadosObjectStorage::readObject( /// NOLINT
@@ -129,7 +128,11 @@ std::unique_ptr<ReadBufferFromFileBase> RadosObjectStorage::readObject( /// NOLI
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    return readObjects({object}, read_settings);
+    StoredObjects rados_objects_to_read = getRadosObjects({object}, false, true);
+    Strings names;
+    for (const auto & obj : rados_objects_to_read)
+        names.push_back(obj.remote_path);
+    return readObjectsImpl(rados_objects_to_read, read_settings, false);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> RadosObjectStorage::writeObject( /// NOLINT
@@ -322,51 +325,69 @@ ObjectStorageKey RadosObjectStorage::generateObjectKeyForPath(const std::string 
 std::unique_ptr<ReadBufferFromFileBase> RadosObjectStorage::readObjectsImpl( /// NOLINT
     const StoredObjects & objects,
     const ReadSettings & read_settings,
-    std::optional<size_t>,
-    std::optional<size_t>) const
+    bool with_cache) const
 {
     ReadSettings disk_read_settings = IObjectStorage::patchSettings(read_settings);
 
+    if (!with_cache)
+    {
+        disk_read_settings.enable_filesystem_cache = false;
+        disk_read_settings.use_page_cache_for_disks_without_file_cache = false;
+    }
+
     auto global_context = Context::getGlobalContextInstance();
 
-    auto read_buffer_creator = [this, disk_read_settings](bool, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
+    auto read_buffer_creator = [this, disk_read_settings](bool restricted_seek, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromRados>(
             io_ctx,
             object_.remote_path,
             disk_read_settings,
-            /* use_external_buffer */ true);
+            /* use_external_buffer */ true,
+            /* offset */ 0,
+            /* read_until_position */ 0,
+            /* restricted_seek */ restricted_seek);
     };
 
-    switch (read_settings.remote_fs_method)
-    {
-        case RemoteFSReadMethod::read: {
-            return std::make_unique<ReadBufferFromRemoteFSGather>(
-                std::move(read_buffer_creator),
-                objects,
-                "ceph:" + endpoint.pool + "/",
-                disk_read_settings,
-                global_context->getFilesystemCacheLog(),
-                /* use_external_buffer */ false);
-        }
-        case RemoteFSReadMethod::threadpool: {
-            auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-                std::move(read_buffer_creator),
-                objects,
-                "ceph:" + endpoint.pool + "/",
-                disk_read_settings,
-                global_context->getFilesystemCacheLog(),
-                /* use_external_buffer */ true);
+    return std::make_unique<ReadBufferFromRemoteFSGather>(
+        std::move(read_buffer_creator),
+        objects,
+        "rados:" + endpoint.pool + "/",
+        disk_read_settings,
+        global_context->getFilesystemCacheLog(),
+        /* use_external_buffer */ false);
 
-            auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-            return std::make_unique<AsynchronousBoundedReadBuffer>(
-                std::move(impl),
-                reader,
-                disk_read_settings,
-                global_context->getAsyncReadCounters(),
-                global_context->getFilesystemReadPrefetchesLog());
-        }
-    }
+    /// TODO: support remote_fs_method = 'threadpool'
+
+    // switch (read_settings.remote_fs_method)
+    // {
+    //     case RemoteFSReadMethod::read:
+    //     {
+    //         return std::make_unique<ReadBufferFromRemoteFSGather>(
+    //             std::move(read_buffer_creator),
+    //             objects,
+    //             "rados:" + endpoint.pool + "/",
+    //             disk_read_settings,
+    //             global_context->getFilesystemCacheLog(),
+    //             /* use_external_buffer */false);
+    //     }
+    //     case RemoteFSReadMethod::threadpool:
+    //     {
+    //         auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+    //             std::move(read_buffer_creator),
+    //             objects,
+    //             "rados:" + endpoint.pool + "/",
+    //             disk_read_settings,
+    //             global_context->getFilesystemCacheLog(),
+    //             /* use_external_buffer */true);
+
+    //         auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+    //         return std::make_unique<AsynchronousBoundedReadBuffer>(
+    //             std::move(impl), reader, disk_read_settings,
+    //             global_context->getAsyncReadCounters(),
+    //             global_context->getFilesystemReadPrefetchesLog());
+    //     }
+    // }
 }
 
 StoredObjects RadosObjectStorage::getRadosObjects(const StoredObjects & objects, bool if_exists, bool with_size) const
