@@ -151,18 +151,15 @@ void PartMovesBetweenShardsOrchestrator::step(Entry & entry)
               entry.state.toString(),
               entry.rollback,
               entry.num_tries);
-    
-    if(!entry.rollback){
-        EntryState state = getNextState(entry);
 
-        if(state.value == entry.state.value)
+    EntryState current_state = entry.state;
+
+    if(!entry.rollback){
+        entry.state = getNextState(entry);
+        if(entry.state.value == current_state.value)
         {
-           throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process the step entry with out quorum success for state {}", state.value);
-        } else{
-            entry.num_tries = 0;
-            entry.state = state;
-            entry.replicas.clear();
-        }
+           throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process the step entry with out quorum success for state {}", entry.state.value);
+        } 
     }
     
     Coordination::Requests ops;
@@ -170,12 +167,16 @@ void PartMovesBetweenShardsOrchestrator::step(Entry & entry)
     try
     {
         stepEntry(entry);
+        entry.num_tries = 0;
+        entry.last_exception_msg = "";
+        entry.replicas.clear();
     }
     catch (...)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
         entry.last_exception_msg = getCurrentExceptionMessage(false);
         entry.num_tries += 1;
+        entry.state = current_state;
     }
 
     entry.update_time = std::time(nullptr);
@@ -650,19 +651,6 @@ void PartMovesBetweenShardsOrchestrator::Entry::fromString(const String & buf)
 UInt64 PartMovesBetweenShardsOrchestrator::getQuorum(String zk_path){
     auto zk = storage.getZooKeeper();
     Strings replicas = zk->getChildren( fs::path(zk_path) / "replicas");
-    Strings exists_paths;
-    exists_paths.reserve(replicas.size());
-    for (const auto & replica : replicas)
-        exists_paths.emplace_back(fs::path(zk_path) / "replicas" / replica / "is_active");
-
-    auto exists_result = zk->exists(exists_paths);
-
-    for (size_t i = 0; i < exists_paths.size(); ++i)
-    {
-        auto error = exists_result[i].error;
-        if (error != Coordination::Error::ZOK)
-            throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "Replica {} is inactive", replicas[i]);
-    }
     return replicas.size();
 }
 }
