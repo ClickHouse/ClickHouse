@@ -76,6 +76,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     {"24.8",
         {
             {"input_format_json_max_depth", 1000000, 1000, "It was unlimited in previous versions, but that was unsafe."},
+            {"allow_experimental_drop_detached_table", true, false, "Enable drop detach table."},
             {"merge_tree_min_bytes_per_task_for_remote_reading", 4194304, 2097152, "Value is unified with `filesystem_prefetch_min_bytes_for_single_read_task`"},
             {"allow_archive_path_syntax", true, true, "Added new setting to allow disabling archive path syntax."},
         }

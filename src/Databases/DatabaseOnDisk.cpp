@@ -372,6 +372,14 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     (void)fs::remove(table_metadata_path_drop);
 }
 
+UUID DatabaseOnDisk::getTableUUIDFromDetachedMetadata(ContextPtr local_context, const String & table_metadata_path) const
+{
+    ASTPtr ast_detached = parseQueryFromMetadata(log, local_context, table_metadata_path);
+    auto & create_detached = ast_detached->as<ASTCreateQuery &>();
+
+    return create_detached.uuid;
+}
+
 void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_name) const
 {
     std::lock_guard lock(mutex);
