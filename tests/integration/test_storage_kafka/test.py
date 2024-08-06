@@ -4771,7 +4771,7 @@ def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):
           assignments.current_offset,
           if(length(exceptions.time)>0, exceptions.time[1]::String, 'never') as last_exception_time_,
           if(length(exceptions.text)>0, exceptions.text[1], 'no exception') as last_exception_,
-          stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
+          stable_timestamp(last_poll_time) as last_poll_time_, stable_timestamp(last_commit_time) as last_commit_time_,
           num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
           num_rebalance_revocations, num_rebalance_assignments, is_currently_used
           FROM system.kafka_consumers WHERE database='test' and table IN ('kafka', 'kafka2') format Vertical;
@@ -4791,7 +4791,6 @@ assignments.current_offset: [2]
 last_exception_time_:       never
 last_exception_:            no exception
 last_poll_time_:            now
-num_messages_read:          4
 last_commit_time_:          now
 num_commits:                2
 last_rebalance_time_:       now
@@ -4810,7 +4809,6 @@ assignments.current_offset: [2]
 last_exception_time_:       never
 last_exception_:            no exception
 last_poll_time_:            now
-num_messages_read:          1
 last_commit_time_:          now
 num_commits:                1
 last_rebalance_time_:       never

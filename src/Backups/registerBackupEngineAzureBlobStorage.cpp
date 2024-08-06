@@ -141,7 +141,8 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 reader,
                 params.context,
                 params.is_internal_backup,
-                /* use_same_s3_credentials_for_base_backup*/ false);
+                /* use_same_s3_credentials_for_base_backup*/ false,
+                params.use_same_password_for_base_backup);
         }
         else
         {
@@ -164,7 +165,8 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 params.backup_coordination,
                 params.backup_uuid,
                 params.deduplicate_files,
-                /* use_same_s3_credentials_for_base_backup */ false);
+                /* use_same_s3_credentials_for_base_backup */ false,
+                params.use_same_password_for_base_backup);
         }
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "AzureBlobStorage support is disabled");
