@@ -189,7 +189,7 @@ void MergeTreeReaderCompact::readData(
             serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], nullptr);
         }
 
-        cache.emplace(name, column);
+        cache[name] = column;
 
         size_t read_rows_in_column = column->size() - column_size_before_reading;
         if (read_rows_in_column != rows_to_read)
