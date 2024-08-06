@@ -3216,13 +3216,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// Block the case of alter table add projection for special merge trees.
     if (std::any_of(commands.begin(), commands.end(), [](const AlterCommand & c) { return c.type == AlterCommand::ADD_PROJECTION; }))
     {
-        const std::unordered_set<String> allowed_storages{"MergeTree", "ReplicatedMergeTree", "SharedMergeTree"};
-        if (auto storage_name = getName(); !allowed_storages.contains(storage_name)
+        if (merging_params.mode != MergingParams::Mode::Ordinary
             && settings_from_storage->deduplicate_merge_projection_mode == DeduplicateMergeProjectionMode::THROW)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Projection is fully supported in (Replictaed, Shared)MergeTree, but also allowed in non-throw mode with other"
-                " mergetree family members. Consider drop or rebuild option of deduplicate_merge_projection_mode."
-                " Current storage name is {}.", storage_name);
+                "Projection is fully supported in {} with deduplicate_merge_projection_mode = throw. "
+                "Use 'drop' or 'rebuild' option of deduplicate_merge_projection_mode.",
+                getName());
     }
 
     commands.apply(new_metadata, local_context);
