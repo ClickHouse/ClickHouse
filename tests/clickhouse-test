@@ -374,7 +374,7 @@ def kill_process_group(pgid):
         if RELEASE_BUILD:
             sleep(0.5)
         else:
-            sleep(5)
+            sleep(10)
         # NOTE: this still may leave some processes, that had been
         # created by timeout(1), since it also creates new process
         # group. But this should not be a problem with default
