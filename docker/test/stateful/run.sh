@@ -241,6 +241,7 @@ function run_tests()
         --no-stateless
         --hung-check
         --print-time
+        --capture-client-stacktrace
         "${ADDITIONAL_OPTIONS[@]}"
         "$SKIP_TESTS_OPTION"
     )

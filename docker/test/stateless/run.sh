@@ -273,6 +273,7 @@ function run_tests()
         --hung-check
         --print-time
         --no-drop-if-fail
+        --capture-client-stacktrace
         --test-runs "$NUM_TRIES"
         "${ADDITIONAL_OPTIONS[@]}"
     )

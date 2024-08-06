@@ -358,7 +358,13 @@ def clickhouse_execute_json(
     return rows
 
 
+# Should we capture client's stacktraces via SIGTSTP
+CAPTURE_CLIENT_STACKTRACE = False
+
+
 def kill_process_group(pgid):
+    global CAPTURE_CLIENT_STACKTRACE
+
     print(f"Killing process group {pgid}")
     print(f"Processes in process group {pgid}:")
     print(
@@ -368,13 +374,14 @@ def kill_process_group(pgid):
         end="",
     )
     try:
-        # Let's try to dump stacktrace in client (useful to catch issues there)
-        os.killpg(pgid, signal.SIGTSTP)
-        # Wait some time for clickhouse utilities to gather stacktrace
-        if RELEASE_BUILD:
-            sleep(0.5)
-        else:
-            sleep(10)
+        if CAPTURE_CLIENT_STACKTRACE:
+            # Let's try to dump stacktrace in client (useful to catch issues there)
+            os.killpg(pgid, signal.SIGTSTP)
+            # Wait some time for clickhouse utilities to gather stacktrace
+            if RELEASE_BUILD:
+                sleep(0.5)
+            else:
+                sleep(10)
         # NOTE: this still may leave some processes, that had been
         # created by timeout(1), since it also creates new process
         # group. But this should not be a problem with default
@@ -3446,6 +3453,11 @@ def parse_args():
         default="./client.fatal.log",
         help="Path to file for fatal logs from client",
     )
+    parser.add_argument(
+        "--capture-client-stacktrace",
+        action="store_true",
+        help="Capture stacktraces from clickhouse-client/local on errors",
+    )
 
     return parser.parse_args()
 
@@ -3487,6 +3499,8 @@ if __name__ == "__main__":
             file=sys.stderr,
         )
         sys.exit(1)
+
+    CAPTURE_CLIENT_STACKTRACE = args.capture_client_stacktrace
 
     # Autodetect the directory with queries if not specified
     if args.queries is None:
