@@ -27,36 +27,6 @@ enum StatisticsFileVersion : UInt16
     V0 = 0,
 };
 
-std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & field)
-{
-    switch (field.getType())
-    {
-        case Field::Types::Int64:
-            return field.get<Int64>();
-        case Field::Types::UInt64:
-            return field.get<UInt64>();
-        case Field::Types::Float64:
-            return field.get<Float64>();
-        case Field::Types::Int128:
-            return field.get<Int128>();
-        case Field::Types::UInt128:
-            return field.get<UInt128>();
-        case Field::Types::Int256:
-            return field.get<Int256>();
-        case Field::Types::UInt256:
-            return field.get<UInt256>();
-        default:
-            return {};
-    }
-}
-
-std::optional<String> StatisticsUtils::tryConvertToString(const DB::Field & field)
-{
-    if (field.getType() == Field::Types::String)
-        return field.get<String>();
-    return {};
-}
-
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
     : stat(stat_)
 {
@@ -105,7 +75,7 @@ Float64 ColumnStatistics::estimateLess(const Field & val) const
 {
     if (stats.contains(StatisticsType::TDigest))
         return stats.at(StatisticsType::TDigest)->estimateLess(val);
-    return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
+    return rows * ConditionSelectivityEstimator::default_cond_range_factor;
 }
 
 Float64 ColumnStatistics::estimateGreater(const Field & val) const
@@ -115,8 +85,7 @@ Float64 ColumnStatistics::estimateGreater(const Field & val) const
 
 Float64 ColumnStatistics::estimateEqual(const Field & val) const
 {
-    auto float_val = StatisticsUtils::tryConvertToFloat64(val);
-    if (float_val.has_value() && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
+    if (stats_desc.data_type->isValueRepresentedByNumber() && stats.contains(StatisticsType::Uniq) && stats.contains(StatisticsType::TDigest))
     {
         /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
         if (stats.at(StatisticsType::Uniq)->estimateCardinality() < 2048)
@@ -126,10 +95,7 @@ Float64 ColumnStatistics::estimateEqual(const Field & val) const
     if (stats.contains(StatisticsType::CountMinSketch))
         return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
 #endif
-    if (!float_val.has_value() && (float_val < - ConditionSelectivityEstimator::threshold || float_val > ConditionSelectivityEstimator::threshold))
-        return rows * ConditionSelectivityEstimator::default_normal_cond_factor;
-    else
-        return rows * ConditionSelectivityEstimator::default_good_cond_factor;
+    return rows * ConditionSelectivityEstimator::default_cond_equal_factor;
 }
 
 /// -------------------------------------

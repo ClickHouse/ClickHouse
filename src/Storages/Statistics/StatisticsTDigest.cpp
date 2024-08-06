@@ -1,6 +1,8 @@
 #include <Storages/Statistics/StatisticsTDigest.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
@@ -10,24 +12,21 @@ extern const int ILLEGAL_STATISTICS;
 extern const int LOGICAL_ERROR;
 }
 
-StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & description)
+StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
+    , data_type(data_type_)
 {
 }
 
 void StatisticsTDigest::update(const ColumnPtr & column)
 {
-    size_t rows = column->size();
-    for (size_t row = 0; row < rows; ++row)
+    for (size_t row = 0; row < column->size(); ++row)
     {
-        Field field;
-        column->get(row, field);
-
-        if (field.isNull())
+        if (column->isNullAt(row))
             continue;
 
-        if (auto field_as_float = StatisticsUtils::tryConvertToFloat64(field))
-            t_digest.add(*field_as_float, 1);
+        auto data = column->getFloat64(row);
+        t_digest.add(data, 1);
     }
 }
 
@@ -43,18 +42,22 @@ void StatisticsTDigest::deserialize(ReadBuffer & buf)
 
 Float64 StatisticsTDigest::estimateLess(const Field & val) const
 {
-    auto val_as_float = StatisticsUtils::tryConvertToFloat64(val);
-    if (val_as_float)
-        return t_digest.getCountLessThan(*val_as_float);
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'tdigest' does not support estimating value of type {}", val.getTypeName());
+    Field val_converted = convertFieldToType(val, *data_type);
+    if (val_converted.isNull())
+        return 0;
+
+    auto val_as_float = applyVisitor(FieldVisitorConvertToNumber<Float64>(), val_converted);
+    return t_digest.getCountLessThan(val_as_float);
 }
 
 Float64 StatisticsTDigest::estimateEqual(const Field & val) const
 {
-    auto val_as_float = StatisticsUtils::tryConvertToFloat64(val);
-    if (val_as_float)
-        return t_digest.getCountEqual(*val_as_float);
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'tdigest' does not support estimating value of type {}", val.getTypeName());
+    Field val_converted = convertFieldToType(val, *data_type);
+    if (val_converted.isNull())
+        return 0;
+
+    auto val_as_float = applyVisitor(FieldVisitorConvertToNumber<Float64>(), val_converted);
+    return t_digest.getCountEqual(val_as_float);
 }
 
 void tdigestStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
@@ -65,9 +68,9 @@ void tdigestStatisticsValidator(const SingleStatisticsDescription & /*descriptio
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'tdigest' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & /*data_type*/)
+StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
 {
-    return std::make_shared<StatisticsTDigest>(description);
+    return std::make_shared<StatisticsTDigest>(description, data_type);
 }
 
 }

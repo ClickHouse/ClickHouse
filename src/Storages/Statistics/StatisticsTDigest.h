@@ -9,7 +9,7 @@ namespace DB
 class StatisticsTDigest : public IStatistics
 {
 public:
-    explicit StatisticsTDigest(const SingleStatisticsDescription & description);
+    explicit StatisticsTDigest(const SingleStatisticsDescription & description, const DataTypePtr & data_type_);
 
     void update(const ColumnPtr & column) override;
 
@@ -21,6 +21,7 @@ public:
 
 private:
     QuantileTDigest<Float64> t_digest;
+    DataTypePtr data_type;
 };
 
 void tdigestStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
