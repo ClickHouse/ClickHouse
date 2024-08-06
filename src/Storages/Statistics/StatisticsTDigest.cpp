@@ -10,8 +10,8 @@ extern const int ILLEGAL_STATISTICS;
 extern const int LOGICAL_ERROR;
 }
 
-StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & stat_)
-    : IStatistics(stat_)
+StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & description)
+    : IStatistics(description)
 {
 }
 
@@ -57,7 +57,7 @@ Float64 StatisticsTDigest::estimateEqual(const Field & val) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'tdigest' does not support estimating value of type {}", val.getTypeName());
 }
 
-void tdigestStatisticsValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
+void tdigestStatisticsValidator(const SingleStatisticsDescription & /*description*/, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
     data_type = removeLowCardinalityAndNullable(data_type);
@@ -65,9 +65,9 @@ void tdigestStatisticsValidator(const SingleStatisticsDescription &, DataTypePtr
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'tdigest' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & stat, DataTypePtr)
+StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & description, DataTypePtr /*data_type*/)
 {
-    return std::make_shared<StatisticsTDigest>(stat);
+    return std::make_shared<StatisticsTDigest>(description);
 }
 
 }

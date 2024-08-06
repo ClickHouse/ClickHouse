@@ -25,8 +25,8 @@ extern const int ILLEGAL_STATISTICS;
 static constexpr auto num_hashes = 7uz;
 static constexpr auto num_buckets = 2718uz;
 
-StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & stat_, DataTypePtr data_type_)
-    : IStatistics(stat_)
+StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & description, DataTypePtr data_type_)
+    : IStatistics(description)
     , sketch(num_hashes, num_buckets)
     , data_type(data_type_)
 {
@@ -84,7 +84,7 @@ void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
 }
 
 
-void countMinSketchStatisticsValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
+void countMinSketchStatisticsValidator(const SingleStatisticsDescription & /*description*/, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
     data_type = removeLowCardinalityAndNullable(data_type);
@@ -92,9 +92,9 @@ void countMinSketchStatisticsValidator(const SingleStatisticsDescription &, Data
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'count_min' does not support type {}", data_type->getName());
 }
 
-StatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
+StatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & description, DataTypePtr data_type)
 {
-    return std::make_shared<StatisticsCountMinSketch>(stat, data_type);
+    return std::make_shared<StatisticsCountMinSketch>(description, data_type);
 }
 
 }

@@ -11,8 +11,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_STATISTICS;
 }
 
-StatisticsUniq::StatisticsUniq(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type)
-    : IStatistics(stat_)
+StatisticsUniq::StatisticsUniq(const SingleStatisticsDescription & description, const DataTypePtr & data_type)
+    : IStatistics(description)
 {
     arena = std::make_unique<Arena>();
     AggregateFunctionProperties properties;
@@ -52,7 +52,7 @@ UInt64 StatisticsUniq::estimateCardinality() const
     return column->getUInt(0);
 }
 
-void uniqStatisticsValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
+void uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/, DataTypePtr data_type)
 {
     data_type = removeNullable(data_type);
     data_type = removeLowCardinalityAndNullable(data_type);
@@ -60,9 +60,9 @@ void uniqStatisticsValidator(const SingleStatisticsDescription &, DataTypePtr da
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'uniq' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type)
+StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, DataTypePtr data_type)
 {
-    return std::make_shared<StatisticsUniq>(stat, data_type);
+    return std::make_shared<StatisticsUniq>(description, data_type);
 }
 
 }
