@@ -534,7 +534,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 {
     ASTPtr ast;
 
-    const auto & settings = getContext()->getSettingsRef();
+    auto settings = getContext()->getSettingsRef();
     {
         std::lock_guard lock(mutex);
         auto database_metadata_path = getContext()->getPath() + "metadata/" + escapeForFileName(database_name) + ".sql";
@@ -733,7 +733,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
         return nullptr;
     }
 
-    const auto & settings = local_context->getSettingsRef();
+    auto settings = local_context->getSettingsRef();
     ParserCreateQuery parser;
     const char * pos = query.data();
     std::string error_message;

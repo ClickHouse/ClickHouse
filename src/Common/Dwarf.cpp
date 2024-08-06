@@ -1559,7 +1559,8 @@ bool Dwarf::isAddrInRangeList(const CompilationUnit & cu,
                     auto sp_start = addr_.substr(*cu.addr_base + index_start * sizeof(uint64_t));
                     auto start = read<uint64_t>(sp_start);
 
-                    auto end = start + length;
+                    auto sp_end = addr_.substr(*cu.addr_base + index_start * sizeof(uint64_t) + length);
+                    auto end = read<uint64_t>(sp_end);
                     if (start != end && address >= start && address < end)
                     {
                         return true;

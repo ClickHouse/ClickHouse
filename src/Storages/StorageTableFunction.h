@@ -112,7 +112,7 @@ public:
 
             auto step = std::make_unique<ExpressionStep>(
                 query_plan.getCurrentDataStream(),
-                std::move(convert_actions_dag));
+                convert_actions_dag);
 
             step->setStepDescription("Converting columns");
             query_plan.addStep(std::move(step));

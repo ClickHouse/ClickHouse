@@ -4,6 +4,8 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 

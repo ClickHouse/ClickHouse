@@ -8,7 +8,6 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
-#include <Common/Logger.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/config_version.h>
@@ -101,7 +100,7 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
 {
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
-    capture_thread_frame_pointers = getThreadFramePointers();
+    capture_thread_frame_pointers = thread_frame_pointers;
     handle_error_code(msg_masked.msg, code, remote, getStackFramePointers());
 }
 
@@ -111,7 +110,7 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
 {
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
-    capture_thread_frame_pointers = getThreadFramePointers();
+    capture_thread_frame_pointers = thread_frame_pointers;
     handle_error_code(message(), code, remote, getStackFramePointers());
 }
 
@@ -120,7 +119,7 @@ Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
 {
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
-    capture_thread_frame_pointers = getThreadFramePointers();
+    capture_thread_frame_pointers = thread_frame_pointers;
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = exc.get_stack_trace_frames();
     auto stack_trace_size = exc.get_stack_trace_size();
@@ -134,7 +133,7 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
 {
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
-    capture_thread_frame_pointers = getThreadFramePointers();
+    capture_thread_frame_pointers = thread_frame_pointers;
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = exc.get_stack_trace_frames();
     auto stack_trace_size = exc.get_stack_trace_size();
@@ -224,38 +223,10 @@ Exception::FramePointers Exception::getStackFramePointers() const
 }
 
 thread_local bool Exception::enable_job_stack_trace = false;
-thread_local bool Exception::can_use_thread_frame_pointers = false;
-thread_local Exception::ThreadFramePointers Exception::thread_frame_pointers;
-
-Exception::ThreadFramePointers::ThreadFramePointers()
-{
-    can_use_thread_frame_pointers = true;
-}
-
-Exception::ThreadFramePointers::~ThreadFramePointers()
-{
-    can_use_thread_frame_pointers = false;
-}
-
-Exception::ThreadFramePointersBase Exception::getThreadFramePointers()
-{
-    if (can_use_thread_frame_pointers)
-        return thread_frame_pointers.frame_pointers;
-
-    return {};
-}
-
-void Exception::setThreadFramePointers(ThreadFramePointersBase frame_pointers)
-{
-    if (can_use_thread_frame_pointers)
-        thread_frame_pointers.frame_pointers = std::move(frame_pointers);
-}
+thread_local std::vector<StackTrace::FramePointers> Exception::thread_frame_pointers = {};
 
 static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message)
 {
-    if (!isLoggingEnabled())
-        return;
-
     try
     {
         PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
@@ -271,9 +242,6 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
 {
-    if (!isLoggingEnabled())
-        return;
-
     /// Under high memory pressure, new allocations throw a
     /// MEMORY_LIMIT_EXCEEDED exception.
     ///

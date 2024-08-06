@@ -1,5 +1,4 @@
--- Tags: long, no-random-merge-tree-settings
--- no-random-merge-tree-settings - times out in private
+-- Tags: long
 
 DROP TABLE IF EXISTS build;
 DROP TABLE IF EXISTS skewed_probe;

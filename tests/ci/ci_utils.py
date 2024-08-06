@@ -2,7 +2,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -16,8 +15,6 @@ class Envs:
     WORKFLOW_RESULT_FILE = os.getenv(
         "WORKFLOW_RESULT_FILE", "/tmp/workflow_results.json"
     )
-    S3_BUILDS_BUCKET = os.getenv("S3_BUILDS_BUCKET", "clickhouse-builds")
-    GITHUB_WORKFLOW = os.getenv("GITHUB_WORKFLOW", "")
 
 
 LABEL_CATEGORIES = {
@@ -85,7 +82,7 @@ def normalize_string(string: str) -> str:
     return res
 
 
-class GH:
+class GHActions:
     class ActionsNames:
         RunConfig = "RunConfig"
 
@@ -107,9 +104,6 @@ class GH:
                 res = json.load(json_file)
             except json.JSONDecodeError as e:
                 print(f"ERROR: json decoder exception {e}")
-                json_file.seek(0)
-                print("    File content:")
-                print(json_file.read())
                 return {}
         return res
 
@@ -118,14 +112,6 @@ class GH:
         res = cls._get_workflow_results()
         results = [f"{job}: {data['result']}" for job, data in res.items()]
         cls.print_in_group("Workflow results", results)
-
-    @classmethod
-    def is_workflow_ok(cls) -> bool:
-        res = cls._get_workflow_results()
-        for _job, data in res.items():
-            if data["result"] == "failure":
-                return False
-        return bool(res)
 
     @classmethod
     def get_workflow_job_result(cls, wf_job_name: str) -> Optional[str]:
@@ -199,79 +185,72 @@ class GH:
         return False
 
     @staticmethod
-    def get_pr_url_by_branch(branch, repo=None):
-        repo = repo or Envs.GITHUB_REPOSITORY
-        get_url_cmd = f"gh pr list --repo {repo} --head {branch} --json url --jq '.[0].url' --state open"
-        url = Shell.get_output(get_url_cmd)
-        if not url:
-            print(f"WARNING: No open PR found, branch [{branch}] - search for merged")
-            get_url_cmd = f"gh pr list --repo {repo} --head {branch} --json url --jq '.[0].url' --state merged"
-            url = Shell.get_output(get_url_cmd)
+    def get_pr_url_by_branch(repo, branch):
+        get_url_cmd = (
+            f"gh pr list --repo {repo} --head {branch} --json url --jq '.[0].url'"
+        )
+        url = Shell.run(get_url_cmd)
         if not url:
             print(f"ERROR: PR nor found, branch [{branch}]")
         return url
 
-    @staticmethod
-    def is_latest_release_branch(branch):
-        latest_branch = Shell.get_output(
-            'gh pr list --label release --repo ClickHouse/ClickHouse --search "sort:created" -L1 --json headRefName'
-        )
-        return latest_branch == branch
-
 
 class Shell:
     @classmethod
-    def get_output_or_raise(cls, command):
-        return cls.get_output(command, strict=True)
-
-    @classmethod
-    def get_output(cls, command, strict=False):
+    def run_strict(cls, command):
         res = subprocess.run(
             command,
             shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            check=strict,
+            check=True,
         )
         return res.stdout.strip()
 
     @classmethod
-    def check(
-        cls,
-        command,
-        strict=False,
-        verbose=False,
-        dry_run=False,
-        stdin_str=None,
-        **kwargs,
-    ):
+    def run(cls, command, check=False, dry_run=False):
         if dry_run:
             print(f"Dry-ryn. Would run command [{command}]")
-            return True
-        if verbose:
-            print(f"Run command [{command}]")
-        proc = subprocess.Popen(
+            return ""
+        print(f"Run command [{command}]")
+        res = ""
+        result = subprocess.run(
             command,
             shell=True,
-            stderr=subprocess.STDOUT,
             stdout=subprocess.PIPE,
-            stdin=subprocess.PIPE if stdin_str else None,
-            universal_newlines=True,
-            start_new_session=True,
-            bufsize=1,
-            errors="backslashreplace",
-            **kwargs,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
         )
-        if stdin_str:
-            proc.communicate(input=stdin_str)
-        elif proc.stdout:
-            for line in proc.stdout:
-                sys.stdout.write(line)
-        proc.wait()
-        if strict:
-            assert proc.returncode == 0
-        return proc.returncode == 0
+        if result.returncode == 0:
+            print(f"stdout: {result.stdout.strip()}")
+            res = result.stdout
+        else:
+            print(
+                f"ERROR: stdout: {result.stdout.strip()}, stderr: {result.stderr.strip()}"
+            )
+            if check:
+                assert result.returncode == 0
+        return res.strip()
+
+    @classmethod
+    def run_as_daemon(cls, command):
+        print(f"Run daemon command [{command}]")
+        subprocess.Popen(command.split(" "))  # pylint:disable=consider-using-with
+        return 0, ""
+
+    @classmethod
+    def check(cls, command):
+        result = subprocess.run(
+            command,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        return result.returncode == 0
 
 
 class Utils:
@@ -295,7 +274,7 @@ class Utils:
 
     @staticmethod
     def clear_dmesg():
-        Shell.check("sudo dmesg --clear", verbose=True)
+        Shell.run("sudo dmesg --clear ||:")
 
     @staticmethod
     def check_pr_description(pr_body: str, repo_name: str) -> Tuple[str, str]:
