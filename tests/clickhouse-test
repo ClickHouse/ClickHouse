@@ -1072,12 +1072,12 @@ class TestCase:
     def apply_random_settings_limits(self, random_settings):
         for setting in random_settings:
             if setting in self.random_settings_limits:
-                min = self.random_settings_limits[setting][0]
-                if min and random_settings[setting] < min:
-                    random_settings[setting] = min
-                max = self.random_settings_limits[setting][1]
-                if max and random_settings[setting] > max:
-                    random_settings[setting] = max
+                min_value = self.random_settings_limits[setting][0]
+                if min_value and random_settings[setting] < min_value:
+                    random_settings[setting] = min_value
+                max_value = self.random_settings_limits[setting][1]
+                if max_value and random_settings[setting] > max_value:
+                    random_settings[setting] = max_value
 
     def __init__(self, suite, case: str, args, is_concurrent: bool):
         self.case: str = case  # case file name
@@ -2005,7 +2005,7 @@ class TestSuite:
         all_random_settings_limits = {}
         start_time = datetime.now()
         for test_name in all_tests:
-            tags, random_settings_limits = load_tags_and_random_settings_limits_from_file(os.path.join(suite_dir, test_name)) # noqa: ignore E203
+            tags, random_settings_limits = load_tags_and_random_settings_limits_from_file(os.path.join(suite_dir, test_name))  # noqa: ignore E203
             if tags:
                 all_tags[test_name] = tags
             if random_settings_limits:
@@ -2052,7 +2052,7 @@ class TestSuite:
             )
         )
         self.all_tags: Dict[str, Set[str]] = all_tags_and_random_settings_limits[0]
-        self.all_random_settings_limits: Dict[str, Dict[str, (int, int)]] = all_tags_and_random_settings_limits[1] # noqa: ignore E203
+        self.all_random_settings_limits: Dict[str, Dict[str, (int, int)]] = all_tags_and_random_settings_limits[1]  # noqa: ignore E203
 
         self.sequential_tests = []
         self.parallel_tests = []
