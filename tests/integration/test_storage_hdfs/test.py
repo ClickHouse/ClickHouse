@@ -610,44 +610,48 @@ def test_format_detection(started_cluster):
 
 
 def test_schema_inference_with_globs(started_cluster):
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    dir = "/test_schema_inference_with_globs"
+    fs.mkdirs(dir)
     node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/data1.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
+        f"insert into table function hdfs('hdfs://hdfs1:9000{dir}/data1.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
     )
     node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/data2.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select 0"
+        f"insert into table function hdfs('hdfs://hdfs1:9000{dir}/data2.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select 0"
     )
 
     result = node1.query(
-        f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings input_format_json_infer_incomplete_types_as_strings=0"
+        f"desc hdfs('hdfs://hdfs1:9000{dir}/data*.jsoncompacteachrow') settings input_format_json_infer_incomplete_types_as_strings=0"
     )
     assert result.strip() == "c1\tNullable(Int64)"
 
     result = node1.query(
-        f"select * from hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings input_format_json_infer_incomplete_types_as_strings=0"
+        f"select * from hdfs('hdfs://hdfs1:9000{dir}/data*.jsoncompacteachrow') settings input_format_json_infer_incomplete_types_as_strings=0"
     )
     assert sorted(result.split()) == ["0", "\\N"]
 
     node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/data3.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
+        f"insert into table function hdfs('hdfs://hdfs1:9000{dir}/data3.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
     )
 
     filename = "data{1,3}.jsoncompacteachrow"
 
     result = node1.query_and_get_error(
-        f"desc hdfs('hdfs://hdfs1:9000/{filename}') settings schema_inference_use_cache_for_hdfs=0, input_format_json_infer_incomplete_types_as_strings=0"
+        f"desc hdfs('hdfs://hdfs1:9000{dir}/{filename}') settings schema_inference_use_cache_for_hdfs=0, input_format_json_infer_incomplete_types_as_strings=0"
     )
 
     assert "All attempts to extract table structure from files failed" in result
 
     node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/data0.jsoncompacteachrow', 'TSV', 'x String') select '[123;]'"
+        f"insert into table function hdfs('hdfs://hdfs1:9000{dir}/data0.jsoncompacteachrow', 'TSV', 'x String') select '[123;]'"
     )
 
     result = node1.query_and_get_error(
-        f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings schema_inference_use_cache_for_hdfs=0, input_format_json_infer_incomplete_types_as_strings=0"
+        f"desc hdfs('hdfs://hdfs1:9000{dir}/data*.jsoncompacteachrow') settings schema_inference_use_cache_for_hdfs=0, input_format_json_infer_incomplete_types_as_strings=0"
     )
 
     assert "CANNOT_EXTRACT_TABLE_STRUCTURE" in result
+    fs.delete(dir, recursive=True)
 
 
 def test_insert_select_schema_inference(started_cluster):
@@ -694,6 +698,7 @@ def test_cluster_macro(started_cluster):
 
 def test_virtual_columns_2(started_cluster):
     hdfs_api = started_cluster.hdfs_api
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
 
     table_function = (
         f"hdfs('hdfs://hdfs1:9000/parquet_2', 'Parquet', 'a Int32, b String')"
@@ -710,6 +715,8 @@ def test_virtual_columns_2(started_cluster):
 
     result = node1.query(f"SELECT _path FROM {table_function}")
     assert result.strip() == "kek"
+    fs.delete("/parquet_2")
+    fs.delete("/parquet_3")
 
 
 def check_profile_event_for_query(node, file, profile_event, amount=1):
