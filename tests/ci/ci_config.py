@@ -510,7 +510,6 @@ class CI:
         JobNames.LIBFUZZER_TEST: JobConfig(
             required_builds=[BuildNames.FUZZERS],
             run_by_label=Tags.libFuzzer,
-            timeout=10800,
             run_command='libfuzzer_test_check.py "$CHECK_NAME"',
             runner_type=Runners.STYLE_CHECKER,
         ),
