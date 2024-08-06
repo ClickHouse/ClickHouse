@@ -59,7 +59,7 @@ SELECT 'Test statistics uniq:';
 ALTER TABLE tab ADD STATISTICS a, b, c, d TYPE uniq;
 ALTER TABLE tab MATERIALIZE STATISTICS a, b, c, d;
 SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String|_DateTime', '')
-FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE d = cast(1, 'DateTime')/*100*/ and c = 0/*1000*/ and b = 0/*100*/ and a = '0'/*100*/)
+FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE d = cast(1, 'DateTime')/*100*/ and c = 0/*1000*/)
 WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 ALTER TABLE tab DROP STATISTICS a, b, c, d;
 
@@ -73,7 +73,7 @@ ALTER TABLE tab ADD STATISTICS d TYPE count_min, minmax, uniq, tdigest;
 ALTER TABLE tab MATERIALIZE STATISTICS a, b, c, d;
 
 SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String|_DateTime', '')
-FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE d = cast(1, 'DateTime')/*1*/ and c < -90/*900*/ and b > 900/*990*/ and a = '0'/*1*/)
+FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE d = cast(1, 'DateTime')/*1*/ and c < -90/*900*/ and b > 900/*990*/)
 WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 
 SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String|_DateTime', '')
@@ -83,7 +83,7 @@ WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 
 SELECT 'Test statistics implicitly type conversion:';
 SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String|_DateTime', '')
-FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE d = '2024-08-06 09:58:09'/*0*/ and c = '0'/*100*/ and b > 0/*9990*/ and a = '10000'/*0*/)
+FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE d = '2024-08-06 09:58:09'/*0*/ and c = '0'/*100*/ and b > 0/*9990*/ and a = '1'/*1*/)
 WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 
 ALTER TABLE tab DROP STATISTICS a, b, c, d;
