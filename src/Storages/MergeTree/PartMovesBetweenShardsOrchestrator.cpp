@@ -30,16 +30,6 @@ PartMovesBetweenShardsOrchestrator::PartMovesBetweenShardsOrchestrator(StorageRe
     , log(getLogger(logger_name))
     , entries_znode_path(zookeeper_path + "/part_moves_shard")
 {
-
-    /// Schedule pool is not designed for long-running tasks. TODO replace with a separate thread?
-    auto zk = storage.getZooKeeper();
-    Coordination::Requests ops;
-    ops.emplace_back(zkutil::makeCreateRequest( fs::path(entries_znode_path) / "tasks" , "", zkutil::CreateMode::Persistent,true));
-    ops.emplace_back(zkutil::makeCreateRequest( fs::path(entries_znode_path) / "task_queue" , "", zkutil::CreateMode::Persistent,true));
-    Coordination::Responses responses;
-    Coordination::Error rc = zk->tryMulti(ops, responses);
-    zkutil::KeeperMultiException::check(rc, ops, responses);
-
     task = storage.getContext()->getSchedulePool().createTask(logger_name, [this]{ run(); });
 }
 
@@ -84,11 +74,11 @@ void PartMovesBetweenShardsOrchestrator::shutdown()
 
 std::vector<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrchestrator::getEntriesFromZk()
 {
-    std::lock_guard lock(state_mutex);
     std::vector<Entry> tasks;
     auto zk = storage.getZooKeeper();
 
     Strings task_names = zk->getChildren(entries_znode_path + "/tasks");
+
     for (auto const & task_name : task_names)
     {
         PartMovesBetweenShardsOrchestrator::Entry e;
@@ -131,12 +121,9 @@ std::optional<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsO
         entry_to_process.version = stat.version;
         entry_to_process.znode_name = signaled_entry;
 
-        /// Create a lock holder to prevent other replicas from processing the same task
-        zkutil::EphemeralNodeHolder::Ptr entry_node_holder;
-
         try
         {
-            entry_node_holder = zkutil::EphemeralNodeHolder::create(entry_to_process.znode_name + "/lock_holder", *zk, storage.replica_name);
+            zk->create(entry_to_process.znode_path + "/replica", storage.replica_name, zkutil::CreateMode::Ephemeral);
             return entry_to_process;
         }
         catch (const Coordination::Exception & e)
@@ -197,10 +184,9 @@ void PartMovesBetweenShardsOrchestrator::step(Entry & entry)
             entry.num_tries += 1;
         }
     }
-     entry.update_time = std::time(nullptr);
-     ops.emplace_back(zkutil::makeSetRequest(entry.znode_path, entry.toString(), entry.version));
-     ops.emplace_back(zkutil::makeRemoveRequest(entry.znode_path+ "/lock_holder", -1));
-
+    entry.update_time = std::time(nullptr);
+    ops.emplace_back(zkutil::makeSetRequest(entry.znode_path, entry.toString(), entry.version));
+    ops.emplace_back(zkutil::makeRemoveRequest(entry.znode_path+ "/replica", -1));
     Coordination::Responses responses;
     Coordination::Error rc = zk->tryMulti(ops, responses);
     zkutil::KeeperMultiException::check(rc, ops, responses);
@@ -545,9 +531,8 @@ void PartMovesBetweenShardsOrchestrator::removePins(Entry & entry, zkutil::ZooKe
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/pinned_part_uuids", src_pins.toString(), src_pins.stat.version));
     ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/pinned_part_uuids", dst_pins.toString(), dst_pins.stat.version));
-    if(entry.rollback){
-        ops.emplace_back(zkutil::makeRemoveRequest(entries_znode_path + "/task_queue/" + entry.znode_name, -1));
-    }
+    ops.emplace_back(zkutil::makeRemoveRequest(entries_znode_path + "/task_queue/" + entry.znode_name, -1));
+
     zk->multi(ops);
 }
 
@@ -596,9 +581,6 @@ CancellationCode PartMovesBetweenShardsOrchestrator::killPartMoveToShard(const U
 
 std::vector<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrchestrator::getEntries()
 {
-
-    std::lock_guard lock(state_mutex);
-
     return getEntriesFromZk();
 }
 

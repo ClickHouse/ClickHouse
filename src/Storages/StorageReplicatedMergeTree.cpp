@@ -779,6 +779,8 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
 
     /// Part movement.
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/part_moves_shard", String(), zkutil::CreateMode::Persistent));
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/part_moves_shard/tasks", String(), zkutil::CreateMode::Persistent));
+    futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/part_moves_shard/task_queue", String(), zkutil::CreateMode::Persistent));
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/pinned_part_uuids", getPinnedPartUUIDs()->toString(), zkutil::CreateMode::Persistent));
     /// For ALTER PARTITION with multi-leaders
     futures.push_back(zookeeper->asyncTryCreateNoThrow(zookeeper_path + "/alter_partition_version", String(), zkutil::CreateMode::Persistent));
@@ -3649,23 +3651,27 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr StorageReplicatedMergeTree::selectQue
 void StorageReplicatedMergeTree::updateMovePartTask( const LogEntry & logEntry, bool result)
 {
     auto zookeeper = getZooKeeper();
-     String value;
+    String value;
     Coordination::Stat stat;
     
     while (zookeeper->tryGet(fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name , value, &stat)){
         PartMovesBetweenShardsOrchestrator::Entry entry;
         entry.fromString(value);
-        if(result)
+        if(result){
+            if(entry.replicas_failed.find(replica_name) != entry.replicas_failed.end())
+                entry.replicas_failed.erase(replica_name);
             entry.replicas_success.insert(replica_name);
-        else 
+        }
+        else{
             entry.replicas_failed.insert(replica_name);
+        }
 
         Coordination::Requests ops;
         Coordination::Responses responses;
 
         ops.emplace_back(zkutil::makeSetRequest(fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name, entry.toString(), stat.version));
 
-        if(entry.replicas_success.size() + entry.replicas_failed.size()  == entry.required_number_of_replicas){
+        if(entry.replicas_success.size() + entry.replicas_failed.size() == entry.required_number_of_replicas){
             ops.emplace_back(zkutil::makeCreateRequest(fs::path(logEntry.task_entry_zk_path) / "task_queue" / logEntry.task_name, replica_name, zkutil::CreateMode::Persistent, true));
         }
 
@@ -3696,9 +3702,7 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
     {
         try
         {
-            
             bool result =  executeLogEntry(*entry_to_process);
-            
             if(!entry_to_process->task_name.empty()){
                 updateMovePartTask(*entry_to_process, result);
             }
@@ -3729,6 +3733,7 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
               * The thread that performs this action will sleep a few seconds after the exception.
               * See `queue.processEntry` function.
               */
+            updateMovePartTask(*entry_to_process, false);
             throw;
         }
         catch (...)

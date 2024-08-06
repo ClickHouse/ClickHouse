@@ -242,9 +242,7 @@ def test_part_move_step_by_step(started_cluster):
     wait_for_state(
         "SYNC_SOURCE",
         s0r0,
-        "test_part_move_step_by_step",
-        "Some replicas haven\\'t processed event",
-    )
+        "test_part_move_step_by_step")
     deduplication_invariant.assert_no_exception()
 
     # Start all replicas in source shard but stop a replica in destination shard
@@ -263,9 +261,7 @@ def test_part_move_step_by_step(started_cluster):
     wait_for_state(
         "SYNC_DESTINATION",
         s0r0,
-        "test_part_move_step_by_step",
-        "Some replicas haven\\'t processed event",
-    )
+        "test_part_move_step_by_step")
     deduplication_invariant.assert_no_exception()
 
     # Start previously stopped replica in destination shard to let SYNC_DESTINATION
@@ -276,9 +272,7 @@ def test_part_move_step_by_step(started_cluster):
     wait_for_state(
         "DESTINATION_FETCH",
         s0r0,
-        "test_part_move_step_by_step",
-        "Some replicas haven\\'t processed event",
-    )
+        "test_part_move_step_by_step")
     deduplication_invariant.assert_no_exception()
 
     # Start previously stopped replica in destination shard to let DESTINATION_FETCH
@@ -289,9 +283,7 @@ def test_part_move_step_by_step(started_cluster):
     wait_for_state(
         "DESTINATION_ATTACH",
         s0r0,
-        "test_part_move_step_by_step",
-        "Some replicas haven\\'t processed event",
-    )
+        "test_part_move_step_by_step")
     deduplication_invariant.assert_no_exception()
 
     # Start all replicas in destination shard to let DESTINATION_ATTACH succeed.
@@ -301,9 +293,7 @@ def test_part_move_step_by_step(started_cluster):
     wait_for_state(
         "SOURCE_DROP",
         s0r1,
-        "test_part_move_step_by_step",
-        "Some replicas haven\\'t processed event",
-    )
+        "test_part_move_step_by_step")
     deduplication_invariant.assert_no_exception()
 
     s0r0.start_clickhouse()
@@ -391,9 +381,7 @@ def test_part_move_step_by_step_kill(started_cluster):
     wait_for_state(
         "SYNC_SOURCE",
         s0r0,
-        "test_part_move_step_by_step_kill",
-        "Some replicas haven\\'t processed event",
-    )
+        "test_part_move_step_by_step_kill")
     deduplication_invariant.assert_no_exception()
 
     # Start all replicas in source shard but stop a replica in destination shard
@@ -412,9 +400,7 @@ def test_part_move_step_by_step_kill(started_cluster):
     wait_for_state(
         "SYNC_DESTINATION",
         s0r0,
-        "test_part_move_step_by_step_kill",
-        "Some replicas haven\\'t processed event",
-    )
+        "test_part_move_step_by_step_kill" )
     deduplication_invariant.assert_no_exception()
 
     # Start previously stopped replica in destination shard to let SYNC_DESTINATION
@@ -425,9 +411,7 @@ def test_part_move_step_by_step_kill(started_cluster):
     wait_for_state(
         "DESTINATION_FETCH",
         s0r0,
-        "test_part_move_step_by_step_kill",
-        "Some replicas haven\\'t processed event",
-    )
+        "test_part_move_step_by_step_kill")
 
     # Start previously stopped replica in destination shard to let DESTINATION_FETCH
     # succeed.
@@ -437,9 +421,7 @@ def test_part_move_step_by_step_kill(started_cluster):
     wait_for_state(
         "DESTINATION_ATTACH",
         s0r0,
-        "test_part_move_step_by_step_kill",
-        "Some replicas haven\\'t processed event",
-    )
+        "test_part_move_step_by_step_kill")
     deduplication_invariant.assert_no_exception()
 
     # Rollback here.
@@ -454,8 +436,7 @@ def test_part_move_step_by_step_kill(started_cluster):
         "DESTINATION_ATTACH",
         s0r0,
         "test_part_move_step_by_step_kill",
-        assert_exception_msg="Some replicas haven\\'t processed event",
-        assert_rollback=True,
+        assert_rollback=True
     )
 
     s1r1.start_clickhouse()
