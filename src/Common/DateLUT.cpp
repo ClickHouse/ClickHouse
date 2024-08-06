@@ -272,7 +272,7 @@ void DateLUT::setPreferSystemTZData()
                                                    const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> & fallback
                                                    ) -> std::unique_ptr<cctz::ZoneInfoSource>
     {
-	auto system_tz_source = fallback(name);
+	    auto system_tz_source = fallback(name);
         if (system_tz_source)
             return system_tz_source;
 
