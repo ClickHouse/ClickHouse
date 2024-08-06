@@ -37,6 +37,7 @@ DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     , metadata_helper(metadata_helper_)
 {}
 
+
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     IObjectStorage & object_storage_,
     IMetadataStorage & metadata_storage_,

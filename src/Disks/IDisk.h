@@ -245,7 +245,7 @@ public:
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     /// Differs from removeRecursive for S3/HDFS disks
-    /// Removes files every time limit is reached and reduces memory consumption.
+    /// Limits the number of removing files in batches to prevent high memory consumption.
     virtual void removeRecursiveWithLimit(const String & path) { removeRecursive(path); }
 
     /// Remove file. Throws exception if file doesn't exists or if directory is not empty.
