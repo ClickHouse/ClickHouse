@@ -55,19 +55,19 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         ColumnPtr res;
-        if (!((res = executeType<UInt8>(arguments, input_rows_count))
-            || (res = executeType<UInt16>(arguments, input_rows_count))
-            || (res = executeType<UInt32>(arguments, input_rows_count))
-            || (res = executeType<UInt64>(arguments, input_rows_count))
-            || (res = executeType<Int8>(arguments, input_rows_count))
-            || (res = executeType<Int16>(arguments, input_rows_count))
-            || (res = executeType<Int32>(arguments, input_rows_count))
-            || (res = executeType<Int64>(arguments, input_rows_count))
-            || (res = executeType<Float32>(arguments, input_rows_count))
-            || (res = executeType<Float64>(arguments, input_rows_count))))
+        if (!((res = executeType<UInt8>(arguments))
+            || (res = executeType<UInt16>(arguments))
+            || (res = executeType<UInt32>(arguments))
+            || (res = executeType<UInt64>(arguments))
+            || (res = executeType<Int8>(arguments))
+            || (res = executeType<Int16>(arguments))
+            || (res = executeType<Int32>(arguments))
+            || (res = executeType<Int64>(arguments))
+            || (res = executeType<Float32>(arguments))
+            || (res = executeType<Float64>(arguments))))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                             arguments[0].column->getName(), getName());
 
@@ -76,7 +76,7 @@ public:
 
 private:
     template <typename T>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments) const
     {
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(arguments[0].column.get()))
         {
@@ -85,12 +85,13 @@ private:
             const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             ColumnString::Chars & data_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
-            data_to.resize(input_rows_count * 2);
-            offsets_to.resize(input_rows_count);
+            size_t size = vec_from.size();
+            data_to.resize(size * 2);
+            offsets_to.resize(size);
 
             WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 Impl::format(static_cast<double>(vec_from[i]), buf_to);
                 writeChar(0, buf_to);

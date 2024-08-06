@@ -1,7 +1,6 @@
 #include <Storages/IStorage.h>
 
 #include <Common/StringUtils.h>
-#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -237,7 +236,7 @@ StorageID IStorage::getStorageID() const
     return storage_id;
 }
 
-ConditionSelectivityEstimator IStorage::getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const
+ConditionSelectivityEstimator IStorage::getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAGPtr &, ContextPtr) const
 {
     return {};
 }
@@ -325,8 +324,9 @@ std::string PrewhereInfo::dump() const
         ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
     }
 
+    if (prewhere_actions)
     {
-        ss << "prewhere_actions " << prewhere_actions.dumpDAG() << "\n";
+        ss << "prewhere_actions " << prewhere_actions->dumpDAG() << "\n";
     }
 
     ss << "remove_prewhere_column " << remove_prewhere_column
@@ -340,8 +340,10 @@ std::string FilterDAGInfo::dump() const
     WriteBufferFromOwnString ss;
     ss << "FilterDAGInfo for column '" << column_name <<"', do_remove_column "
        << do_remove_column << "\n";
-
-    ss << "actions " << actions.dumpDAG() << "\n";
+    if (actions)
+    {
+        ss << "actions " << actions->dumpDAG() << "\n";
+    }
 
     return ss.str();
 }

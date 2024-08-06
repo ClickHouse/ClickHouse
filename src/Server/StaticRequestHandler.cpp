@@ -4,14 +4,13 @@
 #include "HTTPHandlerFactory.h"
 #include "HTTPResponseHeaderWriter.h"
 
-#include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Interpreters/Context.h>
 
 #include <Common/Exception.h>
 

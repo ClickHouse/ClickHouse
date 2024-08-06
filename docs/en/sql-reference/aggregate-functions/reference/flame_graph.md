@@ -1,6 +1,6 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/flame_graph
-sidebar_position: 138
+slug: /en/sql-reference/aggregate-functions/reference/flamegraph
+sidebar_position: 110
 ---
 
 # flameGraph

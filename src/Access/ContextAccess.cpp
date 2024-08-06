@@ -38,24 +38,6 @@ namespace ErrorCodes
 
 namespace
 {
-    const std::vector<std::tuple<AccessFlags, std::string>> source_and_table_engines = {
-        {AccessType::FILE, "File"},
-        {AccessType::URL, "URL"},
-        {AccessType::REMOTE, "Distributed"},
-        {AccessType::MONGO, "MongoDB"},
-        {AccessType::REDIS, "Redis"},
-        {AccessType::MYSQL, "MySQL"},
-        {AccessType::POSTGRES, "PostgreSQL"},
-        {AccessType::SQLITE, "SQLite"},
-        {AccessType::ODBC, "ODBC"},
-        {AccessType::JDBC, "JDBC"},
-        {AccessType::HDFS, "HDFS"},
-        {AccessType::S3, "S3"},
-        {AccessType::HIVE, "Hive"},
-        {AccessType::AZURE, "AzureBlobStorage"}
-    };
-
-
     AccessRights mixAccessRightsFromUserAndRoles(const User & user, const EnabledRolesInfo & roles_info)
     {
         AccessRights res = user.access;
@@ -224,6 +206,22 @@ namespace
         }
 
         /// There is overlap between AccessType sources and table engines, so the following code avoids user granting twice.
+        static const std::vector<std::tuple<AccessFlags, std::string>> source_and_table_engines = {
+            {AccessType::FILE, "File"},
+            {AccessType::URL, "URL"},
+            {AccessType::REMOTE, "Distributed"},
+            {AccessType::MONGO, "MongoDB"},
+            {AccessType::REDIS, "Redis"},
+            {AccessType::MYSQL, "MySQL"},
+            {AccessType::POSTGRES, "PostgreSQL"},
+            {AccessType::SQLITE, "SQLite"},
+            {AccessType::ODBC, "ODBC"},
+            {AccessType::JDBC, "JDBC"},
+            {AccessType::HDFS, "HDFS"},
+            {AccessType::S3, "S3"},
+            {AccessType::HIVE, "Hive"},
+            {AccessType::AZURE, "AzureBlobStorage"}
+        };
 
         /// Sync SOURCE and TABLE_ENGINE, so only need to check TABLE_ENGINE later.
         if (access_control.doesTableEnginesRequireGrant())
@@ -269,11 +267,6 @@ namespace
 
     template <typename... OtherArgs>
     std::string_view getDatabase(std::string_view arg1, const OtherArgs &...) { return arg1; }
-
-    std::string_view getTableEngine() { return {}; }
-
-    template <typename... OtherArgs>
-    std::string_view getTableEngine(std::string_view arg1, const OtherArgs &...) { return arg1; }
 }
 
 
@@ -627,58 +620,18 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
 
     if (!granted)
     {
-        auto access_denied_no_grant = [&]<typename... FmtArgs>(AccessFlags access_flags, FmtArgs && ...fmt_args)
+        if (grant_option && acs->isGranted(flags, args...))
         {
-            if (grant_option && acs->isGranted(access_flags, fmt_args...))
-            {
-                return access_denied(ErrorCodes::ACCESS_DENIED,
-                    "{}: Not enough privileges. "
-                    "The required privileges have been granted, but without grant option. "
-                    "To execute this query, it's necessary to have the grant {} WITH GRANT OPTION",
-                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions());
-            }
-
             return access_denied(ErrorCodes::ACCESS_DENIED,
-                "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
-                AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
-        };
-
-        /// As we check the SOURCES from the Table Engine logic, direct prompt about Table Engine would be misleading
-        /// since SOURCES is not granted actually. In order to solve this, turn the prompt logic back to Sources.
-        if (flags & AccessType::TABLE_ENGINE && !access_control->doesTableEnginesRequireGrant())
-        {
-            AccessFlags new_flags;
-
-            String table_engine_name{getTableEngine(args...)};
-            for (const auto & source_and_table_engine : source_and_table_engines)
-            {
-                const auto & table_engine = std::get<1>(source_and_table_engine);
-                if (table_engine != table_engine_name) continue;
-                const auto & source = std::get<0>(source_and_table_engine);
-                /// Set the flags from Table Engine to SOURCES so that prompts can be meaningful.
-                new_flags = source;
-                break;
-            }
-
-            /// Might happen in the case of grant Table Engine on A (but not source), then revoke A.
-            if (new_flags.isEmpty())
-                return access_denied_no_grant(flags, args...);
-
-            if (grant_option && acs->isGranted(flags, args...))
-            {
-                return access_denied(ErrorCodes::ACCESS_DENIED,
-                    "{}: Not enough privileges. "
-                    "The required privileges have been granted, but without grant option. "
-                    "To execute this query, it's necessary to have the grant {} WITH GRANT OPTION",
-                    AccessRightsElement{new_flags}.toStringForAccessTypeSource());
-            }
-
-            return access_denied(ErrorCodes::ACCESS_DENIED,
-                "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
-                AccessRightsElement{new_flags}.toStringForAccessTypeSource() + (grant_option ? " WITH GRANT OPTION" : ""));
+                "{}: Not enough privileges. "
+                "The required privileges have been granted, but without grant option. "
+                "To execute this query, it's necessary to have the grant {} WITH GRANT OPTION",
+                AccessRightsElement{flags, args...}.toStringWithoutOptions());
         }
 
-        return access_denied_no_grant(flags, args...);
+        return access_denied(ErrorCodes::ACCESS_DENIED,
+            "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
+            AccessRightsElement{flags, args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
     }
 
     struct PrecalculatedFlags

@@ -23,7 +23,6 @@
 #include <Common/DateLUTImpl.h>
 #include <base/find_symbols.h>
 #include <Core/DecimalFunctions.h>
-#include <Core/Settings.h>
 
 #include <type_traits>
 #include <concepts>
@@ -783,9 +782,9 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFormatDateTimeImpl>(context); }
 
     explicit FunctionFormatDateTimeImpl(ContextPtr context)
-        : mysql_M_is_month_name(context->getSettingsRef().formatdatetime_parsedatetime_m_is_month_name)
-        , mysql_f_prints_single_zero(context->getSettingsRef().formatdatetime_f_prints_single_zero)
-        , mysql_format_ckl_without_leading_zeros(context->getSettingsRef().formatdatetime_format_without_leading_zeros)
+        : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
+        , mysql_f_prints_single_zero(context->getSettings().formatdatetime_f_prints_single_zero)
+        , mysql_format_ckl_without_leading_zeros(context->getSettings().formatdatetime_format_without_leading_zeros)
     {
     }
 
@@ -848,7 +847,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, [[maybe_unused]] size_t input_rows_count) const override
     {
         ColumnPtr res;
         if constexpr (support_integer == SupportInteger::Yes)
@@ -862,17 +861,17 @@ public:
                 if (!castType(arguments[0].type.get(), [&](const auto & type)
                     {
                         using FromDataType = std::decay_t<decltype(type)>;
-                        if (!(res = executeType<FromDataType>(arguments, result_type, input_rows_count)))
+                        if (!(res = executeType<FromDataType>(arguments, result_type)))
                             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                                 "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime or DateTime64.",
                                 arguments[0].column->getName(), getName());
                         return true;
                     }))
                 {
-                    if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
-                        || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
-                        || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
-                        || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
+                    if (!((res = executeType<DataTypeDate>(arguments, result_type))
+                        || (res = executeType<DataTypeDate32>(arguments, result_type))
+                        || (res = executeType<DataTypeDateTime>(arguments, result_type))
+                        || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
                         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                             "Illegal column {} of function {}, must be Integer or DateTime.",
                             arguments[0].column->getName(), getName());
@@ -881,10 +880,10 @@ public:
         }
         else
         {
-            if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
-                || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
-                || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
-                || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
+            if (!((res = executeType<DataTypeDate>(arguments, result_type))
+                || (res = executeType<DataTypeDate32>(arguments, result_type))
+                || (res = executeType<DataTypeDateTime>(arguments, result_type))
+                || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Illegal column {} of function {}, must be Date or DateTime.",
                     arguments[0].column->getName(), getName());
@@ -894,7 +893,7 @@ public:
     }
 
     template <typename DataType>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
     {
         auto non_const_datetime = arguments[0].column->convertToFullColumnIfConst();
         auto * times = checkAndGetColumn<typename DataType::ColumnType>(non_const_datetime.get());
@@ -955,11 +954,13 @@ public:
         else
             time_zone = &DateLUT::instance();
 
+        const auto & vec = times->getData();
+
         auto col_res = ColumnString::create();
         auto & res_data = col_res->getChars();
         auto & res_offsets = col_res->getOffsets();
-        res_data.resize(input_rows_count * (out_template_size + 1));
-        res_offsets.resize(input_rows_count);
+        res_data.resize(vec.size() * (out_template_size + 1));
+        res_offsets.resize(vec.size());
 
         if constexpr (format_syntax == FormatSyntax::MySQL)
         {
@@ -988,11 +989,9 @@ public:
             }
         }
 
-        const auto & vec = times->getData();
-
         auto * begin = reinterpret_cast<char *>(res_data.data());
         auto * pos = begin;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < vec.size(); ++i)
         {
             if (!const_time_zone_column && arguments.size() > 2)
             {
@@ -1834,10 +1833,10 @@ using FunctionFromUnixTimestampInJodaSyntax = FunctionFormatDateTimeImpl<NameFro
 REGISTER_FUNCTION(FormatDateTime)
 {
     factory.registerFunction<FunctionFormatDateTime>();
-    factory.registerAlias("DATE_FORMAT", FunctionFormatDateTime::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("DATE_FORMAT", FunctionFormatDateTime::name, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionFromUnixTimestamp>();
-    factory.registerAlias("FROM_UNIXTIME", FunctionFromUnixTimestamp::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("FROM_UNIXTIME", FunctionFromUnixTimestamp::name, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionFormatDateTimeInJodaSyntax>();
     factory.registerFunction<FunctionFromUnixTimestampInJodaSyntax>();

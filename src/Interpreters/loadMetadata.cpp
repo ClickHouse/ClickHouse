@@ -24,7 +24,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
-#include <Core/Settings.h>
 
 #include <filesystem>
 
@@ -385,7 +384,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
     if (database->getEngineName() != "Ordinary")
         return;
 
-    const Strings permanently_detached_tables = database->getNamesOfPermanentlyDetachedTables();
+    Strings permanently_detached_tables = database->getNamesOfPermanentlyDetachedTables();
     if (!permanently_detached_tables.empty())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot automatically convert database {} from Ordinary to Atomic, "

@@ -1,7 +1,6 @@
 #include <Backups/BackupIO_S3.h>
 
 #if USE_AWS_S3
-#include <Core/Settings.h>
 #include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
@@ -55,9 +54,9 @@ namespace
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
             settings.auth_settings.region,
             context->getRemoteHostFilter(),
-            static_cast<unsigned>(local_settings.s3_max_redirects),
-            static_cast<unsigned>(local_settings.backup_restore_s3_retry_attempts),
-            local_settings.enable_s3_requests_logging,
+            static_cast<unsigned>(global_settings.s3_max_redirects),
+            static_cast<unsigned>(global_settings.s3_retry_attempts),
+            global_settings.enable_s3_requests_logging,
             /* for_disk_s3 = */ false,
             request_settings.get_request_throttler,
             request_settings.put_request_throttler,

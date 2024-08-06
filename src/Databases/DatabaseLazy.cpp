@@ -1,7 +1,6 @@
 #include <Databases/DatabaseLazy.h>
 
 #include <base/sort.h>
-#include <base/isSharedPtrUnique.h>
 #include <iomanip>
 #include <filesystem>
 #include <Common/CurrentMetrics.h>
@@ -188,14 +187,7 @@ void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_n
 
     it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), current_time, table_name);
 
-    LOG_DEBUG(log, "Add info for detached table {} to snapshot.", backQuote(table_name));
-    if (snapshot_detached_tables.contains(table_name))
-    {
-        LOG_DEBUG(log, "Clean info about detached table {} from snapshot.", backQuote(table_name));
-        snapshot_detached_tables.erase(table_name);
-    }
-
-    CurrentMetrics::add(CurrentMetrics::AttachedTable);
+    CurrentMetrics::add(CurrentMetrics::AttachedTable, 1);
 }
 
 StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & table_name)
@@ -211,17 +203,8 @@ StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & ta
         if (it->second.expiration_iterator != cache_expiration_queue.end())
             cache_expiration_queue.erase(it->second.expiration_iterator);
         tables_cache.erase(it);
-        LOG_DEBUG(log, "Add info for detached table {} to snapshot.", backQuote(table_name));
-        snapshot_detached_tables.emplace(
-            table_name,
-            SnapshotDetachedTable{
-                .database = res->getStorageID().database_name,
-                .table = res->getStorageID().table_name,
-                .uuid = res->getStorageID().uuid,
-                .metadata_path = getObjectMetadataPath(table_name),
-                .is_permanently = false});
 
-        CurrentMetrics::sub(CurrentMetrics::AttachedTable);
+        CurrentMetrics::sub(CurrentMetrics::AttachedTable, 1);
     }
     return res;
 }
@@ -322,7 +305,7 @@ try
         String table_name = expired_tables.front().table_name;
         auto it = tables_cache.find(table_name);
 
-        if (!it->second.table || isSharedPtrUnique(it->second.table))
+        if (!it->second.table || it->second.table.unique())
         {
             LOG_DEBUG(log, "Drop table {} from cache.", backQuote(it->first));
             it->second.table.reset();

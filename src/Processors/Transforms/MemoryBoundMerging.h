@@ -150,7 +150,11 @@ private:
         if (!chunk.hasRows())
             return;
 
-        const auto & agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
+        const auto & info = chunk.getChunkInfo();
+        if (!info)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in SortingAggregatedForMemoryBoundMergingTransform.");
+
+        const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
         if (!agg_info)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo in SortingAggregatedForMemoryBoundMergingTransform.");

@@ -139,19 +139,6 @@ def test(storage_policy):
             == insert_values_arr[i]
         )
 
-    metadata_it = cluster.minio_client.list_objects(
-        cluster.minio_bucket, "data/", recursive=True
-    )
-    metadata_count = 0
-    for obj in list(metadata_it):
-        if "/__meta/" in obj.object_name:
-            assert obj.object_name.endswith("/prefix.path")
-            metadata_count += 1
-        else:
-            assert not obj.object_name.endswith("/prefix.path")
-
-    assert metadata_count > 0
-
     for i in range(NUM_WORKERS):
         node = cluster.instances[f"node{i + 1}"]
         node.query("DROP TABLE IF EXISTS test SYNC")

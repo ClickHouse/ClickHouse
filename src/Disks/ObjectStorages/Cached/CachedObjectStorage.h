@@ -98,10 +98,9 @@ public:
 
     const std::string & getCacheName() const override { return cache_config_name; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
 
-    ObjectStorageKey
-    generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
+    ObjectStorageKey generateObjectKeyPrefixForDirectoryPath(const std::string & path) const override;
 
     void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { object_storage->setKeysGenerator(gen); }
 
@@ -128,7 +127,7 @@ public:
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
 #if USE_AZURE_BLOB_STORAGE
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() const override
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() override
     {
         return object_storage->getAzureBlobStorageClient();
     }

@@ -157,7 +157,7 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 namespace
 {
 
-KeyCondition buildCondition(const IndexDescription & index, const ActionsDAG * filter_actions_dag, ContextPtr context)
+KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGPtr & filter_actions_dag, ContextPtr context)
 {
     return KeyCondition{filter_actions_dag, context, index.column_names, index.expression};
 }
@@ -165,7 +165,7 @@ KeyCondition buildCondition(const IndexDescription & index, const ActionsDAG * f
 }
 
 MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
-    const IndexDescription & index, const ActionsDAG * filter_actions_dag, ContextPtr context)
+    const IndexDescription & index, const ActionsDAGPtr & filter_actions_dag, ContextPtr context)
     : index_data_types(index.data_types)
     , condition(buildCondition(index, filter_actions_dag, context))
 {
@@ -198,7 +198,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator(const Me
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
-    const ActionsDAG * filter_actions_dag, ContextPtr context) const
+    const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_actions_dag, context);
 }
