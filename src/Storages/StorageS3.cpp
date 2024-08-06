@@ -1740,15 +1740,17 @@ bool StorageS3::Configuration::withGlobsIgnorePartitionWildcard() const
     return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
 }
 
-void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection)
+void StorageS3::processNamedCollectionResult(
+    StorageS3::Configuration & configuration, const NamedCollection & collection, const ContextPtr & local_context)
 {
+    const auto & settings = local_context->getSettingsRef();
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
-        configuration.url = S3::URI(std::filesystem::path(collection.get<String>("url")) / filename);
+        configuration.url = S3::URI(std::filesystem::path(collection.get<String>("url")) / filename, settings.allow_archive_path_syntax);
     else
-        configuration.url = S3::URI(collection.get<String>("url"));
+        configuration.url = S3::URI(collection.get<String>("url"), settings.allow_archive_path_syntax);
 
     configuration.auth_settings.access_key_id = collection.getOrDefault<String>("access_key_id", "");
     configuration.auth_settings.secret_access_key = collection.getOrDefault<String>("secret_access_key", "");
@@ -1771,7 +1773,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, const C
 
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
     {
-        processNamedCollectionResult(configuration, *named_collection);
+        processNamedCollectionResult(configuration, *named_collection, local_context);
     }
     else
     {
@@ -1871,7 +1873,8 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, const C
         }
 
         /// This argument is always the first
-        configuration.url = S3::URI(checkAndGetLiteralArgument<String>(engine_args[0], "url"));
+        configuration.url
+            = S3::URI(checkAndGetLiteralArgument<String>(engine_args[0], "url"), local_context->getSettingsRef().allow_archive_path_syntax);
 
         if (engine_args_to_idx.contains("format"))
             configuration.format = checkAndGetLiteralArgument<String>(engine_args[engine_args_to_idx["format"]], "format");

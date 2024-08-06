@@ -383,7 +383,8 @@ public:
 
     bool supportsPartitionBy() const override;
 
-    static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
+    static void
+    processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection, const ContextPtr & local_context);
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
