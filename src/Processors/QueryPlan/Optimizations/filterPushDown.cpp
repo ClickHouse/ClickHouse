@@ -19,6 +19,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
@@ -478,6 +479,14 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         ///       - Filter - Something
 
         return 3;
+    }
+
+    if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(child.get()))
+    {
+        FilterDAGInfo info{filter->getExpression(), filter->getFilterColumnName(), filter->removesFilterColumn()};
+        read_from_merge->addFilter(std::move(info));
+        std::swap(*parent_node, *child_node);
+        return 1;
     }
 
     return 0;
