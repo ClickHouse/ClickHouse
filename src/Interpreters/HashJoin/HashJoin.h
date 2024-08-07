@@ -225,7 +225,7 @@ public:
             SCOPE_EXIT(filterBySelector());
 
             if (num_rows >= rows())
-                return Block{};
+                return block.cloneEmpty();
 
             chassert(block);
 
