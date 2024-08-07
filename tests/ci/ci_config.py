@@ -682,6 +682,34 @@ class CI:
         assert res, f"not a build [{build_name}] or invalid JobConfig"
         return res
 
+    @classmethod
+    def is_workflow_ok(cls) -> bool:
+        # TODO: temporary method to make Mergeable check working
+        res = cls.GH.get_workflow_results()
+        if not res:
+            print("ERROR: no workflow results found")
+            return False
+        for workflow_job, workflow_data in res.items():
+            status = workflow_data["result"]
+            if status in (
+                cls.GH.ActionStatuses.SUCCESS,
+                cls.GH.ActionStatuses.SKIPPED,
+            ):
+                print(f"Workflow status for [{workflow_job}] is [{status}] - continue")
+            elif status in (cls.GH.ActionStatuses.FAILURE,):
+                if workflow_job in (
+                    WorkflowStages.TESTS_2,
+                    WorkflowStages.TESTS_2_WW,
+                ):
+                    print(
+                        f"Failed Workflow status for [{workflow_job}], it's not required - continue"
+                    )
+                    continue
+
+                print(f"Failed Workflow status for [{workflow_job}]")
+                return False
+        return True
+
 
 if __name__ == "__main__":
     parser = ArgumentParser(
