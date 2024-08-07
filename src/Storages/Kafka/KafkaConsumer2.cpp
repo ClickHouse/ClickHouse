@@ -352,8 +352,7 @@ void KafkaConsumer2::subscribeIfNotSubscribedYet()
 
 ReadBufferPtr KafkaConsumer2::getNextMessage()
 {
-    if (current != messages.end())
-    {
+    while (current != messages.end()) {
         const auto * data = current->get_payload().get_data();
         size_t size = current->get_payload().get_size();
         ++current;
