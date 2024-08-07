@@ -54,7 +54,7 @@ inline void WriteBufferValidUTF8::putReplacement()
 }
 
 
-inline void WriteBufferValidUTF8::putValid(char *data, size_t len)
+inline void WriteBufferValidUTF8::putValid(const char *data, size_t len)
 {
     if (len == 0)
         return;
@@ -152,18 +152,18 @@ void WriteBufferValidUTF8::finalizeImpl()
     /// Handle remaining bytes if we have an incomplete sequence
     if (working_buffer.begin() != memory.data())
     {
-        char * p = memory.data();
+        const char * p = memory.data();
 
         while (p < pos)
         {
-            UInt8 len = length_of_utf8_sequence[static_cast<unsigned char>(*p)];
+            UInt8 len = length_of_utf8_sequence[static_cast<const unsigned char>(*p)];
             if (p + len > pos)
             {
                 /// Incomplete sequence. Skip one byte.
                 putReplacement();
                 ++p;
             }
-            else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<unsigned char *>(p), len))
+            else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<const unsigned char *>(p), len))
             {
                 /// Valid sequence
                 putValid(p, len);
