@@ -95,7 +95,7 @@ SELECT
     toInt8(-8),
     toInt8(-8.8),
     toInt8('-8')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -156,7 +156,7 @@ Query:
 SELECT
     toInt8OrZero('-8'),
     toInt8OrZero('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -216,7 +216,7 @@ Query:
 SELECT
     toInt8OrNull('-8'),
     toInt8OrNull('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -281,7 +281,7 @@ Query:
 SELECT
     toInt8OrDefault('-8', CAST('-1', 'Int8')),
     toInt8OrDefault('abc', CAST('-1', 'Int8'))
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -345,7 +345,7 @@ SELECT
     toInt16(-16),
     toInt16(-16.16),
     toInt16('-16')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -406,7 +406,7 @@ Query:
 SELECT
     toInt16OrZero('-16'),
     toInt16OrZero('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -466,7 +466,7 @@ Query:
 SELECT
     toInt16OrNull('-16'),
     toInt16OrNull('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -531,7 +531,7 @@ Query:
 SELECT
     toInt16OrDefault('-16', CAST('-1', 'Int16')),
     toInt16OrDefault('abc', CAST('-1', 'Int16'))
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -595,7 +595,7 @@ SELECT
     toInt32(-32),
     toInt32(-32.32),
     toInt32('-32')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -656,7 +656,7 @@ Query:
 SELECT
     toInt32OrZero('-32'),
     toInt32OrZero('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -715,7 +715,7 @@ Query:
 SELECT
     toInt32OrNull('-32'),
     toInt32OrNull('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -780,7 +780,7 @@ Query:
 SELECT
     toInt32OrDefault('-32', CAST('-1', 'Int32')),
     toInt32OrDefault('abc', CAST('-1', 'Int32'))
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -844,7 +844,7 @@ SELECT
     toInt64(-64),
     toInt64(-64.64),
     toInt64('-64')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -905,7 +905,7 @@ Query:
 SELECT
     toInt64OrZero('-64'),
     toInt64OrZero('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -965,7 +965,7 @@ Query:
 SELECT
     toInt64OrNull('-64'),
     toInt64OrNull('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -1030,7 +1030,7 @@ Query:
 SELECT
     toInt64OrDefault('-64', CAST('-1', 'Int64')),
     toInt64OrDefault('abc', CAST('-1', 'Int64'))
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -1093,7 +1093,7 @@ SELECT
     toInt128(-128),
     toInt128(-128.8),
     toInt128('-128')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -1154,7 +1154,7 @@ Query:
 SELECT
     toInt128OrZero('-128'),
     toInt128OrZero('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -1214,7 +1214,7 @@ Query:
 SELECT
     toInt128OrNull('-128'),
     toInt128OrNull('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -1279,7 +1279,7 @@ Query:
 SELECT
     toInt128OrDefault('-128', CAST('-1', 'Int128')),
     toInt128OrDefault('abc', CAST('-1', 'Int128'))
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -1342,7 +1342,7 @@ SELECT
     toInt256(-256),
     toInt256(-256.256),
     toInt256('-256')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -1403,7 +1403,7 @@ Query:
 SELECT
     toInt256OrZero('-256'),
     toInt256OrZero('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -1463,7 +1463,7 @@ Query:
 SELECT
     toInt256OrNull('-256'),
     toInt256OrNull('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -1528,7 +1528,7 @@ Query:
 SELECT
     toInt256OrDefault('-256', CAST('-1', 'Int256')),
     toInt256OrDefault('abc', CAST('-1', 'Int256'))
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -1592,7 +1592,7 @@ SELECT
     toUInt8(8),
     toUInt8(8.8),
     toUInt8('8')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -1653,7 +1653,7 @@ Query:
 SELECT
     toUInt8OrZero('-8'),
     toUInt8OrZero('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -1713,7 +1713,7 @@ Query:
 SELECT
     toUInt8OrNull('8'),
     toUInt8OrNull('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -1778,7 +1778,7 @@ Query:
 SELECT
     toUInt8OrDefault('8', CAST('0', 'UInt8')),
     toUInt8OrDefault('abc', CAST('0', 'UInt8'))
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -1842,7 +1842,7 @@ SELECT
     toUInt16(16),
     toUInt16(16.16),
     toUInt16('16')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -1903,7 +1903,7 @@ Query:
 SELECT
     toUInt16OrZero('16'),
     toUInt16OrZero('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -1963,7 +1963,7 @@ Query:
 SELECT
     toUInt16OrNull('16'),
     toUInt16OrNull('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -2028,7 +2028,7 @@ Query:
 SELECT
     toUInt16OrDefault('16', CAST('0', 'UInt16')),
     toUInt16OrDefault('abc', CAST('0', 'UInt16'))
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -2092,7 +2092,7 @@ SELECT
     toUInt32(32),
     toUInt32(32.32),
     toUInt32('32')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -2154,7 +2154,7 @@ Query:
 SELECT
     toUInt32OrZero('32'),
     toUInt32OrZero('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -2214,7 +2214,7 @@ Query:
 SELECT
     toUInt32OrNull('32'),
     toUInt32OrNull('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -2279,7 +2279,7 @@ Query:
 SELECT
     toUInt32OrDefault('32', CAST('0', 'UInt32')),
     toUInt32OrDefault('abc', CAST('0', 'UInt32'))
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -2343,7 +2343,7 @@ SELECT
     toUInt64(64),
     toUInt64(64.64),
     toUInt64('64')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -2404,7 +2404,7 @@ Query:
 SELECT
     toUInt64OrZero('64'),
     toUInt64OrZero('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -2464,7 +2464,7 @@ Query:
 SELECT
     toUInt64OrNull('64'),
     toUInt64OrNull('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -2529,7 +2529,7 @@ Query:
 SELECT
     toUInt64OrDefault('64', CAST('0', 'UInt64')),
     toUInt64OrDefault('abc', CAST('0', 'UInt64'))
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -2592,7 +2592,7 @@ SELECT
     toUInt128(128),
     toUInt128(128.8),
     toUInt128('128')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -2653,7 +2653,7 @@ Query:
 SELECT
     toUInt128OrZero('128'),
     toUInt128OrZero('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -2713,7 +2713,7 @@ Query:
 SELECT
     toUInt128OrNull('128'),
     toUInt128OrNull('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -2778,7 +2778,7 @@ Query:
 SELECT
     toUInt128OrDefault('128', CAST('0', 'UInt128')),
     toUInt128OrDefault('abc', CAST('0', 'UInt128'))
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -2841,7 +2841,7 @@ SELECT
     toUInt256(256),
     toUInt256(256.256),
     toUInt256('256')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -2902,7 +2902,7 @@ Query:
 SELECT
     toUInt256OrZero('256'),
     toUInt256OrZero('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -2962,7 +2962,7 @@ Query:
 SELECT
     toUInt256OrNull('256'),
     toUInt256OrNull('abc')
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -3027,7 +3027,7 @@ Query:
 SELECT
     toUInt256OrDefault('-256', CAST('0', 'UInt256')),
     toUInt256OrDefault('abc', CAST('0', 'UInt256'))
-FORMAT vertical;
+FORMAT Vertical;
 ```
 
 Result:
@@ -3542,173 +3542,312 @@ SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeN
 
 ## toDateTime64OrDefault
 
-## toDecimal(32\|64\|128\|256)
+## toDecimal32
 
-Converts `value` to the [Decimal](../data-types/decimal.md) data type with precision of `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
+Converts an input value to a value of type [`Decimal(9, S)`](../data-types/decimal.md) with scale of `S`. Throws an exception in case of an error.
 
-- `toDecimal32(value, S)`
-- `toDecimal64(value, S)`
-- `toDecimal128(value, S)`
-- `toDecimal256(value, S)`
+**Syntax**
 
-## toDecimal(32\|64\|128\|256)OrNull
-
-Converts an input string to a [Nullable(Decimal(P,S))](../data-types/decimal.md) data type value. This family of functions includes:
-
-- `toDecimal32OrNull(expr, S)` — Results in `Nullable(Decimal32(S))` data type.
-- `toDecimal64OrNull(expr, S)` — Results in `Nullable(Decimal64(S))` data type.
-- `toDecimal128OrNull(expr, S)` — Results in `Nullable(Decimal128(S))` data type.
-- `toDecimal256OrNull(expr, S)` — Results in `Nullable(Decimal256(S))` data type.
-
-These functions should be used instead of `toDecimal*()` functions, if you prefer to get a `NULL` value instead of an exception in the event of an input value parsing error.
+```sql
+toDecimal32(expr, S)
+```
 
 **Arguments**
 
-- `expr` — [Expression](../syntax.md/#syntax-expressions), returns a value in the [String](../data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
-- `S` — Scale, the number of decimal places in the resulting value.
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
+- `S` — Scale parameter from [ 1 : 9 ] specifying how many decimal digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+
+Supported arguments:
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type Float32/64.
+
+Unsupported arguments:
+- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32('0xc0fe', 1);`.
+
+:::note
+Integer overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`. 
+Excessive digits in a fraction are discarded (not rounded). 
+Excessive digits in the integer part will lead to an exception.
+:::
 
 **Returned value**
 
-A value in the `Nullable(Decimal(P,S))` data type. The value contains:
+- Value of type `Decimal(9, S)`. [Decimal32(S)](../data-types/int-uint.md).
 
-- Number with `S` decimal places, if ClickHouse interprets the input string as a number.
-- `NULL`, if ClickHouse can’t interpret the input string as a number or if the input number contains more than `S` decimal places.
-
-**Examples**
+**Example**
 
 Query:
 
-``` sql
-SELECT toDecimal32OrNull(toString(-1.111), 5) AS val, toTypeName(val);
+```sql
+SELECT
+    toDecimal32(2, 1) AS a, toTypeName(a) AS type_a,
+    toDecimal32(4.2, 2) AS b, toTypeName(b) AS type_b,
+    toDecimal32('4.2', 3) AS c, toTypeName(c) AS type_c
+FORMAT Vertical;
 ```
 
 Result:
 
 ```response
-┌────val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 5))─┐
-│ -1.111 │ Nullable(Decimal(9, 5))                            │
-└────────┴────────────────────────────────────────────────────┘
+Row 1:
+──────
+a:      2
+type_a: Decimal(9, 1)
+b:      4.2
+type_b: Decimal(9, 2)
+c:      4.2
+type_c: Decimal(9, 3)
 ```
 
-Query:
+**See also**
 
-``` sql
-SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val);
+- [`toDecimal32OrZero`](#todecimal32orzero).
+- [`toDecimal32OrNull`](#todecimal32ornull).
+- [`toDecimal32OrDefault`](#todecimal32ordefault).
+
+## toDecimal32OrZero
+
+Like [`toDecimal32`](#todecimal32), this function converts an input value to a value of type [Decimal(9, S)](../data-types/decimal.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toDecimal32OrZero(expr, S)
 ```
-
-Result:
-
-```response
-┌──val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 2))─┐
-│ ᴺᵁᴸᴸ │ Nullable(Decimal(9, 2))                            │
-└──────┴────────────────────────────────────────────────────┘
-```
-
-
-## toDecimal(32\|64\|128\|256)OrDefault
-
-Converts an input string to a [Decimal(P,S)](../data-types/decimal.md) data type value. This family of functions includes:
-
-- `toDecimal32OrDefault(expr, S)` — Results in `Decimal32(S)` data type.
-- `toDecimal64OrDefault(expr, S)` — Results in `Decimal64(S)` data type.
-- `toDecimal128OrDefault(expr, S)` — Results in `Decimal128(S)` data type.
-- `toDecimal256OrDefault(expr, S)` — Results in `Decimal256(S)` data type.
-
-These functions should be used instead of `toDecimal*()` functions, if you prefer to get a default value instead of an exception in the event of an input value parsing error.
 
 **Arguments**
 
-- `expr` — [Expression](../syntax.md/#syntax-expressions), returns a value in the [String](../data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
-- `S` — Scale, the number of decimal places in the resulting value.
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter from [ 1 : 9 ] specifying how many decimal digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+
+Supported arguments:
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
+
+Unsupported arguments:
+- String representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32OrZero('0xc0fe', 1);`.
+
+:::note
+Integer overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`.
+Excessive digits in a fraction are discarded (not rounded).
+Excessive digits in the integer part will lead to an exception.
+:::
 
 **Returned value**
 
-A value in the `Decimal(P,S)` data type. The value contains:
-
-- Number with `S` decimal places, if ClickHouse interprets the input string as a number.
-- Default `Decimal(P,S)` data type value, if ClickHouse can’t interpret the input string as a number or if the input number contains more than `S` decimal places.
-
-**Examples**
-
-Query:
-
-``` sql
-SELECT toDecimal32OrDefault(toString(-1.111), 5) AS val, toTypeName(val);
-```
-
-Result:
-
-```response
-┌────val─┬─toTypeName(toDecimal32OrDefault(toString(-1.111), 5))─┐
-│ -1.111 │ Decimal(9, 5)                                         │
-└────────┴───────────────────────────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT toDecimal32OrDefault(toString(-1.111), 2) AS val, toTypeName(val);
-```
-
-Result:
-
-```response
-┌─val─┬─toTypeName(toDecimal32OrDefault(toString(-1.111), 2))─┐
-│   0 │ Decimal(9, 2)                                         │
-└─────┴───────────────────────────────────────────────────────┘
-```
-
-## toDecimal(32\|64\|128\|256)OrZero
-
-Converts an input value to the [Decimal(P,S)](../data-types/decimal.md) data type. This family of functions includes:
-
-- `toDecimal32OrZero( expr, S)` — Results in `Decimal32(S)` data type.
-- `toDecimal64OrZero( expr, S)` — Results in `Decimal64(S)` data type.
-- `toDecimal128OrZero( expr, S)` — Results in `Decimal128(S)` data type.
-- `toDecimal256OrZero( expr, S)` — Results in `Decimal256(S)` data type.
-
-These functions should be used instead of `toDecimal*()` functions, if you prefer to get a `0` value instead of an exception in the event of an input value parsing error.
-
-**Arguments**
-
-- `expr` — [Expression](../syntax.md/#syntax-expressions), returns a value in the [String](../data-types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
-- `S` — Scale, the number of decimal places in the resulting value.
-
-**Returned value**
-
-A value in the `Nullable(Decimal(P,S))` data type. The value contains:
-
-- Number with `S` decimal places, if ClickHouse interprets the input string as a number.
-- 0 with `S` decimal places, if ClickHouse can’t interpret the input string as a number or if the input number contains more than `S` decimal places.
+- Value of type `Decimal(9, S)` if successful, otherwise `0` with `S` decimal places. [Decimal32(S)](../data-types/decimal.md).
 
 **Example**
 
 Query:
 
 ``` sql
-SELECT toDecimal32OrZero(toString(-1.111), 5) AS val, toTypeName(val);
+SELECT
+    toDecimal32OrZero(toString(-1.111), 5) AS val,
+    toTypeName(val)
+FORMAT Vertical;
 ```
 
 Result:
 
 ```response
-┌────val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 5))─┐
-│ -1.111 │ Decimal(9, 5)                                      │
-└────────┴────────────────────────────────────────────────────┘
+Row 1:
+──────
+val:             -1.111
+toTypeName(val): Decimal(9, 5)
 ```
 
 Query:
 
 ``` sql
-SELECT toDecimal32OrZero(toString(-1.111), 2) AS val, toTypeName(val);
+SELECT
+    toDecimal32OrZero(toString(-1.111), 2) AS val,
+    toTypeName(val)
+FORMAT Vertical;
 ```
 
 Result:
 
 ```response
-┌──val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 2))─┐
-│ 0.00 │ Decimal(9, 2)                                      │
-└──────┴────────────────────────────────────────────────────┘
+Row 1:
+──────
+val:             -1.11
+toTypeName(val): Decimal(9, 2)
+```
+
+**See also**
+
+- [`toDecimal32`](#todecimal32).
+- [`toDecimal32OrNull`](#todecimal32ornull).
+- [`toDecimal32OrDefault`](#todecimal32ordefault).
+
+## toDecimal32OrNull
+
+Like [`toDecimal32`](#todecimal32), this function converts an input value to a value of type [Nullable(Decimal(9, S))](../data-types/decimal.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toDecimal32OrNull(expr, S)
+```
+
+**Arguments**
+
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter from [ 1 : 9 ] specifying how many decimal digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+
+Supported arguments:
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
+
+Unsupported arguments:
+- String representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32OrNull('0xc0fe', 1);`.
+
+:::note
+Integer overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`.
+Excessive digits in a fraction are discarded (not rounded).
+Excessive digits in the integer part will lead to an exception.
+:::
+
+**Returned value**
+
+- Value of type `Nullable(Decimal(9, S))` if successful, otherwise value `NULL` of the same type. [Decimal32(S)](../data-types/decimal.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT
+    toDecimal32OrNull(toString(-1.111), 5) AS val,
+    toTypeName(val)
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+val:             -1.111
+toTypeName(val): Nullable(Decimal(9, 5))
+```
+
+Query:
+
+``` sql
+SELECT
+    toDecimal32OrNull(toString(-1.111), 2) AS val,
+    toTypeName(val)
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+val:             -1.11
+toTypeName(val): Nullable(Decimal(9, 2))
+```
+
+**See also**
+
+- [`toDecimal32`](#todecimal32).
+- [`toDecimal32OrZero`](#todecimal32orzero).
+- [`toDecimal32OrDefault`](#todecimal32ordefault).
+
+## toDecimal32OrDefault
+
+Like [`toDecimal32`](#todecimal32), this function converts an input value to a value of type [Decimal(9, S)](../data-types/decimal.md) but returns the default value in case of an error.
+
+**Syntax**
+
+```sql
+toDecimal32OrDefault(expr, S[, default])
+```
+
+**Arguments**
+
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter from [ 1 : 9 ] specifying how many decimal digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `default` (optional) — The default value to return if parsing to type `Decimal32(S)` is unsuccessful. [Decimal32(S](../data-types/decimal.md).
+
+Supported arguments:
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
+
+Unsupported arguments:
+- String representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32OrDefault('0xc0fe', 1);`.
+
+:::note
+Integer overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`.
+Excessive digits in a fraction are discarded (not rounded).
+Excessive digits in the integer part will lead to an exception.
+:::
+
+**Returned value**
+
+- Value of type `Decimal(9, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal32(S)](../data-types/decimal.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT
+    toDecimal32OrDefault(toString(-1.111), 5) AS val,
+    toTypeName(val)
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+val:             -1.111
+toTypeName(val): Decimal(9, 5)
+```
+
+Query:
+
+``` sql
+SELECT
+    toDecimal32OrDefault(toString(-1.111), 2) AS val,
+    toTypeName(val)
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+val:             -1.11
+toTypeName(val): Decimal(9, 2)
+```
+
+Query:
+
+``` sql
+SELECT
+    toDecimal32OrDefault('Inf', 2, CAST('0', 'Decimal32(2)')) AS val,
+    toTypeName(val)
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+val:             0
+toTypeName(val): Decimal(9, 2)
 ```
 
 ## toString
