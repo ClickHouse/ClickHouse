@@ -40,10 +40,11 @@ std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value,
         /// For case val_int32 < 10.5 or val_int32 < '10.5' we should convert 10.5 to Float64.
         if (isInteger(value_data_type) && (value.getType() == Field::Types::Float64 || value.getType() == Field::Types::String))
             val_converted = convertFieldToType(value, *DataTypeFactory::instance().get("Float64"));
+        else
+            /// We should convert value to the real column data type and then translate it to Float64.
+            /// For example for expression col_date > '2024-08-07', if we directly convert '2024-08-07' to Float64, we will get null.
+            val_converted = convertFieldToType(value, *value_data_type);
 
-        /// We should convert value to the real column data type and then translate it to Float64.
-        /// For example for expression col_date > '2024-08-07', if we directly convert '2024-08-07' to Float64, we will get null.
-        val_converted = convertFieldToType(value, *value_data_type);
         if (val_converted.isNull())
             return {};
         return applyVisitor(FieldVisitorConvertToNumber<Float64>(), val_converted);
