@@ -31,8 +31,6 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
         {"database_shard_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database shard (for clusters that belong to a `Replicated` database)."},
         {"database_replica_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database replica (for clusters that belong to a `Replicated` database)."},
         {"is_active", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "The status of the Replicated database replica (for clusters that belong to a Replicated database): 1 means 'replica is online', 0 means 'replica is offline', NULL means 'unknown'."},
-        {"replication_lag", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>()), "The replication lag of the `Replicated` database replica (for clusters that belong to a Replicated database)."},
-        {"recovery_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The recovery time of the `Replicated` database replica (for clusters that belong to a Replicated database), in milliseconds."},
     };
 
     description.setAliases({
@@ -42,36 +40,34 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
     return description;
 }
 
-void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const
 {
     for (const auto & name_and_cluster : context->getClusters())
-        writeCluster(res_columns, name_and_cluster, {});
+        writeCluster(res_columns, columns_mask, name_and_cluster, /* replicated= */ nullptr);
 
     const auto databases = DatabaseCatalog::instance().getDatabases();
-    for (const auto & [database_name, database] : databases)
+    for (const auto & name_and_database : databases)
     {
-        if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(database.get()))
+        if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(name_and_database.second.get()))
         {
+
             if (auto database_cluster = replicated->tryGetCluster())
-                writeCluster(res_columns, {database_name, database_cluster},
-                             replicated->tryGetReplicasInfo(database_cluster));
+                writeCluster(res_columns, columns_mask, {name_and_database.first, database_cluster}, replicated);
 
             if (auto database_cluster = replicated->tryGetAllGroupsCluster())
-                writeCluster(res_columns, {DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX + database_name, database_cluster},
-                             replicated->tryGetReplicasInfo(database_cluster));
+                writeCluster(res_columns, columns_mask, {DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX + name_and_database.first, database_cluster}, replicated);
         }
     }
 }
 
-void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const NameAndCluster & name_and_cluster,
-                                         const ReplicasInfo & replicas_info)
+void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std::vector<UInt8> & columns_mask, const NameAndCluster & name_and_cluster, const DatabaseReplicated * replicated)
 {
     const String & cluster_name = name_and_cluster.first;
     const ClusterPtr & cluster = name_and_cluster.second;
     const auto & shards_info = cluster->getShardsInfo();
     const auto & addresses_with_failover = cluster->getShardsAddresses();
 
-    size_t global_replica_idx = 0;
+    size_t replica_idx = 0;
     for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
     {
         const auto & shard_info = shards_info[shard_index];
@@ -80,44 +76,55 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const Nam
 
         for (size_t replica_index = 0; replica_index < shard_addresses.size(); ++replica_index)
         {
-            size_t i = 0;
+            size_t src_index = 0, res_index = 0;
             const auto & address = shard_addresses[replica_index];
 
-            res_columns[i++]->insert(cluster_name);
-            res_columns[i++]->insert(shard_info.shard_num);
-            res_columns[i++]->insert(shard_info.weight);
-            res_columns[i++]->insert(shard_info.has_internal_replication);
-            res_columns[i++]->insert(replica_index + 1);
-            res_columns[i++]->insert(address.host_name);
-            auto resolved = address.getResolvedAddress();
-            res_columns[i++]->insert(resolved ? resolved->host().toString() : String());
-            res_columns[i++]->insert(address.port);
-            res_columns[i++]->insert(address.is_local);
-            res_columns[i++]->insert(address.user);
-            res_columns[i++]->insert(address.default_database);
-            res_columns[i++]->insert(pool_status[replica_index].error_count);
-            res_columns[i++]->insert(pool_status[replica_index].slowdown_count);
-            res_columns[i++]->insert(pool_status[replica_index].estimated_recovery_time.count());
-            res_columns[i++]->insert(address.database_shard_name);
-            res_columns[i++]->insert(address.database_replica_name);
-            if (replicas_info.empty())
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(cluster_name);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(shard_info.shard_num);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(shard_info.weight);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(shard_info.has_internal_replication);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(replica_index + 1);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(address.host_name);
+            if (columns_mask[src_index++])
             {
-                res_columns[i++]->insertDefault();
-                res_columns[i++]->insertDefault();
-                res_columns[i++]->insertDefault();
+                auto resolved = address.getResolvedAddress();
+                res_columns[res_index++]->insert(resolved ? resolved->host().toString() : String());
             }
-            else
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(address.port);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(address.is_local);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(address.user);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(address.default_database);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(pool_status[replica_index].error_count);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(pool_status[replica_index].slowdown_count);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(pool_status[replica_index].estimated_recovery_time.count());
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(address.database_shard_name);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(address.database_replica_name);
+            if (columns_mask[src_index++])
             {
-                const auto & replica_info = replicas_info[global_replica_idx];
-                res_columns[i++]->insert(replica_info.is_active);
-                res_columns[i++]->insert(replica_info.replication_lag);
-                if (replica_info.recovery_time != 0)
-                    res_columns[i++]->insert(replica_info.recovery_time);
-                else
-                    res_columns[i++]->insertDefault();
-            }
+                std::vector<UInt8> is_active;
+                if (replicated)
+                    is_active = replicated->tryGetAreReplicasActive(name_and_cluster.second);
 
-            ++global_replica_idx;
+                if (is_active.empty())
+                    res_columns[res_index++]->insertDefault();
+                else
+                    res_columns[res_index++]->insert(is_active[replica_idx++]);
+            }
         }
     }
 }
