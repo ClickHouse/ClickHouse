@@ -1,10 +1,8 @@
 #include <Storages/Statistics/StatisticsMinMax.h>
-#include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/convertFieldToType.h>
 
 #include <algorithm>
 
@@ -53,11 +51,9 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf)
 
 Float64 StatisticsMinMax::estimateLess(const Field & val) const
 {
-    Field val_converted = convertFieldToType(val, *data_type);
-    if (val_converted.isNull())
+    auto val_as_float = StatisticsUtils::tryConvertToFloat64(val, data_type);
+    if (!val_as_float.has_value())
         return 0;
-
-    auto val_as_float = applyVisitor(FieldVisitorConvertToNumber<Float64>(), val_converted);
 
     if (val_as_float < min)
         return 0;
@@ -68,7 +64,7 @@ Float64 StatisticsMinMax::estimateLess(const Field & val) const
     if (min == max)
         return (val_as_float != max) ? 0 : row_count;
 
-    return ((val_as_float - min) / (max - min)) * row_count;
+    return ((*val_as_float - min) / (max - min)) * row_count;
 }
 
 void minMaxStatisticsValidator(const SingleStatisticsDescription & /*statistics_description*/, DataTypePtr data_type)

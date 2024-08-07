@@ -1,6 +1,8 @@
 #include <Storages/Statistics/Statistics.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/StatisticsCountMinSketch.h>
@@ -10,6 +12,7 @@
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 
 
 #include "config.h" /// USE_DATASKETCHES
@@ -28,6 +31,25 @@ enum StatisticsFileVersion : UInt16
     V0 = 0,
 };
 
+std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & value_data_type)
+{
+    if (value_data_type->isValueRepresentedByNumber())
+    {
+        Field val_converted;
+
+        /// For case val_int32 < 10.5 or val_int32 < '10.5' we should convert 10.5 to Float64.
+        if (isInteger(value_data_type) && (value.getType() == Field::Types::Float64 || value.getType() == Field::Types::String))
+            val_converted = convertFieldToType(value, *DataTypeFactory::instance().get("Float64"));
+
+        /// We should convert value to the real column data type and then translate it to Float64.
+        /// For example for expression col_date > '2024-08-07', if we directly convert '2024-08-07' to Float64, we will get null.
+        val_converted = convertFieldToType(value, *value_data_type);
+        if (val_converted.isNull())
+            return {};
+        return applyVisitor(FieldVisitorConvertToNumber<Float64>(), val_converted);
+    }
+    return {};
+}
 
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
     : stat(stat_)

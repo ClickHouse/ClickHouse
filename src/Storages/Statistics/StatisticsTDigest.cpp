@@ -41,22 +41,18 @@ void StatisticsTDigest::deserialize(ReadBuffer & buf)
 
 Float64 StatisticsTDigest::estimateLess(const Field & val) const
 {
-    Field val_converted = convertFieldToType(val, *data_type);
-    if (val_converted.isNull())
+    auto val_as_float = StatisticsUtils::tryConvertToFloat64(val, data_type);
+    if (!val_as_float.has_value())
         return 0;
-
-    auto val_as_float = applyVisitor(FieldVisitorConvertToNumber<Float64>(), val_converted);
-    return t_digest.getCountLessThan(val_as_float);
+    return t_digest.getCountLessThan(*val_as_float);
 }
 
 Float64 StatisticsTDigest::estimateEqual(const Field & val) const
 {
-    Field val_converted = convertFieldToType(val, *data_type);
-    if (val_converted.isNull())
+    auto val_as_float = StatisticsUtils::tryConvertToFloat64(val, data_type);
+    if (!val_as_float.has_value())
         return 0;
-
-    auto val_as_float = applyVisitor(FieldVisitorConvertToNumber<Float64>(), val_converted);
-    return t_digest.getCountEqual(val_as_float);
+    return t_digest.getCountEqual(*val_as_float);
 }
 
 void tdigestStatisticsValidator(const SingleStatisticsDescription & /*statistics_description*/, DataTypePtr data_type)
