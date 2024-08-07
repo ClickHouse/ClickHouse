@@ -8,7 +8,9 @@ using namespace DB;
 
 using ResourceTest = ResourceTestClass;
 
-TEST(SchedulerFairPolicy, Factory)
+/// Tests disabled because of leaks in the test themselves: https://github.com/ClickHouse/ClickHouse/issues/67678
+
+TEST(DISABLED_SchedulerFairPolicy, Factory)
 {
     ResourceTest t;
 
@@ -17,7 +19,7 @@ TEST(SchedulerFairPolicy, Factory)
     EXPECT_TRUE(dynamic_cast<FairPolicy *>(fair.get()) != nullptr);
 }
 
-TEST(SchedulerFairPolicy, FairnessWeights)
+TEST(DISABLED_SchedulerFairPolicy, FairnessWeights)
 {
     ResourceTest t;
 
@@ -41,7 +43,7 @@ TEST(SchedulerFairPolicy, FairnessWeights)
     t.consumed("B", 20);
 }
 
-TEST(SchedulerFairPolicy, Activation)
+TEST(DISABLED_SchedulerFairPolicy, Activation)
 {
     ResourceTest t;
 
@@ -77,7 +79,7 @@ TEST(SchedulerFairPolicy, Activation)
     t.consumed("B", 10);
 }
 
-TEST(SchedulerFairPolicy, FairnessMaxMin)
+TEST(DISABLED_SchedulerFairPolicy, FairnessMaxMin)
 {
     ResourceTest t;
 
@@ -101,7 +103,7 @@ TEST(SchedulerFairPolicy, FairnessMaxMin)
     t.consumed("A", 20);
 }
 
-TEST(SchedulerFairPolicy, HierarchicalFairness)
+TEST(DISABLED_SchedulerFairPolicy, HierarchicalFairness)
 {
     ResourceTest t;
 
