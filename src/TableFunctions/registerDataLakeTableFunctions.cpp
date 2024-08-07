@@ -17,13 +17,25 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionIcebergS3>(
         {.documentation
          = {.description = R"(The table function can be used to read the Iceberg table stored on S3 object store.)",
-            .examples{{"iceberg", "SELECT * FROM iceberg(url, access_key_id, secret_access_key)", ""}},
+            .examples{{"icebergS3", "SELECT * FROM icebergS3(url, access_key_id, secret_access_key)", ""}},
             .categories{"DataLake"}},
          .allow_readonly = false});
 
 #    endif
 #    if USE_AZURE_BLOB_STORAGE
+    factory.registerFunction<TableFunctionIcebergAzure>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the Iceberg table stored on Azure object store.)",
+            .examples{{"icebergAzure", "SELECT * FROM icebergAzure(url, access_key_id, secret_access_key)", ""}},
+            .categories{"DataLake"}},
+         .allow_readonly = false});
 #    endif
+    factory.registerFunction<TableFunctionIcebergLocal>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the Iceberg table stored locally.)",
+            .examples{{"icebergLocal", "SELECT * FROM icebergLocal(filename)", ""}},
+            .categories{"DataLake"}},
+         .allow_readonly = false});
 }
 #endif
 
@@ -62,11 +74,13 @@ void registerTableFunctionHudi(TableFunctionFactory & factory)
 void registerDataLakeTableFunctions(TableFunctionFactory & factory)
 {
     UNUSED(factory);
-#if USE_AWS_S3
 #if USE_AVRO
+#    if USE_AWS_S3
     registerTableFunctionIceberg(factory);
 #endif
-#if USE_PARQUET
+#endif
+#if USE_AWS_S3
+#    if USE_PARQUET
     registerTableFunctionDeltaLake(factory);
 #endif
     registerTableFunctionHudi(factory);

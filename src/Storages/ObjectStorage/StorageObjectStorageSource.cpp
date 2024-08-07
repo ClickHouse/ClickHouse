@@ -438,6 +438,8 @@ std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
     {
         LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
 
+        LOG_DEBUG(&Poco::Logger::get("Get path"), "Path: {}", object_info.getPath());
+
         auto async_reader = object_storage->readObjects(
             StoredObjects{StoredObject{object_info.getPath(), /* local_path */ "", object_size}}, read_settings);
 

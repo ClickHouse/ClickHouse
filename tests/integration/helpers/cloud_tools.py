@@ -52,15 +52,16 @@ class LocalUploader(CloudUploader):
 
 
 class AzureUploader(CloudUploader):
-    def __init__(self, blob_service_client, container_name):
-        self.blob_service_client = blob_service_client
-        self.container_name = container_name
+
+    def __init__(self, container_client):
+        self.container_client = container_client
 
     def upload_file(self, local_path, remote_blob_path):
-        blob_client = self.blob_service_client.get_blob_client(
-            container=self.container_name, blob=remote_blob_path
-        )
+        # print("Local path", local_path)
+        # print("Remote blob path", remote_blob_path)
+        blob_client = self.container_client.get_blob_client(remote_blob_path)
         with open(local_path, "rb") as data:
+            # print("Data", data)
             blob_client.upload_blob(data, overwrite=True)
 
 
