@@ -4,6 +4,8 @@
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Common/Exception.h>
+#include <Common/Logger.h>
 
 namespace DB
 {
@@ -202,9 +204,16 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     return chunk;
 }
 
-void RemoteSource::onCancel()
+void RemoteSource::onCancel() noexcept
 {
-    query_executor->cancel();
+    try
+    {
+        query_executor->cancel();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("RemoteSource"), "Error occurs on cancellation.");
+    }
 }
 
 void RemoteSource::onUpdatePorts()
