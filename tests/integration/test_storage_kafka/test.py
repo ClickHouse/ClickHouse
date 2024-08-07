@@ -1163,8 +1163,10 @@ def kafka_cluster():
 def kafka_setup_teardown():
     instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
     admin_client = get_admin_client(cluster)
+
     def get_topics_to_delete():
         return [t for t in admin_client.list_topics() if not t.startswith("_")]
+
     topics = get_topics_to_delete()
     logging.debug(f"Deleting topics: {topics}")
     result = admin_client.delete_topics(topics)
@@ -1176,7 +1178,7 @@ def kafka_setup_teardown():
 
     retries = 0
     topics = get_topics_to_delete()
-    while (len(topics) != 0):
+    while len(topics) != 0:
         logging.info(f"Existing topics: {topics}")
         if retries >= 5:
             raise Exception(f"Failed to delete topics {topics}")
