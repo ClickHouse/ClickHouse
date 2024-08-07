@@ -3,6 +3,12 @@
 # shellcheck disable=SC1091
 source /setup_export_logs.sh
 
+# shellcheck source=../stateless/stress_tests.lib
+source /stress_tests.lib
+
+# Avoid overlaps with previous runs
+dmesg --clear
+
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
@@ -72,8 +78,12 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
     remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
 fi
 
+export IS_FLAKY_CHECK=0
+
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
+    export IS_FLAKY_CHECK=1
+
     export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
     export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
     export THREAD_FUZZER_SLEEP_TIME_US_MAX=100000
@@ -164,7 +174,7 @@ do
 done
 
 setup_logs_replication
-attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
+attach_gdb_to_clickhouse
 
 function fn_exists() {
     declare -F "$1" > /dev/null;
@@ -212,6 +222,10 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--shared-catalog')
     fi
 
+    if [[ "$USE_DISTRIBUTED_CACHE" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--distributed-cache')
+    fi
+
     if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--replicated-database')
         # Too many tests fail for DatabaseReplicated in parallel.
@@ -256,7 +270,7 @@ function run_tests()
     | ts '%Y-%m-%d %H:%M:%S' \
     | tee -a test_output/test_result.txt
     set -e
-    DURATION=$((START_TIME - SECONDS))
+    DURATION=$((SECONDS - START_TIME))
 
     echo "Elapsed ${DURATION} seconds."
     if [[ $DURATION -ge $TIMEOUT ]]
@@ -295,22 +309,22 @@ stop_logs_replication
 failed_to_save_logs=0
 for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log
 do
-    err=$(clickhouse-client -q "select * from system.$table into outfile '/test_output/$table.tsv.gz' format TSVWithNamesAndTypes")
-    echo "$err"
-    [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
+    if ! clickhouse-client -q "select * from system.$table into outfile '/test_output/$table.tsv.zst' format TSVWithNamesAndTypes"; then
+        failed_to_save_logs=1
+    fi
     if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        err=$( { clickhouse-client --port 19000 -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst; } 2>&1 )
-        echo "$err"
-        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
-        err=$( { clickhouse-client --port 29000 -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst; } 2>&1 )
-        echo "$err"
-        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
+        if ! clickhouse-client --port 19000 -q "select * from system.$table into outfile '/test_output/$table.1.tsv.zst' format TSVWithNamesAndTypes"; then
+            failed_to_save_logs=1
+        fi
+        if ! clickhouse-client --port 29000 -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"; then
+            failed_to_save_logs=1
+        fi
     fi
 
     if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
-        err=$( { clickhouse-client --port 19000 -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst; } 2>&1 )
-        echo "$err"
-        [[ "0" != "${#err}"  ]] && failed_to_save_logs=1
+        if ! clickhouse-client --port 29000 -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"; then
+            failed_to_save_logs=1
+        fi
     fi
 done
 
@@ -383,6 +397,8 @@ do
         | zstd --threads=0 > "/test_output/trace-log-$trace_type-flamegraph.tsv.zst" ||:
 done
 
+# Grep logs for sanitizer asserts, crashes and other critical errors
+check_logs_for_critical_errors
 
 # Compressed (FIXME: remove once only github actions will be left)
 rm /var/log/clickhouse-server/clickhouse-server.log
