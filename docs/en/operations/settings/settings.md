@@ -4629,8 +4629,8 @@ Default Value: 5.
 
 ## memory_overcommit_ratio_denominator {#memory_overcommit_ratio_denominator}
 
-It represents soft memory limit in case when hard limit is reached on user level.
-This value is used to compute overcommit ratio for the query.
+It represents the soft memory limit when the hard limit is reached on the global level.
+This value is used to compute the overcommit ratio for the query.
 Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 
@@ -4646,8 +4646,8 @@ Default value: `5000000`.
 
 ## memory_overcommit_ratio_denominator_for_user {#memory_overcommit_ratio_denominator_for_user}
 
-It represents soft memory limit in case when hard limit is reached on global level.
-This value is used to compute overcommit ratio for the query.
+It represents the soft memory limit when the hard limit is reached on the user level.
+This value is used to compute the overcommit ratio for the query.
 Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 
