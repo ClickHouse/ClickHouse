@@ -16,10 +16,12 @@ SYSTEM FLUSH LOGS;
 
 -- StorageSystemTables
 SELECT argMin(read_rows, event_time_microseconds), argMax(read_rows, event_time_microseconds) FROM system.query_log WHERE 1
+    AND current_database = currentDatabase()
     AND query LIKE '%SELECT database, table FROM system.tables WHERE database = \'information_schema\' AND table = \'tables\';'
     AND type = 'QueryFinish';
 
 -- StorageSystemReplicas
 SELECT argMin(read_rows, event_time_microseconds), argMax(read_rows, event_time_microseconds) FROM system.query_log WHERE 1
+    AND current_database = currentDatabase()
     AND query LIKE '%SELECT database, table, replica_name FROM system.replicas WHERE database = currentDatabase() AND table = \'test_03217_system_tables_replica_1\' AND replica_name = \'r1\';'
     AND type = 'QueryFinish';
