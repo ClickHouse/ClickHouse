@@ -366,31 +366,7 @@ bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTre
         }
     }
 
-    if (node.isFunction())
-    {
-        /// Similar to the logic of KeyCondition, restrict the usage of bloom filter, in case of func like cast(c=1 or c=9999 as Bool).
-        const std::unordered_set<String> atom_map
-        {
-            "equals",
-            "notEquals",
-            "has",
-            "mapContains",
-            "indexOf",
-            "hasAny",
-            "hasAll",
-            "in",
-            "notIn",
-            "globalIn",
-            "globalNotIn"
-        };
-
-        auto func_name = node.toFunctionNode().getFunctionName();
-        if (atom_map.find(func_name) == std::end(atom_map))
-            return false;
-    }
-
-    bool res = traverseFunction(node, out, nullptr /*parent*/);
-    return res;
+    return traverseFunction(node, out, nullptr /*parent*/);
 }
 
 bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent)
