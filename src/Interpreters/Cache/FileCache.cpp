@@ -326,6 +326,8 @@ std::vector<FileSegment::Range> FileCache::splitRange(size_t offset, size_t size
     ///                  ^                  ^
     ///                right offset         aligned_right_offset
     /// [_________]                           <-- last cached file segment, e.g. we have uncovered suffix of the requested range
+    ///           ^
+    ///           last_file_segment_right_offset
     /// [________________]
     ///        size
     /// [____________________________________]
@@ -335,9 +337,10 @@ std::vector<FileSegment::Range> FileCache::splitRange(size_t offset, size_t size
     /// and get something like this:
     ///
     /// [________________________]
-    ///                  ^             ^
-    ///              right_offset   right_offset + max_file_segment_size
-    /// e.g. there is no need to create sub-segment for range (right_offset + max_file_segment_size, aligned_right_offset].
+    ///          ^               ^
+    ///          |               last_file_segment_right_offset + max_file_segment_size
+    ///          last_file_segment_right_offset
+    /// e.g. there is no need to create sub-segment for range (last_file_segment_right_offset + max_file_segment_size, aligned_right_offset].
     /// Because its left offset would be bigger than right_offset.
     /// Therefore, we set end_pos_non_included as offset+size, but remaining_size as aligned_size.
 
@@ -557,7 +560,7 @@ FileCache::getOrSet(
 
     FileSegment::Range initial_range(offset, offset + size - 1);
     /// result_range is initial range, which will be adjusted according to
-    /// 1. aligned offset, alighed_end_offset
+    /// 1. aligned_offset, aligned_end_offset
     /// 2. max_file_segments_limit
     FileSegment::Range result_range = initial_range;
 

@@ -174,7 +174,7 @@ do
 done
 
 setup_logs_replication
-attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
+attach_gdb_to_clickhouse
 
 function fn_exists() {
     declare -F "$1" > /dev/null;
@@ -397,6 +397,8 @@ do
         | zstd --threads=0 > "/test_output/trace-log-$trace_type-flamegraph.tsv.zst" ||:
 done
 
+# Grep logs for sanitizer asserts, crashes and other critical errors
+check_logs_for_critical_errors
 
 # Compressed (FIXME: remove once only github actions will be left)
 rm /var/log/clickhouse-server/clickhouse-server.log
@@ -429,8 +431,5 @@ if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
     tar -chf /test_output/coordination1.tar /var/lib/clickhouse1/coordination ||:
 fi
-
-# Grep logs for sanitizer asserts, crashes and other critical errors
-check_logs_for_critical_errors
 
 collect_core_dumps
