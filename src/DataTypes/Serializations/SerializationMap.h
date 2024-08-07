@@ -76,7 +76,7 @@ private:
     ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader) const;
 
     template <typename ReturnType>
-    ReturnType deserializeTextJSONMapImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
+    ReturnType deserializeEmpyStringAsDefaultOrNested(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
 };
 
 }

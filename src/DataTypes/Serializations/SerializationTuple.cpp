@@ -314,7 +314,7 @@ void SerializationTuple::serializeTextJSONPretty(const IColumn & column, size_t 
 }
 
 template <typename ReturnType>
-ReturnType SerializationTuple::deserializeTextJSONTupleImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, auto && deserialize_element) const
+ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, auto && deserialize_element) const
 {
     static constexpr auto throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -490,29 +490,48 @@ ReturnType SerializationTuple::deserializeTextJSONTupleImpl(IColumn & column, Re
 }
 
 template <typename ReturnType>
-ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+ReturnType SerializationTuple::deserializeEmpyStringAsDefaultOrNested(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     auto deserializer = [&settings, this](IColumn & column_, ReadBuffer & istr_, auto && deserialize_nested) -> ReturnType
     {
         auto adapter = [&deserialize_nested, &istr_, this](IColumn & nested_column, size_t element_pos) -> ReturnType
         {
-            return deserialize_nested(nested_column, istr_, this->elems[element_pos]);
+            return deserialize_nested(nested_column, istr_, elems[element_pos]);
         };
 
-        return this->deserializeTextJSONTupleImpl<ReturnType>(column_, istr_, settings, adapter);
+        return deserializeTextJSONImpl<ReturnType>(column_, istr_, settings, std::move(adapter));
     };
 
-    return JSONUtils::deserializeEmpyStringAsDefaultOrNested<ReturnType>(column, istr, settings, deserializer);
+    return JSONUtils::deserializeEmpyStringAsDefaultOrNested<ReturnType>(column, istr, settings, std::move(deserializer));
 }
 
 void SerializationTuple::deserializeTextJSON(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
 {
-    deserializeTextJSONImpl(column, istr, settings);
+    if (settings.json.empty_as_default)
+        deserializeEmpyStringAsDefaultOrNested(column, istr, settings);
+    else
+        deserializeTextJSONImpl<void>(column, istr, settings,
+            [&settings, &istr, this](IColumn & nested_column, size_t element_pos) -> void
+        {
+            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(nested_column, istr, settings, elems[element_pos]);
+            else
+                elems[element_pos]->deserializeTextJSON(nested_column, istr, settings);
+        });
 }
 
 bool SerializationTuple::tryDeserializeTextJSON(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
 {
-    return deserializeTextJSONImpl<bool>(column, istr, settings);
+    if (settings.json.empty_as_default)
+        return deserializeEmpyStringAsDefaultOrNested<bool>(column, istr, settings);
+
+    return deserializeTextJSONImpl<bool>(column, istr, settings,
+        [&settings, &istr, this](IColumn & nested_column, size_t element_pos) -> bool
+        {
+            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(nested_column, istr, settings, elems[element_pos]);
+            return elems[element_pos]->tryDeserializeTextJSON(nested_column, istr, settings);
+        });
 }
 
 

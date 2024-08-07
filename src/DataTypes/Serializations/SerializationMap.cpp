@@ -317,7 +317,7 @@ void SerializationMap::serializeTextJSONPretty(const IColumn & column, size_t ro
 }
 
 template <typename ReturnType>
-ReturnType SerializationMap::deserializeTextJSONMapImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+ReturnType SerializationMap::deserializeEmpyStringAsDefaultOrNested(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     auto deserializer = [this](IColumn & column_, ReadBuffer & istr_, auto && deserialize_nested) -> ReturnType
     {
@@ -325,20 +325,39 @@ ReturnType SerializationMap::deserializeTextJSONMapImpl(IColumn & column, ReadBu
         {
             return deserialize_nested(nested_column, buf, nested_column_serialization);
         };
-        return this->deserializeTextImpl<ReturnType>(column_, istr_, adapter);
+        return this->deserializeTextImpl<ReturnType>(column_, istr_, std::move(adapter));
     };
 
-    return JSONUtils::deserializeEmpyStringAsDefaultOrNested<ReturnType>(column, istr, settings, deserializer);
+    return JSONUtils::deserializeEmpyStringAsDefaultOrNested<ReturnType>(column, istr, settings, std::move(deserializer));
 }
 
 void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeTextJSONMapImpl<void>(column, istr, settings);
+    if (settings.json.empty_as_default)
+        deserializeEmpyStringAsDefaultOrNested<void>(column, istr, settings);
+    else
+        deserializeTextImpl(column, istr,
+            [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
+            {
+                if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
+                    SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
+                else
+                    subcolumn_serialization->deserializeTextJSON(subcolumn, buf, settings);
+            });
 }
 
 bool SerializationMap::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    return deserializeTextJSONMapImpl<bool>(column, istr, settings);
+    if (settings.json.empty_as_default)
+        return deserializeEmpyStringAsDefaultOrNested<bool>(column, istr, settings);
+
+    return deserializeTextImpl<bool>(column, istr,
+        [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
+        {
+            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
+                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
+            return subcolumn_serialization->tryDeserializeTextJSON(subcolumn, buf, settings);
+        });
 }
 
 void SerializationMap::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

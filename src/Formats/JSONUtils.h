@@ -181,9 +181,9 @@ namespace JSONUtils
             }
         };
 
-        auto deserialize_nested = [&settings, &do_deserialize_nested, &deserialize_nested_impl](IColumn & nested_column, ReadBuffer & buf, const SerializationPtr & nested_column_serialization) -> ReturnType
+        auto deserialize_nested = [&do_deserialize_nested, &deserialize_nested_impl](IColumn & nested_column, ReadBuffer & buf, const SerializationPtr & nested_column_serialization) -> ReturnType
         {
-            if (!settings.json.empty_as_default || buf.eof() || *buf.position() != EMPTY_STRING[0])
+            if (buf.eof() || *buf.position() != EMPTY_STRING[0])
                 return deserialize_nested_impl(nested_column, buf, nested_column_serialization);
 
             if (buf.available() >= EMPTY_STRING_LENGTH)
