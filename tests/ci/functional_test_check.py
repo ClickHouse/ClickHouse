@@ -115,7 +115,7 @@ def get_run_command(
         envs.append("-e NUM_TRIES=50")
         envs.append("-e MAX_RUN_TIME=2800")
     else:
-        max_run_time = os.getenv("MAX_RUN_TIME", 0)
+        max_run_time = os.getenv("MAX_RUN_TIME", "0")
         envs.append(f"-e MAX_RUN_TIME={max_run_time}")
 
     envs += [f"-e {e}" for e in additional_envs]
