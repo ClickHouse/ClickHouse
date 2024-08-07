@@ -54,8 +54,6 @@ source /utils.lib
 /usr/share/clickhouse-test/config/install.sh
 
 ./setup_minio.sh stateless
-./mc admin trace clickminio > /test_output/minio.log &
-MC_ADMIN_PID=$!
 
 ./setup_hdfs_minicluster.sh
 
@@ -176,7 +174,7 @@ done
 setup_logs_replication
 attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
 
-# create minio log webhooks for both audit and server logs
+# create tables for minio log webhooks
 clickhouse-client --query "CREATE TABLE minio_audit_logs
 (
     log String,
@@ -184,7 +182,6 @@ clickhouse-client --query "CREATE TABLE minio_audit_logs
 )
 ENGINE = MergeTree
 ORDER BY tuple()"
-./mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?query=INSERT%20INTO%20minio_audit_logs%20FORMAT%20LineAsString"
 
 clickhouse-client --query "CREATE TABLE minio_server_logs
 (
@@ -193,7 +190,36 @@ clickhouse-client --query "CREATE TABLE minio_server_logs
 )
 ENGINE = MergeTree
 ORDER BY tuple()"
+
+# create minio log webhooks for both audit and server logs
 ./mc admin config set clickminio logger_webhook:ch_server_webhook endpoint="http://localhost:8123/?query=INSERT%20INTO%20minio_server_logs%20FORMAT%20LineAsString"
+./mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?query=INSERT%20INTO%20minio_audit_logs%20FORMAT%20LineAsString"
+max_retries=100
+retry=1
+
+while [ $retry -le $max_retries ]; do
+    echo "clickminio restart attempt $retry:"
+
+    output=$(mc admin service restart clickminio 2>&1)
+    echo "$output"
+
+    if echo "$output" | grep -q "Restarted \`clickminio\` successfully in 1 seconds"; then
+        echo "Restarted clickminio successfully."
+        break
+    fi
+
+    sleep 1
+
+    retry=$((retry + 1))
+done
+
+if [ $retry -gt $max_retries ]; then
+    echo "Failed to restart clickminio after $max_retries attempts."
+fi
+
+./mc admin service restart clickminio
+./mc admin trace clickminio > /test_output/minio.log &
+MC_ADMIN_PID=$!
 
 function fn_exists() {
     declare -F "$1" > /dev/null;
