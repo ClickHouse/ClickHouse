@@ -211,4 +211,4 @@ private:
     }
 };
 
-} // namespace DB
+}
