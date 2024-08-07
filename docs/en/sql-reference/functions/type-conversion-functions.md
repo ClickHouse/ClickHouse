@@ -3045,13 +3045,425 @@ toUInt256OrDefault('abc', CAST('0', 'UInt256')):  0
 - [`toUInt256OrZero`](#touint256orzero).
 - [`toUInt256OrNull`](#touint256ornull).
 
-## toFloat(32\|64)
+## toFloat32
 
-## toFloat(32\|64)OrZero
+Converts an input value to a value of type [`Float32`](../data-types/float.md). Throws an exception in case of an error.
 
-## toFloat(32\|64)OrNull
+**Syntax**
 
-## toFloat(32\|64)OrDefault
+```sql
+toFloat32(expr)
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- String representations of (U)Int8/16/32/128/256.
+- Values of type Float32/64, including `NaN` and `Inf`.
+- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
+
+Unsupported arguments:
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat32('0xc0fe');`.
+
+**Returned value**
+
+- 32-bit floating point value. [Float32](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toFloat32(42.7),
+    toFloat32('42.7'),
+    toFloat32('NaN')
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toFloat32(42.7):   42.7
+toFloat32('42.7'): 42.7
+toFloat32('NaN'):  nan
+```
+
+**See also**
+
+- [`toFloat32OrZero`](#tofloat32orzero).
+- [`toFloat32OrNull`](#tofloat32ornull).
+- [`toFloat32OrDefault`](#tofloat32ordefault).
+
+## toFloat32OrZero
+
+Like [`toFloat32`](#tofloat32), this function converts an input value to a value of type [Float32](../data-types/float.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toFloat32OrZero(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256, Float32/64.
+
+Unsupported arguments (return `0`):
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat32OrZero('0xc0fe');`.
+
+**Returned value**
+
+- 32-bit Float value if successful, otherwise `0`. [Float32](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toFloat32OrZero('42.7'),
+    toFloat32OrZero('abc')
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toFloat32OrZero('42.7'): 42.7
+toFloat32OrZero('abc'):  0
+```
+
+**See also**
+
+- [`toFloat32`](#tofloat32).
+- [`toFloat32OrNull`](#tofloat32ornull).
+- [`toFloat32OrDefault`](#tofloat32ordefault).
+
+## toFloat32OrNull
+
+Like [`toFloat32`](#tofloat32), this function converts an input value to a value of type [Float32](../data-types/float.md) but returns `NULL` in case of an error.
+
+**Syntax**
+
+```sql
+toFloat32OrNull(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256, Float32/64.
+
+Unsupported arguments (return `\N`):
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat32OrNull('0xc0fe');`.
+
+**Returned value**
+
+- 32-bit Float value if successful, otherwise `\N`. [Float32](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toFloat32OrNull('42.7'),
+    toFloat32OrNull('abc')
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toFloat32OrNull('42.7'): 42.7
+toFloat32OrNull('abc'):  ᴺᵁᴸᴸ
+```
+
+**See also**
+
+- [`toFloat32`](#tofloat32).
+- [`toFloat32OrZero`](#tofloat32orzero).
+- [`toFloat32OrDefault`](#tofloat32ordefault).
+
+## toFloat32OrDefault
+
+Like [`toFloat32`](#tofloat32), this function converts an input value to a value of type [Float32](../data-types/float.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
+
+**Syntax**
+
+```sql
+toFloat32OrDefault(expr[, default])
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `Float32` is unsuccessful. [Float32](../data-types/float.md).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- String representations of (U)Int8/16/32/128/256.
+- Values of type Float32/64, including `NaN` and `Inf`.
+- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
+
+Arguments for which the default value is returned:
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat32OrDefault('0xc0fe', CAST('0', 'Float32'));`.
+
+**Returned value**
+
+- 32-bit Float value if successful, otherwise returns the default value if passed or `0` if not. [Float32](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toFloat32OrDefault('8', CAST('0', 'Float32')),
+    toFloat32OrDefault('abc', CAST('0', 'Float32'))
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toFloat32OrDefault('8', CAST('0', 'Float32')):   8
+toFloat32OrDefault('abc', CAST('0', 'Float32')): 0
+```
+
+**See also**
+
+- [`toFloat32`](#tofloat32).
+- [`toFloat32OrZero`](#tofloat32orzero).
+- [`toFloat32OrNull`](#tofloat32ornull).
+
+## toFloat64
+
+Converts an input value to a value of type [`Float64`](../data-types/float.md). Throws an exception in case of an error.
+
+**Syntax**
+
+```sql
+toFloat64(expr)
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- String representations of (U)Int8/16/32/128/256.
+- Values of type Float32/64, including `NaN` and `Inf`.
+- String representations of type Float32/64, including `NaN` and `Inf` (case-insensitive).
+
+Unsupported arguments:
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat64('0xc0fe');`.
+
+**Returned value**
+
+- 64-bit floating point value. [Float64](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toFloat64(42.7),
+    toFloat64('42.7'),
+    toFloat64('NaN')
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toFloat64(42.7):   42.7
+toFloat64('42.7'): 42.7
+toFloat64('NaN'):  nan
+```
+
+**See also**
+
+- [`toFloat64OrZero`](#tofloat64orzero).
+- [`toFloat64OrNull`](#tofloat64ornull).
+- [`toFloat64OrDefault`](#tofloat64ordefault).
+
+## toFloat64OrZero
+
+Like [`toFloat64`](#tofloat64), this function converts an input value to a value of type [Float64](../data-types/float.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toFloat64OrZero(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256, Float32/64.
+
+Unsupported arguments (return `0`):
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat64OrZero('0xc0fe');`.
+
+**Returned value**
+
+- 64-bit Float value if successful, otherwise `0`. [Float64](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toFloat64OrZero('42.7'),
+    toFloat64OrZero('abc')
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toFloat64OrZero('42.7'): 42.7
+toFloat64OrZero('abc'):  0
+```
+
+**See also**
+
+- [`toFloat64`](#tofloat64).
+- [`toFloat64OrNull`](#tofloat64ornull).
+- [`toFloat64OrDefault`](#tofloat64ordefault).
+
+## toFloat64OrNull
+
+Like [`toFloat64`](#tofloat64), this function converts an input value to a value of type [Float64](../data-types/float.md) but returns `NULL` in case of an error.
+
+**Syntax**
+
+```sql
+toFloat64OrNull(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256, Float32/64.
+
+Unsupported arguments (return `\N`):
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat64OrNull('0xc0fe');`.
+
+**Returned value**
+
+- 64-bit Float value if successful, otherwise `\N`. [Float64](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toFloat64OrNull('42.7'),
+    toFloat64OrNull('abc')
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toFloat64OrNull('42.7'): 42.7
+toFloat64OrNull('abc'):  ᴺᵁᴸᴸ
+```
+
+**See also**
+
+- [`toFloat64`](#tofloat64).
+- [`toFloat64OrZero`](#tofloat64orzero).
+- [`toFloat64OrDefault`](#tofloat64ordefault).
+
+## toFloat64OrDefault
+
+Like [`toFloat64`](#tofloat64), this function converts an input value to a value of type [Float64](../data-types/float.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
+
+**Syntax**
+
+```sql
+toFloat64OrDefault(expr[, default])
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `Float64` is unsuccessful. [Float64](../data-types/float.md).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- String representations of (U)Int8/16/32/128/256.
+- Values of type Float32/64, including `NaN` and `Inf`.
+- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
+
+Arguments for which the default value is returned:
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat64OrDefault('0xc0fe', CAST('0', 'Float64'));`.
+
+**Returned value**
+
+- 64-bit Float value if successful, otherwise returns the default value if passed or `0` if not. [Float64](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toFloat64OrDefault('8', CAST('0', 'Float64')),
+    toFloat64OrDefault('abc', CAST('0', 'Float64'))
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toFloat64OrDefault('8', CAST('0', 'Float64')):   8
+toFloat64OrDefault('abc', CAST('0', 'Float64')): 0
+```
+
+**See also**
+
+- [`toFloat64`](#tofloat64).
+- [`toFloat64OrZero`](#tofloat64orzero).
+- [`toFloat64OrNull`](#tofloat64ornull).
 
 ## toDate
 

@@ -7,7 +7,7 @@ from typing import Dict, Optional, Any, Union, Sequence, List, Set
 
 from ci_config import CI
 
-from ci_utils import is_hex, GH
+from ci_utils import Utils, GH
 from commit_status_helper import CommitStatusData
 from env_helper import (
     TEMP_PATH,
@@ -240,7 +240,7 @@ class CiCache:
             int(job_properties[-1]),
         )
 
-        if not is_hex(job_digest):
+        if not Utils.is_hex(job_digest):
             print("ERROR: wrong record job digest")
             return None
 
