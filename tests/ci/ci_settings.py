@@ -2,7 +2,6 @@ import re
 from dataclasses import dataclass, asdict
 from typing import Optional, List, Dict, Any, Iterable
 
-from ci_utils import normalize_string
 from ci_config import CI
 from git_helper import Runner as GitRunner, GIT_PREFIX
 from pr_info import PRInfo
@@ -89,14 +88,14 @@ class CiSettings:
                 if not res.include_keywords:
                     res.include_keywords = []
                 res.include_keywords.append(
-                    normalize_string(match.removeprefix("ci_include_"))
+                    CI.Utils.normalize_string(match.removeprefix("ci_include_"))
                 )
             elif match.startswith("ci_exclude_"):
                 if not res.exclude_keywords:
                     res.exclude_keywords = []
                 keywords = match.removeprefix("ci_exclude_").split("|")
                 res.exclude_keywords += [
-                    normalize_string(keyword) for keyword in keywords
+                    CI.Utils.normalize_string(keyword) for keyword in keywords
                 ]
             elif match == CI.Tags.NO_CI_CACHE:
                 res.no_ci_cache = True
@@ -163,7 +162,7 @@ class CiSettings:
         # do not exclude builds
         if self.exclude_keywords and not CI.is_build_job(job):
             for keyword in self.exclude_keywords:
-                if keyword in normalize_string(job):
+                if keyword in CI.Utils.normalize_string(job):
                     print(f"Job [{job}] matches Exclude keyword [{keyword}] - deny")
                     return False
 
@@ -174,7 +173,7 @@ class CiSettings:
                 # never exclude Style Check by include keywords
                 return True
             for keyword in self.include_keywords:
-                if keyword in normalize_string(job):
+                if keyword in CI.Utils.normalize_string(job):
                     print(f"Job [{job}] matches Include keyword [{keyword}] - pass")
                     return True
             to_deny = True

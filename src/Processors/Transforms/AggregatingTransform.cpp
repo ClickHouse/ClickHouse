@@ -367,7 +367,7 @@ public:
         return prepareTwoLevel();
     }
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         shared_data->is_cancelled.store(true, std::memory_order_seq_cst);
     }

@@ -48,7 +48,7 @@ public:
 
     ChunkAndProgress read();
 
-    void cancel() { is_cancelled = true; }
+    void cancel() noexcept { is_cancelled = true; }
 
     const MergeTreeReaderSettings & getSettings() const { return reader_settings; }
 
