@@ -21,7 +21,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int NO_AVAILABLE_REPLICA;
 }
 
 PartMovesBetweenShardsOrchestrator::PartMovesBetweenShardsOrchestrator(StorageReplicatedMergeTree & storage_)
