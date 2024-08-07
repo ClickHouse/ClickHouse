@@ -379,10 +379,17 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
                 auto replica_active = zk_res[2 * global_replica_index + 1];
                 auto replica_log_ptr = zk_res[2 * global_replica_index + 2];
 
+                UInt64 recovery_time = 0;
+                {
+                    std::lock_guard lock(ddl_worker_mutex);
+                    if (replica.is_local && ddl_worker)
+                        recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+                }
+
                 replicas_info[global_replica_index] = ReplicaInfo{
                     .is_active = replica_active.error == Coordination::Error::ZOK,
                     .replication_lag = replica_log_ptr.error != Coordination::Error::ZNONODE ? std::optional(max_log_ptr - parse<UInt32>(replica_log_ptr.data)) : std::nullopt,
-                    .recovery_time = replica.is_local && ddl_worker ? ddl_worker->getCurrentInitializationDurationMs() : 0,
+                    .recovery_time = recovery_time,
                 };
 
                 ++global_replica_index;
