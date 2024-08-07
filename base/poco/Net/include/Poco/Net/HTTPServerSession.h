@@ -66,7 +66,6 @@ namespace Net
         bool _firstRequest;
         Poco::Timespan _keepAliveTimeout;
         int _maxKeepAliveRequests;
-        HTTPServerParams::Ptr _params;
     };
 
 

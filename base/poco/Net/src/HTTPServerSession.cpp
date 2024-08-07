@@ -24,7 +24,6 @@ HTTPServerSession::HTTPServerSession(const StreamSocket & socket, HTTPServerPara
     , _firstRequest(true)
     , _keepAliveTimeout(pParams->getKeepAliveTimeout())
     , _maxKeepAliveRequests(pParams->getMaxKeepAliveRequests())
-    , _params(pParams)
 {
 	setTimeout(pParams->getTimeout());
 }
