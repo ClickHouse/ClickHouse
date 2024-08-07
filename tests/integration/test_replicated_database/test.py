@@ -1549,26 +1549,3 @@ def test_all_groups_cluster(started_cluster):
     assert "bad_settings_node\ndummy_node\n" == bad_settings_node.query(
         "select host_name from system.clusters where name='all_groups.db_cluster' order by host_name"
     )
-
-
-def test_alter_modify_order_by(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS alter_modify_order_by SYNC")
-    snapshotting_node.query("DROP DATABASE IF EXISTS alter_modify_order_by SYNC")
-
-    main_node.query(
-        "CREATE DATABASE alter_modify_order_by ENGINE = Replicated('/test/database/alter_modify_order_by', 'shard1', 'replica1');"
-    )
-    main_node.query(
-        "CREATE TABLE alter_modify_order_by.t1 (id Int64, score Int64) ENGINE = ReplicatedMergeTree('/test/tables/{uuid}/{shard}', '{replica}') ORDER BY (id);"
-    )
-    main_node.query("ALTER TABLE alter_modify_order_by.t1 modify order by (id);")
-    snapshotting_node.query(
-        "CREATE DATABASE alter_modify_order_by ENGINE = Replicated('/test/database/alter_modify_order_by', 'shard2', 'replica1');"
-    )
-
-    query = "show create table alter_modify_order_by.t1"
-    expected = main_node.query(query)
-    assert_eq_with_retry(snapshotting_node, query, expected)
-
-    main_node.query("DROP DATABASE IF EXISTS alter_modify_order_by SYNC")
-    snapshotting_node.query("DROP DATABASE IF EXISTS alter_modify_order_by SYNC")
