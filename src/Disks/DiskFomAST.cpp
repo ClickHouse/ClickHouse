@@ -144,7 +144,7 @@ std::string DiskFomAST::getConfigDefinedDisk(const std::string &disk_name, Conte
         if (result->isCustomDisk())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Disk name `{}` is a custom disk that is used in other table."
+                "Disk name `{}` is a custom disk that is used in other table. "
                 "That disk could not be used by a reference by other tables. The custom disk should be fully specified with a disk function.",
                 disk_name);
 
