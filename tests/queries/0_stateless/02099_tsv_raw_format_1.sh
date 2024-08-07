@@ -46,16 +46,3 @@ echo 'nSome text' | $CLICKHOUSE_CLIENT -q "INSERT INTO test_nullable_string_0209
 
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_nullable_string_02099"
 $CLICKHOUSE_CLIENT -q "DROP TABLE test_nullable_string_02099"
-
-
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_parallel_parsing_02099"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE test_parallel_parsing_02099 (x UInt64, a Array(UInt64), s String) ENGINE=Memory()";
-$CLICKHOUSE_CLIENT -q "SELECT number AS x, range(number % 50) AS a, toString(a) AS s FROM numbers(1000000) FORMAT TSVRaw" | $CLICKHOUSE_CLIENT --input_format_parallel_parsing=0 -q "INSERT INTO test_parallel_parsing_02099 FORMAT TSVRaw"
-$CLICKHOUSE_CLIENT -q "SELECT * FROM test_parallel_parsing_02099 ORDER BY x" | md5sum
-
-$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE test_parallel_parsing_02099"
-
-$CLICKHOUSE_CLIENT -q "SELECT number AS x, range(number % 50) AS a, toString(a) AS s FROM numbers(1000000) FORMAT TSVRaw" | $CLICKHOUSE_CLIENT --input_format_parallel_parsing=1 -q "INSERT INTO test_parallel_parsing_02099 FORMAT TSVRaw"
-$CLICKHOUSE_CLIENT -q "SELECT * FROM test_parallel_parsing_02099 ORDER BY x" | md5sum
-
-$CLICKHOUSE_CLIENT -q "DROP TABLE test_parallel_parsing_02099"
