@@ -1,10 +1,6 @@
-information_schema	tables
-default	test_replica_1	r1
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
       ReadFromMerge
         Filter (( + ( + )))
-          ReadFromMergeTree (default.test_replica_1)
-1	1
-1	1
+          ReadFromMergeTree (default.test_03217_merge_replica_1)
