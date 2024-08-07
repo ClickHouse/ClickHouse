@@ -114,7 +114,6 @@ arrayFirst
 arrayFirstIndex
 arrayFirstOrNull
 arrayFlatten
-arrayIntersect
 arrayJaccardIndex
 arrayJoin
 arrayLast
