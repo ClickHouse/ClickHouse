@@ -78,7 +78,7 @@ This output shows the names separated by a comma followed by a space.
 Query:
 
 ``` sql
-SELECT groupConcat(Name, ', ', 2) FROM Employees;
+SELECT groupConcat(', ', 2)(Name) FROM Employees;
 ```
 
 Result:
