@@ -1,4 +1,5 @@
--- Tags: distributed, long
+-- Tags: distributed, long, no-flaky-check
+-- ^ no-flaky-check - sometimes longer than 600s with ThreadFuzzer.
 
 SET max_memory_usage = 150000000;
 SET max_bytes_before_external_sort = 10000000;

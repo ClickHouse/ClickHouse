@@ -1,4 +1,4 @@
--- Tags: shard
+-- Tags: long
 
 SET max_rows_to_read = '55M';
 
