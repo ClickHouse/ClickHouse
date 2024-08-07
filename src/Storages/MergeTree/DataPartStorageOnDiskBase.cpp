@@ -411,12 +411,7 @@ void DataPartStorageOnDiskBase::backup(
         auto filepath_on_disk = part_path_on_disk / filepath;
         auto filepath_in_backup = part_path_in_backup / filepath;
 
-        if (files_without_checksums.contains(filepath))
-        {
-            backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk, read_settings, copy_encrypted));
-            return;
-        }
-        else if (is_projection_part && allow_backup_broken_projection && !disk->exists(filepath_on_disk))
+        if (is_projection_part && allow_backup_broken_projection && !disk->exists(filepath_on_disk))
             return;
 
         if (make_temporary_hard_links)
@@ -436,6 +431,7 @@ void DataPartStorageOnDiskBase::backup(
             file_hash = it->second.file_hash;
         }
 
+        /// All files in a data part are immutable since the data part is finalized.
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromImmutableFile>(disk, filepath_on_disk, copy_encrypted, file_size, file_hash);
 
         if (temp_dir_owner)
