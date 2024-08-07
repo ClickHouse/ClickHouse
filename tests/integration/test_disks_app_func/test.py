@@ -96,13 +96,13 @@ def init_data(source):
     source.query("INSERT INTO test_table(*) VALUES ('test1', 2)")
 
 
-def init_data_s3(source):
+def init_data_s3(source, disk="test3"):
     source.query("DROP TABLE IF EXISTS test_table_s3")
 
     source.query(
         "CREATE TABLE test_table_s3(word String, value UInt64) "
         "ENGINE=MergeTree() "
-        "ORDER BY word SETTINGS storage_policy = 'test3'"
+        f"ORDER BY word SETTINGS storage_policy = '{disk}'"
     )
 
     source.query("INSERT INTO test_table_s3(*) VALUES ('test1', 2)")
@@ -324,15 +324,15 @@ def test_disks_app_func_read_write(started_cluster):
 
 def test_remote_disk_list(started_cluster):
     source = cluster.instances["disks_app_test"]
-    init_data_s3(source)
+    init_data_s3(source, "test4")
 
-    out = ls(source, "test3", ".")
+    out = ls(source, "test4", ".")
 
     files = out.split("\n")
 
     assert files[0] == "store"
 
-    out = ls(source, "test3", ". --recursive")
+    out = ls(source, "test4", ". --recursive")
 
     assert ".:\nstore\n" in out
     assert "\n./store:\n" in out
