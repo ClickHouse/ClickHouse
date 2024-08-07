@@ -194,6 +194,17 @@ If enabled, ClickHouse will try to infer type `DateTime64` from string fields in
 
 Enabled by default.
 
+## input_format_try_infer_variants {#input_format_try_infer_variants}
+
+If enabled, ClickHouse will try to infer type [`Variant`](../../sql-reference/data-types/variant.md) in schema inference for text formats when there is more than one possible type for column/array elements.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: `0`.
+
 ## date_time_input_format {#date_time_input_format}
 
 Allows choosing a parser of the text representation of date and time.
