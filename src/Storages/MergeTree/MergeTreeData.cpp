@@ -1146,7 +1146,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, {parts[0]});
 
-    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag.getOutputs().at(0), nullptr, /*allow_non_deterministic_functions=*/ false);
+    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag.getOutputs().at(0), nullptr);
     if (!filter_dag)
         return {};
 
@@ -7141,12 +7141,7 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
 
     MergeTreeDataSelectExecutor reader(*this);
     auto result_ptr = reader.estimateNumMarksToRead(
-        parts,
-        storage_snapshot->getMetadataForQuery()->getColumns().getAll().getNames(),
-        storage_snapshot->metadata,
-        query_info,
-        query_context,
-        query_context->getSettingsRef().max_threads);
+        parts, {}, storage_snapshot->metadata, query_info, query_context, query_context->getSettingsRef().max_threads);
 
     UInt64 total_rows = result_ptr->selected_rows;
     if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
