@@ -2362,7 +2362,7 @@ toUInt64('64'):  64
 - [`toUInt64OrNull`](#touint64ornull).
 - [`toUInt64OrDefault`](#touint64ordefault).
 
-## toInt64OrZero
+## toUInt64OrZero
 
 Like [`toUInt64`](#touint64), this function converts an input value to a value of type [UInt64](../data-types/int-uint.md) but returns `0` in case of an error.
 
