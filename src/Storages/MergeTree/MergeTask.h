@@ -8,7 +8,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 
-#include <Interpreters/SquashingTransform.h>
+#include <Interpreters/Squashing.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -231,7 +231,7 @@ private:
         using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
         ProjectionNameToItsBlocks projection_parts;
         std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
-        std::vector<SquashingTransform> projection_squashes;
+        std::vector<Squashing> projection_squashes;
         size_t projection_block_num = 0;
         ExecutableTaskPtr merge_projection_parts_task_ptr;
 
