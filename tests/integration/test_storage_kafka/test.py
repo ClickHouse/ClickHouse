@@ -1161,8 +1161,27 @@ def kafka_cluster():
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
-    instance.query("DROP DATABASE IF EXISTS test; CREATE DATABASE test;")
-    # logging.debug("kafka is available - running test")
+    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
+    admin_client = get_admin_client(cluster)
+    def get_topics_to_delete():
+        return [t for t in admin_client.list_topics() if not t.startswith("_")]
+    topics = get_topics_to_delete()
+    logging.debug(f"Deleting topics: {topics}")
+    result = admin_client.delete_topics(topics)
+    for topic, error in result.topic_error_codes:
+        if error != 0:
+            logging.warning(f"Received error {error} while deleting topic {topic}")
+        else:
+            logging.info(f"Deleted topic {topic}")
+
+    retries = 0
+    topics = get_topics_to_delete()
+    while (len(topics) != 0):
+        logging.info(f"Existing topics: {topics}")
+        if retries >= 5:
+            raise Exception(f"Failed to delete topics {topics}")
+        retries += 1
+        time.sleep(0.5)
     yield  # run test
 
 
@@ -3286,7 +3305,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
         )
         instance.query(
             f"""
-            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.view SYNC;
             DROP TABLE IF EXISTS test.consumer;
 
             {create_query};
@@ -3329,7 +3348,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
         instance.query(
             """
             DROP TABLE test.consumer;
-            DROP TABLE test.view;
+            DROP TABLE test.view SYNC;
         """
         )
 
@@ -5381,7 +5400,7 @@ def test_multiple_read_in_materialized_views(kafka_cluster, create_query_generat
         )
         instance.query(
             f"""
-            DROP TABLE IF EXISTS test.kafka_multiple_read_input;
+            DROP TABLE IF EXISTS test.kafka_multiple_read_input SYNC;
             DROP TABLE IF EXISTS test.kafka_multiple_read_table;
             DROP TABLE IF EXISTS test.kafka_multiple_read_mv;
 
@@ -5496,9 +5515,9 @@ def test_kafka_null_message(kafka_cluster, create_query_generator):
 
         instance.query(
             """
-            DROP TABLE test.null_message_consumer;
+            DROP TABLE test.null_message_consumer SYNC;
             DROP TABLE test.null_message_view;
-            DROP TABLE test.null_message_kafka;
+            DROP TABLE test.null_message_kafka SYNC;
         """
         )
 
