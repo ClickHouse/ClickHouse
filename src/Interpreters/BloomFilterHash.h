@@ -92,7 +92,7 @@ struct BloomFilterHash
         else if (which.isDate()) return build_hash_column(getNumberTypeHash<UInt64, UInt16>(field));
         else if (which.isDate32()) return build_hash_column(getNumberTypeHash<UInt64, Int32>(field));
         else if (which.isDateTime()) return build_hash_column(getNumberTypeHash<UInt64, UInt32>(field));
-	else if (which.isDateTime64()) return build_hash_column(getNumberTypeHash<DateTime64, DateTime64>(field));
+        else if (which.isDateTime64()) return build_hash_column(getNumberTypeHash<DateTime64, DateTime64>(field));
         else if (which.isFloat32()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
         else if (which.isFloat64()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
         else if (which.isUUID()) return build_hash_column(getNumberTypeHash<UUID, UUID>(field));
@@ -157,7 +157,7 @@ struct BloomFilterHash
         else if (which.isDate()) getNumberTypeHash<UInt16, is_first>(column, vec, pos);
         else if (which.isDate32()) getNumberTypeHash<Int32, is_first>(column, vec, pos);
         else if (which.isDateTime()) getNumberTypeHash<UInt32, is_first>(column, vec, pos);
-	else if (which.isDateTime64()) getDecimalTypeHash<DateTime64, is_first>(column, vec, pos);
+        else if (which.isDateTime64()) getDecimalTypeHash<DateTime64, is_first>(column, vec, pos);
         else if (which.isFloat32()) getNumberTypeHash<Float32, is_first>(column, vec, pos);
         else if (which.isFloat64()) getNumberTypeHash<Float64, is_first>(column, vec, pos);
         else if (which.isUUID()) getNumberTypeHash<UUID, is_first>(column, vec, pos);
