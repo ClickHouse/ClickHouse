@@ -23,7 +23,7 @@ CREATE TABLE test
     p_id String,
     d UInt32,
 )
-Engine = ReplicatedMergeTree()
+Engine = ReplicatedMergeTree('/clickhouse/tables/{database}/test/test_table', '1')
 ORDER BY (c_id, p_id)
 """
 )
