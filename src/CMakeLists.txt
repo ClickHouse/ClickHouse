@@ -111,6 +111,13 @@ add_headers_and_sources(dbms Storages/ObjectStorage/Azure)
 add_headers_and_sources(dbms Storages/ObjectStorage/S3)
 add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
+add_library(clickhouse_hudi_queries
+    src/Storages/ObjectStorage/DataLakes/HudiCOWQueries.cpp
+    src/Storages/ObjectStorage/DataLakes/HudiMORQueries.cpp
+    src/Storages/ObjectStorage/DataLakes/HudiTimeTravelQueries.cpp
+)
+target_link_libraries(clickhouse_hudi_queries PRIVATE dbms clickhouse_common_io)
+
 add_headers_and_sources(dbms Common/NamedCollections)
 
 if (TARGET ch_contrib::amqp_cpp)
