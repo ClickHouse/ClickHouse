@@ -390,7 +390,8 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
         }
 
         return replicas_info;
-    } catch (...)
+    }
+    catch (...)
     {
         tryLogCurrentException(log);
         return {};
