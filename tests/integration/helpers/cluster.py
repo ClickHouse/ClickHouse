@@ -3261,14 +3261,22 @@ class ClickHouseCluster:
             raise Exception("Fatal messages found: {}".format(fatal_log))
 
     def pause_container(self, instance_name):
+        paused_services = subprocess_check_call(self.base_cmd + ["ps", "--services", "--filter", "status=paused"])
+        assert paused_services.find(instance_name) < 0
+        
         subprocess_check_call(self.base_cmd + ["pause", instance_name])
+        
         paused_services = subprocess_check_call(self.base_cmd + ["ps", "--services", "--filter", "status=paused"])
         assert paused_services.find(instance_name) >= 0
 
     def unpause_container(self, instance_name):
         paused_services = subprocess_check_call(self.base_cmd + ["ps", "--services", "--filter", "status=paused"])
         assert paused_services.find(instance_name) >= 0
+        
         subprocess_check_call(self.base_cmd + ["unpause", instance_name])
+        
+        paused_services = subprocess_check_call(self.base_cmd + ["ps", "--services", "--filter", "status=paused"])
+        assert paused_services.find(instance_name) < 0
 
     def open_bash_shell(self, instance_name):
         os.system(" ".join(self.base_cmd + ["exec", instance_name, "/bin/bash"]))
