@@ -1,18 +1,22 @@
 #include <Common/PipeFDs.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
+#include <Common/FailPoint.h>
 
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 
 #include <unistd.h>
 #include <fcntl.h>
-#include <string>
 #include <algorithm>
-
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char lazy_pipe_fds_fail_close[];
+}
 
 namespace ErrorCodes
 {
@@ -42,6 +46,11 @@ void LazyPipeFDs::open()
 
 void LazyPipeFDs::close()
 {
+    fiu_do_on(FailPoints::lazy_pipe_fds_fail_close,
+    {
+        throw Exception(ErrorCodes::CANNOT_PIPE, "Manually triggered exception on close");
+    });
+
     for (int & fd : fds_rw)
     {
         if (fd < 0)

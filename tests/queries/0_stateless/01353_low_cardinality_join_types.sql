@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 0;
+SET enable_analyzer = 0;
 set join_algorithm = 'hash';
 
 select '-';
@@ -75,7 +75,7 @@ from (select toLowCardinality(number) k, toLowCardinality(toString(number)) s fr
 full join (select toLowCardinality(number+1) k, toLowCardinality(toString(number+1)) s from numbers(2)) as js2
 using k order by js1.k, js2.k;
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 set join_algorithm = 'hash';
 
 select '-';

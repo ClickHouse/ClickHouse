@@ -556,7 +556,9 @@ void TCPHandler::runImpl()
                             std::scoped_lock lock(out_mutex, task_callback_mutex);
 
                             if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
+                            {
                                 return true;
+                            }
 
                             sendProgress();
                             sendSelectProfileEvents();
@@ -968,8 +970,8 @@ void TCPHandler::processInsertQuery()
         if (settings.throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert &&
             settings.deduplicate_blocks_in_dependent_materialized_views)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Deduplication is dependent materialized view cannot work together with async inserts. "\
-                    "Please disable eiher `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
+                    "Deduplication in dependent materialized view cannot work together with async inserts. "\
+                    "Please disable either `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
 
         auto result = processAsyncInsertQuery(*insert_queue);
         if (result.status == AsynchronousInsertQueue::PushResult::OK)

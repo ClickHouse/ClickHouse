@@ -247,6 +247,7 @@ DoubleDelta
 Doxygen
 Durre
 ECMA
+ETag
 Ecto
 EdgeAngle
 EdgeLengthKm
@@ -1587,6 +1588,7 @@ enum's
 enums
 erfc
 errorCodeToName
+etag
 evalMLMethod
 exFAT
 expiryMsec
@@ -1622,6 +1624,7 @@ filesystem
 filesystemAvailable
 filesystemCapacity
 filesystemFree
+filesystemUnreserved
 filesystems
 finalizeAggregation
 fips
@@ -1732,6 +1735,7 @@ groupBitmap
 groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
+groupConcat
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1748,6 +1752,7 @@ groupbitmapor
 groupbitmapxor
 groupbitor
 groupbitxor
+groupconcat
 groupuniqarray
 grpc
 grpcio
@@ -1865,9 +1870,11 @@ jdbc
 jemalloc
 jeprof
 joinGet
+joinGetOrNull
 json
 jsonMergePatch
 jsonasstring
+jsonasobject
 jsoncolumns
 jsoncolumnsmonoblock
 jsoncompact
@@ -2277,6 +2284,7 @@ prettyspacemonoblock
 prettyspacenoescapes
 prettyspacenoescapesmonoblock
 prewhere
+printf
 privateKeyFile
 privateKeyPassphraseHandler
 prlimit
