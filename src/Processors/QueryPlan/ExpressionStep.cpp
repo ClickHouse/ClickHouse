@@ -10,14 +10,14 @@
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits(const ActionsDAG & actions, const Block & header, const SortDescription & sort_description)
+static ITransformingStep::Traits getTraits(const ActionsDAG & actions)
 {
     return ITransformingStep::Traits
     {
         {
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = actions.isSortingPreserved(header, sort_description),
+            .preserves_sorting = false,
         },
         {
             .preserves_number_of_rows = !actions.hasArrayJoin(),
@@ -29,7 +29,7 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAG acti
     : ITransformingStep(
         input_stream_,
         ExpressionTransform::transformHeader(input_stream_.header, actions_dag_),
-        getTraits(actions_dag_, input_stream_.header, input_stream_.sort_description))
+        getTraits(actions_dag_))
     , actions_dag(std::move(actions_dag_))
 {
 }

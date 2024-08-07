@@ -9,17 +9,10 @@
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits(const ActionsDAG & expression, const Block & header, const SortDescription & sort_description, bool remove_filter_column, const String & filter_column_name)
+static ITransformingStep::Traits getTraits()
 {
-    bool preserves_sorting = expression.isSortingPreserved(header, sort_description, remove_filter_column ? filter_column_name : "");
-    if (remove_filter_column)
-    {
-        preserves_sorting &= std::find_if(
-                                 begin(sort_description),
-                                 end(sort_description),
-                                 [&](const auto & column_desc) { return column_desc.column_name == filter_column_name; })
-            == sort_description.end();
-    }
+    bool preserves_sorting = false;
+
     return ITransformingStep::Traits
     {
         {
@@ -45,7 +38,7 @@ FilterStep::FilterStep(
             &actions_dag_,
             filter_column_name_,
             remove_filter_column_),
-        getTraits(actions_dag_, input_stream_.header, input_stream_.sort_description, remove_filter_column_, filter_column_name_))
+        getTraits())
     , actions_dag(std::move(actions_dag_))
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)

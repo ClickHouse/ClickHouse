@@ -1,4 +1,4 @@
-#include <Processors/Transforms/DistinctSortedChunkTransform.h>
+#include <Processors/Transforms/DistinctSortedStreamTransform.h>
 
 namespace DB
 {
@@ -9,18 +9,16 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-DistinctSortedChunkTransform::DistinctSortedChunkTransform(
+DistinctSortedStreamTransform::DistinctSortedStreamTransform(
     const Block & header_,
     const SizeLimits & output_size_limits_,
     UInt64 limit_hint_,
     const SortDescription & sorted_columns_descr_,
-    const Names & source_columns,
-    const bool sorted_stream_)
+    const Names & source_columns)
     : ISimpleTransform(header_, header_, true)
     , limit_hint(limit_hint_)
     , output_size_limits(output_size_limits_)
     , sorted_columns_descr(sorted_columns_descr_)
-    , sorted_stream(sorted_stream_)
 {
     /// calculate sorted columns positions
     sorted_columns_pos.reserve(sorted_columns_descr.size());
@@ -49,7 +47,7 @@ DistinctSortedChunkTransform::DistinctSortedChunkTransform(
     prev_chunk_latest_key.reserve(sorted_columns.size());
 }
 
-void DistinctSortedChunkTransform::initChunkProcessing(const Columns & input_columns)
+void DistinctSortedStreamTransform::initChunkProcessing(const Columns & input_columns)
 {
     sorted_columns.clear();
     for (size_t pos : sorted_columns_pos)
@@ -64,7 +62,7 @@ void DistinctSortedChunkTransform::initChunkProcessing(const Columns & input_col
 }
 
 template <bool clear_data>
-size_t DistinctSortedChunkTransform::ordinaryDistinctOnRange(IColumn::Filter & filter, const size_t range_begin, const size_t range_end)
+size_t DistinctSortedStreamTransform::ordinaryDistinctOnRange(IColumn::Filter & filter, const size_t range_begin, const size_t range_end)
 {
     size_t count = 0;
     switch (data.type)
@@ -86,7 +84,7 @@ size_t DistinctSortedChunkTransform::ordinaryDistinctOnRange(IColumn::Filter & f
 }
 
 template <typename Method>
-size_t DistinctSortedChunkTransform::buildFilterForRange(
+size_t DistinctSortedStreamTransform::buildFilterForRange(
     Method & method, IColumn::Filter & filter, const size_t range_begin, const size_t range_end)
 {
     typename Method::State state(other_columns, other_columns_sizes, nullptr);
@@ -104,7 +102,7 @@ size_t DistinctSortedChunkTransform::buildFilterForRange(
     return count;
 }
 
-void DistinctSortedChunkTransform::saveLatestKey(const size_t row_pos)
+void DistinctSortedStreamTransform::saveLatestKey(const size_t row_pos)
 {
     prev_chunk_latest_key.clear();
     for (const auto & col : sorted_columns)
@@ -114,7 +112,7 @@ void DistinctSortedChunkTransform::saveLatestKey(const size_t row_pos)
     }
 }
 
-bool DistinctSortedChunkTransform::isKey(const size_t key_pos, const size_t row_pos) const
+bool DistinctSortedStreamTransform::isKey(const size_t key_pos, const size_t row_pos) const
 {
     for (size_t i = 0; i < sorted_columns.size(); ++i)
     {
@@ -125,7 +123,7 @@ bool DistinctSortedChunkTransform::isKey(const size_t key_pos, const size_t row_
     return true;
 }
 
-bool DistinctSortedChunkTransform::isLatestKeyFromPrevChunk(const size_t row_pos) const
+bool DistinctSortedStreamTransform::isLatestKeyFromPrevChunk(const size_t row_pos) const
 {
     for (size_t i = 0, s = sorted_columns.size(); i < s; ++i)
     {
@@ -148,7 +146,7 @@ bool DistinctSortedChunkTransform::isLatestKeyFromPrevChunk(const size_t row_pos
 }
 
 template<typename Predicate>
-size_t DistinctSortedChunkTransform::getRangeEnd(size_t begin, size_t end, Predicate pred) const
+size_t DistinctSortedStreamTransform::getRangeEnd(size_t begin, size_t end, Predicate pred) const
 {
     assert(begin < end);
 
@@ -178,7 +176,7 @@ size_t DistinctSortedChunkTransform::getRangeEnd(size_t begin, size_t end, Predi
     return end;
 }
 
-std::pair<size_t, size_t> DistinctSortedChunkTransform::continueWithPrevRange(const size_t chunk_rows, IColumn::Filter & filter)
+std::pair<size_t, size_t> DistinctSortedStreamTransform::continueWithPrevRange(const size_t chunk_rows, IColumn::Filter & filter)
 {
     /// prev_chunk_latest_key is empty on very first transform() call
     /// or first row doesn't match a key from previous transform()
@@ -198,7 +196,7 @@ std::pair<size_t, size_t> DistinctSortedChunkTransform::continueWithPrevRange(co
     return {range_end, output_rows};
 }
 
-void DistinctSortedChunkTransform::transform(Chunk & chunk)
+void DistinctSortedStreamTransform::transform(Chunk & chunk)
 {
     const size_t chunk_rows = chunk.getNumRows();
     if (unlikely(0 == chunk_rows))

@@ -648,8 +648,7 @@ void addDistinctStep(QueryPlan & query_plan,
         limits,
         limit_hint_for_distinct,
         column_names,
-        pre_distinct,
-        settings.optimize_distinct_in_order);
+        pre_distinct);
 
     distinct_step->setStepDescription(pre_distinct ? "Preliminary DISTINCT" : "DISTINCT");
     query_plan.addStep(std::move(distinct_step));
@@ -1363,8 +1362,7 @@ void Planner::buildPlanForUnionNode()
             limits,
             0 /*limit hint*/,
             query_plan.getCurrentDataStream().header.getNames(),
-            false /*pre distinct*/,
-            settings.optimize_distinct_in_order);
+            false /*pre distinct*/);
         query_plan.addStep(std::move(distinct_step));
     }
 }

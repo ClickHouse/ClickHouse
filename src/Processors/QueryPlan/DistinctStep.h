@@ -14,8 +14,8 @@ public:
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
         const Names & columns_,
-        bool pre_distinct_, /// If is enabled, execute distinct for separate streams. Otherwise, merge streams.
-        bool optimize_distinct_in_order_);
+        /// If is enabled, execute distinct for separate streams. Otherwise, merge streams.
+        bool pre_distinct_);
 
     String getName() const override { return "Distinct"; }
     const Names & getColumnNames() const { return columns; }
@@ -29,6 +29,8 @@ public:
 
     UInt64 getLimitHint() const { return limit_hint; }
 
+    void applyOrder(SortDescription sort_desc) { distinct_sort_desc = std::move(sort_desc); }
+
 private:
     void updateOutputStream() override;
 
@@ -36,7 +38,7 @@ private:
     UInt64 limit_hint;
     const Names columns;
     bool pre_distinct;
-    bool optimize_distinct_in_order;
+    SortDescription distinct_sort_desc;
 };
 
 }
