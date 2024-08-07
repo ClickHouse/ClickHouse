@@ -25,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace AzureBlobStorage
@@ -76,11 +77,28 @@ BlockBlobClient ContainerClientWrapper::GetBlockBlobClient(const String & blob_n
     return client.GetBlockBlobClient(blob_prefix / blob_name);
 }
 
+BlobContainerPropertiesRespones ContainerClientWrapper::GetProperties() const
+{
+    return client.GetProperties();
+}
+
 ListBlobsPagedResponse ContainerClientWrapper::ListBlobs(const ListBlobsOptions & options) const
 {
     auto new_options = options;
     new_options.Prefix = blob_prefix / options.Prefix.ValueOr("");
-    return client.ListBlobs(new_options);
+
+    auto response = client.ListBlobs(new_options);
+    auto blob_prefix_str = blob_prefix.string() + "/";
+
+    for (auto & blob : response.Blobs)
+    {
+        if (!blob.Name.starts_with(blob_prefix_str))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected prefix '{}' in blob name '{}'", blob_prefix_str, blob.Name);
+
+        blob.Name = blob.Name.substr(blob_prefix_str.size());
+    }
+
+    return response;
 }
 
 bool ContainerClientWrapper::IsClientForDisk() const
@@ -258,7 +276,7 @@ void processURL(const String & url, const String & container_name, Endpoint & en
 static bool containerExists(const ContainerClient & client)
 {
     ProfileEvents::increment(ProfileEvents::AzureGetProperties);
-    if (client.GetClickhouseOptions().IsClientForDisk)
+    if (client.IsClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskAzureGetProperties);
 
     try

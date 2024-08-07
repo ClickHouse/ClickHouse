@@ -100,6 +100,7 @@ using RawContainerClient = Azure::Storage::Blobs::BlobContainerClient;
 
 using Azure::Storage::Blobs::ListBlobsOptions;
 using Azure::Storage::Blobs::ListBlobsPagedResponse;
+using BlobContainerPropertiesRespones = Azure::Response<Azure::Storage::Blobs::Models::BlobContainerProperties>;
 
 /// A wrapper for ContainerClient that correctly handles the prefix of blobs.
 /// See AzureBlobStorageEndpoint and processAzureBlobStorageEndpoint for details.
@@ -111,6 +112,7 @@ public:
     bool IsClientForDisk() const;
     BlobClient GetBlobClient(const String & blob_name) const;
     BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
+    BlobContainerPropertiesRespones GetProperties() const;
     ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
 
 private:
