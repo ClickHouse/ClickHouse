@@ -172,9 +172,9 @@ private:
             concrete_columns[i] = concrete_column;
         }
 
-        ColumnString & concreate_out_data = assert_cast<ColumnString &>(out_data);
-        auto & out_chars = concreate_out_data.getChars();
-        auto & out_offsets = concreate_out_data.getOffsets();
+        ColumnString & concrete_out_data = assert_cast<ColumnString &>(out_data);
+        auto & out_chars = concrete_out_data.getChars();
+        auto & out_offsets = concrete_out_data.getOffsets();
         out_chars.resize_exact(total_bytes);
         out_offsets.resize_exact(input_rows_count * columns.size());
 
@@ -197,7 +197,6 @@ private:
 
     bool executeFixedString(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
-        size_t total_bytes = 0;
         std::vector<const ColumnFixedString *> concrete_columns(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
@@ -205,15 +204,16 @@ private:
             if (!concrete_column)
                 return false;
 
-            total_bytes += concrete_column->getChars().size();
             concrete_columns[i] = concrete_column;
         }
 
-        ColumnFixedString & concreate_out_data = assert_cast<ColumnFixedString &>(out_data);
-        auto & out_chars = concreate_out_data.getChars();
+        ColumnFixedString & concrete_out_data = assert_cast<ColumnFixedString &>(out_data);
+        auto & out_chars = concrete_out_data.getChars();
+
+        const size_t n = concrete_out_data.getN();
+        size_t total_bytes = concrete_out_data.getN() * columns.size() * input_rows_count;
         out_chars.resize_exact(total_bytes);
 
-        const size_t n = concreate_out_data.getN();
         size_t curr_out_offset = 0;
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
         {
@@ -241,9 +241,9 @@ private:
             nested_columns[i] = &concrete_column->getNestedColumn();
         }
 
-        ColumnNullable & concreate_out_data = assert_cast<ColumnNullable &>(out_data);
-        auto & out_null_map = concreate_out_data.getNullMapColumn();
-        auto & out_nested_column = concreate_out_data.getNestedColumn();
+        ColumnNullable & concrete_out_data = assert_cast<ColumnNullable &>(out_data);
+        auto & out_null_map = concrete_out_data.getNullMapColumn();
+        auto & out_nested_column = concrete_out_data.getNestedColumn();
         executeAny(null_maps, out_null_map, input_rows_count);
         executeAny(nested_columns, out_nested_column, input_rows_count);
         return true;
@@ -251,11 +251,11 @@ private:
 
     bool executeTuple(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
-        ColumnTuple * concreate_out_data = typeid_cast<ColumnTuple *>(&out_data);
-        if (!concreate_out_data)
+        ColumnTuple * concrete_out_data = typeid_cast<ColumnTuple *>(&out_data);
+        if (!concrete_out_data)
             return false;
 
-        const size_t tuple_size = concreate_out_data->tupleSize();
+        const size_t tuple_size = concrete_out_data->tupleSize();
         for (size_t i = 0; i < tuple_size; ++i)
         {
             ColumnRawPtrs elem_columns(columns.size(), nullptr);
@@ -264,7 +264,7 @@ private:
                 const ColumnTuple * concrete_column = assert_cast<const ColumnTuple *>(columns[j]);
                 elem_columns[j] = &concrete_column->getColumn(i);
             }
-            executeAny(elem_columns, concreate_out_data->getColumn(i), input_rows_count);
+            executeAny(elem_columns, concrete_out_data->getColumn(i), input_rows_count);
         }
         return true;
     }
