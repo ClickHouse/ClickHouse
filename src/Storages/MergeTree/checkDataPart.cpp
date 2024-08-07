@@ -38,11 +38,13 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
+    extern const int CANNOT_SCHEDULE_TASK;
     extern const int UNEXPECTED_FILE_IN_DATA_PART;
     extern const int NO_FILE_IN_DATA_PART;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int BROKEN_PROJECTION;
+    extern const int ABORTED;
 }
 
 
@@ -88,11 +90,11 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     }
     catch (const Exception & e)
     {
-        if (isNotEnoughMemoryErrorCode(e.code()))
-            return true;
-
-        if (e.code() == ErrorCodes::NETWORK_ERROR || e.code() == ErrorCodes::SOCKET_TIMEOUT)
-            return true;
+        return isNotEnoughMemoryErrorCode(e.code())
+            || e.code() == ErrorCodes::NETWORK_ERROR
+            || e.code() == ErrorCodes::SOCKET_TIMEOUT
+            || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
+            || e.code() == ErrorCodes::ABORTED;
     }
     catch (const Poco::Net::NetException &)
     {
@@ -335,16 +337,21 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         projections_on_disk.erase(projection_file);
     }
 
-    if (throw_on_broken_projection && !broken_projections_message.empty())
+    if (throw_on_broken_projection)
     {
-        throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
-    }
+        if (!broken_projections_message.empty())
+        {
+            throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
+        }
 
-    if (require_checksums && !projections_on_disk.empty())
-    {
-        throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
-            "Found unexpected projection directories: {}",
-            fmt::join(projections_on_disk, ","));
+        /// This one is actually not broken, just redundant files on disk which
+        /// MergeTree will never use.
+        if (require_checksums && !projections_on_disk.empty())
+        {
+            throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
+                "Found unexpected projection directories: {}",
+                fmt::join(projections_on_disk, ","));
+        }
     }
 
     if (is_cancelled())
