@@ -14,6 +14,12 @@ namespace DB
 constexpr auto STATS_FILE_PREFIX = "statistics_";
 constexpr auto STATS_FILE_SUFFIX = ".stats";
 
+struct StatisticsUtils
+{
+    /// Returns std::nullopt if input Field cannot be converted to a concrete value
+    /// - `data_type` is the type of the column on which the statistics object was build on
+    static std::optional<Float64> tryConvertToFloat64(const Field & value, const DataTypePtr & data_type);
+};
 
 /// Statistics describe properties of the values in the column,
 /// e.g. how many unique values exist,

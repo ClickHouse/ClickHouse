@@ -1,14 +1,17 @@
 #include <Storages/Statistics/Statistics.h>
+#include <Common/Exception.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/logger_useful.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/StatisticsCountMinSketch.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/StatisticsUniq.h>
 #include <Storages/StatisticsDescription.h>
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
 
 
 #include "config.h" /// USE_DATASKETCHES
@@ -26,6 +29,29 @@ enum StatisticsFileVersion : UInt16
 {
     V0 = 0,
 };
+
+std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
+{
+    if (data_type->isValueRepresentedByNumber())
+    {
+        Field value_converted;
+
+        if (isInteger(data_type) && (value.getType() == Field::Types::Float64 || value.getType() == Field::Types::String))
+            /// For case val_int32 < 10.5 or val_int32 < '10.5' we should convert 10.5 to Float64.
+            value_converted = convertFieldToType(value, *DataTypeFactory::instance().get("Float64"));
+        else
+            /// We should convert value to the real column data type and then translate it to Float64.
+            /// For example for expression col_date > '2024-08-07', if we directly convert '2024-08-07' to Float64, we will get null.
+            value_converted = convertFieldToType(value, *data_type);
+
+        if (value_converted.isNull())
+            return {};
+
+        Float64 value_as_float = applyVisitor(FieldVisitorConvertToNumber<Float64>(), value_converted);
+        return value_as_float;
+    }
+    return {};
+}
 
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
     : stat(stat_)
