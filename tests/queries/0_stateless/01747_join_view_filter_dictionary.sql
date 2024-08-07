@@ -25,7 +25,7 @@ create table dictst01747(some_name String, field1 String, field2 UInt8) Engine =
 as select 'name', 'test', 33;
 
 CREATE DICTIONARY default.dict01747 (some_name String, field1 String, field2 UInt8)
-PRIMARY KEY some_name SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000
+PRIMARY KEY some_name SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort()
 TABLE dictst01747 DB currentDatabase() USER 'default'))
 LIFETIME(MIN 0 MAX 0) LAYOUT(COMPLEX_KEY_HASHED());
 

@@ -24,7 +24,7 @@ using FunctionHasSubsequenceUTF8 = HasSubsequenceImpl<NameHasSubsequenceUTF8, Ha
 
 REGISTER_FUNCTION(hasSubsequenceUTF8)
 {
-    factory.registerFunction<FunctionHasSubsequenceUTF8>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionHasSubsequenceUTF8>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

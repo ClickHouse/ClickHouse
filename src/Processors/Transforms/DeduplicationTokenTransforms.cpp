@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 void RestoreChunkInfosTransform::transform(Chunk & chunk)
 {
-    chunk.getChunkInfos().append(chunk_infos.clone());
+    chunk.getChunkInfos().appendIfUniq(chunk_infos.clone());
 }
 
 namespace DeduplicationToken
@@ -148,9 +148,11 @@ void CheckTokenTransform::transform(Chunk & chunk)
     auto token_info = chunk.getChunkInfos().get<TokenInfo>();
 
     if (!token_info)
+    {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk has to have DedupTokenInfo as ChunkInfo, {}", debug);
+    }
 
-    LOG_DEBUG(log, "debug: {}, token: {}", debug, token_info->debugToken());
+    LOG_TEST(log, "debug: {}, token: {}, columns {} rows {}", debug, token_info->debugToken(), chunk.getNumColumns(), chunk.getNumRows());
 }
 #endif
 

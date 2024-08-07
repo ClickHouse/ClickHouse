@@ -23,8 +23,9 @@
 #include <Common/quoteString.h>
 #include <Common/escapeForFileName.h>
 #include <base/insertAtEnd.h>
-#include <boost/algorithm/string/join.hpp>
+#include <Core/Settings.h>
 
+#include <boost/algorithm/string/join.hpp>
 #include <boost/range/adaptor/map.hpp>
 
 #include <filesystem>
@@ -221,10 +222,19 @@ void RestorerFromBackup::setStage(const String & new_stage, const String & messa
     if (restore_coordination)
     {
         restore_coordination->setStage(new_stage, message);
-        if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
-            restore_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
-        else
-            restore_coordination->waitForStage(new_stage);
+
+        /// The initiator of a RESTORE ON CLUSTER query waits for other hosts to complete their work (see waitForStage(Stage::COMPLETED) in BackupsWorker::doRestore),
+        /// but other hosts shouldn't wait for each others' completion. (That's simply unnecessary and also
+        /// the initiator may start cleaning up (e.g. removing restore-coordination ZooKeeper nodes) once all other hosts are in Stage::COMPLETED.)
+        bool need_wait = (new_stage != Stage::COMPLETED);
+
+        if (need_wait)
+        {
+            if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
+                restore_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
+            else
+                restore_coordination->waitForStage(new_stage);
+        }
     }
 }
 

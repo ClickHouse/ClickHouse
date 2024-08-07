@@ -16,14 +16,14 @@ public:
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;
 
-    Float64 estimateLess(Float64 val) const override;
-    Float64 estimateEqual(Float64 val) const override;
+    Float64 estimateLess(const Field & val) const override;
+    Float64 estimateEqual(const Field & val) const override;
 
 private:
     QuantileTDigest<Float64> t_digest;
 };
 
-void TDigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
-StatisticsPtr TDigestCreator(const SingleStatisticsDescription & stat, DataTypePtr);
+void tdigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
+StatisticsPtr tdigestCreator(const SingleStatisticsDescription & stat, DataTypePtr);
 
 }

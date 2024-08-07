@@ -41,7 +41,7 @@ For more details, see [https://en.wikipedia.org/wiki/Inverse_trigonometric_funct
                 {"nan", "SELECT asin(1.1), asin(-2), asin(inf), asin(nan)", ""}},
             .categories{"Mathematical", "Trigonometric"}
         },
-        FunctionFactory::CaseInsensitive);
+        FunctionFactory::Case::Insensitive);
 }
 
 }
