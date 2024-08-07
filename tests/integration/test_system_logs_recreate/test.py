@@ -36,8 +36,12 @@ def test_system_logs_recreate():
     try:
         node.query("SYSTEM FLUSH LOGS")
         for table in system_logs:
-            assert "ENGINE = MergeTree" in node.query(f"SHOW CREATE TABLE system.{table}")
-            assert "ENGINE = Null" not in node.query(f"SHOW CREATE TABLE system.{table}")
+            assert "ENGINE = MergeTree" in node.query(
+                f"SHOW CREATE TABLE system.{table}"
+            )
+            assert "ENGINE = Null" not in node.query(
+                f"SHOW CREATE TABLE system.{table}"
+            )
             assert (
                 len(
                     node.query(f"SHOW TABLES FROM system LIKE '{table}%'")
@@ -103,7 +107,9 @@ def test_system_logs_recreate():
         import logging
 
         for table in system_logs:
-            create_table_sql = node.query(f"SHOW CREATE TABLE system.{table} FORMAT TSVRaw")
+            create_table_sql = node.query(
+                f"SHOW CREATE TABLE system.{table} FORMAT TSVRaw"
+            )
             logging.debug(
                 "With storage policy, SHOW CREATE TABLE system.%s is: %s",
                 table,
@@ -129,8 +135,12 @@ def test_system_logs_recreate():
         node.restart_clickhouse()
         node.query("SYSTEM FLUSH LOGS")
         for table in system_logs:
-            assert "ENGINE = MergeTree" in node.query(f"SHOW CREATE TABLE system.{table}")
-            assert "ENGINE = Null" not in node.query(f"SHOW CREATE TABLE system.{table}")
+            assert "ENGINE = MergeTree" in node.query(
+                f"SHOW CREATE TABLE system.{table}"
+            )
+            assert "ENGINE = Null" not in node.query(
+                f"SHOW CREATE TABLE system.{table}"
+            )
             assert (
                 len(
                     node.query(f"SHOW TABLES FROM system LIKE '{table}%'")

@@ -12,6 +12,7 @@ node = cluster.add_instance(
     stay_alive=True,
 )
 
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
