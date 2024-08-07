@@ -159,19 +159,19 @@ void WriteBufferValidUTF8::finalizeImpl()
             UInt8 len = length_of_utf8_sequence[static_cast<unsigned char>(*p)];
             if (p + len > pos)
             {
-                // Incomplete sequence. Skip one byte.
+                /// Incomplete sequence. Skip one byte.
                 putReplacement();
                 ++p;
             }
             else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<unsigned char *>(p), len))
             {
-                // Valid sequence
+                /// Valid sequence
                 putValid(p, len);
                 p += len;
             }
             else
             {
-                // Invalid sequence, skip first byte.
+                /// Invalid sequence, skip first byte.
                 putReplacement();
                 ++p;
             }
