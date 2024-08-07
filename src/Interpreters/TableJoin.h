@@ -201,19 +201,19 @@ private:
     Names requiredJoinedNames() const;
 
     /// Create converting actions and change key column names if required
-    ActionsDAGPtr applyKeyConvertToTable(
+    std::optional<ActionsDAG> applyKeyConvertToTable(
         const ColumnsWithTypeAndName & cols_src,
         const NameToTypeMap & type_mapping,
         JoinTableSide table_side,
         NameToNameMap & key_column_rename);
 
-    ActionsDAGPtr applyNullsafeWrapper(
+    std::optional<ActionsDAG> applyNullsafeWrapper(
         const ColumnsWithTypeAndName & cols_src,
         const NameSet & columns_for_nullsafe_comparison,
         JoinTableSide table_side,
         NameToNameMap & key_column_rename);
 
-    ActionsDAGPtr applyJoinUseNullsConversion(
+    std::optional<ActionsDAG> applyJoinUseNullsConversion(
         const ColumnsWithTypeAndName & cols_src,
         const NameToNameMap & key_column_rename);
 
@@ -263,7 +263,7 @@ public:
 
     TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data; }
 
-    ActionsDAGPtr createJoinedBlockActions(ContextPtr context) const;
+    ActionsDAG createJoinedBlockActions(ContextPtr context) const;
 
     const std::vector<JoinAlgorithm> & getEnabledJoinAlgorithms() const { return join_algorithm; }
 
@@ -378,7 +378,7 @@ public:
     /// Calculate converting actions, rename key columns in required
     /// For `USING` join we will convert key columns inplace and affect into types in the result table
     /// For `JOIN ON` we will create new columns with converted keys to join by.
-    std::pair<ActionsDAGPtr, ActionsDAGPtr>
+    std::pair<std::optional<ActionsDAG>, std::optional<ActionsDAG>>
     createConvertingActions(
         const ColumnsWithTypeAndName & left_sample_columns,
         const ColumnsWithTypeAndName & right_sample_columns);
