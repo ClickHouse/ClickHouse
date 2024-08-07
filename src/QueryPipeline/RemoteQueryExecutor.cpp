@@ -25,12 +25,17 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
+#include <charconv>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
+
 namespace ProfileEvents
 {
     extern const Event SuspendSendingQueryToShard;
     extern const Event ReadTaskRequestsReceived;
     extern const Event MergeTreeReadTaskRequestsReceived;
     extern const Event ParallelReplicasAvailableCount;
+    extern const Event DistributedShardTryCount;
 }
 
 namespace DB
@@ -43,6 +48,8 @@ namespace Setting
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool use_hedged_requests;
+    extern const SettingsUInt64 distributed_shard_retry_count;
+    extern const SettingsString distributed_shard_retry_error_codes;
 }
 
 namespace ErrorCodes
@@ -70,7 +77,33 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , stage(stage_)
     , extension(extension_)
     , priority_func(priority_func_)
+    , retry_config(RetryConfig::fromContext(context_))
 {
+}
+
+RemoteQueryExecutor::RetryConfig RemoteQueryExecutor::RetryConfig::fromContext(ContextPtr context)
+{
+    RetryConfig retry_config;
+    const Settings & current_settings = context->getSettingsRef();
+    retry_config.count = current_settings[Setting::distributed_shard_retry_count];
+
+    const String & error_codes_list = current_settings[Setting::distributed_shard_retry_error_codes].toString();
+    if (error_codes_list.empty())
+        return retry_config;
+
+    Strings error_codes;
+    boost::split(error_codes, error_codes_list, boost::is_any_of(","));
+    for (String & error_code_str : error_codes)
+    {
+        if (error_code_str.empty())
+            continue;
+
+        int error_code{};
+        if (std::from_chars(error_code_str.data(), error_code_str.data() + error_code_str.size(), error_code).ec == std::errc{})
+           retry_config.retryable_errors.emplace(error_code);
+    }
+
+    return retry_config;
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
@@ -478,6 +511,38 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
+{
+    size_t max_tries = 1 + retry_config.count;
+    size_t tries_used = 0;
+
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::DistributedShardTryCount, tries_used);
+    });
+
+    while (true)
+    {
+        try {
+            ++tries_used;
+            return readAttempt();
+        }
+        catch (const Exception & err)
+        {
+            if (tries_used >= max_tries || !retry_config.retryable_errors.contains(err.code()))
+            {
+                throw;
+            }
+
+            cancel();
+            connections->disconnect();
+            sent_query = false;
+            read_context.reset();
+            if (log)
+                LOG_DEBUG(log, "try {} of {} failed due to error code {}", tries_used, max_tries, err.code());
+        }
+    }
+}
+
+RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAttempt()
 {
 #if defined(OS_LINUX)
     if (!read_context || (resent_query && recreate_read_context))

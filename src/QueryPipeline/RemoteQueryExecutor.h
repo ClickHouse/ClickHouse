@@ -5,10 +5,13 @@
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Common/ErrorCodes.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <sys/types.h>
+
+#include <boost/container/flat_set.hpp>
 
 
 namespace DB
@@ -49,6 +52,13 @@ public:
         std::shared_ptr<TaskIterator> task_iterator = nullptr;
         std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator = nullptr;
         std::optional<IConnections::ReplicaInfo> replica_info = {};
+    };
+
+    struct RetryConfig
+    {
+        static RetryConfig fromContext(ContextPtr);
+        UInt64 count = 0;
+        boost::container::flat_set<ErrorCodes::ErrorCode> retryable_errors;
     };
 
     /// Takes a connection pool for a node (not cluster)
@@ -250,6 +260,8 @@ private:
     ProgressCallback progress_callback;
     ProfileInfoCallback profile_info_callback;
 
+    ReadResult readAttempt();
+
     /// Scalars needed to be sent to remote servers
     Scalars scalars;
     /// Temporary tables needed to be sent to remote servers
@@ -311,6 +323,8 @@ private:
     LoggerPtr log = nullptr;
 
     GetPriorityForLoadBalancing::Func priority_func;
+
+    RetryConfig retry_config;
 
     /// Send all scalars to remote servers
     void sendScalars();
