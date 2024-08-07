@@ -361,7 +361,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         }
 
         bool right_row_found = false;
-
         KnownRowsHolder<flag_per_row> known_rows;
         for (size_t onexpr_idx = 0; onexpr_idx < added_columns.join_on_keys.size(); ++onexpr_idx)
         {
@@ -693,7 +692,7 @@ size_t HashJoinMethods<KIND,STRICTNESS, MapsTemplate>::joinRightColumnsWithAddti
                         any_matched = true;
                         if constexpr (join_features.is_semi_join || join_features.is_any_join)
                         {
-                            auto used_once = used_flags.template setUsedOnce<true, true>(
+                            auto used_once = used_flags.template setUsedOnce<join_features.need_flags, true>(
                                 selected_right_row_it->block, selected_right_row_it->row_num, 0);
                             if (used_once)
                             {
