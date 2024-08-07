@@ -1272,7 +1272,7 @@ def test_filtering_by_file_or_path(cluster):
     node.query("SYSTEM FLUSH LOGS")
 
     result = node.query(
-        f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query ilike '%select%azure%test_filter%' AND type='QueryFinish'"
+        f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query ilike '%select%azure%test_filter%' AND type='QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1"
     )
 
     assert int(result) == 1
