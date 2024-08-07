@@ -1,4 +1,5 @@
--- Tags: shard
+-- Tags: shard, no-fasttest
+-- no-fasttest: Slow timeouts
 
 SET prefer_localhost_replica = 1;
 SET connections_with_failover_max_tries=1;
