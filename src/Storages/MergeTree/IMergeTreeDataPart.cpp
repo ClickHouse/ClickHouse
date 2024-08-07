@@ -72,7 +72,6 @@ namespace ErrorCodes
     extern const int BAD_TTL_FILE;
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int FILE_DOESNT_EXIST;
 }
 
 
