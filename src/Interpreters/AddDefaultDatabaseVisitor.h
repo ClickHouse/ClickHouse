@@ -101,7 +101,7 @@ private:
 
     const String database_name;
     std::set<String> external_tables;
-    mutable String with_alias;
+    mutable std::unordered_set<String> with_aliases;
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
@@ -120,7 +120,8 @@ private:
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
         if (select.recursive_with)
-            with_alias = select.with()->children[0]->as<ASTWithElement>()->name;
+            for (const auto & child : select.with()->children)
+                with_aliases.insert(child->as<ASTWithElement>()->name);
 
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
@@ -171,7 +172,7 @@ private:
         if (external_tables.contains(identifier.shortName()))
             return;
         /// This is WITH RECURSIVE alias.
-        if (!with_alias.empty() && identifier.name() == with_alias)
+        if (with_aliases.contains(identifier.name()))
             return;
 
         auto qualified_identifier = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
