@@ -2242,16 +2242,16 @@ def test_kafka_virtual_columns_with_materialized_view(
         )
 
 
-def insert_with_retry(instance, values, table_name="kafka", max_try_couunt=5):
+def insert_with_retry(instance, values, table_name="kafka", max_try_count=5):
     try_count = 0
     while True:
         logging.debug(f"Inserting, try_count is {try_count}")
         try:
             try_count += 1
-            instance.query("INSERT INTO test.kafka VALUES {}".format(values))
+            instance.query(f"INSERT INTO test.{table_name} VALUES {values}")
             break
         except QueryRuntimeException as e:
-            if "Local: Timed out." in str(e) and try_count < max_try_couunt:
+            if "Local: Timed out." in str(e) and try_count < max_try_count:
                 continue
             else:
                 raise
