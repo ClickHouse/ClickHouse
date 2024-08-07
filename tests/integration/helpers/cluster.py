@@ -1530,9 +1530,9 @@ class ClickHouseCluster:
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_azurite = True
         env_variables["AZURITE_PORT"] = str(self.azurite_port)
-        env_variables["AZURITE_STORAGE_ACCOUNT_URL"] = (
-            f"http://azurite1:{env_variables['AZURITE_PORT']}/devstoreaccount1"
-        )
+        env_variables[
+            "AZURITE_STORAGE_ACCOUNT_URL"
+        ] = f"http://azurite1:{env_variables['AZURITE_PORT']}/devstoreaccount1"
         env_variables["AZURITE_CONNECTION_STRING"] = (
             f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
             f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
@@ -1768,9 +1768,9 @@ class ClickHouseCluster:
 
         # Code coverage files will be placed in database directory
         # (affect only WITH_COVERAGE=1 build)
-        env_variables["LLVM_PROFILE_FILE"] = (
-            "/var/lib/clickhouse/server_%h_%p_%m.profraw"
-        )
+        env_variables[
+            "LLVM_PROFILE_FILE"
+        ] = "/var/lib/clickhouse/server_%h_%p_%m.profraw"
 
         clickhouse_start_command = CLICKHOUSE_START_COMMAND
         if clickhouse_log_file:
@@ -3261,21 +3261,29 @@ class ClickHouseCluster:
             raise Exception("Fatal messages found: {}".format(fatal_log))
 
     def pause_container(self, instance_name):
-        paused_services = subprocess_check_call(self.base_cmd + ["ps", "--services", "--filter", "status=paused"])
+        paused_services = subprocess_check_call(
+            self.base_cmd + ["ps", "--services", "--filter", "status=paused"]
+        )
         assert paused_services.find(instance_name) < 0
-        
+
         subprocess_check_call(self.base_cmd + ["pause", instance_name])
-        
-        paused_services = subprocess_check_call(self.base_cmd + ["ps", "--services", "--filter", "status=paused"])
+
+        paused_services = subprocess_check_call(
+            self.base_cmd + ["ps", "--services", "--filter", "status=paused"]
+        )
         assert paused_services.find(instance_name) >= 0
 
     def unpause_container(self, instance_name):
-        paused_services = subprocess_check_call(self.base_cmd + ["ps", "--services", "--filter", "status=paused"])
+        paused_services = subprocess_check_call(
+            self.base_cmd + ["ps", "--services", "--filter", "status=paused"]
+        )
         assert paused_services.find(instance_name) >= 0
-        
+
         subprocess_check_call(self.base_cmd + ["unpause", instance_name])
-        
-        paused_services = subprocess_check_call(self.base_cmd + ["ps", "--services", "--filter", "status=paused"])
+
+        paused_services = subprocess_check_call(
+            self.base_cmd + ["ps", "--services", "--filter", "status=paused"]
+        )
         assert paused_services.find(instance_name) < 0
 
     def open_bash_shell(self, instance_name):
