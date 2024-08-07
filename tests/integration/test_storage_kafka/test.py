@@ -2280,11 +2280,12 @@ def test_kafka_insert(kafka_cluster, create_query_generator):
         values.append("({i}, {i})".format(i=i))
     values = ",".join(values)
 
-    insert_with_retry(instance, values)
+    with existing_kafka_topic(get_admin_client(kafka_cluster), topic_name):
+        insert_with_retry(instance, values)
 
-    messages = kafka_consume_with_retry(kafka_cluster, topic_name, message_count)
-    result = "\n".join(messages)
-    kafka_check_result(result, True)
+        messages = kafka_consume_with_retry(kafka_cluster, topic_name, message_count)
+        result = "\n".join(messages)
+        kafka_check_result(result, True)
 
 
 @pytest.mark.parametrize(
