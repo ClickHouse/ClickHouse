@@ -1546,7 +1546,7 @@ toInt256OrDefault('abc', CAST('-1', 'Int256')):  -1
 - [`toInt256OrZero`](#toint256orzero).
 - [`toInt256OrNull`](#toint256ornull).
 
-# toUInt8
+## toUInt8
 
 Converts an input value to a value of type [`UInt8`](../data-types/int-uint.md). Throws an exception in case of an error.
 
