@@ -3513,7 +3513,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                         const auto & new_column = new_metadata.getColumns().get(command.column_name);
                         if (!old_column.type->equals(*new_column.type))
                             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                                            "ALTER types of column {} with statistics is not not safe "
+                                            "ALTER types of column {} with statistics is not safe "
                                             "because it can change the representation of statistics",
                                             backQuoteIfNeed(command.column_name));
                     }
