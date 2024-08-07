@@ -176,6 +176,25 @@ done
 setup_logs_replication
 attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
 
+# create minio log webhooks for both audit and server logs
+clickhouse-client --query "CREATE TABLE minio_audit_logs
+(
+    log String,
+    event_time DateTime64(9) MATERIALIZED parseDateTime64BestEffortOrZero(substring(JSONExtractRaw(log, 'time'), 2, 29), 9, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY tuple()"
+./mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?query=INSERT%20INTO%20minio_audit_logs%20FORMAT%20LineAsString"
+
+clickhouse-client --query "CREATE TABLE minio_server_logs
+(
+    log String,
+    event_time DateTime64(9) MATERIALIZED parseDateTime64BestEffortOrZero(substring(JSONExtractRaw(log, 'time'), 2, 29), 9, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY tuple()"
+./mc admin config set clickminio logger_webhook:ch_server_webhook endpoint="http://localhost:8123/?query=INSERT%20INTO%20minio_server_logs%20FORMAT%20LineAsString"
+
 function fn_exists() {
     declare -F "$1" > /dev/null;
 }
@@ -327,6 +346,11 @@ do
         fi
     fi
 done
+
+
+# collect minio audit and server logs
+clickhouse-client -q "SELECT log FROM minio_audit_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow"
+clickhouse-client -q "SELECT log FROM minio_server_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow"
 
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?
