@@ -60,19 +60,19 @@ def show_query_result(query):
 
 
 def compare_query(query):
-    timeout = 30
+    timeout = 60
     start_time = time.time()
     evaluation_time = start_time
     print(f"Evaluating query: {query}")
     print(f"Evaluation time: {evaluation_time}")
     while time.time() < start_time + timeout:
         result_from_writer = execute_query_on_prometheus_writer(query, evaluation_time)
+        time.sleep(1)
         result_from_reader = execute_query_on_prometheus_reader(query, evaluation_time)
         print(f"Result from prometheus_writer: {result_from_writer}")
         print(f"Result from prometheus_reader: {result_from_reader}")
         if result_from_writer == result_from_reader:
             return
-        time.sleep(1)
     raise Exception(
         f"Got different results from prometheus_writer and prometheus_reader"
     )
@@ -162,8 +162,12 @@ def test_external_tables():
         "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))) "
         "ENGINE=AggregatingMergeTree ORDER BY (metric_name, id)"
     )
+
+    # FIXME: The table structure should be:
+    # "CREATE TABLE mymetrics (metric_family_name String, type LowCardinality(String), unit LowCardinality(String), help String)"
+    # Renamed it because of the bug and potential type mismatch.
     node.query(
-        "CREATE TABLE mymetrics (metric_family_name String, type LowCardinality(String), unit LowCardinality(String), help String) "
+        "CREATE TABLE mymetrics (metric_family_name String, type String, unit String, help String) "
         "ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
     )
     node.query(

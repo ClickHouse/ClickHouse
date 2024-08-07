@@ -155,7 +155,18 @@ StorageTimeSeries::StorageTimeSeries(
         auto & target = targets.emplace_back();
         target.kind = target_kind;
         target.table_id = initTarget(target_kind, target_info, local_context, getStorageID(), columns, *storage_settings, mode);
-        target.is_inner_table = target_info->table_id.empty();
+        target.is_inner_table = target_info && target_info->table_id.empty();
+
+        if (target_kind == ViewTarget::Metrics && !target.is_inner_table)
+        {
+            auto table = DatabaseCatalog::instance().tryGetTable(target.table_id, getContext());
+            auto metadata = table->getInMemoryMetadataPtr();
+
+            for (const auto & column : metadata->columns)
+                if (column.type->lowCardinality())
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "External metrics table cannot have LowCardnality columns for now.");
+        }
+
         has_inner_tables |= target.is_inner_table;
     }
 }
