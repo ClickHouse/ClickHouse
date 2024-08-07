@@ -358,8 +358,9 @@ ReadBufferPtr KafkaConsumer2::getNextMessage()
         size_t size = current->get_payload().get_size();
         ++current;
 
-        chassert(data != nullptr);
-        return std::make_shared<ReadBufferFromMemory>(data, size);
+        // `data` can be nullptr on case of the Kafka message has empty payload
+        if (data)
+            return std::make_shared<ReadBufferFromMemory>(data, size);
     }
 
     return nullptr;
