@@ -208,7 +208,6 @@ Chunk StorageObjectStorageSource::generate()
                   .filename = &filename,
                   .last_modified = object_info->metadata->last_modified,
                   .etag = &(object_info->metadata->etag)
-                  .last_modified = object_info->metadata->last_modified,
                 }, getContext(), read_from_format_info.columns_description);
 
             const auto & partition_columns = configuration->getPartitionColumns();
