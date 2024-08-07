@@ -173,8 +173,10 @@ do
     sleep 1
 done
 
-setup_logs_replication
-attach_gdb_to_clickhouse
+# TODO: temporary disable logs replication because of problems related to async deduplicated insert
+# https://github.com/ClickHouse/ClickHouse/issues/67606
+#setup_logs_replication
+attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
 
 function fn_exists() {
     declare -F "$1" > /dev/null;
@@ -303,7 +305,8 @@ ls -la /
 clickhouse-client -q "system flush logs" ||:
 
 # stop logs replication to make it possible to dump logs tables via clickhouse-local
-stop_logs_replication
+# TODO: temporary disable logs replication
+# stop_logs_replication
 
 # Try to get logs while server is running
 failed_to_save_logs=0
