@@ -1,3 +1,6 @@
+import logging
+import time
+
 import pytest
 import psycopg2
 
@@ -463,6 +466,47 @@ def test_inaccessible_postgresql_database_engine_filterable_on_system_tables(
 
     node1.query("DROP DATABASE postgres_database")
     assert "postgres_database" not in node1.query("SHOW DATABASES")
+
+
+
+def test_postgres_database_engine_restart(started_cluster):
+    # connect to database as well
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    node1.query(
+        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+    )
+    assert "postgres_database" in node1.query("SHOW DATABASES")
+
+    create_postgres_table(cursor, "test_table")
+    assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
+    assert node1.query("INSERT INTO  postgres_database.test_table VALUES (1, 1)") == ""
+    assert node1.query("SELECT id FROM postgres_database.test_table") == '1\n'
+
+    # kill postgres
+    cluster.restart_postgress()
+
+    timeout = 60
+    timeout_time = time.time() + timeout
+    connection_restored = False
+    while time.time() < timeout_time and not connection_restored:
+        time.sleep(5)
+        try:
+            connection_restored = node1.query("SELECT id FROM postgres_database.test_table") == '1\n'
+        except Exception as e:
+            logging.debug(f"connection failed: {e}")
+            time.sleep(5)
+
+    assert node1.query("SELECT id FROM postgres_database.test_table") == '1\n'
+
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+    drop_postgres_table(cursor, "test_table")
 
 
 if __name__ == "__main__":
