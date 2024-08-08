@@ -51,7 +51,12 @@ StringRef ColumnNullable::getDataAt(size_t n) const
 void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
 {
     const auto & arr = getNullMapData();
-    hash.update(arr[n]);
+    /// we should do nothing for null field, otherwise:
+    ///   - hash(1::UInt8) == hash(NULL::Nullable(UInt8))
+    ///   - hash(NULL) != hash(NULL::Nllable(UInt8))
+    /// because we use 1::UInt8 to represent a null field in the NullMapColumn
+
+    /// hash.update(arr[n]);
     if (arr[n] == 0)
         getNestedColumn().updateHashWithValue(n, hash);
 }

@@ -5,7 +5,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/SetVariants.h>
 
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -167,8 +169,35 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
         extractNestedColumnsAndNullMap(key_columns, null_map);
     }
 
-    /// Choose data structure to use for the set.
-    data.init(SetVariants::chooseMethod(key_columns, key_sizes));
+    if (choose_hashed_method)
+    {
+        data.init(SetVariants::Type::hashed);
+    }
+    else
+    {
+        /// Choose data structure to use for the set.
+        data.init(SetVariants::chooseMethod(key_columns, key_sizes));
+    }
+}
+
+void Set::setDataTypes(const DataTypes & datatypes)
+{
+    std::lock_guard lock(rwlock);
+    if (datatypes.size() != keys_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Method Set::setDataTypes error, expect size {} but {}", keys_size, datatypes.size());
+
+    for (size_t i = 0; i < keys_size; ++i)
+    {
+        data_types[i] = datatypes[i];
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types[i].get()))
+        {
+            data_types[i] = low_cardinality_type->getDictionaryType();
+        }
+        if (!transform_null_in)
+        {
+            data_types[i] = removeNullable(data_types[i]);
+        }
+    }
 }
 
 void Set::fillSetElements()
@@ -313,6 +342,25 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     /// The constant columns to the left of IN are not supported directly. For this, they first materialize.
     Columns materialized_columns;
     materialized_columns.reserve(num_key_columns);
+
+    bool return_in_advance = false;
+    for (size_t i = 0; i < num_key_columns; ++i)
+    {
+        if (transform_null_in && columns.at(i).type->isNullableNothing())
+        {
+            // NULL IN SomeType which is not Nullable.
+            if (!data_types[i]->isNullable())
+            {
+                return_in_advance = true;
+                break;
+            }
+        }
+    }
+    if (return_in_advance)
+    {
+        vec_res = ColumnUInt8::Container(columns.at(0).column->size(), negative);
+        return res;
+    }
 
     for (size_t i = 0; i < num_key_columns; ++i)
     {

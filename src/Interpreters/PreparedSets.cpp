@@ -50,6 +50,7 @@ static bool equals(const DataTypes & lhs, const DataTypes & rhs)
 FutureSetFromStorage::FutureSetFromStorage(SetPtr set_) : set(std::move(set_)) {}
 SetPtr FutureSetFromStorage::get() const { return set; }
 DataTypes FutureSetFromStorage::getTypes() const { return set->getElementsTypes(); }
+DataTypes FutureSetFromStorage::getLeftArgTypes() const { return set->getDataTypes(); }
 
 SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr &)
 {
@@ -57,11 +58,12 @@ SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr &)
 }
 
 
-FutureSetFromTuple::FutureSetFromTuple(Block block, const Settings & settings)
+FutureSetFromTuple::FutureSetFromTuple(Block block, const Settings & settings, const DataTypes & left_arg_types, bool first_argument_has_nullable_nothing)
 {
     auto size_limits = getSizeLimitsForSet(settings);
-    set = std::make_shared<Set>(size_limits, settings.use_index_for_in_with_subqueries_max_values, settings.transform_null_in);
+    set = std::make_shared<Set>(size_limits, settings.use_index_for_in_with_subqueries_max_values, settings.transform_null_in, first_argument_has_nullable_nothing);
     set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
+    set->setDataTypes(left_arg_types);
 
     Columns columns;
     columns.reserve(block.columns());
@@ -75,7 +77,7 @@ FutureSetFromTuple::FutureSetFromTuple(Block block, const Settings & settings)
 }
 
 DataTypes FutureSetFromTuple::getTypes() const { return set->getElementsTypes(); }
-
+DataTypes FutureSetFromTuple::getLeftArgTypes() const { return set->getDataTypes(); }
 SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
 {
     if (set->hasExplicitSetElements())
@@ -142,6 +144,11 @@ void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
 DataTypes FutureSetFromSubquery::getTypes() const
 {
     return set_and_key->set->getElementsTypes();
+}
+
+DataTypes FutureSetFromSubquery::getLeftArgTypes() const
+{
+    return set_and_key->set->getDataTypes();
 }
 
 std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const ContextPtr & context)
@@ -250,15 +257,14 @@ String PreparedSets::toString(const PreparedSets::Hash & key, const DataTypes & 
     return buf.str();
 }
 
-FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, Block block, const Settings & settings)
+FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, Block block, const Settings & settings, const DataTypes & left_arg_types, bool first_argument_has_nullable_nothing)
 {
-    auto from_tuple = std::make_shared<FutureSetFromTuple>(std::move(block), settings);
-    const auto & set_types = from_tuple->getTypes();
+    auto from_tuple = std::make_shared<FutureSetFromTuple>(std::move(block), settings, left_arg_types, first_argument_has_nullable_nothing);
     auto & sets_by_hash = sets_from_tuple[key];
 
     for (const auto & set : sets_by_hash)
-        if (equals(set->getTypes(), set_types))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate set: {}", toString(key, set_types));
+        if (equals(set->getLeftArgTypes(), left_arg_types))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate set: {}", toString(key, left_arg_types));
 
     sets_by_hash.push_back(from_tuple);
     return from_tuple;
@@ -318,7 +324,7 @@ FutureSetFromTuplePtr PreparedSets::findTuple(const Hash & key, const DataTypes 
         return nullptr;
 
     for (const auto & set : it->second)
-        if (equals(set->getTypes(), types))
+        if (equals(set->getLeftArgTypes(), types))
             return set;
 
     return nullptr;

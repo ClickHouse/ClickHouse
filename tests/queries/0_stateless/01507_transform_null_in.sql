@@ -8,3 +8,7 @@ SELECT (1, 2) IN (1, NULL);
 SELECT (1, 2) IN tuple(1, NULL);
 SELECT (1, 2) IN ((1, NULL), (1, 2));
 SELECT (1, NULL) IN (1, NULL);
+SELECT (1, NULL) IN (1, 1);
+SELECT (1, NULL) IN ((1, 1), (NULL, 1));
+SELECT NULL IN 1;
+SELECT NULL IN (1, 2, 3);
