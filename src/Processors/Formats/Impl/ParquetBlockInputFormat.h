@@ -2,9 +2,11 @@
 #include "config.h"
 #if USE_PARQUET
 
+#include <Common/logger_useful.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/SharedParsingThreadPool.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
 namespace parquet { class FileMetaData; }
@@ -17,6 +19,7 @@ namespace DB
 
 class ArrowColumnToCHColumn;
 class ParquetRecordReader;
+class TaskTracker;
 
 // Parquet files contain a metadata block with the following information:
 //  * list of columns,
@@ -53,7 +56,8 @@ public:
         const Block & header,
         const FormatSettings & format_settings,
         size_t max_decoding_threads,
-        size_t min_bytes_for_seek);
+        size_t min_bytes_for_seek,
+        SharedParsingThreadPoolPtr shared_pool);
 
     ~ParquetBlockInputFormat() override;
 
@@ -252,6 +256,7 @@ private:
     size_t max_decoding_threads;
     size_t min_bytes_for_seek;
     const size_t max_pending_chunks_per_row_group_batch = 2;
+    size_t additional_parsing_threads = 0;
 
     /// RandomAccessFile is thread safe, so we share it among threads.
     /// FileReader is not, so each thread creates its own.
@@ -280,7 +285,11 @@ private:
 
     // These are only used when max_decoding_threads > 1.
     size_t row_group_batches_started = 0;
-    std::unique_ptr<ThreadPool> pool;
+    std::shared_ptr<ThreadPool> pool;
+    std::unique_ptr<TaskTracker> task_tracker;
+    SharedParsingThreadPoolPtr shared_pool;
+
+    LoggerPtr log;
 
     BlockMissingValues previous_block_missing_values;
     size_t previous_approx_bytes_read_for_chunk = 0;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <Formats/SharedParsingThreadPool.h>
 #include <IO/CompressionMethod.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -175,7 +176,7 @@ public:
         UInt64 max_block_size,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
-        size_t max_parsing_threads,
+        SharedParsingThreadPoolPtr shared_pool,
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
         bool glob_url = false,
@@ -191,6 +192,8 @@ public:
     }
 
     Chunk generate() override;
+
+    void onFinish() override { shared_pool->finishStream(); }
 
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
@@ -227,6 +230,7 @@ private:
     HTTPHeaderEntries headers;
     bool need_only_count;
     size_t total_rows_in_file = 0;
+    SharedParsingThreadPoolPtr shared_pool;
 
     Poco::Net::HTTPBasicCredentials credentials;
 

@@ -5,6 +5,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
+#include <Common/ThreadPoolTaskTracker.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -375,23 +376,42 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     const Block & header_,
     const FormatSettings & format_settings_,
     size_t max_decoding_threads_,
-    size_t min_bytes_for_seek_)
+    size_t min_bytes_for_seek_,
+    SharedParsingThreadPoolPtr shared_pool_)
     : IInputFormat(header_, &buf)
     , format_settings(format_settings_)
     , skip_row_groups(format_settings.parquet.skip_row_groups)
     , max_decoding_threads(max_decoding_threads_)
     , min_bytes_for_seek(min_bytes_for_seek_)
     , pending_chunks(PendingChunk::Compare { .row_group_first = format_settings_.parquet.preserve_order })
+    , shared_pool(std::move(shared_pool_))
+    , log(getLogger("ParquetBlockInputFormat"))
 {
-    if (max_decoding_threads > 1)
+    if (shared_pool)
+    {
+        pool = shared_pool->getOrSetPool(
+            CurrentMetrics::ParquetDecoderThreads,
+            CurrentMetrics::ParquetDecoderThreadsActive,
+            CurrentMetrics::ParquetDecoderThreadsScheduled);
+    }
+    else if (max_decoding_threads > 1)
+    {
         pool = std::make_unique<ThreadPool>(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive, CurrentMetrics::ParquetDecoderThreadsScheduled, max_decoding_threads);
+    }
+
+    if (pool)
+        task_tracker = std::make_unique<TaskTracker>(
+            threadPoolCallbackRunnerUnsafe<void>(*pool, "ParquetDecoder"), 0, std::make_shared<LogSeriesLimiter>(log, 1, 5));
 }
 
 ParquetBlockInputFormat::~ParquetBlockInputFormat()
 {
     is_stopped = true;
-    if (pool)
-        pool->wait();
+    if (task_tracker)
+        task_tracker->safeWaitAll();
+
+    if (shared_pool)
+        shared_pool->releaseThreads(additional_parsing_threads);
 }
 
 void ParquetBlockInputFormat::initializeIfNeeded()
@@ -554,26 +574,18 @@ void ParquetBlockInputFormat::scheduleRowGroup(size_t row_group_batch_idx)
 
     status = RowGroupBatchState::Status::Running;
 
-    pool->scheduleOrThrowOnError(
-        [this, row_group_batch_idx, thread_group = CurrentThread::getGroup()]()
+    task_tracker->add([this, row_group_batch_idx] {
+        try
         {
-            if (thread_group)
-                CurrentThread::attachToGroupIfDetached(thread_group);
-            SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-
-            try
-            {
-                setThreadName("ParquetDecoder");
-
-                threadFunction(row_group_batch_idx);
-            }
-            catch (...)
-            {
-                std::lock_guard lock(mutex);
-                background_exception = std::current_exception();
-                condvar.notify_all();
-            }
-        });
+            threadFunction(row_group_batch_idx);
+        }
+        catch (...)
+        {
+            std::lock_guard lock(mutex);
+            background_exception = std::current_exception();
+            condvar.notify_all();
+        }
+    });
 }
 
 void ParquetBlockInputFormat::threadFunction(size_t row_group_batch_idx)
@@ -690,8 +702,19 @@ void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row
         ++row_group_batches_completed;
     }
 
-    if (pool)
+    if (task_tracker)
     {
+        if (shared_pool)
+        {
+            size_t num_remaining_tasks = row_group_batches.size() - row_group_batches_completed;
+            if (num_remaining_tasks > max_decoding_threads)
+            {
+                size_t free_threads = shared_pool->tryAcquireThreads(num_remaining_tasks);
+                additional_parsing_threads += free_threads;
+                max_decoding_threads += free_threads;
+            }
+        }
+
         while (row_group_batches_started - row_group_batches_completed < max_decoding_threads &&
                row_group_batches_started < row_group_batches.size())
             scheduleRowGroup(row_group_batches_started++);
@@ -762,8 +785,8 @@ Chunk ParquetBlockInputFormat::read()
 void ParquetBlockInputFormat::resetParser()
 {
     is_stopped = true;
-    if (pool)
-        pool->wait();
+    if (task_tracker)
+        task_tracker->safeWaitAll();
 
     arrow_file.reset();
     metadata.reset();
@@ -832,7 +855,8 @@ void registerInputFormatParquet(FormatFactory & factory)
                const ReadSettings & read_settings,
                bool is_remote_fs,
                size_t /* max_download_threads */,
-               size_t max_parsing_threads)
+               size_t max_parsing_threads,
+               SharedParsingThreadPoolPtr shared_pool)
             {
                 size_t min_bytes_for_seek = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
                 return std::make_shared<ParquetBlockInputFormat>(
@@ -840,7 +864,8 @@ void registerInputFormatParquet(FormatFactory & factory)
                     sample,
                     settings,
                     max_parsing_threads,
-                    min_bytes_for_seek);
+                    min_bytes_for_seek,
+                    shared_pool);
             });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
 }

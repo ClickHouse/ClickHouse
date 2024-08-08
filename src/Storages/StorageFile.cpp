@@ -1179,7 +1179,8 @@ StorageFileSource::StorageFileSource(
     UInt64 max_block_size_,
     FilesIteratorPtr files_iterator_,
     std::unique_ptr<ReadBuffer> read_buf_,
-    bool need_only_count_)
+    bool need_only_count_,
+    SharedParsingThreadPoolPtr shared_pool_)
     : SourceWithKeyCondition(info.source_header, false), WithContext(context_)
     , storage(std::move(storage_))
     , files_iterator(std::move(files_iterator_))
@@ -1190,6 +1191,7 @@ StorageFileSource::StorageFileSource(
     , block_for_format(info.format_header)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
+    , shared_pool(std::move(shared_pool_))
 {
     if (!storage->use_table_fd)
     {
@@ -1403,20 +1405,9 @@ Chunk StorageFileSource::generate()
                 read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
             }
 
-            const Settings & settings = getContext()->getSettingsRef();
-
-            size_t file_num = 0;
-            if (storage->archive_info)
-                file_num = storage->archive_info->paths_to_archives.size();
-            else
-                file_num = storage->paths.size();
-
-            chassert(file_num > 0);
-
-            const auto max_parsing_threads = std::max<size_t>(settings.max_parsing_threads / file_num, 1UL);
             input_format = FormatFactory::instance().getInput(
                 storage->format_name, *read_buf, block_for_format, getContext(), max_block_size, storage->format_settings,
-                max_parsing_threads, std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count);
+                shared_pool->getThreadsPerStream(), std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count, shared_pool);
 
             if (key_condition)
                 input_format->setKeyCondition(key_condition);
@@ -1668,6 +1659,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (progress_callback && !storage->archive_info)
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
+    auto shared_pool = std::make_shared<SharedParsingThreadPool>(ctx->getSettingsRef().max_parsing_threads, num_streams);
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         /// In case of reading from fd we have to check whether we have already created
@@ -1685,7 +1678,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             max_block_size,
             files_iterator,
             std::move(read_buffer),
-            need_only_count);
+            need_only_count,
+            shared_pool);
 
         source->setKeyCondition(filter_actions_dag, ctx);
         pipes.emplace_back(std::move(source));

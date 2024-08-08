@@ -1,5 +1,6 @@
 #pragma once
 #include <Common/re2.h>
+#include <Formats/SharedParsingThreadPool.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Processors/SourceWithKeyCondition.h>
@@ -39,7 +40,7 @@ public:
         ContextPtr context_,
         UInt64 max_block_size_,
         std::shared_ptr<IIterator> file_iterator_,
-        size_t max_parsing_threads_,
+        SharedParsingThreadPoolPtr shared_pool,
         bool need_only_count_);
 
     ~StorageObjectStorageSource() override;
@@ -49,6 +50,8 @@ public:
     void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override;
 
     Chunk generate() override;
+
+    void onFinish() override { shared_pool->finishStream(); }
 
     static std::shared_ptr<IIterator> createFileIterator(
         ConfigurationPtr configuration,
@@ -72,7 +75,7 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
-    const size_t max_parsing_threads;
+    SharedParsingThreadPoolPtr shared_pool;
     const ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
 
@@ -129,7 +132,8 @@ protected:
         const LoggerPtr & log,
         size_t max_block_size,
         size_t max_parsing_threads,
-        bool need_only_count);
+        bool need_only_count,
+        SharedParsingThreadPoolPtr shared_pool = {});
 
     ReaderHolder createReader();
 

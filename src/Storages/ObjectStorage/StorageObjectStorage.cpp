@@ -156,13 +156,13 @@ public:
             num_streams = 1;
         }
 
-        const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
+        auto shared_pool = std::make_shared<SharedParsingThreadPool>(max_threads, num_streams);
 
         for (size_t i = 0; i < num_streams; ++i)
         {
             auto source = std::make_shared<StorageObjectStorageSource>(
                 getName(), object_storage, configuration, info, format_settings,
-                context, max_block_size, iterator_wrapper, max_parsing_threads, need_only_count);
+                context, max_block_size, iterator_wrapper, shared_pool, need_only_count);
 
             source->setKeyCondition(filter_actions_dag, context);
             pipes.emplace_back(std::move(source));

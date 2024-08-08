@@ -4,6 +4,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/FileRenamer.h>
+#include <Formats/SharedParsingThreadPool.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Processors/SourceWithKeyCondition.h>
 
@@ -250,8 +251,8 @@ private:
         UInt64 max_block_size_,
         FilesIteratorPtr files_iterator_,
         std::unique_ptr<ReadBuffer> read_buf_,
-        bool need_only_count_);
-
+        bool need_only_count_,
+        SharedParsingThreadPoolPtr shared_pool);
 
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile
@@ -271,6 +272,8 @@ private:
     bool tryGetCountFromCache(const struct stat & file_stat);
 
     Chunk generate() override;
+
+    void onFinish() override { shared_pool->finishStream(); }
 
     void addNumRowsToCache(const String & path, size_t num_rows) const;
 
@@ -303,6 +306,7 @@ private:
     bool need_only_count = false;
     size_t total_rows_in_file = 0;
 
+    SharedParsingThreadPoolPtr shared_pool;
     std::shared_lock<std::shared_timed_mutex> shared_lock;
 };
 

@@ -49,7 +49,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     ContextPtr context_,
     UInt64 max_block_size_,
     std::shared_ptr<IIterator> file_iterator_,
-    size_t max_parsing_threads_,
+    SharedParsingThreadPoolPtr shared_pool_,
     bool need_only_count_)
     : SourceWithKeyCondition(info.source_header, false)
     , WithContext(context_)
@@ -59,7 +59,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
-    , max_parsing_threads(max_parsing_threads_)
+    , shared_pool(std::move(shared_pool_))
     , read_from_format_info(info)
     , create_reader_pool(std::make_shared<ThreadPool>(
         CurrentMetrics::StorageObjectStorageThreads,
@@ -270,7 +270,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 {
     return createReader(
         0, file_iterator, configuration, object_storage, read_from_format_info, format_settings,
-        key_condition, getContext(), &schema_cache, log, max_block_size, max_parsing_threads, need_only_count);
+        key_condition, getContext(), &schema_cache, log, max_block_size, shared_pool->getThreadsPerStream(), need_only_count, shared_pool);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
@@ -286,7 +286,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const LoggerPtr & log,
     size_t max_block_size,
     size_t max_parsing_threads,
-    bool need_only_count)
+    bool need_only_count,
+    SharedParsingThreadPoolPtr shared_pool)
 {
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
@@ -371,7 +372,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             std::nullopt,
             true/* is_remote_fs */,
             compression_method,
-            need_only_count);
+            need_only_count,
+            shared_pool);
 
         if (key_condition_)
             input_format->setKeyCondition(key_condition_);
