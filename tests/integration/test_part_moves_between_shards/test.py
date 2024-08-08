@@ -239,10 +239,7 @@ def test_part_move_step_by_step(started_cluster):
     )
 
     # Should hang on SYNC_SOURCE until all source replicas acknowledge new pinned UUIDs.
-    wait_for_state(
-        "SYNC_SOURCE",
-        s0r0,
-        "test_part_move_step_by_step")
+    wait_for_state("SYNC_SOURCE", s0r0, "test_part_move_step_by_step")
     deduplication_invariant.assert_no_exception()
 
     # Start all replicas in source shard but stop a replica in destination shard
@@ -258,10 +255,7 @@ def test_part_move_step_by_step(started_cluster):
         "SYSTEM START MERGES test_part_move_step_by_step; OPTIMIZE TABLE test_part_move_step_by_step;"
     )
 
-    wait_for_state(
-        "SYNC_DESTINATION",
-        s0r0,
-        "test_part_move_step_by_step")
+    wait_for_state("SYNC_DESTINATION", s0r0, "test_part_move_step_by_step")
     deduplication_invariant.assert_no_exception()
 
     # Start previously stopped replica in destination shard to let SYNC_DESTINATION
@@ -269,10 +263,7 @@ def test_part_move_step_by_step(started_cluster):
     # Stop the other replica in destination shard to prevent DESTINATION_FETCH succeed.
     s1r0.stop_clickhouse()
     s1r1.start_clickhouse()
-    wait_for_state(
-        "DESTINATION_FETCH",
-        s0r0,
-        "test_part_move_step_by_step")
+    wait_for_state("DESTINATION_FETCH", s0r0, "test_part_move_step_by_step")
     deduplication_invariant.assert_no_exception()
 
     # Start previously stopped replica in destination shard to let DESTINATION_FETCH
@@ -280,20 +271,14 @@ def test_part_move_step_by_step(started_cluster):
     # Stop the other replica in destination shard to prevent DESTINATION_ATTACH succeed.
     s1r1.stop_clickhouse()
     s1r0.start_clickhouse()
-    wait_for_state(
-        "DESTINATION_ATTACH",
-        s0r0,
-        "test_part_move_step_by_step")
+    wait_for_state("DESTINATION_ATTACH", s0r0, "test_part_move_step_by_step")
     deduplication_invariant.assert_no_exception()
 
     # Start all replicas in destination shard to let DESTINATION_ATTACH succeed.
     # Stop a source replica to prevent SOURCE_DROP succeeding.
     s0r0.stop_clickhouse()
     s1r1.start_clickhouse()
-    wait_for_state(
-        "SOURCE_DROP",
-        s0r1,
-        "test_part_move_step_by_step")
+    wait_for_state("SOURCE_DROP", s0r1, "test_part_move_step_by_step")
     deduplication_invariant.assert_no_exception()
 
     s0r0.start_clickhouse()
@@ -378,10 +363,7 @@ def test_part_move_step_by_step_kill(started_cluster):
     )
 
     # Should hang on SYNC_SOURCE until all source replicas acknowledge new pinned UUIDs.
-    wait_for_state(
-        "SYNC_SOURCE",
-        s0r0,
-        "test_part_move_step_by_step_kill")
+    wait_for_state("SYNC_SOURCE", s0r0, "test_part_move_step_by_step_kill")
     deduplication_invariant.assert_no_exception()
 
     # Start all replicas in source shard but stop a replica in destination shard
@@ -397,10 +379,7 @@ def test_part_move_step_by_step_kill(started_cluster):
         "SYSTEM START MERGES test_part_move_step_by_step_kill; OPTIMIZE TABLE test_part_move_step_by_step_kill;"
     )
 
-    wait_for_state(
-        "SYNC_DESTINATION",
-        s0r0,
-        "test_part_move_step_by_step_kill" )
+    wait_for_state("SYNC_DESTINATION", s0r0, "test_part_move_step_by_step_kill" )
     deduplication_invariant.assert_no_exception()
 
     # Start previously stopped replica in destination shard to let SYNC_DESTINATION
@@ -408,20 +387,14 @@ def test_part_move_step_by_step_kill(started_cluster):
     # Stop the other replica in destination shard to prevent DESTINATION_FETCH succeed.
     s1r0.stop_clickhouse()
     s1r1.start_clickhouse()
-    wait_for_state(
-        "DESTINATION_FETCH",
-        s0r0,
-        "test_part_move_step_by_step_kill")
+    wait_for_state("DESTINATION_FETCH", s0r0, "test_part_move_step_by_step_kill")
 
     # Start previously stopped replica in destination shard to let DESTINATION_FETCH
     # succeed.
     # Stop the other replica in destination shard to prevent DESTINATION_ATTACH succeed.
     s1r1.stop_clickhouse()
     s1r0.start_clickhouse()
-    wait_for_state(
-        "DESTINATION_ATTACH",
-        s0r0,
-        "test_part_move_step_by_step_kill")
+    wait_for_state("DESTINATION_ATTACH", s0r0, "test_part_move_step_by_step_kill")
     deduplication_invariant.assert_no_exception()
 
     # Rollback here.
@@ -432,18 +405,11 @@ def test_part_move_step_by_step_kill(started_cluster):
     """
     )
 
-    wait_for_state(
-        "DESTINATION_ATTACH",
-        s0r0,
-        "test_part_move_step_by_step_kill",
-        assert_rollback=True
-    )
+    wait_for_state("DESTINATION_ATTACH", s0r0, "test_part_move_step_by_step_kill", assert_rollback=True)
 
     s1r1.start_clickhouse()
 
-    wait_for_state(
-        "CANCELLED", s0r0, "test_part_move_step_by_step_kill", assert_rollback=True
-    )
+    wait_for_state("CANCELLED", s0r0, "test_part_move_step_by_step_kill", assert_rollback=True)
     deduplication_invariant.assert_no_exception()
 
     # No hung tasks in replication queue. Would timeout otherwise.
@@ -626,3 +592,4 @@ class ConcurrentInvariant:
     def _assert_started(self):
         if not self.started:
             raise Exception("invariant thread not started, forgot to call start?")
+        

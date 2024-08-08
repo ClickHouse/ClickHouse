@@ -3658,7 +3658,7 @@ void StorageReplicatedMergeTree::updateMovePartTask( const LogEntry & logEntry, 
         return;
     }
     
-    while (zookeeper->tryGet(fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name , value, &stat)){
+    while (zookeeper->tryGet(fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name, value, &stat)){
         PartMovesBetweenShardsOrchestrator::Entry entry;
         entry.fromString(value);
         entry.replicas.push_back(replica_name);
