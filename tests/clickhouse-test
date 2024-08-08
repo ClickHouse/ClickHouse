@@ -1603,7 +1603,7 @@ class TestCase:
 
     def run_single_test(
         self, server_logs_level, client_options
-    ) -> Tuple[Optional[Popen], str, str, str, float]:
+    ) -> Tuple[Optional[Popen], float]:
         args = self.testcase_args
         client = args.testcase_client
         start_time = args.testcase_start_time
