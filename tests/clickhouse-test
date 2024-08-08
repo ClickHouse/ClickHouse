@@ -376,7 +376,7 @@ def kill_process_group(pgid):
             # Let's try to dump stacktrace in client (useful to catch issues there)
             os.killpg(pgid, signal.SIGTSTP)
             # Wait some time for clickhouse utilities to gather stacktrace
-            if RELEASE_BUILD:
+            if RELEASE_NON_SANITIZED:
                 sleep(0.5)
             else:
                 sleep(10)
@@ -2407,11 +2407,11 @@ class BuildFlags:
 
 
 # Release and non-sanitizer build
-RELEASE_BUILD = False
+RELEASE_NON_SANITIZED = False
 
 
 def collect_build_flags(args):
-    global RELEASE_BUILD
+    global RELEASE_NON_SANITIZED
 
     result = []
 
@@ -2437,7 +2437,7 @@ def collect_build_flags(args):
     elif b"RelWithDebInfo" in value or b"Release" in value:
         result.append(BuildFlags.RELEASE)
 
-    RELEASE_BUILD = result == [BuildFlags.RELEASE]
+    RELEASE_NON_SANITIZED = result == [BuildFlags.RELEASE]
 
     value = clickhouse_execute(
         args,
