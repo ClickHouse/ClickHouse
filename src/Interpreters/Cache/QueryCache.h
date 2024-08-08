@@ -176,6 +176,7 @@ public:
         friend class QueryCache; /// for createWriter()
     };
 
+    using KeyCreator = const std::function<QueryCache::Key(const ASTPtr&)>;
     /// Reader's constructor looks up a query result for a key in the cache. If found, it constructs source processors (that generate the
     /// cached result) for use in a pipe or query pipeline.
     class Reader
@@ -187,7 +188,8 @@ public:
         std::unique_ptr<SourceFromChunks> getSourceTotals();
         std::unique_ptr<SourceFromChunks> getSourceExtremes();
     private:
-        Reader(Cache & cache_, const Key & key, const std::lock_guard<std::mutex> &);
+        Reader(Cache & cache_, ASTPtr & ast, const KeyCreator & key_creator, const std::lock_guard<std::mutex> &);
+        std::optional<Cache::KeyMapped> findSubqueryInCache(Cache & cache_, ASTPtr & ast, const KeyCreator & key_creator);
         void buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
         std::unique_ptr<SourceFromChunks> source_from_chunks;
         std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
@@ -200,7 +202,7 @@ public:
 
     void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
-    Reader createReader(const Key & key);
+    Reader createReader(ASTPtr & ast, const KeyCreator & key_creator);
     Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size, size_t max_query_cache_size_in_bytes_quota, size_t max_query_cache_entries_quota);
 
     void clear();
