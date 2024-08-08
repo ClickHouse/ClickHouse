@@ -64,6 +64,17 @@ def test_read_write_storage_with_globs(started_cluster):
         hdfs_api.write_data("/storage" + i, i + "\tMark\t72.53\n")
         assert hdfs_api.read_data("/storage" + i) == i + "\tMark\t72.53\n"
 
+    node1.query(
+        "create table HDFSStorageWithDoubleAsterisk (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/**.doublestar.tsv', 'TSV')"
+    )
+
+    for i in ["1", "2", "3"]:
+        hdfs_api.write_data(f"/subdir{i}/file{i}.doublestar.tsv", f"{i}\tMark\t72.53\n")
+    assert (
+        hdfs_api.read_data(f"/subdir{i}/file{i}.doublestar.tsv")
+        == f"{i}\tMark\t72.53\n"
+    )
+
     assert (
         node1.query(
             "select count(*) from HDFSStorageWithRange settings s3_throw_on_zero_files_match=1"
@@ -73,6 +84,7 @@ def test_read_write_storage_with_globs(started_cluster):
     assert node1.query("select count(*) from HDFSStorageWithEnum") == "3\n"
     assert node1.query("select count(*) from HDFSStorageWithQuestionMark") == "3\n"
     assert node1.query("select count(*) from HDFSStorageWithAsterisk") == "3\n"
+    assert node1.query("select count(*) from HDFSStorageWithDoubleAsterisk") == "3\n"
 
     try:
         node1.query("insert into HDFSStorageWithEnum values (1, 'NEW', 4.2)")
@@ -95,10 +107,18 @@ def test_read_write_storage_with_globs(started_cluster):
         print(ex)
         assert "in readonly mode" in str(ex)
 
+    try:
+        node1.query("insert into HDFSStorageWithDoubleAsterisk values (1, 'NEW', 4.2)")
+        assert False, "Exception have to be thrown"
+    except Exception as ex:
+        print(ex)
+        assert "in readonly mode" in str(ex)
+
     node1.query("drop table HDFSStorageWithRange")
     node1.query("drop table HDFSStorageWithEnum")
     node1.query("drop table HDFSStorageWithQuestionMark")
     node1.query("drop table HDFSStorageWithAsterisk")
+    node1.query("drop table HDFSStorageWithDoubleAsterisk")
 
 
 def test_storage_with_multidirectory_glob(started_cluster):
