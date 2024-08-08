@@ -821,7 +821,9 @@ if __name__ == "__main__":
         else:
             title = "Failed: " + title
             CIBuddy(dry_run=args.dry_run).post_critical(
-                title, dataclasses.asdict(release_info)
+                title,
+                dataclasses.asdict(release_info),
+                channels=[CIBuddy.Channels.ALERTS, CIBuddy.Channels.INFO],
             )
 
     if args.set_progress_started:
