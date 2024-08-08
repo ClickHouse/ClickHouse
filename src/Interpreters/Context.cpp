@@ -4395,15 +4395,6 @@ DiskPtr Context::getDisk(const String & name) const
     return disk_selector->get(name);
 }
 
-DiskPtr Context::tryGetDisk(const String & name) const
-{
-    std::lock_guard lock(shared->storage_policies_mutex);
-
-    auto disk_selector = getDiskSelector(lock);
-
-    return disk_selector->tryGet(name);
-}
-
 DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);

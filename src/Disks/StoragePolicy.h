@@ -12,8 +12,6 @@
 #include <Common/formatReadable.h>
 
 #include <memory>
-#include <mutex>
-#include <string_view>
 #include <unordered_map>
 #include <unistd.h>
 #include <boost/noncopyable.hpp>

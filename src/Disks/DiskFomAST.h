@@ -8,7 +8,7 @@ namespace DB
 
 namespace DiskFomAST
 {
-    std::string getConfigDefinedDisk(const std::string & name, ContextPtr context);
+    void ensureDiskIsNotCustom(const std::string & name, ContextPtr context);
     std::string createCustomDisk(const ASTPtr & disk_function, ContextPtr context, bool attach);
 }
 

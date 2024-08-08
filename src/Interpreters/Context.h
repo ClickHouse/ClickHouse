@@ -1186,7 +1186,6 @@ public:
 
     /// Provides storage disks
     DiskPtr getDisk(const String & name) const;
-    DiskPtr tryGetDisk(const String & name) const;
     using DiskCreator = std::function<DiskPtr(const DisksMap & disks_map)>;
     DiskPtr getOrCreateDisk(const String & name, DiskCreator creator) const;
 

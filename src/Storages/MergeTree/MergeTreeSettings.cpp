@@ -71,7 +71,7 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr conte
                     }
                     else
                     {
-                        value = DiskFomAST::getConfigDefinedDisk(value.safeGet<String>(), context);
+                        DiskFomAST::ensureDiskIsNotCustom(value.safeGet<String>(), context);
                     }
 
                     if (has("storage_policy"))

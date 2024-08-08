@@ -133,25 +133,19 @@ std::string DiskFomAST::createCustomDisk(const ASTPtr & disk_function_ast, Conte
     FlattenDiskConfigurationVisitor::Data data{context, attach};
     FlattenDiskConfigurationVisitor{data}.visit(ast);
 
-    auto disk_name = assert_cast<const ASTLiteral &>(*ast).value.get<String>();
-    return disk_name;
+    return assert_cast<const ASTLiteral &>(*ast).value.get<String>();
 }
 
-std::string DiskFomAST::getConfigDefinedDisk(const std::string & disk_name, ContextPtr context)
+void DiskFomAST::ensureDiskIsNotCustom(const std::string & disk_name, ContextPtr context)
 {
-    if (auto result = context->tryGetDisk(disk_name))
-    {
-        if (result->isCustomDisk())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Disk name `{}` is a custom disk that is used in other table. "
-                "That disk could not be used by a reference by other tables. The custom disk should be fully specified with a disk function.",
-                disk_name);
+    auto disk = context->getDisk(disk_name);
 
-        return disk_name;
-    }
-
-    throw Exception(ErrorCodes::UNKNOWN_DISK, "Unknown disk {}", disk_name);
+    if (disk->isCustomDisk())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Disk name `{}` is a custom disk that is used in other table. "
+            "That disk could not be used by a reference by other tables. The custom disk should be fully specified with a disk function.",
+            disk_name);
 }
 
 }
