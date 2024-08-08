@@ -176,6 +176,7 @@ done
 # TODO: temporary disable logs replication because of problems related to async deduplicated insert
 # https://github.com/ClickHouse/ClickHouse/issues/67606
 #setup_logs_replication
+
 attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
 
 function fn_exists() {
