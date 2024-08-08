@@ -65,7 +65,7 @@ SELECT now() AS current_date_time, current_date_time + (INTERVAL 4 DAY + INTERVA
 └─────────────────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
-And to compare values with different intevals:
+And to compare values with different intervals:
 
 ``` sql
 SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);

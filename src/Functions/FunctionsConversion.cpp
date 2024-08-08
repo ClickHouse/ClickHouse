@@ -1606,7 +1606,7 @@ struct ConvertImpl
                 result_value = arguments[0].column->getInt(0) / conversion_factor;
             }
             else
-            { 
+            {
                 for (int i = from_position - 1; i >= to_position; --i)
                 {
                     for (const auto &entry : map)
