@@ -31,7 +31,7 @@ from report import (
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from ci_config import CI
-from ci_utils import Utils
+from ci_utils import Utils, Shell
 
 NO_CHANGES_MSG = "Nothing to run"
 
@@ -246,13 +246,30 @@ def handle_sigterm(signum, _frame):
     print(f"WARNING: Received signal {signum}")
     global timeout_exceeded
     timeout_exceeded = True
-    if (
-        test_process and test_process.poll() is None
-    ):  # Check if the process is still running
-        print(
-            f"WARNING: Send SIGKILL signal to job's subprocess, pid [{test_process.process.pid}]"
+    tests_subprocess = Shell.get_output(
+        "ps -e -o pgid,cmd | grep run_tests | grep -v grep | grep -v docker | head -n1"
+    )
+    if not tests_subprocess:
+        tests_subprocess = Shell.get_output(
+            'ps -e -o pgid,cmd | grep "/clickhouse-test " | grep -v grep | grep -v docker | head -n1'
         )
-        test_process.send_signal(signal.SIGKILL)
+    if tests_subprocess:
+        try:
+            pgid = int(tests_subprocess.split(" ")[0].strip())
+            print(
+                f"NOTE: Send SIGKILL to run_test subprocess [{tests_subprocess}], pid [{pgid}]"
+            )
+            Shell.check(f"sudo kill -9 {pgid}", verbose=True)
+            Shell.check(f"sudo kill -9 -{pgid}", verbose=True)
+            print(
+                Shell.get_output(
+                    'ps -e -o pid,pgid,cmd | grep "/clickhouse-test " | grep -v grep | grep -v docker'
+                )
+            )
+        except Exception as e:
+            print(f"ERROR: failed to kill test runner, exception [{e}]")
+    else:
+        print(f"WARNING: test runner process not found")
 
 
 def main():
