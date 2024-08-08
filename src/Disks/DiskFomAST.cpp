@@ -35,7 +35,7 @@ std::string getOrCreateCustomDisk(DiskConfigurationPtr config, const std::string
     if (disk_settings_keys.size() == 1 && disk_settings_keys.front() == "name" && !attach)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Disk function `{}` has to have the other arguments which describe the disk. Invalid disk description.",
+            "Disk function `{}` must have other arguments apart from `name`, which describe disk configuration. Invalid disk description.",
             serialization);
 
     auto disk_settings_hash = sipHash128(serialization.data(), serialization.size());
