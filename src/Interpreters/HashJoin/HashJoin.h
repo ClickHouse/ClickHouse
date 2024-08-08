@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <deque>
 #include <memory>
 #include <optional>
@@ -205,6 +206,10 @@ public:
         void filterBySelector()
         {
             chassert(block);
+
+            if (!wasScattered())
+                return;
+
             auto columns = block.getColumns();
             for (auto & col : columns)
             {
