@@ -375,13 +375,9 @@ SELECT id, ary[indexOf(ary, 'value3')] FROM test_bf_indexOf WHERE ary[indexOf(ar
 
 DROP TABLE IF EXISTS test_bf_indexOf;
 
--- expecting cast function to be unknown
+-- Test for bug #65597
 DROP TABLE IF EXISTS test_bf_cast;
-
-CREATE TABLE test_bf_cast (c Int32, INDEX x1 (c) type bloom_filter) ENGINE = MergeTree ORDER BY c as select 1;
-
-SELECT count() FROM test_bf_cast WHERE cast(c=1 or c=9999 as Bool) settings use_skip_indexes=0;
-
-SELECT count() FROM test_bf_cast WHERE cast(c=1 or c=9999 as Bool) settings use_skip_indexes=1;
-
+CREATE TABLE test_bf_cast (c Int32, INDEX x1 (c) type bloom_filter) ENGINE = MergeTree ORDER BY c AS SELECT 1;
+SELECT count() FROM test_bf_cast WHERE cast(c = 1 OR c = 9999 AS Bool) SETTINGS use_skip_indexes=0;
+SELECT count() FROM test_bf_cast WHERE cast(c = 1 OR c = 9999 AS Bool) SETTINGS use_skip_indexes=1;
 DROP TABLE test_bf_cast;
