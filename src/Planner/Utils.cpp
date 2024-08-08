@@ -20,6 +20,8 @@
 
 #include <Interpreters/Context.h>
 
+#include <AggregateFunctions/WindowFunction.h>
+
 #include <Analyzer/Utils.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -32,6 +34,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/WindowNode.h>
 
 #include <Core/Settings.h>
 
@@ -475,6 +478,22 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings)
                 parser, additional_result_filter.data(), additional_result_filter.data() + additional_result_filter.size(),
                 "additional result filter", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
     return additional_result_filter_ast;
+}
+
+std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node)
+{
+    if (!node.isWindowFunction())
+        return {};
+    auto & window_node = node.getWindowNode()->as<WindowNode &>();
+    const auto & window_frame = window_node.getWindowFrame();
+    if (!window_frame.is_default)
+        return window_frame;
+    auto aggregate_function = node.getAggregateFunction();
+    if (const auto * win_func = dynamic_cast<const IWindowFunction *>(aggregate_function.get()))
+    {
+        return win_func->getDefaultFrame();
+    }
+    return {};
 }
 
 }
