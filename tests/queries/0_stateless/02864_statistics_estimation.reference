@@ -6,22 +6,22 @@ Test statistics count_min:
 Test statistics minmax:
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(greater(d, _CAST(9998, \'DateTime\')), less(c, -1), greater(b, 0)) (removed)
+          Prewhere filter column: and(greater(d, CAST(9998, \'DateTime\')), less(c, -1), greater(b, 0)) (removed)
 Test statistics tdigest:
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(greater(d, _CAST(9998, \'DateTime\')), less(c, -1), greater(b, 0)) (removed)
+          Prewhere filter column: and(greater(d, CAST(9998, \'DateTime\')), less(c, -1), greater(b, 0)) (removed)
 Test statistics uniq:
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(equals(d, _CAST(1, \'DateTime\')), equals(c, 0)) (removed)
+          Prewhere filter column: and(equals(d, CAST(1, \'DateTime\')), equals(c, 0)) (removed)
 Test statistics multi-types:
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(equals(d, _CAST(1, \'DateTime\')), less(c, -90), greater(b, 900)) (removed)
+          Prewhere filter column: and(equals(d, CAST(1, \'DateTime\')), less(c, -90), greater(b, 900)) (removed)
         Prewhere info
           Prewhere filter
-          Prewhere filter column: and(equals(a, \'10000\'), equals(b, 0), less(c, 0), greater(d, _CAST(1, \'DateTime\'))) (removed)
+          Prewhere filter column: and(equals(a, \'10000\'), equals(b, 0), less(c, 0), greater(d, CAST(1, \'DateTime\'))) (removed)
 Test statistics implicitly type conversion:
 1
 1
