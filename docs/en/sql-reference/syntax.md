@@ -149,6 +149,10 @@ Result:
 
 Query parameters allow you to write generic queries that contain abstract placeholders instead of concrete identifiers. When a query with query parameters is executed, all placeholders are resolved and replaced by the actual query parameter values.
 
+:::note
+Please keep in mind that parameters are **replaced** by the actual parameter value. There won't be any preprocessing of it. So if you are using a [string](#string) as a value, you must escape it by yourself.
+:::
+
 There are two way to define a query parameter:
 
 - use the `SET param_<name>=<value>` command
