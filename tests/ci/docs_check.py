@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from docker_images_helper import get_docker_image, pull_image
-from env_helper import REPO_COPY, TEMP_PATH
+from env_helper import REPO_COPY, TEMP_PATH, ROOT_DIR
 from pr_info import PRInfo
 from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
@@ -66,9 +66,13 @@ def main():
     test_output = temp_path / "docs_check_log"
     test_output.mkdir(parents=True, exist_ok=True)
 
+    docs_output = temp_path / "docs_output"
+    docs_output.mkdir(parents=True, exist_ok=True)
+
     cmd = (
         f"docker run --cap-add=SYS_PTRACE -e GIT_DOCS_BRANCH={args.docs_branch} "
         f"--volume={repo_path}:/ClickHouse --volume={test_output}:/output_path "
+        f"--volume={docs_output}:/opt/clickhouse-docs/build "
         f"{docker_image}"
     )
 
@@ -86,8 +90,46 @@ def main():
             status = FAILURE
             logging.info("Run failed")
 
+    html_test_cmd = (
+        f"docker run --rm --cap-add=SYS_PTRACE "
+        f"--volume={docs_output}:/test "
+        f"wjdp/htmltest:v0.17.0 -c /test/.htmltest.yml"
+    )
+
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+
+    docs_path = Path(ROOT_DIR) / "docs"
+    html_test_path = docs_path / ".htmltest.yml"
+    html_test_logs_path = docs_output / "tmp" / ".htmltest" / "htmltest.log"
+    subprocess.check_call(f"cp {html_test_path} {docs_output}/", shell=True)
+
+    html_test_return_code = subprocess.call(html_test_cmd, shell=True)
+
     test_results = []  # type: TestResults
+    if html_test_return_code != 0:
+        dirs_to_check = []
+        langs = ["en", "ru", "zh"]
+
+        # check only directories from this repository
+        for lang in langs:
+            lang_path = docs_path / lang
+            for dir in lang_path.iterdir():
+                if dir.is_dir():
+                    dirs_to_check.append(f"{lang_path.name}/{dir.name}")
+
+        with open(html_test_logs_path, "r", encoding="utf-8") as html_test_logs:
+            if not any(html_test_logs):
+                html_test_error = f"Empty htmltest logs, but return code is {html_test_return_code}"
+                logging.error(html_test_error)
+                description = html_test_error
+                status = FAILURE
+
+            for line in html_test_logs:
+                for dir in dirs_to_check:
+                    if dir in line:
+                        test_results.append(TestResult(line, "FAIL"))
+                        break
+
     additional_files = []
     if not any(test_output.iterdir()):
         logging.error("No output files after docs check")
