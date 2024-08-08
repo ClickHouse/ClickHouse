@@ -11,12 +11,13 @@ class BackupCoordinationStageSync
 public:
     BackupCoordinationStageSync(
         const String & root_zookeeper_path_,
-        WithRetries & with_retries_,
+        const String & current_host_,
+        const WithRetries & with_retries_,
         LoggerPtr log_);
 
     /// Sets the stage of the current host and signal other hosts if there were other hosts waiting for that.
-    void set(const String & current_host, const String & new_stage, const String & message, const bool & all_hosts = false);
-    void setError(const String & current_host, const Exception & exception);
+    void setStage(const String & stage, const String & stage_result);
+    void setError(const Exception & exception);
 
     /// Sets the stage of the current host and waits until all hosts come to the same stage.
     /// The function returns the messages all hosts set when they come to the required stage.
@@ -27,16 +28,41 @@ public:
 
 private:
     void createRootNodes();
-
-    struct State;
-    State readCurrentState(WithRetries::RetriesControlHolder & retries_control_holder, const Strings & zk_nodes, const Strings & all_hosts, const String & stage_to_wait) const;
+    void readState();
 
     Strings waitImpl(const Strings & all_hosts, const String & stage_to_wait, std::optional<std::chrono::milliseconds> timeout) const;
 
-    String zookeeper_path;
+    const String zookeeper_path;
     /// A reference to the field of parent object - BackupCoordinationRemote or RestoreCoordinationRemote
-    WithRetries & with_retries;
-    LoggerPtr log;
+    const WithRetries & with_retries;
+    const LoggerPtr log;
+
+    struct HostInfo
+    {
+        String host;
+        bool started = false;
+        bool connected = false;
+        std::optional<std::chrono::time_point<std::chrono::system_clock>> last_time_connected;
+        std::unordered_map<String, Sring> stage_results;
+    };
+
+    struct HostAndError
+    {
+        String host;
+        Exception exception;
+    };
+
+    struct State
+    {
+        std::map<String, HostInfo> hosts_info;
+        std::optional<HostAndError> error;
+    };
+
+    State state TSA_GUARDED_BY(mutex);
+    std::conditional_variable state_changed;
+    std::mutex mutex;
+
+    Poco::Event zk_nodes_changed;
 };
 
 }
