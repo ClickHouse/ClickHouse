@@ -2133,6 +2133,17 @@ class ClickHouseCluster:
     def restart_service(self, service_name):
         run_and_check(self.base_cmd + ["restart", service_name])
 
+    def restart_container(self, container_name):
+        p = subprocess.Popen(
+            ("docker", "restart",  "-s", "9", container_name),
+            stdout=subprocess.PIPE,
+        )
+        p.communicate()
+        return p.returncode == 0
+
+    def restart_postgress(self):
+        return self.restart_container(self.postgres_id)
+
     def get_instance_ip(self, instance_name):
         logging.debug("get_instance_ip instance_name={}".format(instance_name))
         docker_id = self.get_instance_docker_id(instance_name)
