@@ -414,8 +414,8 @@ private:
             {
                 if (unlikely(current_offset >= max_joined_block_rows))
                 {
-                    added_columns.offsets_to_replicate->resize_assume_reserved(i);
-                    added_columns.filter.resize_assume_reserved(i);
+                    added_columns.offsets_to_replicate->resize(i);
+                    added_columns.filter.resize(i);
                     break;
                 }
             }
