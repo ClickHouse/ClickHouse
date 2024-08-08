@@ -2,9 +2,6 @@
 
 cd /ClickHouse/utils/check-style || echo -e "failure\tRepo not found" > /test_output/check_status.tsv
 
-sudo apt update
-sudo apt install time -y
-
 start_total=$(date +%s)
 
 start=$(date +%s)
