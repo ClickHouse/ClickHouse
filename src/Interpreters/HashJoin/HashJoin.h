@@ -372,7 +372,7 @@ public:
 
     void debugKeys() const;
 
-    void shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize = false);
+    void shrinkStoredBlocksToFit(size_t & total_bytes_in_join);
 
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
 

@@ -46,7 +46,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}", first_arg->getName(), getName());
 
 
-        for (size_t i = 1; i < arguments.size(); ++i)
+        for (const auto i : collections::range(1, arguments.size()))
         {
             const auto & pos_arg = arguments[i];
 
@@ -57,19 +57,19 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         const auto * value_col = arguments.front().column.get();
 
         ColumnPtr res;
-        if (!((res = execute<UInt8>(arguments, result_type, value_col, input_rows_count))
-            || (res = execute<UInt16>(arguments, result_type, value_col, input_rows_count))
-            || (res = execute<UInt32>(arguments, result_type, value_col, input_rows_count))
-            || (res = execute<UInt64>(arguments, result_type, value_col, input_rows_count))
-            || (res = execute<Int8>(arguments, result_type, value_col, input_rows_count))
-            || (res = execute<Int16>(arguments, result_type, value_col, input_rows_count))
-            || (res = execute<Int32>(arguments, result_type, value_col, input_rows_count))
-            || (res = execute<Int64>(arguments, result_type, value_col, input_rows_count))))
+        if (!((res = execute<UInt8>(arguments, result_type, value_col))
+            || (res = execute<UInt16>(arguments, result_type, value_col))
+            || (res = execute<UInt32>(arguments, result_type, value_col))
+            || (res = execute<UInt64>(arguments, result_type, value_col))
+            || (res = execute<Int8>(arguments, result_type, value_col))
+            || (res = execute<Int16>(arguments, result_type, value_col))
+            || (res = execute<Int32>(arguments, result_type, value_col))
+            || (res = execute<Int64>(arguments, result_type, value_col))))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", value_col->getName(), getName());
 
         return res;
@@ -79,28 +79,28 @@ private:
     template <typename T>
     ColumnPtr execute(
             const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
-            const IColumn * const value_col_untyped,
-            size_t input_rows_count) const
+            const IColumn * const value_col_untyped) const
     {
         if (const auto value_col = checkAndGetColumn<ColumnVector<T>>(value_col_untyped))
         {
+            const auto size = value_col->size();
             bool is_const;
             const auto const_mask = createConstMaskIfConst<T>(arguments, is_const);
             const auto & val = value_col->getData();
 
-            auto out_col = ColumnVector<UInt8>::create(input_rows_count);
+            auto out_col = ColumnVector<UInt8>::create(size);
             auto & out = out_col->getData();
 
             if (is_const)
             {
-                for (size_t i = 0; i < input_rows_count; ++i)
+                for (const auto i : collections::range(0, size))
                     out[i] = Impl::apply(val[i], const_mask);
             }
             else
             {
-                const auto mask = createMask<T>(input_rows_count, arguments);
+                const auto mask = createMask<T>(size, arguments);
 
-                for (size_t i = 0; i < input_rows_count; ++i)
+                for (const auto i : collections::range(0, size))
                     out[i] = Impl::apply(val[i], mask[i]);
             }
 
@@ -108,22 +108,23 @@ private:
         }
         else if (const auto value_col_const = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
         {
+            const auto size = value_col_const->size();
             bool is_const;
             const auto const_mask = createConstMaskIfConst<T>(arguments, is_const);
             const auto val = value_col_const->template getValue<T>();
 
             if (is_const)
             {
-                return result_type->createColumnConst(input_rows_count, toField(Impl::apply(val, const_mask)));
+                return result_type->createColumnConst(size, toField(Impl::apply(val, const_mask)));
             }
             else
             {
-                const auto mask = createMask<T>(input_rows_count, arguments);
-                auto out_col = ColumnVector<UInt8>::create(input_rows_count);
+                const auto mask = createMask<T>(size, arguments);
+                auto out_col = ColumnVector<UInt8>::create(size);
 
                 auto & out = out_col->getData();
 
-                for (size_t i = 0; i < input_rows_count; ++i)
+                for (const auto i : collections::range(0, size))
                     out[i] = Impl::apply(val, mask[i]);
 
                 return out_col;
@@ -139,7 +140,7 @@ private:
         out_is_const = true;
         ValueType mask = 0;
 
-        for (size_t i = 1; i < arguments.size(); ++i)
+        for (const auto i : collections::range(1, arguments.size()))
         {
             if (auto pos_col_const = checkAndGetColumnConst<ColumnVector<ValueType>>(arguments[i].column.get()))
             {
@@ -165,7 +166,7 @@ private:
     {
         PaddedPODArray<ValueType> mask(size, ValueType{});
 
-        for (size_t i = 1; i < arguments.size(); ++i)
+        for (const auto i : collections::range(1, arguments.size()))
         {
             const auto * pos_col = arguments[i].column.get();
 
@@ -186,7 +187,7 @@ private:
         {
             const auto & pos = pos_col->getData();
 
-            for (size_t i = 0; i < mask.size(); ++i)
+            for (const auto i : collections::range(0, mask.size()))
                 if (pos[i] < 8 * sizeof(ValueType))
                     mask[i] = mask[i] | (ValueType(1) << pos[i]);
                 else
@@ -204,7 +205,7 @@ private:
 
             const auto new_mask = ValueType(1) << pos;
 
-            for (size_t i = 0; i < mask.size(); ++i)
+            for (const auto i : collections::range(0, mask.size()))
                 mask[i] = mask[i] | new_mask;
 
             return true;

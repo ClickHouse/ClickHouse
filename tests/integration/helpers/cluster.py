@@ -52,7 +52,6 @@ from helpers.client import QueryRuntimeException
 import docker
 
 from .client import Client
-from .retry_decorator import retry
 
 from .config_cluster import *
 
@@ -133,52 +132,6 @@ def get_free_port():
     with socket.socket() as s:
         s.bind(("", 0))
         return s.getsockname()[1]
-
-
-def is_port_free(port: int) -> bool:
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(("", port))
-            return True
-    except socket.error:
-        return False
-
-
-class PortPoolManager:
-    """
-    This class is used for distribution of ports allocated to single pytest-xdist worker
-    It can be used by multiple ClickHouseCluster instances
-    """
-
-    # Shared between instances
-    all_ports = None
-    free_ports = None
-
-    def __init__(self):
-        self.used_ports = []
-
-        if self.all_ports is None:
-            worker_ports = os.getenv("WORKER_FREE_PORTS")
-            ports = [int(p) for p in worker_ports.split(" ")]
-
-            # Static vars
-            PortPoolManager.all_ports = ports
-            PortPoolManager.free_ports = ports
-
-    def get_port(self):
-        for port in self.free_ports:
-            if is_port_free(port):
-                self.free_ports.remove(port)
-                self.used_ports.append(port)
-                return port
-
-        raise Exception(
-            f"No free ports: {self.all_ports}",
-        )
-
-    def return_used_ports(self):
-        self.free_ports.extend(self.used_ports)
-        self.used_ports.clear()
 
 
 def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
@@ -294,7 +247,7 @@ def check_rabbitmq_is_available(rabbitmq_id, cookie):
         ),
         stdout=subprocess.PIPE,
     )
-    p.wait(timeout=60)
+    p.communicate()
     return p.returncode == 0
 
 
@@ -762,66 +715,61 @@ class ClickHouseCluster:
                 .stop()
             )
 
-        self.port_pool = PortPoolManager()
-
     @property
     def kafka_port(self):
         if self._kafka_port:
             return self._kafka_port
-        self._kafka_port = self.port_pool.get_port()
+        self._kafka_port = get_free_port()
         return self._kafka_port
 
     @property
     def schema_registry_port(self):
         if self._schema_registry_port:
             return self._schema_registry_port
-        self._schema_registry_port = self.port_pool.get_port()
+        self._schema_registry_port = get_free_port()
         return self._schema_registry_port
 
     @property
     def schema_registry_auth_port(self):
         if self._schema_registry_auth_port:
             return self._schema_registry_auth_port
-        self._schema_registry_auth_port = self.port_pool.get_port()
+        self._schema_registry_auth_port = get_free_port()
         return self._schema_registry_auth_port
 
     @property
     def kerberized_kafka_port(self):
         if self._kerberized_kafka_port:
             return self._kerberized_kafka_port
-        self._kerberized_kafka_port = self.port_pool.get_port()
+        self._kerberized_kafka_port = get_free_port()
         return self._kerberized_kafka_port
 
     @property
     def azurite_port(self):
         if self._azurite_port:
             return self._azurite_port
-        self._azurite_port = self.port_pool.get_port()
+        self._azurite_port = get_free_port()
         return self._azurite_port
 
     @property
     def mongo_port(self):
         if self._mongo_port:
             return self._mongo_port
-        self._mongo_port = self.port_pool.get_port()
+        self._mongo_port = get_free_port()
         return self._mongo_port
 
     @property
     def mongo_no_cred_port(self):
         if self._mongo_no_cred_port:
             return self._mongo_no_cred_port
-        self._mongo_no_cred_port = self.port_pool.get_port()
+        self._mongo_no_cred_port = get_free_port()
         return self._mongo_no_cred_port
 
     @property
     def redis_port(self):
         if self._redis_port:
             return self._redis_port
-        self._redis_port = self.port_pool.get_port()
+        self._redis_port = get_free_port()
         return self._redis_port
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.port_pool.return_used_ports()
 
     def print_all_docker_pieces(self):
         res_networks = subprocess.check_output(
@@ -2371,7 +2319,7 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=60):
+    def wait_rabbitmq_to_start(self, timeout=30):
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
@@ -2399,7 +2347,7 @@ class ClickHouseCluster:
                 )
             rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
         except Exception as e:
-            logging.debug(f"Unable to get logs from docker: {e}.")
+            logging.debug("Unable to get logs from docker.")
         raise Exception("Cannot wait RabbitMQ container")
 
     def wait_nats_is_available(self, max_retries=5):
@@ -2747,14 +2695,15 @@ class ClickHouseCluster:
 
             images_pull_cmd = self.base_cmd + ["pull"]
             # sometimes dockerhub/proxy can be flaky
-
-            def logging_pulling_images(**kwargs):
-                if "exception" in kwargs:
-                    logging.info(
-                        "Got exception pulling images: %s", kwargs["exception"]
-                    )
-
-            retry(log_function=logging_pulling_images)(run_and_check)(images_pull_cmd)
+            for i in range(5):
+                try:
+                    run_and_check(images_pull_cmd)
+                    break
+                except Exception as ex:
+                    if i == 4:
+                        raise ex
+                    logging.info("Got exception pulling images: %s", ex)
+                    time.sleep(i * 3)
 
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")
@@ -3027,17 +2976,7 @@ class ClickHouseCluster:
                     "Trying to create Azurite instance by command %s",
                     " ".join(map(str, azurite_start_cmd)),
                 )
-
-                def logging_azurite_initialization(exception, retry_number, sleep_time):
-                    logging.info(
-                        f"Azurite initialization failed with error: {exception}"
-                    )
-
-                retry(
-                    log_function=logging_azurite_initialization,
-                )(
-                    run_and_check
-                )(azurite_start_cmd)
+                run_and_check(azurite_start_cmd)
                 self.up_called = True
                 logging.info("Trying to connect to Azurite")
                 self.wait_azurite_to_start()
@@ -4484,7 +4423,7 @@ class ClickHouseInstance:
 
         use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         # If specific version was used there can be no
-        # enable_analyzer setting, so do this only if it was
+        # allow_experimental_analyzer setting, so do this only if it was
         # explicitly requested.
         if self.tag:
             use_old_analyzer = False

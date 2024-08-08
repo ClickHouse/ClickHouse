@@ -33,16 +33,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
-DataTypeAggregateFunction::DataTypeAggregateFunction(AggregateFunctionPtr function_, const DataTypes & argument_types_,
-                            const Array & parameters_, std::optional<size_t> version_)
-    : function(std::move(function_))
-    , argument_types(argument_types_)
-    , parameters(parameters_)
-    , version(version_)
-{
-}
-
 String DataTypeAggregateFunction::getFunctionName() const
 {
     return function->getName();
@@ -267,8 +257,8 @@ static DataTypePtr create(const ASTPtr & arguments)
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unexpected AST element {} passed as aggregate function name for data type AggregateFunction. "
-                        "Must be identifier or function", data_type_ast->getID());
+                        "Unexpected AST element passed as aggregate function name for data type AggregateFunction. "
+                        "Must be identifier or function.");
 
     for (size_t i = argument_types_start_idx; i < arguments->children.size(); ++i)
         argument_types.push_back(DataTypeFactory::instance().get(arguments->children[i]));

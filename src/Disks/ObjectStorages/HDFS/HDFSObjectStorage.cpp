@@ -4,8 +4,8 @@
 #include <Storages/ObjectStorage/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 
-#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 
@@ -53,8 +53,7 @@ std::string HDFSObjectStorage::extractObjectKeyFromURL(const StoredObject & obje
     return path;
 }
 
-ObjectStorageKey
-HDFSObjectStorage::generateObjectKeyForPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
+ObjectStorageKey HDFSObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
 {
     initializeHDFSFS();
     /// what ever data_source_description.description value is, consider that key as relative key
@@ -222,7 +221,6 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
                 ObjectMetadata{
                     static_cast<uint64_t>(ls.file_info[i].mSize),
                     Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
-                    "",
                     {}}));
         }
 

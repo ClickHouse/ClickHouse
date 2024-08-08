@@ -105,7 +105,7 @@ private:
 
     bool write_progress_on_update = false;
 
-    EventRateMeter cpu_usage_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average cpu utilization last 2 second, skip first 4 points
+    EventRateMeter cpu_usage_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/}; // average cpu utilization last 2 second
     HostToTimesMap hosts_data;
     /// In case of all of the above:
     /// - clickhouse-local

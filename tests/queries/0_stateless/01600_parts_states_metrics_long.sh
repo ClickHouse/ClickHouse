@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,26 +15,17 @@ verify_sql="SELECT
 # In case of test failure, this code will do infinite loop and timeout.
 verify()
 {
-    for i in {1..5000}
+    while true
     do
-        result=$( $CLICKHOUSE_CLIENT --query="$verify_sql" )
-        [ "$result" = "1" ] && echo "$result" && break
+        result=$( $CLICKHOUSE_CLIENT -m --query="$verify_sql" )
+        [ "$result" = "1" ] && break
         sleep 0.1
-
-        if [[ $i -eq 5000 ]]
-        then
-            $CLICKHOUSE_CLIENT "
-              SELECT sumIf(value, metric = 'PartsActive'), sumIf(value, metric = 'PartsOutdated') FROM system.metrics;
-              SELECT sum(active), sum(NOT active) FROM system.parts;
-              SELECT sum(active), sum(NOT active) FROM system.projection_parts;
-              SELECT count() FROM system.dropped_tables_parts;
-            "
-        fi
     done
+    echo 1
 }
 
 $CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=1 --query="DROP TABLE IF EXISTS test_table"
-$CLICKHOUSE_CLIENT --query="CREATE TABLE test_table (data Date) ENGINE = MergeTree PARTITION BY toYear(data) ORDER BY data;"
+$CLICKHOUSE_CLIENT --query="CREATE TABLE test_table(data Date) ENGINE = MergeTree  PARTITION BY toYear(data) ORDER BY data;"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO test_table VALUES ('1992-01-01')"
 verify

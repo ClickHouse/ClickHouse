@@ -304,7 +304,7 @@ void RefreshTask::refreshTask()
                 {
                     PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
                     auto text = message.text;
-                    message.text = fmt::format("Refresh view {} failed: {}", view->getStorageID().getFullTableName(), message.text);
+                    message.text = fmt::format("Refresh failed: {}", message.text);
                     LOG_ERROR(log, message);
                     exception = text;
                 }

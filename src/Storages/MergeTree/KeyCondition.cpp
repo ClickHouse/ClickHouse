@@ -566,7 +566,6 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
     }
 
     const ActionsDAG::Node * res = nullptr;
-    bool handled_inversion = false;
 
     switch (node.type)
     {
@@ -583,7 +582,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                 /// Re-generate column name for constant.
                 /// DAG form query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
                 /// DAG from PK does not use it. This breaks matching by column name sometimes.
-                /// Ideally, we should not compare names, but DAG subtrees instead.
+                /// Ideally, we should not compare manes, but DAG subtrees instead.
                 name = ASTLiteral(column_const->getDataColumn()[0]).getColumnName();
             else
                 name = node.result_name;
@@ -594,9 +593,9 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
         case (ActionsDAG::ActionType::ALIAS):
         {
             /// Ignore aliases
-            res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, need_inversion);
-            handled_inversion = true;
-            break;
+            const auto & alias = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, need_inversion);
+            to_inverted[&node] = &alias;
+            return alias;
         }
         case (ActionsDAG::ActionType::ARRAY_JOIN):
         {
@@ -609,10 +608,20 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
             auto name = node.function_base->getName();
             if (name == "not")
             {
-                res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, !need_inversion);
-                handled_inversion = true;
+                const auto & arg = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, !need_inversion);
+                to_inverted[&node] = &arg;
+                return arg;
             }
-            else if (name == "indexHint")
+
+            if (name == "materialize")
+            {
+                /// Ignore materialize
+                const auto & arg = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, need_inversion);
+                to_inverted[&node] = &arg;
+                return arg;
+            }
+
+            if (name == "indexHint")
             {
                 ActionsDAG::NodeRawConstPtrs children;
                 if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
@@ -620,17 +629,19 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                     if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
                     {
                         const auto & index_hint_dag = index_hint->getActions();
-                        children = index_hint_dag.getOutputs();
+                        children = index_hint_dag->getOutputs();
 
                         for (auto & arg : children)
                             arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, need_inversion);
                     }
                 }
 
-                res = &inverted_dag.addFunction(node.function_base, children, "");
-                handled_inversion = true;
+                const auto & func = inverted_dag.addFunction(node.function_base, children, "");
+                to_inverted[&node] = &func;
+                return func;
             }
-            else if (need_inversion && (name == "and" || name == "or"))
+
+            if (need_inversion && (name == "and" || name == "or"))
             {
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
@@ -648,56 +659,32 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
 
                 /// We match columns by name, so it is important to fill name correctly.
                 /// So, use empty string to make it automatically.
-                res = &inverted_dag.addFunction(function_builder, children, "");
-                handled_inversion = true;
+                const auto & func = inverted_dag.addFunction(function_builder, children, "");
+                to_inverted[&node] = &func;
+                return func;
             }
-            else
+
+            ActionsDAG::NodeRawConstPtrs children(node.children);
+
+            for (auto & arg : children)
+                arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, false);
+
+            auto it = inverse_relations.find(name);
+            if (it != inverse_relations.end())
             {
-                ActionsDAG::NodeRawConstPtrs children(node.children);
-
-                for (auto & arg : children)
-                    arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, false);
-
-                auto it = inverse_relations.find(name);
-                if (it != inverse_relations.end())
-                {
-                    const auto & func_name = need_inversion ? it->second : it->first;
-                    auto function_builder = FunctionFactory::instance().get(func_name, context);
-                    res = &inverted_dag.addFunction(function_builder, children, "");
-                    handled_inversion = true;
-                }
-                else
-                {
-                    /// Argument types could change slightly because of our transformations, e.g.
-                    /// LowCardinality can be added because some subexpressions became constant
-                    /// (in particular, sets). If that happens, re-run function overload resolver.
-                    /// Otherwise don't re-run it because some functions may not be available
-                    /// through FunctionFactory::get(), e.g. FunctionCapture.
-                    bool types_changed = false;
-                    for (size_t i = 0; i < children.size(); ++i)
-                    {
-                        if (!node.children[i]->result_type->equals(*children[i]->result_type))
-                        {
-                            types_changed = true;
-                            break;
-                        }
-                    }
-
-                    if (types_changed)
-                    {
-                        auto function_builder = FunctionFactory::instance().get(name, context);
-                        res = &inverted_dag.addFunction(function_builder, children, "");
-                    }
-                    else
-                    {
-                        res = &inverted_dag.addFunction(node.function_base, children, "");
-                    }
-                }
+                const auto & func_name = need_inversion ? it->second : it->first;
+                auto function_builder = FunctionFactory::instance().get(func_name, context);
+                const auto & func = inverted_dag.addFunction(function_builder, children, "");
+                to_inverted[&node] = &func;
+                return func;
             }
+
+            res = &inverted_dag.addFunction(node.function_base, children, "");
+            chassert(res->result_type == node.result_type);
         }
     }
 
-    if (!handled_inversion && need_inversion)
+    if (need_inversion)
         res = &inverted_dag.addFunction(FunctionFactory::instance().get("not", context), {res}, "");
 
     to_inverted[&node] = res;
@@ -709,22 +696,22 @@ const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyConditi
     {"hilbertEncode", SpaceFillingCurveType::Hilbert}
 };
 
-ActionsDAG KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
+ActionsDAGPtr KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
 {
-    ActionsDAG res;
+    auto res = std::make_shared<ActionsDAG>();
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted;
 
     for (auto & node : nodes)
-        node = &DB::cloneASTWithInversionPushDown(*node, res, to_inverted, context, false);
+        node = &DB::cloneASTWithInversionPushDown(*node, *res, to_inverted, context, false);
 
     if (nodes.size() > 1)
     {
         auto function_builder = FunctionFactory::instance().get("and", context);
-        nodes = {&res.addFunction(function_builder, std::move(nodes), "")};
+        nodes = {&res->addFunction(function_builder, std::move(nodes), "")};
     }
 
-    res.getOutputs().swap(nodes);
+    res->getOutputs().swap(nodes);
 
     return res;
 }
@@ -743,7 +730,7 @@ Block KeyCondition::getBlockWithConstants(
     if (syntax_analyzer_result)
     {
         auto actions = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActionsDAG();
-        for (const auto & action_node : actions.getOutputs())
+        for (const auto & action_node : actions->getOutputs())
         {
             if (action_node->column)
                 result.insert(ColumnWithTypeAndName{action_node->column, action_node->result_type, action_node->result_name});
@@ -798,7 +785,7 @@ void KeyCondition::getAllSpaceFillingCurves()
 }
 
 KeyCondition::KeyCondition(
-    const ActionsDAG * filter_dag,
+    ActionsDAGPtr filter_dag,
     ContextPtr context,
     const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_,
@@ -839,9 +826,9 @@ KeyCondition::KeyCondition(
       * are pushed down and applied (when possible) to leaf nodes.
       */
     auto inverted_dag = cloneASTWithInversionPushDown({filter_dag->getOutputs().at(0)}, context);
-    assert(inverted_dag.getOutputs().size() == 1);
+    assert(inverted_dag->getOutputs().size() == 1);
 
-    const auto * inverted_dag_filter_node = inverted_dag.getOutputs()[0];
+    const auto * inverted_dag_filter_node = inverted_dag->getOutputs()[0];
 
     RPNBuilder<RPNElement> builder(inverted_dag_filter_node, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {

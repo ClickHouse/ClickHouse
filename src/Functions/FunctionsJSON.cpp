@@ -125,7 +125,7 @@ public:
             }
 
             String error;
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (const auto i : collections::range(0, input_rows_count))
             {
                 if (!col_json_const)
                 {
@@ -314,7 +314,7 @@ private:
     static size_t calculateMaxSize(const ColumnString::Offsets & offsets)
     {
         size_t max_size = 0;
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (const auto i : collections::range(0, offsets.size()))
         {
             size_t size = offsets[i] - offsets[i - 1];
             max_size = std::max(max_size, size);

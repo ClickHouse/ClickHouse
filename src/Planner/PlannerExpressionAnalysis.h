@@ -64,7 +64,7 @@ public:
         : projection_analysis_result(std::move(projection_analysis_result_))
     {}
 
-    ProjectionAnalysisResult & getProjection()
+    const ProjectionAnalysisResult & getProjection() const
     {
         return projection_analysis_result;
     }
@@ -74,7 +74,7 @@ public:
         return where_analysis_result.filter_actions != nullptr;
     }
 
-    FilterAnalysisResult & getWhere()
+    const FilterAnalysisResult & getWhere() const
     {
         return where_analysis_result;
     }
@@ -89,7 +89,7 @@ public:
         return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty();
     }
 
-    AggregationAnalysisResult & getAggregation()
+    const AggregationAnalysisResult & getAggregation() const
     {
         return aggregation_analysis_result;
     }
@@ -104,7 +104,7 @@ public:
         return having_analysis_result.filter_actions != nullptr;
     }
 
-    FilterAnalysisResult & getHaving()
+    const FilterAnalysisResult & getHaving() const
     {
         return having_analysis_result;
     }
@@ -119,7 +119,7 @@ public:
         return !window_analysis_result.window_descriptions.empty();
     }
 
-    WindowAnalysisResult & getWindow()
+    const WindowAnalysisResult & getWindow() const
     {
         return window_analysis_result;
     }
@@ -134,7 +134,7 @@ public:
         return qualify_analysis_result.filter_actions != nullptr;
     }
 
-    FilterAnalysisResult & getQualify()
+    const FilterAnalysisResult & getQualify() const
     {
         return qualify_analysis_result;
     }
@@ -149,7 +149,7 @@ public:
         return sort_analysis_result.before_order_by_actions != nullptr;
     }
 
-    SortAnalysisResult & getSort()
+    const SortAnalysisResult & getSort() const
     {
         return sort_analysis_result;
     }
@@ -164,7 +164,7 @@ public:
         return limit_by_analysis_result.before_limit_by_actions != nullptr;
     }
 
-    LimitByAnalysisResult & getLimitBy()
+    const LimitByAnalysisResult & getLimitBy() const
     {
         return limit_by_analysis_result;
     }

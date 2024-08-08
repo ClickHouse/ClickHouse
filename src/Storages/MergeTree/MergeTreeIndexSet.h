@@ -84,7 +84,7 @@ class MergeTreeIndexConditionSet final : public IMergeTreeIndexCondition
 public:
     MergeTreeIndexConditionSet(
         size_t max_rows_,
-        const ActionsDAG * filter_dag,
+        const ActionsDAGPtr & filter_dag,
         ContextPtr context,
         const IndexDescription & index_description);
 
@@ -95,16 +95,16 @@ public:
     ~MergeTreeIndexConditionSet() override = default;
 private:
     const ActionsDAG::Node & traverseDAG(const ActionsDAG::Node & node,
-        ActionsDAG & result_dag,
+        ActionsDAGPtr & result_dag,
         const ContextPtr & context,
         std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const;
 
     const ActionsDAG::Node * atomFromDAG(const ActionsDAG::Node & node,
-        ActionsDAG & result_dag,
+        ActionsDAGPtr & result_dag,
         const ContextPtr & context) const;
 
     const ActionsDAG::Node * operatorFromDAG(const ActionsDAG::Node & node,
-        ActionsDAG & result_dag,
+        ActionsDAGPtr & result_dag,
         const ContextPtr & context,
         std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const;
 
@@ -143,7 +143,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const ActionsDAG * filter_actions_dag, ContextPtr context) const override;
+            const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const override;
 
     size_t max_rows = 0;
 };

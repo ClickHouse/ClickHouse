@@ -285,7 +285,7 @@ private:
     const bool with_zk_fields;
     const size_t max_block_size;
     std::shared_ptr<StorageSystemReplicasImpl> impl;
-    ExpressionActionsPtr virtual_columns_filter;
+    const ActionsDAG::Node * predicate = nullptr;
 };
 
 void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -293,18 +293,7 @@ void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
 
     if (filter_actions_dag)
-    {
-        Block block_to_filter
-        {
-            { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
-            { ColumnString::create(), std::make_shared<DataTypeString>(), "table" },
-            { ColumnString::create(), std::make_shared<DataTypeString>(), "engine" },
-        };
-
-        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
-        if (dag)
-            virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
-    }
+        predicate = filter_actions_dag->getOutputs().at(0);
 }
 
 void StorageSystemReplicas::read(
@@ -441,8 +430,7 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
             { col_engine, std::make_shared<DataTypeString>(), "engine" },
         };
 
-        if (virtual_columns_filter)
-            VirtualColumnUtils::filterBlockWithExpression(virtual_columns_filter, filtered_block);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
 
         if (!filtered_block.rows())
         {

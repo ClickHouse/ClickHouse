@@ -323,7 +323,7 @@ bool RestoreCoordinationRemote::hasConcurrentRestores(const std::atomic<size_t> 
         return false;
 
     bool result = false;
-    std::string path = zookeeper_path + "/stage";
+    std::string path = zookeeper_path +"/stage";
 
     auto holder = with_retries.createRetriesControlHolder("createRootNodes");
     holder.retries_ctl.retryLoop(
