@@ -12,6 +12,7 @@
 #include <Common/ActionBlocker.h>
 #include <Core/Settings.h>
 #include <Common/ProfileEvents.h>
+#include "base/types.h"
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -512,11 +513,20 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
 {
-    Block block;
-    if (!ctx->is_cancelled() && (global_ctx->merging_executor->pull(block)))
-    {
-        global_ctx->rows_written += block.rows();
+    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+    UInt64 step_time_ms = global_ctx->data->getSettings()->merge_preferred_step_execution_time_ms.totalMilliseconds();
 
+    do
+    {
+        Block block;
+
+        if (ctx->is_cancelled() || !global_ctx->merging_executor->pull(block))
+        {
+            finalize();
+            return false;
+        }
+
+        global_ctx->rows_written += block.rows();
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
         UInt64 result_rows = 0;
@@ -536,11 +546,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
 
             global_ctx->space_reservation->update(static_cast<size_t>((1. - progress) * ctx->initial_reservation));
         }
+    } while (watch.elapsedMilliseconds() < step_time_ms);
 
-        /// Need execute again
-        return true;
-    }
+    /// Need execute again
+    return true;
+}
 
+void MergeTask::ExecuteAndFinalizeHorizontalPart::finalize() const
+{
     global_ctx->merging_executor.reset();
     global_ctx->merged_pipeline.reset();
 
@@ -550,13 +563,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with expired TTL");
 
-    const auto data_settings = global_ctx->data->getSettings();
     const size_t sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
-    ctx->need_sync = needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound, *data_settings);
-
-    return false;
+    ctx->need_sync = needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound, *global_ctx->data->getSettings());
 }
-
 
 bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 {
@@ -734,17 +743,24 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 
 bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
 {
-    Block block;
-    if (!global_ctx->merges_blocker->isCancelled() && !global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed)
-        && ctx->executor->pull(block))
+    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+    UInt64 step_time_ms = global_ctx->data->getSettings()->merge_preferred_step_execution_time_ms.totalMilliseconds();
+
+    do
     {
+        Block block;
+
+        if (global_ctx->merges_blocker->isCancelled()
+            || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed)
+            || !ctx->executor->pull(block))
+            return false;
+
         ctx->column_elems_written += block.rows();
         ctx->column_to->write(block);
+    } while (watch.elapsedMilliseconds() < step_time_ms);
 
-        /// Need execute again
-        return true;
-    }
-    return false;
+    /// Need execute again
+    return true;
 }
 
 
