@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+
 ROOT_PATH=$(git rev-parse --show-toplevel)
 NPROC=$(($(nproc) + 3))
 
@@ -14,7 +15,6 @@ find "$ROOT_PATH/tests/queries/"{0_stateless,1_stateful} -name '*.sh' -print0 | 
 
 after_test_sh=$(date +%s)
 echo "Running schellcheck on test shell files took $((after_test_sh - start_total)) seconds"
-
 
 echo "Finding docker shell files..."
 time find "$ROOT_PATH/docker" -type f -exec file -F' ' --mime-type {} + | \
