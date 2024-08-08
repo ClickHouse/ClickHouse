@@ -18,8 +18,7 @@ constexpr auto STATS_FILE_SUFFIX = ".stats";
 struct StatisticsUtils
 {
     /// Returns std::nullopt if input Field cannot be converted to a concrete value
-    static std::optional<Float64> tryConvertToFloat64(const Field & field);
-    static std::optional<String> tryConvertToString(const Field & field);
+    static std::optional<Float64> tryConvertToFloat64(const Field & value, const DataTypePtr & value_data_type);
 };
 
 /// Statistics describe properties of the values in the column,
@@ -42,7 +41,7 @@ public:
     virtual UInt64 estimateCardinality() const;
 
     /// Per-value estimations.
-    /// Throws if the statistics object is not able to do a meaningful estimation.
+    /// Throws a LOGICAL_ERROR if the statistics object is not able to do a meaningful estimation.
     virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
     virtual Float64 estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
 

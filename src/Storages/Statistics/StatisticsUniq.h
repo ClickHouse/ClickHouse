@@ -3,6 +3,7 @@
 #include <Common/Arena.h>
 #include <Storages/Statistics/Statistics.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -10,7 +11,7 @@ namespace DB
 class StatisticsUniq : public IStatistics
 {
 public:
-    StatisticsUniq(const SingleStatisticsDescription & stat_, const DataTypePtr & data_type);
+    StatisticsUniq(const SingleStatisticsDescription & statistics_description, const DataTypePtr & data_type);
     ~StatisticsUniq() override;
 
     void update(const ColumnPtr & column) override;
@@ -24,10 +25,9 @@ private:
     std::unique_ptr<Arena> arena;
     AggregateFunctionPtr collector;
     AggregateDataPtr data;
-
 };
 
-void uniqValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
-StatisticsPtr uniqCreator(const SingleStatisticsDescription & stat, DataTypePtr data_type);
+void uniqStatisticsValidator(const SingleStatisticsDescription & statistics_description, DataTypePtr data_type);
+StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & statistics_description, DataTypePtr data_type);
 
 }
