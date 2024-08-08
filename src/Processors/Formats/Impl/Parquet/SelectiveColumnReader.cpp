@@ -17,9 +17,9 @@ extern const int PARQUET_EXCEPTION;
 
 Chunk RowGroupChunkReader::readChunk(size_t rows)
 {
+    if (!remain_rows) return {};
     rows = std::min(rows, remain_rows);
     MutableColumns columns;
-
     for (auto & reader : column_readers)
     {
         columns.push_back(reader->createColumn());
@@ -43,14 +43,26 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
         if (!rows_to_read)
             break;
 
-        RowSet row_set(rows_to_read);
+        OptionalRowSet row_set = std::nullopt;
+        if (!filter_columns.empty())
+            row_set = std::optional(RowSet(rows_to_read));
         for (auto & column : filter_columns)
         {
             reader_columns_mapping[column]->computeRowSet(row_set, rows_to_read);
-            if (row_set.none())
+            if (row_set.value().none())
                 break;
         }
-        bool skip_all = row_set.none();
+        bool skip_all = false;
+        if (row_set.has_value())  skip_all = row_set.value().none();
+        if (skip_all)
+        {
+            metrics.skipped_rows += rows_to_read;
+        }
+
+        bool all = false;
+        if (row_set.has_value())  all = row_set.value().all();
+        if (all) row_set = std::nullopt;
+
         for (size_t i = 0; i < column_readers.size(); i++)
         {
             if (skip_all)
@@ -59,8 +71,25 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
                 column_readers[i]->read(columns[i], row_set, rows_to_read);
         }
         remain_rows -= rows_to_read;
+        metrics.filtered_rows += (rows_to_read - (columns[0]->size() - rows_read));
         rows_read = columns[0]->size();
     }
+
+    if (parquet_reader->remain_filter.has_value())
+    {
+        auto input = parquet_reader->header.cloneWithColumns(std::move(columns));
+        auto output = input.getColumns();
+        parquet_reader->remain_filter.value().execute(input);
+        const auto& filter = checkAndGetColumn<ColumnUInt8>(*input.getByPosition(0).column).getData();
+        size_t resize_hint = 0;
+        for (size_t i = 0; i < columns.size(); i++)
+        {
+            output[i] = output[i]->assumeMutable()->filter(filter, resize_hint);
+            resize_hint = output[i]->size();
+        }
+        return Chunk(std::move(output), resize_hint);
+    }
+    metrics.output_rows += rows_read;
     return Chunk(std::move(columns), rows_read);
 }
 
@@ -109,8 +138,8 @@ RowGroupChunkReader::RowGroupChunkReader(
         size_t offset = range.first;
         column_buffers[reader_idx].resize_fill(compress_size, 0);
         remain_rows = row_group_meta->ColumnChunk(idx)->num_values();
-        parquet_reader->file->seek(offset, SEEK_SET);
-        size_t count = parquet_reader->file->readBig(reinterpret_cast<char *>(column_buffers[reader_idx].data()), compress_size);
+        parquet_reader->file.seek(offset, SEEK_SET);
+        size_t count = parquet_reader->file.readBig(reinterpret_cast<char *>(column_buffers[reader_idx].data()), compress_size);
         if (count != compress_size)
             throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Failed to read column data");
         auto page_reader = std::make_unique<LazyPageReader>(
@@ -197,13 +226,13 @@ void SelectiveColumnReader::readDataPageV1(const parquet::DataPageV1 & page)
         decoder.Decode(static_cast<int>(state.remain_rows), state.def_levels.data());
     }
     state.buffer_size = max_size;
-    if (page.encoding() == parquet::Encoding::PLAIN_DICTIONARY)
+    if (page.encoding() == parquet::Encoding::RLE_DICTIONARY || page.encoding() == parquet::Encoding::PLAIN_DICTIONARY)
     {
         initIndexDecoderIfNeeded();
         createDictDecoder();
         plain = false;
     }
-    else
+    else if (page.encoding() == parquet::Encoding::PLAIN)
     {
         if (!plain)
         {
@@ -211,6 +240,10 @@ void SelectiveColumnReader::readDataPageV1(const parquet::DataPageV1 & page)
             plain = true;
         }
         plain_decoder = std::make_unique<PlainDecoder>(state.buffer, state.remain_rows);
+    }
+    else
+    {
+        throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported encoding type {}", magic_enum::enum_name(page.encoding()));
     }
     state.lazy_skip_rows = skipValuesInCurrentPage(state.lazy_skip_rows);
     chassert(state.lazy_skip_rows == 0);
@@ -233,19 +266,36 @@ void SelectiveColumnReader::skipPageIfNeed()
         state.remain_rows = 0;
     }
 }
+void SelectiveColumnReader::skip(size_t rows)
+{
+    state.lazy_skip_rows += rows;
+    state.lazy_skip_rows = skipValuesInCurrentPage(state.lazy_skip_rows);
+    skipPageIfNeed();
+}
+void SelectiveColumnReader::skipNulls(size_t rows_to_skip)
+{
+    auto skipped = std::min(rows_to_skip, state.remain_rows);
+    state.remain_rows -= skipped;
+    state.lazy_skip_rows += (rows_to_skip - skipped);
+}
 
 template <typename T>
-void computeRowSetPlain(const T * start, RowSet & row_set, const ColumnFilterPtr & filter, size_t rows_to_read)
+void computeRowSetPlain(const T * start, OptionalRowSet & row_set, const ColumnFilterPtr & filter, size_t rows_to_read)
 {
-    if (filter && row_set.any())
+    if (filter)
     {
         if constexpr (std::is_same_v<T, Int64>)
-            filter->testInt64Values(row_set, 0, rows_to_read, start);
+        {
+            if (row_set.has_value())
+                filter->testInt64Values(row_set.value(), 0, rows_to_read, start);
+        }
+        else
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported type");
     }
 }
 
 template <typename DataType>
-void NumberColumnDirectReader<DataType>::computeRowSet(RowSet & row_set, size_t rows_to_read)
+void NumberColumnDirectReader<DataType>::computeRowSet(OptionalRowSet & row_set, size_t rows_to_read)
 {
     readAndDecodePage();
     chassert(rows_to_read <= state.remain_rows);
@@ -254,7 +304,7 @@ void NumberColumnDirectReader<DataType>::computeRowSet(RowSet & row_set, size_t 
 }
 
 template <typename DataType>
-void NumberColumnDirectReader<DataType>::read(MutableColumnPtr & column, RowSet & row_set, size_t rows_to_read)
+void NumberColumnDirectReader<DataType>::read(MutableColumnPtr & column, const OptionalRowSet & row_set, size_t rows_to_read)
 {
     readAndDecodePage();
     auto * int_column = static_cast<DataType::ColumnType *>(column.get());
@@ -275,7 +325,7 @@ size_t NumberColumnDirectReader<DataType>::skipValuesInCurrentPage(size_t rows_t
 
 template <typename DataType>
 void NumberColumnDirectReader<DataType>::readSpace(
-    MutableColumnPtr & column, RowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t, size_t rows_to_read)
+    MutableColumnPtr & column, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t, size_t rows_to_read)
 {
     readAndDecodePage();
     auto * int_column = static_cast<DataType::ColumnType *>(column.get());
@@ -285,27 +335,28 @@ void NumberColumnDirectReader<DataType>::readSpace(
 
 template <typename T>
 void computeRowSetPlainSpace(
-    const T * start, RowSet & row_set, const ColumnFilterPtr & filter, PaddedPODArray<UInt8> & null_map, size_t rows_to_read)
+    const T * start, OptionalRowSet & row_set, const ColumnFilterPtr & filter, PaddedPODArray<UInt8> & null_map, size_t rows_to_read)
 {
-    if (!filter || row_set.none())
+    if (!filter || !row_set.has_value())
         return;
     int count = 0;
+    auto & sets = row_set.value();
     for (size_t i = 0; i < rows_to_read; i++)
     {
         if (null_map[i])
         {
-            row_set.set(i, filter->testNull());
+            sets.set(i, filter->testNull());
         }
         else
         {
-            row_set.set(i, filter->testInt64(start[count]));
+            sets.set(i, filter->testInt64(start[count]));
             count++;
         }
     }
 }
 
 template <typename DataType>
-void NumberColumnDirectReader<DataType>::computeRowSetSpace(RowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t, size_t rows_to_read)
+void NumberColumnDirectReader<DataType>::computeRowSetSpace(OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t, size_t rows_to_read)
 {
     readAndDecodePage();
     const Int64 * start = reinterpret_cast<const Int64 *>(state.buffer);
@@ -340,7 +391,7 @@ void NumberDictionaryReader<DataType>::nextIdxBatchIfEmpty(size_t rows_to_read)
 }
 
 template <typename DataType>
-void NumberDictionaryReader<DataType>::computeRowSet(RowSet & row_set, size_t rows_to_read)
+void NumberDictionaryReader<DataType>::computeRowSet(OptionalRowSet & row_set, size_t rows_to_read)
 {
     readAndDecodePage();
     chassert(rows_to_read <= state.remain_rows);
@@ -351,25 +402,28 @@ void NumberDictionaryReader<DataType>::computeRowSet(RowSet & row_set, size_t ro
         return;
     }
     nextIdxBatchIfEmpty(rows_to_read);
-    if (scan_spec.filter || row_set.any())
+    if (scan_spec.filter || row_set.has_value())
     {
         auto & cache = *state.filter_cache;
+        auto & sets = row_set.value();
         for (size_t i = 0; i < rows_to_read; ++i)
         {
-            int idx = state.idx_buffer[0];
+            int idx = state.idx_buffer[i];
             if (!cache.has(idx))
             {
                 if constexpr (std::is_same_v<typename DataType::FieldType, Int64>)
                     cache.set(idx, scan_spec.filter->testInt64(dict[idx]));
+                else
+                    throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported type");
             }
-            row_set.set(i, cache.get(idx));
+            sets.set(i, cache.get(idx));
         }
     }
 }
 
 template <typename DataType>
 void NumberDictionaryReader<DataType>::computeRowSetSpace(
-    RowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read)
+    OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read)
 {
     readAndDecodePage();
     chassert(rows_to_read <= state.remain_rows);
@@ -381,10 +435,11 @@ void NumberDictionaryReader<DataType>::computeRowSetSpace(
     }
     auto nonnull_count = rows_to_read - null_count;
     nextIdxBatchIfEmpty(nonnull_count);
-    if (scan_spec.filter || row_set.any())
+    if (scan_spec.filter || row_set.has_value())
     {
         auto & cache = *state.filter_cache;
         int count = 0;
+        auto & sets = row_set.value();
         for (size_t i = 0; i < rows_to_read; ++i)
         {
             if (null_map[i])
@@ -393,7 +448,7 @@ void NumberDictionaryReader<DataType>::computeRowSetSpace(
                 {
                     cache.setNull(scan_spec.filter->testNull());
                 }
-                row_set.set(i, cache.getNull());
+                sets.set(i, cache.getNull());
             }
             else
             {
@@ -402,15 +457,17 @@ void NumberDictionaryReader<DataType>::computeRowSetSpace(
                 {
                     if constexpr (std::is_same_v<typename DataType::FieldType, Int64>)
                         cache.set(idx, scan_spec.filter->testInt64(dict[idx]));
+                    else
+                        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported type");
                 }
-                row_set.set(i, cache.get(idx));
+                sets.set(i, cache.get(idx));
             }
         }
     }
 }
 
 template <typename DataType>
-void NumberDictionaryReader<DataType>::read(MutableColumnPtr & column, RowSet & row_set, size_t rows_to_read)
+void NumberDictionaryReader<DataType>::read(MutableColumnPtr & column, const OptionalRowSet & row_set, size_t rows_to_read)
 {
     readAndDecodePage();
     auto * int_column = static_cast<DataType::ColumnType *>(column.get());
@@ -426,7 +483,7 @@ void NumberDictionaryReader<DataType>::read(MutableColumnPtr & column, RowSet & 
 
 template <typename DataType>
 void NumberDictionaryReader<DataType>::readSpace(
-    MutableColumnPtr & column, RowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read)
+    MutableColumnPtr & column, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read)
 {
     readAndDecodePage();
     auto * int_column = static_cast<DataType::ColumnType *>(column.get());
@@ -445,7 +502,7 @@ void NumberDictionaryReader<DataType>::readDictPage(const parquet::DictionaryPag
     auto dict_size = page.num_values();
     dict.resize(dict_size);
     state.filter_cache = std::make_unique<FilterCache>(dict_size);
-    memcpy(dict.data(), dict_data, dict_size * sizeof(Int64));
+    memcpy(dict.data(), dict_data, dict_size * sizeof(typename DataType::FieldType));
 }
 
 template <typename DataType>
@@ -515,7 +572,7 @@ void OptionalColumnReader::nextBatchNullMapIfNeeded(size_t rows_to_read)
     }
 }
 
-void OptionalColumnReader::computeRowSet(RowSet & row_set, size_t rows_to_read)
+void OptionalColumnReader::computeRowSet(OptionalRowSet & row_set, size_t rows_to_read)
 {
     applyLazySkip();
     nextBatchNullMapIfNeeded(rows_to_read);
@@ -525,7 +582,7 @@ void OptionalColumnReader::computeRowSet(RowSet & row_set, size_t rows_to_read)
         child->computeRowSet(row_set, rows_to_read);
 }
 
-void OptionalColumnReader::read(MutableColumnPtr & column, RowSet & row_set, size_t rows_to_read)
+void OptionalColumnReader::read(MutableColumnPtr & column, const OptionalRowSet & row_set, size_t rows_to_read)
 {
     applyLazySkip();
     nextBatchNullMapIfNeeded(rows_to_read);
@@ -533,14 +590,19 @@ void OptionalColumnReader::read(MutableColumnPtr & column, RowSet & row_set, siz
     auto * nullable_column = static_cast<ColumnNullable *>(column.get());
     auto nested_column = nullable_column->getNestedColumnPtr()->assumeMutable();
     auto & null_data = nullable_column->getNullMapData();
-
-    for (size_t i = 0; i < rows_to_read; i++)
+    if (row_set.has_value())
     {
-        if (row_set.get(i))
+        const auto & sets = row_set.value();
+        for (size_t i = 0; i < rows_to_read; i++)
         {
-            null_data.push_back(cur_null_map[i]);
+            if (sets.get(i))
+            {
+                null_data.push_back(cur_null_map[i]);
+            }
         }
     }
+    else
+        null_data.insert(cur_null_map.begin(), cur_null_map.end());
     if (cur_null_count)
     {
         child->readSpace(nested_column, row_set, cur_null_map, cur_null_count, rows_to_read);
@@ -667,36 +729,435 @@ Int32 loadLength(const uint8_t * data)
     }
     return value_len;
 }
-void computeRowSetPlainString(const uint8_t * start, RowSet & row_set, ColumnFilterPtr filter, size_t rows_to_read)
+void computeRowSetPlainString(const uint8_t * start, OptionalRowSet & row_set, ColumnFilterPtr filter, size_t rows_to_read)
 {
-    if (!filter)
+    if (!filter || !row_set.has_value())
         return;
     size_t offset = 0;
+    auto & sets = row_set.value();
     for (size_t i = 0; i < rows_to_read; i++)
     {
         auto len = loadLength(start + offset);
         offset += 4;
-        row_set.set(i, filter->testString(String(reinterpret_cast<const char *>(start + offset), len)));
+        sets.set(i, filter->testString(String(reinterpret_cast<const char *>(start + offset), len)));
         offset += len;
     }
 }
 void computeRowSetPlainStringSpace(
-    const uint8_t * start, RowSet & row_set, ColumnFilterPtr filter, size_t rows_to_read, PaddedPODArray<UInt8, 4096> & null_map)
+    const uint8_t * start, OptionalRowSet & row_set, ColumnFilterPtr filter, size_t rows_to_read, PaddedPODArray<UInt8, 4096> & null_map)
 {
-    if (!filter)
+    if (!filter || !row_set.has_value())
         return;
     size_t offset = 0;
+    auto & sets = row_set.value();
     for (size_t i = 0; i < rows_to_read; i++)
     {
         if (null_map[i])
         {
-            row_set.set(i, filter->testNull());
+            sets.set(i, filter->testNull());
             continue;
         }
         auto len = loadLength(start + offset);
         offset += 4;
-        row_set.set(i, filter->testString(String(reinterpret_cast<const char *>(start + offset), len)));
+        sets.set(i, filter->testString(String(reinterpret_cast<const char *>(start + offset), len)));
         offset += len;
     }
+}
+
+void StringDictionaryReader::nextIdxBatchIfEmpty(size_t rows_to_read)
+{
+    if (!state.idx_buffer.empty() || plain)
+        return;
+    state.idx_buffer.resize(rows_to_read);
+    idx_decoder.GetBatch(state.idx_buffer.data(), static_cast<int>(rows_to_read));
+}
+
+void StringDictionaryReader::initIndexDecoderIfNeeded()
+{
+    if (dict.empty())
+        return;
+    uint8_t bit_width = *state.buffer;
+    idx_decoder = arrow::util::RleDecoder(++state.buffer, static_cast<int>(--state.buffer_size), bit_width);
+}
+
+void StringDictionaryReader::readDictPage(const parquet::DictionaryPage & page)
+{
+    const auto * dict_data = page.data();
+    size_t dict_size = page.num_values();
+    dict.reserve(dict_size);
+    state.filter_cache = std::make_unique<FilterCache>(dict_size);
+    for (size_t i = 0; i < dict_size; i++)
+    {
+        auto len = loadLength(dict_data);
+        dict_data += 4;
+        String value;
+        value.resize(len);
+        memcpy(value.data(), dict_data, len);
+        dict.emplace_back(value);
+        dict_data += len;
+    }
+}
+
+size_t StringDictionaryReader::skipValuesInCurrentPage(size_t rows_to_skip)
+{
+    if (!state.page || !rows_to_skip)
+        return rows_to_skip;
+    size_t skipped = std::min(state.remain_rows, rows_to_skip);
+    state.remain_rows -= skipped;
+    if (plain)
+    {
+        size_t offset = 0;
+        for (size_t i = 0; i < skipped; i++)
+        {
+            auto len = loadLength(state.buffer + offset);
+            offset += 4 + len;
+        }
+        state.buffer += offset;
+    }
+    else
+    {
+        if (!state.idx_buffer.empty())
+        {
+            // only support skip all
+            chassert(state.idx_buffer.size() == skipped);
+            state.idx_buffer.resize(0);
+        }
+        else
+        {
+            state.idx_buffer.resize(skipped);
+            idx_decoder.GetBatch(state.idx_buffer.data(), static_cast<int>(skipped));
+            state.idx_buffer.resize(0);
+        }
+    }
+    return rows_to_skip - skipped;
+}
+
+void StringDictionaryReader::readSpace(
+    MutableColumnPtr & column, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read)
+{
+    readAndDecodePage();
+    ColumnString * string_column = reinterpret_cast<ColumnString *>(column.get());
+    if (plain)
+    {
+        size_t total_size = plain_decoder->calculateStringTotalSizeSpace(state.buffer, row_set, null_map, rows_to_read);
+        string_column->getOffsets().reserve(string_column->getOffsets().size() + rows_to_read);
+        string_column->getChars().reserve(string_column->getChars().size() + total_size);
+        plain_decoder->decodeStringSpace(string_column->getChars(), string_column->getOffsets(), row_set, null_map, rows_to_read);
+    }
+    else
+    {
+        auto nonnull_count = rows_to_read - null_count;
+        nextIdxBatchIfEmpty(nonnull_count);
+        dict_decoder->decodeStringSpace(dict, string_column->getChars(), string_column->getOffsets(), row_set, null_map, rows_to_read);
+    }
+}
+
+void StringDictionaryReader::read(MutableColumnPtr & column, const OptionalRowSet & row_set, size_t rows_to_read)
+{
+    readAndDecodePage();
+    ColumnString * string_column = reinterpret_cast<ColumnString *>(column.get());
+    if (plain)
+    {
+        size_t total_size = plain_decoder->calculateStringTotalSize(state.buffer, row_set, rows_to_read);
+        string_column->getOffsets().reserve(string_column->getOffsets().size() + rows_to_read);
+        string_column->getChars().reserve(string_column->getChars().size() + total_size);
+        plain_decoder->decodeString(string_column->getChars(), string_column->getOffsets(), row_set, rows_to_read);
+    }
+    else
+    {
+        nextIdxBatchIfEmpty(rows_to_read);
+        dict_decoder->decodeString(dict, string_column->getChars(), string_column->getOffsets(), row_set, rows_to_read);
+    }
+}
+
+void StringDictionaryReader::computeRowSetSpace(
+    OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read)
+{
+    readAndDecodePage();
+    chassert(rows_to_read <= state.remain_rows);
+    if (plain)
+    {
+        computeRowSetPlainStringSpace(state.buffer, row_set, scan_spec.filter, rows_to_read, null_map);
+        return;
+    }
+    auto nonnull_count = rows_to_read - null_count;
+    nextIdxBatchIfEmpty(nonnull_count);
+    if (scan_spec.filter || row_set.has_value())
+    {
+        auto & cache = *state.filter_cache;
+        auto & sets = row_set.value();
+        int count = 0;
+        for (size_t i = 0; i < rows_to_read; ++i)
+        {
+            if (null_map[i])
+            {
+                if (!cache.hasNull())
+                {
+                    cache.setNull(scan_spec.filter->testNull());
+                }
+                sets.set(i, cache.getNull());
+            }
+            else
+            {
+                int idx = state.idx_buffer[count++];
+                if (!cache.has(idx))
+                {
+                    cache.set(idx, scan_spec.filter->testString(dict[idx]));
+                }
+                sets.set(i, cache.get(idx));
+            }
+        }
+    }
+}
+
+void StringDictionaryReader::computeRowSet(OptionalRowSet & row_set, size_t rows_to_read)
+{
+    readAndDecodePage();
+    chassert(rows_to_read <= state.remain_rows);
+    if (plain)
+    {
+        computeRowSetPlainString(state.buffer, row_set, scan_spec.filter, rows_to_read);
+        return;
+    }
+    nextIdxBatchIfEmpty(rows_to_read);
+    if (scan_spec.filter || row_set.has_value())
+    {
+        auto & cache = *state.filter_cache;
+        for (size_t i = 0; i < rows_to_read; ++i)
+        {
+            auto & sets = row_set.value();
+            int idx = state.idx_buffer[i];
+            if (!cache.has(idx))
+            {
+                cache.set(idx, scan_spec.filter->testString(dict[idx]));
+            }
+            sets.set(i, cache.get(idx));
+        }
+    }
+}
+
+void StringDictionaryReader::downgradeToPlain()
+{
+    dict_decoder = nullptr;
+    dict.clear();
+}
+
+size_t StringDirectReader::skipValuesInCurrentPage(size_t rows_to_skip)
+{
+    if (!state.page || !rows_to_skip)
+        return rows_to_skip;
+    size_t skipped = std::min(state.remain_rows, rows_to_skip);
+    state.remain_rows -= skipped;
+    size_t offset = 0;
+    for (size_t i = 0; i < skipped; i++)
+    {
+        auto len = loadLength(state.buffer + offset);
+        offset += 4 + len;
+    }
+    state.buffer += offset;
+    return rows_to_skip - skipped;
+}
+
+void StringDirectReader::readSpace(
+    MutableColumnPtr & column, const OptionalRowSet & row_set, PaddedPODArray<UInt8, 4096> & null_map, size_t null_count, size_t rows_to_read)
+{
+    ColumnString * string_column = reinterpret_cast<ColumnString *>(column.get());
+    size_t total_size = plain_decoder->calculateStringTotalSizeSpace(state.buffer, row_set, null_map, rows_to_read - null_count);
+    string_column->getOffsets().reserve(string_column->getOffsets().size() + rows_to_read);
+    string_column->getChars().reserve(string_column->getChars().size() + total_size);
+    plain_decoder->decodeStringSpace(string_column->getChars(), string_column->getOffsets(), row_set, null_map, rows_to_read);
+}
+
+void StringDirectReader::read(MutableColumnPtr & column, const OptionalRowSet & row_set, size_t rows_to_read)
+{
+    ColumnString * string_column = reinterpret_cast<ColumnString *>(column.get());
+    size_t total_size = plain_decoder->calculateStringTotalSize(state.buffer, row_set, rows_to_read);
+    string_column->getOffsets().reserve(string_column->getOffsets().size() + rows_to_read);
+    string_column->getChars().reserve(string_column->getChars().size() + total_size);
+    plain_decoder->decodeString(string_column->getChars(), string_column->getOffsets(), row_set, rows_to_read);
+}
+
+void StringDirectReader::computeRowSetSpace(OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t, size_t rows_to_read)
+{
+    readAndDecodePage();
+    computeRowSetPlainStringSpace(state.buffer, row_set, scan_spec.filter, rows_to_read, null_map);
+}
+
+void StringDirectReader::computeRowSet(OptionalRowSet & row_set, size_t rows_to_read)
+{
+    readAndDecodePage();
+    computeRowSetPlainString(state.buffer, row_set, scan_spec.filter, rows_to_read);
+}
+
+void DictDecoder::decodeStringSpace(
+    std::vector<String> & dict,
+    ColumnString::Chars & chars,
+    IColumn::Offsets & offsets,
+    const OptionalRowSet & row_set,
+    PaddedPODArray<UInt8> & null_map,
+    size_t rows_to_read)
+{
+    size_t rows_read = 0;
+    size_t count = 0;
+    if (row_set.has_value())
+    {
+        const auto & sets = row_set.value();
+        while (rows_read < rows_to_read)
+        {
+            if (sets.get(rows_read))
+            {
+                if (null_map[rows_read])
+                {
+                    chars.push_back(0);
+                    offsets.push_back(chars.size());
+                }
+                else
+                {
+                    String value = dict[idx_buffer[count]];
+                    chars.insert(value.data(), value.data() + value.size());
+                    chars.push_back(0);
+                    offsets.push_back(chars.size());
+                    count++;
+                }
+            }
+            else if (!null_map[rows_read])
+                count++;
+            rows_read++;
+        }
+    }
+    else
+    {
+        while (rows_read < rows_to_read)
+        {
+            if (null_map[rows_read])
+            {
+                chars.push_back(0);
+                offsets.push_back(chars.size());
+            }
+            else
+            {
+                String value = dict[idx_buffer[count]];
+                chars.insert(value.data(), value.data() + value.size());
+                chars.push_back(0);
+                offsets.push_back(chars.size());
+                count++;
+            }
+            rows_read++;
+        }
+    }
+    chassert(count == idx_buffer.size());
+    remain_rows -= rows_to_read;
+    idx_buffer.resize(0);
+}
+void DictDecoder::decodeString(
+    std::vector<String> & dict,
+    ColumnString::Chars & chars,
+    IColumn::Offsets & offsets,
+    const OptionalRowSet & row_set,
+    size_t rows_to_read)
+{
+    if (row_set.has_value())
+    {
+        const auto & sets = row_set.value();
+        for (size_t i = 0; i < rows_to_read; i++)
+        {
+            if (sets.get(i))
+            {
+                String & value = dict[idx_buffer[i]];
+                auto chars_cursor = chars.size();
+                chars.resize(chars_cursor + value.size() + 1);
+                memcpySmallAllowReadWriteOverflow15(&chars[chars_cursor], value.data(), value.size());
+                chars.back() = 0;
+                offsets.push_back(chars.size());
+            }
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < rows_to_read; i++)
+        {
+            String & value = dict[idx_buffer[i]];
+            auto chars_cursor = chars.size();
+            chars.resize(chars_cursor + value.size() + 1);
+            memcpySmallAllowReadWriteOverflow15(&chars[chars_cursor], value.data(), value.size());
+            chars.back() = 0;
+            offsets.push_back(chars.size());
+        }
+    }
+    idx_buffer.resize(0);
+    remain_rows -= rows_to_read;
+}
+template <class DictValueType>
+void DictDecoder::decodeFixedValue(
+    PaddedPODArray<DictValueType> & dict,
+    PaddedPODArray<DictValueType> & data,
+    const OptionalRowSet & row_set,
+    size_t rows_to_read)
+{
+    size_t rows_read = 0;
+    if (row_set.has_value())
+    {
+        const auto & sets = row_set.value();
+        while (rows_read < rows_to_read)
+        {
+            if (sets.get(rows_read))
+            {
+                data.push_back(dict[idx_buffer[rows_read]]);
+            }
+            rows_read++;
+        }
+    }
+    else
+    {
+        while (rows_read < rows_to_read)
+        {
+            data.push_back(dict[idx_buffer[rows_read]]);
+            rows_read++;
+        }
+    }
+    idx_buffer.resize(0);
+    remain_rows -= rows_to_read;
+}
+template <class DictValueType>
+void DictDecoder::decodeFixedValueSpace(
+    PaddedPODArray<DictValueType> & dict,
+    PaddedPODArray<DictValueType> & data,
+    const OptionalRowSet & row_set,
+    PaddedPODArray<UInt8> & null_map,
+    size_t rows_to_read)
+{
+    size_t rows_read = 0;
+    size_t count = 0;
+    if (row_set.has_value())
+    {
+        const auto & sets = row_set.value();
+        while (rows_read < rows_to_read)
+        {
+            if (sets.get(rows_read))
+            {
+                if (null_map[rows_read])
+                    data.push_back(0);
+                else
+                    data.push_back(dict[idx_buffer[count++]]);
+            }
+            else if (!null_map[rows_read])
+                count++;
+            rows_read++;
+        }
+    }
+    else
+    {
+        while (rows_read < rows_to_read)
+        {
+            if (null_map[rows_read])
+                data.push_back(0);
+            else
+                data.push_back(dict[idx_buffer[count++]]);
+            rows_read++;
+        }
+    }
+    chassert(count == idx_buffer.size());
+    remain_rows -= rows_to_read;
+    idx_buffer.resize(0);
 }
 }

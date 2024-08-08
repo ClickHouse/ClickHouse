@@ -34,21 +34,21 @@ std::unique_ptr<parquet::ParquetFileReader> createFileReader(
 
 ParquetReader::ParquetReader(
     Block header_,
-    std::shared_ptr<ReadBufferFromFileBase> file_,
+    SeekableReadBuffer& file_,
     parquet::ArrowReaderProperties arrow_properties_,
     parquet::ReaderProperties reader_properties_,
     std::shared_ptr<::arrow::io::RandomAccessFile> arrow_file_,
     const FormatSettings & format_settings,
     std::vector<int> row_groups_indices_,
     std::shared_ptr<parquet::FileMetaData> metadata)
-    : file_reader(createFileReader(arrow_file_, reader_properties_, metadata))
+    : file_reader(metadata ? nullptr : createFileReader(arrow_file_, reader_properties_, metadata))
     , file(file_)
     , arrow_properties(arrow_properties_)
     , header(std::move(header_))
     , max_block_size(format_settings.parquet.max_block_size)
     , properties(reader_properties_)
     , row_groups_indices(std::move(row_groups_indices_))
-    , meta_data(file_reader->metadata())
+    , meta_data(metadata ? metadata : file_reader->metadata())
 {
     if (row_groups_indices.empty())
         for (int i = 0; i < meta_data->num_row_groups(); i++)
@@ -80,10 +80,26 @@ Block ParquetReader::read()
 }
 void ParquetReader::addFilter(const String & column_name, const ColumnFilterPtr filter)
 {
-    filters[column_name] = filter;
+    std::cerr << "add filter to column " << column_name << ": " << filter->toString() << std::endl;
+    if (!filters.contains(column_name))
+        filters[column_name] = filter;
+    else
+        filters[column_name] = filters[column_name]->merge(filter.get());
+    std::cerr << "filter on column " << column_name << ": " << filters[column_name]->toString() << std::endl;
 }
-
-
+void ParquetReader::setRemainFilter(std::optional<ActionsDAG> & expr)
+{
+    if (expr.has_value())
+    {
+        ExpressionActionsSettings settings;
+        ExpressionActions actions = ExpressionActions(std::move(expr.value()), settings);
+        remain_filter = std::optional<ExpressionActions>(std::move(actions));
+    }
+}
+std::unique_ptr<RowGroupChunkReader> ParquetReader::getRowGroupChunkReader(size_t row_group_idx)
+{
+    return std::make_unique<RowGroupChunkReader>(this, meta_data->RowGroup(static_cast<int>(row_group_idx)), filters);
+}
 
 
 }

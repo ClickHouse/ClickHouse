@@ -1,11 +1,11 @@
 #pragma once
 #include <iostream>
 #include <unordered_set>
+#include <Functions/IFunction.h>
+#include <Interpreters/ActionsDAG.h>
 #include <base/types.h>
 #include <boost/dynamic_bitset.hpp>
 #include <Common/Exception.h>
-
-#include <Interpreters/ActionsDAG.h>
 
 namespace DB
 {
@@ -32,7 +32,12 @@ private:
     size_t max_rows = 0;
     boost::dynamic_bitset<> bitset;
 };
+using OptionalRowSet = std::optional<RowSet>;
 
+bool isConstantNode(const ActionsDAG::Node & node);
+bool isCompareColumnWithConst(const ActionsDAG::Node & node);
+const ActionsDAG::Node * getInputNode(const ActionsDAG::Node & node);
+ActionsDAG::NodeRawConstPtrs getConstantNode(const ActionsDAG::Node & node);
 class ColumnFilter;
 using ColumnFilterPtr = std::shared_ptr<ColumnFilter>;
 
@@ -54,8 +59,10 @@ enum ColumnFilterKind
 
 class ColumnFilter
 {
-public:
+protected:
     ColumnFilter(ColumnFilterKind kind, bool null_allowed_) : kind_(kind), null_allowed(null_allowed_) { }
+
+public:
     virtual ~ColumnFilter() = default;
     virtual ColumnFilterKind kind() const { return kind_; }
     virtual bool testNull() const { return null_allowed; }
@@ -64,7 +71,10 @@ public:
     virtual bool testFloat32(Float32) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testFloat32 not implemented"); }
     virtual bool testFloat64(Float64) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testFloat64 not implemented"); }
     virtual bool testBool(bool) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testBool not implemented"); }
-    virtual bool testString(const String & /*value*/) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testString not implemented"); }
+    virtual bool testString(const String & /*value*/) const
+    {
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testString not implemented");
+    }
     virtual bool testInt64Range(Int64, Int64) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testInt64Range not implemented"); }
     virtual bool testFloat32Range(Float32, Float32) const
     {
@@ -76,7 +86,7 @@ public:
     }
     virtual void testInt64Values(RowSet & row_set, size_t offset, size_t len, const Int64 * data) const
     {
-        for (size_t i = offset; i < offset+len; ++i)
+        for (size_t i = offset; i < offset + len; ++i)
         {
             row_set.set(i, testInt64(data[i]));
         }
@@ -87,6 +97,15 @@ public:
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "merge not implemented");
     }
 
+    virtual ColumnFilterPtr clone(std::optional<bool> nullAllowed = std::nullopt) const = 0;
+
+    virtual String toString() const
+    {
+        return fmt::format(
+            "Filter({}, {})",
+            magic_enum::enum_name(kind()),
+            null_allowed ? "null allowed" : "null not allowed");
+    }
 protected:
     ColumnFilterKind kind_;
     bool null_allowed;
@@ -97,12 +116,14 @@ class IsNullFilter : public ColumnFilter
 public:
     IsNullFilter() : ColumnFilter(IsNull, true) { }
     bool testNotNull() const override { return false; }
+    ColumnFilterPtr clone(std::optional<bool>) const override { return std::make_shared<IsNullFilter>(); }
 };
 
 class IsNotNullFilter : public ColumnFilter
 {
 public:
     IsNotNullFilter() : ColumnFilter(IsNotNull, false) { }
+    ColumnFilterPtr clone(std::optional<bool>) const override { return std::make_shared<IsNotNullFilter>(); }
 };
 
 class AlwaysTrueFilter : public ColumnFilter
@@ -121,6 +142,7 @@ public:
     void testInt64Values(RowSet & set, size_t, size_t, const Int64 *) const override { set.setAllTrue(); }
     bool testString(const String & /*value*/) const override { return true; }
     ColumnFilterPtr merge(const ColumnFilter * /*filter*/) const override { return std::make_shared<AlwaysTrueFilter>(); }
+    ColumnFilterPtr clone(std::optional<bool>) const override { return std::make_shared<AlwaysTrueFilter>(); }
 };
 
 class AlwaysFalseFilter : public ColumnFilter
@@ -139,12 +161,13 @@ public:
     void testInt64Values(RowSet & set, size_t, size_t, const Int64 *) const override { set.setAllFalse(); }
     bool testString(const String & /*value*/) const override { return false; }
     ColumnFilterPtr merge(const ColumnFilter * /*filter*/) const override { return std::make_shared<AlwaysFalseFilter>(); }
+    ColumnFilterPtr clone(std::optional<bool>) const override { return std::make_shared<AlwaysFalseFilter>(); }
 };
-
+using OptionalFilter = std::optional<std::pair<String, ColumnFilterPtr>>;
 class Int64RangeFilter : public ColumnFilter
 {
 public:
-    static ColumnFilterPtr create(const ActionsDAG::Node & node);
+    static OptionalFilter create(const ActionsDAG::Node & node);
     explicit Int64RangeFilter(const Int64 min_, const Int64 max_, bool null_allowed_)
         : ColumnFilter(Int64Range, null_allowed_), max(max_), min(min_), is_single_value(max == min)
     {
@@ -154,6 +177,14 @@ public:
     bool testInt64Range(Int64 lower, Int64 upper) const override { return min >= lower && max <= upper; }
     void testInt64Values(RowSet & row_set, size_t offset, size_t len, const Int64 * data) const override;
     ColumnFilterPtr merge(const ColumnFilter * filter) const override;
+    ColumnFilterPtr clone(std::optional<bool> null_allowed_) const override
+    {
+        return std::make_shared<Int64RangeFilter>(min, max, null_allowed_.value_or(null_allowed));
+    }
+    String toString() const override
+    {
+        return fmt::format("Int64RangeFilter: [{}, {}] {}", min, max, null_allowed ? "with nulls" : "no nulls");
+    }
 
 private:
     const Int64 max;
@@ -163,39 +194,42 @@ private:
 class ByteValuesFilter : public ColumnFilter
 {
 public:
+    static OptionalFilter create(const ActionsDAG::Node & node);
     ByteValuesFilter(const std::vector<String> & values_, bool null_allowed_)
         : ColumnFilter(ByteValues, null_allowed_), values(values_.begin(), values_.end())
     {
         std::ranges::for_each(values_, [&](const String & value) { lengths.insert(value.size()); });
+        lower = *std::min_element(values_.begin(), values_.end());
+        upper = *std::max_element(values_.begin(), values_.end());
     }
 
-    ByteValuesFilter(const std::unordered_set<String> & values_, bool null_allowed_)
-        : ColumnFilter(ByteValues, null_allowed_), values(values_)
+    ByteValuesFilter(const ByteValuesFilter & other, bool nullAllowed)
+        : ColumnFilter(ColumnFilterKind::ByteValues, nullAllowed)
+        , lower(other.lower)
+        , upper(other.upper)
+        , values(other.values)
+        , lengths(other.lengths)
     {
-        std::ranges::for_each(values_, [&](const String & value) { lengths.insert(value.size()); });
     }
 
     bool testString(const String & value) const override { return lengths.contains(value.size()) && values.contains(value); }
     ColumnFilterPtr merge(const ColumnFilter * filter) const override;
-
-private:
-    std::unordered_set<size_t> lengths;
-    std::unordered_set<String> values;
-};
-
-class Int64MultiRangeFilter : public ColumnFilter
-{
-public:
-    Int64MultiRangeFilter(const std::vector<ColumnFilterPtr> & ranges_, bool null_allowed_)
-        : ColumnFilter(Int64MultiRange, null_allowed_), ranges(ranges_)
+    ColumnFilterPtr clone(std::optional<bool> null_allowed_) const override
     {
+        return std::make_shared<ByteValuesFilter>(*this, null_allowed_.value_or(null_allowed));
+    }
+
+    String toString() const override
+    {
+        return "ByteValuesFilter(" + lower + ", " + upper + ")";
     }
 
 private:
-    std::vector<ColumnFilterPtr> ranges;
-    std::vector<Int64> lower_bounds;
+    String lower;
+    String upper;
+    std::unordered_set<String> values;
+    std::unordered_set<size_t> lengths;
 };
-
 
 class AbstractRange : public ColumnFilter
 {
@@ -241,6 +275,43 @@ template <is_floating_point T>
 class FloatRangeFilter : public AbstractRange
 {
 public:
+    static OptionalFilter create(const ActionsDAG::Node & node)
+    {
+        if (!isCompareColumnWithConst(node))
+            return std::nullopt;
+        const auto * input_node = getInputNode(node);
+        auto name = input_node->result_name;
+        if (!isFloat(input_node->result_type))
+            return std::nullopt;
+        auto constant_nodes = getConstantNode(node);
+        auto func_name = node.function_base->getName();
+        T value;
+        if constexpr (std::is_same_v<T, Float32>)
+            value = constant_nodes.front()->column->getFloat32(0);
+        else
+            value = constant_nodes.front()->column->getFloat64(0);
+        ColumnFilterPtr filter = nullptr;
+        if (func_name == "less")
+        {
+            filter = std::make_shared<FloatRangeFilter<T>>(0, true, false, value, false, false, false);
+        }
+        else if (func_name == "greater")
+        {
+            filter = std::make_shared<FloatRangeFilter<T>>(value, false, false, 0, true, false, false);
+        }
+        else if (func_name == "lessOrEquals")
+        {
+            filter = std::make_shared<FloatRangeFilter<T>>(0, true, true, value, false, false, false);
+        }
+        else if (func_name == "greaterOrEquals")
+        {
+            filter = std::make_shared<FloatRangeFilter<T>>(value, false, false, 0, true, true, false);
+        }
+        if (filter)
+            return std::make_optional(std::make_pair(name, filter));
+        else
+            return std::nullopt;
+    }
     FloatRangeFilter(
         const T min_, bool lowerUnbounded, bool lowerExclusive, const T max_, bool upperUnbounded, bool upperExclusive, bool nullAllowed)
         : AbstractRange(
@@ -255,9 +326,38 @@ public:
     {
     }
 
+    FloatRangeFilter(const FloatRangeFilter & other, bool null_allowed_)
+        : AbstractRange(
+              other.lower_unbounded,
+              other.lower_exclusive,
+              other.upper_unbounded,
+              other.upper_exclusive,
+              null_allowed_,
+              (std::is_same_v<T, double>) ? ColumnFilterKind::DoubleRange : ColumnFilterKind::FloatRange)
+        , min(other.min)
+        , max(other.max)
+    {
+        chassert(lower_unbounded || !std::isnan(min));
+        chassert(upper_unbounded || !std::isnan(max));
+    }
+
     bool testFloat32(Float32 value) const override { return testFloatingPoint(value); }
-    bool testFloat64(Float64 value) const override { return testFloatingPoint(value); }
+    bool testFloat64(Float64 value) const override { return testFloatingPoint(static_cast<T>(value)); }
     ColumnFilterPtr merge(const ColumnFilter * filter) const override;
+    ColumnFilterPtr clone(std::optional<bool> null_allowed_) const override
+    {
+        return std::make_shared<FloatRangeFilter>(*this, null_allowed_.value_or(null_allowed));
+    }
+    String toString() const override
+    {
+        return fmt::format(
+            "FloatRangeFilter: {}{}, {}{} {}",
+            (lower_exclusive || lower_unbounded) ? "(" : "[",
+            lower_unbounded ? "-inf" : std::to_string(min),
+            upper_unbounded ? "nan" : std::to_string(max),
+            (upper_exclusive && !upper_unbounded) ? ")" : "]",
+            null_allowed ? "with nulls" : "no nulls");
+    }
 
 private:
     bool testFloatingPoint(T value) const
@@ -285,6 +385,8 @@ private:
     const T max;
 };
 
+using Float32RangeFilter = FloatRangeFilter<Float32>;
+using Float64RangeFilter = FloatRangeFilter<Float64>;
 
-
+OptionalFilter createFloatRangeFilter(const ActionsDAG::Node & node);
 }

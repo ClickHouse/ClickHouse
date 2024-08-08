@@ -1,5 +1,6 @@
 #include "ColumnFilter.h"
-#include <Functions/IFunction.h>
+#include <Columns/ColumnSet.h>
+#include <Interpreters/Set.h>
 
 namespace DB
 {
@@ -73,41 +74,43 @@ ActionsDAG::NodeRawConstPtrs getConstantNode(const ActionsDAG::Node & node)
     return result;
 }
 
-ColumnFilterPtr Int64RangeFilter::create(const ActionsDAG::Node & node)
+OptionalFilter Int64RangeFilter::create(const ActionsDAG::Node & node)
 {
     if (!isCompareColumnWithConst(node))
-        return nullptr;
+        return std::nullopt;
     const auto * input_node = getInputNode(node);
+    auto name = input_node->result_name;
     if (!isInt64(input_node->result_type))
-        return nullptr;
+        return std::nullopt;
     auto constant_nodes = getConstantNode(node);
     auto func_name = node.function_base->getName();
+    Int64 value = constant_nodes.front()->column->getInt(0);
+    ColumnFilterPtr filter = nullptr;
     if (func_name == "equals")
     {
-        Int64 value = constant_nodes.front()->column->getInt(0);
-        return std::make_shared<Int64RangeFilter>(value, value, false);
+        filter = std::make_shared<Int64RangeFilter>(value, value, false);
     }
     else if (func_name == "less")
     {
-        Int64 value = constant_nodes.front()->column->getInt(0);
-        return std::make_shared<Int64RangeFilter>(std::numeric_limits<Int64>::min(), value - 1, false);
+        filter = std::make_shared<Int64RangeFilter>(std::numeric_limits<Int64>::min(), value - 1, false);
     }
     else if (func_name == "greater")
     {
-        Int64 value = constant_nodes.front()->column->getInt(0);
-        return std::make_shared<Int64RangeFilter>(value + 1, std::numeric_limits<Int64>::max(), false);
+        filter = std::make_shared<Int64RangeFilter>(value + 1, std::numeric_limits<Int64>::max(), false);
     }
     else if (func_name == "lessOrEquals")
     {
-        Int64 value = constant_nodes.front()->column->getInt(0);
-        return std::make_shared<Int64RangeFilter>(std::numeric_limits<Int64>::min(), value, true);
+        filter = std::make_shared<Int64RangeFilter>(std::numeric_limits<Int64>::min(), value, true);
     }
     else if (func_name == "greaterOrEquals")
     {
-        Int64 value = constant_nodes.front()->column->getInt(0);
-        return std::make_shared<Int64RangeFilter>(value, std::numeric_limits<Int64>::max(), true);
+        filter = std::make_shared<Int64RangeFilter>(value, std::numeric_limits<Int64>::max(), true);
     }
-    return nullptr;
+    if (filter)
+    {
+        return std::make_optional(std::make_pair(name, filter));
+    }
+    return std::nullopt;
 }
 
 
@@ -136,7 +139,7 @@ ColumnFilterPtr Int64RangeFilter::merge(const ColumnFilter * other) const
                 return nullOrFalse(both_null_allowed);
             }
             return std::make_shared<Int64RangeFilter>(
-                std::min(min, other_range->min), std::max(max, other_range->max), both_null_allowed);
+                std::max(min, other_range->min), std::min(max, other_range->max), both_null_allowed);
         }
         default:
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Can't merge filter of kind {}", magic_enum::enum_name(other->kind()));
@@ -151,7 +154,7 @@ ColumnFilterPtr ByteValuesFilter::merge(const ColumnFilter * other) const
         case IsNull:
             return other->merge(this);
         case IsNotNull:
-            return std::make_shared<ByteValuesFilter>(values, false);
+            return clone(false);
         case ByteValues: {
             bool both_null_allowed = null_allowed && other->testNull();
             const auto & other_values = dynamic_cast<const ByteValuesFilter *>(other);
@@ -179,6 +182,51 @@ ColumnFilterPtr ByteValuesFilter::merge(const ColumnFilter * other) const
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Can't merge filter of kind {}", magic_enum::enum_name(other->kind()));
     }
 }
+OptionalFilter ByteValuesFilter::create(const ActionsDAG::Node & node)
+{
+    if (!isCompareColumnWithConst(node))
+        return std::nullopt;
+    const auto * input_node = getInputNode(node);
+    auto name = input_node->result_name;
+    if (!isString(input_node->result_type))
+        return std::nullopt;
+    auto constant_nodes = getConstantNode(node);
+    auto func_name = node.function_base->getName();
+    ColumnFilterPtr filter = nullptr;
+    if (func_name == "equals")
+    {
+        auto value = constant_nodes.front()->column->getDataAt(0);
+        String str;
+        str.resize(value.size);
+        memcpy(str.data(), value.data, value.size);
+        std::vector<String> values = {str};
+        filter = std::make_shared<ByteValuesFilter>(values, false);
+    }
+    else if (func_name == "in")
+    {
+        const auto *arg = checkAndGetColumn<const ColumnConst>(constant_nodes.front()->column.get());
+        const auto * column_set = checkAndGetColumn<const ColumnSet>(&arg->getDataColumn());
+        if (!column_set)
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only ColumnSet is supported in IN clause, but got {}", arg->getDataColumn().getName());
+        auto set = column_set->getData()->get();
+        auto elements = set->getSetElements().front();
+        std::vector<String> values;
+        for (size_t i = 0; i < elements->size(); ++i)
+        {
+            auto value = elements->getDataAt(i);
+            String str;
+            str.resize(value.size);
+            memcpy(str.data(), value.data, value.size);
+            values.emplace_back(str);
+        }
+        filter = std::make_shared<ByteValuesFilter>(values, false);
+    }
+    if (filter)
+    {
+        return std::make_optional(std::make_pair(name, filter));
+    }
+    return std::nullopt;
+}
 
 template <is_floating_point T>
 ColumnFilterPtr FloatRangeFilter<T>::merge(const ColumnFilter * other) const
@@ -203,14 +251,14 @@ ColumnFilterPtr FloatRangeFilter<T>::merge(const ColumnFilter * other) const
             auto upper = std::min(max, otherRange->max);
 
             auto both_lower_unbounded =
-                lower_unbounded && otherRange->lowerUnbounded_;
+                lower_unbounded && otherRange->lower_unbounded;
             auto both_upper_unbounded =
-                upper_unbounded && otherRange->upperUnbounded_;
+                upper_unbounded && otherRange->upper_unbounded;
 
             auto lower_exclusive_ = !both_lower_unbounded &&
-                (!testDouble(lower) || !other->testFloat64(lower));
+                (!testFloat64(lower) || !other->testFloat64(lower));
             auto upper_exclusive_ = !both_upper_unbounded &&
-                (!testDouble(upper) || !other->testFloat64(upper));
+                (!testFloat64(upper) || !other->testFloat64(upper));
 
             if (lower > upper || (lower == upper && lower_exclusive)) {
                 nullOrFalse(both_null_allowed);
@@ -229,8 +277,25 @@ ColumnFilterPtr FloatRangeFilter<T>::merge(const ColumnFilter * other) const
     }
 }
 
-template <>
-class FloatRangeFilter<Float32>;
-template <>
-class FloatRangeFilter<Float64>;
+template <> class FloatRangeFilter<Float32>;
+template <> class FloatRangeFilter<Float64>;
+
+OptionalFilter createFloatRangeFilter(const ActionsDAG::Node & node)
+{
+    if (!isCompareColumnWithConst(node))
+        return std::nullopt;
+    const auto * input_node = getInputNode(node);
+    if (!isFloat(input_node->result_type))
+        return std::nullopt;
+
+    bool is_float32 = WhichDataType(input_node->result_type).isFloat32();
+    if (is_float32)
+    {
+        return Float32RangeFilter::create(node);
+    }
+    else
+    {
+        return Float64RangeFilter::create(node);
+    }
+}
 }
