@@ -16,11 +16,13 @@ namespace DB
 /// When only need to match only one row from right table, use HashJoin::MapsOne. For example, LEFT ANY/SEMI/ANTI.
 ///
 /// HashJoin::MapsAll will store all rows for each key in the map. It is used when need to match multiple rows from right table.
-/// For example, RIGHT ANY/ALL, FULL JOIN, INNER JOIN.
+/// For example, LEFT ALL, INNER ALL, RIGHT ALL/ANY.
 ///
 /// prefer_use_maps_all is true when there is mixed inequal condition in the join condition. For example, `t1.a = t2.a AND t1.b > t2.b`.
 /// In this case, we need to use HashJoin::MapsAll to store all rows for each key in the map. We will select all matched rows from the map
 /// and filter them by `t1.b > t2.b`.
+///
+/// flagged indicates whether we need to store flags for each row whether it has been used in the join. See JoinUsedFlags.h.
 template <JoinKind kind, JoinStrictness join_strictness, bool prefer_use_maps_all>
 struct MapGetter;
 
@@ -30,7 +32,7 @@ template <bool prefer_use_maps_all> struct MapGetter<JoinKind::Right, JoinStrict
 template <bool prefer_use_maps_all> struct MapGetter<JoinKind::Full, JoinStrictness::RightAny, prefer_use_maps_all>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = true; };
 
 template <> struct MapGetter<JoinKind::Left, JoinStrictness::Any, false>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <> struct MapGetter<JoinKind::Left, JoinStrictness::Any, true>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
+template <> struct MapGetter<JoinKind::Left, JoinStrictness::Any, true>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
 template <> struct MapGetter<JoinKind::Inner, JoinStrictness::Any, true> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
 template <> struct MapGetter<JoinKind::Inner, JoinStrictness::Any, false> { using Map = HashJoin::MapsOne; static constexpr bool flagged = true; };
 template <bool prefer_use_maps_all> struct MapGetter<JoinKind::Right, JoinStrictness::Any, prefer_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
@@ -43,7 +45,7 @@ template <bool prefer_use_maps_all> struct MapGetter<JoinKind::Full, JoinStrictn
 
 /// Only SEMI LEFT and SEMI RIGHT are valid. INNER and FULL are here for templates instantiation.
 template <> struct MapGetter<JoinKind::Left, JoinStrictness::Semi, false>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <> struct MapGetter<JoinKind::Left, JoinStrictness::Semi, true>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
+template <> struct MapGetter<JoinKind::Left, JoinStrictness::Semi, true>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
 template <bool prefer_use_maps_all> struct MapGetter<JoinKind::Inner, JoinStrictness::Semi, prefer_use_maps_all> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
 template <bool prefer_use_maps_all> struct MapGetter<JoinKind::Right, JoinStrictness::Semi, prefer_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
 template <bool prefer_use_maps_all> struct MapGetter<JoinKind::Full, JoinStrictness::Semi, prefer_use_maps_all>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };

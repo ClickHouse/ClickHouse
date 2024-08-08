@@ -1,11 +1,12 @@
 #pragma once
 #include <Interpreters/HashJoin/HashJoinMethods.h>
+
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int UNSUPPORTED_JOIN_KEYS;
-    extern const int LOGICAL_ERROR;
+extern const int UNSUPPORTED_JOIN_KEYS;
+extern const int LOGICAL_ERROR;
 }
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
@@ -156,7 +157,6 @@ Block HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             block.safeGetByPosition(pos).column = block.safeGetByPosition(pos).column->replicate(*offsets_to_replicate);
         }
     }
-
     return remaining_block;
 }
 
@@ -596,7 +596,7 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <typename KeyGetter, typename Map, typename AddedColumns>
-size_t HashJoinMethods<KIND,STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtitionalFilter(
+size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddtitionalFilter(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
@@ -662,6 +662,8 @@ size_t HashJoinMethods<KIND,STRICTNESS, MapsTemplate>::joinRightColumnsWithAddti
                 {
                     auto & mapped = find_result.getMapped();
                     find_results.push_back(find_result);
+                    /// We don't add missing in addFoundRowAll here. we will add it after filter is applied.
+                    /// it's different from `joinRightColumns`.
                     if (flag_per_row)
                         addFoundRowAll<Map, false, true>(mapped, selected_rows, current_added_rows, all_flag_known_rows, nullptr);
                     else
@@ -682,32 +684,54 @@ size_t HashJoinMethods<KIND,STRICTNESS, MapsTemplate>::joinRightColumnsWithAddti
         for (size_t i = 1, n = row_replicate_offset.size(); i < n; ++i)
         {
             bool any_matched = false;
-            /// For right join, flag_per_row is true, we need mark used flags for each row.
+            /// right/full join or multiple disjuncts, we need to mark used flags for each row.
             if (flag_per_row)
             {
                 for (size_t replicated_row = prev_replicated_row; replicated_row < row_replicate_offset[i]; ++replicated_row)
                 {
                     if (filter_flags[replicated_row])
                     {
-                        any_matched = true;
                         if constexpr (join_features.is_semi_join || join_features.is_any_join)
                         {
-                            auto used_once = used_flags.template setUsedOnce<join_features.need_flags, true>(
-                                selected_right_row_it->block, selected_right_row_it->row_num, 0);
-                            if (used_once)
+                            /// For LEFT/INNER SEMI/ANY JOIN, we need to add only first appeared row from left,
+                            if constexpr (join_features.left || join_features.inner)
                             {
-                                total_added_rows += 1;
-                                added_columns.appendFromBlock(
-                                    *selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
+                                if (!any_matched)
+                                {
+                                    // For inner join, we need mark each right row'flag, because we only use each right row once.
+                                    auto used_once = used_flags.template setUsedOnce<join_features.need_flags, true>(
+                                        selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                                    if (used_once)
+                                    {
+                                        any_matched = true;
+                                        total_added_rows += 1;
+                                        added_columns.appendFromBlock(
+                                            *selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                auto used_once = used_flags.template setUsedOnce<join_features.need_flags, true>(
+                                    selected_right_row_it->block, selected_right_row_it->row_num, 0);
+                                if (used_once)
+                                {
+                                    any_matched = true;
+                                    total_added_rows += 1;
+                                    added_columns.appendFromBlock(
+                                        *selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
+                                }
                             }
                         }
                         else if constexpr (join_features.is_anti_join)
                         {
+                            any_matched = true;
                             if constexpr (join_features.right && join_features.need_flags)
                                 used_flags.template setUsed<true, true>(selected_right_row_it->block, selected_right_row_it->row_num, 0);
                         }
                         else
                         {
+                            any_matched = true;
                             total_added_rows += 1;
                             added_columns.appendFromBlock(
                                 *selected_right_row_it->block, selected_right_row_it->row_num, join_features.add_missing);
@@ -715,6 +739,7 @@ size_t HashJoinMethods<KIND,STRICTNESS, MapsTemplate>::joinRightColumnsWithAddti
                                 selected_right_row_it->block, selected_right_row_it->row_num, 0);
                         }
                     }
+
                     ++selected_right_row_it;
                 }
             }
@@ -892,7 +917,8 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::correctNullabilityInplace(
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::correctNullabilityInplace(ColumnWithTypeAndName & column, bool nullable, const IColumn::Filter & negative_null_map)
+void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::correctNullabilityInplace(
+    ColumnWithTypeAndName & column, bool nullable, const IColumn::Filter & negative_null_map)
 {
     if (nullable)
     {
@@ -908,4 +934,3 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::correctNullabilityInplace(
         JoinCommon::removeColumnNullability(column);
 }
 }
-
