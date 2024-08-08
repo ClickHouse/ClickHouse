@@ -6,7 +6,7 @@
 SET allow_experimental_statistics = 1;
 SET allow_statistics_optimize = 1;
 SET mutations_sync = 1;
-SET allow_analyzer = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS tab;
 
