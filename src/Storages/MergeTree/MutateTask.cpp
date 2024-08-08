@@ -1,13 +1,15 @@
 #include <Storages/MergeTree/MutateTask.h>
 
+#include <DataTypes/ObjectUtils.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
+#include <Core/Settings.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Columns/ColumnsNumber.h>
 #include <Parsers/queryToString.h>
-#include <Interpreters/SquashingTransform.h>
+#include <Interpreters/Squashing.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
 #include <Processors/Transforms/TTLTransform.h>
@@ -19,16 +21,19 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 
 namespace ProfileEvents
@@ -1267,7 +1272,7 @@ private:
     ProjectionNameToItsBlocks projection_parts;
     std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
 
-    std::vector<SquashingTransform> projection_squashes;
+    std::vector<Squashing> projection_squashes;
     const ProjectionsDescription & projections;
 
     ExecutableTaskPtr merge_projection_parts_task_ptr;
@@ -1286,7 +1291,7 @@ void PartMergerWriter::prepare()
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
         // We split the materialization into multiple stages similar to the process of INSERT SELECT query.
-        projection_squashes.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
+        projection_squashes.emplace_back(ctx->updated_header, settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
     }
 
     existing_rows_count = 0;
@@ -1296,6 +1301,7 @@ void PartMergerWriter::prepare()
 bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 {
     Block cur_block;
+    Block projection_header;
     if (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor->pull(cur_block))
     {
         if (ctx->minmax_idx)
@@ -1311,16 +1317,16 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         {
             const auto & projection = *ctx->projections_to_build[i];
 
-            Block projection_block;
-            {
-                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-                projection_block = projection_squashes[i].add(projection.calculate(cur_block, ctx->context));
-            }
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
+            Block block_to_squash = projection.calculate(cur_block, ctx->context);
+            projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
 
-            if (projection_block)
+            Chunk squashed_chunk = Squashing::squash(projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}));
+            if (squashed_chunk)
             {
+                auto result = projection_squashes[i].getHeader().cloneWithColumns(squashed_chunk.detachColumns());
                 auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                    *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num);
+                    *ctx->data, ctx->log, result, projection, ctx->new_data_part.get(), ++block_num);
                 tmp_part.finalize();
                 tmp_part.part->getDataPartStorage().commitTransaction();
                 projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
@@ -1338,12 +1344,13 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
         const auto & projection = *ctx->projections_to_build[i];
-        auto & projection_squash = projection_squashes[i];
-        auto projection_block = projection_squash.add({});
-        if (projection_block)
+        auto & projection_squash_plan = projection_squashes[i];
+        auto squashed_chunk = Squashing::squash(projection_squash_plan.flush());
+        if (squashed_chunk)
         {
+            auto result = projection_squash_plan.getHeader().cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num);
+                *ctx->data, ctx->log, result, projection, ctx->new_data_part.get(), ++block_num);
             temp_part.finalize();
             temp_part.part->getDataPartStorage().commitTransaction();
             projection_parts[projection.name].emplace_back(std::move(temp_part.part));
@@ -1901,7 +1908,7 @@ private:
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
                 ctx->metadata_snapshot,
-                ctx->updated_header,
+                ctx->updated_header.getNamesAndTypesList(),
                 ctx->compression_codec,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
                 ColumnsStatistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),

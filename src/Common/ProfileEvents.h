@@ -40,6 +40,7 @@ namespace ProfileEvents
         Timer(Counters & counters_, Event timer_event_, Event counter_event, Resolution resolution_);
         ~Timer() { end(); }
         void cancel() { watch.reset(); }
+        void restart() { watch.restart(); }
         void end();
         UInt64 get();
 

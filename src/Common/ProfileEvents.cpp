@@ -3,6 +3,7 @@
 #include <Common/TraceSender.h>
 
 
+// clang-format off
 /// Available events. Add something here as you wish.
 /// If the event is generic (i.e. not server specific)
 /// it should be also added to src/Coordination/KeeperConstant.cpp
@@ -14,6 +15,7 @@
     M(QueriesWithSubqueries, "Count queries with all subqueries") \
     M(SelectQueriesWithSubqueries, "Count SELECT queries with all subqueries") \
     M(InsertQueriesWithSubqueries, "Count INSERT queries with all subqueries") \
+    M(SelectQueriesWithPrimaryKeyUsage, "Count SELECT queries which use the primary key to evaluate the WHERE condition") \
     M(AsyncInsertQuery, "Same as InsertQuery, but only for asynchronous INSERT queries.") \
     M(AsyncInsertBytes, "Data size in bytes of asynchronous INSERT queries.") \
     M(AsyncInsertRows, "Number of rows inserted by asynchronous INSERT queries.") \
@@ -191,8 +193,10 @@
     M(ReplicaPartialShutdown, "How many times Replicated table has to deinitialize its state due to session expiration in ZooKeeper. The state is reinitialized every time when ZooKeeper is available again.") \
     \
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.") \
+    M(SelectedPartsTotal, "Number of total data parts before selecting which ones to read from a MergeTree table.") \
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.") \
     M(SelectedMarks, "Number of marks (index granules) selected to read from a MergeTree table.") \
+    M(SelectedMarksTotal, "Number of total marks (index granules) before selecting which ones to read from a MergeTree table.") \
     M(SelectedRows, "Number of rows SELECTed from all tables.") \
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.") \
     M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).") \
@@ -236,7 +240,12 @@
     \
     M(CannotRemoveEphemeralNode, "Number of times an error happened while trying to remove ephemeral node. This is not an issue, because our implementation of ZooKeeper library guarantee that the session will expire and the node will be removed.") \
     \
-    M(RegexpCreated, "Compiled regular expressions. Identical regular expressions compiled just once and cached forever.") \
+    M(RegexpWithMultipleNeedlesCreated, "Regular expressions with multiple needles (VectorScan library) compiled.") \
+    M(RegexpWithMultipleNeedlesGlobalCacheHit, "Number of times we fetched compiled regular expression with multiple needles (VectorScan library) from the global cache.") \
+    M(RegexpWithMultipleNeedlesGlobalCacheMiss, "Number of times we failed to fetch compiled regular expression with multiple needles (VectorScan library) from the global cache.") \
+    M(RegexpLocalCacheHit, "Number of times we fetched compiled regular expression from a local cache.") \
+    M(RegexpLocalCacheMiss, "Number of times we failed to fetch compiled regular expression from a local cache.") \
+    \
     M(ContextLock, "Number of times the lock of Context was acquired or tried to acquire. This is global lock.") \
     M(ContextLockWaitMicroseconds, "Context lock wait time in microseconds") \
     \
@@ -435,8 +444,6 @@ The server successfully detected this situation and will download merged part fr
     M(ReadBufferFromS3InitMicroseconds, "Time spent initializing connection to S3.") \
     M(ReadBufferFromS3Bytes, "Bytes read from S3.") \
     M(ReadBufferFromS3RequestsErrors, "Number of exceptions while reading from S3.") \
-    M(ReadBufferFromS3ResetSessions, "Number of HTTP sessions that were reset in ReadBufferFromS3.") \
-    M(ReadBufferFromS3PreservedSessions, "Number of HTTP sessions that were preserved in ReadBufferFromS3.") \
     \
     M(WriteBufferFromS3Microseconds, "Time spent on writing to S3.") \
     M(WriteBufferFromS3Bytes, "Bytes written to S3.") \
@@ -445,14 +452,18 @@ The server successfully detected this situation and will download merged part fr
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
     \
     M(AzureGetObject, "Number of Azure API GetObject calls.") \
-    M(AzureUploadPart, "Number of Azure blob storage API UploadPart calls") \
+    M(AzureUpload, "Number of Azure blob storage API Upload calls") \
+    M(AzureStageBlock, "Number of Azure blob storage API StageBlock calls") \
+    M(AzureCommitBlockList, "Number of Azure blob storage API CommitBlockList calls") \
     M(AzureCopyObject, "Number of Azure blob storage API CopyObject calls") \
     M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
     M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.") \
     M(AzureGetProperties, "Number of Azure blob storage API GetProperties calls.") \
     \
     M(DiskAzureGetObject, "Number of Disk Azure API GetObject calls.") \
-    M(DiskAzureUploadPart, "Number of Disk Azure blob storage API UploadPart calls") \
+    M(DiskAzureUpload, "Number of Disk Azure blob storage API Upload calls") \
+    M(DiskAzureStageBlock, "Number of Disk Azure blob storage API StageBlock calls") \
+    M(DiskAzureCommitBlockList, "Number of Disk Azure blob storage API CommitBlockList calls") \
     M(DiskAzureCopyObject, "Number of Disk Azure blob storage API CopyObject calls") \
     M(DiskAzureListObjects, "Number of Disk Azure blob storage API ListObjects calls.") \
     M(DiskAzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
@@ -497,6 +508,7 @@ The server successfully detected this situation and will download merged part fr
     M(FileSegmentHolderCompleteMicroseconds, "File segments holder complete() time") \
     M(FileSegmentFailToIncreasePriority, "Number of times the priority was not increased due to a high contention on the cache lock") \
     M(FilesystemCacheFailToReserveSpaceBecauseOfLockContention, "Number of times space reservation was skipped due to a high contention on the cache lock") \
+    M(FilesystemCacheFailToReserveSpaceBecauseOfCacheResize, "Number of times space reservation was skipped due to the cache is being resized") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segments count, which were hold") \
     M(FilesystemCacheUnusedHoldFileSegments, "Filesystem cache file segments count, which were hold, but not used (because of seek or LIMIT n, etc)") \
     M(FilesystemCacheFreeSpaceKeepingThreadRun, "Number of times background thread executed free space keeping job") \
@@ -557,6 +569,7 @@ The server successfully detected this situation and will download merged part fr
     M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.") \
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.") \
     M(AggregationOptimizedEqualRangesOfKeys, "For how many blocks optimization of equal ranges of keys was applied") \
+    M(HashJoinPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for hash join.") \
     \
     M(MetadataFromKeeperCacheHit, "Number of times an object storage metadata request was answered from cache without making request to Keeper") \
     M(MetadataFromKeeperCacheMiss, "Number of times an object storage metadata request had to be answered from Keeper") \
@@ -609,6 +622,13 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperPacketsReceived, "Packets received by keeper server") \
     M(KeeperRequestTotal, "Total requests number on keeper server") \
     M(KeeperLatency, "Keeper latency") \
+    M(KeeperTotalElapsedMicroseconds, "Keeper total latency for a single request") \
+    M(KeeperProcessElapsedMicroseconds, "Keeper commit latency for a single request") \
+    M(KeeperPreprocessElapsedMicroseconds, "Keeper preprocessing latency for a single reuquest") \
+    M(KeeperStorageLockWaitMicroseconds, "Time spent waiting for acquiring Keeper storage lock") \
+    M(KeeperCommitWaitElapsedMicroseconds, "Time spent waiting for certain log to be committed") \
+    M(KeeperBatchMaxCount, "Number of times the size of batch was limited by the amount") \
+    M(KeeperBatchMaxTotalSize, "Number of times the size of batch was limited by the total bytes size") \
     M(KeeperCommits, "Number of successful commits") \
     M(KeeperCommitsFailed, "Number of failed commits") \
     M(KeeperSnapshotCreations, "Number of snapshots creations")\
@@ -635,15 +655,16 @@ The server successfully detected this situation and will download merged part fr
     M(S3QueueSetFileProcessingMicroseconds, "Time spent to set file as processing")\
     M(S3QueueSetFileProcessedMicroseconds, "Time spent to set file as processed")\
     M(S3QueueSetFileFailedMicroseconds, "Time spent to set file as failed")\
-    M(S3QueueFailedFiles, "Number of files which failed to be processed")\
-    M(S3QueueProcessedFiles, "Number of files which were processed")\
-    M(S3QueueCleanupMaxSetSizeOrTTLMicroseconds, "Time spent to set file as failed")\
-    M(S3QueuePullMicroseconds, "Time spent to read file data")\
-    M(S3QueueLockLocalFileStatusesMicroseconds, "Time spent to lock local file statuses")\
+    M(ObjectStorageQueueFailedFiles, "Number of files which failed to be processed")\
+    M(ObjectStorageQueueProcessedFiles, "Number of files which were processed")\
+    M(ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds, "Time spent to set file as failed")\
+    M(ObjectStorageQueuePullMicroseconds, "Time spent to read file data")\
+    M(ObjectStorageQueueLockLocalFileStatusesMicroseconds, "Time spent to lock local file statuses")\
     \
     M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds")\
     M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted") \
-    M(IOUringSQEsResubmits, "Total number of io_uring SQE resubmits performed") \
+    M(IOUringSQEsResubmitsAsync, "Total number of asynchronous io_uring SQE resubmits performed") \
+    M(IOUringSQEsResubmitsSync, "Total number of synchronous io_uring SQE resubmits performed") \
     M(IOUringCQEsCompleted, "Total number of successfully completed io_uring CQEs") \
     M(IOUringCQEsFailed, "Total number of completed io_uring CQEs with failures") \
     \
@@ -753,6 +774,10 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ReadWriteBufferFromHTTPRequestsSent, "Number of HTTP requests sent by ReadWriteBufferFromHTTP") \
     M(ReadWriteBufferFromHTTPBytes, "Total size of payload bytes received and sent by ReadWriteBufferFromHTTP. Doesn't include HTTP headers.") \
+    \
+    M(GWPAsanAllocateSuccess, "Number of successful allocations done by GWPAsan") \
+    M(GWPAsanAllocateFailed, "Number of failed allocations done by GWPAsan (i.e. filled pool)") \
+    M(GWPAsanFree, "Number of free operations done by GWPAsan") \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

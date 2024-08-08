@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -17,6 +18,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
@@ -41,6 +43,7 @@
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace DB
 {
@@ -1137,9 +1140,9 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             for (const auto & kv : stage.column_to_updated)
             {
                 auto column_name = kv.second->getColumnName();
-                const auto & dag_node = actions->findInOutputs(column_name);
-                const auto & alias = actions->addAlias(dag_node, kv.first);
-                actions->addOrReplaceInOutputs(alias);
+                const auto & dag_node = actions->dag.findInOutputs(column_name);
+                const auto & alias = actions->dag.addAlias(dag_node, kv.first);
+                actions->dag.addOrReplaceInOutputs(alias);
             }
         }
 
@@ -1197,12 +1200,12 @@ void MutationsInterpreter::Source::read(
         const auto & names = first_stage.filter_column_names;
         size_t num_filters = names.size();
 
-        ActionsDAGPtr filter;
+        std::optional<ActionsDAG> filter;
         if (!first_stage.filter_column_names.empty())
         {
             ActionsDAG::NodeRawConstPtrs nodes(num_filters);
             for (size_t i = 0; i < num_filters; ++i)
-                nodes[i] = &steps[i]->actions()->findInOutputs(names[i]);
+                nodes[i] = &steps[i]->actions()->dag.findInOutputs(names[i]);
 
             filter = ActionsDAG::buildFilterActionsDAG(nodes);
         }
@@ -1211,7 +1214,7 @@ void MutationsInterpreter::Source::read(
             MergeTreeSequentialSourceType::Mutation,
             plan, *data, storage_snapshot,
             part, required_columns,
-            apply_deleted_mask_, filter, context_,
+            apply_deleted_mask_, std::move(filter), context_,
             getLogger("MutationsInterpreter"));
     }
     else
@@ -1273,18 +1276,24 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
         for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
         {
             const auto & step = stage.expressions_chain.steps[i];
-            if (step->actions()->hasArrayJoin())
+            if (step->actions()->dag.hasArrayJoin())
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "arrayJoin is not allowed in mutations");
 
             if (i < stage.filter_column_names.size())
             {
+                auto dag = step->actions()->dag.clone();
+                if (step->actions()->project_input)
+                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->actions(), stage.filter_column_names[i], false));
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), std::move(dag), stage.filter_column_names[i], false));
             }
             else
             {
+                auto dag = step->actions()->dag.clone();
+                if (step->actions()->project_input)
+                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->actions()));
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(dag)));
             }
         }
 

@@ -2,6 +2,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <IO/ReadHelpers.h>
@@ -2004,7 +2005,8 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     MutationCommands commands;
     for (auto it = begin; it != end; ++it)
     {
-        /// FIXME uncomment this assertion after relesing 23.5 (currently it fails in Upgrade check)
+        /// FIXME : This was supposed to be fixed after releasing 23.5 (it fails in Upgrade check)
+        /// but it's still present https://github.com/ClickHouse/ClickHouse/issues/65275
         /// chassert(mutation_pointer < it->second->entry->znode_name);
         mutation_ids.push_back(it->second->entry->znode_name);
         const auto & commands_from_entry = it->second->entry->commands;

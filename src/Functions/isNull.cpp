@@ -7,6 +7,8 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnDynamic.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -21,14 +23,32 @@ class FunctionIsNull : public IFunction
 public:
     static constexpr auto name = "isNull";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIsNull>();
+        return std::make_shared<FunctionIsNull>(context->getSettingsRef().allow_experimental_analyzer);
     }
+
+    explicit FunctionIsNull(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
 
     std::string getName() const override
     {
         return name;
+    }
+
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    {
+        /// (column IS NULL) triggers a bug in old analyzer when it is replaced to constant.
+        if (!use_analyzer)
+            return nullptr;
+
+        const ColumnWithTypeAndName & elem = arguments[0];
+        if (elem.type->onlyNull())
+            return result_type->createColumnConst(1, UInt8(1));
+
+        if (canContainNull(*elem.type))
+            return nullptr;
+
+        return result_type->createColumnConst(1, UInt8(0));
     }
 
     size_t getNumberOfArguments() const override { return 1; }
@@ -83,13 +103,16 @@ public:
             return DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
         }
     }
+
+private:
+    bool use_analyzer;
 };
 
 }
 
 REGISTER_FUNCTION(IsNull)
 {
-    factory.registerFunction<FunctionIsNull>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionIsNull>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

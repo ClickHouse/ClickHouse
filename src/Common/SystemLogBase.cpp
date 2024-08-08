@@ -1,5 +1,6 @@
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/CrashLog.h>
+#include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
@@ -10,7 +11,7 @@
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/S3QueueLog.h>
+#include <Interpreters/ObjectStorageQueueLog.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/ZooKeeperLog.h>
@@ -64,7 +65,7 @@ void SystemLogQueue<LogElement>::push(LogElement&& element)
     /// Memory can be allocated while resizing on queue.push_back.
     /// The size of allocation can be in order of a few megabytes.
     /// But this should not be accounted for query memory usage.
-    /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flacky.
+    /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flaky.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     /// Should not log messages under mutex.

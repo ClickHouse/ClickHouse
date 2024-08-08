@@ -330,27 +330,26 @@ void SSLManager::initDefaultContext(bool server)
 	else
 		_ptrDefaultClientContext->disableProtocols(disabledProtocols);
 
-    /// Temporarily disabled during the transition from boringssl to OpenSSL due to tsan issues.
-	/// bool cacheSessions = config.getBool(prefix + CFG_CACHE_SESSIONS, false);
-	/// if (server)
-	/// {
-	/// 	std::string sessionIdContext = config.getString(prefix + CFG_SESSION_ID_CONTEXT, config.getString("application.name", ""));
-	/// 	_ptrDefaultServerContext->enableSessionCache(cacheSessions, sessionIdContext);
-	/// 	if (config.hasProperty(prefix + CFG_SESSION_CACHE_SIZE))
-	/// 	{
-	/// 		int cacheSize = config.getInt(prefix + CFG_SESSION_CACHE_SIZE);
-	/// 		_ptrDefaultServerContext->setSessionCacheSize(cacheSize);
-	/// 	}
-	/// 	if (config.hasProperty(prefix + CFG_SESSION_TIMEOUT))
-	/// 	{
-	/// 		int timeout = config.getInt(prefix + CFG_SESSION_TIMEOUT);
-	/// 		_ptrDefaultServerContext->setSessionTimeout(timeout);
-	/// 	}
-	/// }
-	/// else
-	/// {
-	/// 	_ptrDefaultClientContext->enableSessionCache(cacheSessions);
-	/// }
+	bool cacheSessions = config.getBool(prefix + CFG_CACHE_SESSIONS, false);
+	if (server)
+	{
+		std::string sessionIdContext = config.getString(prefix + CFG_SESSION_ID_CONTEXT, config.getString("application.name", ""));
+		_ptrDefaultServerContext->enableSessionCache(cacheSessions, sessionIdContext);
+		if (config.hasProperty(prefix + CFG_SESSION_CACHE_SIZE))
+		{
+			int cacheSize = config.getInt(prefix + CFG_SESSION_CACHE_SIZE);
+			_ptrDefaultServerContext->setSessionCacheSize(cacheSize);
+		}
+		if (config.hasProperty(prefix + CFG_SESSION_TIMEOUT))
+		{
+			int timeout = config.getInt(prefix + CFG_SESSION_TIMEOUT);
+			_ptrDefaultServerContext->setSessionTimeout(timeout);
+		}
+	}
+	else
+	{
+		_ptrDefaultClientContext->enableSessionCache(cacheSessions);
+	}
 	bool extendedVerification = config.getBool(prefix + CFG_EXTENDED_VERIFICATION, false);
 	if (server)
 		_ptrDefaultServerContext->enableExtendedCertificateVerification(extendedVerification);
@@ -426,6 +425,23 @@ void SSLManager::initCertificateHandler(bool server)
 			_ptrClientCertificateHandler = pFactory->create(false);
 	}
 	else throw Poco::Util::UnknownOptionException(std::string("No InvalidCertificate handler known with the name ") + className);
+}
+
+
+Context::Ptr SSLManager::getCustomServerContext(const std::string & name)
+{
+	Poco::FastMutex::ScopedLock lock(_mutex);
+	auto it = _mapPtrServerContexts.find(name);
+	if (it != _mapPtrServerContexts.end())
+		return it->second;
+	return nullptr;
+}
+
+Context::Ptr SSLManager::setCustomServerContext(const std::string & name, Context::Ptr ctx)
+{
+	Poco::FastMutex::ScopedLock lock(_mutex);
+	ctx = _mapPtrServerContexts.insert({name, ctx}).first->second;
+	return ctx;
 }
 
 

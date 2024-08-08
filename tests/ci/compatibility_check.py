@@ -196,7 +196,7 @@ def main():
 
     # See https://sourceware.org/glibc/wiki/Glibc%20Timeline
     max_glibc_version = ""
-    if "amd64" in check_name:
+    if "amd64" in check_name or "release" in check_name:
         max_glibc_version = "2.4"
     elif "aarch64" in check_name:
         max_glibc_version = "2.18"  # because of build with newer sysroot?

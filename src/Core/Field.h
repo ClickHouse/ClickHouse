@@ -1038,7 +1038,7 @@ struct fmt::formatter<DB::Field>
     }
 
     template <typename FormatContext>
-    auto format(const DB::Field & x, FormatContext & ctx)
+    auto format(const DB::Field & x, FormatContext & ctx) const
     {
         return fmt::format_to(ctx.out(), "{}", toString(x));
     }

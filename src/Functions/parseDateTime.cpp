@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 
@@ -564,8 +565,8 @@ namespace
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
 
         explicit FunctionParseDateTimeImpl(ContextPtr context)
-            : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
-            , mysql_parse_ckl_without_leading_zeros(context->getSettings().parsedatetime_parse_without_leading_zeros)
+            : mysql_M_is_month_name(context->getSettingsRef().formatdatetime_parsedatetime_m_is_month_name)
+            , mysql_parse_ckl_without_leading_zeros(context->getSettingsRef().parsedatetime_parse_without_leading_zeros)
         {
         }
 
@@ -581,15 +582,15 @@ namespace
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             FunctionArgumentDescriptors mandatory_args{
-                {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-                {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+                {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
             };
 
             FunctionArgumentDescriptors optional_args{
+                {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
                 {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"}
             };
 
-            validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
+            validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
             String time_zone_name = getTimeZone(arguments).getTimeZone();
             DataTypePtr date_type = std::make_shared<DataTypeDateTime>(time_zone_name);
@@ -978,8 +979,7 @@ namespace
             [[nodiscard]]
             static PosOrError mysqlAmericanDate(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto status = checkSpace(cur, end, 8, "mysqlAmericanDate requires size >= 8", fragment))
-                    return tl::unexpected(status.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 8, "mysqlAmericanDate requires size >= 8", fragment))
 
                 Int32 month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month)))
@@ -993,7 +993,7 @@ namespace
 
                 Int32 year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, year)))
-                RETURN_ERROR_IF_FAILED(date.setYear(year))
+                RETURN_ERROR_IF_FAILED(date.setYear(year + 2000))
                 return cur;
             }
 
@@ -1015,8 +1015,7 @@ namespace
             [[nodiscard]]
             static PosOrError mysqlISO8601Date(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto status = checkSpace(cur, end, 10, "mysqlISO8601Date requires size >= 10", fragment))
-                    return tl::unexpected(status.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 10, "mysqlISO8601Date requires size >= 10", fragment))
 
                 Int32 year;
                 Int32 month;
@@ -1462,8 +1461,7 @@ namespace
             [[nodiscard]]
             static PosOrError jodaDayOfWeekText(size_t /*min_represent_digits*/, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
             {
-                if (auto result= checkSpace(cur, end, 3, "jodaDayOfWeekText requires size >= 3", fragment); !result.has_value())
-                    return tl::unexpected(result.error());
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "jodaDayOfWeekText requires size >= 3", fragment))
 
                 String text1(cur, 3);
                 boost::to_lower(text1);
@@ -1556,8 +1554,8 @@ namespace
                 Int32 day_of_month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(
                     cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, day_of_month)))
-                if (auto res = date.setDayOfMonth(day_of_month); !res.has_value())
-                    return tl::unexpected(res.error());
+                RETURN_ERROR_IF_FAILED(date.setDayOfMonth(day_of_month))
+
                 return cur;
             }
 
@@ -2031,14 +2029,24 @@ namespace
 
         String getFormat(const ColumnsWithTypeAndName & arguments) const
         {
-            const auto * format_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
-            if (!format_column)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
-                    arguments[1].column->getName(),
-                    getName());
-            return format_column->getValue<String>();
+            if (arguments.size() == 1)
+            {
+                if constexpr (parse_syntax == ParseSyntax::MySQL)
+                    return "%Y-%m-%d %H:%i:%s";
+                else
+                    return "yyyy-MM-dd HH:mm:ss";
+            }
+            else
+            {
+                const auto * col_format = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+                if (!col_format)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
+                        arguments[1].column->getName(),
+                        getName());
+                return col_format->getValue<String>();
+            }
         }
 
         const DateLUTImpl & getTimeZone(const ColumnsWithTypeAndName & arguments) const
@@ -2100,10 +2108,10 @@ namespace
 REGISTER_FUNCTION(ParseDateTime)
 {
     factory.registerFunction<FunctionParseDateTime>();
-    factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionParseDateTimeOrZero>();
     factory.registerFunction<FunctionParseDateTimeOrNull>();
-    factory.registerAlias("str_to_date", FunctionParseDateTimeOrNull::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("str_to_date", FunctionParseDateTimeOrNull::name, FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionParseDateTimeInJodaSyntax>();
     factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrZero>();

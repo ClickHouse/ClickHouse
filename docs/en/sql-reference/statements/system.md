@@ -18,10 +18,21 @@ Reloads all dictionaries that have been successfully loaded before.
 By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
 Always returns `Ok.` regardless of the result of the dictionary update.
 
+**Syntax**
+
+```sql
+SYSTEM RELOAD DICTIONARIES [ON CLUSTER cluster_name]
+```
+
 ## RELOAD DICTIONARY
 
 Completely reloads a dictionary `dictionary_name`, regardless of the state of the dictionary (LOADED / NOT_LOADED / FAILED).
 Always returns `Ok.` regardless of the result of updating the dictionary.
+
+``` sql
+SYSTEM RELOAD DICTIONARY [ON CLUSTER cluster_name] dictionary_name
+```
+
 The status of the dictionary can be checked by querying the `system.dictionaries` table.
 
 ``` sql
@@ -174,7 +185,7 @@ Aborts ClickHouse process (like `kill -9 {$ pid_clickhouse-server}`)
 
 ## Managing Distributed Tables
 
-ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [FLUSH DISTRIBUTED](#query_language-system-flush-distributed), and [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) queries. You can also synchronously insert distributed data with the [distributed_foreground_insert](../../operations/settings/settings.md#distributed_foreground_insert) setting.
+ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [STOP DISTRIBUTED SENDS](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), and [START DISTRIBUTED SENDS](#start-distributed-sends) queries. You can also synchronously insert distributed data with the [distributed_foreground_insert](../../operations/settings/settings.md#distributed_foreground_insert) setting.
 
 ### STOP DISTRIBUTED SENDS
 

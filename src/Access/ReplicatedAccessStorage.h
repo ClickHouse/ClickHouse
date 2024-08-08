@@ -23,6 +23,8 @@ public:
     ReplicatedAccessStorage(const String & storage_name, const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper, AccessChangesNotifier & changes_notifier_, bool allow_backup);
     ~ReplicatedAccessStorage() override;
 
+    void shutdown() override;
+
     const char * getStorageType() const override { return STORAGE_TYPE; }
 
     void startPeriodicReloading() override { startWatchingThread(); }

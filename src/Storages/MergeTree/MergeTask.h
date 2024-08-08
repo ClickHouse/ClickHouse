@@ -24,6 +24,7 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 
 
 namespace DB
@@ -137,7 +138,7 @@ private:
         virtual ~IStage() = default;
     };
 
-    /// By default this context is uninitialed, but some variables has to be set after construction,
+    /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
     struct GlobalRuntimeContext : public IStageRuntimeContext
@@ -164,14 +165,13 @@ private:
 
         NamesAndTypesList gathering_columns{};
         NamesAndTypesList merging_columns{};
-        Names gathering_column_names{};
-        Names merging_column_names{};
         NamesAndTypesList storage_columns{};
-        Names all_column_names{};
         MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
 
+        IndicesDescription merging_skip_indexes;
+        std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
+
         MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
-        size_t gathering_column_names_size{0};
 
         std::unique_ptr<MergeStageProgress> horizontal_stage_progress{nullptr};
         std::unique_ptr<MergeStageProgress> column_progress{nullptr};
@@ -199,7 +199,7 @@ private:
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;
 
-    /// By default this context is uninitialed, but some variables has to be set after construction,
+    /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
     struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext
@@ -232,7 +232,6 @@ private:
 
         /// Dependencies for next stages
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
-        size_t column_num_for_vertical_merge{0};
         bool need_sync{false};
     };
 
@@ -260,19 +259,21 @@ private:
 
         MergeAlgorithm chooseMergeAlgorithm() const;
         void createMergedStream();
+        void extractMergingAndGatheringColumns() const;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {
             ctx = static_pointer_cast<ExecuteAndFinalizeHorizontalPartRuntimeContext>(local);
             global_ctx = static_pointer_cast<GlobalRuntimeContext>(global);
         }
+
         StageRuntimeContextPtr getContextForNextStage() override;
 
         ExecuteAndFinalizeHorizontalPartRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
     };
 
-    /// By default this context is uninitialed, but some variables has to be set after construction,
+    /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
     struct VerticalMergeRuntimeContext : public IStageRuntimeContext
@@ -284,7 +285,6 @@ private:
         CompressionCodecPtr compression_codec;
         TemporaryDataOnDiskPtr tmp_disk{nullptr};
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
-        size_t column_num_for_vertical_merge{0};
         bool read_with_direct_io{false};
         bool need_sync{false};
         /// End dependencies from previous stages
@@ -348,7 +348,7 @@ private:
         GlobalRuntimeContextPtr global_ctx;
     };
 
-    /// By default this context is uninitialed, but some variables has to be set after construction,
+    /// By default this context is uninitialized, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
     struct MergeProjectionsRuntimeContext : public IStageRuntimeContext
@@ -408,15 +408,8 @@ private:
 
     Stages::const_iterator stages_iterator = stages.begin();
 
-    static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
-    {
-        return global_ctx->data->getSettings()->enable_block_number_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
-    }
-
-    static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)
-    {
-        return global_ctx->data->getSettings()->enable_block_offset_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
-    }
+    static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx);
+    static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx);
 
     static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
 };

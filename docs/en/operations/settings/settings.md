@@ -1170,6 +1170,10 @@ Data in the VALUES clause of INSERT queries is processed by a separate stream pa
 
 Default value: 262144 (= 256 KiB).
 
+:::note
+`max_query_size` cannot be set within an SQL query (e.g., `SELECT now() SETTINGS max_query_size=10000`) because ClickHouse needs to allocate a buffer to parse the query, and this buffer size is determined by the `max_query_size` setting, which must be configured before the query is executed.
+:::
+
 ## max_parser_depth {#max_parser_depth}
 
 Limits maximum recursion depth in the recursive descent parser. Allows controlling the stack size.
@@ -1354,11 +1358,24 @@ Connection pool size for PostgreSQL table engine and database engine.
 
 Default value: 16
 
+## postgresql_connection_attempt_timeout {#postgresql-connection-attempt-timeout}
+
+Connection timeout in seconds of a single attempt to connect PostgreSQL end-point.
+The value is passed as a `connect_timeout` parameter of the connection URL.
+
+Default value: `2`.
+
 ## postgresql_connection_pool_wait_timeout {#postgresql-connection-pool-wait-timeout}
 
 Connection pool push/pop timeout on empty pool for PostgreSQL table engine and database engine. By default it will block on empty pool.
 
 Default value: 5000
+
+## postgresql_connection_pool_retries {#postgresql-connection-pool-retries}
+
+The maximum number of retries to establish a connection with the PostgreSQL end-point.
+
+Default value: `2`.
 
 ## postgresql_connection_pool_auto_close_connection {#postgresql-connection-pool-auto-close-connection}
 
@@ -1589,6 +1606,22 @@ Possible values:
 - `range` — Split the entire value space of the expression in the ranges. This type of filtering is useful if values of `parallel_replicas_custom_key` are uniformly spread across the entire integer space, e.g. hash values.
 
 Default value: `default`.
+
+## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
+
+Allows the filter type `range` to split the work evenly between replicas based on the custom range `[parallel_replicas_custom_key_range_lower, INT_MAX]`.
+
+When used in conjuction with [parallel_replicas_custom_key_range_upper](#parallel_replicas_custom_key_range_upper), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`.
+
+Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing.
+
+## parallel_replicas_custom_key_range_upper {#parallel_replicas_custom_key_range_upper}
+
+Allows the filter type `range` to split the work evenly between replicas based on the custom range `[0, parallel_replicas_custom_key_range_upper]`. A value of 0 disables the upper bound, setting it the max value of the custom key expression.
+
+When used in conjuction with [parallel_replicas_custom_key_range_lower](#parallel_replicas_custom_key_range_lower), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`.
+
+Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing.
 
 ## allow_experimental_parallel_reading_from_replicas
 
@@ -2520,7 +2553,7 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 
-Default value: `0`.
+Default value: `1`.
 
 ## optimize_trivial_count_query {#optimize-trivial-count-query}
 
@@ -3172,7 +3205,7 @@ Default value: `0`.
 
 ## lightweight_deletes_sync {#lightweight_deletes_sync}
 
-The same as 'mutation_sync', but controls only execution of lightweight deletes. 
+The same as 'mutation_sync', but controls only execution of lightweight deletes.
 
 Possible values:
 
@@ -3862,6 +3895,10 @@ Possible values:
 
 Default value: 30.
 
+:::note
+It's applicable only to the default profile. A server reboot is required for the changes to take effect.
+:::
+
 ## http_receive_timeout {#http_receive_timeout}
 
 HTTP receive timeout (in seconds).
@@ -4014,7 +4051,7 @@ Rewrite aggregate functions with if expression as argument when logically equiva
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
 
 :::note
-Supported only with experimental analyzer (`allow_experimental_analyzer = 1`).
+Supported only with experimental analyzer (`enable_analyzer = 1`).
 :::
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
@@ -5130,7 +5167,7 @@ Allows using statistic to optimize the order of [prewhere conditions](../../sql-
 
 ## analyze_index_with_space_filling_curves
 
-If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
+If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
 
 ## query_plan_enable_optimizations {#query_plan_enable_optimizations}
 
@@ -5398,6 +5435,15 @@ When set to `false` than all attempts are made with identical timeouts.
 
 Default value: `true`.
 
+## allow_deprecated_snowflake_conversion_functions {#allow_deprecated_snowflake_conversion_functions}
+
+Functions `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake`, and `dateTime64ToSnowflake` are deprecated and disabled by default.
+Please use functions `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID`, and `dateTime64ToSnowflakeID` instead.
+
+To re-enable the deprecated functions (e.g., during a transition period), please set this setting to `true`.
+
+Default value: `false`
+
 ## allow_experimental_variant_type {#allow_experimental_variant_type}
 
 Allows creation of experimental [Variant](../../sql-reference/data-types/variant.md).
@@ -5562,3 +5608,9 @@ Default value: `10000000`.
 Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 
 Default value: `1GiB`.
+
+## disable_insertion_and_mutation
+
+Disable all insert and mutations (alter table update / alter table delete / alter table drop partition). Set to true, can make this node focus on reading queries.
+
+Default value: `false`.

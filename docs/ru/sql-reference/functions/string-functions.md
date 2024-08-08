@@ -538,15 +538,27 @@ SELECT base58Decode('3dc8KtHrwM');
 
 Синоним: `TO_BASE64`.
 
+## base64URLEncode(s)
+
+Производит кодирование URL (String или FixedString) в base64-представление в соответствии с [RFC 4648](https://tools.ietf.org/html/rfc4648).
+
 ## base64Decode(s) {#base64decode}
 
 Декодирует base64-представление s в исходную строку. При невозможности декодирования выбрасывает исключение
 
 Синоним: `FROM_BASE64`.
 
+## base64URLDecode(s)
+
+Декодирует base64-представление URL в исходную строку в соответствии с [RFC 4648](https://tools.ietf.org/html/rfc4648). При невозможности декодирования выбрасывает исключение
+
 ## tryBase64Decode(s) {#trybase64decode}
 
 Функционал аналогичен base64Decode, но при невозможности декодирования возвращает пустую строку.
+
+## tryBase64URLDecode(s)
+
+Функционал аналогичен base64URLDecode, но при невозможности декодирования возвращает пустую строку.
 
 ## endsWith(s, suffix) {#endswith}
 

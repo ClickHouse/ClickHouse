@@ -26,6 +26,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeDateTime.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -53,9 +54,9 @@ namespace DB
 namespace VirtualColumnUtils
 {
 
-void buildSetsForDAG(const ActionsDAGPtr & dag, const ContextPtr & context)
+void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
 {
-    for (const auto & node : dag->getNodes())
+    for (const auto & node : dag.getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN)
         {
@@ -76,15 +77,19 @@ void buildSetsForDAG(const ActionsDAGPtr & dag, const ContextPtr & context)
     }
 }
 
-void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
+ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context)
 {
     buildSetsForDAG(dag, context);
-    auto actions = std::make_shared<ExpressionActions>(dag);
+    return std::make_shared<ExpressionActions>(std::move(dag));
+}
+
+void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block)
+{
     Block block_with_filter = block;
     actions->execute(block_with_filter, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
 
     /// Filter the block.
-    String filter_column_name = dag->getOutputs().at(0)->result_name;
+    String filter_column_name = actions->getActionsDAG().getOutputs().at(0)->result_name;
     ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullColumnIfConst();
 
     ConstantFilterDescription constant_filter(*filter_column);
@@ -111,7 +116,7 @@ void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context)
 
 NameSet getVirtualNamesForFileLikeStorage()
 {
-    return {"_path", "_file", "_size"};
+    return {"_path", "_file", "_size", "_time"};
 }
 
 VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns)
@@ -129,6 +134,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription
     add_virtual("_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
     add_virtual("_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
     add_virtual("_size", makeNullable(std::make_shared<DataTypeUInt64>()));
+    add_virtual("_time", makeNullable(std::make_shared<DataTypeDateTime>()));
 
     return desc;
 }
@@ -153,7 +159,7 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
-ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns)
+std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns)
 {
     if (!predicate || virtual_columns.empty())
         return {};
@@ -169,7 +175,7 @@ ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, con
     return splitFilterDagForAllowedInputs(predicate, &block);
 }
 
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ActionsDAGPtr & dag, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns)
 {
     Block block;
     for (const auto & column : virtual_columns)
@@ -182,37 +188,45 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     for (size_t i = 0; i != paths.size(); ++i)
         addPathAndFileToVirtualColumns(block, paths[i], i);
 
-    filterBlockWithDAG(dag, block, context);
+    filterBlockWithExpression(actions, block);
 
     return block.getByName("_idx").column;
 }
 
-void addRequestedPathFileAndSizeVirtualsToChunk(
-    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, std::optional<size_t> size, const String * filename)
+void addRequestedFileLikeStorageVirtualsToChunk(
+    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
+    VirtualsForFileLikeStorage virtual_values)
 {
     for (const auto & virtual_column : requested_virtual_columns)
     {
         if (virtual_column.name == "_path")
         {
-            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), path)->convertToFullColumnIfConst());
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), virtual_values.path)->convertToFullColumnIfConst());
         }
         else if (virtual_column.name == "_file")
         {
-            if (filename)
+            if (virtual_values.filename)
             {
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *filename)->convertToFullColumnIfConst());
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), (*virtual_values.filename))->convertToFullColumnIfConst());
             }
             else
             {
-                size_t last_slash_pos = path.find_last_of('/');
-                auto filename_from_path = path.substr(last_slash_pos + 1);
+                size_t last_slash_pos = virtual_values.path.find_last_of('/');
+                auto filename_from_path = virtual_values.path.substr(last_slash_pos + 1);
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), filename_from_path)->convertToFullColumnIfConst());
             }
         }
         else if (virtual_column.name == "_size")
         {
-            if (size)
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *size)->convertToFullColumnIfConst());
+            if (virtual_values.size)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.size)->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (virtual_column.name == "_time")
+        {
+            if (virtual_values.last_modified)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), virtual_values.last_modified->epochTime())->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
@@ -308,9 +322,9 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
             {
                 if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
                 {
-                    auto index_hint_dag = index_hint->getActions()->clone();
+                    auto index_hint_dag = index_hint->getActions().clone();
                     ActionsDAG::NodeRawConstPtrs atoms;
-                    for (const auto & output : index_hint_dag->getOutputs())
+                    for (const auto & output : index_hint_dag.getOutputs())
                         if (const auto * child_copy = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes))
                             atoms.push_back(child_copy);
 
@@ -321,13 +335,13 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                         if (atoms.size() > 1)
                         {
                             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-                            res = &index_hint_dag->addFunction(func_builder_and, atoms, {});
+                            res = &index_hint_dag.addFunction(func_builder_and, atoms, {});
                         }
 
                         if (!res->result_type->equals(*node->result_type))
-                            res = &index_hint_dag->addCast(*res, node->result_type, {});
+                            res = &index_hint_dag.addCast(*res, node->result_type, {});
 
-                        additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(*index_hint_dag)));
+                        additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(index_hint_dag)));
                         return res;
                     }
                 }
@@ -345,15 +359,15 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
     return node;
 }
 
-ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs)
+std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs)
 {
     if (!predicate)
-        return nullptr;
+        return {};
 
     ActionsDAG::Nodes additional_nodes;
     const auto * res = splitFilterNodeForAllowedInputs(predicate, allowed_inputs, additional_nodes);
     if (!res)
-        return nullptr;
+        return {};
 
     return ActionsDAG::cloneSubDAG({res}, true);
 }
@@ -362,7 +376,7 @@ void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block,
 {
     auto dag = splitFilterDagForAllowedInputs(predicate, &block);
     if (dag)
-        filterBlockWithDAG(dag, block, context);
+        filterBlockWithExpression(buildFilterExpression(std::move(*dag), context), block);
 }
 
 }

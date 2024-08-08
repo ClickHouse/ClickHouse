@@ -1,4 +1,5 @@
 #include <Compression/CompressionFactory.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -18,6 +19,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Storages/StorageView.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
@@ -32,9 +34,9 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <ranges>
 
@@ -1056,7 +1058,7 @@ bool AlterCommand::isRemovingProperty() const
 
 bool AlterCommand::isDropSomething() const
 {
-    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX
+    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX || type == Type::DROP_STATISTICS
         || type == Type::DROP_CONSTRAINT || type == Type::DROP_PROJECTION;
 }
 
@@ -1613,7 +1615,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
     }
 
-    if (all_columns.empty())
+    /// Parameterized views do not have 'columns' in their metadata
+    bool is_parameterized_view = table->as<StorageView>() && table->as<StorageView>()->isParameterizedView();
+
+    if (!is_parameterized_view && all_columns.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);

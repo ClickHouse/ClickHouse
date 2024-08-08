@@ -9,6 +9,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBuffer.h>
@@ -24,7 +25,6 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
-#include "Parsers/ASTSetQuery.h"
 #include <Core/Defines.h>
 #include <Compression/CompressionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -207,6 +207,13 @@ void ColumnDescription::readText(ReadBuffer & buf)
 
             if (col_ast->settings)
                 settings = col_ast->settings->as<ASTSetQuery &>().changes;
+
+            if (col_ast->statistics_desc)
+            {
+                statistics = ColumnStatisticsDescription::fromColumnDeclaration(*col_ast, type);
+                /// every column has name `x` here, so we have to set the name manually.
+                statistics.column_name = name;
+            }
         }
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");
@@ -694,15 +701,15 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
         auto jt = subcolumns.get<0>().find(column_name);
         if (jt != subcolumns.get<0>().end())
             return *jt;
-    }
 
-    /// Check for dynamic subcolumns.
-    auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
-    it = columns.get<1>().find(ordinary_column_name);
-    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
-    {
-        if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
-            return NameAndTypePair(ordinary_column_name, dynamic_subcolumn_name, it->type, dynamic_subcolumn_type);
+        /// Check for dynamic subcolumns.
+        auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
+        it = columns.get<1>().find(ordinary_column_name);
+        if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
+        {
+            if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
+                return NameAndTypePair(ordinary_column_name, dynamic_subcolumn_name, it->type, dynamic_subcolumn_type);
+        }
     }
 
     return {};

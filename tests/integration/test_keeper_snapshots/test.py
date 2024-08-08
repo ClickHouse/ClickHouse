@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-#!/usr/bin/env python3
 import pytest
 from helpers.cluster import ClickHouseCluster
 import helpers.keeper_utils as keeper_utils
@@ -190,7 +189,7 @@ def test_invalid_snapshot(started_cluster):
                 f"/var/lib/clickhouse/coordination/snapshots/{last_snapshot}",
             ]
         )
-        node.start_clickhouse(expected_to_fail=True)
+        node.start_clickhouse(start_wait_sec=120, expected_to_fail=True)
         assert node.contains_in_log(
             "Aborting because of failure to load from latest snapshot with index"
         )

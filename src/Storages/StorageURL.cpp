@@ -36,6 +36,8 @@
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 
@@ -196,7 +198,7 @@ public:
     {
         uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
 
-        ActionsDAGPtr filter_dag;
+        std::optional<ActionsDAG> filter_dag;
         if (!uris.empty())
             filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
@@ -207,7 +209,9 @@ public:
             for (const auto & uri : uris)
                 paths.push_back(Poco::URI(uri).getPath());
 
-            VirtualColumnUtils::filterByPathOrFile(uris, paths, filter_dag, virtual_columns, context);
+            VirtualColumnUtils::buildSetsForDAG(*filter_dag, context);
+            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns);
         }
     }
 
@@ -411,7 +415,12 @@ Chunk StorageURLSource::generate()
             if (input_format)
                 chunk_size = input_format->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
-            VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(chunk, requested_virtual_columns, curr_uri.getPath(), current_file_size);
+            VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
+                chunk, requested_virtual_columns,
+                {
+                    .path = curr_uri.getPath(),
+                    .size = current_file_size
+                });
             return chunk;
         }
 
@@ -455,7 +464,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
         setCredentials(credentials, request_uri);
 
-        const auto settings = context_->getSettings();
+        const auto & settings = context_->getSettingsRef();
 
         auto proxy_config = getProxyConfiguration(request_uri.getScheme());
 
@@ -560,42 +569,36 @@ StorageURLSink::StorageURLSink(
 }
 
 
-void StorageURLSink::consume(Chunk chunk)
+void StorageURLSink::consume(Chunk & chunk)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
         return;
-    writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+    writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
 }
 
 void StorageURLSink::onCancel()
 {
     std::lock_guard lock(cancel_mutex);
-    finalize();
+    cancelBuffers();
+    releaseBuffers();
     cancelled = true;
 }
 
-void StorageURLSink::onException(std::exception_ptr exception)
+void StorageURLSink::onException(std::exception_ptr)
 {
     std::lock_guard lock(cancel_mutex);
-    try
-    {
-        std::rethrow_exception(exception);
-    }
-    catch (...)
-    {
-        /// An exception context is needed to proper delete write buffers without finalization
-        release();
-    }
+    cancelBuffers();
+    releaseBuffers();
 }
 
 void StorageURLSink::onFinish()
 {
     std::lock_guard lock(cancel_mutex);
-    finalize();
+    finalizeBuffers();
 }
 
-void StorageURLSink::finalize()
+void StorageURLSink::finalizeBuffers()
 {
     if (!writer)
         return;
@@ -604,20 +607,29 @@ void StorageURLSink::finalize()
     {
         writer->finalize();
         writer->flush();
-        write_buf->finalize();
     }
     catch (...)
     {
         /// Stop ParallelFormattingOutputFormat correctly.
-        release();
+        releaseBuffers();
         throw;
     }
+
+    write_buf->finalize();
 }
 
-void StorageURLSink::release()
+void StorageURLSink::releaseBuffers()
 {
     writer.reset();
-    write_buf->finalize();
+    write_buf.reset();
+}
+
+void StorageURLSink::cancelBuffers()
+{
+    if (writer)
+        writer->cancel();
+    if (write_buf)
+        write_buf->cancel();
 }
 
 class PartitionedStorageURLSink : public PartitionedSink
@@ -727,7 +739,9 @@ namespace
                     {
                         for (const auto & url : options)
                         {
-                            if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url))
+                            auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url);
+                            /// Use this format only if we have a schema reader for it.
+                            if (format_from_file_name && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file_name))
                             {
                                 format = format_from_file_name;
                                 break;
@@ -1314,7 +1328,7 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
     const Poco::Net::HTTPBasicCredentials & credentials,
     const ContextPtr & context)
 {
-    auto settings = context->getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     auto uri = Poco::URI(url);
 

@@ -150,15 +150,15 @@ A case insensitive invariant of [position](#position).
 Query:
 
 ``` sql
-SELECT position('Hello, world!', 'hello');
+SELECT positionCaseInsensitive('Hello, world!', 'hello');
 ```
 
 Result:
 
 ``` text
-┌─position('Hello, world!', 'hello')─┐
-│                                  0 │
-└────────────────────────────────────┘
+┌─positionCaseInsensitive('Hello, world!', 'hello')─┐
+│                                                 1 │
+└───────────────────────────────────────────────────┘
 ```
 
 ## positionUTF8
@@ -262,7 +262,7 @@ Result:
 
 ## multiSearchAllPositionsUTF8
 
-Like [multiSearchAllPositions](#multiSearchAllPositions) but assumes `haystack` and the `needle` substrings are UTF-8 encoded strings.
+Like [multiSearchAllPositions](#multisearchallpositions) but assumes `haystack` and the `needle` substrings are UTF-8 encoded strings.
 
 **Syntax**
 
@@ -336,7 +336,7 @@ Result:
 
 Like [`position`](#position) but returns the leftmost offset in a `haystack` string which matches any of multiple `needle` strings.
 
-Functions [`multiSearchFirstPositionCaseInsensitive`](#multiSearchFirstPositionCaseInsensitive), [`multiSearchFirstPositionUTF8`](#multiSearchFirstPositionUTF8) and [`multiSearchFirstPositionCaseInsensitiveUTF8`](#multiSearchFirstPositionCaseInsensitiveUTF8) provide case-insensitive and/or UTF-8 variants of this function.
+Functions [`multiSearchFirstPositionCaseInsensitive`](#multisearchfirstpositioncaseinsensitive), [`multiSearchFirstPositionUTF8`](#multisearchfirstpositionutf8) and [`multiSearchFirstPositionCaseInsensitiveUTF8`](#multisearchfirstpositioncaseinsensitiveutf8) provide case-insensitive and/or UTF-8 variants of this function.
 
 **Syntax**
 
@@ -370,7 +370,7 @@ Result:
 
 ## multiSearchFirstPositionCaseInsensitive
 
-Like [`multiSearchFirstPosition`](#multiSearchFirstPosition) but ignores case.
+Like [`multiSearchFirstPosition`](#multisearchfirstposition) but ignores case.
 
 **Syntax**
 
@@ -404,7 +404,7 @@ Result:
 
 ## multiSearchFirstPositionUTF8
 
-Like [`multiSearchFirstPosition`](#multiSearchFirstPosition) but assumes `haystack` and `needle` to be UTF-8 strings.
+Like [`multiSearchFirstPosition`](#multisearchfirstposition) but assumes `haystack` and `needle` to be UTF-8 strings.
 
 **Syntax**
 
@@ -440,7 +440,7 @@ Result:
 
 ## multiSearchFirstPositionCaseInsensitiveUTF8
 
-Like [`multiSearchFirstPosition`](#multiSearchFirstPosition) but assumes `haystack` and `needle` to be UTF-8 strings and ignores case.
+Like [`multiSearchFirstPosition`](#multisearchfirstposition) but assumes `haystack` and `needle` to be UTF-8 strings and ignores case.
 
 **Syntax**
 
@@ -478,7 +478,7 @@ Result:
 
 Returns the index `i` (starting from 1) of the leftmost found needle<sub>i</sub> in the string `haystack` and 0 otherwise.
 
-Functions [`multiSearchFirstIndexCaseInsensitive`](#multiSearchFirstIndexCaseInsensitive), [`multiSearchFirstIndexUTF8`](#multiSearchFirstIndexUTF8) and [`multiSearchFirstIndexCaseInsensitiveUTF8`](#multiSearchFirstIndexCaseInsensitiveUTF8) provide case-insensitive and/or UTF-8 variants of this function.
+Functions [`multiSearchFirstIndexCaseInsensitive`](#multisearchfirstindexcaseinsensitive), [`multiSearchFirstIndexUTF8`](#multisearchfirstindexutf8) and [`multiSearchFirstIndexCaseInsensitiveUTF8`](#multisearchfirstindexcaseinsensitiveutf8) provide case-insensitive and/or UTF-8 variants of this function.
 
 **Syntax**
 
@@ -615,7 +615,7 @@ Result:
 
 Returns 1, if at least one string needle<sub>i</sub> matches the string `haystack` and 0 otherwise.
 
-Functions [`multiSearchAnyCaseInsensitive`](#multiSearchAnyCaseInsensitive), [`multiSearchAnyUTF8`](#multiSearchAnyUTF8) and []`multiSearchAnyCaseInsensitiveUTF8`](#multiSearchAnyCaseInsensitiveUTF8) provide case-insensitive and/or UTF-8 variants of this function.
+Functions [`multiSearchAnyCaseInsensitive`](#multisearchanycaseinsensitive), [`multiSearchAnyUTF8`](#multisearchanyutf8) and [`multiSearchAnyCaseInsensitiveUTF8`](#multisearchanycaseinsensitiveutf8) provide case-insensitive and/or UTF-8 variants of this function.
 
 **Syntax**
 
@@ -719,7 +719,7 @@ Result:
 
 ## multiSearchAnyCaseInsensitiveUTF8
 
-Like [multiSearchAnyUTF8](#multiSearchAnyUTF8) but ignores case.
+Like [multiSearchAnyUTF8](#multisearchanyutf8) but ignores case.
 
 *Syntax**
 
@@ -880,7 +880,7 @@ extractAll(haystack, pattern)
 
 Matches all groups of the `haystack` string using the `pattern` regular expression. Returns an array of arrays, where the first array includes all fragments matching the first group, the second array - matching the second group, etc.
 
-This function is slower than [extractAllGroupsVertical](#extractallgroups-vertical).
+This function is slower than [extractAllGroupsVertical](#extractallgroupsvertical).
 
 **Syntax**
 
@@ -952,7 +952,7 @@ Result:
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## like {#like}
+## like
 
 Returns whether string `haystack` matches the LIKE expression `pattern`.
 
@@ -1215,7 +1215,7 @@ Result:
 
 ## ngramSearchCaseInsensitive
 
-Provides a case-insensitive variant of [ngramSearch](#ngramSearch).
+Provides a case-insensitive variant of [ngramSearch](#ngramsearch).
 
 **Syntax**
 
@@ -1630,7 +1630,7 @@ Result:
 
 ## hasSubsequenceCaseInsensitive
 
-Like [hasSubsequence](#hasSubsequence) but searches case-insensitively.
+Like [hasSubsequence](#hassubsequence) but searches case-insensitively.
 
 **Syntax**
 
@@ -1665,7 +1665,7 @@ Result:
 
 ## hasSubsequenceUTF8
 
-Like [hasSubsequence](#hasSubsequence) but assumes `haystack` and `needle` are UTF-8 encoded strings.
+Like [hasSubsequence](#hassubsequence) but assumes `haystack` and `needle` are UTF-8 encoded strings.
 
 **Syntax**
 
@@ -1700,7 +1700,7 @@ Result:
 
 ## hasSubsequenceCaseInsensitiveUTF8
 
-Like [hasSubsequenceUTF8](#hasSubsequenceUTF8) but searches case-insensitively.
+Like [hasSubsequenceUTF8](#hassubsequenceutf8) but searches case-insensitively.
 
 **Syntax**
 

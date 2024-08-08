@@ -5,22 +5,25 @@
 
 #include <base/hex.h>
 #include <base/interpolate.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/StringUtils.h>
+#include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
+#include <Common/randomDelay.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
-#include <Common/ThreadFuzzer.h>
-#include <Common/FailPoint.h>
-#include <Common/randomDelay.h>
 
+#include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
+#include <Core/Settings.h>
 
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 
@@ -39,6 +42,7 @@
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
@@ -1512,7 +1516,7 @@ static time_t tryGetPartCreateTime(zkutil::ZooKeeperPtr & zookeeper, const Strin
 
 void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(const Strings & parts_in_zk, const Strings & parts_to_fetch) const
 {
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     constexpr bool paranoid_check_for_covered_parts_default = true;
 #else
     constexpr bool paranoid_check_for_covered_parts_default = false;
@@ -2379,7 +2383,7 @@ static void paranoidCheckForCoveredPartsInZooKeeper(
     const String & covering_part_name,
     const StorageReplicatedMergeTree & storage)
 {
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
     constexpr bool paranoid_check_for_covered_parts_default = true;
 #else
     constexpr bool paranoid_check_for_covered_parts_default = false;
@@ -3936,7 +3940,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         merge_selecting_task->schedule();
     else
     {
-        LOG_TRACE(log, "Scheduling next merge selecting task after {}ms", merge_selecting_sleep_ms);
+        LOG_TRACE(log, "Scheduling next merge selecting task after {}ms, current attempt status: {}", merge_selecting_sleep_ms, result);
         merge_selecting_task->scheduleAfter(merge_selecting_sleep_ms);
     }
 }
@@ -5272,6 +5276,8 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
     if (shutdown_prepared_called.exchange(true))
         return;
 
+    LOG_TRACE(log, "Start preparing for shutdown");
+
     try
     {
         auto settings_ptr = getSettings();
@@ -5282,7 +5288,11 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
         stopBeingLeader();
 
         if (attach_thread)
+        {
             attach_thread->shutdown();
+            LOG_TRACE(log, "The attach thread is shutdown");
+        }
+
 
         restarting_thread.shutdown(/* part_of_full_shutdown */true);
         /// Explicitly set the event, because the restarting thread will not set it again
@@ -5295,6 +5305,8 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
         shutdown_deadline.emplace(std::chrono::system_clock::now());
         throw;
     }
+
+    LOG_TRACE(log, "Finished preparing for shutdown");
 }
 
 void StorageReplicatedMergeTree::partialShutdown()
@@ -5331,6 +5343,8 @@ void StorageReplicatedMergeTree::shutdown(bool)
 {
     if (shutdown_called.exchange(true))
         return;
+
+    LOG_TRACE(log, "Shutdown started");
 
     flushAndPrepareForShutdown();
 
@@ -5374,6 +5388,7 @@ void StorageReplicatedMergeTree::shutdown(bool)
         /// Wait for all of them
         std::lock_guard lock(data_parts_exchange_ptr->rwlock);
     }
+    LOG_TRACE(log, "Shutdown finished");
 }
 
 
@@ -5460,12 +5475,45 @@ void StorageReplicatedMergeTree::read(
     /// 2. Do not read parts that have not yet been written to the quorum of the replicas.
     /// For this you have to synchronously go to ZooKeeper.
     if (settings.select_sequential_consistency)
+    {
         readLocalSequentialConsistencyImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams);
-    else if (local_context->canUseParallelReplicasOnInitiator())
+        return;
+    }
+    /// reading step for parallel replicas with new analyzer is built in Planner, so don't do it here
+    if (local_context->canUseParallelReplicasOnInitiator() && !settings.allow_experimental_analyzer)
+    {
         readParallelReplicasImpl(query_plan, column_names, query_info, local_context, processed_stage);
-    else
-        readLocalImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams);
-}
+        return;
+    }
+
+    if (local_context->canUseParallelReplicasCustomKey() && !settings.allow_experimental_analyzer
+        && local_context->getClientInfo().distributed_depth == 0)
+    {
+        if (auto cluster = local_context->getClusterForParallelReplicas();
+            local_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
+        {
+            auto modified_query_info = query_info;
+            modified_query_info.cluster = std::move(cluster);
+            ClusterProxy::executeQueryWithParallelReplicasCustomKey(
+                query_plan,
+                getStorageID(),
+                std::move(modified_query_info),
+                getInMemoryMetadataPtr()->getColumns(),
+                storage_snapshot,
+                processed_stage,
+                query_info.query,
+                local_context);
+            return;
+        }
+        else
+            LOG_WARNING(
+                log,
+                "Parallel replicas with custom key will not be used because cluster defined by 'cluster_for_parallel_replicas' ('{}') has "
+                "multiple shards",
+                cluster->getName());
+    }
+
+    readLocalImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams); }
 
 void StorageReplicatedMergeTree::readLocalSequentialConsistencyImpl(
     QueryPlan & query_plan,
@@ -5493,36 +5541,8 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage)
 {
-    ASTPtr modified_query_ast;
-    Block header;
-    const auto table_id = getStorageID();
-
-    if (local_context->getSettingsRef().allow_experimental_analyzer)
-    {
-        QueryTreeNodePtr modified_query_tree = query_info.query_tree->clone();
-        rewriteJoinToGlobalJoin(modified_query_tree, local_context);
-        modified_query_tree = buildQueryTreeForShard(query_info.planner_context, modified_query_tree);
-
-        header = InterpreterSelectQueryAnalyzer::getSampleBlock(
-            modified_query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
-        modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
-    }
-    else
-    {
-        modified_query_ast = ClusterProxy::rewriteSelectQuery(local_context, query_info.query,
-            table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
-        header
-            = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
-    }
-
     ClusterProxy::executeQueryWithParallelReplicas(
-        query_plan,
-        table_id,
-        header,
-        processed_stage,
-        modified_query_ast,
-        local_context,
-        query_info.storage_limits);
+        query_plan, getStorageID(), processed_stage, query_info.query, local_context, query_info.storage_limits);
 }
 
 void StorageReplicatedMergeTree::readLocalImpl(
@@ -5535,7 +5555,8 @@ void StorageReplicatedMergeTree::readLocalImpl(
     const size_t num_streams)
 {
     const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
-        && (!local_context->getSettingsRef().allow_experimental_analyzer || query_info.analyzer_can_use_parallel_replicas_on_follower);
+        && (!local_context->getSettingsRef().allow_experimental_analyzer
+            || query_info.current_table_chosen_for_reading_with_parallel_replicas);
 
     auto plan = reader.read(
         column_names, storage_snapshot, query_info,
@@ -5583,7 +5604,7 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRows(const Settings & set
     return res;
 }
 
-std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr local_context) const
+std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
 {
     DataPartsVector parts;
     foreachActiveParts([&](auto & part) { parts.push_back(part); }, local_context->getSettingsRef().select_sequential_consistency);
@@ -5683,7 +5704,7 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
         {
             auto connection = std::make_shared<Connection>(
                 node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, SSHKey(), node.quota_key, node.cluster, node.cluster_secret,
+                node.user, node.password, SSHKey(), /*jwt*/"", node.quota_key, node.cluster, node.cluster_secret,
                 "ParallelInsertSelectInititiator",
                 node.compression,
                 node.secure
@@ -5772,6 +5793,12 @@ bool StorageReplicatedMergeTree::optimize(
 
     if (!is_leader)
         throw Exception(ErrorCodes::NOT_A_LEADER, "OPTIMIZE cannot be done on this replica because it is not a leader");
+
+    if (deduplicate && getInMemoryMetadataPtr()->hasProjections())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
+                    "User should drop all the projections manually before running the query",
+                    getStorageID().getTableName());
 
     if (cleanup)
     {
@@ -7336,7 +7363,7 @@ void StorageReplicatedMergeTree::fetchPartition(
         if (try_no)
             LOG_INFO(log, "Some of parts ({}) are missing. Will try to fetch covering parts.", missing_parts.size());
 
-        if (try_no >= query_context->getSettings().max_fetch_partition_retries_count)
+        if (try_no >= query_context->getSettingsRef().max_fetch_partition_retries_count)
             throw Exception(ErrorCodes::TOO_MANY_RETRIES_TO_FETCH_PARTS,
                 "Too many retries to fetch parts from {}:{}", from_zookeeper_name, best_replica_path);
 

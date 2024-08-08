@@ -3,35 +3,9 @@ add_subdirectory(divide)
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_functions .)
 
-set(DBMS_FUNCTIONS
-    IFunction.cpp
-    FunctionFactory.cpp
-    FunctionHelpers.cpp
-    extractTimeZoneFromFunctionArguments.cpp
-    FunctionsLogical.cpp
-    if.cpp
-    multiIf.cpp
-    multiMatchAny.cpp
-    checkHyperscanRegexp.cpp
-    array/has.cpp
-    CastOverloadResolver.cpp
-    # Provides dependency for cast - createFunctionBaseCast()
-    FunctionsConversion.cpp
-)
-extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
-extract_into_parent_list(clickhouse_functions_headers dbms_headers
-    IFunction.h
-    FunctionFactory.h
-    FunctionHelpers.h
-    extractTimeZoneFromFunctionArguments.h
-    FunctionsLogical.h
-    CastOverloadResolver.h
-)
-
 add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_headers} ${clickhouse_functions_sources})
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
     target_compile_options(clickhouse_functions_obj PRIVATE "-g0")
-    set_source_files_properties(${DBMS_FUNCTIONS} DIRECTORY .. PROPERTIES COMPILE_FLAGS "-g0")
 endif()
 
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_obj>)

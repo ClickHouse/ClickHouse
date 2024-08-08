@@ -23,11 +23,13 @@
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Core/Settings.h>
 
 
 namespace fs = std::filesystem;
@@ -307,6 +309,16 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
     try
     {
         FS::createFile(detached_permanently_flag);
+
+        std::lock_guard lock(mutex);
+        if (const auto it = snapshot_detached_tables.find(table_name); it == snapshot_detached_tables.end())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Snapshot doesn't contain info about detached table `{}`", table_name);
+        }
+        else
+        {
+            it->second.is_permanently = true;
+        }
     }
     catch (Exception & e)
     {
@@ -522,7 +534,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 {
     ASTPtr ast;
 
-    auto settings = getContext()->getSettingsRef();
+    const auto & settings = getContext()->getSettingsRef();
     {
         std::lock_guard lock(mutex);
         auto database_metadata_path = getContext()->getPath() + "metadata/" + escapeForFileName(database_name) + ".sql";
@@ -721,7 +733,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
         return nullptr;
     }
 
-    auto settings = local_context->getSettingsRef();
+    const auto & settings = local_context->getSettingsRef();
     ParserCreateQuery parser;
     const char * pos = query.data();
     std::string error_message;
@@ -794,7 +806,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
         throw_on_error);
 
     create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
-                            std::make_shared<ASTLiteral>("SYSTEM TABLE is built on the fly."));
+                            std::make_shared<ASTLiteral>(storage->getInMemoryMetadata().comment));
 
     return create_table_query;
 }

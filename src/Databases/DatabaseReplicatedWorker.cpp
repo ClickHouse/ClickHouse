@@ -3,6 +3,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
+#include <Core/Settings.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -421,6 +422,8 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     {
         /// Some replica is added or removed, let's update cached cluster
         database->setCluster(database->getClusterImpl());
+        if (!database->replica_group_name.empty())
+            database->setCluster(database->getClusterImpl(/*all_groups*/ true), /*all_groups*/ true);
         out_reason = fmt::format("Entry {} is a dummy task", entry_name);
         return {};
     }

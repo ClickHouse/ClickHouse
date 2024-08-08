@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteSettings.h>
 
@@ -13,17 +14,16 @@ namespace ErrorCodes
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
-    const Block & header_,
+    const NamesAndTypesList & columns_list_,
     CompressionCodecPtr default_codec,
     const MergeTreeIndices & indices_to_recalc,
     const ColumnsStatistics & stats_to_recalc_,
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
-    : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, header_.getNamesAndTypesList(), /*reset_columns=*/ true)
-    , header(header_)
+    : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, /*reset_columns=*/ true)
 {
-    const auto & global_settings = data_part->storage.getContext()->getSettings();
+    const auto & global_settings = data_part->storage.getContext()->getSettingsRef();
 
     MergeTreeWriterSettings writer_settings(
         global_settings,
@@ -37,7 +37,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         data_part->name, data_part->storage.getLogName(), data_part->getSerializations(),
         data_part_storage, data_part->index_granularity_info,
         storage_settings,
-        header.getNamesAndTypesList(),
+        columns_list_,
         data_part->getColumnPositions(),
         metadata_snapshot_,
         data_part->storage.getVirtualsPtr(),

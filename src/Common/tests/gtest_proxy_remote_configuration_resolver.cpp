@@ -42,6 +42,7 @@ TEST(RemoteProxyConfigurationResolver, HTTPOverHTTP)
     RemoteProxyConfigurationResolver resolver(
         remote_server_configuration,
         ProxyConfiguration::Protocol::HTTP,
+        "",
         std::make_shared<RemoteProxyHostFetcherMock>(proxy_server_mock)
     );
 
@@ -68,6 +69,7 @@ TEST(RemoteProxyConfigurationResolver, HTTPSOverHTTPS)
     RemoteProxyConfigurationResolver resolver(
         remote_server_configuration,
         ProxyConfiguration::Protocol::HTTPS,
+        "",
         std::make_shared<RemoteProxyHostFetcherMock>(proxy_server_mock)
     );
 
@@ -95,6 +97,7 @@ TEST(RemoteProxyConfigurationResolver, HTTPSOverHTTP)
     RemoteProxyConfigurationResolver resolver(
         remote_server_configuration,
         ProxyConfiguration::Protocol::HTTPS,
+        "",
         std::make_shared<RemoteProxyHostFetcherMock>(proxy_server_mock)
     );
 
@@ -122,6 +125,7 @@ TEST(RemoteProxyConfigurationResolver, HTTPSOverHTTPNoTunneling)
     RemoteProxyConfigurationResolver resolver(
         remote_server_configuration,
         ProxyConfiguration::Protocol::HTTPS,
+        "",
         std::make_shared<RemoteProxyHostFetcherMock>(proxy_server_mock),
         true /* disable_tunneling_for_https_requests_over_http_proxy_ */
     );
@@ -153,6 +157,7 @@ TEST(RemoteProxyConfigurationResolver, SimpleCacheTest)
     RemoteProxyConfigurationResolver resolver(
         remote_server_configuration,
         ProxyConfiguration::Protocol::HTTP,
+        "",
         fetcher_mock
     );
 
