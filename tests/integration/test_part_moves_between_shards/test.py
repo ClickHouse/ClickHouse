@@ -599,4 +599,3 @@ class ConcurrentInvariant:
     def _assert_started(self):
         if not self.started:
             raise Exception("invariant thread not started, forgot to call start?")
-        

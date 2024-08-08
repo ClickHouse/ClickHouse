@@ -106,16 +106,14 @@ std::optional<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsO
 
 
     for(String & signaled_entry : signaled_entries){
-
         Entry entry_to_process;
-       
         Coordination::Stat stat;
         entry_to_process.znode_path = entries_znode_path + "/tasks/" + signaled_entry;
         auto entry_str = zk->get(entry_to_process.znode_path, &stat);
         entry_to_process.fromString(entry_str);
         entry_to_process.version = stat.version;
         entry_to_process.znode_name = signaled_entry;
-
+        
         try
         {
             zk->create(entry_to_process.znode_path + "/replica", storage.replica_name, zkutil::CreateMode::Ephemeral);
@@ -151,7 +149,7 @@ void PartMovesBetweenShardsOrchestrator::step(Entry & entry)
         if(entry.state.value == current_state.value)
         {
            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process the step entry with out quorum success for state {}", entry.state.value);
-        } 
+        }
     }
     Coordination::Requests ops;
 
@@ -273,7 +271,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(Entry & entry)
                 Coordination::Responses responses;
                 Coordination::Error rc = zk->tryMulti(ops, responses);
                 zkutil::KeeperMultiException::check(rc, ops, responses);
-                LOG_DEBUG(log, "Pushed log entry for task {} and state {}", entry.znode_name, entry.state.toString());  
+                LOG_DEBUG(log, "Pushed log entry for task {} and state {}", entry.znode_name, entry.state.toString());
             }
             break;
         }
