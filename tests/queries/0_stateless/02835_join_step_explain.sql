@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS test_table_1;
 CREATE TABLE test_table_1
