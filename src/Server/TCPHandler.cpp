@@ -365,9 +365,6 @@ void TCPHandler::runImpl()
 
         try
         {
-            /// If a user passed query-local timeouts, reset socket to initial state at the end of the query
-            SCOPE_EXIT({state.timeout_setter.reset();});
-
             /** If Query - process it. If Ping or Cancel - go back to the beginning.
              *  There may come settings for a separate query that modify `query_context`.
              *  It's possible to receive part uuids packet before the query, so then receivePacket has to be called twice.
@@ -397,7 +394,8 @@ void TCPHandler::runImpl()
             /// So it's better to update the connection settings for flexibility.
             extractConnectionSettingsFromContext(query_context);
 
-            /// Sync timeouts on client and server during current query to avoid dangling queries on server
+            /// Sync timeouts on client and server during current query to avoid dangling queries on server.
+            /// It should be reset at the end of query.
             state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), send_timeout, receive_timeout);
 
             /// Should we send internal logs to client?
@@ -558,7 +556,9 @@ void TCPHandler::runImpl()
                             std::scoped_lock lock(out_mutex, task_callback_mutex);
 
                             if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
+                            {
                                 return true;
+                            }
 
                             sendProgress();
                             sendSelectProfileEvents();
@@ -605,6 +605,7 @@ void TCPHandler::runImpl()
             /// QueryState should be cleared before QueryScope, since otherwise
             /// the MemoryTracker will be wrong for possible deallocations.
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
+            /// Also it resets socket's timeouts.
             state.reset();
             last_sent_snapshots = ProfileEvents::ThreadIdToCountersSnapshot{};
             query_scope.reset();
@@ -629,6 +630,9 @@ void TCPHandler::runImpl()
 
             state.io.onException();
             exception.reset(e.clone());
+
+            /// In case of exception state was not reset, so socket's timouts must be reset explicitly
+            state.timeout_setter.reset();
 
             if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
                 throw;
@@ -687,6 +691,9 @@ void TCPHandler::runImpl()
             state.io.onException();
             exception = std::make_unique<DB::Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
         }
+
+        /// In case of exception state was not reset, so socket's timouts must be reset explicitly
+        state.timeout_setter.reset();
 
         try
         {

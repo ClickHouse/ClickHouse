@@ -247,6 +247,7 @@ DoubleDelta
 Doxygen
 Durre
 ECMA
+ETag
 Ecto
 EdgeAngle
 EdgeLengthKm
@@ -1587,6 +1588,7 @@ enum's
 enums
 erfc
 errorCodeToName
+etag
 evalMLMethod
 exFAT
 expiryMsec
@@ -2282,6 +2284,7 @@ prettyspacemonoblock
 prettyspacenoescapes
 prettyspacenoescapesmonoblock
 prewhere
+printf
 privateKeyFile
 privateKeyPassphraseHandler
 prlimit

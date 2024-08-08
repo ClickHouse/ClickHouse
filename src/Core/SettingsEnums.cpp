@@ -178,6 +178,11 @@ IMPLEMENT_SETTING_ENUM(LightweightMutationProjectionMode, ErrorCodes::BAD_ARGUME
      {"drop", LightweightMutationProjectionMode::DROP},
      {"rebuild", LightweightMutationProjectionMode::REBUILD}})
 
+IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", DeduplicateMergeProjectionMode::THROW},
+     {"drop", DeduplicateMergeProjectionMode::DROP},
+     {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
+
 IMPLEMENT_SETTING_AUTO_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_ENUM(ParquetVersion, ErrorCodes::BAD_ARGUMENTS,

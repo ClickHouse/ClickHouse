@@ -13,9 +13,8 @@ node = cluster.add_instance(
 )
 
 system_logs = [
-    # disabled by default
-    ("system.text_log", 0),
     # enabled by default
+    ("system.text_log", 1),
     ("system.query_log", 1),
     ("system.query_thread_log", 1),
     ("system.part_log", 1),
