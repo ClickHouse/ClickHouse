@@ -46,9 +46,11 @@ void PartMovesBetweenShardsOrchestrator::run()
 
     try
     {
-        if (storage.is_leader){
+        if (storage.is_leader)
+        {
             std::optional<Entry> selected_entry = selectEntryFromZk();
-            if (selected_entry.has_value()){
+            if (selected_entry.has_value())
+            {
                 /// Schedule for immediate re-execution as likely there is more work
                 /// to be done.
                 step(selected_entry.value());
@@ -104,7 +106,8 @@ std::optional<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsO
 
     Strings signaled_entries = zk->getChildren(entries_znode_path + "/task_queue");
 
-    for (String & signaled_entry : signaled_entries){
+    for (String & signaled_entry : signaled_entries)
+    {
         Entry entry_to_process;
         Coordination::Stat stat;
         entry_to_process.znode_path = entries_znode_path + "/tasks/" + signaled_entry;
@@ -123,7 +126,8 @@ std::optional<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsO
             if (e.code == Coordination::Error::ZNODEEXISTS)
             {
                 LOG_DEBUG(log, "Task {} is being processed by another replica", entry_to_process.znode_name);
-            } else {
+            } else 
+            {
                 throw;
             }
         }
@@ -143,7 +147,8 @@ void PartMovesBetweenShardsOrchestrator::step(Entry & entry)
 
     EntryState current_state = entry.state;
 
-    if (!entry.rollback){
+    if (!entry.rollback)
+    {
         entry.state = getNextState(entry);
         if (entry.state.value == current_state.value)
         {
@@ -177,10 +182,10 @@ void PartMovesBetweenShardsOrchestrator::step(Entry & entry)
 
 PartMovesBetweenShardsOrchestrator::EntryState PartMovesBetweenShardsOrchestrator::getNextState(Entry & entry) const
 {
-    if (entry.state.value == EntryState::TODO  || entry.replicas.size() == entry.required_number_of_replicas){
+    if (entry.state.value == EntryState::TODO  || entry.replicas.size() == entry.required_number_of_replicas)
+    {
         return EntryState::nextState(entry.state.value);
     }
-
     return entry.state;
 }
 

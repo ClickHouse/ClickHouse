@@ -3652,11 +3652,13 @@ void StorageReplicatedMergeTree::updateMovePartTask(const LogEntry & logEntry, b
     auto zookeeper = getZooKeeper();
     String value;
     Coordination::Stat stat;
-    if (!result){
+    if (!result)
+    {
         LOG_DEBUG(log, "Task {} failed to execute {} on replica {} ", logEntry.task_name, logEntry.typeToString(), replica_name);
         return;
     }
-    while (zookeeper->tryGet(fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name, value, &stat)){
+    while (zookeeper->tryGet(fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name, value, &stat))
+    {
         PartMovesBetweenShardsOrchestrator::Entry entry;
         entry.fromString(value);
         entry.replicas.push_back(replica_name);
@@ -3664,7 +3666,8 @@ void StorageReplicatedMergeTree::updateMovePartTask(const LogEntry & logEntry, b
         Coordination::Requests ops;
         Coordination::Responses responses;
         ops.emplace_back(zkutil::makeSetRequest(fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name, entry.toString(), stat.version));
-        if (entry.replicas.size() == entry.required_number_of_replicas){
+        if (entry.replicas.size() == entry.required_number_of_replicas)
+        {
             ops.emplace_back(zkutil::makeCreateRequest(fs::path(logEntry.task_entry_zk_path) / "task_queue" / logEntry.task_name, replica_name, zkutil::CreateMode::Persistent, true));
         }
 
@@ -3678,7 +3681,8 @@ void StorageReplicatedMergeTree::updateMovePartTask(const LogEntry & logEntry, b
             /// Node was updated meanwhile. We must re-read it and repeat all the actions.
             continue;
         }
-        else {
+        else 
+        {
             throw Coordination::Exception::fromPath(code, fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name);
         }
     }
@@ -3692,7 +3696,8 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
         try
         {
             bool result =  executeLogEntry(*entry_to_process);
-            if (!entry_to_process->task_name.empty()){
+            if (!entry_to_process->task_name.empty())
+            {
                 updateMovePartTask(*entry_to_process, result);
             }
             return result;
