@@ -200,7 +200,7 @@ retry=1
 while [ $retry -le $max_retries ]; do
     echo "clickminio restart attempt $retry:"
 
-    output=$(mc admin service restart clickminio 2>&1)
+    output=$(./mc admin service restart clickminio 2>&1)
     echo "$output"
 
     if echo "$output" | grep -q "Restarted \`clickminio\` successfully in 1 seconds"; then
