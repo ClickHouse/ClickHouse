@@ -283,7 +283,7 @@ static void initRowsBeforeAggregation(std::shared_ptr<Processors> processors, IO
     if (!processors->empty())
     {
         RowsBeforeStepCounterPtr rows_before_aggregation = std::make_shared<RowsBeforeStepCounter>();
-        for (auto processor : *processors)
+        for (const auto & processor : *processors)
         {
             if (typeid_cast<AggregatingTransform *>(processor.get()) || typeid_cast<AggregatingInOrderTransform *>(processor.get()))
             {
@@ -545,7 +545,7 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     extremes = nullptr;
 
     initRowsBeforeLimit(format.get());
-    for (const auto context : resources.interpreter_context)
+    for (const auto & context : resources.interpreter_context)
     {
         if (context->getSettingsRef().rows_before_aggregation)
         {
