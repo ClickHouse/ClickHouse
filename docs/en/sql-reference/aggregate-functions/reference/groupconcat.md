@@ -10,7 +10,7 @@ Calculates a concatenated string from a group of strings, optionally separated b
 **Syntax**
 
 ``` sql
-groupConcat(expression [, delimiter] [, limit]);
+groupConcat[(delimiter [, limit])](expression);
 ```
 
 **Arguments**
@@ -20,7 +20,7 @@ groupConcat(expression [, delimiter] [, limit]);
 - `limit` — A positive [integer](../../../sql-reference/data-types/int-uint.md) specifying the maximum number of elements to concatenate. If more elements are present, excess elements are ignored. This parameter is optional.
 
 :::note
-If delimiter is specified without limit, it must be the first parameter following the expression. If both delimiter and limit are specified, delimiter must precede limit.
+If delimiter is specified without limit, it must be the first parameter. If both delimiter and limit are specified, delimiter must precede limit.
 :::
 
 **Returned value**
@@ -61,7 +61,7 @@ This concatenates all names into one continuous string without any separator.
 Query:
 
 ``` sql
-SELECT groupConcat(Name, ', ', 2) FROM Employees;
+SELECT groupConcat(', ')(Name)  FROM Employees;
 ```
 
 Result:
@@ -78,7 +78,7 @@ This output shows the names separated by a comma followed by a space.
 Query:
 
 ``` sql
-SELECT groupConcat(Name, ', ', 2) FROM Employees;
+SELECT groupConcat(', ', 2)(Name) FROM Employees;
 ```
 
 Result:
