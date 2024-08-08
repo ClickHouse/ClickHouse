@@ -375,7 +375,7 @@ void PipelineExecutor::spawnThreads()
             catch (...)
             {
                 /// In case of exception from executor itself, stop other threads.
-                finish();
+                cancel();
                 tasks.getThreadContext(thread_num).setException(std::current_exception());
             }
         });

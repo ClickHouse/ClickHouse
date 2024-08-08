@@ -90,6 +90,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 
     ParserExpression expr_parser;
 
+    executor.sendQuery();
     while (Block current = executor.readBlock())
     {
         ColumnPtr name = current.getByName("name").column;
@@ -197,6 +198,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
 
         executor.setPoolMode(PoolMode::GET_ONE);
         executor.setMainTable(remote_table_id);
+        executor.sendQuery();
 
         ColumnsDescription res;
         while (auto block = executor.readBlock())
