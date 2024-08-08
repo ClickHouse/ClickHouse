@@ -1,7 +1,7 @@
 ---
 slug: /en/sql-reference/window-functions/lagInFrame
 sidebar_label: lagInFrame
-sidebar_position: 8
+sidebar_position: 9
 ---
 
 # lagInFrame
