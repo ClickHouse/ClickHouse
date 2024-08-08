@@ -18,7 +18,7 @@
     M(ErrorLog,              error_log,            "Contains history of error values from table system.errors, periodically flushed to disk.") \
     M(FilesystemCacheLog,    filesystem_cache_log, "Contains a history of all events occurred with filesystem cache for objects on a remote filesystem.") \
     M(FilesystemReadPrefetchesLog, filesystem_read_prefetches_log, "Contains a history of all prefetches done during reading from MergeTables backed by a remote filesystem.") \
-    M(ObjectStorageQueueLog, s3_queue_log,         "Contains logging entries with the information files processes by S3Queue engine.") \
+    M(ObjectStorageQueueLog, s3queue_log,          "Contains logging entries with the information files processes by S3Queue engine.") \
     M(ObjectStorageQueueLog, azure_queue_log,      "Contains logging entries with the information files processes by S3Queue engine.") \
     M(AsynchronousMetricLog, asynchronous_metric_log, "Contains the historical values for system.asynchronous_metrics, once per time interval (one second by default).") \
     M(OpenTelemetrySpanLog,  opentelemetry_span_log, "Contains information about trace spans for executed queries.") \

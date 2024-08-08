@@ -24,8 +24,7 @@ def start_cluster():
 
 def test_system_logs_exists():
     system_logs = [
-        # disabled by default
-        ("system.text_log", 0),
+        ("system.text_log", 1),
         ("system.query_log", 1),
         ("system.query_thread_log", 1),
         ("system.part_log", 1),

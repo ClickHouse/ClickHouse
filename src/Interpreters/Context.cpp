@@ -4256,7 +4256,7 @@ std::shared_ptr<ObjectStorageQueueLog> Context::getS3QueueLog() const
     if (!shared->system_logs)
         return {};
 
-    return shared->system_logs->s3_queue_log;
+    return shared->system_logs->s3queue_log;
 }
 
 std::shared_ptr<ObjectStorageQueueLog> Context::getAzureQueueLog() const
