@@ -103,7 +103,10 @@ INSERT INTO tab2 select toString(number), number, number, cast(number, 'DateTime
 SELECT count(*) FROM tab2 WHERE a = '0';
 SELECT count(*) FROM tab2 WHERE a = 0; -- { serverError NO_COMMON_TYPE }
 
+SELECT count(*) FROM tab2 WHERE b = 1;
+SELECT count(*) FROM tab2 WHERE b = '1';
 SELECT count(*) FROM tab2 WHERE b = 1.1;
+SELECT count(*) FROM tab2 WHERE b = '1.1'; -- { serverError TYPE_MISMATCH }
 
 SELECT count(*) FROM tab2 WHERE c = 1.1;
 SELECT count(*) FROM tab2 WHERE c = 1000; -- out of range of UInt16

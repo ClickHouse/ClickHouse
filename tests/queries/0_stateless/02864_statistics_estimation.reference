@@ -24,6 +24,8 @@ Test statistics multi-types:
           Prewhere filter column: and(equals(a, \'10000\'), equals(b, 0), less(c, 0), greater(d, _CAST(1, \'DateTime\'))) (removed)
 Test statistics implicitly type conversion:
 1
+1
+1
 0
 0
 0
