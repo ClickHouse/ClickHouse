@@ -84,12 +84,18 @@ public:
         return result;
     }
 
-    void append(Self && other)
+    // append items for other inscnace only if there is no such item in current instance
+    void appendIfUniq(Self && other)
     {
         auto middle_idx = records.size();
         std::move(other.records.begin(), other.records.end(), std::back_inserter(records));
+        // merge is stable
         std::inplace_merge(records.begin(), records.begin() + middle_idx, records.end());
-        chassert(isUniqTypes());
+        // remove duplicates
+        records.erase(std::unique(records.begin(), records.end()), records.end());
+
+        assert(std::is_sorted(records.begin(), records.end()));
+        assert(isUniqTypes());
     }
 
     template <class T>
@@ -142,7 +148,6 @@ private:
     bool isUniqTypes() const
     {
         auto uniq_it = std::adjacent_find(records.begin(), records.end());
-
         return uniq_it == records.end();
     }
 
@@ -161,8 +166,6 @@ private:
 
 
         records.emplace(it, type_idx, item);
-
-        chassert(isUniqTypes());
     }
 
     Records::const_iterator getImpl(std::type_index type_idx) const
