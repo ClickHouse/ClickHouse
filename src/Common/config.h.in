@@ -59,7 +59,7 @@
 #cmakedefine01 USE_SKIM
 #cmakedefine01 USE_PRQL
 #cmakedefine01 USE_ULID
-#cmakedefine01 FIU_ENABLE
+#cmakedefine01 USE_LIBFIU
 #cmakedefine01 USE_BCRYPT
 #cmakedefine01 USE_LIBARCHIVE
 #cmakedefine01 USE_POCKETFFT
