@@ -143,7 +143,9 @@ public:
 
     struct ScatteredBlock : private boost::noncopyable
     {
-        ScatteredBlock(const Block & block_) : block(block_), selector(createTrivialSelector(block.rows())) { }
+        ScatteredBlock() = default;
+
+        explicit ScatteredBlock(const Block & block_) : block(block_), selector(createTrivialSelector(block.rows())) { }
 
         ScatteredBlock(const Block & block_, IColumn::Selector && selector_) : block(block_), selector(std::move(selector_)) { }
 
@@ -173,7 +175,7 @@ public:
 
         const auto & getSelector() const { return selector; }
 
-        operator bool() const { return !!block; }
+        explicit operator bool() const { return !!block; }
 
         /// Accounts only selected rows
         size_t rows() const { return selector.size(); }
@@ -195,7 +197,7 @@ public:
         void filter(const IColumn::Filter & filter)
         {
             chassert(block && block.rows() == filter.size());
-            auto it = std::remove_if(selector.begin(), selector.end(), [&](size_t idx) { return !filter[idx]; });
+            auto * it = std::remove_if(selector.begin(), selector.end(), [&](size_t idx) { return !filter[idx]; });
             selector.resize(std::distance(selector.begin(), it));
         }
 
@@ -215,7 +217,7 @@ public:
             }
 
             /// We have to to id that way because references to the block should remain valid
-            block.setColumns(std::move(columns));
+            block.setColumns(columns);
             selector = createTrivialSelector(block.rows());
         }
 
@@ -225,7 +227,7 @@ public:
             SCOPE_EXIT(filterBySelector());
 
             if (num_rows >= rows())
-                return block.cloneEmpty();
+                return ScatteredBlock{block.cloneEmpty()};
 
             chassert(block);
 
@@ -255,7 +257,7 @@ public:
             }
 
             /// We have to to id that way because references to the block should remain valid
-            block.setColumns(std::move(columns));
+            block.setColumns(columns);
             selector = createTrivialSelector(block.rows());
         }
 

@@ -208,7 +208,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 
                 bool limit_exceeded = !hash_join->data->addBlockToJoin(dispatched_block, check_limits);
 
-                dispatched_block = Block{};
+                dispatched_block = {};
                 blocks_left--;
 
                 if (limit_exceeded)
