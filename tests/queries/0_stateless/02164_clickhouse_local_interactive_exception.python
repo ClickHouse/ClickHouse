@@ -41,11 +41,7 @@ def run_with_timeout(func, args, timeout):
             return
 
 
-def expect(text, master, debug_log_fd):
-    output_b = os.read(master, 4096)
-    output = output_b.decode()
-    debug_log_fd.write(repr(output_b) + "\n")
-    debug_log_fd.flush()
+def expect(text, master, debug_log_fd, output=""):
     while not text in output:
         output_b = os.read(master, 4096)
         output += output_b.decode()
@@ -74,12 +70,7 @@ def test_completion(program, argv, prompt, state=None):
             state.value = 2
 
             output = expect("CANNOT_PARSE_INPUT_ASSERTION_FAILED", master, debug_log_fd)
-
-            while not ":)" in output:
-                output_b = os.read(master, 4096)
-                output += output_b.decode()
-                debug_log_fd.write(repr(output_b) + "\n")
-                debug_log_fd.flush()
+            expect(":)", master, debug_log_fd, output)
 
             print("OK")
             state.value = 0
