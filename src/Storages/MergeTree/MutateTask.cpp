@@ -134,9 +134,22 @@ static void splitAndModifyMutationCommands(
                     mutated_columns.emplace(command.column_name);
                 }
             }
+            if (command.type == MutationCommand::Type::MATERIALIZE_COLUMNS)
+            {
+                for (const auto & col : metadata_snapshot->getColumns())
+                {
+                    if (!col.default_desc.expression)
+                        continue;
+                    mutated_columns.emplace(col.name);
+                }
+                if (!mutated_columns.empty())
+                    for_interpreter.push_back(command);
+            }
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || command.type == MutationCommand::Type::MATERIALIZE_INDEXES
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTICS
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
+                || command.type == MutationCommand::Type::MATERIALIZE_PROJECTIONS
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
                 || command.type == MutationCommand::Type::UPDATE
@@ -262,9 +275,16 @@ static void splitAndModifyMutationCommands(
                 if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
                     for_interpreter.push_back(command);
             }
+            else if (command.type == MutationCommand::Type::MATERIALIZE_COLUMNS)
+            {
+                if (auto column_ordinary = table_columns.getOrdinary(); !column_ordinary.empty())
+                    for_interpreter.push_back(command);
+            }
             else if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || command.type == MutationCommand::Type::MATERIALIZE_INDEXES
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTICS
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
+                || command.type == MutationCommand::Type::MATERIALIZE_PROJECTIONS
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
                 || command.type == MutationCommand::Type::UPDATE

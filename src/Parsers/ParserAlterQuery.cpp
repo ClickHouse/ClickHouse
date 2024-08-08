@@ -30,6 +30,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_rename_column(Keyword::RENAME_COLUMN);
     ParserKeyword s_comment_column(Keyword::COMMENT_COLUMN);
     ParserKeyword s_materialize_column(Keyword::MATERIALIZE_COLUMN);
+    ParserKeyword s_materialize_columns(Keyword::MATERIALIZE_COLUMNS);
 
     ParserKeyword s_modify_order_by(Keyword::MODIFY_ORDER_BY);
     ParserKeyword s_modify_sample_by(Keyword::MODIFY_SAMPLE_BY);
@@ -46,6 +47,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_drop_index(Keyword::DROP_INDEX);
     ParserKeyword s_clear_index(Keyword::CLEAR_INDEX);
     ParserKeyword s_materialize_index(Keyword::MATERIALIZE_INDEX);
+    ParserKeyword s_materialize_indexes(Keyword::MATERIALIZE_INDEXES);
 
     ParserKeyword s_add_statistics(Keyword::ADD_STATISTICS);
     ParserKeyword s_drop_statistics(Keyword::DROP_STATISTICS);
@@ -60,6 +62,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_drop_projection(Keyword::DROP_PROJECTION);
     ParserKeyword s_clear_projection(Keyword::CLEAR_PROJECTION);
     ParserKeyword s_materialize_projection(Keyword::MATERIALIZE_PROJECTION);
+    ParserKeyword s_materialize_projections(Keyword::MATERIALIZE_PROJECTIONS);
     ParserKeyword s_modify_comment(Keyword::MODIFY_COMMENT);
 
     ParserKeyword s_add(Keyword::ADD);
@@ -238,6 +241,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                         return false;
                 }
             }
+            else if (s_materialize_columns.ignore(pos, expected))
+            {
+                command->type = ASTAlterCommand::MATERIALIZE_COLUMNS;
+                command->detach = false;
+
+                if (s_in_partition.ignore(pos, expected))
+                {
+                    if (!parser_partition.parse(pos, command_partition, expected))
+                        return false;
+                }
+            }
             else if (s_drop_partition.ignore(pos, expected))
             {
                 if (!parser_partition.parse(pos, command_partition, expected))
@@ -368,6 +382,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                         return false;
                 }
             }
+            else if (s_materialize_indexes.ignore(pos, expected))
+            {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                command->type = ASTAlterCommand::MATERIALIZE_INDEXES;
+                command->detach = false;
+
+                if (s_in_partition.ignore(pos, expected))
+                {
+                    if (!parser_partition.parse(pos, command_partition, expected))
+                        return false;
+                }
+            }
             else if (s_add_statistics.ignore(pos, expected))
             {
                 if (s_if_not_exists.ignore(pos, expected))
@@ -486,6 +514,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 command->type = ASTAlterCommand::MATERIALIZE_PROJECTION;
+                command->detach = false;
+
+                if (s_in_partition.ignore(pos, expected))
+                {
+                    if (!parser_partition.parse(pos, command_partition, expected))
+                        return false;
+                }
+            }
+            else if (s_materialize_projections.ignore(pos, expected))
+            {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                command->type = ASTAlterCommand::MATERIALIZE_PROJECTIONS;
                 command->detach = false;
 
                 if (s_in_partition.ignore(pos, expected))

@@ -451,7 +451,11 @@ AccessRightsElements InterpreterKillQueryQuery::getRequiredAccessForDDLOnCluster
                 AccessType::ALTER_UPDATE
                 | AccessType::ALTER_DELETE
                 | AccessType::ALTER_MATERIALIZE_INDEX
+                | AccessType::ALTER_MATERIALIZE_INDEXES
                 | AccessType::ALTER_MATERIALIZE_COLUMN
+                | AccessType::ALTER_MATERIALIZE_COLUMNS
+                | AccessType::ALTER_MATERIALIZE_PROJECTION
+                | AccessType::ALTER_MATERIALIZE_PROJECTIONS
                 | AccessType::ALTER_MATERIALIZE_TTL
             );
     return required_access;

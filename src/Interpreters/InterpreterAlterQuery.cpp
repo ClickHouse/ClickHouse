@@ -340,6 +340,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_MATERIALIZE_COLUMN, database, table);
             break;
         }
+        case ASTAlterCommand::MATERIALIZE_COLUMNS:
+        {
+            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_COLUMNS, database, table);
+            break;
+        }
         case ASTAlterCommand::MODIFY_ORDER_BY:
         {
             required_access.emplace_back(AccessType::ALTER_ORDER_BY, database, table);
@@ -389,6 +394,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_MATERIALIZE_INDEX, database, table);
             break;
         }
+        case ASTAlterCommand::MATERIALIZE_INDEXES:
+        {
+            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_INDEXES, database, table);
+            break;
+        }
         case ASTAlterCommand::ADD_CONSTRAINT:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_CONSTRAINT, database, table);
@@ -415,6 +425,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::MATERIALIZE_PROJECTION:
         {
             required_access.emplace_back(AccessType::ALTER_MATERIALIZE_PROJECTION, database, table);
+            break;
+        }
+        case ASTAlterCommand::MATERIALIZE_PROJECTIONS:
+        {
+            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_PROJECTIONS, database, table);
             break;
         }
         case ASTAlterCommand::MODIFY_TTL:

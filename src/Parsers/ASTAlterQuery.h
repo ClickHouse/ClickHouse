@@ -32,6 +32,7 @@ public:
         COMMENT_COLUMN,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
+        MATERIALIZE_COLUMNS,
 
         MODIFY_ORDER_BY,
         MODIFY_SAMPLE_BY,
@@ -47,6 +48,7 @@ public:
         ADD_INDEX,
         DROP_INDEX,
         MATERIALIZE_INDEX,
+        MATERIALIZE_INDEXES,
 
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
@@ -54,6 +56,7 @@ public:
         ADD_PROJECTION,
         DROP_PROJECTION,
         MATERIALIZE_PROJECTION,
+        MATERIALIZE_PROJECTIONS,
 
         ADD_STATISTICS,
         DROP_STATISTICS,
