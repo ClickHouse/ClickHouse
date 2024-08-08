@@ -183,9 +183,9 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
     if (quorum)
         out << "quorum: " << quorum << "\n";
 
-    if(!task_name.empty())
+    if (!task_name.empty())
         out << "task_name: " << task_name << "\n";
-    if(!task_entry_zk_path.empty())
+    if (!task_entry_zk_path.empty())
         out << "task_entry_zk_path: " << task_entry_zk_path << "\n";
 }
 
@@ -384,10 +384,10 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
     if (!in.eof() && checkString("quorum: ", in))
             in >>  quorum >> "\n";
 
-    if(!in.eof() && checkString("task_name: ", in))
+    if (!in.eof() && checkString("task_name: ", in))
             in >> task_name >> "\n";
 
-    if(!in.eof() && checkString("task_entry_zk_path: ", in))
+    if (!in.eof() && checkString("task_entry_zk_path: ", in))
             in >>  task_entry_zk_path >> "\n";
 }
 
