@@ -5,11 +5,6 @@ if(NOT USE_MONGODB)
     return()
 endif()
 
-if(USE_MUSL)
-    message(WARNING "libmongoc and libbson cannot be used with Musl")
-    set(USE_MONGODB 0)
-endif()
-
 set(BSONCXX_SOURCES_DIR "${ClickHouse_SOURCE_DIR}/contrib/mongo-cxx-driver/src/bsoncxx")
 set(BSONCXX_SOURCES
         ${BSONCXX_SOURCES_DIR}/lib/bsoncxx/v_noabi/bsoncxx/array/element.cpp
