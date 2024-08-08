@@ -468,7 +468,6 @@ def test_inaccessible_postgresql_database_engine_filterable_on_system_tables(
     assert "postgres_database" not in node1.query("SHOW DATABASES")
 
 
-
 def test_postgres_database_engine_restart(started_cluster):
     # connect to database as well
     conn = get_postgres_conn(
@@ -484,7 +483,7 @@ def test_postgres_database_engine_restart(started_cluster):
     create_postgres_table(cursor, "test_table")
     assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
     assert node1.query("INSERT INTO  postgres_database.test_table VALUES (1, 1)") == ""
-    assert node1.query("SELECT id FROM postgres_database.test_table") == '1\n'
+    assert node1.query("SELECT id FROM postgres_database.test_table") == "1\n"
 
     # kill postgres
     cluster.restart_postgress()
@@ -495,12 +494,14 @@ def test_postgres_database_engine_restart(started_cluster):
     while time.time() < timeout_time and not connection_restored:
         time.sleep(5)
         try:
-            connection_restored = node1.query("SELECT id FROM postgres_database.test_table") == '1\n'
+            connection_restored = (
+                node1.query("SELECT id FROM postgres_database.test_table") == "1\n"
+            )
         except Exception as e:
             logging.debug(f"connection failed: {e}")
             time.sleep(5)
 
-    assert node1.query("SELECT id FROM postgres_database.test_table") == '1\n'
+    assert node1.query("SELECT id FROM postgres_database.test_table") == "1\n"
 
     conn = get_postgres_conn(
         started_cluster.postgres_ip, started_cluster.postgres_port, database=True
