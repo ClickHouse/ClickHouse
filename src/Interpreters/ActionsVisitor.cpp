@@ -1210,7 +1210,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             else if (identifier && (functionIsJoinGet(node.name) || functionIsDictGet(node.name)) && arg == 0)
             {
                 auto table_id = identifier->getTableId();
-                table_id = data.getContext()->resolveStorageID(table_id, Context::ResolveOrdinary);
+                table_id = data.getContext()->resolveStorageID(table_id, Context::ResolveOrdinary, /*get_uuid*/ false);
                 auto column_string = ColumnString::create();
                 column_string->insert(table_id.getDatabaseName() + "." + table_id.getTableName());
                 ColumnWithTypeAndName column(
@@ -1442,7 +1442,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         ///  and the table has the type Set (a previously prepared set).
         if (identifier)
         {
-            auto table_id = data.getContext()->resolveStorageID(right_in_operand);
+            auto table_id = data.getContext()->resolveStorageID(right_in_operand, Context::ResolveAll, /*get_uuid*/ false);
             StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id, data.getContext());
 
             if (table)
