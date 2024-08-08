@@ -228,6 +228,40 @@ void convertUInt64toInt64IfPossible(const DataTypes & types, TypeIndexSet & type
     }
 }
 
+DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &types_set)
+{
+    const auto& granularity_map = getGranularityMap();
+    int min_granularity = std::get<0>(granularity_map.at(IntervalKind::Kind::Year));
+    DataTypePtr smallest_type;
+
+    bool is_higher_interval = false; // For Years, Quarters and Months
+
+    for (const auto &type : types)
+    {
+        if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(type.get()))
+        {
+            int current_granularity = std::get<0>(granularity_map.at(interval_type->getKind()));
+            if (current_granularity > 8)
+                is_higher_interval = true;
+            if (current_granularity < min_granularity)
+            {
+                min_granularity = current_granularity;
+                smallest_type = type;
+            }
+        }
+    }
+
+    if (is_higher_interval && min_granularity <= 8)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot compare intervals {} and {} because the amount of days in month is not determined", types[0]->getName(), types[1]->getName());
+
+    if (smallest_type)
+    {
+        types_set.clear();
+        types_set.insert(smallest_type->getTypeId());
+    }
+
+    return smallest_type;
+}
 }
 
 template <LeastSupertypeOnError on_error>
@@ -650,6 +684,13 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         auto numeric_type = getNumericType<on_error>(type_ids);
         if (numeric_type)
             return numeric_type;
+    }
+
+    /// For interval data types.
+    {
+        auto res = findSmallestIntervalSuperType(types, type_ids);
+        if (res)
+            return res;
     }
 
     /// All other data types (UUID, AggregateFunction, Enum...) are compatible only if they are the same (checked in trivial cases).

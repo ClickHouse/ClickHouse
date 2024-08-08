@@ -1,5 +1,7 @@
 #pragma once
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeInterval.h>
+#include <Common/IntervalKind.h>
 
 namespace DB
 {
@@ -47,5 +49,25 @@ DataTypePtr getLeastSupertype(const TypeIndexSet & types);
 DataTypePtr getLeastSupertypeOrString(const TypeIndexSet & types);
 
 DataTypePtr tryGetLeastSupertype(const TypeIndexSet & types);
+
+/// A map that enumerated all interval kinds in ascending order with a conversion value to a next interval
+inline const std::unordered_map<IntervalKind::Kind, std::pair<int, int>> & getGranularityMap()
+{
+    static std::unordered_map<IntervalKind::Kind, std::pair<int, int>> granularity_map =
+    {
+        {IntervalKind::Kind::Nanosecond, {1, 1000}},
+        {IntervalKind::Kind::Microsecond, {2, 1000}},
+        {IntervalKind::Kind::Millisecond, {3, 1000}},
+        {IntervalKind::Kind::Second, {4, 60}},
+        {IntervalKind::Kind::Minute, {5, 60}},
+        {IntervalKind::Kind::Hour, {6, 24}},
+        {IntervalKind::Kind::Day, {7, 7}},
+        {IntervalKind::Kind::Week, {8, 4}},
+        {IntervalKind::Kind::Month, {9, 3}},
+        {IntervalKind::Kind::Quarter, {10, 4}},
+        {IntervalKind::Kind::Year, {11, 1}}
+    };
+    return granularity_map;
+}
 
 }
