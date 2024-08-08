@@ -60,7 +60,7 @@ Block concatenateBlocks(const HashJoin::ScatteredBlocks & blocks)
     Blocks inner_blocks;
     for (const auto & block : blocks)
     {
-        chassert(!block.wasScattered(), "Not scattered block is expected here");
+        chassert(!block.wasScattered(), "Not scattered blocks are expected in join result");
         inner_blocks.push_back(block.getSourceBlock());
     }
     return concatenateBlocks(inner_blocks);
@@ -178,7 +178,8 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 
 bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_limits)
 {
-    /// We prematurely materialize columns here to avoid materializing columns multiple times on each thread.
+    /// We materialize columns here to avoid materializing them multiple times on different threads
+    /// (inside different `hash_join`-s) because the block will be shared.
     Block right_block = hash_joins[0]->data->materializeColumnsFromRightBlock(right_block_);
 
     auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, right_block);

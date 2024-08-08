@@ -146,9 +146,9 @@ public:
     {
         ScatteredBlock() = default;
 
-        explicit ScatteredBlock(const Block & block_) : block(block_), selector(createTrivialSelector(block.rows())) { }
+        explicit ScatteredBlock(Block block_) : block(std::move(block_)), selector(createTrivialSelector(block.rows())) { }
 
-        ScatteredBlock(const Block & block_, IColumn::Selector && selector_) : block(block_), selector(std::move(selector_)) { }
+        ScatteredBlock(Block block_, IColumn::Selector && selector_) : block(std::move(block_)), selector(std::move(selector_)) { }
 
         ScatteredBlock(ScatteredBlock && other) noexcept : block(std::move(other.block)), selector(std::move(other.selector))
         {
@@ -175,6 +175,8 @@ public:
         Block && getSourceBlock() && { return std::move(block); }
 
         const auto & getSelector() const { return selector; }
+
+        bool contains(size_t idx) const { return std::find(selector.begin(), selector.end(), idx) != selector.end(); }
 
         explicit operator bool() const { return !!block; }
 
@@ -261,7 +263,6 @@ public:
                 columns[pos] = std::move(c);
             }
 
-            /// We have to to id that way because references to the block should remain valid
             block.setColumns(columns);
             selector = createTrivialSelector(block.rows());
         }

@@ -81,10 +81,7 @@ Block filterColumnsPresentInSampleBlock(const Block & block, const Block & sampl
 {
     Block filtered_block;
     for (const auto & sample_column : sample_block.getColumnsWithTypeAndName())
-    {
-        ColumnWithTypeAndName column = block.getByName(sample_column.name);
-        filtered_block.insert(std::move(column));
-    }
+        filtered_block.insert(block.getByName(sample_column.name));
     return filtered_block;
 }
 
@@ -456,8 +453,8 @@ Block HashJoin::materializeColumnsFromRightBlock(Block block) const
 
 Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block_sample_)
 {
-    Block structured_block = DB::materializeColumnsFromRightBlock(block, saved_block_sample_, {});
-    return filterColumnsPresentInSampleBlock(structured_block, saved_block_sample_);
+    Block prepared_block = DB::materializeColumnsFromRightBlock(block, saved_block_sample_, {});
+    return filterColumnsPresentInSampleBlock(prepared_block, saved_block_sample_);
 }
 
 Block HashJoin::prepareRightBlock(const Block & block) const
@@ -975,6 +972,8 @@ void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
 
+    chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
+
     for (const auto & onexpr : table_join->getClauses())
     {
         auto cond_column_name = onexpr.condColumnNames();
@@ -987,31 +986,26 @@ void HashJoin::joinBlock(ScatteredBlock & block, ExtraBlockPtr & not_processed)
             cond_column_name.second);
     }
 
-    chassert(kind == JoinKind::Left || kind == JoinKind::Inner);
-
     std::vector<const std::decay_t<decltype(data->maps[0])> *> maps_vector;
     for (size_t i = 0; i < table_join->getClauses().size(); ++i)
         maps_vector.push_back(&data->maps[i]);
 
-    if (joinDispatch(
-            kind,
-            strictness,
-            maps_vector,
-            [&](auto kind_, auto strictness_, auto & maps_vector_)
-            {
-                using MapType = typename MapGetter<kind_, strictness_>::Map;
-                ScatteredBlock remaining_block = HashJoinMethods<kind_, strictness_, MapType>::joinBlockImpl(
-                    *this, block, sample_block_with_columns_to_add, maps_vector_);
-                if (remaining_block.rows())
-                    not_processed = std::make_shared<ExtraBlock>(std::move(remaining_block).getSourceBlock());
-                else
-                    not_processed.reset();
-            }))
-    {
-        /// Joined
-    }
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
+    const bool joined = joinDispatch(
+        kind,
+        strictness,
+        maps_vector,
+        [&](auto kind_, auto strictness_, auto & maps_vector_)
+        {
+            using MapType = typename MapGetter<kind_, strictness_>::Map;
+            ScatteredBlock remaining_block
+                = HashJoinMethods<kind_, strictness_, MapType>::joinBlockImpl(*this, block, sample_block_with_columns_to_add, maps_vector_);
+            if (remaining_block.rows())
+                not_processed = std::make_shared<ExtraBlock>(std::move(remaining_block).getSourceBlock());
+            else
+                not_processed.reset();
+        });
+
+    chassert(joined);
 }
 
 HashJoin::~HashJoin()
