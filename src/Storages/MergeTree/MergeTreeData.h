@@ -1094,6 +1094,9 @@ public:
     /// Unloads primary keys of all parts.
     void unloadPrimaryKeys();
 
+    // Load primary keys of all parts
+    void loadPrimaryKeys();
+
     /// Unloads primary keys of outdated parts that are not used by any query.
     /// Returns the number of parts for which index was unloaded.
     size_t unloadPrimaryKeysOfOutdatedParts();

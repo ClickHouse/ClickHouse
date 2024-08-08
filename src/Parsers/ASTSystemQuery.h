@@ -102,6 +102,7 @@ public:
         CANCEL_VIEW,
         TEST_VIEW,
         UNLOAD_PRIMARY_KEY,
+        LOAD_PRIMARY_KEY,
         END
     };
 
