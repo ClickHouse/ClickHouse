@@ -28,9 +28,9 @@ void AggregationMethodOneNumber<FieldType, TData, consecutive_keys_optimization,
 
 template struct AggregationMethodOneNumber<UInt8, AggregatedDataWithUInt8Key, false>;
 template struct AggregationMethodOneNumber<UInt16, AggregatedDataWithUInt16Key, false>;
-template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64Key>;
+template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt32Key>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64Key>;
-template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>;
+template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt32KeyTwoLevel>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyHash64>;
 template struct AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key, false, true>;
@@ -165,7 +165,7 @@ void AggregationMethodKeysFixed<TData, has_nullable_keys, has_low_cardinality,co
         }
     }
 }
-template struct AggregationMethodKeysFixed<AggregatedDataWithUInt16Key, false, false, false>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithUInt16Key>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt32Key>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt64Key>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128>;

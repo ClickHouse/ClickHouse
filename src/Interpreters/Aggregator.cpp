@@ -2376,51 +2376,127 @@ void NO_INLINE Aggregator::mergeDataImpl(
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
         mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
 
-    PaddedPODArray<AggregateDataPtr> dst_places;
-    PaddedPODArray<AggregateDataPtr> src_places;
-
-    auto merge = [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
+    if constexpr (std::is_same_v<AggregatedDataWithUInt8Key, Table> || std::is_same_v<AggregatedDataWithUInt16Key, Table>)
     {
-        if (!inserted)
+        auto thread_pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::AggregatorThreads,
+            CurrentMetrics::AggregatorThreadsActive,
+            CurrentMetrics::AggregatorThreadsScheduled,
+            params.max_threads);
+        auto merge_bucket = [&](auto begin, auto end, ThreadGroupPtr thread_group)
         {
-            dst_places.push_back(dst);
-            src_places.push_back(src);
-        }
-        else
-        {
-            dst = src;
-        }
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachFromGroupIfNotDetached();
+            );
+            if (thread_group)
+                CurrentThread::attachToGroupIfDetached(thread_group);
 
-        src = nullptr;
-    };
+            PaddedPODArray<AggregateDataPtr> dst_places;
+            PaddedPODArray<AggregateDataPtr> src_places;
 
-    if (prefetch)
-        table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
-    else
-        table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
-    table_src.clearAndShrink();
+            auto merge = [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
+            {
+                if (!inserted)
+                {
+                    dst_places.push_back(dst);
+                    src_places.push_back(src);
+                }
+                else
+                {
+                    dst = src;
+                }
+
+                src = nullptr;
+            };
+
+            if (prefetch)
+                table_src.template mergeToViaEmplaceInRange<decltype(merge), true>(begin, end, table_dst, std::move(merge));
+            else
+                table_src.template mergeToViaEmplaceInRange<decltype(merge), false>(begin, end, table_dst, std::move(merge));
 
 #if USE_EMBEDDED_COMPILER
-    if (use_compiled_functions)
+            if (use_compiled_functions)
+            {
+                const auto & compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
+                compiled_functions.merge_aggregate_states_function(dst_places.data(), src_places.data(), dst_places.size());
+
+                for (size_t i = 0; i < params.aggregates_size; ++i)
+                {
+                    if (!is_aggregate_function_compiled[i])
+                        aggregate_functions[i]->mergeAndDestroyBatch(
+                            dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], arena);
+                }
+
+                return;
+            }
+#endif
+
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+            {
+                aggregate_functions[i]->mergeAndDestroyBatch(
+                    dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], arena);
+            }
+        };
+        for (size_t bucket_idx = 0; bucket_idx < Table::BUCKET_NUM; ++bucket_idx)
+        {
+            auto begin = table_src.getIteratorWithOffsetAndLimit(bucket_idx * Table::BUCKET_SIZE, Table::BUCKET_SIZE);
+            auto end = table_src.getIteratorWithOffset((bucket_idx + 1) * Table::BUCKET_SIZE);
+            auto task = [group = CurrentThread::getGroup(), &merge_bucket, begin, end] { merge_bucket(begin, end, group); };
+            thread_pool->scheduleOrThrowOnError(task);
+        }
+        thread_pool->wait();
+
+        table_src.clearAndShrink();
+    }
+    else
     {
-        const auto & compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
-        compiled_functions.merge_aggregate_states_function(dst_places.data(), src_places.data(), dst_places.size());
+        PaddedPODArray<AggregateDataPtr> dst_places;
+        PaddedPODArray<AggregateDataPtr> src_places;
+
+        auto merge = [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
+        {
+            if (!inserted)
+            {
+                dst_places.push_back(dst);
+                src_places.push_back(src);
+            }
+            else
+            {
+                dst = src;
+            }
+
+            src = nullptr;
+        };
+
+        if (prefetch)
+            table_src.template mergeToViaEmplace<decltype(merge), true>(table_dst, std::move(merge));
+        else
+            table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
+        table_src.clearAndShrink();
+
+#if USE_EMBEDDED_COMPILER
+        if (use_compiled_functions)
+        {
+            const auto & compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
+            compiled_functions.merge_aggregate_states_function(dst_places.data(), src_places.data(), dst_places.size());
+
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+            {
+                if (!is_aggregate_function_compiled[i])
+                    aggregate_functions[i]->mergeAndDestroyBatch(
+                        dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], arena);
+            }
+
+            return;
+        }
+#endif
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
         {
-            if (!is_aggregate_function_compiled[i])
-                aggregate_functions[i]->mergeAndDestroyBatch(
-                    dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], arena);
+            aggregate_functions[i]->mergeAndDestroyBatch(
+                dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], arena);
         }
-
-        return;
-    }
-#endif
-
-    for (size_t i = 0; i < params.aggregates_size; ++i)
-    {
-        aggregate_functions[i]->mergeAndDestroyBatch(
-            dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], arena);
     }
 }
 
