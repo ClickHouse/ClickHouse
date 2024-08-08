@@ -26,7 +26,7 @@ std::string getOrCreateCustomDisk(DiskConfigurationPtr config, const std::string
 {
     Poco::Util::AbstractConfiguration::Keys disk_settings_keys;
     config->keys(disk_settings_keys);
-    // Check that no settings are defined when disk from the config is referred.
+    /// Check that no settings are defined when disk from the config is referred.
     if (disk_settings_keys.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
