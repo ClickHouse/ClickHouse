@@ -30,7 +30,7 @@ std::string getOrCreateCustomDisk(DiskConfigurationPtr config, const std::string
     if (disk_settings_keys.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Disk function has no arguments. Invalid disk description.");
+            "Disk function must have arguments. Invalid disk description.");
 
     if (disk_settings_keys.size() == 1 && disk_settings_keys.front() == "name" && !attach)
         throw Exception(
