@@ -1096,7 +1096,7 @@ void StorageWindowView::threadFuncFireProc()
             slide_interval);
     }
 
-    if (max_watermark >= timestamp_now)
+    if (max_watermark >= timestamp_start)
         clean_cache_task->schedule();
 
     UInt64 next_fire_ms = static_cast<UInt64>(next_fire_signal) * 1000;
