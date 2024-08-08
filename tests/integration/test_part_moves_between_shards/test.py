@@ -379,7 +379,7 @@ def test_part_move_step_by_step_kill(started_cluster):
         "SYSTEM START MERGES test_part_move_step_by_step_kill; OPTIMIZE TABLE test_part_move_step_by_step_kill;"
     )
 
-    wait_for_state("SYNC_DESTINATION", s0r0, "test_part_move_step_by_step_kill" )
+    wait_for_state("SYNC_DESTINATION", s0r0, "test_part_move_step_by_step_kill")
     deduplication_invariant.assert_no_exception()
 
     # Start previously stopped replica in destination shard to let SYNC_DESTINATION
@@ -405,11 +405,18 @@ def test_part_move_step_by_step_kill(started_cluster):
     """
     )
 
-    wait_for_state("DESTINATION_ATTACH", s0r0, "test_part_move_step_by_step_kill", assert_rollback=True)
+    wait_for_state(
+        "DESTINATION_ATTACH",
+        s0r0,
+        "test_part_move_step_by_step_kill",
+        assert_rollback=True,
+    )
 
     s1r1.start_clickhouse()
 
-    wait_for_state("CANCELLED", s0r0, "test_part_move_step_by_step_kill", assert_rollback=True)
+    wait_for_state(
+        "CANCELLED", s0r0, "test_part_move_step_by_step_kill", assert_rollback=True
+    )
     deduplication_invariant.assert_no_exception()
 
     # No hung tasks in replication queue. Would timeout otherwise.

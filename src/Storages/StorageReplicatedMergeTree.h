@@ -655,7 +655,7 @@ private:
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name, bool storage_init);
 
-    /// Update the move_part task result in the queue checks for the quorum 
+    /// Update the move_part task result in the queue checks for the quorum
     void updateMovePartTask(const LogEntry & entry, bool result);
 
     /// Running jobs from the queue.
