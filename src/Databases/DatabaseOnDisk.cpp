@@ -23,6 +23,7 @@
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Common/filesystemHelpers.h>
@@ -171,7 +172,14 @@ DatabaseOnDisk::DatabaseOnDisk(
     , metadata_path(metadata_path_)
     , data_path(data_path_)
 {
-    fs::create_directories(local_context->getPath() + data_path);
+}
+
+
+void DatabaseOnDisk::createDirectories()
+{
+    if (directories_created.test_and_set())
+        return;
+    fs::create_directories(std::filesystem::path(getContext()->getPath()) / data_path);
     fs::create_directories(metadata_path);
 }
 
@@ -189,6 +197,8 @@ void DatabaseOnDisk::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
+    createDirectories();
+
     const auto & settings = local_context->getSettingsRef();
     const auto & create = query->as<ASTCreateQuery &>();
     assert(table_name == create.getTable());
@@ -256,7 +266,6 @@ void DatabaseOnDisk::createTable(
     }
 
     commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, local_context);
-
     removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, false);
 }
 
@@ -284,6 +293,8 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
 {
     try
     {
+        createDirectories();
+
         /// Add a table to the map of known tables.
         attachTable(query_context, query.getTable(), table, getTableDataPath(query));
 
@@ -308,6 +319,16 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
     try
     {
         FS::createFile(detached_permanently_flag);
+
+        std::lock_guard lock(mutex);
+        if (const auto it = snapshot_detached_tables.find(table_name); it == snapshot_detached_tables.end())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Snapshot doesn't contain info about detached table `{}`", table_name);
+        }
+        else
+        {
+            it->second.is_permanently = true;
+        }
     }
     catch (Exception & e)
     {
@@ -409,6 +430,7 @@ void DatabaseOnDisk::renameTable(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
     }
 
+    createDirectories();
     waitDatabaseStarted();
 
     auto table_data_relative_path = getTableDataPath(table_name);
@@ -523,7 +545,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 {
     ASTPtr ast;
 
-    auto settings = getContext()->getSettingsRef();
+    const auto & settings = getContext()->getSettingsRef();
     {
         std::lock_guard lock(mutex);
         auto database_metadata_path = getContext()->getPath() + "metadata/" + escapeForFileName(database_name) + ".sql";
@@ -557,14 +579,14 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     if (local_context->getSettingsRef().force_remove_data_recursively_on_drop)
     {
-        (void)fs::remove_all(local_context->getPath() + getDataPath());
+        (void)fs::remove_all(std::filesystem::path(getContext()->getPath()) / data_path);
         (void)fs::remove_all(getMetadataPath());
     }
     else
     {
         try
         {
-            (void)fs::remove(local_context->getPath() + getDataPath());
+            (void)fs::remove(std::filesystem::path(getContext()->getPath()) / data_path);
             (void)fs::remove(getMetadataPath());
         }
         catch (const fs::filesystem_error & e)
@@ -602,15 +624,18 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_n
     }
 }
 
-void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const IteratingFunction & process_metadata_file) const
+void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_metadata_file) const
 {
+    if (!fs::exists(metadata_path))
+        return;
+
     auto process_tmp_drop_metadata_file = [&](const String & file_name)
     {
         assert(getUUID() == UUIDHelpers::Nil);
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         const std::string object_name = file_name.substr(0, file_name.size() - strlen(tmp_drop_ext));
 
-        if (fs::exists(local_context->getPath() + getDataPath() + '/' + object_name))
+        if (fs::exists(std::filesystem::path(getContext()->getPath()) / data_path / object_name))
         {
             fs::rename(getMetadataPath() + file_name, getMetadataPath() + object_name + ".sql");
             LOG_WARNING(log, "Object {} was not dropped previously and will be restored", backQuote(object_name));
@@ -627,7 +652,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
     std::vector<std::pair<String, bool>> metadata_files;
 
     fs::directory_iterator dir_end;
-    for (fs::directory_iterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
+    for (fs::directory_iterator dir_it(metadata_path); dir_it != dir_end; ++dir_it)
     {
         String file_name = dir_it->path().filename();
         /// For '.svn', '.gitignore' directory and similar.
@@ -722,7 +747,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
         return nullptr;
     }
 
-    auto settings = local_context->getSettingsRef();
+    const auto & settings = local_context->getSettingsRef();
     ParserCreateQuery parser;
     const char * pos = query.data();
     std::string error_message;
