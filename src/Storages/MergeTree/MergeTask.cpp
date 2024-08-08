@@ -5,9 +5,6 @@
 #include <memory>
 #include <fmt/format.h>
 
-#include "Common/ElapsedTimeProfileEventIncrement.h"
-#include "Common/Logger.h"
-#include "Common/Stopwatch.h"
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Core/Settings.h>
@@ -46,6 +43,8 @@
 namespace ProfileEvents
 {
     extern const Event Merge;
+    extern const Event MergedColumns;
+    extern const Event GatheredColumns;
     extern const Event MergeTotalMilliseconds;
     extern const Event MergeExecuteMilliseconds;
     extern const Event MergeHorizontalStageExecuteMilliseconds;
@@ -183,6 +182,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 {
+    ProfileEvents::increment(ProfileEvents::Merge);
+
     String local_tmp_prefix;
     if (global_ctx->need_prefix)
     {
@@ -199,8 +200,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     /// throw exception
     if (isTTLMergeType(global_ctx->future_part->merge_type) && global_ctx->ttl_merges_blocker->isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with TTL");
-
-    ProfileEvents::increment(ProfileEvents::Merge);
 
     LOG_DEBUG(ctx->log, "Merging {} parts: from {} to {} into {} with storage {}",
         global_ctx->future_part->parts.size(),
@@ -810,6 +809,9 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
 
     /// Print overall profiling info. NOTE: it may duplicates previous messages
     {
+        ProfileEvents::increment(ProfileEvents::MergedColumns, global_ctx->merging_columns.size());
+        ProfileEvents::increment(ProfileEvents::GatheredColumns, global_ctx->gathering_columns.size());
+
         double elapsed_seconds = global_ctx->merge_list_element_ptr->watch.elapsedSeconds();
         LOG_DEBUG(ctx->log,
             "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",
@@ -1021,8 +1023,8 @@ bool MergeTask::execute()
     /// Stage is finished, need to initialize context for the next stage and update profile events.
 
     UInt64 current_elapsed_ms = global_ctx->merge_list_element_ptr->watch.elapsedMilliseconds();
-    UInt64 stage_elapsed_ms = current_elapsed_ms - global_ctx->prev_elapesed_ms;
-    global_ctx->prev_elapesed_ms = current_elapsed_ms;
+    UInt64 stage_elapsed_ms = current_elapsed_ms - global_ctx->prev_elapsed_ms;
+    global_ctx->prev_elapsed_ms = current_elapsed_ms;
 
     ProfileEvents::increment(current_stage->getTotalTimeProfileEvent(), stage_elapsed_ms);
     ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, stage_elapsed_ms);

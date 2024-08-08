@@ -209,6 +209,8 @@
     \
     M(Merge, "Number of launched background merges.") \
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.") \
+    M(MergedColumns, "Number of columns merged during the horizontal stage of merges.") \
+    M(GatheredColumns, "Number of columns gathered during the vertical stage of merges.") \
     M(MergedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for background merges. This is the number before merge.") \
     M(MergeTotalMilliseconds, "Total time spent for background merges") \
     M(MergeExecuteMilliseconds, "Total busy time spent for execution of background merges") \
@@ -231,8 +233,11 @@
     M(MutationUntouchedParts, "Number of total parts for which mutations tried to be applied but which was completely skipped according to predicate") \
     M(MutatedRows, "Rows read for mutations. This is the number of rows before mutation") \
     M(MutatedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for mutations. This is the number before mutation.") \
-    M(MutationTimeMilliseconds, "Total time spent for mutations.") \
-    M(MutateTaskProjectionsCalculationMicroseconds, "Time spent calculating projections") \
+    M(MutationTotalMilliseconds, "Total time spent for mutations.") \
+    M(MutationExecuteMilliseconds, "Total busy time spent for execution of mutations.") \
+    M(MutationAllPartColumns, "Number of times when task to mutate all columns in part was created") \
+    M(MutationSomePartColumns, "Number of times when task to mutate some columns in part was created") \
+    M(MutateTaskProjectionsCalculationMicroseconds, "Time spent calculating projections in mutations.") \
     \
     M(MergeTreeDataWriterRows, "Number of rows INSERTed to MergeTree tables.") \
     M(MergeTreeDataWriterUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) INSERTed to MergeTree tables.") \

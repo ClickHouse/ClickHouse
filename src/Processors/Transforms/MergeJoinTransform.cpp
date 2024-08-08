@@ -515,7 +515,7 @@ IMergingAlgorithm::MergedStats MergeJoinAlgorithm::getMergedStats() const
 {
     return
     {
-        .bytes = 0,
+        .bytes = stat.num_bytes[0] + stat.num_bytes[1],
         .rows = stat.num_rows[0] + stat.num_rows[1],
         .blocks = stat.num_blocks[0] + stat.num_blocks[1],
     };
@@ -557,6 +557,7 @@ void MergeJoinAlgorithm::consume(Input & input, size_t source_num)
     {
         stat.num_blocks[source_num] += 1;
         stat.num_rows[source_num] += input.chunk.getNumRows();
+        stat.num_bytes[source_num] += input.chunk.allocatedBytes();
     }
 
     prepareChunk(input.chunk);
