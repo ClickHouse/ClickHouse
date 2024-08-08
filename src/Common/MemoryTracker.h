@@ -59,6 +59,8 @@ private:
     std::atomic<Int64> profiler_limit {0};
     std::atomic_bool allow_use_jemalloc_memory {true};
 
+    Stopwatch stopwatch;
+
     static std::atomic<Int64> free_memory_in_allocator_arenas;
 
     Int64 profiler_step = 0;
@@ -257,7 +259,7 @@ public:
     void logPeakMemoryUsage();
 
     void debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]]);
-    void updateMemoryCredits();
+    void updateMemoryCredits(size_t previous_value, size_t current_value);
 };
 
 extern MemoryTracker total_memory_tracker;

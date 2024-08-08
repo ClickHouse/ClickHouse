@@ -208,6 +208,7 @@ void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]
 #endif
 }
 
+
 AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker, double _sample_probability)
 {
     if (size < 0)
@@ -224,13 +225,15 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         if (level == VariableContext::Global)
         {
             /// For global memory tracker always update memory usage.
-            amount.fetch_add(size, std::memory_order_relaxed);
+            size_t previous_value = amount.load(std::memory_order_relaxed);
+            size_t current_value = previous_value + size;
+            amount.store(current_value, std::memory_order_relaxed);
 
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
                 CurrentMetrics::add(metric_loaded, size);
 
-            updateMemoryCredits();
+            updateMemoryCredits(previous_value, current_value);
         }
 
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
@@ -243,17 +246,15 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         return AllocationTrace(_sample_probability);
     }
 
-    /** Using memory_order_relaxed means that if allocations are done simultaneously,
-      *  we allow exception about memory limit exceeded to be thrown only on next allocation.
-      * So, we allow over-allocations.
-      */
-    Int64 will_be = size ? size + amount.fetch_add(size, std::memory_order_relaxed) : amount.load(std::memory_order_relaxed);
+    size_t previous_value = amount.load(std::memory_order_relaxed);
+    Int64 will_be = size ? size + previous_value : previous_value;
+    amount.store(will_be, std::memory_order_relaxed);
 
     auto metric_loaded = metric.load(std::memory_order_relaxed);
     if (metric_loaded != CurrentMetrics::end() && size)
         CurrentMetrics::add(metric_loaded, size);
 
-    updateMemoryCredits();
+    updateMemoryCredits(previous_value, will_be);
 
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
@@ -300,7 +301,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
 
     Int64 limit_to_check = current_hard_limit;
 
-#if USE_JEMALLOC
+    #if USE_JEMALLOC
     if (level == VariableContext::Global && allow_use_jemalloc_memory.load(std::memory_order_relaxed))
     {
         /// Jemalloc arenas may keep some extra memory.
@@ -322,7 +323,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
 
         limit_to_check += abs(current_free_memory_in_allocator_arenas);
     }
-#endif
+    #endif
 
     if (unlikely(current_hard_limit && will_be > limit_to_check))
     {
@@ -402,7 +403,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         return loaded_next->allocImpl(size, throw_if_memory_exceeded, tracker, _sample_probability);
     }
 
-    updateMemoryCredits();
+    updateMemoryCredits(previous_value, will_be);
     return AllocationTrace(_sample_probability);
 }
 
@@ -615,19 +616,14 @@ bool canEnqueueBackgroundTask()
     return limit == 0 || amount < limit;
 }
 
-void MemoryTracker::updateMemoryCredits()
+void MemoryTracker::updateMemoryCredits(size_t previous_value, size_t current_value)
 {
-    static thread_local Stopwatch stopwatch;
-    static std::atomic<size_t> previous_value{0}; // Use atomic for previous_value
     constexpr Int64 local_threshold = 512 * 1024;
-    size_t current_value = amount.load(std::memory_order_relaxed); // Use relaxed order for reading
 
-    if (current_value > previous_value.load(std::memory_order_relaxed) &&
-        current_value - previous_value.load(std::memory_order_relaxed) > local_threshold)
+    if (current_value > previous_value && current_value - previous_value > local_threshold)
     {
-        size_t delta = ((current_value - previous_value.load(std::memory_order_relaxed)) * stopwatch.elapsedMicroseconds()) / (1024 * 1024);
+        size_t delta = ((current_value - previous_value) * stopwatch.elapsedMicroseconds()); // Use the member variable
         ProfileEvents::increment(ProfileEvents::MemoryCredits, delta);
-        previous_value.store(current_value, std::memory_order_relaxed); // Use relaxed order for storing
         stopwatch.restart();
     }
 }
