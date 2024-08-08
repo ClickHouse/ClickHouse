@@ -1,4 +1,6 @@
-#ifdef ENABLE_SZ3
+#include "config.h"
+
+#if USE_SZ3
 
 #include "DataTypes/IDataType.h"
 
@@ -27,7 +29,7 @@ public:
     enum class DataType : uint8_t
     {
         FLOAT32 = 0,
-        FLOAT64 = 1,
+        FLOAT64
     };
 
     explicit CompressionCodecSZ3(DataType type_);
@@ -80,29 +82,13 @@ UInt32 CompressionCodecSZ3::getMaxCompressedDataSize(UInt32 uncompressed_size) c
     return uncompressed_size + 1;
 }
 
-CompressionCodecSZ3::DataType getDataType(const IDataType & column_type)
-{
-    switch (WhichDataType(column_type).idx)
-    {
-        case TypeIndex::Float32:
-            return CompressionCodecSZ3::DataType::FLOAT32;
-        case TypeIndex::Float64:
-            return CompressionCodecSZ3::DataType::FLOAT64;
-        default:
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "SZ3 codec is not applicable for {} because the data type must be one of these: Float32, Float64",
-                column_type.getName());
-    }
-}
-
 UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
-    char* res;
+    char * res;
     size_t src_size;
 
-    char* source_compressed = new char[source_size];
-    memcpy(source_compressed, source, source_size);
+    auto source_compressed = std::make_unique<char[]>(source_size);
+    memcpy(source_compressed.get(), source, source_size);
 
     switch (type)
     {
@@ -148,18 +134,17 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
     {
         case DataType::FLOAT32:
         {
-            res = SZ_compress(conf, reinterpret_cast<float*>(source_compressed), src_size);
+            res = SZ_compress(conf, reinterpret_cast<float *>(source_compressed.get()), src_size);
             break;
         }
         case DataType::FLOAT64:
         {
-            res = SZ_compress(conf, reinterpret_cast<double*>(source_compressed), src_size);
+            res = SZ_compress(conf, reinterpret_cast<double *>(source_compressed.get()), src_size);
             break;
         }
     }
 
     memcpy(dest, res, src_size);
-    delete[] source_compressed;
     return static_cast<UInt32>(src_size) + 1;
 }
 
@@ -167,34 +152,47 @@ void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_si
 {
     SZ3::Config conf;
     --source_size;
-    DataType decoded_type = static_cast<DataType>(source[0]);
+    DataType data_type = static_cast<DataType>(source[0]);
     ++source;
-    char* copy_compressed = new char[source_size];
-    memcpy(copy_compressed, source, source_size);
+    auto copy_compressed = std::make_unique<char[]>(source_size);
+    memcpy(copy_compressed.get(), source, source_size);
 
-    switch (decoded_type)
+    switch (data_type)
     {
         case DataType::FLOAT32:
         {
-            auto* res = SZ_decompress<float>(conf, copy_compressed, source_size);
-            memcpy(dest, reinterpret_cast<char*>(res), static_cast<size_t>(uncompressed_size));
+            auto * res = SZ_decompress<float>(conf, copy_compressed.get(), source_size);
+            memcpy(dest, reinterpret_cast<char *>(res), static_cast<size_t>(uncompressed_size));
             break;
         }
         case DataType::FLOAT64:
         {
-            auto* res = SZ_decompress<double>(conf, copy_compressed, source_size);
-            memcpy(dest, reinterpret_cast<char*>(res), static_cast<size_t>(uncompressed_size));
+            auto * res = SZ_decompress<double>(conf, copy_compressed.get(), source_size);
+            memcpy(dest, reinterpret_cast<char *>(res), static_cast<size_t>(uncompressed_size));
             break;
         }
     }
-    delete[] copy_compressed;
+}
+
+CompressionCodecSZ3::DataType getDataType(const IDataType & column_type)
+{
+    switch (WhichDataType(column_type).idx)
+    {
+        case TypeIndex::Float32:
+            return CompressionCodecSZ3::DataType::FLOAT32;
+        case TypeIndex::Float64:
+            return CompressionCodecSZ3::DataType::FLOAT64;
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "SZ3 codec is not applicable for {} because the data type must be Float32 or Float64",
+                            column_type.getName());
+    }
 }
 
 void registerCodecSZ3(CompressionCodecFactory & factory)
 {
-    UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::SZ3);
-
-    auto reg_func = [&](const ASTPtr &, const IDataType * column_type) -> CompressionCodecPtr
+    auto method_code = static_cast<UInt8>(CompressionMethodByte::SZ3);
+    auto codec_builder = [&](const ASTPtr &, const IDataType * column_type) -> CompressionCodecPtr
     {
         auto data_type = CompressionCodecSZ3::DataType::FLOAT32;
         if (column_type)
@@ -203,9 +201,9 @@ void registerCodecSZ3(CompressionCodecFactory & factory)
         }
         return std::make_shared<CompressionCodecSZ3>(data_type);
     };
-    factory.registerCompressionCodecWithType("SZ3", method_code, reg_func);
+    factory.registerCompressionCodecWithType("SZ3", method_code, codec_builder);
 
 }
 
 }
-#endif // ENABLE_SZ3
+#endif
