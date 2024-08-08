@@ -1561,12 +1561,8 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             mutations_snapshot,
             context,
             query_info,
-<<<<<<< HEAD
-            metadata_for_reading,
+            storage_snapshot->metadata,
             log);
-=======
-            storage_snapshot->metadata);
->>>>>>> upstream/master
     }
 }
 
