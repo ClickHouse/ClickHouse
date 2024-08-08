@@ -40,6 +40,7 @@ def run_with_timeout(func, args, timeout):
             print(f"Timeout, state: {STATE_MAP[state.value]}")
             return
 
+
 def expect(text, master, debug_log_fd):
     output_b = os.read(master, 4096)
     output = output_b.decode()
@@ -52,6 +53,7 @@ def expect(text, master, debug_log_fd):
         debug_log_fd.flush()
 
     return output
+
 
 def test_completion(program, argv, prompt, state=None):
     shell_pid, master = pty.fork()
@@ -92,5 +94,11 @@ if __name__ == "__main__":
     args.append("--disable_suggestion")
     args.append("--highlight=0")
     run_with_timeout(
-        test_completion, [args[0], args, "insert into table function null() format TSV some trash here 123 \n 456"], COMPLETION_TIMEOUT_SECONDS
+        test_completion,
+        [
+            args[0],
+            args,
+            "insert into table function null() format TSV some trash here 123 \n 456",
+        ],
+        COMPLETION_TIMEOUT_SECONDS,
     )
