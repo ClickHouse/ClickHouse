@@ -116,7 +116,7 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
 
 NameSet getVirtualNamesForFileLikeStorage()
 {
-    return {"_path", "_file", "_size", "_time"};
+    return {"_path", "_file", "_size", "_time", "_etag"};
 }
 
 VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns)
@@ -135,6 +135,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription
     add_virtual("_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
     add_virtual("_size", makeNullable(std::make_shared<DataTypeUInt64>()));
     add_virtual("_time", makeNullable(std::make_shared<DataTypeDateTime>()));
+    add_virtual("_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
 
     return desc;
 }
@@ -230,6 +231,13 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
+        else if (virtual_column.name == "_etag")
+        {
+            if (virtual_values.etag)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), (*virtual_values.etag))->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
     }
 }
 
@@ -275,8 +283,7 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
 static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
     const ActionsDAG::Node * node,
     const Block * allowed_inputs,
-    ActionsDAG::Nodes & additional_nodes,
-    bool allow_non_deterministic_functions)
+    ActionsDAG::Nodes & additional_nodes)
 {
     if (node->type == ActionsDAG::ActionType::FUNCTION)
     {
@@ -285,14 +292,8 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
             auto & node_copy = additional_nodes.emplace_back(*node);
             node_copy.children.clear();
             for (const auto * child : node->children)
-                if (const auto * child_copy = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes, allow_non_deterministic_functions))
+                if (const auto * child_copy = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes))
                     node_copy.children.push_back(child_copy);
-                /// Expression like (now_allowed AND allowed) is not allowed if allow_non_deterministic_functions = true. This is important for
-                /// trivial count optimization, otherwise we can get incorrect results. For example, if the query is
-                /// SELECT count() FROM table WHERE _partition_id = '0' AND rowNumberInBlock() = 1, we cannot apply
-                /// trivial count.
-                else if (!allow_non_deterministic_functions)
-                    return nullptr;
 
             if (node_copy.children.empty())
                 return nullptr;
@@ -318,7 +319,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
         {
             auto & node_copy = additional_nodes.emplace_back(*node);
             for (auto & child : node_copy.children)
-                if (child = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes, allow_non_deterministic_functions); !child)
+                if (child = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes); !child)
                     return nullptr;
 
             return &node_copy;
@@ -332,7 +333,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     auto index_hint_dag = index_hint->getActions().clone();
                     ActionsDAG::NodeRawConstPtrs atoms;
                     for (const auto & output : index_hint_dag.getOutputs())
-                        if (const auto * child_copy = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes, allow_non_deterministic_functions))
+                        if (const auto * child_copy = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes))
                             atoms.push_back(child_copy);
 
                     if (!atoms.empty())
@@ -366,13 +367,13 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
     return node;
 }
 
-std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, bool allow_non_deterministic_functions)
+std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs)
 {
     if (!predicate)
         return {};
 
     ActionsDAG::Nodes additional_nodes;
-    const auto * res = splitFilterNodeForAllowedInputs(predicate, allowed_inputs, additional_nodes, allow_non_deterministic_functions);
+    const auto * res = splitFilterNodeForAllowedInputs(predicate, allowed_inputs, additional_nodes);
     if (!res)
         return {};
 
@@ -381,7 +382,7 @@ std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node 
 
 void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context)
 {
-    auto dag = splitFilterDagForAllowedInputs(predicate, &block,  /*allow_non_deterministic_functions=*/ false);
+    auto dag = splitFilterDagForAllowedInputs(predicate, &block);
     if (dag)
         filterBlockWithExpression(buildFilterExpression(std::move(*dag), context), block);
 }

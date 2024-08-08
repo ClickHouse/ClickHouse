@@ -43,6 +43,12 @@ size_t getCompoundTypeDepth(const IDataType & type)
             const auto & tuple_elements = assert_cast<const DataTypeTuple &>(*current_type).getElements();
             if (!tuple_elements.empty())
                 current_type = tuple_elements.at(0).get();
+            else
+            {
+                /// Special case: tuple with no element - tuple(). In this case, what's the compound type depth?
+                /// I'm not certain about the theoretical answer, but from experiment, 1 is the most reasonable choice.
+                return 1;
+            }
 
             ++result;
         }
