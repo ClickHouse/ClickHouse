@@ -380,7 +380,6 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
     }
     else
         new_part_format.storage_type = MergeTreeDataPartStorageType::Full;
-    
     /// Optional field.
     if (!in.eof() && checkString("quorum: ", in))
             in >>  quorum >> "\n";

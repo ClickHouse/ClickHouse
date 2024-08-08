@@ -3656,7 +3656,6 @@ void StorageReplicatedMergeTree::updateMovePartTask( const LogEntry & logEntry, 
         LOG_DEBUG(log, "Task {} failed to execute {} on replica {} ", logEntry.task_name, logEntry.typeToString(), replica_name);
         return;
     }
-    
     while(zookeeper->tryGet(fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name, value, &stat)){
         PartMovesBetweenShardsOrchestrator::Entry entry;
         entry.fromString(value);
@@ -8712,7 +8711,6 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     part_move_entry.part_name = part->name;
     part_move_entry.part_uuid = part->uuid;
     part_move_entry.to_shard = to;
-
     String task_name = "task-"+ toString(part_move_entry.task_uuid);
 
     Coordination::Requests ops;
@@ -8721,14 +8719,12 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     ops.emplace_back(zkutil::makeSetRequest(to + "/pinned_part_uuids", dst_pins.toString(), dst_pins.stat.version));
     ops.emplace_back(zkutil::makeCreateRequest( fs::path(part_moves_between_shards_orchestrator.entries_znode_path) / "tasks" / task_name, part_move_entry.toString(), zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest( fs::path(part_moves_between_shards_orchestrator.entries_znode_path) / "task_queue" / task_name, "", zkutil::CreateMode::Persistent));
-
     Coordination::Responses responses;
     Coordination::Error rc = zookeeper->tryMulti(ops, responses);
     zkutil::KeeperMultiException::check(rc, ops, responses);
 
     String task_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
     LOG_DEBUG(log, "Created task for part movement between shards at {}", task_znode_path);
-
     /// TODO(nv): Nice to have support for `alter_sync`.
     ///     For now use the system.part_moves_between_shards table for status.
 }
