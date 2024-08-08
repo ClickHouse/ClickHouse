@@ -1146,7 +1146,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, {parts[0]});
 
-    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag.getOutputs().at(0), nullptr, /*allow_non_deterministic_functions=*/ false);
+    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag.getOutputs().at(0), nullptr);
     if (!filter_dag)
         return {};
 
@@ -3211,6 +3211,17 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                             "The following alter commands: '{}' will modify data on disk, "
                             "but setting `allow_non_metadata_alters` is disabled",
                             queryToString(mutation_commands.ast()));
+    }
+
+    /// Block the case of alter table add projection for special merge trees.
+    if (std::any_of(commands.begin(), commands.end(), [](const AlterCommand & c) { return c.type == AlterCommand::ADD_PROJECTION; }))
+    {
+        if (merging_params.mode != MergingParams::Mode::Ordinary
+            && settings_from_storage->deduplicate_merge_projection_mode == DeduplicateMergeProjectionMode::THROW)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Projection is fully supported in {} with deduplicate_merge_projection_mode = throw. "
+                "Use 'drop' or 'rebuild' option of deduplicate_merge_projection_mode.",
+                getName());
     }
 
     commands.apply(new_metadata, local_context);
@@ -7141,12 +7152,7 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
 
     MergeTreeDataSelectExecutor reader(*this);
     auto result_ptr = reader.estimateNumMarksToRead(
-        parts,
-        storage_snapshot->getMetadataForQuery()->getColumns().getAll().getNames(),
-        storage_snapshot->metadata,
-        query_info,
-        query_context,
-        query_context->getSettingsRef().max_threads);
+        parts, {}, storage_snapshot->metadata, query_info, query_context, query_context->getSettingsRef().max_threads);
 
     UInt64 total_rows = result_ptr->selected_rows;
     if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)

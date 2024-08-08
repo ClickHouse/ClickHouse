@@ -9,7 +9,7 @@ from ci_settings import CiSettings
 from pr_info import PRInfo, EventType
 from s3_helper import S3Helper
 from ci_cache import CiCache
-from ci_utils import normalize_string
+from ci_utils import Utils
 
 
 _TEST_EVENT_JSON = {"dummy": "dummy"}
@@ -55,7 +55,7 @@ class TestCIConfig(unittest.TestCase):
             if CI.JOB_CONFIGS[job].job_name_keyword:
                 self.assertTrue(
                     CI.JOB_CONFIGS[job].job_name_keyword.lower()
-                    in normalize_string(job),
+                    in Utils.normalize_string(job),
                     f"Job [{job}] apparently uses wrong common config with job keyword [{CI.JOB_CONFIGS[job].job_name_keyword}]",
                 )
 
@@ -291,7 +291,9 @@ class TestCIConfig(unittest.TestCase):
             assert tag_config
             set_jobs = tag_config.run_jobs
             for job in set_jobs:
-                if any(k in normalize_string(job) for k in settings.exclude_keywords):
+                if any(
+                    k in Utils.normalize_string(job) for k in settings.exclude_keywords
+                ):
                     continue
                 expected_jobs_to_do.append(job)
         for job, config in CI.JOB_CONFIGS.items():
@@ -303,12 +305,12 @@ class TestCIConfig(unittest.TestCase):
                 # expected to run all builds jobs
                 expected_jobs_to_do.append(job)
             if not any(
-                keyword in normalize_string(job)
+                keyword in Utils.normalize_string(job)
                 for keyword in settings.include_keywords
             ):
                 continue
             if any(
-                keyword in normalize_string(job)
+                keyword in Utils.normalize_string(job)
                 for keyword in settings.exclude_keywords
             ):
                 continue
