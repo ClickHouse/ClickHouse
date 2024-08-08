@@ -252,7 +252,7 @@ DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &
     }
 
     if (is_higher_interval && min_granularity <= 8)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot compare intervals {} and {} because the amount of days in month is not determined", types[0]->getName(), types[1]->getName());
+        throw Exception(ErrorCodes::NO_COMMON_TYPE, "Cannot compare intervals {} and {} because the amount of days in month is not determined", types[0]->getName(), types[1]->getName());
 
     if (smallest_type)
     {
