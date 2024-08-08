@@ -89,12 +89,12 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             auto table_name = main_table.getQualifiedName();
 
             ConnectionEstablisher connection_establisher(pool, &timeouts, current_settings, log, &table_name);
-            connection_establisher.run(result, fail_message);
+            connection_establisher.run(result, fail_message, /*force_connected=*/ true);
         }
         else
         {
             ConnectionEstablisher connection_establisher(pool, &timeouts, current_settings, log, nullptr);
-            connection_establisher.run(result, fail_message);
+            connection_establisher.run(result, fail_message, /*force_connected=*/ true);
         }
 
         std::vector<IConnectionPool::Entry> connection_entries;
