@@ -197,7 +197,7 @@ The function returns a ClickHouse internal representation of the multilinestring
 ### Example
 
 ```sql
-SELECT wkt(readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6))'));
+SELECT readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6))');
 ```
 
 ```response

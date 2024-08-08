@@ -471,7 +471,7 @@ static void callOnGeometryDataType(DataTypePtr type, F && f)
         return f(ConverterType<ColumnToLineStringsConverter<Point>>());
 
     /// We should take the name into consideration to avoid ambiguity.
-    /// Because for example both MultiLineString and Polygon are resolved to Array(Tuple(Point)).
+    /// Because for example both MultiLineString and Polygon are resolved to Array(Array(Point)).
     else if (factory.get("MultiLineString")->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == "MultiLineString")
         return f(ConverterType<ColumnToMultiLineStringsConverter<Point>>());
 
