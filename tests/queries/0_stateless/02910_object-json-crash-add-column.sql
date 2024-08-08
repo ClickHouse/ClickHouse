@@ -1,3 +1,5 @@
+SET allow_experimental_object_type=1;
+
 DROP TABLE IF EXISTS test02910;
 
 CREATE TABLE test02910
