@@ -1,6 +1,7 @@
 -- Tags: no-fasttest
 
 DROP TABLE IF EXISTS tab SYNC;
+DROP TABLE IF EXISTS tab2 SYNC;
 
 SET allow_experimental_statistics = 1;
 SET allow_statistics_optimize = 1;
@@ -78,17 +79,55 @@ SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String|_DateTi
 FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE d > cast(1, 'DateTime')/*9999*/ and c < 0/*9900*/ and b = 0/*10*/ and a = '10000'/*0*/)
 WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
 
+DROP TABLE IF EXISTS tab SYNC;
 
 SELECT 'Test statistics implicitly type conversion:';
 
-SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String|_DateTime', '')
-FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE d = '2024-08-06 09:58:09'/*0*/ and c = '0'/*100*/)
-WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
+CREATE TABLE tab2
+(
+    a String,
+    b UInt64,
+    c UInt8,
+    d DateTime,
+    e Boolean,
+    f Float64,
+    g Decimal32(1),
+    pk String,
+) Engine = MergeTree() ORDER BY pk;
 
-SELECT replaceRegexpAll(explain, '__table1.|_UInt8|_Int8|_UInt16|_String|_DateTime', '')
-FROM (EXPLAIN actions=1 SELECT count(*) FROM tab WHERE d = '2024-08-06 09:58:09'/*0*/ and b > 50.1/*5000*/)
-WHERE explain LIKE '%Prewhere%' OR explain LIKE '%Filter column%';
-ALTER TABLE tab DROP STATISTICS a, b, c, d;
+ALTER TABLE tab2 ADD STATISTICS a TYPE count_min, uniq;
+ALTER TABLE tab2 ADD STATISTICS b, c, d, e, f, g TYPE count_min, minmax, uniq, tdigest;
 
+INSERT INTO tab2 select toString(number), number, number, cast(number, 'DateTime'), number % 2, number, toDecimal32(number, 1), toString(number) FROM system.numbers LIMIT 100;
 
-DROP TABLE IF EXISTS tab SYNC;
+SELECT count(*) FROM tab2 WHERE a = '0';
+SELECT count(*) FROM tab2 WHERE a = 0; -- { serverError NO_COMMON_TYPE }
+
+SELECT count(*) FROM tab2 WHERE b = 1.1;
+
+SELECT count(*) FROM tab2 WHERE c = 1.1;
+SELECT count(*) FROM tab2 WHERE c = 1000; -- out of range of UInt16
+
+SELECT count(*) FROM tab2 WHERE d = '2024-08-06 09:58:09';
+SELECT count(*) FROM tab2 WHERE d = '2024-08-06 09:58:0';  -- { serverError CANNOT_PARSE_DATETIME }
+
+SELECT count(*) FROM tab2 WHERE e = true;
+SELECT count(*) FROM tab2 WHERE e = 'true'; -- { serverError TYPE_MISMATCH }
+SELECT count(*) FROM tab2 WHERE e = 1;
+SELECT count(*) FROM tab2 WHERE e = 2;
+SELECT count(*) FROM tab2 WHERE e = 1.1;
+SELECT count(*) FROM tab2 WHERE e = '1';
+
+SELECT count(*) FROM tab2 WHERE f = 1.1;
+SELECT count(*) FROM tab2 WHERE f = '1.1';
+SELECT count(*) FROM tab2 WHERE f = 1;
+SELECT count(*) FROM tab2 WHERE f = '1';
+
+SELECT count(*) FROM tab2 WHERE g = toDecimal32(1.0, 1);
+SELECT count(*) FROM tab2 WHERE g = toDecimal32(1.10, 1);
+SELECT count(*) FROM tab2 WHERE g = toDecimal32(1.0, 2);
+SELECT count(*) FROM tab2 WHERE g = 1.0;
+SELECT count(*) FROM tab2 WHERE g = 1.0;
+SELECT count(*) FROM tab2 WHERE g = '1.0';
+
+DROP TABLE IF EXISTS tab2 SYNC;

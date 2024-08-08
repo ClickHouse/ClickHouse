@@ -23,9 +23,23 @@ Test statistics multi-types:
           Prewhere filter
           Prewhere filter column: and(equals(a, \'10000\'), equals(b, 0), less(c, 0), greater(d, _CAST(1, \'DateTime\'))) (removed)
 Test statistics implicitly type conversion:
-        Prewhere info
-          Prewhere filter
-          Prewhere filter column: and(equals(d, \'2024-08-06 09:58:09\'), equals(c, \'0\')) (removed)
-        Prewhere info
-          Prewhere filter
-          Prewhere filter column: and(equals(d, \'2024-08-06 09:58:09\'), greater(b, 50.1_Float64)) (removed)
+1
+0
+0
+0
+0
+50
+50
+0
+0
+50
+0
+0
+1
+1
+1
+0
+1
+1
+1
+1
