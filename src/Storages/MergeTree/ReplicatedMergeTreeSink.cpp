@@ -3,8 +3,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Interpreters/PartLog.h>
+#include <Common/Exception.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
-#include "Common/Exception.h"
 #include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/SipHash.h>
@@ -155,7 +155,18 @@ ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
 }
 
 template<bool async_insert>
-ReplicatedMergeTreeSinkImpl<async_insert>::~ReplicatedMergeTreeSinkImpl() = default;
+ReplicatedMergeTreeSinkImpl<async_insert>::~ReplicatedMergeTreeSinkImpl()
+{
+    if (!delayed_chunk)
+        return;
+
+    for (auto & partition : delayed_chunk->partitions)
+    {
+        partition.temp_part.cancel();
+    }
+
+    delayed_chunk.reset();
+}
 
 template<bool async_insert>
 size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper)
@@ -1155,8 +1166,9 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::onStart()
 template<bool async_insert>
 void ReplicatedMergeTreeSinkImpl<async_insert>::onFinish()
 {
-    const auto & settings = context->getSettingsRef();
+    chassert(!isCancelled());
 
+    const auto & settings = context->getSettingsRef();
     ZooKeeperWithFaultInjectionPtr zookeeper = ZooKeeperWithFaultInjection::createInstance(
         settings.insert_keeper_fault_injection_probability,
         settings.insert_keeper_fault_injection_seed,

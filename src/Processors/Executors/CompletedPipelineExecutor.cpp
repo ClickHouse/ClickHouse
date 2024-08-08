@@ -97,7 +97,9 @@ void CompletedPipelineExecutor::execute()
                 break;
 
             if (is_cancelled_callback())
+            {
                 data->executor->cancel();
+            }
         }
 
         if (data->has_exception)
@@ -116,7 +118,9 @@ CompletedPipelineExecutor::~CompletedPipelineExecutor()
     try
     {
         if (data && data->executor)
+        {
             data->executor->cancel();
+        }
     }
     catch (...)
     {

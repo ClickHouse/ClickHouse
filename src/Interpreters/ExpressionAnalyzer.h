@@ -135,7 +135,12 @@ public:
     /// A list of windows for window functions.
     const WindowDescriptions & windowDescriptions() const { return window_descriptions; }
 
-    void makeWindowDescriptionFromAST(const Context & context, const WindowDescriptions & existing_descriptions, WindowDescription & desc, const IAST * ast);
+    void makeWindowDescriptionFromAST(
+        const Context & context,
+        const WindowDescriptions & existing_descriptions,
+        AggregateFunctionPtr aggregate_function,
+        WindowDescription & desc,
+        const IAST * ast);
     void makeWindowDescriptions(ActionsDAG & actions);
 
     /** Checks if subquery is not a plain StorageSet.

@@ -209,7 +209,7 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
     )
     assert create_multipart == 1
     assert upload_parts >= 2
-    assert s3_errors >= 2
+    assert s3_errors == 1
 
 
 @pytest.mark.parametrize(

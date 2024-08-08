@@ -146,7 +146,7 @@ private:
             auto objects = outcome.GetResult().GetContents();
             for (const auto & object : objects)
             {
-                ObjectMetadata metadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), {}};
+                ObjectMetadata metadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), object.GetETag(), {}};
                 batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
             }
 
@@ -332,6 +332,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
                 ObjectMetadata{
                     static_cast<uint64_t>(object.GetSize()),
                     Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
+                    object.GetETag(),
                     {}}));
 
         if (max_keys)
@@ -479,6 +480,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) cons
     ObjectMetadata result;
     result.size_bytes = object_info.size;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
+    result.etag = object_info.etag;
     result.attributes = object_info.metadata;
 
     return result;

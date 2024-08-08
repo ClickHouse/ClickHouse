@@ -241,12 +241,12 @@ CREATE OR REPLACE TABLE test
 (
     id UInt64,
     size_bytes Int64,
-    size String Alias formatReadableSize(size_bytes)
+    size String ALIAS formatReadableSize(size_bytes)
 )
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO test Values (1, 4678899);
+INSERT INTO test VALUES (1, 4678899);
 
 SELECT id, size_bytes, size FROM test;
 ┌─id─┬─size_bytes─┬─size─────┐
@@ -497,7 +497,7 @@ If you perform a SELECT query mentioning a specific value in an encrypted column
 ```sql
 CREATE TABLE mytable
 (
-    x String Codec(AES_128_GCM_SIV)
+    x String CODEC(AES_128_GCM_SIV)
 )
 ENGINE = MergeTree ORDER BY x;
 ```

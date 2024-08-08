@@ -9,7 +9,7 @@
 namespace DB
 {
 
-void IProcessor::cancel()
+void IProcessor::cancel() noexcept
 {
 
     bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);

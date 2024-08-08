@@ -918,10 +918,10 @@ try
             metrics.reserve(servers_to_start_before_tables.size() + servers.size());
 
             for (const auto & server : servers_to_start_before_tables)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
 
             for (const auto & server : servers)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
             return metrics;
         }
     );

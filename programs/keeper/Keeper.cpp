@@ -421,7 +421,7 @@ try
             std::lock_guard lock(servers_lock);
             metrics.reserve(servers->size());
             for (const auto & server : *servers)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
             return metrics;
         }
     );
