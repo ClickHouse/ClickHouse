@@ -345,3 +345,9 @@ CREATE TABLE sipHashKeyed_keys (`a` Map(String, String)) ENGINE = Memory;
 INSERT INTO sipHashKeyed_keys FORMAT VALUES ({'a':'b', 'c':'d'}), ({'e':'f', 'g':'h'});
 SELECT hex(sipHash128ReferenceKeyed((0::UInt64, materialize(0::UInt64)), a)) FROM sipHashKeyed_keys ORDER BY a;
 DROP TABLE sipHashKeyed_keys;
+
+SELECT 'Check bug 3 found fuzzing';
+SELECT sipHash64Keyed((1::UInt64, 2::UInt64), []::Array(UInt8));
+SELECT hex(sipHash128Keyed((1::UInt64, 2::UInt64), []::Array(UInt8)));
+SELECT sipHash64Keyed((1::UInt64, 2::UInt64), mapFromArrays([], []));
+SELECT hex(sipHash128Keyed((1::UInt64, 2::UInt64), mapFromArrays([], [])));
