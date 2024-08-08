@@ -46,9 +46,9 @@ void PartMovesBetweenShardsOrchestrator::run()
 
     try
     {
-        if(storage.is_leader){
+        if (storage.is_leader){
             std::optional<Entry> selected_entry = selectEntryFromZk();
-            if(selected_entry.has_value()){
+            if (selected_entry.has_value()){
                 /// Schedule for immediate re-execution as likely there is more work
                 /// to be done.
                 step(selected_entry.value());
@@ -104,7 +104,7 @@ std::optional<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsO
 
     Strings signaled_entries = zk->getChildren(entries_znode_path + "/task_queue");
 
-    for(String & signaled_entry : signaled_entries){
+    for (String & signaled_entry : signaled_entries){
         Entry entry_to_process;
         Coordination::Stat stat;
         entry_to_process.znode_path = entries_znode_path + "/tasks/" + signaled_entry;
@@ -143,9 +143,9 @@ void PartMovesBetweenShardsOrchestrator::step(Entry & entry)
 
     EntryState current_state = entry.state;
 
-    if(!entry.rollback){
+    if (!entry.rollback){
         entry.state = getNextState(entry);
-        if(entry.state.value == current_state.value)
+        if (entry.state.value == current_state.value)
         {
            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process the step entry with out quorum success for state {}", entry.state.value);
         }
@@ -177,7 +177,7 @@ void PartMovesBetweenShardsOrchestrator::step(Entry & entry)
 
 PartMovesBetweenShardsOrchestrator::EntryState PartMovesBetweenShardsOrchestrator::getNextState(Entry & entry) const
 {
-    if(entry.state.value == EntryState::TODO  || entry.replicas.size() == entry.required_number_of_replicas ){
+    if (entry.state.value == EntryState::TODO  || entry.replicas.size() == entry.required_number_of_replicas){
         return EntryState::nextState(entry.state.value);
     }
 
@@ -642,9 +642,10 @@ void PartMovesBetweenShardsOrchestrator::Entry::fromString(const String & buf)
     replicas = parseFromString<std::vector<String>>(json->getValue<std::string>(JSON_KEY_REPLICAS));
 }
 
-UInt64 PartMovesBetweenShardsOrchestrator::getQuorum(String zk_path){
+UInt64 PartMovesBetweenShardsOrchestrator::getQuorum(String zk_path)
+{
     auto zk = storage.getZooKeeper();
-    Strings replicas = zk->getChildren( fs::path(zk_path) / "replicas");
+    Strings replicas = zk->getChildren(fs::path(zk_path) / "replicas");
     return replicas.size();
 }
 }
