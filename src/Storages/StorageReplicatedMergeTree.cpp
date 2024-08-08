@@ -1787,7 +1787,6 @@ void StorageReplicatedMergeTree::syncPinnedPartUUIDs(bool startup)
         auto new_pinned_part_uuids = std::make_shared<PinnedPartUUIDs>();
         new_pinned_part_uuids->fromString(s);
         new_pinned_part_uuids->stat = stat;
-        
         /// No queries could be run in parallel with pinned_part_uuids
         /// updating, otherwise that query could be started without
         /// pinned_part_uuids, then it will receive some UUIds from remote
@@ -3658,22 +3657,19 @@ void StorageReplicatedMergeTree::updateMovePartTask( const LogEntry & logEntry, 
         return;
     }
     
-    while (zookeeper->tryGet(fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name, value, &stat)){
+    while(zookeeper->tryGet(fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name, value, &stat)){
         PartMovesBetweenShardsOrchestrator::Entry entry;
         entry.fromString(value);
         entry.replicas.push_back(replica_name);
 
         Coordination::Requests ops;
         Coordination::Responses responses;
-
         ops.emplace_back(zkutil::makeSetRequest(fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name, entry.toString(), stat.version));
-
         if(entry.replicas.size() == entry.required_number_of_replicas){
             ops.emplace_back(zkutil::makeCreateRequest(fs::path(logEntry.task_entry_zk_path) / "task_queue" / logEntry.task_name, replica_name, zkutil::CreateMode::Persistent, true));
         }
 
         auto code = zookeeper->tryMulti(ops, responses);
-
         if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
         {
             break;
@@ -3685,9 +3681,7 @@ void StorageReplicatedMergeTree::updateMovePartTask( const LogEntry & logEntry, 
         } else {
             throw Coordination::Exception::fromPath(code, fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name);
         }
-
     }
-
 }
 
 
@@ -8725,7 +8719,6 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/log", merge_pred.getVersion())); /// Make sure no new events were added to the log.
     ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/pinned_part_uuids", src_pins.toString(), src_pins.stat.version));
     ops.emplace_back(zkutil::makeSetRequest(to + "/pinned_part_uuids", dst_pins.toString(), dst_pins.stat.version));
-
     ops.emplace_back(zkutil::makeCreateRequest( fs::path(part_moves_between_shards_orchestrator.entries_znode_path) / "tasks" / task_name, part_move_entry.toString(), zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest( fs::path(part_moves_between_shards_orchestrator.entries_znode_path) / "task_queue" / task_name, "", zkutil::CreateMode::Persistent));
 

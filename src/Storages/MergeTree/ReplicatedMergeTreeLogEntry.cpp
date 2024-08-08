@@ -185,7 +185,6 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
     if(!task_name.empty())
         out << "task_name: " << task_name << "\n";
-    
     if(!task_entry_zk_path.empty())
         out << "task_entry_zk_path: " << task_entry_zk_path << "\n";
 }
@@ -391,7 +390,6 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
 
     if(!in.eof() && checkString("task_entry_zk_path: ", in))
             in >>  task_entry_zk_path >> "\n";
-
 }
 
 void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::writeText(WriteBuffer & out) const

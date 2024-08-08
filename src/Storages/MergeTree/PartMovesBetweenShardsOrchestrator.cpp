@@ -100,7 +100,6 @@ std::vector<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrc
 std::optional<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsOrchestrator::selectEntryFromZk()
 {
     std::lock_guard lock(state_mutex);
-    
     auto zk = storage.getZooKeeper();
 
     Strings signaled_entries = zk->getChildren(entries_znode_path + "/task_queue");
@@ -111,13 +110,9 @@ std::optional<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsO
         Entry entry_to_process;
        
         Coordination::Stat stat;
-
         entry_to_process.znode_path = entries_znode_path + "/tasks/" + signaled_entry;
-
         auto entry_str = zk->get(entry_to_process.znode_path, &stat);
-
         entry_to_process.fromString(entry_str);
-
         entry_to_process.version = stat.version;
         entry_to_process.znode_name = signaled_entry;
 
@@ -135,7 +130,6 @@ std::optional<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsO
                 throw;
             }
         }
-        
     }
     return std::nullopt;
 }
@@ -143,7 +137,6 @@ std::optional<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsO
 void PartMovesBetweenShardsOrchestrator::step(Entry & entry)
 {
     auto zk = storage.getZooKeeper();
-
 
     LOG_DEBUG(log, "stepEntry on task {} from state {} (rollback: {}), try: {}",
               entry.znode_name,
@@ -160,7 +153,6 @@ void PartMovesBetweenShardsOrchestrator::step(Entry & entry)
            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process the step entry with out quorum success for state {}", entry.state.value);
         } 
     }
-    
     Coordination::Requests ops;
 
     try
@@ -281,7 +273,6 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(Entry & entry)
                 Coordination::Responses responses;
                 Coordination::Error rc = zk->tryMulti(ops, responses);
                 zkutil::KeeperMultiException::check(rc, ops, responses);
-
                 LOG_DEBUG(log, "Pushed log entry for task {} and state {}", entry.znode_name, entry.state.toString());  
             }
             break;
@@ -289,7 +280,6 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(Entry & entry)
 
         case EntryState::DESTINATION_FETCH:
         {
-
             if (entry.rollback)
             {
                 // TODO(nv): Do we want to cleanup fetched data on the destination?
