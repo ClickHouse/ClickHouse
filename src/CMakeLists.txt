@@ -110,6 +110,10 @@ list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_dele
 add_headers_and_sources(clickhouse_compression Compression)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
 
+if (TARGET ch_contrib::sz3)
+    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::sz3)
+endif()
+
 add_headers_and_sources(dbms Disks/IO)
 add_headers_and_sources(dbms Disks/ObjectStorages)
 if (TARGET ch_contrib::sqlite)
@@ -657,10 +661,6 @@ dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
 
 if (TARGET ch_contrib::usearch)
     dbms_target_link_libraries(PUBLIC ch_contrib::usearch)
-endif()
-
-if (TARGET ch_contrib::sz3)
-    dbms_target_link_libraries (PUBLIC ch_contrib::sz3)
 endif()
 
 if (TARGET ch_contrib::prometheus_protobufs)

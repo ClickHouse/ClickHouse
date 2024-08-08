@@ -188,7 +188,7 @@ void registerCodecGorilla(CompressionCodecFactory & factory);
 void registerCodecEncrypted(CompressionCodecFactory & factory);
 void registerCodecFPC(CompressionCodecFactory & factory);
 void registerCodecGCD(CompressionCodecFactory & factory);
-#ifdef ENABLE_SZ3
+#if USE_SZ3
 void registerCodecSZ3(CompressionCodecFactory & factory);
 #endif
 
@@ -212,8 +212,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecDeflateQpl(*this);
 #endif
     registerCodecGCD(*this);
-
-#ifdef ENABLE_SZ3
+#if USE_SZ3
     registerCodecSZ3(*this);
 #endif
 

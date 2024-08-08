@@ -70,7 +70,8 @@ void CompressionCodecFPC::updateHash(SipHash & hash) const
 }
 
 CompressionCodecFPC::CompressionCodecFPC(UInt8 float_size, UInt8 compression_level)
-    : float_width{float_size}, level{compression_level}
+    : float_width(float_size)
+    , level(compression_level)
 {
     setCodecDescription("FPC", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
 }
