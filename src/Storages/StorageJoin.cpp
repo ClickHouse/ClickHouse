@@ -75,6 +75,7 @@ StorageJoin::StorageJoin(
     table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
     join = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
     restore();
+    optimizeUnlocked();
 }
 
 RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const
@@ -97,6 +98,47 @@ SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataP
 {
     std::lock_guard mutate_lock(mutate_mutex);
     return StorageSetOrJoinBase::write(query, metadata_snapshot, context, /*async_insert=*/false);
+}
+
+bool StorageJoin::optimize(
+    const ASTPtr & /*query*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const ASTPtr & partition,
+    bool final,
+    bool deduplicate,
+    const Names & /* deduplicate_by_columns */,
+    bool cleanup,
+    ContextPtr context)
+{
+
+    if (partition)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition cannot be specified when optimizing table of type Join");
+
+    if (final)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FINAL cannot be specified when optimizing table of type Join");
+
+    if (deduplicate)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DEDUPLICATE cannot be specified when optimizing table of type Join");
+
+    if (cleanup)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CLEANUP cannot be specified when optimizing table of type Join");
+
+    std::lock_guard mutate_lock(mutate_mutex);
+    TableLockHolder lock_holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
+
+    optimizeUnlocked();
+    return true;
+}
+
+void StorageJoin::optimizeUnlocked()
+{
+    size_t current_bytes = join->getTotalByteCount();
+    size_t dummy = current_bytes;
+    join->shrinkStoredBlocksToFit(dummy, true);
+
+    size_t optimized_bytes = join->getTotalByteCount();
+    if (current_bytes > optimized_bytes)
+        LOG_INFO(getLogger("StorageJoin"), "Optimized Join storage from {} to {} bytes", current_bytes, optimized_bytes);
 }
 
 void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
