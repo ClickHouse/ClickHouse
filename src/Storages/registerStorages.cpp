@@ -26,6 +26,8 @@ void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
 void registerStorageLoop(StorageFactory & factory);
+void registerStorageTimeSeries(StorageFactory & factory);
+
 #if USE_RAPIDJSON || USE_SIMDJSON
 void registerStorageFuzzJSON(StorageFactory & factory);
 #endif
@@ -130,6 +132,8 @@ void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
     registerStorageExecutable(factory);
     registerStorageWindowView(factory);
     registerStorageLoop(factory);
+    registerStorageTimeSeries(factory);
+
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerStorageFuzzJSON(factory);
 #endif

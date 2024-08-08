@@ -16,7 +16,7 @@ import upload_result_helper
 from build_check import get_release_or_pr
 from ci_config import CI
 from ci_metadata import CiMetadata
-from ci_utils import GH, normalize_string, Utils
+from ci_utils import GH, Utils
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
@@ -296,7 +296,7 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
         # do not set report prefix for scheduled or dispatched wf (in case it started from feature branch while
         #   testing), otherwise reports won't be found
         if not (pr_info.is_scheduled or pr_info.is_dispatched):
-            report_prefix = normalize_string(pr_info.head_ref)
+            report_prefix = Utils.normalize_string(pr_info.head_ref)
     print(
         f"Use report prefix [{report_prefix}], pr_num [{pr_info.number}], head_ref [{pr_info.head_ref}]"
     )
@@ -718,7 +718,7 @@ def _upload_build_artifacts(
         (
             get_release_or_pr(pr_info, get_version_from_repo())[1],
             pr_info.sha,
-            normalize_string(build_name),
+            Utils.normalize_string(build_name),
             "performance.tar.zst",
         )
     )
@@ -1250,7 +1250,7 @@ def main() -> int:
                     (
                         get_release_or_pr(pr_info, get_version_from_repo())[0],
                         pr_info.sha,
-                        normalize_string(
+                        Utils.normalize_string(
                             job_report.check_name or _get_ext_check_name(args.job_name)
                         ),
                     )

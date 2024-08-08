@@ -20,6 +20,7 @@ from typing import Any, Dict
 
 from env_helper import IS_CI
 from integration_test_images import IMAGES
+from tee_popen import TeePopen
 
 MAX_RETRY = 1
 NUM_WORKERS = 5
@@ -356,20 +357,13 @@ class ClickhouseIntegrationTestsRunner:
                     logging.info("Package found in %s", full_path)
                     log_name = "install_" + f + ".log"
                     log_path = os.path.join(str(self.path()), log_name)
-                    with open(log_path, "w", encoding="utf-8") as log:
-                        cmd = f"dpkg -x {full_path} ."
-                        logging.info("Executing installation cmd %s", cmd)
-                        with subprocess.Popen(
-                            cmd, shell=True, stderr=log, stdout=log
-                        ) as proc:
-                            if proc.wait() == 0:
-                                logging.info(
-                                    "Installation of %s successfull", full_path
-                                )
-                            else:
-                                raise RuntimeError(
-                                    f"Installation of {full_path} failed"
-                                )
+                    cmd = f"dpkg -x {full_path} ."
+                    logging.info("Executing installation cmd %s", cmd)
+                    with TeePopen(cmd, log_file=log_path) as proc:
+                        if proc.wait() == 0:
+                            logging.info("Installation of %s successfull", full_path)
+                        else:
+                            raise RuntimeError(f"Installation of {full_path} failed")
                     break
             else:
                 raise FileNotFoundError(f"Package with {package} not found")
@@ -784,8 +778,8 @@ class ClickhouseIntegrationTestsRunner:
         logging.info("Starting check with retries")
         final_retry = 0
         logs = []
-        tires_num = 1 if should_fail else FLAKY_TRIES_COUNT
-        for i in range(tires_num):
+        tries_num = 1 if should_fail else FLAKY_TRIES_COUNT
+        for i in range(tries_num):
             final_retry += 1
             logging.info("Running tests for the %s time", i)
             counters, tests_times, log_paths = self.try_run_test_group(

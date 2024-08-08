@@ -75,9 +75,14 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.8",
         {
+            {"restore_replace_external_table_functions_to_null", false, false, "New setting."},
+            {"restore_replace_external_engines_to_null", false, false, "New setting."},
             {"input_format_json_max_depth", 1000000, 1000, "It was unlimited in previous versions, but that was unsafe."},
             {"merge_tree_min_bytes_per_task_for_remote_reading", 4194304, 2097152, "Value is unified with `filesystem_prefetch_min_bytes_for_single_read_task`"},
+            {"allow_experimental_kafka_offsets_storage_in_keeper", false, false, "Allow the usage of experimental Kafka storage engine that stores the committed offsets in ClickHouse Keeper"},
             {"allow_archive_path_syntax", true, true, "Added new setting to allow disabling archive path syntax."},
+            {"allow_experimental_time_series_table", false, false, "Added new setting to allow the TimeSeries table engine"},
+            {"enable_analyzer", 1, 1, "Added an alias to a setting `allow_experimental_analyzer`."},
         }
     },
     {"24.7",
@@ -89,7 +94,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"input_format_native_decode_types_in_binary_format", false, false, "Added new setting to allow to read type names in binary format in Native output format"},
             {"read_in_order_use_buffering", false, true, "Use buffering before merging while reading in order of primary key"},
             {"enable_named_columns_in_function_tuple", false, true, "Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers."},
-            {"input_format_json_case_insensitive_column_matching", false, false, "Ignore case when matching JSON keys with CH columns."},
             {"optimize_trivial_insert_select", true, false, "The optimization does not make sense in many cases."},
             {"dictionary_validate_primary_key_type", false, false, "Validate primary key type for dictionaries. By default id type for simple layouts will be implicitly converted to UInt64."},
             {"collect_hash_table_stats_during_joins", false, true, "New setting."},
