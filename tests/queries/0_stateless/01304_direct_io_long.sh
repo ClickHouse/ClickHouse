@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-object-storage-with-slow-build
+# Tags: long, no-object-storage-with-slow-build, no-flaky-check
+# It can be too long with ThreadFuzzer
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
