@@ -951,12 +951,40 @@ namespace
         engine_ast->no_empty_args = true;
         storage.set(storage.engine, engine_ast);
     }
+
+    void setNullTableEngine(ASTStorage & storage)
+    {
+        auto engine_ast = std::make_shared<ASTFunction>();
+        engine_ast->name = "Null";
+        engine_ast->no_empty_args = true;
+        storage.set(storage.engine, engine_ast);
+    }
+
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.as_table_function)
+    {
+        if (getContext()->getSettingsRef().restore_replace_external_table_functions_to_null)
+        {
+            const auto & factory = TableFunctionFactory::instance();
+
+            auto properties = factory.tryGetProperties(create.as_table_function->as<ASTFunction>()->name);
+            if (properties && properties->allow_readonly)
+                return;
+            if (!create.storage)
+            {
+                auto storage_ast = std::make_shared<ASTStorage>();
+                create.set(create.storage, storage_ast);
+            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage should not be created yet, it's a bug.");
+            create.as_table_function = nullptr;
+            setNullTableEngine(*create.storage);
+        }
         return;
+    }
 
     if (create.is_dictionary || create.is_ordinary_view || create.is_live_view || create.is_window_view)
         return;
@@ -1006,6 +1034,13 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         {
             /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
             setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
+        }
+        /// For external tables with restore_replace_external_engine_to_null setting we replace external engines to
+        /// Null table engine.
+        else if (getContext()->getSettingsRef().restore_replace_external_engines_to_null)
+        {
+            if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type != AccessType::NONE)
+                setNullTableEngine(*create.storage);
         }
         return;
     }
