@@ -3,6 +3,7 @@
 #include <list>
 #include <memory>
 
+#include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
 
 #include <Compression/CompressedReadBuffer.h>
@@ -26,6 +27,12 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
+namespace ProfileEvents
+{
+    extern const Event MergeHorizontalStageTotalMilliseconds;
+    extern const Event MergeVerticalStageTotalMilliseconds;
+    extern const Event MergeProjectionStageTotalMilliseconds;
+}
 
 namespace DB
 {
@@ -134,6 +141,7 @@ private:
     {
         virtual void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) = 0;
         virtual StageRuntimeContextPtr getContextForNextStage() = 0;
+        virtual ProfileEvents::Event getTotalTimeProfileEvent() const = 0;
         virtual bool execute() = 0;
         virtual ~IStage() = default;
     };
@@ -195,6 +203,7 @@ private:
         bool need_prefix;
 
         scope_guard temporary_directory_lock;
+        UInt64 prev_elapesed_ms{0};
     };
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;
@@ -233,6 +242,7 @@ private:
         /// Dependencies for next stages
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
         bool need_sync{false};
+        UInt64 elapsed_execute_ns{0};
     };
 
     using ExecuteAndFinalizeHorizontalPartRuntimeContextPtr = std::shared_ptr<ExecuteAndFinalizeHorizontalPartRuntimeContext>;
@@ -256,7 +266,6 @@ private:
 
         ExecuteAndFinalizeHorizontalPartSubtasks::const_iterator subtasks_iterator = subtasks.begin();
 
-
         MergeAlgorithm chooseMergeAlgorithm() const;
         void createMergedStream();
         void extractMergingAndGatheringColumns() const;
@@ -268,6 +277,7 @@ private:
         }
 
         StageRuntimeContextPtr getContextForNextStage() override;
+        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeHorizontalStageTotalMilliseconds; }
 
         ExecuteAndFinalizeHorizontalPartRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
@@ -307,6 +317,7 @@ private:
         QueryPipeline column_parts_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
         std::unique_ptr<CompressedReadBufferFromFile> rows_sources_read_buf{nullptr};
+        UInt64 elapsed_execute_ns{0};
     };
 
     using VerticalMergeRuntimeContextPtr = std::shared_ptr<VerticalMergeRuntimeContext>;
@@ -321,6 +332,7 @@ private:
             global_ctx = static_pointer_cast<GlobalRuntimeContext>(global);
         }
         StageRuntimeContextPtr getContextForNextStage() override;
+        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeVerticalStageTotalMilliseconds; }
 
         bool prepareVerticalMergeForAllColumns() const;
         bool executeVerticalMergeForAllColumns() const;
@@ -361,6 +373,7 @@ private:
         MergeTasks::iterator projections_iterator;
 
         LoggerPtr log{getLogger("MergeTask::MergeProjectionsStage")};
+        UInt64 elapsed_execute_ns{0};
     };
 
     using MergeProjectionsRuntimeContextPtr = std::shared_ptr<MergeProjectionsRuntimeContext>;
@@ -368,12 +381,15 @@ private:
     struct MergeProjectionsStage : public IStage
     {
         bool execute() override;
+
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {
             ctx = static_pointer_cast<MergeProjectionsRuntimeContext>(local);
             global_ctx = static_pointer_cast<GlobalRuntimeContext>(global);
         }
-        StageRuntimeContextPtr getContextForNextStage() override { return nullptr; }
+
+        StageRuntimeContextPtr getContextForNextStage() override;
+        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeProjectionStageTotalMilliseconds; }
 
         bool mergeMinMaxIndexAndPrepareProjections() const;
         bool executeProjections() const;

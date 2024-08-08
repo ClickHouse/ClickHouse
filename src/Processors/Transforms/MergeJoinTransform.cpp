@@ -511,6 +511,16 @@ void MergeJoinAlgorithm::logElapsed(double seconds)
         stat.max_blocks_loaded);
 }
 
+IMergingAlgorithm::MergedStats MergeJoinAlgorithm::getMergedStats() const
+{
+    return
+    {
+        .bytes = 0,
+        .rows = stat.num_rows[0] + stat.num_rows[1],
+        .blocks = stat.num_blocks[0] + stat.num_blocks[1],
+    };
+}
+
 static void prepareChunk(Chunk & chunk)
 {
     if (!chunk)
@@ -1271,7 +1281,7 @@ MergeJoinTransform::MergeJoinTransform(
 
 void MergeJoinTransform::onFinish()
 {
-    algorithm.logElapsed(total_stopwatch.elapsedSeconds());
+    algorithm.logElapsed(merging_elapsed_ns / 1000000000ULL);
 }
 
 }

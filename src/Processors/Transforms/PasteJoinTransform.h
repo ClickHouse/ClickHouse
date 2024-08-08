@@ -35,8 +35,7 @@ public:
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
-
-    void logElapsed(double seconds);
+    MergedStats getMergedStats() const override;
 
 private:
     Chunk createBlockWithDefaults(size_t source_num);

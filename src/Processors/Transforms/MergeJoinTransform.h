@@ -245,6 +245,8 @@ public:
     void setAsofInequality(ASOFJoinInequality asof_inequality_);
 
     void logElapsed(double seconds);
+    MergedStats getMergedStats() const override;
+
 private:
     std::optional<Status> handleAnyJoinState();
     Status anyJoin();
