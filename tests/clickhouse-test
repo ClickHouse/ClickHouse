@@ -363,8 +363,6 @@ CAPTURE_CLIENT_STACKTRACE = False
 
 
 def kill_process_group(pgid):
-    global CAPTURE_CLIENT_STACKTRACE
-
     print(f"Killing process group {pgid}")
     print(f"Processes in process group {pgid}:")
     print(
