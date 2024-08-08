@@ -40,6 +40,18 @@ def run_with_timeout(func, args, timeout):
             print(f"Timeout, state: {STATE_MAP[state.value]}")
             return
 
+def expect(text, master, debug_log_fd):
+    output_b = os.read(master, 4096)
+    output = output_b.decode()
+    debug_log_fd.write(repr(output_b) + "\n")
+    debug_log_fd.flush()
+    while not text in output:
+        output_b = os.read(master, 4096)
+        output += output_b.decode()
+        debug_log_fd.write(repr(output_b) + "\n")
+        debug_log_fd.flush()
+
+    return output
 
 def test_completion(program, argv, prompt, state=None):
     shell_pid, master = pty.fork()
@@ -49,43 +61,17 @@ def test_completion(program, argv, prompt, state=None):
         try:
             debug_log_fd = open(DEBUG_LOG, "a")
 
-            output_b = os.read(master, 4096)
-            output = output_b.decode()
-            debug_log_fd.write(repr(output_b) + "\n")
-            debug_log_fd.flush()
-            while not ":)" in output:
-                output_b = os.read(master, 4096)
-                output += output_b.decode()
-                debug_log_fd.write(repr(output_b) + "\n")
-                debug_log_fd.flush()
+            expect(":)", master, debug_log_fd)
 
             state.value = 1
-
             os.write(master, bytes(prompt.encode()))
-            output_b = os.read(master, 4096)
-            output = output_b.decode()
-            debug_log_fd.write(repr(output_b) + "\n")
-            debug_log_fd.flush()
-            while not prompt[:-10] in output:
-                output_b = os.read(master, 4096)
-                output += output_b.decode()
-                debug_log_fd.write(repr(output_b) + "\n")
-                debug_log_fd.flush()
+            expect(prompt[:-10], master, debug_log_fd)
 
             time.sleep(0.01)
             os.write(master, b"\r")
-
             state.value = 2
 
-            output_b = os.read(master, 4096)
-            output = output_b.decode()
-            debug_log_fd.write(repr(output_b) + "\n")
-            debug_log_fd.flush()
-            while not "CANNOT_PARSE_INPUT_ASSERTION_FAILED" in output:
-                output_b = os.read(master, 4096)
-                output += output_b.decode()
-                debug_log_fd.write(repr(output_b) + "\n")
-                debug_log_fd.flush()
+            output = expect("CANNOT_PARSE_INPUT_ASSERTION_FAILED", master, debug_log_fd)
 
             while not ":)" in output:
                 output_b = os.read(master, 4096)
