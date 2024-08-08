@@ -38,7 +38,7 @@ categories_preferred_order = (
     "Experimental Feature",
     "Performance Improvement",
     "Improvement",
-    "Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)",
+    # "Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)",
     "Bug Fix (user-visible misbehavior in an official stable release)",
     "Build/Testing/Packaging Improvement",
     "Other",
@@ -294,7 +294,8 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
             r"(?i)bug\Wfix",
             category,
         )
-        and "Critical Bug Fix" not in category
+        # Map "Critical Bug Fix" to "Bug fix" category for changelog
+        # and "Critical Bug Fix" not in category
     ):
         category = "Bug Fix (user-visible misbehavior in an official stable release)"
 

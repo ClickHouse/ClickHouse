@@ -118,7 +118,7 @@ And the result of interpreting the `INSERT SELECT` query is a "completed" `Query
 
 `InterpreterSelectQuery` uses `ExpressionAnalyzer` and `ExpressionActions` machinery for query analysis and transformations. This is where most rule-based query optimizations are performed. `ExpressionAnalyzer` is quite messy and should be rewritten: various query transformations and optimizations should be extracted into separate classes to allow for modular transformations of the query.
 
-To address current problems that exist in interpreters, a new `InterpreterSelectQueryAnalyzer` is being developed. It is a new version of `InterpreterSelectQuery` that does not use `ExpressionAnalyzer` and introduces an additional abstraction level between `AST` and `QueryPipeline` called `QueryTree`. It is not production-ready yet, but it can be tested with the `allow_experimental_analyzer` flag.
+To address problems that exist in interpreters, a new `InterpreterSelectQueryAnalyzer` has been developed. This is a new version of the `InterpreterSelectQuery`, which does not use the `ExpressionAnalyzer` and introduces an additional layer of abstraction between `AST` and `QueryPipeline`, called `QueryTree'. It is fully ready for use in production, but just in case it can be turned off by setting the value of the `enable_analyzer` setting to `false`.
 
 ## Functions {#functions}
 
