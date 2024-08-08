@@ -96,10 +96,6 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
     loading_thread = std::thread([my_context = Context::createCopy(context), connection_parameters, suggestion_limit, this]
     {
         ThreadStatus thread_status;
-        my_context->makeQueryContext();
-        auto group = ThreadGroup::createForQuery(my_context);
-        CurrentThread::attachToGroup(group);
-
         for (size_t retry = 0; retry < 10; ++retry)
         {
             try

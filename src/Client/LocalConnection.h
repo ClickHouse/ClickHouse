@@ -61,6 +61,8 @@ struct LocalQueryState
     /// Time after the last check to stop the request and send the progress.
     Stopwatch after_send_progress;
     Stopwatch after_send_profile_events;
+
+    std::unique_ptr<CurrentThread::QueryScope> query_scope_holder;
 };
 
 

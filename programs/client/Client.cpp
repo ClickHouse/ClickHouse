@@ -19,6 +19,7 @@
 
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
 #include <Common/config_version.h>
@@ -327,6 +328,7 @@ int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
     UseSSL use_ssl;
+    auto & thread_status = MainThreadStatus::getInstance();
     setupSignalHandler();
 
     std::cout << std::fixed << std::setprecision(3);
@@ -340,6 +342,14 @@ try
     adjustSettings();
     initTTYBuffer(toProgressOption(config().getString("progress", "default")));
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
+
+    {
+        // All that just to set DB::CurrentThread::get().getGlobalContext()
+        // which is required for client timezone (pushed from server) to work.
+        auto thread_group = std::make_shared<ThreadGroup>();
+        const_cast<ContextWeakPtr&>(thread_group->global_context) = global_context;
+        thread_status.attachToGroup(thread_group, false);
+    }
 
     /// Includes delayed_interactive.
     if (is_interactive)

@@ -296,6 +296,9 @@ protected:
     Settings cmd_settings;
     MergeTreeSettings cmd_merge_tree_settings;
 
+    /// thread status should be destructed before shared context because it relies on process list.
+    std::optional<ThreadStatus> thread_status;
+
     ServerConnectionPtr connection;
     ConnectionParameters connection_parameters;
 
