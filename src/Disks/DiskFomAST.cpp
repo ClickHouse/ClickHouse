@@ -64,7 +64,7 @@ std::string getOrCreateCustomDisk(DiskConfigurationPtr config, const std::string
 
     if (!disk->isCustomDisk())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The disk `{}` is already exist and described by the config."
+            "Disk `{}` already exists and is described by the config."
             " It is impossible to redefine it.",
             disk_name);
 
