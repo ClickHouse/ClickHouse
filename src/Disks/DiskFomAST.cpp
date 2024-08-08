@@ -137,7 +137,7 @@ std::string DiskFomAST::createCustomDisk(const ASTPtr & disk_function_ast, Conte
     return disk_name;
 }
 
-std::string DiskFomAST::getConfigDefinedDisk(const std::string &disk_name, ContextPtr context)
+std::string DiskFomAST::getConfigDefinedDisk(const std::string & disk_name, ContextPtr context)
 {
     if (auto result = context->tryGetDisk(disk_name))
     {
