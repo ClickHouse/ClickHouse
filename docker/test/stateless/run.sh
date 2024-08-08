@@ -203,7 +203,7 @@ while [ $retry -le $max_retries ]; do
     output=$(./mc admin service restart clickminio 2>&1)
     echo "$output"
 
-    if echo "$output" | grep -q "Restarted \`clickminio\` successfully in 1 seconds"; then
+    if echo "$output" | grep -q "Restarted \`clickminio\` successfully"; then
         echo "Restarted clickminio successfully."
         break
     fi
