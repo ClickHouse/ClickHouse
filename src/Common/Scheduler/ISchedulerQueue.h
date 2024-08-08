@@ -22,28 +22,19 @@ public:
     {}
 
     // Wrapper for `enqueueRequest()` that should be used to account for available resource budget
-    void enqueueRequestUsingBudget(ResourceRequest * request)
+    // Returns `estimated_cost` that should be passed later to `adjustBudget()`
+    [[ nodiscard ]] ResourceCost enqueueRequestUsingBudget(ResourceRequest * request)
     {
-        request->cost = budget.ask(request->cost);
+        ResourceCost estimated_cost = request->cost;
+        request->cost = budget.ask(estimated_cost);
         enqueueRequest(request);
+        return estimated_cost;
     }
 
     // Should be called to account for difference between real and estimated costs
     void adjustBudget(ResourceCost estimated_cost, ResourceCost real_cost)
     {
         budget.adjust(estimated_cost, real_cost);
-    }
-
-    // Adjust budget to account for extra consumption of `cost` resource units
-    void consumeBudget(ResourceCost cost)
-    {
-        adjustBudget(0, cost);
-    }
-
-    // Adjust budget to account for requested, but not consumed `cost` resource units
-    void accumulateBudget(ResourceCost cost)
-    {
-        adjustBudget(cost, 0);
     }
 
     /// Enqueue new request to be executed using underlying resource.
