@@ -176,5 +176,8 @@ endif()
 if (TARGET ch_contrib::sz3)
     set(USE_SZ3 1)
 endif()
+if (TARGET ch_contrib::numactl)
+    set(USE_NUMACTL 1)
+endif()
 
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR})

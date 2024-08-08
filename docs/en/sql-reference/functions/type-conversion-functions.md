@@ -1546,57 +1546,1924 @@ toInt256OrDefault('abc', CAST('-1', 'Int256')):  -1
 - [`toInt256OrZero`](#toint256orzero).
 - [`toInt256OrNull`](#toint256ornull).
 
-## toUInt(8\|16\|32\|64\|256)
+# toUInt8
 
-Converts an input value to the [UInt](../data-types/int-uint.md) data type. This function family includes:
+Converts an input value to a value of type [`UInt8`](../data-types/int-uint.md). Throws an exception in case of an error.
 
-- `toUInt8(expr)` — Converts to a value of data type `UInt8`.
-- `toUInt16(expr)` — Converts to a value of data type `UInt16`.
-- `toUInt32(expr)` — Converts to a value of data type `UInt32`.
-- `toUInt64(expr)` — Converts to a value of data type `UInt64`.
-- `toUInt256(expr)` — Converts to a value of data type `UInt256`.
+**Syntax**
+
+```sql
+toUInt8(expr)
+```
 
 **Arguments**
 
-- `expr` — [Expression](../syntax.md/#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported arguments:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt8('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt8](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.  
+For example: `SELECT toUInt8(256) == 0;`.
+:::
 
 **Returned value**
 
-- Integer value in the `UInt8`, `UInt16`, `UInt32`, `UInt64` or `UInt256` data type.
+- 8-bit unsigned integer value. [UInt8](../data-types/int-uint.md).
 
-Functions use [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::
 
-The behavior of functions for negative arguments and for the [NaN and Inf](../data-types/float.md/#data_type-float-nan-inf) arguments is undefined. If you pass a string with a negative number, for example `'-32'`, ClickHouse raises an exception. Remember about [numeric conversions issues](#common-issues-with-data-conversion), when using the functions.
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toUInt8(8),
+    toUInt8(8.8),
+    toUInt8('8')
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt8(8):   8
+toUInt8(8.8): 8
+toUInt8('8'): 8
+```
+
+**See also**
+
+- [`toUInt8OrZero`](#touint8orzero).
+- [`toUInt8OrNull`](#touint8ornull).
+- [`toUInt8OrDefault`](#touint8ordefault).
+
+## toUInt8OrZero
+
+Like [`toUInt8`](#touint8), this function converts an input value to a value of type [UInt8](../data-types/int-uint.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toUInt8OrZero(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported arguments (return `0`):
+- String representations of ordinary Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt8OrZero('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt8](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 8-bit unsigned integer value if successful, otherwise `0`. [UInt8](../data-types/int-uint.md).
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::
 
 **Example**
 
 Query:
 
 ``` sql
-SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8);
+SELECT
+    toUInt8OrZero('-8'),
+    toUInt8OrZero('abc')
+FORMAT vertical;
 ```
 
 Result:
 
 ```response
-┌───────toUInt64(nan)─┬─toUInt32(-32)─┬─toUInt16('16')─┬─toUInt8(8.8)─┐
-│ 9223372036854775808 │    4294967264 │             16 │            8 │
-└─────────────────────┴───────────────┴────────────────┴──────────────┘
+Row 1:
+──────
+toUInt8OrZero('-8'):  0
+toUInt8OrZero('abc'): 0
 ```
 
-## toUInt(8\|16\|32\|64\|256)OrZero
+**See also**
 
-## toUInt(8\|16\|32\|64\|256)OrNull
+- [`toUInt8`](#touint8).
+- [`toUInt8OrNull`](#touint8ornull).
+- [`toUInt8OrDefault`](#touint8ordefault).
 
-## toUInt(8\|16\|32\|64\|256)OrDefault
+## toUInt8OrNull
 
-## toFloat(32\|64)
+Like [`toUInt8`](#touint8), this function converts an input value to a value of type [UInt8](../data-types/int-uint.md) but returns `NULL` in case of an error.
 
-## toFloat(32\|64)OrZero
+**Syntax**
 
-## toFloat(32\|64)OrNull
+```sql
+toUInt8OrNull(x)
+```
 
-## toFloat(32\|64)OrDefault
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported arguments (return `\N`)
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt8OrNull('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt8](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 8-bit unsigned integer value if successful, otherwise `NULL`. [UInt8](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toUInt8OrNull('8'),
+    toUInt8OrNull('abc')
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt8OrNull('8'):   8
+toUInt8OrNull('abc'): ᴺᵁᴸᴸ
+```
+
+**See also**
+
+- [`toUInt8`](#touint8).
+- [`toUInt8OrZero`](#touint8orzero).
+- [`toUInt8OrDefault`](#touint8ordefault).
+
+## toUInt8OrDefault
+
+Like [`toUInt8`](#touint8), this function converts an input value to a value of type [UInt8](../data-types/int-uint.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
+
+**Syntax**
+
+```sql
+toUInt8OrDefault(expr[, default])
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `UInt8` is unsuccessful. [UInt8](../data-types/int-uint.md).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
+
+Arguments for which the default value is returned:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt8OrDefault('0xc0fe', CAST('0', 'UInt8'));`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt8](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 8-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt8](../data-types/int-uint.md).
+
+:::note
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
+:::
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toUInt8OrDefault('8', CAST('0', 'UInt8')),
+    toUInt8OrDefault('abc', CAST('0', 'UInt8'))
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt8OrDefault('8', CAST('0', 'UInt8')):   8
+toUInt8OrDefault('abc', CAST('0', 'UInt8')): 0
+```
+
+**See also**
+
+- [`toUInt8`](#touint8).
+- [`toUInt8OrZero`](#touint8orzero).
+- [`toUInt8OrNull`](#touint8orNull).
+
+## toUInt16
+
+Converts an input value to a value of type [`UInt16`](../data-types/int-uint.md). Throws an exception in case of an error.
+
+**Syntax**
+
+```sql
+toUInt16(expr)
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported arguments:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt16('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt16](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.  
+For example: `SELECT toUInt16(65536) == 0;`.
+:::
+
+**Returned value**
+
+- 16-bit unsigned integer value. [UInt16](../data-types/int-uint.md).
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toUInt16(16),
+    toUInt16(16.16),
+    toUInt16('16')
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt16(16):    16
+toUInt16(16.16): 16
+toUInt16('16'):  16
+```
+
+**See also**
+
+- [`toUInt16OrZero`](#touint16orzero).
+- [`toUInt16OrNull`](#touint16ornull).
+- [`toUInt16OrDefault`](#touint16ordefault).
+
+## toUInt16OrZero
+
+Like [`toUInt16`](#touint16), this function converts an input value to a value of type [UInt16](../data-types/int-uint.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toUInt16OrZero(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported arguments (return `0`):
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt16OrZero('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt16](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered as an error.
+:::
+
+**Returned value**
+
+- 16-bit unsigned integer value if successful, otherwise `0`. [UInt16](../data-types/int-uint.md).
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toUInt16OrZero('16'),
+    toUInt16OrZero('abc')
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt16OrZero('16'):  16
+toUInt16OrZero('abc'): 0
+```
+
+**See also**
+
+- [`toUInt16`](#touint16).
+- [`toUInt16OrNull`](#touint16ornull).
+- [`toUInt16OrDefault`](#touint16ordefault).
+
+## toUInt16OrNull
+
+Like [`toUInt16`](#touint16), this function converts an input value to a value of type [UInt16](../data-types/int-uint.md) but returns `NULL` in case of an error.
+
+**Syntax**
+
+```sql
+toUInt16OrNull(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported arguments (return `\N`)
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt16OrNull('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt16](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 16-bit unsigned integer value if successful, otherwise `NULL`. [UInt16](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toUInt16OrNull('16'),
+    toUInt16OrNull('abc')
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt16OrNull('16'):  16
+toUInt16OrNull('abc'): ᴺᵁᴸᴸ
+```
+
+**See also**
+
+- [`toUInt16`](#touint16).
+- [`toUInt16OrZero`](#touint16orzero).
+- [`toUInt16OrDefault`](#touint16ordefault).
+
+## toUInt16OrDefault
+
+Like [`toUInt16`](#touint16), this function converts an input value to a value of type [UInt16](../data-types/int-uint.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
+
+**Syntax**
+
+```sql
+toUInt16OrDefault(expr[, default])
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `UInt16` is unsuccessful. [UInt16](../data-types/int-uint.md).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
+
+Arguments for which the default value is returned:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt16OrDefault('0xc0fe', CAST('0', 'UInt16'));`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt16](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 16-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt16](../data-types/int-uint.md).
+
+:::note
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
+:::
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toUInt16OrDefault('16', CAST('0', 'UInt16')),
+    toUInt16OrDefault('abc', CAST('0', 'UInt16'))
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt16OrDefault('16', CAST('0', 'UInt16')):  16
+toUInt16OrDefault('abc', CAST('0', 'UInt16')): 0
+```
+
+**See also**
+
+- [`toUInt16`](#touint16).
+- [`toUInt16OrZero`](#touint16orzero).
+- [`toUInt16OrNull`](#touint16ornull).
+
+## toUInt32
+
+Converts an input value to a value of type [`UInt32`](../data-types/int-uint.md). Throws an exception in case of an error.
+
+**Syntax**
+
+```sql
+toUInt32(expr)
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported arguments:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt32('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt32](../data-types/int-uint.md), the result over or under flows.
+This is not considered an error.  
+For example: `SELECT toUInt32(4294967296) == 0;`
+:::
+
+**Returned value**
+
+- 32-bit unsigned integer value. [UInt32](../data-types/int-uint.md).
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toUInt32(32),
+    toUInt32(32.32),
+    toUInt32('32')
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt32(32):    32
+toUInt32(32.32): 32
+toUInt32('32'):  32
+```
+
+**See also**
+
+- [`toUInt32OrZero`](#touint32orzero).
+- [`toUInt32OrNull`](#touint32ornull).
+- [`toUInt32OrDefault`](#touint32ordefault).
+
+## toUInt32OrZero
+
+Like [`toUInt32`](#touint32), this function converts an input value to a value of type [UInt32](../data-types/int-uint.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toUInt32OrZero(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported arguments (return `0`):
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt32OrZero('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt32](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 32-bit unsigned integer value if successful, otherwise `0`. [UInt32](../data-types/int-uint.md)
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)
+, meaning it truncates fractional digits of numbers.
+:::
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toUInt32OrZero('32'),
+    toUInt32OrZero('abc')
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt32OrZero('32'):  32
+toUInt32OrZero('abc'): 0
+```
+**See also**
+
+- [`toUInt32`](#touint32).
+- [`toUInt32OrNull`](#touint32ornull).
+- [`toUInt32OrDefault`](#touint32ordefault).
+
+## toUInt32OrNull
+
+Like [`toUInt32`](#touint32), this function converts an input value to a value of type [UInt32](../data-types/int-uint.md) but returns `NULL` in case of an error.
+
+**Syntax**
+
+```sql
+toUInt32OrNull(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported arguments (return `\N`)
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt32OrNull('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt32](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 32-bit unsigned integer value if successful, otherwise `NULL`. [UInt32](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)
+, meaning it truncates fractional digits of numbers.
+:::
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toUInt32OrNull('32'),
+    toUInt32OrNull('abc')
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt32OrNull('32'):  32
+toUInt32OrNull('abc'): ᴺᵁᴸᴸ
+```
+
+**See also**
+
+- [`toUInt32`](#touint32).
+- [`toUInt32OrZero`](#touint32orzero).
+- [`toUInt32OrDefault`](#touint32ordefault).
+
+## toUInt32OrDefault
+
+Like [`toUInt32`](#touint32), this function converts an input value to a value of type [UInt32](../data-types/int-uint.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
+
+**Syntax**
+
+```sql
+toUInt32OrDefault(expr[, default])
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `UInt32` is unsuccessful. [UInt32](../data-types/int-uint.md).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
+
+Arguments for which the default value is returned:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt32OrDefault('0xc0fe', CAST('0', 'UInt32'));`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt32](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 32-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt32](../data-types/int-uint.md).
+
+:::note
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
+:::
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toUInt32OrDefault('32', CAST('0', 'UInt32')),
+    toUInt32OrDefault('abc', CAST('0', 'UInt32'))
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt32OrDefault('32', CAST('0', 'UInt32')):  32
+toUInt32OrDefault('abc', CAST('0', 'UInt32')): 0
+```
+
+**See also**
+
+- [`toUInt32`](#touint32).
+- [`toUInt32OrZero`](#touint32orzero).
+- [`toUInt32OrNull`](#touint32ornull).
+
+## toUInt64
+
+Converts an input value to a value of type [`UInt64`](../data-types/int-uint.md). Throws an exception in case of an error.
+
+**Syntax**
+
+```sql
+toUInt64(expr)
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported types:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt64('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt64](../data-types/int-uint.md), the result over or under flows.
+This is not considered an error.  
+For example: `SELECT toUInt64(18446744073709551616) == 0;`
+:::
+
+**Returned value**
+
+- 64-bit unsigned integer value. [UInt64](../data-types/int-uint.md).
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toUInt64(64),
+    toUInt64(64.64),
+    toUInt64('64')
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt64(64):    64
+toUInt64(64.64): 64
+toUInt64('64'):  64
+```
+
+**See also**
+
+- [`toUInt64OrZero`](#touint64orzero).
+- [`toUInt64OrNull`](#touint64ornull).
+- [`toUInt64OrDefault`](#touint64ordefault).
+
+## toInt64OrZero
+
+Like [`toUInt64`](#touint64), this function converts an input value to a value of type [UInt64](../data-types/int-uint.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toUInt64OrZero(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported arguments (return `0`):
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt64OrZero('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt64](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 64-bit unsigned integer value if successful, otherwise `0`. [UInt64](../data-types/int-uint.md).
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toUInt64OrZero('64'),
+    toUInt64OrZero('abc')
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt64OrZero('64'):  64
+toUInt64OrZero('abc'): 0
+```
+
+**See also**
+
+- [`toUInt64`](#touint64).
+- [`toUInt64OrNull`](#touint64ornull).
+- [`toUInt64OrDefault`](#touint64ordefault).
+
+## toUInt64OrNull
+
+Like [`toUInt64`](#touint64), this function converts an input value to a value of type [UInt64](../data-types/int-uint.md) but returns `NULL` in case of an error.
+
+**Syntax**
+
+```sql
+toUInt64OrNull(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported arguments (return `\N`)
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt64OrNull('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt64](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 64-bit unsigned integer value if successful, otherwise `NULL`. [UInt64](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toUInt64OrNull('64'),
+    toUInt64OrNull('abc')
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt64OrNull('64'):  64
+toUInt64OrNull('abc'): ᴺᵁᴸᴸ
+```
+
+**See also**
+
+- [`toUInt64`](#touint64).
+- [`toUInt64OrZero`](#touint64orzero).
+- [`toUInt64OrDefault`](#touint64ordefault).
+
+## toUInt64OrDefault
+
+Like [`toUInt64`](#touint64), this function converts an input value to a value of type [UInt64](../data-types/int-uint.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
+
+**Syntax**
+
+```sql
+toUInt64OrDefault(expr[, default])
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
+- `defauult` (optional) — The default value to return if parsing to type `UInt64` is unsuccessful. [UInt64](../data-types/int-uint.md).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
+
+Arguments for which the default value is returned:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt64OrDefault('0xc0fe', CAST('0', 'UInt64'));`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt64](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 64-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt64](../data-types/int-uint.md).
+
+:::note
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
+:::
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toUInt64OrDefault('64', CAST('0', 'UInt64')),
+    toUInt64OrDefault('abc', CAST('0', 'UInt64'))
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt64OrDefault('64', CAST('0', 'UInt64')):  64
+toUInt64OrDefault('abc', CAST('0', 'UInt64')): 0
+```
+
+**See also**
+
+- [`toUInt64`](#touint64).
+- [`toUInt64OrZero`](#touint64orzero).
+- [`toUInt64OrNull`](#touint64ornull).
+
+## toUInt128
+
+Converts an input value to a value of type [`UInt128`](../data-types/int-uint.md). Throws an exception in case of an error.
+
+**Syntax**
+
+```sql
+toUInt128(expr)
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported arguments:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt128('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt128](../data-types/int-uint.md), the result over or under flows.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 128-bit unsigned integer value. [UInt128](../data-types/int-uint.md).
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toUInt128(128),
+    toUInt128(128.8),
+    toUInt128('128')
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt128(128):   128
+toUInt128(128.8): 128
+toUInt128('128'): 128
+```
+
+**See also**
+
+- [`toUInt128OrZero`](#touint128orzero).
+- [`toUInt128OrNull`](#touint128ornull).
+- [`toUInt128OrDefault`](#touint128ordefault).
+
+## toUInt128OrZero
+
+Like [`toUInt128`](#touint128), this function converts an input value to a value of type [UInt128](../data-types/int-uint.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toUInt128OrZero(expr)
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported arguments (return `0`):
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrZero('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt128](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 128-bit unsigned integer value if successful, otherwise `0`. [UInt128](../data-types/int-uint.md).
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toUInt128OrZero('128'),
+    toUInt128OrZero('abc')
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt128OrZero('128'): 128
+toUInt128OrZero('abc'): 0
+```
+
+**See also**
+
+- [`toUInt128`](#touint128).
+- [`toUInt128OrNull`](#touint128ornull).
+- [`toUInt128OrDefault`](#touint128ordefault).
+
+## toUInt128OrNull
+
+Like [`toUInt128`](#touint128), this function converts an input value to a value of type [UInt128](../data-types/int-uint.md) but returns `NULL` in case of an error.
+
+**Syntax**
+
+```sql
+toUInt128OrNull(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported arguments (return `\N`)
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrNull('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt128](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 128-bit unsigned integer value if successful, otherwise `NULL`. [UInt128](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toUInt128OrNull('128'),
+    toUInt128OrNull('abc')
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt128OrNull('128'): 128
+toUInt128OrNull('abc'): ᴺᵁᴸᴸ
+```
+
+**See also**
+
+- [`toUInt128`](#touint128).
+- [`toUInt128OrZero`](#touint128orzero).
+- [`toUInt128OrDefault`](#touint128ordefault).
+
+## toUInt128OrDefault
+
+Like [`toUInt128`](#toint128), this function converts an input value to a value of type [UInt128](../data-types/int-uint.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
+
+**Syntax**
+
+```sql
+toUInt128OrDefault(expr[, default])
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `UInt128` is unsuccessful. [UInt128](../data-types/int-uint.md).
+
+Supported arguments:
+- (U)Int8/16/32/64/128/256.
+- Float32/64.
+- String representations of (U)Int8/16/32/128/256.
+
+Arguments for which the default value is returned:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrDefault('0xc0fe', CAST('0', 'UInt128'));`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt128](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 128-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt128](../data-types/int-uint.md).
+
+:::note
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
+:::
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toUInt128OrDefault('128', CAST('0', 'UInt128')),
+    toUInt128OrDefault('abc', CAST('0', 'UInt128'))
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt128OrDefault('128', CAST('0', 'UInt128')): 128
+toUInt128OrDefault('abc', CAST('0', 'UInt128')): 0
+```
+
+**See also**
+
+- [`toUInt128`](#touint128).
+- [`toUInt128OrZero`](#touint128orzero).
+- [`toUInt128OrNull`](#touint128ornull).
+
+## toUInt256
+
+Converts an input value to a value of type [`UInt256`](../data-types/int-uint.md). Throws an exception in case of an error.
+
+**Syntax**
+
+```sql
+toUInt256(expr)
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported arguments:
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt256('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt256](../data-types/int-uint.md), the result over or under flows.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 256-bit unsigned integer value. [Int256](../data-types/int-uint.md).
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toUInt256(256),
+    toUInt256(256.256),
+    toUInt256('256')
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt256(256):     256
+toUInt256(256.256): 256
+toUInt256('256'):   256
+```
+
+**See also**
+
+- [`toUInt256OrZero`](#touint256orzero).
+- [`toUInt256OrNull`](#touint256ornull).
+- [`toUInt256OrDefault`](#touint256ordefault).
+
+## toUInt256OrZero
+
+Like [`toUInt256`](#touint256), this function converts an input value to a value of type [UInt256](../data-types/int-uint.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toUInt256OrZero(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported arguments (return `0`):
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt256OrZero('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt256](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 256-bit unsigned integer value if successful, otherwise `0`. [UInt256](../data-types/int-uint.md).
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toUInt256OrZero('256'),
+    toUInt256OrZero('abc')
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt256OrZero('256'): 256
+toUInt256OrZero('abc'): 0
+```
+
+**See also**
+
+- [`toUInt256`](#touint256).
+- [`toUInt256OrNull`](#touint256ornull).
+- [`toUInt256OrDefault`](#touint256ordefault).
+
+## toUInt256OrNull
+
+Like [`toUInt256`](#touint256), this function converts an input value to a value of type [UInt256](../data-types/int-uint.md) but returns `NULL` in case of an error.
+
+**Syntax**
+
+```sql
+toUInt256OrNull(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256.
+
+Unsupported arguments (return `\N`)
+- String representations of Float32/64 values, including `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt256OrNull('0xc0fe');`.
+
+:::note
+If the input value cannot be represented within the bounds of [UInt256](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 256-bit unsigned integer value if successful, otherwise `NULL`. [UInt256](../data-types/int-uint.md) / [NULL](../data-types/nullable.md).
+
+:::note
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+:::
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toUInt256OrNull('256'),
+    toUInt256OrNull('abc')
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt256OrNull('256'): 256
+toUInt256OrNull('abc'): ᴺᵁᴸᴸ
+```
+
+**See also**
+
+- [`toUInt256`](#touint256).
+- [`toUInt256OrZero`](#touint256orzero).
+- [`toUInt256OrDefault`](#touint256ordefault).
+
+## toUInt256OrDefault
+
+Like [`toUInt256`](#touint256), this function converts an input value to a value of type [UInt256](../data-types/int-uint.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
+
+**Syntax**
+
+```sql
+toUInt256OrDefault(expr[, default])
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `UInt256` is unsuccessful. [UInt256](../data-types/int-uint.md).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- String representations of (U)Int8/16/32/128/256.
+
+Arguments for which the default value is returned:
+- String representations of Float32/64 values, including `NaN` and `Inf`
+- String representations of binary and hexadecimal values, e.g. `SELECT toUInt256OrDefault('0xc0fe', CAST('0', 'UInt256'));`
+
+:::note
+If the input value cannot be represented within the bounds of [UInt256](../data-types/int-uint.md), overflow or underflow of the result occurs.
+This is not considered an error.
+:::
+
+**Returned value**
+
+- 256-bit unsigned integer value if successful, otherwise returns the default value if passed or `0` if not. [UInt256](../data-types/int-uint.md).
+
+:::note
+- The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+- The default value type should be the same as the cast type.
+:::
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toUInt256OrDefault('-256', CAST('0', 'UInt256')),
+    toUInt256OrDefault('abc', CAST('0', 'UInt256'))
+FORMAT vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toUInt256OrDefault('-256', CAST('0', 'UInt256')): 0
+toUInt256OrDefault('abc', CAST('0', 'UInt256')):  0
+```
+
+**See also**
+
+- [`toUInt256`](#touint256).
+- [`toUInt256OrZero`](#touint256orzero).
+- [`toUInt256OrNull`](#touint256ornull).
+
+## toFloat32
+
+Converts an input value to a value of type [`Float32`](../data-types/float.md). Throws an exception in case of an error.
+
+**Syntax**
+
+```sql
+toFloat32(expr)
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- String representations of (U)Int8/16/32/128/256.
+- Values of type Float32/64, including `NaN` and `Inf`.
+- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
+
+Unsupported arguments:
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat32('0xc0fe');`.
+
+**Returned value**
+
+- 32-bit floating point value. [Float32](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toFloat32(42.7),
+    toFloat32('42.7'),
+    toFloat32('NaN')
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toFloat32(42.7):   42.7
+toFloat32('42.7'): 42.7
+toFloat32('NaN'):  nan
+```
+
+**See also**
+
+- [`toFloat32OrZero`](#tofloat32orzero).
+- [`toFloat32OrNull`](#tofloat32ornull).
+- [`toFloat32OrDefault`](#tofloat32ordefault).
+
+## toFloat32OrZero
+
+Like [`toFloat32`](#tofloat32), this function converts an input value to a value of type [Float32](../data-types/float.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toFloat32OrZero(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256, Float32/64.
+
+Unsupported arguments (return `0`):
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat32OrZero('0xc0fe');`.
+
+**Returned value**
+
+- 32-bit Float value if successful, otherwise `0`. [Float32](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toFloat32OrZero('42.7'),
+    toFloat32OrZero('abc')
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toFloat32OrZero('42.7'): 42.7
+toFloat32OrZero('abc'):  0
+```
+
+**See also**
+
+- [`toFloat32`](#tofloat32).
+- [`toFloat32OrNull`](#tofloat32ornull).
+- [`toFloat32OrDefault`](#tofloat32ordefault).
+
+## toFloat32OrNull
+
+Like [`toFloat32`](#tofloat32), this function converts an input value to a value of type [Float32](../data-types/float.md) but returns `NULL` in case of an error.
+
+**Syntax**
+
+```sql
+toFloat32OrNull(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256, Float32/64.
+
+Unsupported arguments (return `\N`):
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat32OrNull('0xc0fe');`.
+
+**Returned value**
+
+- 32-bit Float value if successful, otherwise `\N`. [Float32](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toFloat32OrNull('42.7'),
+    toFloat32OrNull('abc')
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toFloat32OrNull('42.7'): 42.7
+toFloat32OrNull('abc'):  ᴺᵁᴸᴸ
+```
+
+**See also**
+
+- [`toFloat32`](#tofloat32).
+- [`toFloat32OrZero`](#tofloat32orzero).
+- [`toFloat32OrDefault`](#tofloat32ordefault).
+
+## toFloat32OrDefault
+
+Like [`toFloat32`](#tofloat32), this function converts an input value to a value of type [Float32](../data-types/float.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
+
+**Syntax**
+
+```sql
+toFloat32OrDefault(expr[, default])
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `Float32` is unsuccessful. [Float32](../data-types/float.md).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- String representations of (U)Int8/16/32/128/256.
+- Values of type Float32/64, including `NaN` and `Inf`.
+- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
+
+Arguments for which the default value is returned:
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat32OrDefault('0xc0fe', CAST('0', 'Float32'));`.
+
+**Returned value**
+
+- 32-bit Float value if successful, otherwise returns the default value if passed or `0` if not. [Float32](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toFloat32OrDefault('8', CAST('0', 'Float32')),
+    toFloat32OrDefault('abc', CAST('0', 'Float32'))
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toFloat32OrDefault('8', CAST('0', 'Float32')):   8
+toFloat32OrDefault('abc', CAST('0', 'Float32')): 0
+```
+
+**See also**
+
+- [`toFloat32`](#tofloat32).
+- [`toFloat32OrZero`](#tofloat32orzero).
+- [`toFloat32OrNull`](#tofloat32ornull).
+
+## toFloat64
+
+Converts an input value to a value of type [`Float64`](../data-types/float.md). Throws an exception in case of an error.
+
+**Syntax**
+
+```sql
+toFloat64(expr)
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- String representations of (U)Int8/16/32/128/256.
+- Values of type Float32/64, including `NaN` and `Inf`.
+- String representations of type Float32/64, including `NaN` and `Inf` (case-insensitive).
+
+Unsupported arguments:
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat64('0xc0fe');`.
+
+**Returned value**
+
+- 64-bit floating point value. [Float64](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toFloat64(42.7),
+    toFloat64('42.7'),
+    toFloat64('NaN')
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toFloat64(42.7):   42.7
+toFloat64('42.7'): 42.7
+toFloat64('NaN'):  nan
+```
+
+**See also**
+
+- [`toFloat64OrZero`](#tofloat64orzero).
+- [`toFloat64OrNull`](#tofloat64ornull).
+- [`toFloat64OrDefault`](#tofloat64ordefault).
+
+## toFloat64OrZero
+
+Like [`toFloat64`](#tofloat64), this function converts an input value to a value of type [Float64](../data-types/float.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toFloat64OrZero(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256, Float32/64.
+
+Unsupported arguments (return `0`):
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat64OrZero('0xc0fe');`.
+
+**Returned value**
+
+- 64-bit Float value if successful, otherwise `0`. [Float64](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toFloat64OrZero('42.7'),
+    toFloat64OrZero('abc')
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toFloat64OrZero('42.7'): 42.7
+toFloat64OrZero('abc'):  0
+```
+
+**See also**
+
+- [`toFloat64`](#tofloat64).
+- [`toFloat64OrNull`](#tofloat64ornull).
+- [`toFloat64OrDefault`](#tofloat64ordefault).
+
+## toFloat64OrNull
+
+Like [`toFloat64`](#tofloat64), this function converts an input value to a value of type [Float64](../data-types/float.md) but returns `NULL` in case of an error.
+
+**Syntax**
+
+```sql
+toFloat64OrNull(x)
+```
+
+**Arguments**
+
+- `x` — A String representation of a number. [String](../data-types/string.md).
+
+Supported arguments:
+- String representations of (U)Int8/16/32/128/256, Float32/64.
+
+Unsupported arguments (return `\N`):
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat64OrNull('0xc0fe');`.
+
+**Returned value**
+
+- 64-bit Float value if successful, otherwise `\N`. [Float64](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toFloat64OrNull('42.7'),
+    toFloat64OrNull('abc')
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toFloat64OrNull('42.7'): 42.7
+toFloat64OrNull('abc'):  ᴺᵁᴸᴸ
+```
+
+**See also**
+
+- [`toFloat64`](#tofloat64).
+- [`toFloat64OrZero`](#tofloat64orzero).
+- [`toFloat64OrDefault`](#tofloat64ordefault).
+
+## toFloat64OrDefault
+
+Like [`toFloat64`](#tofloat64), this function converts an input value to a value of type [Float64](../data-types/float.md) but returns the default value in case of an error.
+If no `default` value is passed then `0` is returned in case of an error.
+
+**Syntax**
+
+```sql
+toFloat64OrDefault(expr[, default])
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions) / [String](../data-types/string.md).
+- `default` (optional) — The default value to return if parsing to type `Float64` is unsuccessful. [Float64](../data-types/float.md).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- String representations of (U)Int8/16/32/128/256.
+- Values of type Float32/64, including `NaN` and `Inf`.
+- String representations of Float32/64, including `NaN` and `Inf` (case-insensitive).
+
+Arguments for which the default value is returned:
+- String representations of binary and hexadecimal values, e.g. `SELECT toFloat64OrDefault('0xc0fe', CAST('0', 'Float64'));`.
+
+**Returned value**
+
+- 64-bit Float value if successful, otherwise returns the default value if passed or `0` if not. [Float64](../data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toFloat64OrDefault('8', CAST('0', 'Float64')),
+    toFloat64OrDefault('abc', CAST('0', 'Float64'))
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+toFloat64OrDefault('8', CAST('0', 'Float64')):   8
+toFloat64OrDefault('abc', CAST('0', 'Float64')): 0
+```
+
+**See also**
+
+- [`toFloat64`](#tofloat64).
+- [`toFloat64OrZero`](#tofloat64orzero).
+- [`toFloat64OrNull`](#tofloat64ornull).
 
 ## toDate
 
@@ -3467,13 +5334,13 @@ This function is the opposite operation of function [formatDateTime](../function
 **Syntax**
 
 ``` sql
-parseDateTime(str, format[, timezone])
+parseDateTime(str[, format[, timezone]])
 ```
 
 **Arguments**
 
-- `str` — the String to be parsed
-- `format` — the format string
+- `str` — The String to be parsed
+- `format` — The format string. Optional. `%Y-%m-%d %H:%i:%s` if not specified.
 - `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). Optional.
 
 **Returned value(s)**
@@ -3516,13 +5383,13 @@ This function is the opposite operation of function [formatDateTimeInJodaSyntax]
 **Syntax**
 
 ``` sql
-parseDateTimeInJodaSyntax(str, format[, timezone])
+parseDateTimeInJodaSyntax(str[, format[, timezone]])
 ```
 
 **Arguments**
 
-- `str` — the String to be parsed
-- `format` — the format string
+- `str` — The String to be parsed
+- `format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
 - `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). Optional.
 
 **Returned value(s)**

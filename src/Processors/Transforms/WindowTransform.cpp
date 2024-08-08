@@ -16,6 +16,9 @@
 #include <Common/Arena.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Functions/CastOverloadResolver.h>
+#include <Functions/IFunction.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -61,26 +64,6 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
-
-// Interface for true window functions. It's not much of an interface, they just
-// accept the guts of WindowTransform and do 'something'. Given a small number of
-// true window functions, and the fact that the WindowTransform internals are
-// pretty much well-defined in domain terms (e.g. frame boundaries), this is
-// somewhat acceptable.
-class IWindowFunction
-{
-public:
-    virtual ~IWindowFunction() = default;
-
-    // Must insert the result for current_row.
-    virtual void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) const = 0;
-
-    virtual std::optional<WindowFrame> getDefaultFrame() const { return {}; }
-
-    /// Is the frame type supported by this function.
-    virtual bool checkWindowFrameType(const WindowTransform * /*transform*/) const { return true; }
-};
 
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
 // [compared] with [reference] +/- offset. Return value is -1/0/+1, like in
@@ -1174,6 +1157,9 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // Initialize output columns.
         for (auto & ws : workspaces)
         {
+            if (ws.window_function_impl)
+                block.casted_columns.push_back(ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices));
+
             block.output_columns.push_back(ws.aggregate_function->getResultType()
                 ->createColumn());
             block.output_columns.back()->reserve(block.rows);
@@ -1515,41 +1501,6 @@ void WindowTransform::work()
     }
 }
 
-// A basic implementation for a true window function. It pretends to be an
-// aggregate function, but refuses to work as such.
-struct WindowFunction
-    : public IAggregateFunctionHelper<WindowFunction>
-    , public IWindowFunction
-{
-    std::string name;
-
-    WindowFunction(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
-        : IAggregateFunctionHelper<WindowFunction>(argument_types_, parameters_, result_type_)
-        , name(name_)
-    {}
-
-    bool isOnlyWindowFunction() const override { return true; }
-
-    [[noreturn]] void fail() const
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The function '{}' can only be used as a window function, not as an aggregate function",
-            getName());
-    }
-
-    String getName() const override { return name; }
-    void create(AggregateDataPtr __restrict) const override {}
-    void destroy(AggregateDataPtr __restrict) const noexcept override {}
-    bool hasTrivialDestructor() const override { return true; }
-    size_t sizeOfData() const override { return 0; }
-    size_t alignOfData() const override { return 1; }
-    void add(AggregateDataPtr __restrict, const IColumn **, size_t, Arena *) const override { fail(); }
-    void merge(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override { fail(); }
-    void serialize(ConstAggregateDataPtr __restrict, WriteBuffer &, std::optional<size_t>) const override { fail(); }
-    void deserialize(AggregateDataPtr __restrict, ReadBuffer &, std::optional<size_t>, Arena *) const override { fail(); }
-    void insertResultInto(AggregateDataPtr __restrict, IColumn &, Arena *) const override { fail(); }
-};
-
 struct WindowFunctionRank final : public WindowFunction
 {
     WindowFunctionRank(const std::string & name_,
@@ -1658,36 +1609,6 @@ struct WindowFunctionHelpers
                 return false;
         }
         return true;
-    }
-};
-
-template<typename State>
-struct StatefulWindowFunction : public WindowFunction
-{
-    StatefulWindowFunction(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
-        : WindowFunction(name_, argument_types_, parameters_, result_type_)
-    {
-    }
-
-    size_t sizeOfData() const override { return sizeof(State); }
-    size_t alignOfData() const override { return 1; }
-
-    void create(AggregateDataPtr __restrict place) const override
-    {
-        new (place) State();
-    }
-
-    void destroy(AggregateDataPtr __restrict place) const noexcept override
-    {
-        reinterpret_cast<State *>(place)->~State();
-    }
-
-    bool hasTrivialDestructor() const override { return std::is_trivially_destructible_v<State>; }
-
-    State & getState(const WindowFunctionWorkspace & workspace) const
-    {
-        return *reinterpret_cast<State *>(workspace.aggregate_function_state.data());
     }
 };
 
@@ -2270,14 +2191,13 @@ public:
 
     bool checkWindowFrameType(const WindowTransform * transform) const override
     {
-            if (transform->window_description.frame.type != WindowFrame::FrameType::RANGE
-                || transform->window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded
-                || transform->window_description.frame.end_type != WindowFrame::BoundaryType::Current)
-            {
-                LOG_ERROR(
-                    getLogger("WindowFunctionPercentRank"),
-                    "Window frame for function 'percent_rank' should be 'RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT'");
-                return false;
+        auto default_window_frame = getDefaultFrame();
+        if (transform->window_description.frame != default_window_frame)
+        {
+            LOG_ERROR(
+                getLogger("WindowFunctionPercentRank"),
+                "Window frame for function 'percent_rank' should be '{}'", default_window_frame->toString());
+            return false;
         }
         return true;
     }
@@ -2287,7 +2207,7 @@ public:
         WindowFrame frame;
         frame.type = WindowFrame::FrameType::RANGE;
         frame.begin_type = WindowFrame::BoundaryType::Unbounded;
-        frame.end_type = WindowFrame::BoundaryType::Current;
+        frame.end_type = WindowFrame::BoundaryType::Unbounded;
         return frame;
     }
 
@@ -2361,6 +2281,8 @@ public:
 template <bool is_lead>
 struct WindowFunctionLagLeadInFrame final : public WindowFunction
 {
+    FunctionBasePtr func_cast = nullptr;
+
     WindowFunctionLagLeadInFrame(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
         : WindowFunction(name_, argument_types_, parameters_, createResultType(argument_types_, name_))
@@ -2388,7 +2310,17 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             return;
         }
 
-        const auto supertype = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
+        if (argument_types.size() > 3)
+        {
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+                "Function '{}' accepts at most 3 arguments, {} given",
+                name, argument_types.size());
+        }
+
+        if (argument_types[0]->equals(*argument_types[2]))
+            return;
+
+        const auto supertype = tryGetLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
         if (!supertype)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -2405,12 +2337,44 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
                 argument_types[2]->getName());
         }
 
-        if (argument_types.size() > 3)
+        const auto from_name = argument_types[2]->getName();
+        const auto to_name = argument_types[0]->getName();
+        ColumnsWithTypeAndName arguments
         {
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                "Function '{}' accepts at most 3 arguments, {} given",
-                name, argument_types.size());
-        }
+            { argument_types[2], "" },
+            {
+                DataTypeString().createColumnConst(0, to_name),
+                std::make_shared<DataTypeString>(),
+                ""
+            }
+        };
+
+        auto get_cast_func = [&arguments]
+        {
+            FunctionOverloadResolverPtr func_builder_cast = createInternalCastOverloadResolver(CastType::accurate, {});
+            return func_builder_cast->build(arguments);
+        };
+
+        func_cast = get_cast_func();
+
+    }
+
+    ColumnPtr castColumn(const Columns & columns, const std::vector<size_t> & idx) override
+    {
+        if (!func_cast)
+            return nullptr;
+
+        ColumnsWithTypeAndName arguments
+        {
+            { columns[idx[2]], argument_types[2], "" },
+            {
+                DataTypeString().createColumnConst(columns[idx[2]]->size(), argument_types[0]->getName()),
+                std::make_shared<DataTypeString>(),
+                ""
+            }
+        };
+
+        return func_cast->execute(arguments, argument_types[0], columns[idx[2]]->size());
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_, const std::string & name_)
@@ -2460,12 +2424,11 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             if (argument_types.size() > 2)
             {
                 // Column with default values is specified.
-                // The conversion through Field is inefficient, but we accept
-                // subtypes of the argument type as a default value (for convenience),
-                // and it's a pain to write conversion that respects ColumnNothing
-                // and ColumnConst and so on.
-                const IColumn & default_column = *current_block.input_columns[
-                    workspace.argument_column_indices[2]].get();
+                const IColumn & default_column =
+                    current_block.casted_columns[function_index] ?
+                        *current_block.casted_columns[function_index].get() :
+                        *current_block.input_columns[workspace.argument_column_indices[2]].get();
+
                 to.insert(default_column[transform->current_row.row]);
             }
             else
@@ -2721,19 +2684,23 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
                 parameters);
         }, properties}, AggregateFunctionFactory::Case::Insensitive);
 
-    factory.registerFunction("dense_rank", {[](const std::string & name,
+    factory.registerFunction("denseRank", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
                 parameters);
-        }, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, properties});
 
-    factory.registerFunction("percent_rank", {[](const std::string & name,
+    factory.registerAlias("dense_rank", "denseRank", AggregateFunctionFactory::Case::Insensitive);
+
+    factory.registerFunction("percentRank", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionPercentRank>(name, argument_types,
                 parameters);
-        }, properties}, AggregateFunctionFactory::Case::Insensitive);
+        }, properties});
+
+    factory.registerAlias("percent_rank", "percentRank", AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("row_number", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
@@ -2805,5 +2772,4 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
                 name, argument_types, parameters);
         }, properties});
 }
-
 }

@@ -16,7 +16,7 @@ import upload_result_helper
 from build_check import get_release_or_pr
 from ci_config import CI
 from ci_metadata import CiMetadata
-from ci_utils import GHActions, normalize_string, Utils
+from ci_utils import GH, Utils
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
@@ -296,7 +296,7 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
         # do not set report prefix for scheduled or dispatched wf (in case it started from feature branch while
         #   testing), otherwise reports won't be found
         if not (pr_info.is_scheduled or pr_info.is_dispatched):
-            report_prefix = normalize_string(pr_info.head_ref)
+            report_prefix = Utils.normalize_string(pr_info.head_ref)
     print(
         f"Use report prefix [{report_prefix}], pr_num [{pr_info.number}], head_ref [{pr_info.head_ref}]"
     )
@@ -368,7 +368,7 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
                 )
                 to_be_skipped = True
                 # skip_status = SUCCESS already there
-                GHActions.print_in_group("Commit Status Data", job_status)
+                GH.print_in_group("Commit Status Data", job_status)
 
     # create pre report
     jr = JobReport.create_pre_report(status=skip_status, job_skipped=to_be_skipped)
@@ -718,7 +718,7 @@ def _upload_build_artifacts(
         (
             get_release_or_pr(pr_info, get_version_from_repo())[1],
             pr_info.sha,
-            normalize_string(build_name),
+            Utils.normalize_string(build_name),
             "performance.tar.zst",
         )
     )
@@ -766,7 +766,9 @@ def _upload_build_artifacts(
         int(job_report.duration),
         GITHUB_JOB_API_URL(),
         head_ref=pr_info.head_ref,
-        pr_number=pr_info.number,
+        # PRInfo fetches pr number for release branches as well - set pr_number to 0 for release
+        #   so that build results are not mistakenly treated as feature branch builds
+        pr_number=pr_info.number if pr_info.is_pr else 0,
     )
     report_url = ci_cache.upload_build_report(build_result)
     print(f"Report file has been uploaded to [{report_url}]")
@@ -1017,7 +1019,9 @@ def _get_ext_check_name(check_name: str) -> str:
     return check_name_with_group
 
 
-def _cancel_pr_wf(s3: S3Helper, pr_number: int, cancel_sync: bool = False) -> None:
+def _cancel_pr_workflow(
+    s3: S3Helper, pr_number: int, cancel_sync: bool = False
+) -> None:
     wf_data = CiMetadata(s3, pr_number).fetch_meta()
     if not cancel_sync:
         if not wf_data.run_id:
@@ -1246,7 +1250,7 @@ def main() -> int:
                     (
                         get_release_or_pr(pr_info, get_version_from_repo())[0],
                         pr_info.sha,
-                        normalize_string(
+                        Utils.normalize_string(
                             job_report.check_name or _get_ext_check_name(args.job_name)
                         ),
                     )
@@ -1366,12 +1370,12 @@ def main() -> int:
         assert indata, "Run config must be provided via --infile"
         _update_gh_statuses_action(indata=indata, s3=s3)
 
-    ### CANCEL PREVIOUS WORKFLOW RUN
+    ### CANCEL THE PREVIOUS WORKFLOW RUN
     elif args.cancel_previous_run:
         if pr_info.is_merge_queue:
-            _cancel_pr_wf(s3, pr_info.merged_pr)
+            _cancel_pr_workflow(s3, pr_info.merged_pr)
         elif pr_info.is_pr:
-            _cancel_pr_wf(s3, pr_info.number, cancel_sync=True)
+            _cancel_pr_workflow(s3, pr_info.number, cancel_sync=True)
         else:
             assert False, "BUG! Not supported scenario"
 
