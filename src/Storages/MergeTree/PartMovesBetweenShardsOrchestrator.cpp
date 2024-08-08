@@ -562,7 +562,15 @@ CancellationCode PartMovesBetweenShardsOrchestrator::killPartMoveToShard(const U
         entry_to_process.num_tries = 0;
         entry_to_process.last_exception_msg = "";
 
-        auto code = zk->trySet(entry_to_process.znode_path, entry_to_process.toString(), entry_to_process.version);
+        String task_name = "task-" + toString(entry_to_process.task_uuid);
+
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeSetRequest(entry_to_process.znode_path, entry_to_process.toString(), entry_to_process.version));
+        ops.emplace_back(zkutil::makeCreateRequest(fs::path(entries_znode_path) / "task_queue" / task_name, "", zkutil::CreateMode::Persistent, true));
+
+        Coordination::Responses responses;
+        auto code = zk->tryMulti(ops, responses);
+
         if (code == Coordination::Error::ZOK)
         {
             // Orchestrator will process it in background.
