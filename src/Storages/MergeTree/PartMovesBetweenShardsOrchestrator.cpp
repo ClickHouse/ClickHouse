@@ -126,7 +126,8 @@ std::optional<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsO
             if (e.code == Coordination::Error::ZNODEEXISTS)
             {
                 LOG_DEBUG(log, "Task {} is being processed by another replica", entry_to_process.znode_name);
-            } else 
+            }
+            else
             {
                 throw;
             }
@@ -182,7 +183,7 @@ void PartMovesBetweenShardsOrchestrator::step(Entry & entry)
 
 PartMovesBetweenShardsOrchestrator::EntryState PartMovesBetweenShardsOrchestrator::getNextState(Entry & entry) const
 {
-    if (entry.state.value == EntryState::TODO  || entry.replicas.size() == entry.required_number_of_replicas)
+    if (entry.state.value == EntryState::TODO || entry.replicas.size() == entry.required_number_of_replicas)
     {
         return EntryState::nextState(entry.state.value);
     }

@@ -3681,7 +3681,7 @@ void StorageReplicatedMergeTree::updateMovePartTask(const LogEntry & logEntry, b
             /// Node was updated meanwhile. We must re-read it and repeat all the actions.
             continue;
         }
-        else 
+        else
         {
             throw Coordination::Exception::fromPath(code, fs::path(logEntry.task_entry_zk_path) / "tasks" / logEntry.task_name);
         }
