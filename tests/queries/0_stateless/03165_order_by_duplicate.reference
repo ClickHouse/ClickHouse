@@ -36,4 +36,4 @@ QUERY id: 0
   LIMIT BY
     LIST id: 16, nodes: 1
       COLUMN id: 2, column_name: id, result_type: UInt64, source_id: 3
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1

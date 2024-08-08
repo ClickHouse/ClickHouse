@@ -30,14 +30,14 @@ QUERY id: 0
       FUNCTION id: 15, function_name: toTypeName, function_type: ordinary, result_type: String
         ARGUMENTS
           LIST id: 16, nodes: 1
-            FUNCTION id: 2, function_name: anyIf, function_type: aggregate, result_type: Nullable(Int128)
+            FUNCTION id: 17, function_name: anyIf, function_type: aggregate, result_type: Nullable(Int128)
               ARGUMENTS
-                LIST id: 3, nodes: 2
-                  FUNCTION id: 4, function_name: _CAST, function_type: ordinary, result_type: Nullable(Int128)
+                LIST id: 18, nodes: 2
+                  FUNCTION id: 19, function_name: _CAST, function_type: ordinary, result_type: Nullable(Int128)
                     ARGUMENTS
-                      LIST id: 5, nodes: 2
+                      LIST id: 20, nodes: 2
                         COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
-                        CONSTANT id: 8, constant_value: \'Nullable(Int128)\', constant_value_type: String
+                        CONSTANT id: 21, constant_value: \'Nullable(Int128)\', constant_value_type: String
                   FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
                     ARGUMENTS
                       LIST id: 10, nodes: 2
@@ -50,8 +50,8 @@ QUERY id: 0
   JOIN TREE
     TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
       ARGUMENTS
-        LIST id: 17, nodes: 1
-          CONSTANT id: 18, constant_value: UInt64_100, constant_value_type: UInt8
+        LIST id: 22, nodes: 1
+          CONSTANT id: 23, constant_value: UInt64_100, constant_value_type: UInt8
 SELECT any(if((number % 10) = 5, CAST(NULL, 'Nullable(Int128)'), number)) AS a, toTypeName(a) FROM numbers(100) AS a;
 0	Nullable(Int128)
 EXPLAIN QUERY TREE SELECT any(if((number % 10) = 5, CAST(NULL, 'Nullable(Int128)'), number)) AS a, toTypeName(a) FROM numbers(100);
@@ -84,17 +84,17 @@ QUERY id: 0
       FUNCTION id: 17, function_name: toTypeName, function_type: ordinary, result_type: String
         ARGUMENTS
           LIST id: 18, nodes: 1
-            FUNCTION id: 2, function_name: anyIf, function_type: aggregate, result_type: Nullable(Int128)
+            FUNCTION id: 19, function_name: anyIf, function_type: aggregate, result_type: Nullable(Int128)
               ARGUMENTS
-                LIST id: 3, nodes: 2
-                  FUNCTION id: 4, function_name: _CAST, function_type: ordinary, result_type: Nullable(Int128)
+                LIST id: 20, nodes: 2
+                  FUNCTION id: 21, function_name: _CAST, function_type: ordinary, result_type: Nullable(Int128)
                     ARGUMENTS
-                      LIST id: 5, nodes: 2
+                      LIST id: 22, nodes: 2
                         COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
-                        CONSTANT id: 8, constant_value: \'Nullable(Int128)\', constant_value_type: String
-                  FUNCTION id: 9, function_name: not, function_type: ordinary, result_type: UInt8
+                        CONSTANT id: 23, constant_value: \'Nullable(Int128)\', constant_value_type: String
+                  FUNCTION id: 24, function_name: not, function_type: ordinary, result_type: UInt8
                     ARGUMENTS
-                      LIST id: 10, nodes: 1
+                      LIST id: 25, nodes: 1
                         FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: UInt8
                           ARGUMENTS
                             LIST id: 12, nodes: 2
@@ -107,5 +107,5 @@ QUERY id: 0
   JOIN TREE
     TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
       ARGUMENTS
-        LIST id: 19, nodes: 1
-          CONSTANT id: 20, constant_value: UInt64_100, constant_value_type: UInt8
+        LIST id: 26, nodes: 1
+          CONSTANT id: 27, constant_value: UInt64_100, constant_value_type: UInt8

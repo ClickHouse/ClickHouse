@@ -40,7 +40,7 @@ QUERY id: 0
                     LIST id: 3, nodes: 1
                       CONSTANT id: 4, constant_value: \'Привет, World\', constant_value_type: String
                 CONSTANT id: 16, constant_value: \'world%\', constant_value_type: String
-  SETTINGS optimize_or_like_chain=0 allow_experimental_analyzer=1
+  SETTINGS optimize_or_like_chain=0 enable_analyzer=1
 SELECT materialize(\'Привет, World\') AS s
 WHERE multiMatchAny(s, [\'^hell\', \'(?i)привет\', \'(?i)^world\']) OR false
 SETTINGS optimize_or_like_chain = 1
@@ -68,7 +68,7 @@ QUERY id: 0
                       CONSTANT id: 4, constant_value: \'Привет, World\', constant_value_type: String
                 CONSTANT id: 10, constant_value: Array_[\'^hell\', \'(?i)привет\', \'(?i)^world\'], constant_value_type: Array(String)
           CONSTANT id: 11, constant_value: UInt64_0, constant_value_type: UInt8
-  SETTINGS optimize_or_like_chain=1 allow_experimental_analyzer=1
+  SETTINGS optimize_or_like_chain=1 enable_analyzer=1
 SELECT
     materialize(\'Привет, World\') AS s1,
     materialize(\'Привет, World\') AS s2

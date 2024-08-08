@@ -1,9 +1,9 @@
 #include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -15,7 +15,8 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
-/// Reasonable threshold.
+/// Reasonable thresholds.
+static constexpr Int64 max_array_size_in_columns_bytes = 1000000000;
 static constexpr size_t max_arrays_size_in_columns = 1000000000;
 
 
@@ -63,12 +64,19 @@ public:
             auto array_size = col_num->getInt(i);
 
             if (unlikely(array_size < 0))
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size cannot be negative: while executing function {}", getName());
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} cannot be negative: while executing function {}", array_size, getName());
+
+            Int64 estimated_size = 0;
+            if (unlikely(common::mulOverflow(array_size, col_value->byteSize(), estimated_size)))
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} with element size {} bytes is too large: while executing function {}", array_size, col_value->byteSize(), getName());
+
+            if (unlikely(estimated_size > max_array_size_in_columns_bytes))
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} with element size {} bytes is too large: while executing function {}", array_size, col_value->byteSize(), getName());
 
             offset += array_size;
 
             if (unlikely(offset > max_arrays_size_in_columns))
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size while executing function {}", getName());
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size {} (will generate at least {} elements) while executing function {}", array_size, offset, getName());
 
             offsets.push_back(offset);
         }

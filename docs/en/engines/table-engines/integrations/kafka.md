@@ -251,6 +251,44 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 - For row-based formats the number of rows in one Kafka message can be controlled by setting `kafka_max_rows_per_message`.
 - For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
 
+## Experimental engine to store committed offsets in ClickHouse Keeper
+
+If `allow_experimental_kafka_offsets_storage_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
+ - `kafka_keeper_path` specifies the path to the table in ClickHouse Keeper
+ - `kafka_replica_name` specifies the replica name in ClickHouse Keeper
+
+Either both of the settings must be specified or neither of them. When both of them are specified, then a new, experimental Kafka engine will be used. The new engine doesn't depend on storing the committed offsets in Kafka, but stores them in ClickHouse Keeper. It still tries to commit the offsets to Kafka, but it only depends on those offsets when the table is created. In any other circumstances (table is restarted, or recovered after some error) the offsets stored in ClickHouse Keeper will be used as an offset to continue consuming messages from. Apart from the committed offset, it also stores how many messages were consumed in the last batch, so if the insert fails, the same amount of messages will be consumed, thus enabling deduplication if necessary.
+
+Example:
+
+``` sql
+CREATE TABLE experimental_kafka (key UInt64, value UInt64)
+ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
+SETTINGS
+  kafka_keeper_path = '/clickhouse/{database}/experimental_kafka',
+  kafka_replica_name = 'r1'
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+```
+
+Or to utilize the `uuid` and `replica` macros similarly to ReplicatedMergeTree:
+
+``` sql
+CREATE TABLE experimental_kafka (key UInt64, value UInt64)
+ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
+SETTINGS
+  kafka_keeper_path = '/clickhouse/{database}/{uuid}',
+  kafka_replica_name = '{replica}'
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+```
+
+### Known limitations
+
+As the new engine is experimental, it is not production ready yet. There are few known limitations of the implementation:
+ - The biggest limitation is the engine doesn't support direct reading. Reading from the engine using materialized views and writing to the engine work, but direct reading doesn't. As a result, all direct `SELECT` queries will fail.
+ - Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` in `kafka_keeper_path` to avoid clashing paths.
+ - To make repeatable reads, messages cannot be consumed from multiple partitions on a single thread. On the other hand, the Kafka consumers have to be polled regularly to keep them alive. As a result of these two objectives, we decided to only allow creating multiple consumers if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
+ - Consumers created by the new storage engine do not show up in [`system.kafka_consumers`](../../../operations/system-tables/kafka_consumers.md) table.
+
 **See Also**
 
 - [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)

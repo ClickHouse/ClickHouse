@@ -206,12 +206,12 @@ REGISTER_FUNCTION(Uptime)
 
 REGISTER_FUNCTION(Version)
 {
-    factory.registerFunction<FunctionVersion>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionVersion>({}, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(Revision)
 {
-    factory.registerFunction<FunctionRevision>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionRevision>({}, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(ZooKeeperSessionUptime)
@@ -237,8 +237,7 @@ Returns the value of `display_name` from config or server FQDN if not set.
 )",
             .examples{{"displayName", "SELECT displayName();", ""}},
             .categories{"Constant", "Miscellaneous"}
-        },
-        FunctionFactory::CaseSensitive);
+        });
 }
 
 

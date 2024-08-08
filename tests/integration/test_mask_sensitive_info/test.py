@@ -13,6 +13,7 @@ node = cluster.add_instance(
     with_zookeeper=True,
     with_azurite=True,
 )
+base_search_query = "SELECT COUNT() FROM system.query_log WHERE query LIKE "
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -35,7 +36,7 @@ def check_logs(must_contain=[], must_not_contain=[]):
             .replace("]", "\\]")
             .replace("*", "\\*")
         )
-        assert node.contains_in_log(escaped_str)
+        assert node.contains_in_log(escaped_str, exclusion_substring=base_search_query)
 
     for str in must_not_contain:
         escaped_str = (
@@ -44,7 +45,9 @@ def check_logs(must_contain=[], must_not_contain=[]):
             .replace("]", "\\]")
             .replace("*", "\\*")
         )
-        assert not node.contains_in_log(escaped_str)
+        assert not node.contains_in_log(
+            escaped_str, exclusion_substring=base_search_query
+        )
 
     for str in must_contain:
         escaped_str = str.replace("'", "\\'")
@@ -60,7 +63,7 @@ def system_query_log_contains_search_pattern(search_pattern):
     return (
         int(
             node.query(
-                f"SELECT COUNT() FROM system.query_log WHERE query LIKE '%{search_pattern}%'"
+                f"{base_search_query}'%{search_pattern}%' AND query NOT LIKE '{base_search_query}%'"
             ).strip()
         )
         >= 1
@@ -104,7 +107,6 @@ def test_create_alter_user():
         ],
         must_not_contain=[
             password,
-            "IDENTIFIED BY",
             "IDENTIFIED BY",
             "IDENTIFIED WITH plaintext_password BY",
         ],
@@ -366,10 +368,7 @@ def test_table_functions():
         f"remoteSecure(named_collection_6, addresses_expr = '127.{{2..11}}', database = 'default', table = 'remote_table', user = 'remote_user', password = '{password}')",
         f"s3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV')",
         f"s3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '{password}')",
-        (
-            f"deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
-            "DNS_ERROR",
-        ),
+        f"deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
         f"azureBlobStorage('{azure_conn_string}', 'cont', 'test_simple.csv', 'CSV')",
         f"azureBlobStorage('{azure_conn_string}', 'cont', 'test_simple_1.csv', 'CSV', 'none')",
         f"azureBlobStorage('{azure_conn_string}', 'cont', 'test_simple_2.csv', 'CSV', 'none', 'auto')",

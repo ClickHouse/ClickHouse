@@ -138,8 +138,8 @@ private:
 
 REGISTER_FUNCTION(Now)
 {
-    factory.registerFunction<NowOverloadResolver>({}, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("current_timestamp", NowOverloadResolver::name, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<NowOverloadResolver>({}, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("current_timestamp", NowOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 
 }

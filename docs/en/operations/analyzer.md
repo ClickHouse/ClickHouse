@@ -123,7 +123,7 @@ To ensure consistent and expected results, especially when migrating old queries
 In the new version of the analyzer, the rules for determining the common supertype for columns specified in the `USING` clause have been standardized to produce more predictable outcomes, especially when dealing with type modifiers like `LowCardinality` and `Nullable`.
 
 - `LowCardinality(T)` and `T`: When a column of type `LowCardinality(T)` is joined with a column of type `T`, the resulting common supertype will be `T`, effectively discarding the `LowCardinality` modifier.
-  
+
 - `Nullable(T)` and `T`: When a column of type `Nullable(T)` is joined with a column of type `T`, the resulting common supertype will be `Nullable(T)`, ensuring that the nullable property is preserved.
 
 **Example:**
@@ -144,7 +144,7 @@ During projection names computation, aliases are not substituted.
 SELECT
     1 + 1 AS x,
     x + 1
-SETTINGS allow_experimental_analyzer = 0
+SETTINGS enable_analyzer = 0
 FORMAT PrettyCompact
 
    ┌─x─┬─plus(plus(1, 1), 1)─┐
@@ -154,7 +154,7 @@ FORMAT PrettyCompact
 SELECT
     1 + 1 AS x,
     x + 1
-SETTINGS allow_experimental_analyzer = 1
+SETTINGS enable_analyzer = 1
 FORMAT PrettyCompact
 
    ┌─x─┬─plus(x, 1)─┐
@@ -177,7 +177,7 @@ SELECT toTypeName(if(0, [2, 3, 4], 'String'))
 
 ### Heterogeneous clusters
 
-The new analyzer significantly changed the communication protocol between servers in the cluster. Thus, it's impossible to run distributed queries on servers with different `allow_experimental_analyzer` setting values.
+The new analyzer significantly changed the communication protocol between servers in the cluster. Thus, it's impossible to run distributed queries on servers with different `enable_analyzer` setting values.
 
 ### Mutations are interpreted by previous analyzer
 

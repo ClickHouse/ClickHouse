@@ -7,13 +7,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-export MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --async_insert_busy_timeout_ms 10 --async_insert_max_data_size 1 --async_insert 1"
+export MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --async_insert_busy_timeout_min_ms 50 --async_insert_busy_timeout_max_ms 50 --async_insert 1"
 
 function insert1()
 {
     local TIMELIMIT=$((SECONDS+$1))
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
-        ${MY_CLICKHOUSE_CLIENT} --wait_for_async_insert 0 -q 'INSERT INTO async_inserts_race FORMAT CSV 1,"a"'
+        ${MY_CLICKHOUSE_CLIENT} --insert_keeper_fault_injection_probability=0 --wait_for_async_insert 0 -q 'INSERT INTO async_inserts_race FORMAT CSV 1,"a"'
     done
 }
 
@@ -21,7 +21,7 @@ function insert2()
 {
     local TIMELIMIT=$((SECONDS+$1))
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
-        ${MY_CLICKHOUSE_CLIENT} --wait_for_async_insert 0 -q 'INSERT INTO async_inserts_race FORMAT JSONEachRow {"id": 5, "s": "e"} {"id": 6, "s": "f"}'
+        ${MY_CLICKHOUSE_CLIENT} --insert_keeper_fault_injection_probability=0 --wait_for_async_insert 0 -q 'INSERT INTO async_inserts_race FORMAT JSONEachRow {"id": 5, "s": "e"} {"id": 6, "s": "f"}'
     done
 }
 
@@ -29,11 +29,8 @@ function insert3()
 {
     local TIMELIMIT=$((SECONDS+$1))
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
-        ${MY_CLICKHOUSE_CLIENT} --wait_for_async_insert 1 -q "INSERT INTO async_inserts_race VALUES (7, 'g') (8, 'h')" &
-        sleep 0.05
+        ${MY_CLICKHOUSE_CLIENT} --insert_keeper_fault_injection_probability=0 --wait_for_async_insert 1 -q "INSERT INTO async_inserts_race VALUES (7, 'g') (8, 'h')"
     done
-
-    wait
 }
 
 function select1()

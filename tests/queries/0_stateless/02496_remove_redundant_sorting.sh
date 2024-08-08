@@ -8,8 +8,8 @@ if [ -z ${ENABLE_ANALYZER+x} ]; then
     ENABLE_ANALYZER=0
 fi
 
-DISABLE_OPTIMIZATION="SET allow_experimental_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=0;SET optimize_duplicate_order_by_and_distinct=0"
-ENABLE_OPTIMIZATION="SET allow_experimental_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=1;SET optimize_duplicate_order_by_and_distinct=0"
+DISABLE_OPTIMIZATION="SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=0;SET optimize_duplicate_order_by_and_distinct=0"
+ENABLE_OPTIMIZATION="SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=1;SET optimize_duplicate_order_by_and_distinct=0"
 
 echo "-- Disabled query_plan_remove_redundant_sorting"
 echo "-- ORDER BY clauses in subqueries are untouched"

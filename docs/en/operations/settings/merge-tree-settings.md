@@ -119,11 +119,6 @@ Minimum size of blocks of uncompressed data required for compression when writin
 You can also specify this setting in the global settings (see [min_compress_block_size](/docs/en/operations/settings/settings.md/#min-compress-block-size) setting).
 The value specified when table is created overrides the global value for this setting.
 
-## max_partitions_to_read
-
-Limits the maximum number of partitions that can be accessed in one query.
-You can also specify setting [max_partitions_to_read](/docs/en/operations/settings/merge-tree-settings.md/#max-partitions-to-read) in the global setting.
-
 ## max_suspicious_broken_parts
 
 If the number of broken parts in a single partition exceeds the `max_suspicious_broken_parts` value, automatic deletion is denied.
@@ -690,6 +685,8 @@ Possible values:
 - Any positive integer.
 
 Default value: -1 (unlimited).
+
+You can also specify a query complexity setting [max_partitions_to_read](query-complexity#max-partitions-to-read) at a query / session / profile level.
 
 ## min_age_to_force_merge_seconds {#min_age_to_force_merge_seconds}
 

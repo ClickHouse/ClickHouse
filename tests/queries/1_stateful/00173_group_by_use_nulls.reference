@@ -9,7 +9,7 @@
 33010362	1336
 800784	1336
 -- { echoOn }
-set allow_experimental_analyzer = 1;
+set enable_analyzer = 1;
 SELECT
     CounterID AS k,
     quantileBFloat16(0.5)(ResolutionWidth)

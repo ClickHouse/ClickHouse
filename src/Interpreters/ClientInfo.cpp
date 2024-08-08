@@ -95,7 +95,7 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
     if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS)
     {
         writeVarUInt(static_cast<UInt64>(collaborate_with_initiator), out);
-        writeVarUInt(count_participating_replicas, out);
+        writeVarUInt(obsolete_count_participating_replicas, out);
         writeVarUInt(number_of_current_replica, out);
     }
 }
@@ -185,7 +185,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
         UInt64 value;
         readVarUInt(value, in);
         collaborate_with_initiator = static_cast<bool>(value);
-        readVarUInt(count_participating_replicas, in);
+        readVarUInt(obsolete_count_participating_replicas, in);
         readVarUInt(number_of_current_replica, in);
     }
 }
@@ -254,6 +254,8 @@ String toString(ClientInfo::Interface interface)
             return "LOCAL";
         case ClientInfo::Interface::TCP_INTERSERVER:
             return "TCP_INTERSERVER";
+        case ClientInfo::Interface::PROMETHEUS:
+            return "PROMETHEUS";
     }
 
     return std::format("Unknown server interface ({}).", static_cast<int>(interface));

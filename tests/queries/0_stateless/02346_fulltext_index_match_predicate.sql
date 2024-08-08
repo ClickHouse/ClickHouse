@@ -31,7 +31,7 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-    allow_experimental_analyzer = 0;
+    enable_analyzer = 0;
 
 SELECT *
 FROM
@@ -42,7 +42,7 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-    allow_experimental_analyzer = 1;
+    enable_analyzer = 1;
 
 SELECT '---';
 
@@ -61,7 +61,7 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-    allow_experimental_analyzer = 0;
+    enable_analyzer = 0;
 
 SELECT *
 FROM
@@ -72,7 +72,7 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-    allow_experimental_analyzer = 1;
+    enable_analyzer = 1;
 
 SELECT '---';
 
@@ -91,7 +91,7 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-    allow_experimental_analyzer = 0;
+    enable_analyzer = 0;
 
 SELECT *
 FROM
@@ -102,6 +102,6 @@ FROM
 WHERE
     explain LIKE '%Granules: %'
 SETTINGS
-    allow_experimental_analyzer = 1;
+    enable_analyzer = 1;
 
 DROP TABLE tab;

@@ -7,16 +7,16 @@ namespace DB
 
 REGISTER_FUNCTION(Round)
 {
-    factory.registerFunction<FunctionRound>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionRoundBankers>({}, FunctionFactory::CaseSensitive);
-    factory.registerFunction<FunctionFloor>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionCeil>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionTrunc>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionRound>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionRoundBankers>({}, FunctionFactory::Case::Sensitive);
+    factory.registerFunction<FunctionFloor>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionCeil>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionTrunc>({}, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionRoundDown>();
 
     /// Compatibility aliases.
-    factory.registerAlias("ceiling", "ceil", FunctionFactory::CaseInsensitive);
-    factory.registerAlias("truncate", "trunc", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("ceiling", "ceil", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("truncate", "trunc", FunctionFactory::Case::Insensitive);
 }
 
 }

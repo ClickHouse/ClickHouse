@@ -18,6 +18,16 @@ if (GLIBC_COMPATIBILITY)
         message (FATAL_ERROR "glibc_compatibility can only be used on x86_64 or aarch64.")
     endif ()
 
+    if (SANITIZE STREQUAL thread)
+        # Disable TSAN instrumentation that conflicts with re-exec due to high ASLR entropy using getauxval
+        # See longer comment in __auxv_init_procfs
+        # In the case of tsan we need to make sure getauxval is not instrumented as that would introduce tsan
+        # internal calls to functions that depend on a state that isn't initialized yet
+        set_source_files_properties(
+                musl/getauxval.c
+                PROPERTIES COMPILE_FLAGS "-mllvm -tsan-instrument-func-entry-exit=false")
+    endif()
+
     # Need to omit frame pointers to match the performance of glibc
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fomit-frame-pointer")
 

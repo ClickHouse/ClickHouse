@@ -10,11 +10,11 @@ CREATE TABLE nr (`x` Nullable(UInt32), `s` Nullable(String)) ENGINE = Memory;
 INSERT INTO t VALUES (1, 'l');
 INSERT INTO nr VALUES (2, NULL);
 
-{% for allow_experimental_analyzer in [0, 1] -%}
+{% for enable_analyzer in [0, 1] -%}
 
-SET allow_experimental_analyzer = {{ allow_experimental_analyzer }};
+SET enable_analyzer = {{ enable_analyzer }};
 
-{% if allow_experimental_analyzer -%}
+{% if enable_analyzer -%}
 SELECT '- analyzer -';
 {% endif -%}
 

@@ -9,10 +9,12 @@ namespace
 
 struct InitcapImpl
 {
-    static void vector(const ColumnString::Chars & data,
+    static void vector(
+        const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t /*input_rows_count*/)
     {
         if (data.empty())
             return;
@@ -21,7 +23,7 @@ struct InitcapImpl
         array(data.data(), data.data() + data.size(), res_data.data());
     }
 
-    static void vectorFixed(const ColumnString::Chars & data, size_t /*n*/, ColumnString::Chars & res_data)
+    static void vectorFixed(const ColumnString::Chars & data, size_t /*n*/, ColumnString::Chars & res_data, size_t)
     {
         res_data.resize(data.size());
         array(data.data(), data.data() + data.size(), res_data.data());
@@ -60,7 +62,7 @@ using FunctionInitcap = FunctionStringToString<InitcapImpl, NameInitcap>;
 
 REGISTER_FUNCTION(Initcap)
 {
-    factory.registerFunction<FunctionInitcap>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionInitcap>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

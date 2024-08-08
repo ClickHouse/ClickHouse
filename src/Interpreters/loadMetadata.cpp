@@ -385,7 +385,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
     if (database->getEngineName() != "Ordinary")
         return;
 
-    Strings permanently_detached_tables = database->getNamesOfPermanentlyDetachedTables();
+    const Strings permanently_detached_tables = database->getNamesOfPermanentlyDetachedTables();
     if (!permanently_detached_tables.empty())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot automatically convert database {} from Ordinary to Atomic, "

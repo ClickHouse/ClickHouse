@@ -9,7 +9,8 @@ CREATE TABLE r (
      s Int64,
      PROJECTION p
          (SELECT a, quantilesTimingMerge(0.5, 0.95, 0.99)(q), sum(s) GROUP BY a)
-) Engine=SummingMergeTree order by (x, a);
+) Engine=SummingMergeTree order by (x, a)
+SETTINGS deduplicate_merge_projection_mode = 'drop';  -- should set it to rebuild once projection is supported with SummingMergeTree
 
 insert into r
 select number%100 x,

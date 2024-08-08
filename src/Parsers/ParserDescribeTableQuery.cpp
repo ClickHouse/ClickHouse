@@ -11,15 +11,12 @@
 namespace DB
 {
 
-
 bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_describe(Keyword::DESCRIBE);
     ParserKeyword s_desc(Keyword::DESC);
     ParserKeyword s_table(Keyword::TABLE);
     ParserKeyword s_settings(Keyword::SETTINGS);
-    ParserToken s_dot(TokenType::Dot);
-    ParserIdentifier name_p;
     ParserSetQuery parser_settings(true);
 
     ASTPtr database;
@@ -52,6 +49,5 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     return true;
 }
-
 
 }

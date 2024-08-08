@@ -12,5 +12,13 @@ yml
 2
 yaml
 2
-ini
-Code: 347. Unknown format of '/config_default.ini' config. (CANNOT_LOAD_CONFIG)
+autodetect xml (with leading whitespaces)
+2
+autodetect xml (non leading whitespaces)
+2
+autodetect yaml
+2
+autodetect invalid xml
+Correct: invalid xml parsed with exception
+autodetect invalid yaml
+Code: 585. Unable to parse YAML configuration file /config_default.badyaml, yaml-cpp: error at line 2, column 12: illegal map value. (CANNOT_PARSE_YAML)

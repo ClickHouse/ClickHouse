@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Disks/ObjectStorages/IMetadataOperation.h>
+#include <Disks/ObjectStorages/InMemoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
 
 #include <filesystem>
@@ -13,20 +14,21 @@ class MetadataStorageFromPlainObjectStorageCreateDirectoryOperation final : publ
 {
 private:
     std::filesystem::path path;
-    std::string key_prefix;
-    MetadataStorageFromPlainObjectStorage::PathMap & path_map;
+    InMemoryPathMap & path_map;
     ObjectStoragePtr object_storage;
+    const std::string metadata_key_prefix;
+    const std::string object_key_prefix;
 
     bool write_created = false;
     bool write_finalized = false;
 
 public:
-    // Assuming that paths are normalized.
     MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
+        /// path_ must end with a trailing '/'.
         std::filesystem::path && path_,
-        std::string && key_prefix_,
-        MetadataStorageFromPlainObjectStorage::PathMap & path_map_,
-        ObjectStoragePtr object_storage_);
+        InMemoryPathMap & path_map_,
+        ObjectStoragePtr object_storage_,
+        const std::string & metadata_key_prefix_);
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
@@ -37,8 +39,9 @@ class MetadataStorageFromPlainObjectStorageMoveDirectoryOperation final : public
 private:
     std::filesystem::path path_from;
     std::filesystem::path path_to;
-    MetadataStorageFromPlainObjectStorage::PathMap & path_map;
+    InMemoryPathMap & path_map;
     ObjectStoragePtr object_storage;
+    const std::string metadata_key_prefix;
 
     bool write_created = false;
     bool write_finalized = false;
@@ -48,10 +51,12 @@ private:
 
 public:
     MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
+        /// Both path_from_ and path_to_ must end with a trailing '/'.
         std::filesystem::path && path_from_,
         std::filesystem::path && path_to_,
-        MetadataStorageFromPlainObjectStorage::PathMap & path_map_,
-        ObjectStoragePtr object_storage_);
+        InMemoryPathMap & path_map_,
+        ObjectStoragePtr object_storage_,
+        const std::string & metadata_key_prefix_);
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
 
@@ -63,15 +68,20 @@ class MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation final : publ
 private:
     std::filesystem::path path;
 
-    MetadataStorageFromPlainObjectStorage::PathMap & path_map;
+    InMemoryPathMap & path_map;
     ObjectStoragePtr object_storage;
+    const std::string metadata_key_prefix;
 
     std::string key_prefix;
     bool removed = false;
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(
-        std::filesystem::path && path_, MetadataStorageFromPlainObjectStorage::PathMap & path_map_, ObjectStoragePtr object_storage_);
+        /// path_ must end with a trailing '/'.
+        std::filesystem::path && path_,
+        InMemoryPathMap & path_map_,
+        ObjectStoragePtr object_storage_,
+        const std::string & metadata_key_prefix_);
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;

@@ -103,8 +103,6 @@ Default: 2
 
 The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`.
 
-## background_merges_mutations_scheduling_policy
-
 Algorithm used to select next merge or mutation to be executed by background thread pool. Policy may be changed at runtime without server restart.
 Could be applied from the `default` profile for backward compatibility.
 

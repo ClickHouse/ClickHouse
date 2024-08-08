@@ -430,7 +430,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
             ASTPtr query = sampling.filter_function;
             auto syntax_result = TreeRewriter(context).analyze(query, available_real_columns);
-            sampling.filter_expression = ExpressionAnalyzer(sampling.filter_function, syntax_result, context).getActionsDAG(false);
+            sampling.filter_expression = std::make_shared<const ActionsDAG>(ExpressionAnalyzer(sampling.filter_function, syntax_result, context).getActionsDAG(false));
         }
     }
 
@@ -444,7 +444,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 }
 
 void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
-    std::optional<KeyCondition> & part_offset_condition, const ActionsDAGPtr & filter_dag, ContextPtr context)
+    std::optional<KeyCondition> & part_offset_condition, const ActionsDAG * filter_dag, ContextPtr context)
 {
     if (!filter_dag)
         return;
@@ -465,10 +465,10 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
         return;
 
     part_offset_condition.emplace(KeyCondition{
-        dag,
+        &*dag,
         context,
         sample.getNames(),
-        std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
+        std::make_shared<ExpressionActions>(ActionsDAG(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
         {}});
 }
 
@@ -476,7 +476,7 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
     const MergeTreeData::DataPartsVector & parts,
-    const ActionsDAGPtr & filter_dag,
+    const ActionsDAG * filter_dag,
     ContextPtr context)
 {
     if (!filter_dag)
@@ -488,7 +488,7 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
         return {};
 
     auto virtual_columns_block = data.getBlockWithVirtualsForFilter(metadata_snapshot, parts);
-    VirtualColumnUtils::filterBlockWithDAG(dag, virtual_columns_block, context);
+    VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), virtual_columns_block);
     return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 }
 

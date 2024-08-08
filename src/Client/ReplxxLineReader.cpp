@@ -362,6 +362,9 @@ ReplxxLineReader::ReplxxLineReader(
     rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_NEXT, code); });
     rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code); });
 
+    /// We don't want the default, "suspend" behavior, it confuses people.
+    rx.bind_key_internal(replxx::Replxx::KEY::control('Z'), "insert_character");
+
     auto commit_action = [this](char32_t code)
     {
         /// If we allow multiline and there is already something in the input, start a newline.

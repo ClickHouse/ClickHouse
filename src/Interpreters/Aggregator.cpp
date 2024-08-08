@@ -2997,7 +2997,11 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         std::unique_ptr<ThreadPool> thread_pool;
         if (max_threads > 1 && total_input_rows > 100000)    /// TODO Make a custom threshold.
-            thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, CurrentMetrics::AggregatorThreadsScheduled, max_threads);
+            thread_pool = std::make_unique<ThreadPool>(
+                CurrentMetrics::AggregatorThreads,
+                CurrentMetrics::AggregatorThreadsActive,
+                CurrentMetrics::AggregatorThreadsScheduled,
+                max_threads);
 
         for (const auto & bucket_blocks : bucket_to_blocks)
         {
@@ -3009,7 +3013,10 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
             result.aggregates_pools.push_back(std::make_shared<Arena>());
             Arena * aggregates_pool = result.aggregates_pools.back().get();
 
-            auto task = [group = CurrentThread::getGroup(), bucket, &merge_bucket, aggregates_pool]{ merge_bucket(bucket, aggregates_pool, group); };
+            /// if we don't use thread pool we don't need to attach and definitely don't want to detach from the thread group
+            /// because this thread is already attached
+            auto task = [group = thread_pool != nullptr ? CurrentThread::getGroup() : nullptr, bucket, &merge_bucket, aggregates_pool]
+            { merge_bucket(bucket, aggregates_pool, group); };
 
             if (thread_pool)
                 thread_pool->scheduleOrThrowOnError(task);
@@ -3300,6 +3307,17 @@ void NO_INLINE Aggregator::destroyImpl(Table & table) const
 
         data = nullptr;
     });
+
+    if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+    {
+        if (table.getNullKeyData() != nullptr)
+        {
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+                aggregate_functions[i]->destroy(table.getNullKeyData() + offsets_of_aggregate_states[i]);
+
+            table.getNullKeyData() = nullptr;
+        }
+    }
 }
 
 

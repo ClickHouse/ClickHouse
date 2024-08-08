@@ -16,7 +16,7 @@ import upload_result_helper
 from build_check import get_release_or_pr
 from ci_config import CI
 from ci_metadata import CiMetadata
-from ci_utils import GHActions, normalize_string, Utils
+from ci_utils import GH, Utils
 from clickhouse_helper import (
     CiLogsCredentials,
     ClickHouseHelper,
@@ -48,7 +48,19 @@ from git_helper import GIT_PREFIX, Git
 from git_helper import Runner as GitRunner
 from github_helper import GitHub
 from pr_info import PRInfo
-from report import ERROR, FAILURE, PENDING, SUCCESS, BuildResult, JobReport, TestResult
+from report import (
+    ERROR,
+    FAILURE,
+    PENDING,
+    SUCCESS,
+    BuildResult,
+    JobReport,
+    TestResult,
+    OK,
+    JOB_STARTED_TEST_NAME,
+    JOB_FINISHED_TEST_NAME,
+    FAIL,
+)
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -82,6 +94,12 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         "--configure",
         action="store_true",
         help="Action that configures ci run. Calculates digests, checks job to be executed, generates json output",
+    )
+    parser.add_argument(
+        "--workflow",
+        default="",
+        type=str,
+        help="Workflow Name, to be provided with --configure for workflow-specific CI runs",
     )
     parser.add_argument(
         "--update-gh-statuses",
@@ -263,7 +281,8 @@ def check_missing_images_on_dockerhub(
     return result
 
 
-def _pre_action(s3, indata, pr_info):
+def _pre_action(s3, job_name, batch, indata, pr_info):
+    no_cache = CiSettings.create_from_run_config(indata).no_ci_cache
     print("Clear dmesg")
     Utils.clear_dmesg()
     CommitStatusData.cleanup()
@@ -274,7 +293,10 @@ def _pre_action(s3, indata, pr_info):
     # for release/master branches reports must be from the same branch
     report_prefix = ""
     if pr_info.is_master or pr_info.is_release:
-        report_prefix = normalize_string(pr_info.head_ref)
+        # do not set report prefix for scheduled or dispatched wf (in case it started from feature branch while
+        #   testing), otherwise reports won't be found
+        if not (pr_info.is_scheduled or pr_info.is_dispatched):
+            report_prefix = Utils.normalize_string(pr_info.head_ref)
     print(
         f"Use report prefix [{report_prefix}], pr_num [{pr_info.number}], head_ref [{pr_info.head_ref}]"
     )
@@ -282,6 +304,90 @@ def _pre_action(s3, indata, pr_info):
 
     ci_cache.dump_run_config(indata)
 
+    to_be_skipped = False
+    skip_status = SUCCESS
+    # check if job was run already
+    if CI.is_build_job(job_name):
+        # this is a build job - check if a build report is present
+        build_result = (
+            BuildResult.load_any(job_name, pr_info.number, pr_info.head_ref)
+            if not no_cache
+            else None
+        )
+        if build_result:
+            if build_result.status == SUCCESS:
+                to_be_skipped = True
+            else:
+                print(
+                    "Build report found but status is unsuccessful - will try to rerun"
+                )
+            print("::group::Build Report")
+            print(build_result.as_json())
+            print("::endgroup::")
+    else:
+        # this is a test job - check if GH commit status or cache record is present
+        commit = get_commit(GitHub(get_best_robot_token(), per_page=100), pr_info.sha)
+        # rerun helper check
+        # FIXME: Find a way to identify if job restarted manually (by developer) or by automatic workflow restart (died spot-instance)
+        #  disable rerun check for the former
+        if job_name not in (
+            CI.JobNames.BUILD_CHECK,
+        ):  # we might want to rerun build report job
+            rerun_helper = RerunHelper(commit, _get_ext_check_name(job_name))
+            if rerun_helper.is_already_finished_by_status():
+                print("WARNING: Rerunning job with GH status ")
+                status = rerun_helper.get_finished_status()
+                assert status
+                print("::group::Commit Status")
+                print(status)
+                print("::endgroup::")
+                to_be_skipped = True
+                skip_status = status.state
+
+        # ci cache check
+        if not to_be_skipped and not no_cache:
+            ci_cache = CiCache(s3, indata["jobs_data"]["digests"]).update()
+            job_config = CI.get_job_config(job_name)
+            if ci_cache.is_successful(
+                job_name,
+                batch,
+                job_config.num_batches,
+                job_config.required_on_release_branch,
+            ):
+                print("CICache record has be found - job will be skipped")
+                job_status = ci_cache.get_successful(
+                    job_name, batch, job_config.num_batches
+                )
+                assert job_status, "BUG"
+                _create_gh_status(
+                    commit,
+                    job_name,
+                    batch,
+                    job_config.num_batches,
+                    job_status,
+                )
+                to_be_skipped = True
+                # skip_status = SUCCESS already there
+                GH.print_in_group("Commit Status Data", job_status)
+
+    # create pre report
+    jr = JobReport.create_pre_report(status=skip_status, job_skipped=to_be_skipped)
+    jr.dump()
+
+    if not to_be_skipped:
+        print("push start record to ci db")
+        prepared_events = prepare_tests_results_for_clickhouse(
+            pr_info,
+            [TestResult(JOB_STARTED_TEST_NAME, OK)],
+            SUCCESS,
+            0.0,
+            JobReport.get_start_time_from_current(),
+            "",
+            _get_ext_check_name(job_name),
+        )
+        ClickHouseHelper().insert_events_into(
+            db="default", table="checks", events=prepared_events
+        )
     print(f"Pre action done. Report files [{reports_files}] have been downloaded")
 
 
@@ -423,6 +529,7 @@ def _configure_jobs(
     pr_info: PRInfo,
     ci_settings: CiSettings,
     skip_jobs: bool,
+    workflow_name: str = "",
     dry_run: bool = False,
 ) -> CiCache:
     """
@@ -440,18 +547,27 @@ def _configure_jobs(
             is_docs_only=pr_info.has_changes_in_documentation_only(),
             is_master=pr_info.is_master,
             is_pr=pr_info.is_pr,
+            workflow_name=workflow_name,
         )
     else:
         job_configs = {}
 
-    # filter jobs in accordance with ci settings
-    job_configs = ci_settings.apply(
-        job_configs,
-        pr_info.is_release,
-        is_pr=pr_info.is_pr,
-        is_mq=pr_info.is_merge_queue,
-        labels=pr_info.labels,
-    )
+    if not workflow_name:
+        # filter jobs in accordance with ci settings
+        job_configs = ci_settings.apply(
+            job_configs,
+            pr_info.is_release,
+            is_pr=pr_info.is_pr,
+            is_mq=pr_info.is_merge_queue,
+            labels=pr_info.labels,
+        )
+
+    # add all job batches to job's to_do batches
+    for _job, job_config in job_configs.items():
+        batches = []
+        for batch in range(job_config.num_batches):
+            batches.append(batch)
+        job_config.batches = batches
 
     # check jobs in ci cache
     ci_cache = CiCache.calc_digests_and_create(
@@ -602,7 +718,7 @@ def _upload_build_artifacts(
         (
             get_release_or_pr(pr_info, get_version_from_repo())[1],
             pr_info.sha,
-            normalize_string(build_name),
+            Utils.normalize_string(build_name),
             "performance.tar.zst",
         )
     )
@@ -650,7 +766,9 @@ def _upload_build_artifacts(
         int(job_report.duration),
         GITHUB_JOB_API_URL(),
         head_ref=pr_info.head_ref,
-        pr_number=pr_info.number,
+        # PRInfo fetches pr number for release branches as well - set pr_number to 0 for release
+        #   so that build results are not mistakenly treated as feature branch builds
+        pr_number=pr_info.number if pr_info.is_pr else 0,
     )
     report_url = ci_cache.upload_build_report(build_result)
     print(f"Report file has been uploaded to [{report_url}]")
@@ -901,7 +1019,9 @@ def _get_ext_check_name(check_name: str) -> str:
     return check_name_with_group
 
 
-def _cancel_pr_wf(s3: S3Helper, pr_number: int, cancel_sync: bool = False) -> None:
+def _cancel_pr_workflow(
+    s3: S3Helper, pr_number: int, cancel_sync: bool = False
+) -> None:
     wf_data = CiMetadata(s3, pr_number).fetch_meta()
     if not cancel_sync:
         if not wf_data.run_id:
@@ -1005,6 +1125,7 @@ def main() -> int:
             pr_info,
             ci_settings,
             args.skip_jobs,
+            args.workflow,
         )
 
         ci_cache.print_status()
@@ -1013,12 +1134,13 @@ def main() -> int:
             ci_cache.print_status()
 
         if IS_CI and not pr_info.is_merge_queue:
-            # wait for pending jobs to be finished, await_jobs is a long blocking call
-            ci_cache.await_pending_jobs(pr_info.is_release)
 
-            if pr_info.is_release:
+            if pr_info.is_release and pr_info.is_push_event:
                 print("Release/master: CI Cache add pending records for all todo jobs")
                 ci_cache.push_pending_all(pr_info.is_release)
+
+            # wait for pending jobs to be finished, await_jobs is a long blocking call
+            ci_cache.await_pending_jobs(pr_info.is_release)
 
         # conclude results
         result["git_ref"] = git_ref
@@ -1045,108 +1167,23 @@ def main() -> int:
     ### PRE action: start
     elif args.pre:
         assert indata, "Run config must be provided via --infile"
-        _pre_action(s3, indata, pr_info)
-        JobReport.create_pre_report().dump()
+        _pre_action(s3, args.job_name, args.batch, indata, pr_info)
 
     ### RUN action: start
     elif args.run:
         assert indata
-        ci_settings = CiSettings.create_from_run_config(indata)
+        job_report = JobReport.load()
         check_name = args.job_name
         check_name_with_group = _get_ext_check_name(check_name)
         print(
             f"Check if rerun for name: [{check_name}], extended name [{check_name_with_group}]"
         )
-        previous_status = None
-        if CI.is_build_job(check_name):
-            # this is a build job - check if a build report is present
-            build_result = (
-                BuildResult.load_any(check_name, pr_info.number, pr_info.head_ref)
-                if not ci_settings.no_ci_cache
-                else None
-            )
-            if build_result:
-                if build_result.status == SUCCESS:
-                    previous_status = build_result.status
-                    JobReport(
-                        status=SUCCESS,
-                        description="",
-                        test_results=[],
-                        start_time="",
-                        duration=0.0,
-                        additional_files=[],
-                        job_skipped=True,
-                    ).dump()
-                else:
-                    # FIXME: Consider reusing failures for build jobs.
-                    #   Just remove this if/else - that makes build job starting and failing immediately
-                    print(
-                        "Build report found but status is unsuccessful - will try to rerun"
-                    )
-                print("::group::Build Report")
-                print(build_result.as_json())
-                print("::endgroup::")
-        else:
-            # this is a test job - check if GH commit status or cache record is present
-            commit = get_commit(
-                GitHub(get_best_robot_token(), per_page=100), pr_info.sha
-            )
 
-            # rerun helper check
-            # FIXME: Find a way to identify if job restarted manually (by developer) or by automatic workflow restart (died spot-instance)
-            #  disable rerun check for the former
-            if check_name not in (
-                CI.JobNames.BUILD_CHECK,
-            ):  # we might want to rerun build report job
-                rerun_helper = RerunHelper(commit, check_name_with_group)
-                if rerun_helper.is_already_finished_by_status():
-                    print("WARNING: Rerunning job with GH status ")
-                    status = rerun_helper.get_finished_status()
-                    assert status
-                    print("::group::Commit Status")
-                    print(status)
-                    print("::endgroup::")
-                    previous_status = status.state
-                    print("Create dummy job report with job_skipped flag")
-                    JobReport(
-                        status=status.state,
-                        description="",
-                        test_results=[],
-                        start_time="",
-                        duration=0.0,
-                        additional_files=[],
-                        job_skipped=True,
-                    ).dump()
-
-            # ci cache check
-            if not previous_status and not ci_settings.no_ci_cache:
-                ci_cache = CiCache(s3, indata["jobs_data"]["digests"]).update()
-                job_config = CI.get_job_config(check_name)
-                if ci_cache.is_successful(
-                    check_name,
-                    args.batch,
-                    job_config.num_batches,
-                    job_config.required_on_release_branch,
-                ):
-                    job_status = ci_cache.get_successful(
-                        check_name, args.batch, job_config.num_batches
-                    )
-                    assert job_status, "BUG"
-                    _create_gh_status(
-                        commit,
-                        check_name,
-                        args.batch,
-                        job_config.num_batches,
-                        job_status,
-                    )
-                    previous_status = job_status.status
-                    GHActions.print_in_group("Commit Status Data", job_status)
-
-        if previous_status and not args.force:
+        if job_report.job_skipped and not args.force:
             print(
-                f"Commit status or Build Report is already present - job will be skipped with status: [{previous_status}]"
+                f"Commit status or Build Report is already present - job will be skipped with status: [{job_report.status}]"
             )
-            if previous_status == SUCCESS:
+            if job_report.status == SUCCESS:
                 exit_code = 0
             else:
                 exit_code = 1
@@ -1166,7 +1203,8 @@ def main() -> int:
         assert (
             job_report
         ), "BUG. There must be job report either real report, or pre-report if job was killed"
-        if not job_report.job_skipped and not job_report.pre_report:
+        error_description = ""
+        if not job_report.pre_report:
             # it's a real job report
             ch_helper = ClickHouseHelper()
             check_url = ""
@@ -1212,7 +1250,7 @@ def main() -> int:
                     (
                         get_release_or_pr(pr_info, get_version_from_repo())[0],
                         pr_info.sha,
-                        normalize_string(
+                        Utils.normalize_string(
                             job_report.check_name or _get_ext_check_name(args.job_name)
                         ),
                     )
@@ -1244,7 +1282,6 @@ def main() -> int:
                     pr_info,
                     dump_to_file=True,
                 )
-
             print(f"Job report url: [{check_url}]")
             prepared_events = prepare_tests_results_for_clickhouse(
                 pr_info,
@@ -1269,9 +1306,7 @@ def main() -> int:
                 )
         elif job_report.job_skipped:
             print(f"Skipped after rerun check {[args.job_name]} - do nothing")
-        elif job_report.job_skipped:
-            print(f"Job was skipped {[args.job_name]} - do nothing")
-        elif job_report.pre_report:
+        else:
             print(f"ERROR: Job was killed - generate evidence")
             job_report.update_duration()
             ret_code = os.getenv("JOB_EXIT_CODE", "")
@@ -1282,10 +1317,14 @@ def main() -> int:
                     pass
             if Utils.is_killed_with_oom():
                 print("WARNING: OOM while job execution")
-                error = f"Out Of Memory, exit_code {job_report.exit_code}, after {int(job_report.duration)}s"
+                print(subprocess.run("sudo dmesg -T", check=False))
+                error_description = f"Out Of Memory, exit_code {job_report.exit_code}"
             else:
-                error = f"Unknown, exit_code {job_report.exit_code}, after {int(job_report.duration)}s"
-            CIBuddy().post_error(error, job_name=_get_ext_check_name(args.job_name))
+                error_description = f"Unknown, exit_code {job_report.exit_code}"
+            CIBuddy().post_job_error(
+                error_description + f" after {int(job_report.duration)}s",
+                job_name=_get_ext_check_name(args.job_name),
+            )
             if CI.is_test_job(args.job_name):
                 gh = GitHub(get_best_robot_token(), per_page=100)
                 commit = get_commit(gh, pr_info.sha)
@@ -1293,11 +1332,32 @@ def main() -> int:
                     commit,
                     ERROR,
                     "",
-                    "Error: " + error,
+                    "Error: " + error_description,
                     _get_ext_check_name(args.job_name),
                     pr_info,
                     dump_to_file=True,
                 )
+
+        if not job_report.job_skipped:
+            print("push finish record to ci db")
+            prepared_events = prepare_tests_results_for_clickhouse(
+                pr_info,
+                [
+                    TestResult(
+                        JOB_FINISHED_TEST_NAME,
+                        FAIL if error_description else OK,
+                        raw_logs=error_description or None,
+                    )
+                ],
+                SUCCESS if not error_description else ERROR,
+                0.0,
+                JobReport.get_start_time_from_current(),
+                "",
+                _get_ext_check_name(args.job_name),
+            )
+            ClickHouseHelper().insert_events_into(
+                db="default", table="checks", events=prepared_events
+            )
     ### POST action: end
 
     ### MARK SUCCESS action: start
@@ -1310,12 +1370,12 @@ def main() -> int:
         assert indata, "Run config must be provided via --infile"
         _update_gh_statuses_action(indata=indata, s3=s3)
 
-    ### CANCEL PREVIOUS WORKFLOW RUN
+    ### CANCEL THE PREVIOUS WORKFLOW RUN
     elif args.cancel_previous_run:
         if pr_info.is_merge_queue:
-            _cancel_pr_wf(s3, pr_info.merged_pr)
+            _cancel_pr_workflow(s3, pr_info.merged_pr)
         elif pr_info.is_pr:
-            _cancel_pr_wf(s3, pr_info.number, cancel_sync=True)
+            _cancel_pr_workflow(s3, pr_info.number, cancel_sync=True)
         else:
             assert False, "BUG! Not supported scenario"
 

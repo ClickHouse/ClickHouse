@@ -143,7 +143,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
             /* cluster_name= */ "",
             /* password= */ ""
         };
-        auto cluster = std::make_shared<Cluster>(getContext()->getSettings(), host_names, params);
+        auto cluster = std::make_shared<Cluster>(getContext()->getSettingsRef(), host_names, params);
 
         // FIXME this (probably) needs a non-constant access to query context,
         // because it might initialized a storage. Ideally, the tables required

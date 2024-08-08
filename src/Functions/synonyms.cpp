@@ -121,7 +121,7 @@ public:
 
 REGISTER_FUNCTION(Synonyms)
 {
-    factory.registerFunction<FunctionSynonyms>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionSynonyms>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

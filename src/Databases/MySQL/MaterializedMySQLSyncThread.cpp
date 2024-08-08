@@ -89,7 +89,7 @@ static constexpr auto MYSQL_BACKGROUND_THREAD_NAME = "MySQLDBSync";
 
 static ContextMutablePtr createQueryContext(ContextPtr context)
 {
-    Settings new_query_settings = context->getSettings();
+    Settings new_query_settings = context->getSettingsCopy();
     new_query_settings.insert_allow_materialized_columns = true;
 
     /// To avoid call AST::format

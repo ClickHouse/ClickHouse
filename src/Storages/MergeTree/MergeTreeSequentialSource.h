@@ -38,7 +38,7 @@ void createReadFromPartStep(
     MergeTreeData::DataPartPtr data_part,
     Names columns_to_read,
     bool apply_deleted_mask,
-    ActionsDAGPtr filter,
+    std::optional<ActionsDAG> filter,
     ContextPtr context,
     LoggerPtr log);
 

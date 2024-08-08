@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 select s.a as a, s.a + 1 as b from (select 10 as a) s;
 select s.a + 1 as a, s.a as b from (select 10 as a) s;

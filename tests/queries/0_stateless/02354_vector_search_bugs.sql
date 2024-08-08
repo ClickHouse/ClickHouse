@@ -8,7 +8,7 @@
 SET allow_experimental_annoy_index = 1;
 SET allow_experimental_usearch_index = 1;
 
-SET allow_experimental_analyzer = 1; -- 0 vs. 1 produce slightly different error codes, make it future-proof
+SET enable_analyzer = 1; -- 0 vs. 1 produce slightly different error codes, make it future-proof
 
 DROP TABLE IF EXISTS tab;
 

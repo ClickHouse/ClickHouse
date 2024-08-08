@@ -36,6 +36,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int BAD_QUERY_PARAMETER;
     extern const int QUERY_NOT_ALLOWED;
 }
 
@@ -150,7 +151,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     }
     else if (!configuration->isPathWithGlobs())
     {
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "ObjectStorageQueue url must either end with '/' or contain globs");
+        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
     checkAndAdjustSettings(*queue_settings, engine_args, mode > LoadingStrictnessLevel::CREATE, log);
@@ -454,7 +455,13 @@ bool StorageObjectStorageQueue::streamToViews()
 
     while (!shutdown_called && !file_iterator->isFinished())
     {
-        InterpreterInsertQuery interpreter(insert, queue_context, false, true, true);
+        InterpreterInsertQuery interpreter(
+            insert,
+            queue_context,
+            /* allow_materialized */ false,
+            /* no_squash */ true,
+            /* no_destination */ true,
+            /* async_isnert */ false);
         auto block_io = interpreter.execute();
         auto read_from_format_info = prepareReadingFromFormat(
             block_io.pipeline.getHeader().getNames(),

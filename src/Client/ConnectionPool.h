@@ -103,7 +103,7 @@ public:
 
     Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
               const Settings & settings,
-              bool force_connected = true) override;
+              bool force_connected) override;
 
     std::string getDescription() const
     {

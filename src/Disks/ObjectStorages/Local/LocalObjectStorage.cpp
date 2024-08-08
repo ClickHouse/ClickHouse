@@ -1,15 +1,15 @@
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 
-#include <Interpreters/Context.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/logger_useful.h>
+#include <filesystem>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
+#include <Interpreters/Context.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
-#include <filesystem>
+#include <Common/logger_useful.h>
 
 namespace fs = std::filesystem;
 
@@ -222,7 +222,8 @@ std::unique_ptr<IObjectStorage> LocalObjectStorage::cloneObjectStorage(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage() is not implemented for LocalObjectStorage");
 }
 
-ObjectStorageKey LocalObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
+ObjectStorageKey
+LocalObjectStorage::generateObjectKeyForPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
 {
     constexpr size_t key_name_total_size = 32;
     return ObjectStorageKey::createAsRelative(key_prefix, getRandomASCIIString(key_name_total_size));

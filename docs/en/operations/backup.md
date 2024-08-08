@@ -85,6 +85,7 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
     - `password` for the file on disk
     - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
     - `use_same_s3_credentials_for_base_backup`: whether base backup to S3 should inherit credentials from the query. Only works with `S3`.
+    - `use_same_password_for_base_backup`: whether base backup archive should inherit the password from the query.
     - `structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
     - `storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
     - `s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`

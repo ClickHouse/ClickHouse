@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-object-storage, no-debug
+# Tags: no-object-storage, no-debug, no-random-merge-tree-settings
 # - no-object-storage - S3 has additional logging
 # - no-debug - debug builds also has additional logging
+# - no-random-merge-tree-settings - changes content of log messages
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -30,6 +30,7 @@ private:
     const ParallelReadingExtension extension;
     const CoordinationMode mode;
 
+    size_t min_marks_per_task{0};
     bool no_more_tasks{false};
     RangesInDataPartsDescription request;
     RangesInDataPartsDescription buffered_tasks;

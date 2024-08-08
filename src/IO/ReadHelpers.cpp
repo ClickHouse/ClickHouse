@@ -3,13 +3,13 @@
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <Common/memcpySmall.h>
+#include <Common/checkStackSize.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
-#include <base/find_symbols.h>
 #include <cstdlib>
 #include <bit>
 
@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 template <size_t num_bytes, typename IteratorSrc, typename IteratorDst>
@@ -1494,9 +1495,19 @@ template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const
 
 
 template <typename ReturnType>
-ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings)
+ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings, size_t current_depth)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    if (unlikely(current_depth > settings.max_depth))
+    {
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "JSON is too deep for key '{}'", name_of_field.toString());
+        return ReturnType(false);
+    }
+
+    if (unlikely(current_depth > 0 && current_depth % 1024 == 0))
+        checkStackSize();
 
     if (buf.eof())
     {
@@ -1560,8 +1571,8 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const Fo
         while (true)
         {
             if constexpr (throw_exception)
-                skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings);
-            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings))
+                skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings, current_depth + 1);
+            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings, current_depth + 1))
                 return ReturnType(false);
 
             skipWhitespaceIfAny(buf);
@@ -1619,8 +1630,8 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const Fo
             skipWhitespaceIfAny(buf);
 
             if constexpr (throw_exception)
-                skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings);
-            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings))
+                skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings, current_depth + 1);
+            else if (!skipJSONFieldImpl<ReturnType>(buf, name_of_field, settings, current_depth + 1))
                 return ReturnType(false);
 
             skipWhitespaceIfAny(buf);
@@ -1659,12 +1670,12 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const Fo
 
 void skipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings)
 {
-    skipJSONFieldImpl<void>(buf, name_of_field, settings);
+    skipJSONFieldImpl<void>(buf, name_of_field, settings, 0);
 }
 
 bool trySkipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings)
 {
-    return skipJSONFieldImpl<bool>(buf, name_of_field, settings);
+    return skipJSONFieldImpl<bool>(buf, name_of_field, settings, 0);
 }
 
 

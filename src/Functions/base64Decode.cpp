@@ -5,6 +5,7 @@
 
 namespace DB
 {
+
 REGISTER_FUNCTION(Base64Decode)
 {
     FunctionDocumentation::Description description = R"(Accepts a String and decodes it from base64, according to RFC 4648 (https://datatracker.ietf.org/doc/html/rfc4648#section-4). Throws an exception in case of an error. Alias: FROM_BASE64.)";
@@ -17,8 +18,9 @@ REGISTER_FUNCTION(Base64Decode)
     factory.registerFunction<FunctionBase64Conversion<Base64Decode<Base64Variant::Normal>>>({description, syntax, arguments, returned_value, examples, categories});
 
     /// MySQL compatibility alias.
-    factory.registerAlias("FROM_BASE64", "base64Decode", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("FROM_BASE64", "base64Decode", FunctionFactory::Case::Insensitive);
 }
+
 }
 
 #endif

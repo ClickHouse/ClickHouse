@@ -103,6 +103,10 @@ $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filte
 $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE (s, lower(s)) IN (('aбвгдеёж', 'aбвгдеёж'), ('abc', 'cba')) ORDER BY k"
 $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE (s, lower(s)) IN (('aбвгдеёж', 'aбвгдеёж'), ('abc', 'cba')) ORDER BY k FORMAT JSON" | grep "rows_read"
 
+# Weird conditions not supported by the index.
+$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT count() FROM bloom_filter_idx WHERE (s = 'asd') = (s = 'asd')"
+$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT count() FROM bloom_filter_idx WHERE has(['asd', 'some string'], s)"
+
 
 # TOKEN BF
 $CLICKHOUSE_CLIENT -n --query="

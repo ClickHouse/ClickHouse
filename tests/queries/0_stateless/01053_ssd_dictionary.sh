@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-fasttest
-# Tag no-fasttest: this test mistakenly requires acces to /var/lib/clickhouse -- can't run this locally, disabled
+# Tag no-fasttest: this test mistakenly requires access to /var/lib/clickhouse -- can't run this locally, disabled
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -n --query="
   DROP DATABASE IF EXISTS 01053_db;
 
-  CREATE DATABASE 01053_db Engine = Ordinary;
+  CREATE DATABASE 01053_db;
 
   DROP TABLE IF EXISTS 01053_db.table_for_dict;
 

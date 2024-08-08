@@ -277,7 +277,7 @@ void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory)
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
     factory.registerFunction("groupConcat", { createAggregateFunctionGroupConcat, properties });
-    factory.registerAlias("group_concat", "groupConcat", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAlias("group_concat", "groupConcat", AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

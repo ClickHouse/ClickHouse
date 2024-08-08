@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 with d as (select 'key'::Varchar(255) c, 'x'::Varchar(255) s)
 SELECT r1, c as r2
 FROM (

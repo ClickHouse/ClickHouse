@@ -14,7 +14,7 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE mt (n Int64) ENGINE=MergeTree ORDER BY 
 function begin_commit_readonly()
 {
   while true; do
-    $CLICKHOUSE_CLIENT --multiquery --query "
+    $CLICKHOUSE_CLIENT --query "
             SET wait_changes_become_visible_after_commit_mode='wait';
             BEGIN TRANSACTION;
             COMMIT;" 2>&1| grep -Fa "Exception: " | grep -Fv UNKNOWN_STATUS_OF_TRANSACTION
@@ -24,7 +24,7 @@ function begin_commit_readonly()
 function begin_rollback_readonly()
 {
   while true; do
-    $CLICKHOUSE_CLIENT --wait_changes_become_visible_after_commit_mode=wait_unknown --multiquery --query "
+    $CLICKHOUSE_CLIENT --wait_changes_become_visible_after_commit_mode=wait_unknown --query "
             BEGIN TRANSACTION;
             SET TRANSACTION SNAPSHOT 42;
             ROLLBACK;"
@@ -34,7 +34,7 @@ function begin_rollback_readonly()
 function begin_insert_commit()
 {
   while true; do
-    $CLICKHOUSE_CLIENT --wait_changes_become_visible_after_commit_mode=async --multiquery --query "
+    $CLICKHOUSE_CLIENT --wait_changes_become_visible_after_commit_mode=async --query "
             BEGIN TRANSACTION;
             INSERT INTO mt VALUES ($RANDOM);
             COMMIT;" 2>&1| grep -Fa "Exception: " | grep -Fv UNKNOWN_STATUS_OF_TRANSACTION

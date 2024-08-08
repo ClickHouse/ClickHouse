@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_STORAGE;
     extern const int NO_REPLICA_NAME_GIVEN;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -827,6 +828,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             if (isFloat(data_types[i]))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Floating point partition key is not supported: {}", metadata.partition_key.column_names[i]);
+    }
+
+    if (metadata.hasProjections() && args.mode == LoadingStrictnessLevel::CREATE)
+    {
+        /// Now let's handle the merge tree family. Note we only handle in the mode of CREATE due to backward compatibility.
+        /// Otherwise, it would fail to start in the case of existing projections with special mergetree.
+        if (merging_params.mode != MergeTreeData::MergingParams::Mode::Ordinary
+            && storage_settings->deduplicate_merge_projection_mode == DeduplicateMergeProjectionMode::THROW)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Projection is fully supported in {}MergeTree with deduplicate_merge_projection_mode = throw. "
+                "Use 'drop' or 'rebuild' option of deduplicate_merge_projection_mode.",
+                merging_params.getModeName());
     }
 
     if (arg_num != arg_cnt)

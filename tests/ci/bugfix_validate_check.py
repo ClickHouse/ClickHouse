@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import List, Sequence, Tuple
 
 from ci_config import CI
-from ci_utils import normalize_string
 from env_helper import TEMP_PATH
 from functional_test_check import NO_CHANGES_MSG
 from report import (
@@ -142,7 +141,9 @@ def main():
         for file in set(jr.additional_files):
             file_ = Path(file)
             file_name = file_.name
-            file_name = file_name.replace(".", "__" + normalize_string(job_id) + ".", 1)
+            file_name = file_name.replace(
+                ".", "__" + CI.Utils.normalize_string(job_id) + ".", 1
+            )
             file_ = file_.rename(file_.parent / file_name)
             additional_files.append(file_)
 

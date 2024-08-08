@@ -277,12 +277,10 @@ WriteBufferFromS3::~WriteBufferFromS3()
             "The file might not be written to S3. "
             "{}.",
             getVerboseLogDetails());
-        return;
     }
-
-    /// That destructor could be call with finalized=false in case of exceptions
-    if (!finalized && !canceled)
+    else if (!finalized)
     {
+        /// That destructor could be call with finalized=false in case of exceptions
         LOG_INFO(
             log,
             "WriteBufferFromS3 is not finalized in destructor. "
@@ -291,9 +289,10 @@ WriteBufferFromS3::~WriteBufferFromS3()
             getVerboseLogDetails());
     }
 
+    /// Wait for all tasks, because they contain reference to this write buffer.
     task_tracker->safeWaitAll();
 
-    if (!multipart_upload_id.empty() && !multipart_upload_finished)
+    if (!canceled && !multipart_upload_id.empty() && !multipart_upload_finished)
     {
         LOG_WARNING(log, "WriteBufferFromS3 was neither finished nor aborted, try to abort upload in destructor. {}.", getVerboseLogDetails());
         tryToAbortMultipartUpload();
