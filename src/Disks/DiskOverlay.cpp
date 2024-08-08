@@ -65,8 +65,8 @@ DiskOverlay::DiskOverlay(const String & name_, const Poco::Util::AbstractConfigu
 {
     String disk_base_name = config_.getString(config_prefix_ + ".disk_base");
     String disk_diff_name = config_.getString(config_prefix_ + ".disk_diff");
-    String metadata_name = config_.getString(config_prefix_ + ".metadata");
-    String tracked_metadata_name = config_.getString(config_prefix_ + ".tracked_metadata");
+    String forward_metadata_name = config_.getString(config_prefix_ + ".forward_metadata.metadata_type");
+    String tracked_metadata_name = config_.getString(config_prefix_ + ".tracked_metadata.metadata_type");
 
     disk_base = map_.at(disk_base_name);
     disk_diff = map_.at(disk_diff_name);
@@ -76,8 +76,8 @@ DiskOverlay::DiskOverlay(const String & name_, const Poco::Util::AbstractConfigu
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Diff disk has to be writable");
     }
 
-    forward_metadata = MetadataStorageFactory::instance().create(metadata_name, config_, config_prefix_, nullptr, "");
-    tracked_metadata = MetadataStorageFactory::instance().create(tracked_metadata_name, config_, config_prefix_, nullptr, "");
+    forward_metadata = MetadataStorageFactory::instance().create(forward_metadata_name, config_, config_prefix_ + ".forward_metadata", nullptr, "", false);
+    tracked_metadata = MetadataStorageFactory::instance().create(tracked_metadata_name, config_, config_prefix_ + ".tracked_metadata", nullptr, "", false);
 }
 
 const String & DiskOverlay::getPath() const
