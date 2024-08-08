@@ -92,7 +92,7 @@ SELECT count(*) FROM tab WHERE u64_count_min < 7.7;
 SELECT count(*) FROM tab WHERE u64_uniq < 7.7;
 
 SELECT count(*) FROM tab WHERE u64 < '7';
--- SELECT count(*) FROM tab WHERE u64_tdigest < '7'; -- BOOM (#67742)
+SELECT count(*) FROM tab WHERE u64_tdigest < '7';
 SELECT count(*) FROM tab WHERE u64_count_min < '7';
 SELECT count(*) FROM tab WHERE u64_uniq < '7';
 
@@ -116,12 +116,12 @@ SELECT count(*) FROM tab WHERE f64_count_min = 7.7;
 SELECT count(*) FROM tab WHERE f64_uniq = 7.7;
 
 SELECT count(*) FROM tab WHERE f64 = '7';
--- SELECT count(*) FROM tab WHERE f64_tdigest = '7'; -- BOOM (#67742)
+SELECT count(*) FROM tab WHERE f64_tdigest = '7';
 SELECT count(*) FROM tab WHERE f64_count_min = '7';
 SELECT count(*) FROM tab WHERE f64_uniq = '7';
 
 SELECT count(*) FROM tab WHERE f64 = '7.7';
--- SELECT count(*) FROM tab WHERE f64_tdigest = '7.7'; -- BOOM (#67742)
+SELECT count(*) FROM tab WHERE f64_tdigest = '7.7';
 SELECT count(*) FROM tab WHERE f64_count_min = '7.7';
 SELECT count(*) FROM tab WHERE f64_uniq = '7.7';
 
@@ -138,12 +138,12 @@ SELECT count(*) FROM tab WHERE f64_count_min < 7.7;
 SELECT count(*) FROM tab WHERE f64_uniq < 7.7;
 
 SELECT count(*) FROM tab WHERE f64 < '7';
--- SELECT count(*) FROM tab WHERE f64_tdigest < '7'; -- BOOM (#67742)
+SELECT count(*) FROM tab WHERE f64_tdigest < '7';
 SELECT count(*) FROM tab WHERE f64_count_min < '7';
 SELECT count(*) FROM tab WHERE f64_uniq < '7';
 
 SELECT count(*) FROM tab WHERE f64 < '7.7';
--- SELECT count(*) FROM tab WHERE f64_tdigest < '7.7'; -- BOOM (#67742)
+SELECT count(*) FROM tab WHERE f64_tdigest < '7.7';
 SELECT count(*) FROM tab WHERE f64_count_min < '7.7';
 SELECT count(*) FROM tab WHERE f64_uniq < '7.7';
 
@@ -164,7 +164,7 @@ SELECT count(*) FROM tab WHERE dt_uniq = 7;
 SELECT 'dt and <';
 
 SELECT count(*) FROM tab WHERE dt < '2024-08-08 11:12:13';
--- SELECT count(*) FROM tab WHERE dt_tdigest < '2024-08-08 11:12:13'; -- BOOM (#67742)
+SELECT count(*) FROM tab WHERE dt_tdigest < '2024-08-08 11:12:13';
 SELECT count(*) FROM tab WHERE dt_count_min < '2024-08-08 11:12:13';
 SELECT count(*) FROM tab WHERE dt_uniq < '2024-08-08 11:12:13';
 
