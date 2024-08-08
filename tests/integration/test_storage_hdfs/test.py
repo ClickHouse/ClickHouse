@@ -118,6 +118,7 @@ def test_read_write_storage_with_globs(started_cluster):
     node1.query("drop table HDFSStorageWithEnum")
     node1.query("drop table HDFSStorageWithQuestionMark")
     node1.query("drop table HDFSStorageWithAsterisk")
+    node1.query("drop table HDFSStorageWithDoubleAsterisk")
 
 
 def test_storage_with_multidirectory_glob(started_cluster):
