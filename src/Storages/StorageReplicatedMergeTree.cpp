@@ -3683,8 +3683,6 @@ void StorageReplicatedMergeTree::updateMovePartTask( const LogEntry & logEntry, 
     }
 }
 
-
-
 bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry)
 {
     LogEntryPtr & entry = selected_entry->log_entry;
