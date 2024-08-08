@@ -104,7 +104,6 @@ std::optional<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsO
 
     Strings signaled_entries = zk->getChildren(entries_znode_path + "/task_queue");
 
-
     for(String & signaled_entry : signaled_entries){
         Entry entry_to_process;
         Coordination::Stat stat;
@@ -113,7 +112,7 @@ std::optional<PartMovesBetweenShardsOrchestrator::Entry> PartMovesBetweenShardsO
         entry_to_process.fromString(entry_str);
         entry_to_process.version = stat.version;
         entry_to_process.znode_name = signaled_entry;
-        
+
         try
         {
             zk->create(entry_to_process.znode_path + "/replica", storage.replica_name, zkutil::CreateMode::Ephemeral);
