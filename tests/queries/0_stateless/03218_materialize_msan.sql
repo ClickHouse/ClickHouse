@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 SELECT
     materialize([(NULL, '11\01111111\011111', '1111')]) AS t,
     (t[1048576]).2,
