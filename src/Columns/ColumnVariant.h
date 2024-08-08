@@ -237,6 +237,7 @@ public:
                            size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const override;
 
     void reserve(size_t n) override;
+    void prepareForSquashing(const Columns & source_columns) override;
     void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;

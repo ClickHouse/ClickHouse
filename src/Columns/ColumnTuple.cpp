@@ -595,6 +595,19 @@ void ColumnTuple::reserve(size_t n)
         getColumn(i).reserve(n);
 }
 
+void ColumnTuple::prepareForSquashing(const Columns & source_columns)
+{
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        Columns nested_columns;
+        nested_columns.reserve(source_columns.size());
+        for (const auto & source_column : source_columns)
+            nested_columns.push_back(assert_cast<const ColumnTuple &>(*source_column).getColumnPtr(i));
+        getColumn(i).prepareForSquashing(nested_columns);
+    }
+}
+
 void ColumnTuple::shrinkToFit()
 {
     const size_t tuple_size = columns.size();
