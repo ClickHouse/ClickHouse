@@ -7,11 +7,11 @@
             <query>GRANT CREATE USER, ALTER USER, DROP USER, SHOW USERS, SHOW CREATE USER ON *.* TO 'testrole' WITH GRANT OPTION;</query>
         </scripts>
         <scripts>
-            <query>CREATE TABLE TestTable (id UInt64) ENGINE=TinyLog</query>
-            <condition>SELECT 1;</condition>
+            <query>SELECT throwIf(1, 'exception condition')</query>
+            <condition>SELECT throwIf(1, 'exception condition')</condition>
         </scripts>
         <scripts>
-            <query>SELECT * FROM system.query_log LIMIT 1</query>
+            <query>CREATE TABLE TestTable_1 (id UInt64) ENGINE=TinyLog</query>
         </scripts>
     </startup_scripts>
 </clickhouse>

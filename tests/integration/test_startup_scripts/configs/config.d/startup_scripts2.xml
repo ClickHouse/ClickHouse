@@ -1,0 +1,20 @@
+<clickhouse>
+    <startup_scripts>
+        <scripts>
+            <query>CREATE ROLE OR REPLACE testrole</query>
+        </scripts>
+        <scripts>
+            <query>GRANT CREATE USER, ALTER USER, DROP USER, SHOW USERS, SHOW CREATE USER ON *.* TO 'testrole' WITH GRANT OPTION;</query>
+        </scripts>
+        <scripts>
+            <query>CREATE TABLE TestTable_1 (id UInt64) ENGINE=TinyLog</query>
+        </scripts>
+        <scripts>
+            <query>CREATE TABLE TestTable_2 (id UInt64) ENGINE=TinyLog</query>
+            <condition>SELECT throwIf(1, 'exception condition')</condition>
+        </scripts>
+        <scripts>
+            <query>CREATE TABLE TestTable_3 (id UInt64) ENGINE=TinyLog</query>
+        </scripts>
+    </startup_scripts>
+</clickhouse>
