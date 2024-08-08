@@ -2,6 +2,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Aggregator.h>
+#include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Common/CurrentMetrics.h>
@@ -21,7 +22,7 @@ namespace CurrentMetrics
 namespace DB
 {
 
-class AggregatedChunkInfo : public ChunkInfo
+class AggregatedChunkInfo : public ChunkInfoCloneable<AggregatedChunkInfo>
 {
 public:
     bool is_overflows = false;

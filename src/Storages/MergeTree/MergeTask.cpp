@@ -797,6 +797,16 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
     }
 
 
+    const auto mode = global_ctx->data->getSettings()->deduplicate_merge_projection_mode;
+    /// Under throw mode, we still choose to drop projections due to backward compatibility since some
+    /// users might have projections before this change.
+    if (global_ctx->data->merging_params.mode != MergeTreeData::MergingParams::Ordinary
+        && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::DROP))
+    {
+        ctx->projections_iterator = ctx->tasks_for_projections.begin();
+        return false;
+    }
+
     const auto & projections = global_ctx->metadata_snapshot->getProjections();
 
     for (const auto & projection : projections)

@@ -4,6 +4,8 @@
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Common/Exception.h>
+#include <Common/Logger.h>
 
 namespace DB
 {
@@ -105,7 +107,27 @@ void RemoteSource::work()
         executor_finished = true;
         return;
     }
+
+    if (preprocessed_packet)
+    {
+        preprocessed_packet = false;
+        return;
+    }
+
     ISource::work();
+}
+
+void RemoteSource::onAsyncJobReady()
+{
+    chassert(async_read);
+
+    if (!was_query_sent)
+        return;
+
+    chassert(!preprocessed_packet);
+    preprocessed_packet = query_executor->processParallelReplicaPacketIfAny();
+    if (preprocessed_packet)
+        is_async_state = false;
 }
 
 std::optional<Chunk> RemoteSource::tryGenerate()
@@ -182,15 +204,22 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         auto info = std::make_shared<AggregatedChunkInfo>();
         info->bucket_num = block.info.bucket_num;
         info->is_overflows = block.info.is_overflows;
-        chunk.setChunkInfo(std::move(info));
+        chunk.getChunkInfos().add(std::move(info));
     }
 
     return chunk;
 }
 
-void RemoteSource::onCancel()
+void RemoteSource::onCancel() noexcept
 {
-    query_executor->cancel();
+    try
+    {
+        query_executor->cancel();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("RemoteSource"), "Error occurs on cancellation.");
+    }
 }
 
 void RemoteSource::onUpdatePorts()

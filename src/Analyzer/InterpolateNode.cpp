@@ -24,7 +24,7 @@ void InterpolateNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_st
 {
     buffer << std::string(indent, ' ') << "INTERPOLATE id: " << format_state.getNodeId(this);
 
-    buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION\n";
+    buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION " << expression_name << " \n";
     getExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 
     buffer << '\n' << std::string(indent + 2, ' ') << "INTERPOLATE_EXPRESSION\n";

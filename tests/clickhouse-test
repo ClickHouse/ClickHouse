@@ -681,6 +681,7 @@ class FailureReason(enum.Enum):
     BUILD = "not running for current build"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
     SHARED_MERGE_TREE = "no-shared-merge-tree"
+    DISTRIBUTED_CACHE = "distributed-cache"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -821,7 +822,10 @@ class SettingsRandomizer:
                 get_localzone(),
             ]
         ),
-        "prefer_warmed_unmerged_parts_seconds": lambda: random.randint(0, 10),
+        # This setting affect part names and their content which can be read from tables in tests.
+        # We have a lot of tests which relies on part names, so it's very unsafe to enable randomization
+        # of this setting
+        # "prefer_warmed_unmerged_parts_seconds": lambda: random.randint(0, 10),
         "use_page_cache_for_disks_without_file_cache": lambda: random.random() < 0.7,
         "page_cache_inject_eviction": lambda: random.random() < 0.5,
         "merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability": lambda: round(
@@ -832,6 +836,8 @@ class SettingsRandomizer:
         "cross_join_min_bytes_to_compress": lambda: random.choice([0, 1, 100000000]),
         "min_external_table_block_size_bytes": lambda: random.choice([0, 1, 100000000]),
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
+        "trace_profile_events": lambda: random.randint(0, 1),
+        "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
     }
 
     @staticmethod
@@ -1187,6 +1193,9 @@ class TestCase:
         elif tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
+        elif tags and ("no-distributed-cache" in tags) and args.distributed_cache:
+            return FailureReason.DISTRIBUTED_CACHE
+
         elif (
             tags
             and ("atomic-database" in tags)
@@ -1221,6 +1230,11 @@ class TestCase:
 
         elif "no-batch" in tags and (
             args.run_by_hash_num is not None or args.run_by_hash_total is not None
+        ):
+            return FailureReason.SKIP
+
+        elif "no-flaky-check" in tags and (
+            1 == int(os.environ.get("IS_FLAKY_CHECK", 0))
         ):
             return FailureReason.SKIP
 
@@ -1524,6 +1538,15 @@ class TestCase:
         client = args.testcase_client
         start_time = args.testcase_start_time
         database = args.testcase_database
+
+        if args.client_log:
+            log_opt = " --client_logs_file=" + args.client_log + " "
+            client_options += log_opt
+            os.environ["CLICKHOUSE_CLIENT_OPT"] = (
+                os.environ["CLICKHOUSE_CLIENT_OPT"]
+                if "CLICKHOUSE_CLIENT_OPT" in os.environ
+                else ""
+            ) + log_opt
 
         # This is for .sh tests
         os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
@@ -2159,7 +2182,10 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
 
     while True:
         if all_tests:
-            case = all_tests.pop(0)
+            try:
+                case = all_tests.pop(0)
+            except IndexError:
+                break
         else:
             break
 
@@ -2178,7 +2204,7 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
             description = ""
             test_case_name = removesuffix(test_case.name, ".gen", ".sql") + ": "
 
-            if is_concurrent or args.run_sequential_tests_in_parallel:
+            if is_concurrent:
                 description = f"{test_case_name:72}"
             else:
                 sys.stdout.flush()
@@ -2202,7 +2228,6 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite, bool
                         args, test_suite, client_options, server_logs_level
                     )
                     test_result = test_case.process_result(test_result, MESSAGES)
-                    break
                 except TimeoutError:
                     break
                 finally:
@@ -2438,35 +2463,6 @@ def extract_key(key: str) -> str:
     )[1]
 
 
-def override_envs(*args_, **kwargs):
-    global args
-    args.client += " --port 19000"
-    args.http_port = 18123
-    args.https_port = 18443
-
-    updated_env = {
-        "CLICKHOUSE_CONFIG": "/etc/clickhouse-server3/config.xml",
-        "CLICKHOUSE_CONFIG_DIR": "/etc/clickhouse-server3",
-        "CLICKHOUSE_CONFIG_GREP": "/etc/clickhouse-server3/preprocessed/config.xml",
-        "CLICKHOUSE_USER_FILES": "/var/lib/clickhouse3/user_files",
-        "CLICKHOUSE_SCHEMA_FILES": "/var/lib/clickhouse3/format_schemas",
-        "CLICKHOUSE_PATH": "/var/lib/clickhouse3",
-        "CLICKHOUSE_PORT_TCP": "19000",
-        "CLICKHOUSE_PORT_TCP_SECURE": "19440",
-        "CLICKHOUSE_PORT_TCP_WITH_PROXY": "19010",
-        "CLICKHOUSE_PORT_HTTP": "18123",
-        "CLICKHOUSE_PORT_HTTPS": "18443",
-        "CLICKHOUSE_PORT_INTERSERVER": "19009",
-        "CLICKHOUSE_PORT_KEEPER": "19181",
-        "CLICKHOUSE_PORT_PROMTHEUS_PORT": "19988",
-        "CLICKHOUSE_PORT_MYSQL": "19004",
-        "CLICKHOUSE_PORT_POSTGRESQL": "19005",
-    }
-    os.environ.update(updated_env)
-
-    run_tests_array(*args_, **kwargs)
-
-
 def run_tests_process(*args, **kwargs):
     return run_tests_array(*args, **kwargs)
 
@@ -2494,36 +2490,16 @@ def do_run_tests(jobs, test_suite: TestSuite):
         # of failures will be nearly the same for all tests from the group.
         random.shuffle(test_suite.parallel_tests)
 
-        batch_size = max(1, (len(test_suite.parallel_tests) // jobs) + 1)
-        parallel_tests_array = []
-        for job in range(jobs):
-            range_ = job * batch_size, job * batch_size + batch_size
-            batch = test_suite.parallel_tests[range_[0] : range_[1]]
-            parallel_tests_array.append((batch, batch_size, test_suite, True))
+        batch_size = len(test_suite.parallel_tests) // jobs
+        manager = multiprocessing.Manager()
+        parallel_tests = manager.list()
+        parallel_tests.extend(test_suite.parallel_tests)
 
         processes = []
-
-        for test_batch in parallel_tests_array:
+        for _ in range(jobs):
             process = multiprocessing.Process(
-                target=run_tests_process, args=(test_batch,)
-            )
-            processes.append(process)
-            process.start()
-
-        if args.run_sequential_tests_in_parallel:
-            # Run parallel tests and sequential tests at the same time
-            # Sequential tests will use different ClickHouse instance
-            # In this process we can safely override values in `args` and `os.environ`
-            process = multiprocessing.Process(
-                target=override_envs,
-                args=(
-                    (
-                        test_suite.sequential_tests,
-                        len(test_suite.sequential_tests),
-                        test_suite,
-                        False,
-                    ),
-                ),
+                target=run_tests_process,
+                args=((parallel_tests, batch_size, test_suite, True),),
             )
             processes.append(process)
             process.start()
@@ -2559,15 +2535,15 @@ def do_run_tests(jobs, test_suite: TestSuite):
 
             sleep(5)
 
-        if not args.run_sequential_tests_in_parallel:
-            run_tests_array(
-                (
-                    test_suite.sequential_tests,
-                    len(test_suite.sequential_tests),
-                    test_suite,
-                    False,
-                )
+        run_tests_array(
+            (
+                test_suite.sequential_tests,
+                len(test_suite.sequential_tests),
+                test_suite,
+                False,
             )
+        )
+
         return len(test_suite.sequential_tests) + len(test_suite.parallel_tests)
     else:
         num_tests = len(test_suite.all_tests)
@@ -2994,6 +2970,15 @@ def main(args):
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
 
+    if args.client_log:
+        if os.path.exists(args.client_log):
+            with open(args.client_log, "rb") as stream:
+                content = stream.read().decode()
+                if len(content):
+                    print("Has fatal logs from client:\n")
+                    print(content)
+            os.remove(args.client_log)
+
     if len(restarted_tests) > 0:
         print("\nSome tests were restarted:\n")
 
@@ -3229,6 +3214,12 @@ def parse_args():
         help="Run tests over s3 storage",
     )
     parser.add_argument(
+        "--distributed-cache",
+        action="store_true",
+        default=False,
+        help="Run tests with enabled distributed cache",
+    )
+    parser.add_argument(
         "--azure-blob-storage",
         action="store_true",
         default=False,
@@ -3386,23 +3377,19 @@ def parse_args():
     parser.add_argument(
         "--replace-replicated-with-shared",
         action="store_true",
-        default=os.environ.get("USE_META_IN_KEEPER_FOR_MERGE_TREE", False),
+        default=os.environ.get("REPLACE_RMT_WITH_SMT", False),
         help="Replace ReplicatedMergeTree engine with SharedMergeTree",
     )
     parser.add_argument(
         "--replace-non-replicated-with-shared",
         action="store_true",
-        default=False,
+        default=os.environ.get("REPLACE_MT_WITH_SMT", False),
         help="Replace ordinary MergeTree engine with SharedMergeTree",
     )
-
     parser.add_argument(
-        "--run-sequential-tests-in-parallel",
-        action="store_true",
-        default=False,
-        help="If `true`, tests with the tag `no-parallel` will run on a "
-        "separate ClickHouse instance in parallel with other tests. "
-        "This is used in CI to make test jobs run faster.",
+        "--client-log",
+        default="./client.fatal.log",
+        help="Path to file for fatal logs from client",
     )
 
     return parser.parse_args()

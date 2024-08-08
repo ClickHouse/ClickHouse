@@ -30,7 +30,7 @@ public:
     void setRowsBeforeLimit(size_t rows_before_limit) override;
     void setRowsBeforeAggregation(size_t rows_before_aggregation) override;
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         queue.clearAndFinish();
     }

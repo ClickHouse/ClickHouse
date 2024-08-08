@@ -3,6 +3,7 @@
 #include <Backups/RestoreCoordinationRemote.h>
 #include <Backups/BackupCoordinationStageSync.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/CreateQueryUUIDs.h>
 #include <Parsers/formatAST.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -269,7 +270,8 @@ bool RestoreCoordinationRemote::acquireInsertingDataForKeeperMap(const String & 
 void RestoreCoordinationRemote::generateUUIDForTable(ASTCreateQuery & create_query)
 {
     String query_str = serializeAST(create_query);
-    String new_uuids_str = create_query.generateRandomUUID(/* always_generate_new_uuid= */ true).toString();
+    CreateQueryUUIDs new_uuids{create_query, /* generate_random= */ true, /* force_random= */ true};
+    String new_uuids_str = new_uuids.toString();
 
     auto holder = with_retries.createRetriesControlHolder("generateUUIDForTable");
     holder.retries_ctl.retryLoop(
@@ -281,11 +283,14 @@ void RestoreCoordinationRemote::generateUUIDForTable(ASTCreateQuery & create_que
             Coordination::Error res = zk->tryCreate(path, new_uuids_str, zkutil::CreateMode::Persistent);
 
             if (res == Coordination::Error::ZOK)
+            {
+                new_uuids.copyToQuery(create_query);
                 return;
+            }
 
             if (res == Coordination::Error::ZNODEEXISTS)
             {
-                create_query.setUUID(ASTCreateQuery::UUIDs::fromString(zk->get(path)));
+                CreateQueryUUIDs::fromString(zk->get(path)).copyToQuery(create_query);
                 return;
             }
 
@@ -318,7 +323,7 @@ bool RestoreCoordinationRemote::hasConcurrentRestores(const std::atomic<size_t> 
         return false;
 
     bool result = false;
-    std::string path = zookeeper_path +"/stage";
+    std::string path = zookeeper_path + "/stage";
 
     auto holder = with_retries.createRetriesControlHolder("createRootNodes");
     holder.retries_ctl.retryLoop(
