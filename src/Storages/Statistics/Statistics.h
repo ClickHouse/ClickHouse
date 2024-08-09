@@ -14,12 +14,11 @@ namespace DB
 constexpr auto STATS_FILE_PREFIX = "statistics_";
 constexpr auto STATS_FILE_SUFFIX = ".stats";
 
-
 struct StatisticsUtils
 {
     /// Returns std::nullopt if input Field cannot be converted to a concrete value
-    static std::optional<Float64> tryConvertToFloat64(const Field & field);
-    static std::optional<String> tryConvertToString(const Field & field);
+    /// - `data_type` is the type of the column on which the statistics object was build on
+    static std::optional<Float64> tryConvertToFloat64(const Field & value, const DataTypePtr & data_type);
 };
 
 /// Statistics describe properties of the values in the column,
@@ -87,10 +86,10 @@ class MergeTreeStatisticsFactory : private boost::noncopyable
 public:
     static MergeTreeStatisticsFactory & instance();
 
-    void validate(const ColumnStatisticsDescription & stats, DataTypePtr data_type) const;
+    void validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
 
-    using Validator = std::function<void(const SingleStatisticsDescription & stats, DataTypePtr data_type)>;
-    using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, DataTypePtr data_type)>;
+    using Validator = std::function<void(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
+    using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
 
     ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats) const;
     ColumnsStatistics getMany(const ColumnsDescription & columns) const;
