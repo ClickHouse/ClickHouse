@@ -39,3 +39,5 @@ SELECT hopEnd(hop(toDateTime('2019-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DA
 
 SELECT hopStart(tuple()); -- { serverError ILLEGAL_COLUMN }
 SELECT hopEnd(tuple()); -- { serverError ILLEGAL_COLUMN }
+SELECT tumbleStart(tuple()); -- { serverError ILLEGAL_COLUMN }
+SELECT tumbleEnd(tuple()); -- { serverError ILLEGAL_COLUMN }
