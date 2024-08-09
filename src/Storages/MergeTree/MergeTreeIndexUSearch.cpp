@@ -44,11 +44,13 @@ namespace ErrorCodes
 namespace
 {
 
-std::unordered_map<String, unum::usearch::metric_kind_t> nameToMetricKind = {
+/// Maps from user-facing name to internal name
+std::unordered_map<String, unum::usearch::metric_kind_t> distanceFunctionToMetricKind = {
     {"L2Distance", unum::usearch::metric_kind_t::l2sq_k},
     {"cosineDistance", unum::usearch::metric_kind_t::cos_k}};
 
-std::unordered_map<String, unum::usearch::scalar_kind_t> nameToScalarKind = {
+/// Maps from user-facing name to internal name
+std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToScalarKind = {
     {"f64", unum::usearch::scalar_kind_t::f64_k},
     {"f32", unum::usearch::scalar_kind_t::f32_k},
     {"f16", unum::usearch::scalar_kind_t::f16_k},
@@ -380,12 +382,12 @@ MergeTreeIndexPtr usearchIndexCreator(const IndexDescription & index)
     static constexpr auto default_metric_kind = unum::usearch::metric_kind_t::l2sq_k;
     auto metric_kind = default_metric_kind;
     if (!index.arguments.empty())
-        metric_kind = nameToMetricKind.at(index.arguments[0].safeGet<String>());
+        metric_kind = distanceFunctionToMetricKind.at(index.arguments[0].safeGet<String>());
 
     static constexpr auto default_scalar_kind = unum::usearch::scalar_kind_t::f16_k;
     auto scalar_kind = default_scalar_kind;
     if (index.arguments.size() > 1)
-        scalar_kind = nameToScalarKind.at(index.arguments[1].safeGet<String>());
+        scalar_kind = quantizationToScalarKind.at(index.arguments[1].safeGet<String>());
 
     return std::make_shared<MergeTreeIndexUSearch>(index, metric_kind, scalar_kind);
 }
@@ -409,13 +411,13 @@ void usearchIndexValidator(const IndexDescription & index, bool /* attach */)
 
     /// Check that a supported metric was passed as first argument
 
-    if (!index.arguments.empty() && !nameToMetricKind.contains(index.arguments[0].safeGet<String>()))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unrecognized metric kind (first argument) for vector index. Supported kinds are: {}", keysAsString(nameToMetricKind));
+    if (!index.arguments.empty() && !distanceFunctionToMetricKind.contains(index.arguments[0].safeGet<String>()))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unrecognized metric kind (first argument) for vector index. Supported kinds are: {}", keysAsString(distanceFunctionToMetricKind));
 
     /// Check that a supported kind was passed as a second argument
 
-    if (index.arguments.size() > 1 && !nameToScalarKind.contains(index.arguments[1].safeGet<String>()))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unrecognized scalar kind (second argument) for vector index. Supported kinds are: {}", keysAsString(nameToScalarKind));
+    if (index.arguments.size() > 1 && !quantizationToScalarKind.contains(index.arguments[1].safeGet<String>()))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unrecognized scalar kind (second argument) for vector index. Supported kinds are: {}", keysAsString(quantizationToScalarKind));
 
     /// Check data type of indexed column:
 
