@@ -180,7 +180,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     }
 
     if (variant_element_state->variant->size() < variant_limit)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of deserialized variant column less than the limit: {} < {}", variant_element_state->variant->size(), *variant_limit);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of deserialized variant column less than the limit: {} < {}", variant_element_state->variant->size(), variant_limit);
 
     size_t variant_offset = variant_element_state->variant->size() - variant_limit;
 
