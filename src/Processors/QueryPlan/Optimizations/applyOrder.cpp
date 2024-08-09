@@ -4,6 +4,8 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Functions/IFunction.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -226,7 +228,20 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
 {
     if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(parent->step.get()))
     {
+        // if (optimization_settings.aggregation_in_order && !properties->sort_description.empty()
+        //     (properties->sort_scope == SortingProperty::SortScope::Stream || properties->sort_scope == SortingProperty::SortScope::Global))
+        //     aggregating_step->applyOrder(properties->sort_description);
+
         auto sort_description = aggregating_step->getSortDescription();
+        if (!sort_description.empty())
+            return {std::move(sort_description), SortingProperty::SortScope::Global};
+    }
+
+    if (auto * mergine_aggeregated = typeid_cast<MergingAggregatedStep *>(parent->step.get()))
+    {
+        enableMemoryBoundMerging(*parent);
+
+        auto sort_description = mergine_aggeregated->getSortDescription();
         if (!sort_description.empty())
             return {std::move(sort_description), SortingProperty::SortScope::Global};
     }
@@ -283,6 +298,27 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
 
         applyActionsToSortDescription(properties->sort_description, expr, out_to_skip);
         return std::move(*properties);
+    }
+
+    if (auto * transforming = dynamic_cast<ITransformingStep *>(parent->step.get()))
+    {
+        if (transforming->getDataStreamTraits().preserves_sorting)
+            return std::move(*properties);
+    }
+
+    if (auto * union_step = typeid_cast<UnionStep *>(parent->step.get()))
+    {
+        SortDescription common_sort_description = std::move(properties->sort_description);
+        auto sort_scope = properties->sort_scope;
+
+        for (size_t i = 1; i < parent->children.size(); ++i)
+        {
+            common_sort_description = commonPrefix(common_sort_description, properties[i].sort_description);
+            sort_scope = std::min(sort_scope, properties[i].sort_scope);
+        }
+
+        if (!common_sort_description.empty() && sort_scope >= SortingProperty::SortScope::Chunk)
+            return {std::move(common_sort_description), sort_scope};
     }
 
     return {};

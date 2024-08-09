@@ -14,17 +14,17 @@ ITransformingStep::ITransformingStep(DataStream input_stream, Block output_heade
 }
 
 DataStream ITransformingStep::createOutputStream(
-    const DataStream & input_stream,
+    [[maybe_unused]] const DataStream & input_stream,
     Block output_header,
-    const DataStreamTraits & stream_traits)
+    [[maybe_unused]] const DataStreamTraits & stream_traits)
 {
     DataStream output_stream{.header = std::move(output_header)};
 
-    if (stream_traits.preserves_sorting)
-    {
-        output_stream.sort_description = input_stream.sort_description;
-        output_stream.sort_scope = input_stream.sort_scope;
-    }
+    // if (stream_traits.preserves_sorting)
+    // {
+    //     output_stream.sort_description = input_stream.sort_description;
+    //     output_stream.sort_scope = input_stream.sort_scope;
+    // }
 
     return output_stream;
 }

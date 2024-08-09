@@ -338,19 +338,19 @@ static void explainStep(
 
     }
 
-    if (options.sorting)
-    {
-        if (step.hasOutputStream())
-        {
-            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
-            if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
-            {
-                settings.out << ": ";
-                dumpSortDescription(step.getOutputStream().sort_description, settings.out);
-            }
-            settings.out.write('\n');
-        }
-    }
+    // if (options.sorting)
+    // {
+    //     if (step.hasOutputStream())
+    //     {
+    //         settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
+    //         if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
+    //         {
+    //             settings.out << ": ";
+    //             dumpSortDescription(step.getOutputStream().sort_description, settings.out);
+    //         }
+    //         settings.out.write('\n');
+    //     }
+    // }
 
     if (options.actions)
         step.describeActions(settings);
@@ -504,6 +504,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::applyOrder(optimization_settings, *root);
     QueryPlanOptimizations::optimizeTreeThirdPass(*this, *root, nodes);
 
     updateDataStreams(*root);

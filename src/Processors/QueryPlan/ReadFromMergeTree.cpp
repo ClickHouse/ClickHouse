@@ -166,8 +166,8 @@ static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
 }
 
 /// build sort description for output stream
-static void updateSortDescriptionForOutputStream(
-    DataStream & output_stream, const Names & sorting_key_columns, const int sort_direction, InputOrderInfoPtr input_order_info, PrewhereInfoPtr prewhere_info, bool enable_vertical_final)
+static SortDescription getSortDescriptionForOutputStream(
+    const DataStream & output_stream, const Names & sorting_key_columns, const int sort_direction, InputOrderInfoPtr input_order_info, PrewhereInfoPtr prewhere_info, bool enable_vertical_final)
 {
     /// Updating sort description can be done after PREWHERE actions are applied to the header.
     /// Aftert PREWHERE actions are applied, column names in header can differ from storage column names due to aliases
@@ -211,20 +211,17 @@ static void updateSortDescriptionForOutputStream(
         sort_description.emplace_back((header.begin() + column_pos)->name, sort_direction);
     }
 
-    if (!sort_description.empty())
+    if (input_order_info && !enable_vertical_final)
     {
-        if (input_order_info && !enable_vertical_final)
-        {
-            output_stream.sort_scope = DataStream::SortScope::Stream;
-            const size_t used_prefix_of_sorting_key_size = input_order_info->used_prefix_of_sorting_key_size;
-            if (sort_description.size() > used_prefix_of_sorting_key_size)
-                sort_description.resize(used_prefix_of_sorting_key_size);
-        }
-        else
-            output_stream.sort_scope = DataStream::SortScope::Chunk;
+        // output_stream.sort_scope = DataStream::SortScope::Stream;
+        const size_t used_prefix_of_sorting_key_size = input_order_info->used_prefix_of_sorting_key_size;
+        if (sort_description.size() > used_prefix_of_sorting_key_size)
+            sort_description.resize(used_prefix_of_sorting_key_size);
+
+        return sort_description;
     }
 
-    output_stream.sort_description = std::move(sort_description);
+    return {};
 }
 
 void ReadFromMergeTree::AnalysisResult::checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const
@@ -324,13 +321,13 @@ ReadFromMergeTree::ReadFromMergeTree(
     setStepDescription(data.getStorageID().getFullNameNotQuoted());
     enable_vertical_final = query_info.isFinal() && context->getSettingsRef().enable_vertical_final && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
 
-    updateSortDescriptionForOutputStream(
-        *output_stream,
-        storage_snapshot->metadata->getSortingKeyColumns(),
-        getSortDirection(),
-        query_info.input_order_info,
-        prewhere_info,
-        enable_vertical_final);
+    // updateSortDescriptionForOutputStream(
+    //     *output_stream,
+    //     storage_snapshot->metadata->getSortingKeyColumns(),
+    //     getSortDirection(),
+    //     query_info.input_order_info,
+    //     prewhere_info,
+    //     enable_vertical_final);
 }
 
 
@@ -1712,14 +1709,14 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
             break;
         sort_description.emplace_back(column_name, sort_direction);
     }
-    if (!sort_description.empty())
-    {
-        const size_t used_prefix_of_sorting_key_size = query_info.input_order_info->used_prefix_of_sorting_key_size;
-        if (sort_description.size() > used_prefix_of_sorting_key_size)
-            sort_description.resize(used_prefix_of_sorting_key_size);
-        output_stream->sort_description = std::move(sort_description);
-        output_stream->sort_scope = DataStream::SortScope::Stream;
-    }
+    // if (!sort_description.empty())
+    // {
+    //     const size_t used_prefix_of_sorting_key_size = query_info.input_order_info->used_prefix_of_sorting_key_size;
+    //     if (sort_description.size() > used_prefix_of_sorting_key_size)
+    //         sort_description.resize(used_prefix_of_sorting_key_size);
+    //     output_stream->sort_description = std::move(sort_description);
+    //     output_stream->sort_scope = DataStream::SortScope::Stream;
+    // }
 
     /// All *InOrder optimization rely on an assumption that output stream is sorted, but vertical FINAL breaks this rule
     /// Let prefer in-order optimization over vertical FINAL for now
@@ -1741,8 +1738,12 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
     output_stream = DataStream{.header = MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
         prewhere_info_value)};
+}
 
-    updateSortDescriptionForOutputStream(
+
+SortDescription ReadFromMergeTree::getSortDescription() const
+{
+    return getSortDescriptionForOutputStream(
         *output_stream,
         storage_snapshot->metadata->getSortingKeyColumns(),
         getSortDirection(),

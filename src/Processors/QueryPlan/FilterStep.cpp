@@ -11,14 +11,12 @@ namespace DB
 
 static ITransformingStep::Traits getTraits()
 {
-    bool preserves_sorting = false;
-
     return ITransformingStep::Traits
     {
         {
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = preserves_sorting,
+            .preserves_sorting = false,
         },
         {
             .preserves_number_of_rows = false,
@@ -103,15 +101,15 @@ void FilterStep::updateOutputStream()
     if (!getDataStreamTraits().preserves_sorting)
         return;
 
-    FindAliasForInputName alias_finder(actions_dag);
-    const auto & input_sort_description = getInputStreams().front().sort_description;
-    for (size_t i = 0, s = input_sort_description.size(); i < s; ++i)
-    {
-        const auto & original_column = input_sort_description[i].column_name;
-        const auto * alias_node = alias_finder.find(original_column);
-        if (alias_node)
-            output_stream->sort_description[i].column_name = alias_node->result_name;
-    }
+    // FindAliasForInputName alias_finder(actions_dag);
+    // const auto & input_sort_description = getInputStreams().front().sort_description;
+    // for (size_t i = 0, s = input_sort_description.size(); i < s; ++i)
+    // {
+    //     const auto & original_column = input_sort_description[i].column_name;
+    //     const auto * alias_node = alias_finder.find(original_column);
+    //     if (alias_node)
+    //         output_stream->sort_description[i].column_name = alias_node->result_name;
+    // }
 }
 
 }

@@ -10,14 +10,14 @@
 namespace DB
 {
 
-static bool memoryBoundMergingWillBeUsed(
-    const DataStream & input_stream,
-    bool memory_bound_merging_of_aggregation_results_enabled,
-    const SortDescription & group_by_sort_description)
-{
-    return memory_bound_merging_of_aggregation_results_enabled && !group_by_sort_description.empty()
-        && input_stream.sort_scope >= DataStream::SortScope::Stream && input_stream.sort_description.hasPrefix(group_by_sort_description);
-}
+// static bool memoryBoundMergingWillBeUsed(
+//     //const DataStream & input_stream,
+//     bool memory_bound_merging_of_aggregation_results_enabled,
+//     const SortDescription & group_by_sort_description)
+// {
+//     return memory_bound_merging_of_aggregation_results_enabled && !group_by_sort_description.empty();
+//         //&& input_stream.sort_scope >= DataStream::SortScope::Stream && input_stream.sort_description.hasPrefix(group_by_sort_description);
+// }
 
 static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_of_bucket_number)
 {
@@ -61,30 +61,30 @@ MergingAggregatedStep::MergingAggregatedStep(
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
 {
-    if (memoryBoundMergingWillBeUsed() && should_produce_results_in_order_of_bucket_number)
-    {
-        output_stream->sort_description = group_by_sort_description;
-        output_stream->sort_scope = DataStream::SortScope::Global;
-    }
+    // if (memoryBoundMergingWillBeUsed() && should_produce_results_in_order_of_bucket_number)
+    // {
+    //     output_stream->sort_description = group_by_sort_description;
+    //     output_stream->sort_scope = DataStream::SortScope::Global;
+    // }
 }
 
-void MergingAggregatedStep::applyOrder(SortDescription sort_description, DataStream::SortScope sort_scope)
+void MergingAggregatedStep::applyOrder(SortDescription input_sort_description) ///, DataStream::SortScope sort_scope)
 {
-    is_order_overwritten = true;
-    overwritten_sort_scope = sort_scope;
+    // is_order_overwritten = true;
+    // overwritten_sort_scope = sort_scope;
 
-    auto & input_stream = input_streams.front();
-    input_stream.sort_scope = sort_scope;
-    input_stream.sort_description = sort_description;
+    // auto & input_stream = input_streams.front();
+    // input_stream.sort_scope = sort_scope;
+    // input_stream.sort_description = sort_description;
 
     /// Columns might be reordered during optimization, so we better to update sort description.
-    group_by_sort_description = std::move(sort_description);
+    group_by_sort_description = std::move(input_sort_description);
 
-    if (memoryBoundMergingWillBeUsed() && should_produce_results_in_order_of_bucket_number)
-    {
-        output_stream->sort_description = group_by_sort_description;
-        output_stream->sort_scope = DataStream::SortScope::Global;
-    }
+    // if (memoryBoundMergingWillBeUsed() && should_produce_results_in_order_of_bucket_number)
+    // {
+    //     output_stream->sort_description = group_by_sort_description;
+    //     output_stream->sort_scope = DataStream::SortScope::Global;
+    // }
 }
 
 void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -155,13 +155,23 @@ void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
 void MergingAggregatedStep::updateOutputStream()
 {
     output_stream = createOutputStream(input_streams.front(), params.getHeader(input_streams.front().header, final), getDataStreamTraits());
-    if (is_order_overwritten)  /// overwrite order again
-        applyOrder(group_by_sort_description, overwritten_sort_scope);
+    // if (is_order_overwritten)  /// overwrite order again
+    //     applyOrder(group_by_sort_description, overwritten_sort_scope);
 }
 
 bool MergingAggregatedStep::memoryBoundMergingWillBeUsed() const
 {
-    return DB::memoryBoundMergingWillBeUsed(
-        input_streams.front(), memory_bound_merging_of_aggregation_results_enabled, group_by_sort_description);
+    return memory_bound_merging_of_aggregation_results_enabled && !group_by_sort_description.empty();
+    // return DB::memoryBoundMergingWillBeUsed(
+    //     memory_bound_merging_of_aggregation_results_enabled, group_by_sort_description);
 }
+
+SortDescription MergingAggregatedStep::getSortDescription() const
+{
+    if (memoryBoundMergingWillBeUsed())
+        return group_by_sort_description;
+
+    return {};
+}
+
 }

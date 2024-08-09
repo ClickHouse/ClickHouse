@@ -125,7 +125,9 @@ bool addPlansForSets(QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes 
 
 /// Enable memory bound merging of aggregation states for remote queries
 /// in case it was enabled for local plan
-void enableMemoryBoundMerging(QueryPlan::Node & node, QueryPlan::Nodes &);
+void enableMemoryBoundMerging(QueryPlan::Node & node);
+
+void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
 }
 

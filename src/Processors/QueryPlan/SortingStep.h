@@ -131,7 +131,7 @@ private:
 
     Settings sort_settings;
 
-    const bool optimize_sorting_by_input_stream_properties = false;
+    // [[maybe_unused]] const bool optimize_sorting_by_input_stream_properties = false;
 };
 
 }

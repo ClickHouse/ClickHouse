@@ -94,7 +94,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     /// if reading from merge tree doesn't provide any output order, we can do nothing
     /// it means that no ordering can provided or supported for a particular sorting key
     /// for example, tuple() or sipHash(string)
-    if (read_from_merge_tree->getOutputStream().sort_description.empty())
+    if (!read_from_merge_tree->readsInOrder())
         return 0;
 
     /// get original names for DISTINCT columns
@@ -122,9 +122,9 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     /// example: SELECT DISTINCT a, b FROM t ORDER BY a; -- sorting key: a, b
     /// if read in order for ORDER BY is already applied, then output sort description will contain only column `a`
     /// but we need columns `a, b`, applying read in order for distinct will still benefit `order by`
-    const DataStream & output_data_stream = read_from_merge_tree->getOutputStream();
-    const SortDescription & output_sort_desc = output_data_stream.sort_description;
-    if (output_data_stream.sort_scope != DataStream::SortScope::Chunk && number_of_sorted_distinct_columns <= output_sort_desc.size())
+    // const DataStream & output_data_stream = read_from_merge_tree->getOutputStream();
+    SortDescription output_sort_desc = read_from_merge_tree->getSortDescription();
+    if (/*output_data_stream.sort_scope != DataStream::SortScope::Chunk && */ number_of_sorted_distinct_columns <= output_sort_desc.size())
         return 0;
 
     /// update input order info in read_from_merge_tree step

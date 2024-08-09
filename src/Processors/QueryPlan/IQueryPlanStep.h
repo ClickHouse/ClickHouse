@@ -38,19 +38,19 @@ public:
     };
 
     /// It is not guaranteed that header has columns from sort_description.
-    SortDescription sort_description = {};
-    SortScope sort_scope = SortScope::None;
+    // SortDescription sort_description = {};
+    // SortScope sort_scope = SortScope::None;
 
     /// Things which may be added:
     /// * limit
     /// * estimated rows number
     /// * memory allocation context
 
-    bool hasEqualPropertiesWith(const DataStream & other) const
-    {
-        return sort_description == other.sort_description
-            && (sort_description.empty() || sort_scope == other.sort_scope);
-    }
+    // bool hasEqualPropertiesWith(const DataStream & other) const
+    // {
+    //     return sort_description == other.sort_description
+    //         && (sort_description.empty() || sort_scope == other.sort_scope);
+    // }
 
     bool hasEqualHeaderWith(const DataStream & other) const
     {
