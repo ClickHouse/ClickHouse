@@ -93,7 +93,7 @@ def process_single_image(
     results = []  # type: TestResults
     for ver in versions:
         stopwatch = Stopwatch()
-        for i in range(5):
+        for i in range(2):
             success, build_log = build_and_push_one_image(
                 image, ver, additional_cache, push, from_tag
             )

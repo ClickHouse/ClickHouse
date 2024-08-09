@@ -9,20 +9,20 @@ dmesg --clear
 set -x
 
 # we mount tests folder from repo to /usr/share
-ln -s /usr/share/clickhouse-test/ci/stress.py /usr/bin/stress
-ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
-ln -s /usr/share/clickhouse-test/ci/download_release_packages.py /usr/bin/download_release_packages
-ln -s /usr/share/clickhouse-test/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
+ln -s /repo/tests/ci/stress.py /usr/bin/stress
+ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
+ln -s /repo/tests/ci/download_release_packages.py /usr/bin/download_release_packages
+ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
 # shellcheck source=../stateless/attach_gdb.lib
-source /attach_gdb.lib
+source /repo/tests/docker_scripts/attach_gdb.lib
 # shellcheck source=../stateless/stress_tests.lib
-source /stress_tests.lib
+source /repo/tests/docker_scripts/stress_tests.lib
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
-./setup_minio.sh stateless # to have a proper environment
+/repo/tests/docker_scripts/setup_minio.sh stateless # to have a proper environment
 
 echo "Get previous release tag"
 # shellcheck disable=SC2016
