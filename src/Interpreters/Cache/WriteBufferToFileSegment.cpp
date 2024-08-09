@@ -86,7 +86,7 @@ void WriteBufferToFileSegment::nextImpl()
 
         throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Failed to reserve {} bytes for {}: {}(segment info: {})",
             bytes_to_write,
-            file_segment->getKind() == FileSegmentKind::Temporary ? "temporary file" : "the file in cache",
+            file_segment->getKind() == FileSegmentKind::Ephemeral ? "temporary file" : "the file in cache",
             reserve_stat_msg,
             file_segment->getInfoForLog()
         );

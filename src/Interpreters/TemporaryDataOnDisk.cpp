@@ -110,7 +110,7 @@ FileSegmentsHolderPtr TemporaryDataOnDisk::createCacheFile(size_t max_file_size)
     const auto key = FileSegment::Key::random();
     auto holder = file_cache->set(
         key, 0, std::max(10_MiB, max_file_size),
-        CreateFileSegmentSettings(FileSegmentKind::Temporary, /* unbounded */ true), FileCache::getCommonUser());
+        CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonUser());
 
     chassert(holder->size() == 1);
     holder->back().getKeyMetadata()->createBaseDirectory(/* throw_if_failed */true);
