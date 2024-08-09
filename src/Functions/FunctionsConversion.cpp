@@ -1579,7 +1579,7 @@ struct ConvertImpl
             IntervalKind to = typeid_cast<const DataTypeInterval *>(result_type.get())->getKind();
             IntervalKind from = typeid_cast<const DataTypeInterval *>(arguments[0].type.get())->getKind();
 
-            if (from == to)
+            if (from == to || arguments[0].column->empty())
                 return arguments[0].column;
 
             const auto &map = getGranularityMap();
