@@ -43,7 +43,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     /// https://docs.aws.amazon.com/AmazonS3/latest/userguide/privatelink-interface-endpoints.html
     static const RE2 aws_private_link_style_pattern(R"(bucket\.vpce\-([a-z0-9\-.]+)\.vpce\.amazonaws\.com(:\d{1,5})?)");
 
-    /// Case when bucket name and key represented in path of S3 URL.
+    /// Case when bucket name and key represented in the path of S3 URL.
     /// E.g. (https://s3.region.amazonaws.com/bucket-name/key)
     /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
     static const RE2 path_style_pattern("^/([^/]*)/(.*)");
@@ -124,13 +124,6 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         }
 
         boost::to_upper(name);
-        /// For S3Express it will look like s3express-eun1-az1, i.e. contain region and AZ info
-        if (name != "S3" && !name.starts_with("S3EXPRESS") && name != "COS" && name != "OBS" && name != "OSS" && name != "EOS")
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Object storage system name is unrecognized in virtual hosted style S3 URI: {}",
-                quoteString(name));
-
         if (name == "COS")
             storage_name = "COSN";
         else
