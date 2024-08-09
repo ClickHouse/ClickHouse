@@ -1051,17 +1051,27 @@ void StorageWindowView::threadFuncFireProc()
     if (shutdown_called)
         return;
 
+    /// Acquiring the lock can take seconds (depends on how long it takes to push) so we keep a reference to remember
+    /// what's the starting point where we want to push from
+    UInt32 timestamp_start = now();
+
     std::lock_guard lock(fire_signal_mutex);
     /// TODO: consider using time_t instead (for every timestamp in this class)
     UInt32 timestamp_now = now();
 
-    LOG_TRACE(log, "Now: {}, next fire signal: {}, max watermark: {}", timestamp_now, next_fire_signal, max_watermark);
+    LOG_TRACE(
+        log,
+        "Start: {}, now: {}, next fire signal: {}, max watermark: {}",
+        timestamp_start,
+        timestamp_now,
+        next_fire_signal,
+        max_watermark);
 
     while (next_fire_signal <= timestamp_now)
     {
         try
         {
-            if (max_watermark >= timestamp_now)
+            if (max_watermark >= timestamp_start)
                 fire(next_fire_signal);
         }
         catch (...)
@@ -1075,11 +1085,18 @@ void StorageWindowView::threadFuncFireProc()
             slide_interval *= 86400;
         next_fire_signal += slide_interval;
 
-        LOG_TRACE(log, "Now: {}, next fire signal: {}, max watermark: {}, max fired watermark: {}, slide interval: {}",
-                  timestamp_now, next_fire_signal, max_watermark, max_fired_watermark, slide_interval);
+        LOG_TRACE(
+            log,
+            "Start: {}, now: {}, next fire signal: {}, max watermark: {}, max fired watermark: {}, slide interval: {}",
+            timestamp_start,
+            timestamp_now,
+            next_fire_signal,
+            max_watermark,
+            max_fired_watermark,
+            slide_interval);
     }
 
-    if (max_watermark >= timestamp_now)
+    if (max_watermark >= timestamp_start)
         clean_cache_task->schedule();
 
     UInt64 next_fire_ms = static_cast<UInt64>(next_fire_signal) * 1000;
