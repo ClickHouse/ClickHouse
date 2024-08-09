@@ -109,7 +109,7 @@ struct MergeTreeIndexAggregatorUSearch final : IMergeTreeIndexAggregator
 };
 
 
-class MergeTreeIndexConditionUSearch final : public IMergeTreeIndexConditionApproximateNearestNeighbor
+class MergeTreeIndexConditionUSearch final : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeIndexConditionUSearch(

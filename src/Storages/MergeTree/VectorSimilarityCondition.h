@@ -169,13 +169,4 @@ private:
     bool index_is_useful = false;
 };
 
-
-/// Common interface of ANN indexes.
-class IMergeTreeIndexConditionApproximateNearestNeighbor : public IMergeTreeIndexCondition
-{
-public:
-    /// Returns vector of indexes of ranges in granule which are useful for query.
-    virtual std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const = 0;
-};
-
 }

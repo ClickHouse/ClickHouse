@@ -1406,11 +1406,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 reader.read(granule);
 
-            auto ann_condition = std::dynamic_pointer_cast<IMergeTreeIndexConditionApproximateNearestNeighbor>(condition);
-            if (ann_condition != nullptr)
+            if (index_helper->isVectorSimilarityIndex())
             {
                 /// An array of indices of useful ranges.
-                auto result = ann_condition->getUsefulRanges(granule);
+                auto result = condition->getUsefulRanges(granule);
 
                 for (auto range : result)
                 {
