@@ -799,6 +799,9 @@ private:
 
 void LogicalExpressionOptimizerPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
+    if (!context->getSettingsRef().enable_optimize_query_tree_logical_expression)
+        return;
+
     LogicalExpressionOptimizerVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
 }

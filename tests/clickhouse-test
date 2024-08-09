@@ -972,6 +972,8 @@ class MergeTreeSettingsRandomizer:
         "cache_populated_by_fetch": lambda: random.randint(0, 1),
         "concurrent_part_removal_threshold": threshold_generator(0.2, 0.3, 0, 100),
         "old_parts_lifetime": threshold_generator(0.2, 0.3, 10, 8 * 60),
+        # "enable_optimize_query_tree_logical_expression": lambda: random.randint(0, 1),
+        "enable_optimize_query_tree_logical_expression": int,
     }
 
     @staticmethod
