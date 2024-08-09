@@ -130,7 +130,7 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
         for (const auto & variant: variants)
         {
             if (variant->getName() != ColumnDynamic::getSharedVariantTypeName())
-                encodeDataType(dynamic_state->variant_type, *stream);
+                encodeDataType(variant, *stream);
         }
     }
     else
