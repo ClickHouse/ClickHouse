@@ -771,7 +771,11 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
             table_name,
             mode,
             files_path,
-            additional_settings={"keeper_path": keeper_path, "s3queue_buckets": 2},
+            additional_settings={
+                "keeper_path": keeper_path,
+                "s3queue_buckets": 2,
+                **({"s3queue_processing_threads_num": 1} if mode == "ordered" else {}),
+            },
         )
 
     for instance in [node, node_2]:
@@ -805,6 +809,10 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     res2 = [
         list(map(int, l.split())) for l in run_query(node_2, get_query).splitlines()
     ]
+
+    logging.debug(
+        f"res1 size: {len(res1)}, res2 size: {len(res2)}, total_rows: {total_rows}"
+    )
 
     assert len(res1) + len(res2) == total_rows
 
