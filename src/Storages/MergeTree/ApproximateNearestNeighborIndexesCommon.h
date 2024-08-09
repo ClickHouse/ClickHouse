@@ -22,15 +22,13 @@ namespace DB
 /// This struct holds all these components.
 struct ApproximateNearestNeighborInformation
 {
-    using Embedding = std::vector<float>;
-
     enum class Metric : uint8_t
     {
         Unknown,
         L2
     };
 
-    Embedding reference_vector;
+    std::vector<Float32> reference_vector;
     Metric metric;
     String column_name;
     UInt64 limit;
