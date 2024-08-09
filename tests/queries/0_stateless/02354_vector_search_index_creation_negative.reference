@@ -1,8 +1,8 @@
 At most two index arguments
 1st argument (distance function) must be String
-Rejects unsupported distance functions
+Unsupported distance functions are rejected
 2nd argument (scalar kind) must be String
-Rejects unsupported scalar kinds (only Usearch)
+Unsupported scalar kinds are rejected
 Must be created on single column
 Must be created on Array(Float32) columns
 Rejects INSERTs of Arrays with different sizes
