@@ -1821,6 +1821,11 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     client_exception.reset();
     server_exception.reset();
 
+    Settings settings = client_context->getSettingsCopy();
+    settings.script_line_number = settings.script_line_number + 1;
+    client_context->setSettings(settings);
+
+
     if (echo_query_ && *echo_query_)
     {
         writeString(full_query, std_out);

@@ -139,6 +139,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
         const auto & current_user = client_info.current_user;
 
         String comment = context->getSettingsRef().log_comment;
+        uint64_t line_number = context->getSettingsRef().script_line_number;
         size_t max_query_size = context->getSettingsRef().max_query_size;
 
         if (comment.size() > max_query_size)
@@ -151,12 +152,13 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
         if (auto txn = context->getCurrentTransaction())
             transaction_info = fmt::format(" (TID: {}, TIDH: {})", txn->tid, txn->tid.getHash());
 
-        LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{} {} (stage: {})",
+        LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{}{} {} (stage: {})",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             transaction_info,
             comment,
+            ", line number:" + std::to_string(line_number),
             toOneLineQuery(query),
             QueryProcessingStage::toString(stage));
 
@@ -193,8 +195,10 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 static void logException(ContextPtr context, QueryLogElement & elem, bool log_error = true)
 {
     String comment;
+    String line_number;
     if (!elem.log_comment.empty())
         comment = fmt::format(" (comment: {})", elem.log_comment);
+    line_number = fmt::format(" (line number {})", std::to_string(elem.script_line_number));
 
     /// Message patterns like "{} (from {}){} (in query: {})" are not really informative,
     /// so we pass elem.exception_format_string as format string instead.
@@ -203,16 +207,18 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
     message.format_string_args = elem.exception_format_string_args;
 
     if (elem.stack_trace.empty() || !log_error)
-        message.text = fmt::format("{} (from {}){} (in query: {})", elem.exception,
+        message.text = fmt::format("{} (from {}){}{} (in query: {})", elem.exception,
                         context->getClientInfo().current_address.toString(),
                         comment,
+                        line_number,
                         toOneLineQuery(elem.query));
     else
         message.text = fmt::format(
-            "{} (from {}){} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
+            "{} (from {}){}{} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
             elem.exception,
             context->getClientInfo().current_address.toString(),
             comment,
+            line_number,
             toOneLineQuery(elem.query),
             elem.stack_trace);
 
@@ -365,6 +371,7 @@ QueryLogElement logQueryStart(
         elem.log_comment = settings.log_comment;
         if (elem.log_comment.size() > settings.max_query_size)
             elem.log_comment.resize(settings.max_query_size);
+        elem.script_line_number = settings.script_line_number;
 
         if (elem.type >= settings.log_queries_min_type && !settings.log_queries_min_query_duration_ms.totalMilliseconds())
         {
@@ -628,6 +635,7 @@ void logExceptionBeforeStart(
     elem.log_comment = settings.log_comment;
     if (elem.log_comment.size() > settings.max_query_size)
         elem.log_comment.resize(settings.max_query_size);
+    elem.script_line_number = settings.script_line_number;
 
     if (auto txn = context->getCurrentTransaction())
         elem.tid = txn->tid;
@@ -715,7 +723,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     ReadBuffer * istr)
 {
     const bool internal = flags.internal;
-
     /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
     /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',
     /// to make sure SpanHolders in current stack ends in correct order, we disable this span for these internal queries
@@ -749,7 +756,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     assert(internal || CurrentThread::get().getQueryContext());
     assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
-
     const Settings & settings = context->getSettingsRef();
 
     size_t max_query_size = settings.max_query_size;

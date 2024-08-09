@@ -71,6 +71,7 @@ static const NameSet settings_to_skip
     /// which means we can put two inserts with different tokens in the same block safely.
     "insert_deduplication_token",
     "log_comment",
+    "script_line_number"
 };
 
 AsynchronousInsertQueue::InsertQuery::InsertQuery(
