@@ -301,8 +301,8 @@ String IParserKQLFunction::kqlCallToExpression(
         });
 
     const auto kql_call = std::format("{}({})", function_name, params_str);
-    DB::Tokens call_tokens(kql_call.c_str(), kql_call.c_str() + kql_call.length());
-    DB::IParser::Pos tokens_pos(call_tokens, max_depth, max_backtracks);
+    Tokens call_tokens(kql_call.data(), kql_call.data() + kql_call.length(), 0, true);
+    IParser::Pos tokens_pos(call_tokens, max_depth, max_backtracks);
     return DB::IParserKQLFunction::getExpression(tokens_pos);
 }
 

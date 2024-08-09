@@ -19,6 +19,8 @@
 
 #include <Storages/SelectQueryInfo.h>
 
+#include <Interpreters/WindowDescription.h>
+
 namespace DB
 {
 
@@ -40,9 +42,6 @@ ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node);
 /// Build context for subquery execution
 ContextPtr buildSubqueryContext(const ContextPtr & context);
 
-/// Update mutable context for subquery execution
-void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
-
 /// Build limits for storage
 StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptions & options);
 
@@ -50,7 +49,7 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
   * Inputs are not used for actions dag outputs.
   * Only root query tree expression node is used as actions dag output.
   */
-ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
+ActionsDAG buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context);
 
@@ -76,11 +75,6 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map = nullptr);
 
-/// Build subquery to read specified columns from table expression
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
-    const ContextPtr & context);
-
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context);
 
 /// Build filter for specific table_expression
@@ -95,5 +89,13 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
         NameSet table_expression_required_names_without_filter = {});
 
 ASTPtr parseAdditionalResultFilter(const Settings & settings);
+
+using UsefulSets = std::unordered_set<FutureSetPtr>;
+void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
+
+/// If the window frame is not set in sql, try to use the default frame from window function
+/// if it have any one. Otherwise return empty.
+/// If the window frame is set in sql, use it anyway.
+std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node);
 
 }

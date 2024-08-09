@@ -210,6 +210,8 @@ static void * getCallerAddress(const ucontext_t & context)
     return reinterpret_cast<void *>(context.uc_mcontext.__gregs[REG_PC]);
 #elif defined(__s390x__)
     return reinterpret_cast<void *>(context.uc_mcontext.psw.addr);
+#elif defined(__loongarch64)
+    return reinterpret_cast<void *>(context.uc_mcontext.__pc);
 #else
     return nullptr;
 #endif
@@ -487,13 +489,25 @@ struct CacheEntry
 
 using CacheEntryPtr = std::shared_ptr<CacheEntry>;
 
-using StackTraceCache = std::map<StackTraceTriple, CacheEntryPtr, std::less<>>;
+static constinit bool can_use_cache = false;
 
-static StackTraceCache & cacheInstance()
+using StackTraceCacheBase = std::map<StackTraceTriple, CacheEntryPtr, std::less<>>;
+
+struct StackTraceCache : public StackTraceCacheBase
 {
-    static StackTraceCache cache;
-    return cache;
-}
+    StackTraceCache()
+        : StackTraceCacheBase()
+    {
+        can_use_cache = true;
+    }
+
+    ~StackTraceCache()
+    {
+        can_use_cache = false;
+    }
+};
+
+static StackTraceCache cache;
 
 static DB::SharedMutex stacktrace_cache_mutex;
 
@@ -501,10 +515,16 @@ String toStringCached(const StackTrace::FramePointers & pointers, size_t offset,
 {
     const StackTraceRefTriple key{pointers, offset, size};
 
+    if (!can_use_cache)
+    {
+        DB::WriteBufferFromOwnString out;
+        toStringEveryLineImpl(false, key, [&](std::string_view str) { out << str << '\n'; });
+        return out.str();
+    }
+
     /// Calculation of stack trace text is extremely slow.
     /// We use cache because otherwise the server could be overloaded by trash queries.
     /// Note that this cache can grow unconditionally, but practically it should be small.
-    StackTraceCache & cache = cacheInstance();
     CacheEntryPtr cache_entry;
 
     // Optimistic try for cache hit to avoid any contention whatsoever, should be the main hot code route
@@ -543,7 +563,7 @@ std::string StackTrace::toString() const
     return toStringCached(frame_pointers, offset, size);
 }
 
-std::string StackTrace::toString(void ** frame_pointers_raw, size_t offset, size_t size)
+std::string StackTrace::toString(void * const * frame_pointers_raw, size_t offset, size_t size)
 {
     __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
 
@@ -556,5 +576,9 @@ std::string StackTrace::toString(void ** frame_pointers_raw, size_t offset, size
 void StackTrace::dropCache()
 {
     std::lock_guard lock{stacktrace_cache_mutex};
-    cacheInstance().clear();
+    cache.clear();
 }
+
+
+thread_local bool asynchronous_stack_unwinding = false;
+thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;

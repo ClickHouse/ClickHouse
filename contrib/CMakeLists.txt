@@ -71,7 +71,6 @@ add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (bzip2-cmake bzip2)
 add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
-add_contrib (rocksdb-cmake rocksdb)
 add_contrib (thrift-cmake thrift)
 # parquet/arrow/orc
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
@@ -148,6 +147,7 @@ add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift, avro, arro
 add_contrib (cppkafka-cmake cppkafka)
 add_contrib (libpqxx-cmake libpqxx)
 add_contrib (libpq-cmake libpq)
+add_contrib (rocksdb-cmake rocksdb) # requires: jemalloc, snappy, zlib, lz4, zstd, liburing
 add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
 add_contrib (idna-cmake idna)
@@ -227,6 +227,10 @@ add_contrib (google-benchmark-cmake google-benchmark)
 add_contrib (ulid-c-cmake ulid-c)
 
 add_contrib (libssh-cmake libssh)
+
+add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
+
+add_contrib(numactl-cmake numactl)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

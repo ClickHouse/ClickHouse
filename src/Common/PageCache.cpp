@@ -198,12 +198,18 @@ size_t PageCache::getPinnedSize() const
 PageCache::MemoryStats PageCache::getResidentSetSize() const
 {
     MemoryStats stats;
+
 #ifdef OS_LINUX
     if (use_madv_free)
     {
         std::unordered_set<UInt64> cache_mmap_addrs;
         {
             std::lock_guard lock(global_mutex);
+
+            /// Don't spend time on reading smaps if page cache is not used.
+            if (mmaps.empty())
+                return stats;
+
             for (const auto & m : mmaps)
                 cache_mmap_addrs.insert(reinterpret_cast<UInt64>(m.ptr));
         }
@@ -258,7 +264,7 @@ PageCache::MemoryStats PageCache::getResidentSetSize() const
                 UInt64 addr = unhexUInt<UInt64>(s.c_str());
                 current_range_is_cache = cache_mmap_addrs.contains(addr);
             }
-            else if (s == "Rss:" || s == "LazyFree")
+            else if (s == "Rss:" || s == "LazyFree:")
             {
                 skip_whitespace();
                 size_t val;
@@ -418,7 +424,7 @@ static void logUnexpectedSyscallError(std::string name)
 {
     std::string message = fmt::format("{} failed: {}", name, errnoToString());
     LOG_WARNING(&Poco::Logger::get("PageCache"), "{}", message);
-#if defined(ABORT_ON_LOGICAL_ERROR)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
     volatile bool true_ = true;
     if (true_) // suppress warning about missing [[noreturn]]
         abortOnFailedAssertion(message);

@@ -6,7 +6,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTStatisticDeclaration.h>
+#include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
@@ -83,15 +83,15 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.index_name = command->index->as<ASTIdentifier &>().name();
         return res;
     }
-    else if (command->type == ASTAlterCommand::MATERIALIZE_STATISTIC)
+    else if (command->type == ASTAlterCommand::MATERIALIZE_STATISTICS)
     {
         MutationCommand res;
         res.ast = command->ptr();
-        res.type = MATERIALIZE_STATISTIC;
+        res.type = MATERIALIZE_STATISTICS;
         if (command->partition)
             res.partition = command->partition->clone();
         res.predicate = nullptr;
-        res.statistic_columns = command->statistic_decl->as<ASTStatisticDeclaration &>().getColumnNames();
+        res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
         return res;
     }
     else if (command->type == ASTAlterCommand::MATERIALIZE_PROJECTION)
@@ -150,16 +150,16 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
             res.clear = true;
         return res;
     }
-    else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_STATISTIC)
+    else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_STATISTICS)
     {
         MutationCommand res;
         res.ast = command->ptr();
-        res.type = MutationCommand::Type::DROP_STATISTIC;
+        res.type = MutationCommand::Type::DROP_STATISTICS;
         if (command->partition)
             res.partition = command->partition->clone();
         if (command->clear_index)
             res.clear = true;
-        res.statistic_columns = command->statistic_decl->as<ASTStatisticDeclaration &>().getColumnNames();
+        res.statistics_columns = command->statistics_decl->as<ASTStatisticsDeclaration &>().getColumnNames();
         return res;
     }
     else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_PROJECTION)

@@ -23,48 +23,42 @@ struct LengthUTF8Impl
 {
     static constexpr auto is_fixed_to_constant = false;
 
-    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res)
+    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res, size_t input_rows_count)
     {
-        size_t size = offsets.size();
-
         ColumnString::Offset prev_offset = 0;
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             res[i] = UTF8::countCodePoints(&data[prev_offset], offsets[i] - prev_offset - 1);
             prev_offset = offsets[i];
         }
     }
 
-    static void vectorFixedToConstant(const ColumnString::Chars & /*data*/, size_t /*n*/, UInt64 & /*res*/)
+    static void vectorFixedToConstant(const ColumnString::Chars & /*data*/, size_t /*n*/, UInt64 & /*res*/, size_t)
     {
     }
 
-    static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt64> & res)
+    static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt64> & res, size_t input_rows_count)
     {
-        size_t size = data.size() / n;
-
-        for (size_t i = 0; i < size; ++i)
-        {
+        for (size_t i = 0; i < input_rows_count; ++i)
             res[i] = UTF8::countCodePoints(&data[i * n], n);
-        }
     }
 
-    [[noreturn]] static void array(const ColumnString::Offsets &, PaddedPODArray<UInt64> &)
+    [[noreturn]] static void array(const ColumnString::Offsets &, PaddedPODArray<UInt64> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function lengthUTF8 to Array argument");
     }
 
-    [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t &, PaddedPODArray<UInt64> &)
+    [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t &, PaddedPODArray<UInt64> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function lengthUTF8 to UUID argument");
     }
 
-    [[noreturn]] static void ipv6(const ColumnIPv6::Container &, size_t &, PaddedPODArray<UInt64> &)
+    [[noreturn]] static void ipv6(const ColumnIPv6::Container &, size_t &, PaddedPODArray<UInt64> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function lengthUTF8 to IPv6 argument");
     }
 
-    [[noreturn]] static void ipv4(const ColumnIPv4::Container &, size_t &, PaddedPODArray<UInt64> &)
+    [[noreturn]] static void ipv4(const ColumnIPv4::Container &, size_t &, PaddedPODArray<UInt64> &, size_t)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function lengthUTF8 to IPv4 argument");
     }
@@ -83,8 +77,8 @@ REGISTER_FUNCTION(LengthUTF8)
     factory.registerFunction<FunctionLengthUTF8>();
 
     /// Compatibility aliases.
-    factory.registerAlias("CHAR_LENGTH", "lengthUTF8", FunctionFactory::CaseInsensitive);
-    factory.registerAlias("CHARACTER_LENGTH", "lengthUTF8", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("CHAR_LENGTH", "lengthUTF8", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("CHARACTER_LENGTH", "lengthUTF8", FunctionFactory::Case::Insensitive);
 }
 
 }

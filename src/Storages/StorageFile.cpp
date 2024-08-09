@@ -25,9 +25,11 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/IArchiveReader.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <Disks/IO/IOUringReader.h>
+#include <Disks/IO/getIOUringReader.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -51,6 +53,9 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
+#include "base/defines.h"
+
+#include <Core/Settings.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -224,7 +229,7 @@ void checkCreationIsAllowed(
     {
         auto table_path_stat = fs::status(table_path);
         if (fs::exists(table_path_stat) && fs::is_directory(table_path_stat))
-            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File must not be a directory");
+            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File {} must not be a directory", table_path);
     }
 }
 
@@ -273,7 +278,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     if (S_ISREG(file_stat.st_mode) && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap))
     {
         if (use_table_fd)
-            res = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd);
+            res = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd, context->getSettingsRef().max_read_buffer_size);
         else
             res = std::make_unique<ReadBufferFromFilePRead>(current_path, context->getSettingsRef().max_read_buffer_size);
 
@@ -282,10 +287,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     else if (read_method == LocalFSReadMethod::io_uring && !use_table_fd)
     {
 #if USE_LIBURING
-        auto & reader = context->getIOURingReader();
-        if (!reader.isSupported())
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "io_uring is not supported by this system");
-
+        auto & reader = getIOUringReaderOrThrow(context);
         res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
             reader,
             Priority{},
@@ -298,7 +300,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     else
     {
         if (use_table_fd)
-            res = std::make_unique<ReadBufferFromFileDescriptor>(table_fd);
+            res = std::make_unique<ReadBufferFromFileDescriptor>(table_fd, context->getSettingsRef().max_read_buffer_size);
         else
             res = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef().max_read_buffer_size);
 
@@ -368,12 +370,21 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     }
     else if (path.find_first_of("*?{") == std::string::npos)
     {
-        std::error_code error;
-        size_t size = fs::file_size(path, error);
-        if (!error)
-            total_bytes_to_read += size;
+        if (!fs::is_directory(path))
+        {
+            std::error_code error;
+            size_t size = fs::file_size(path, error);
+            if (!error)
+                total_bytes_to_read += size;
 
-        paths.push_back(path);
+            paths.push_back(path);
+        }
+        else
+        {
+            /// We list non-directory files under that directory.
+            paths = listFilesWithRegexpMatching(path / fs::path("*"), total_bytes_to_read);
+            can_be_directory = false;
+        }
     }
     else
     {
@@ -418,7 +429,9 @@ namespace
                 {
                     for (const auto & path : paths)
                     {
-                        if (auto format_from_path = FormatFactory::instance().tryGetFormatFromFileName(path))
+                        auto format_from_path = FormatFactory::instance().tryGetFormatFromFileName(path);
+                        /// Use this format only if we have a schema reader for it.
+                        if (format_from_path && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_path))
                         {
                             format = format_from_path;
                             break;
@@ -707,7 +720,9 @@ namespace
                     /// If format is unknown we can try to determine it by the file name.
                     if (!format)
                     {
-                        if (auto format_from_file = FormatFactory::instance().tryGetFormatFromFileName(*filename))
+                        auto format_from_file = FormatFactory::instance().tryGetFormatFromFileName(*filename);
+                        /// Use this format only if we have a schema reader for it.
+                        if (format_from_file && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file))
                             format = format_from_file;
                     }
 
@@ -1121,12 +1136,16 @@ StorageFileSource::FilesIterator::FilesIterator(
     bool distributed_processing_)
     : WithContext(context_), files(files_), archive_info(std::move(archive_info_)), distributed_processing(distributed_processing_)
 {
-    ActionsDAGPtr filter_dag;
+    std::optional<ActionsDAG> filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
         filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
     if (filter_dag)
-        VirtualColumnUtils::filterByPathOrFile(files, files, filter_dag, virtual_columns, context_);
+    {
+        VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
+        auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+        VirtualColumnUtils::filterByPathOrFile(files, files, actions, virtual_columns);
+    }
 }
 
 String StorageFileSource::FilesIterator::next()
@@ -1235,7 +1254,7 @@ StorageFileSource::~StorageFileSource()
     beforeDestroy();
 }
 
-void StorageFileSource::setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_)
+void StorageFileSource::setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_)
 {
     setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
 }
@@ -1343,6 +1362,7 @@ Chunk StorageFileSource::generate()
                         chassert(file_enumerator);
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
                         current_file_size = file_enumerator->getFileInfo().uncompressed_size;
+                        current_file_last_modified = file_enumerator->getFileInfo().last_modified;
                         if (need_only_count && tryGetCountFromCache(current_archive_stat))
                             continue;
 
@@ -1372,6 +1392,7 @@ Chunk StorageFileSource::generate()
                 struct stat file_stat;
                 file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
                 current_file_size = file_stat.st_size;
+                current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
 
                 if (getContext()->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
                     continue;
@@ -1392,7 +1413,7 @@ Chunk StorageFileSource::generate()
 
             chassert(file_num > 0);
 
-            const auto max_parsing_threads = std::max<size_t>(settings.max_threads / file_num, 1UL);
+            const auto max_parsing_threads = std::max<size_t>(settings.max_parsing_threads / file_num, 1UL);
             input_format = FormatFactory::instance().getInput(
                 storage->format_name, *read_buf, block_for_format, getContext(), max_block_size, storage->format_settings,
                 max_parsing_threads, std::nullopt, /*is_remote_fs*/ false, CompressionMethod::None, need_only_count);
@@ -1438,8 +1459,15 @@ Chunk StorageFileSource::generate()
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
             /// Enrich with virtual columns.
-            VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(
-                chunk, requested_virtual_columns, current_path, current_file_size, filename_override.has_value() ? &filename_override.value() : nullptr);
+            VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
+                chunk, requested_virtual_columns,
+                {
+                    .path = current_path,
+                    .size = current_file_size,
+                    .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
+                    .last_modified = current_file_last_modified
+                });
+
             return chunk;
         }
 
@@ -1536,7 +1564,8 @@ private:
 
 void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -1739,6 +1768,12 @@ public:
         initialize();
     }
 
+    ~StorageFileSink() override
+    {
+        if (isCancelled())
+            cancelBuffers();
+    }
+
     void initialize()
     {
         std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer;
@@ -1770,43 +1805,21 @@ public:
 
     String getName() const override { return "StorageFileSink"; }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
-        std::lock_guard cancel_lock(cancel_mutex);
-        if (cancelled)
+        if (isCancelled())
             return;
-        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
-    }
-
-    void onCancel() override
-    {
-        std::lock_guard cancel_lock(cancel_mutex);
-        finalize();
-        cancelled = true;
-    }
-
-    void onException(std::exception_ptr exception) override
-    {
-        std::lock_guard cancel_lock(cancel_mutex);
-        try
-        {
-            std::rethrow_exception(exception);
-        }
-        catch (...)
-        {
-            /// An exception context is needed to proper delete write buffers without finalization
-            release();
-        }
+        writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
     }
 
     void onFinish() override
     {
-        std::lock_guard cancel_lock(cancel_mutex);
-        finalize();
+        chassert(!isCancelled());
+        finalizeBuffers();
     }
 
 private:
-    void finalize()
+    void finalizeBuffers()
     {
         if (!writer)
             return;
@@ -1815,20 +1828,29 @@ private:
         {
             writer->finalize();
             writer->flush();
-            write_buf->finalize();
         }
         catch (...)
         {
             /// Stop ParallelFormattingOutputFormat correctly.
-            release();
+            releaseBuffers();
             throw;
         }
+
+        write_buf->finalize();
     }
 
-    void release()
+    void releaseBuffers()
     {
         writer.reset();
-        write_buf->finalize();
+        write_buf.reset();
+    }
+
+    void cancelBuffers()
+    {
+        if (writer)
+            writer->cancel();
+        if (write_buf)
+            write_buf->cancel();
     }
 
     StorageMetadataPtr metadata_snapshot;
@@ -1847,9 +1869,6 @@ private:
 
     int flags;
     std::unique_lock<std::shared_timed_mutex> lock;
-
-    std::mutex cancel_mutex;
-    bool cancelled = false;
 };
 
 class PartitionedStorageFileSink : public PartitionedSink
@@ -2170,7 +2189,11 @@ void registerStorageFile(StorageFactory & factory)
                 else if (type == Field::Types::UInt64)
                     source_fd = static_cast<int>(literal->value.get<UInt64>());
                 else if (type == Field::Types::String)
-                    StorageFile::parseFileSource(literal->value.get<String>(), source_path, storage_args.path_to_archive);
+                    StorageFile::parseFileSource(
+                        literal->value.get<String>(),
+                        source_path,
+                        storage_args.path_to_archive,
+                        factory_args.getLocalContext()->getSettingsRef().allow_archive_path_syntax);
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
             }
@@ -2197,8 +2220,14 @@ SchemaCache & StorageFile::getSchemaCache(const ContextPtr & context)
     return schema_cache;
 }
 
-void StorageFile::parseFileSource(String source, String & filename, String & path_to_archive)
+void StorageFile::parseFileSource(String source, String & filename, String & path_to_archive, bool allow_archive_path_syntax)
 {
+    if (!allow_archive_path_syntax)
+    {
+        filename = std::move(source);
+        return;
+    }
+
     size_t pos = source.find("::");
     if (pos == String::npos)
     {
@@ -2210,18 +2239,21 @@ void StorageFile::parseFileSource(String source, String & filename, String & pat
     while (path_to_archive_view.ends_with(' '))
         path_to_archive_view.remove_suffix(1);
 
-    if (path_to_archive_view.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path to archive is empty");
-
-    path_to_archive = path_to_archive_view;
-
     std::string_view filename_view = std::string_view{source}.substr(pos + 2);
-    while (filename_view.front() == ' ')
+    while (filename_view.starts_with(' '))
         filename_view.remove_prefix(1);
 
-    if (filename_view.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filename is empty");
+    /// possible situations when the first part can be archive is only if one of the following is true:
+    /// - it contains supported extension
+    /// - it contains characters that could mean glob expression
+    if (filename_view.empty() || path_to_archive_view.empty()
+        || (!hasSupportedArchiveExtension(path_to_archive_view) && path_to_archive_view.find_first_of("*?{") == std::string_view::npos))
+    {
+        filename = std::move(source);
+        return;
+    }
 
+    path_to_archive = path_to_archive_view;
     filename = filename_view;
 }
 

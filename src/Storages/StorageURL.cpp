@@ -36,6 +36,8 @@
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 
@@ -196,7 +198,7 @@ public:
     {
         uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
 
-        ActionsDAGPtr filter_dag;
+        std::optional<ActionsDAG> filter_dag;
         if (!uris.empty())
             filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
@@ -207,7 +209,9 @@ public:
             for (const auto & uri : uris)
                 paths.push_back(Poco::URI(uri).getPath());
 
-            VirtualColumnUtils::filterByPathOrFile(uris, paths, filter_dag, virtual_columns, context);
+            VirtualColumnUtils::buildSetsForDAG(*filter_dag, context);
+            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns);
         }
     }
 
@@ -411,7 +415,12 @@ Chunk StorageURLSource::generate()
             if (input_format)
                 chunk_size = input_format->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
-            VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(chunk, requested_virtual_columns, curr_uri.getPath(), current_file_size);
+            VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
+                chunk, requested_virtual_columns,
+                {
+                    .path = curr_uri.getPath(),
+                    .size = current_file_size
+                });
             return chunk;
         }
 
@@ -455,9 +464,9 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
         setCredentials(credentials, request_uri);
 
-        const auto settings = context_->getSettings();
+        const auto & settings = context_->getSettingsRef();
 
-        auto proxy_config = getProxyConfiguration(http_method);
+        auto proxy_config = getProxyConfiguration(request_uri.getScheme());
 
         try
         {
@@ -543,10 +552,11 @@ StorageURLSink::StorageURLSink(
     std::string content_type = FormatFactory::instance().getContentType(format, context, format_settings);
     std::string content_encoding = toContentEncodingName(compression_method);
 
-    auto proxy_config = getProxyConfiguration(http_method);
+    auto poco_uri = Poco::URI(uri);
+    auto proxy_config = getProxyConfiguration(poco_uri.getScheme());
 
     auto write_buffer = std::make_unique<WriteBufferFromHTTP>(
-        HTTPConnectionGroupType::STORAGE, Poco::URI(uri), http_method, content_type, content_encoding, headers, timeouts, DBMS_DEFAULT_BUFFER_SIZE, proxy_config
+        HTTPConnectionGroupType::STORAGE, poco_uri, http_method, content_type, content_encoding, headers, timeouts, DBMS_DEFAULT_BUFFER_SIZE, proxy_config
     );
 
     const auto & settings = context->getSettingsRef();
@@ -559,42 +569,20 @@ StorageURLSink::StorageURLSink(
 }
 
 
-void StorageURLSink::consume(Chunk chunk)
+void StorageURLSink::consume(Chunk & chunk)
 {
-    std::lock_guard lock(cancel_mutex);
-    if (cancelled)
+    if (isCancelled())
         return;
-    writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
-}
-
-void StorageURLSink::onCancel()
-{
-    std::lock_guard lock(cancel_mutex);
-    finalize();
-    cancelled = true;
-}
-
-void StorageURLSink::onException(std::exception_ptr exception)
-{
-    std::lock_guard lock(cancel_mutex);
-    try
-    {
-        std::rethrow_exception(exception);
-    }
-    catch (...)
-    {
-        /// An exception context is needed to proper delete write buffers without finalization
-        release();
-    }
+    writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
 }
 
 void StorageURLSink::onFinish()
 {
-    std::lock_guard lock(cancel_mutex);
-    finalize();
+    finalizeBuffers();
+    releaseBuffers();
 }
 
-void StorageURLSink::finalize()
+void StorageURLSink::finalizeBuffers()
 {
     if (!writer)
         return;
@@ -603,20 +591,29 @@ void StorageURLSink::finalize()
     {
         writer->finalize();
         writer->flush();
-        write_buf->finalize();
     }
     catch (...)
     {
         /// Stop ParallelFormattingOutputFormat correctly.
-        release();
+        releaseBuffers();
         throw;
     }
+
+    write_buf->finalize();
 }
 
-void StorageURLSink::release()
+void StorageURLSink::releaseBuffers()
 {
     writer.reset();
-    write_buf->finalize();
+    write_buf.reset();
+}
+
+void StorageURLSink::cancelBuffers()
+{
+    if (writer)
+        writer->cancel();
+    if (write_buf)
+        write_buf->cancel();
 }
 
 class PartitionedStorageURLSink : public PartitionedSink
@@ -726,7 +723,9 @@ namespace
                     {
                         for (const auto & url : options)
                         {
-                            if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url))
+                            auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url);
+                            /// Use this format only if we have a schema reader for it.
+                            if (format_from_file_name && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file_name))
                             {
                                 format = format_from_file_name;
                                 break;
@@ -1038,7 +1037,8 @@ private:
 
 void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -1142,8 +1142,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
             return getFailoverOptions(next_uri, max_addresses);
         });
 
-        if (num_streams > glob_iterator->size())
-            num_streams = glob_iterator->size();
+        num_streams = std::min(num_streams, glob_iterator->size());
     }
     else
     {
@@ -1171,8 +1170,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    const size_t max_threads = context->getSettingsRef().max_threads;
-    const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / num_streams);
+    const auto & settings = context->getSettingsRef();
+    const size_t max_parsing_threads = num_streams >= settings.max_parsing_threads ? 1 : (settings.max_parsing_threads  / num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1203,7 +1202,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     size_t output_ports = pipe.numOutputPorts();
-    const bool parallelize_output = context->getSettingsRef().parallelize_output_from_storages;
+    const bool parallelize_output = settings.parallelize_output_from_storages;
     if (parallelize_output && storage->parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < max_num_streams)
         pipe.resize(max_num_streams);
 
@@ -1313,7 +1312,7 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
     const Poco::Net::HTTPBasicCredentials & credentials,
     const ContextPtr & context)
 {
-    auto settings = context->getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     auto uri = Poco::URI(url);
 
@@ -1327,6 +1326,7 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
                    .withBufSize(settings.max_read_buffer_size)
                    .withRedirects(settings.max_http_get_redirects)
                    .withHeaders(headers)
+                   .withProxy(proxy_config)
                    .create(credentials);
 
     return buf->tryGetLastModificationTime();
@@ -1386,6 +1386,11 @@ StorageURLWithFailover::StorageURLWithFailover(
     }
 }
 
+StorageURLSink::~StorageURLSink()
+{
+    if (isCancelled())
+        cancelBuffers();
+}
 
 FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Arguments & args)
 {
@@ -1576,4 +1581,5 @@ void registerStorageURL(StorageFactory & factory)
             .source_access_type = AccessType::URL,
         });
 }
+
 }

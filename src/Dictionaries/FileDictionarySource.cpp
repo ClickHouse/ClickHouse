@@ -1,6 +1,6 @@
 #include "FileDictionarySource.h"
 #include <Common/logger_useful.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>

@@ -1,5 +1,6 @@
 #include <Interpreters/Session.h>
 
+#include <base/isSharedPtrUnique.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
@@ -9,6 +10,7 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
+#include <Core/Settings.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
@@ -32,6 +34,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
+    extern const int USER_EXPIRED;
 }
 
 
@@ -129,7 +132,7 @@ public:
 
             LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
 
-            if (!session.unique())
+            if (!isSharedPtrUnique(session))
                 throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
             return {session, false};
         }
@@ -155,7 +158,7 @@ public:
             return;
         }
 
-        if (!it->second.unique())
+        if (!isSharedPtrUnique(it->second))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot close session {} with refcount {}", session_id, it->second.use_count());
 
         sessions.erase(it);
@@ -365,6 +368,17 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     prepared_client_info->current_address = address;
 }
 
+void Session::checkIfUserIsStillValid()
+{
+    if (user && user->valid_until)
+    {
+        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
+        if (now > user->valid_until)
+            throw Exception(ErrorCodes::USER_EXPIRED, "User expired");
+    }
+}
+
 void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)
 {
     LOG_DEBUG(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
@@ -520,7 +534,7 @@ ContextMutablePtr Session::makeSessionContext()
     session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
     session_context->applySettingsChanges(settings_from_auth_server);
 
-    recordLoginSucess(session_context);
+    recordLoginSuccess(session_context);
 
     return session_context;
 }
@@ -584,7 +598,7 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         { session_name_ },
         max_sessions_for_user);
 
-    recordLoginSucess(session_context);
+    recordLoginSuccess(session_context);
 
     return session_context;
 }
@@ -660,13 +674,13 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         user = query_context->getUser();
 
     /// Interserver does not create session context
-    recordLoginSucess(query_context);
+    recordLoginSuccess(query_context);
 
     return query_context;
 }
 
 
-void Session::recordLoginSucess(ContextPtr login_context) const
+void Session::recordLoginSuccess(ContextPtr login_context) const
 {
     if (notified_session_log_about_login)
         return;
@@ -682,7 +696,7 @@ void Session::recordLoginSucess(ContextPtr login_context) const
         session_log->addLoginSuccess(auth_id,
                                      named_session ? named_session->key.second : "",
                                      settings,
-                                     access,
+                                     access->getAccess(),
                                      getClientInfo(),
                                      user);
     }

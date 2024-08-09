@@ -72,7 +72,7 @@ protected:
     ContextMutablePtr task_context;
 
 private:
-    enum class CheckExistingPartResult
+    enum class CheckExistingPartResult : uint8_t
     {
         PART_EXISTS,
         OK
@@ -81,7 +81,7 @@ private:
     CheckExistingPartResult checkExistingPart();
     bool executeImpl();
 
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_EXECUTE_INNER_MERGE,

@@ -20,6 +20,9 @@
 #include <Common/CurrentMetrics.h>
 
 
+using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
+using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
+
 using Key = UInt64;
 using Value = UInt64;
 
@@ -255,7 +258,7 @@ int main(int argc, char ** argv)
 
     std::cerr << std::fixed << std::setprecision(2);
 
-    ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, num_threads);
+    SimpleThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, num_threads);
 
     Source data(n);
 

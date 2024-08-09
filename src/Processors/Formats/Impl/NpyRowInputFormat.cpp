@@ -131,7 +131,7 @@ std::shared_ptr<NumpyDataType> parseType(String type)
     NumpyDataType::Endianness endianness;
     if (type[0] == '<')
         endianness = NumpyDataType::Endianness::LITTLE;
-    else if (type[1] == '>')
+    else if (type[0] == '>')
         endianness = NumpyDataType::Endianness::BIG;
     else if (type[0] == '|')
         endianness = NumpyDataType::Endianness::NONE;
@@ -444,6 +444,9 @@ bool NpyRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &  /*
         current_column = &array_column->getData();
         elements_in_current_column *= header.shape[i];
     }
+
+    if (typeid_cast<ColumnArray *>(current_column))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected nesting level of column '{}', expected {}", column->getName(), header.shape.size() - 1);
 
     for (size_t i = 0; i != elements_in_current_column; ++i)
         readValue(current_column);

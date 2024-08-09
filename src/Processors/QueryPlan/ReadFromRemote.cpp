@@ -16,11 +16,12 @@
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Parsers/ASTFunction.h>
-
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <boost/algorithm/string/join.hpp>
 
 namespace DB
@@ -360,7 +361,7 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
 ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     ASTPtr query_ast_,
     ClusterPtr cluster_,
-    ParallelReplicasReadingCoordinatorPtr coordinator_,
+    const StorageID & storage_id_,
     Block header_,
     QueryProcessingStage::Enum stage_,
     ContextMutablePtr context_,
@@ -372,7 +373,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     : ISourceStep(DataStream{.header = std::move(header_)})
     , cluster(cluster_)
     , query_ast(query_ast_)
-    , coordinator(std::move(coordinator_))
+    , storage_id(storage_id_)
     , stage(std::move(stage_))
     , context(context_)
     , throttler(throttler_)
@@ -384,6 +385,8 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     chassert(cluster->getShardCount() == 1);
 
     std::vector<String> description;
+    description.push_back(fmt::format("query: {}", formattedAST(query_ast)));
+
     for (const auto & pool : cluster->getShardsInfo().front().per_replica_pools)
         description.push_back(fmt::format("Replica: {}", pool->getHost()));
 
@@ -407,8 +410,8 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
     const auto & shard = cluster->getShardsInfo().at(0);
-    size_t all_replicas_count = current_settings.max_parallel_replicas;
-    if (all_replicas_count > shard.getAllNodeCount())
+    size_t max_replicas_to_use = current_settings.max_parallel_replicas;
+    if (max_replicas_to_use > shard.getAllNodeCount())
     {
         LOG_INFO(
             getLogger("ReadFromParallelRemoteReplicasStep"),
@@ -416,15 +419,14 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
             "Will use the latter number to execute the query.",
             current_settings.max_parallel_replicas,
             shard.getAllNodeCount());
-        all_replicas_count = shard.getAllNodeCount();
+        max_replicas_to_use = shard.getAllNodeCount();
     }
 
-
     std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> shuffled_pool;
-    if (all_replicas_count < shard.getAllNodeCount())
+    if (max_replicas_to_use < shard.getAllNodeCount())
     {
         shuffled_pool = shard.pool->getShuffledPools(current_settings);
-        shuffled_pool.resize(all_replicas_count);
+        shuffled_pool.resize(max_replicas_to_use);
     }
     else
     {
@@ -434,11 +436,13 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         shuffled_pool = shard.pool->getShuffledPools(current_settings, priority_func);
     }
 
-    for (size_t i=0; i < all_replicas_count; ++i)
+    coordinator
+        = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use, current_settings.parallel_replicas_mark_segment_size);
+
+    for (size_t i=0; i < max_replicas_to_use; ++i)
     {
         IConnections::ReplicaInfo replica_info
         {
-            .all_replicas_count = all_replicas_count,
             /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
             .number_of_current_replica = i,
         };
@@ -452,7 +456,6 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         processor->setStorageLimits(storage_limits);
 
     pipeline.init(std::move(pipe));
-
 }
 
 
@@ -488,6 +491,7 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
         RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)});
 
     remote_query_executor->setLogger(log);
+    remote_query_executor->setMainTable(storage_id);
 
     pipes.emplace_back(createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
     addConvertingActions(pipes.back(), output_stream->header);

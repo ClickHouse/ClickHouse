@@ -341,21 +341,25 @@ void MergeTreeDeduplicationLog::shutdown()
     stopped = true;
     if (current_writer)
     {
-        current_writer->finalize();
-        current_writer.reset();
+        /// If an error has occurred during finalize, we'd like to have the exception set for reset.
+        /// Otherwise, we'll be in a situation when a finalization didn't happen, and we didn't get
+        /// any error, causing logical error (see ~MemoryBuffer()).
+        try
+        {
+            current_writer->finalize();
+            current_writer.reset();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            current_writer.reset();
+        }
     }
 }
 
 MergeTreeDeduplicationLog::~MergeTreeDeduplicationLog()
 {
-    try
-    {
-        shutdown();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    shutdown();
 }
 
 }

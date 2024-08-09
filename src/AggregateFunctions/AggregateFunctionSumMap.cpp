@@ -711,7 +711,7 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
 
     const auto * array_type = checkAndGetDataType<DataTypeArray>(args[0].get());
     if (!array_type)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array, not {}",
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #1 for function {} must be an array, not {}",
             name, args[0]->getName());
 
     DataTypePtr keys_type = array_type->getNestedType();
@@ -722,8 +722,8 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
     {
         array_type = checkAndGetDataType<DataTypeArray>(args[i].get());
         if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} for function {} must be an array.",
-                i, name);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} for function {} must be an array, not {}",
+                i + 1, name, args[i]->getName());
         values_types.push_back(array_type->getNestedType());
     }
 

@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
@@ -35,11 +36,13 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
+    extern const int CANNOT_SCHEDULE_TASK;
     extern const int UNEXPECTED_FILE_IN_DATA_PART;
     extern const int NO_FILE_IN_DATA_PART;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int BROKEN_PROJECTION;
+    extern const int ABORTED;
 }
 
 
@@ -84,7 +87,9 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     {
         return isNotEnoughMemoryErrorCode(e.code())
             || e.code() == ErrorCodes::NETWORK_ERROR
-            || e.code() == ErrorCodes::SOCKET_TIMEOUT;
+            || e.code() == ErrorCodes::SOCKET_TIMEOUT
+            || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
+            || e.code() == ErrorCodes::ABORTED;
     }
     catch (const Poco::Net::NetException &)
     {
@@ -219,7 +224,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
                 auto file_name = *stream_name + ".bin";
                 checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
-            });
+            }, column.type, data_part->getColumnSample(column));
         }
     }
     else
@@ -250,7 +255,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             continue;
         }
 
-        /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
+        /// Exclude files written by full-text index from check. No correct checksums are available for them currently.
         if (isGinFile(file_name))
             continue;
 
@@ -328,16 +333,21 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         projections_on_disk.erase(projection_file);
     }
 
-    if (throw_on_broken_projection && !broken_projections_message.empty())
+    if (throw_on_broken_projection)
     {
-        throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
-    }
+        if (!broken_projections_message.empty())
+        {
+            throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
+        }
 
-    if (require_checksums && !projections_on_disk.empty())
-    {
-        throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
-            "Found unexpected projection directories: {}",
-            fmt::join(projections_on_disk, ","));
+        /// This one is actually not broken, just redundant files on disk which
+        /// MergeTree will never use.
+        if (require_checksums && !projections_on_disk.empty())
+        {
+            throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
+                "Found unexpected projection directories: {}",
+                fmt::join(projections_on_disk, ","));
+        }
     }
 
     if (is_cancelled())
@@ -377,7 +387,16 @@ IMergeTreeDataPart::Checksums checkDataPart(
             auto file_name = it->name();
             if (!data_part_storage.isDirectory(file_name))
             {
-                auto remote_path = data_part_storage.getRemotePath(file_name);
+                const bool is_projection_part = data_part->isProjectionPart();
+                auto remote_path = data_part_storage.getRemotePath(file_name, /* if_exists */is_projection_part);
+                if (remote_path.empty())
+                {
+                    chassert(is_projection_part);
+                    throw Exception(
+                        ErrorCodes::BROKEN_PROJECTION,
+                        "Remote path for {} does not exist for projection path. Projection {} is broken",
+                        file_name, data_part->name);
+                }
                 cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
             }
         }

@@ -5,11 +5,12 @@
 import argparse
 import sys
 
-from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
-from github_helper import GitHub
 from commit_status_helper import get_commit, post_commit_status
+from get_robot_token import get_best_robot_token
+from github_helper import GitHub
+from pr_info import PRInfo
 from report import SUCCESS
+from ci_config import CI
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,7 +57,7 @@ def set_sync_status(gh, pr_info, sync_pr):
     # FIXME: uncomment posting red Sync status to prohibit merge in MQ if PR state fetching works good
     if not sync_pr:
         # post_commit_status(
-        #     get_commit(gh, pr_info.sha), FAILURE, "", "Sync PR not found", "A Sync"
+        #     get_commit(gh, pr_info.sha), FAILURE, "", "Sync PR not found", StatusNames.SYNC
         # )
         return
 
@@ -73,7 +74,9 @@ def set_sync_status(gh, pr_info, sync_pr):
 
     if sync_pr.mergeable_state == "clean":
         print(f"Sync PR [{sync_pr.number}] is clean")
-        post_commit_status(get_commit(gh, pr_info.sha), SUCCESS, "", "", "A Sync")
+        post_commit_status(
+            get_commit(gh, pr_info.sha), SUCCESS, "", "", CI.StatusNames.SYNC
+        )
     else:
         print(
             f"Sync PR [{sync_pr}] is not mergeable, state [{sync_pr.mergeable_state}]"
@@ -83,7 +86,7 @@ def set_sync_status(gh, pr_info, sync_pr):
         #     FAILURE,
         #     "",
         #     f"state: {sync_pr.mergeable_state}",
-        #     "A Sync",
+        #     StatusNames.SYNC,
         # )
 
 
@@ -98,11 +101,9 @@ def main():
     assert pr_info.merged_pr, "BUG. merged PR number could not been determined"
 
     prs = gh.get_pulls_from_search(
-        query=f"head:sync-upstream/pr/{pr_info.merged_pr} org:ClickHouse type:pr",
+        query=f"head:sync-upstream/pr/{pr_info.merged_pr} org:ClickHouse type:pr is:open",
         repo="ClickHouse/clickhouse-private",
     )
-
-    sync_pr = None
 
     if len(prs) > 1:
         print(f"WARNING: More than one PR found [{prs}] - exiting")
@@ -110,11 +111,10 @@ def main():
         print("WARNING: No Sync PR found")
     else:
         sync_pr = prs[0]
-
-    if args.merge:
-        merge_sync_pr(gh, sync_pr)
-    elif args.status:
-        set_sync_status(gh, pr_info, sync_pr)
+        if args.merge:
+            merge_sync_pr(gh, sync_pr)
+        elif args.status:
+            set_sync_status(gh, pr_info, sync_pr)
 
 
 if __name__ == "__main__":

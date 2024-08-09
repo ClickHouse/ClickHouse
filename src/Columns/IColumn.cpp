@@ -16,6 +16,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVector.h>
 #include <Core/Field.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -45,7 +46,11 @@ String IColumn::dumpStructure() const
     return res.str();
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void IColumn::insertFrom(const IColumn & src, size_t n)
+#else
+void IColumn::doInsertFrom(const IColumn & src, size_t n)
+#endif
 {
     insert(src[n]);
 }
@@ -80,6 +85,11 @@ ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst 
         res->insertManyFrom(column_with_default_value.getDataColumn(), 0, offsets_diff - 1);
 
     return res;
+}
+
+size_t IColumn::estimateCardinalityInPermutedRange(const IColumn::Permutation & /*permutation*/, const EqualRange & equal_range) const
+{
+    return equal_range.size();
 }
 
 void IColumn::forEachSubcolumn(ColumnCallback callback) const
@@ -461,6 +471,7 @@ template class IColumnHelper<ColumnAggregateFunction, IColumn>;
 template class IColumnHelper<ColumnFunction, IColumn>;
 template class IColumnHelper<ColumnCompressed, IColumn>;
 template class IColumnHelper<ColumnVariant, IColumn>;
+template class IColumnHelper<ColumnDynamic, IColumn>;
 
 template class IColumnHelper<IColumnDummy, IColumn>;
 

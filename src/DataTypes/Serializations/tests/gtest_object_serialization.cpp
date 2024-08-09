@@ -49,7 +49,7 @@ TEST(SerializationObject, FromString)
         settings.position_independent_encoding = false;
         settings.getter = [&in](const auto &) { return &in; };
 
-        serialization->deserializeBinaryBulkStatePrefix(settings, state);
+        serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
         serialization->deserializeBinaryBulkWithMultipleStreams(result_column, column_string->size(), settings, state, nullptr);
     }
 

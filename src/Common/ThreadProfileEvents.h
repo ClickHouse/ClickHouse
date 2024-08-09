@@ -107,10 +107,11 @@ struct RUsageCounters
     }
 
 private:
-    static inline UInt64 getClockMonotonic()
+    static UInt64 getClockMonotonic()
     {
         struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
+        if (0 != clock_gettime(CLOCK_MONOTONIC, &ts))
+            throw std::system_error(std::error_code(errno, std::system_category()));
         return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
     }
 };
@@ -189,7 +190,7 @@ extern PerfEventsCounters current_thread_counters;
 class TasksStatsCounters
 {
 public:
-    enum class MetricsProvider
+    enum class MetricsProvider : uint8_t
     {
         None,
         Procfs,

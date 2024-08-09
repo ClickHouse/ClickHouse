@@ -192,12 +192,12 @@ namespace JSONUtils
 
     void skipRowForJSONEachRow(ReadBuffer & in)
     {
-        return skipRowForJSONEachRowImpl<'{', '}'>(in);
+        skipRowForJSONEachRowImpl<'{', '}'>(in);
     }
 
     void skipRowForJSONCompactEachRow(ReadBuffer & in)
     {
-        return skipRowForJSONEachRowImpl<'[', ']'>(in);
+        skipRowForJSONEachRowImpl<'[', ']'>(in);
     }
 
     NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, const FormatSettings & settings, JSONInferenceInfo * inference_info)
@@ -207,7 +207,6 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
         bool first = true;
         NamesAndTypesList names_and_types;
-        String field;
         while (!in.eof() && *in.position() != '}')
         {
             if (!first)
@@ -235,7 +234,6 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
         bool first = true;
         DataTypes types;
-        String field;
         while (!in.eof() && *in.position() != ']')
         {
             if (!first)
@@ -489,6 +487,8 @@ namespace JSONUtils
         size_t rows,
         size_t rows_before_limit,
         bool applied_limit,
+        size_t rows_before_aggregation,
+        bool applied_aggregation,
         const Stopwatch & watch,
         const Progress & progress,
         bool write_statistics,
@@ -504,7 +504,12 @@ namespace JSONUtils
             writeTitle("rows_before_limit_at_least", out, 1, " ");
             writeIntText(rows_before_limit, out);
         }
-
+        if (applied_aggregation)
+        {
+            writeFieldDelimiter(out, 2);
+            writeTitle("rows_before_aggregation", out, 1, " ");
+            writeIntText(rows_before_aggregation, out);
+        }
         if (write_statistics)
         {
             writeFieldDelimiter(out, 2);

@@ -1,8 +1,6 @@
 #pragma once
 
 #include <deque>
-#include <type_traits>
-#include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <optional>
@@ -200,22 +198,18 @@ public:
       */
     bool finish()
     {
-        bool was_finished_before = false;
-
         {
             std::lock_guard lock(queue_mutex);
 
             if (is_finished)
                 return true;
 
-            was_finished_before = is_finished;
             is_finished = true;
         }
 
         pop_condition.notify_all();
         push_condition.notify_all();
-
-        return was_finished_before;
+        return false;
     }
 
     /// Returns if queue is finished
@@ -249,7 +243,7 @@ public:
     }
 
     /// Clear and finish queue
-    void clearAndFinish()
+    void clearAndFinish() noexcept
     {
         {
             std::lock_guard lock(queue_mutex);

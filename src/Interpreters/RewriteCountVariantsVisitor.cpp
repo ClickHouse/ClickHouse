@@ -6,6 +6,7 @@
 #include <Poco/String.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 

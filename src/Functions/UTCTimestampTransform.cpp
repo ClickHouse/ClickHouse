@@ -67,7 +67,7 @@ namespace
             return date_time_type;
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             if (arguments.size() != 2)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {}'s arguments number must be 2.", name);
@@ -80,14 +80,13 @@ namespace
             const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
             if (WhichDataType(arg1.type).isDateTime())
             {
-                const auto * date_time_col = checkAndGetColumn<ColumnDateTime>(arg1.column.get());
-                size_t col_size = date_time_col->size();
+                const auto & date_time_col = checkAndGetColumn<ColumnDateTime>(*arg1.column);
                 using ColVecTo = DataTypeDateTime::ColumnType;
-                typename ColVecTo::MutablePtr result_column = ColVecTo::create(col_size);
+                typename ColVecTo::MutablePtr result_column = ColVecTo::create(input_rows_count);
                 typename ColVecTo::Container & result_data = result_column->getData();
-                for (size_t i = 0; i < col_size; ++i)
+                for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    UInt32 date_time_val = date_time_col->getElement(i);
+                    UInt32 date_time_val = date_time_col.getElement(i);
                     LocalDateTime date_time(date_time_val, Name::to ? utc_time_zone : DateLUT::instance(time_zone_val));
                     time_t time_val = date_time.to_time_t(Name::from ? utc_time_zone : DateLUT::instance(time_zone_val));
                     result_data[i] = static_cast<UInt32>(time_val);
@@ -96,17 +95,16 @@ namespace
             }
             else if (WhichDataType(arg1.type).isDateTime64())
             {
-                const auto * date_time_col = checkAndGetColumn<ColumnDateTime64>(arg1.column.get());
-                size_t col_size = date_time_col->size();
+                const auto & date_time_col = checkAndGetColumn<ColumnDateTime64>(*arg1.column);
                 const DataTypeDateTime64 * date_time_type = static_cast<const DataTypeDateTime64 *>(arg1.type.get());
                 UInt32 col_scale = date_time_type->getScale();
                 Int64 scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(col_scale);
                 using ColDecimalTo = DataTypeDateTime64::ColumnType;
-                typename ColDecimalTo::MutablePtr result_column = ColDecimalTo::create(col_size, col_scale);
+                typename ColDecimalTo::MutablePtr result_column = ColDecimalTo::create(input_rows_count, col_scale);
                 typename ColDecimalTo::Container & result_data = result_column->getData();
-                for (size_t i = 0; i < col_size; ++i)
+                for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    DateTime64 date_time_val = date_time_col->getElement(i);
+                    DateTime64 date_time_val = date_time_col.getElement(i);
                     Int64 seconds = date_time_val.value / scale_multiplier;
                     Int64 micros = date_time_val.value % scale_multiplier;
                     LocalDateTime date_time(seconds, Name::to ? utc_time_zone : DateLUT::instance(time_zone_val));
@@ -144,8 +142,8 @@ REGISTER_FUNCTION(UTCTimestampTransform)
 {
     factory.registerFunction<ToUTCTimestampFunction>();
     factory.registerFunction<FromUTCTimestampFunction>();
-    factory.registerAlias("to_utc_timestamp", NameToUTCTimestamp::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("from_utc_timestamp", NameFromUTCTimestamp::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("to_utc_timestamp", NameToUTCTimestamp::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("from_utc_timestamp", NameFromUTCTimestamp::name, FunctionFactory::Case::Insensitive);
 }
 
 }

@@ -79,6 +79,15 @@ void FileCacheSettings::loadImpl(FuncHas has, FuncGetUInt get_uint, FuncGetStrin
 
     if (has("write_cache_per_user_id_directory"))
         slru_size_ratio = get_uint("write_cache_per_user_id_directory");
+
+    if (has("keep_free_space_size_ratio"))
+        keep_free_space_size_ratio = get_double("keep_free_space_size_ratio");
+
+    if (has("keep_free_space_elements_ratio"))
+        keep_free_space_elements_ratio = get_double("keep_free_space_elements_ratio");
+
+    if (has("keep_free_space_remove_batch"))
+        keep_free_space_elements_ratio = get_uint("keep_free_space_remove_batch");
 }
 
 void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)

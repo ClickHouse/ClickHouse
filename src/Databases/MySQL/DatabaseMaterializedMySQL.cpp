@@ -84,7 +84,8 @@ LoadTaskPtr DatabaseMaterializedMySQL::startupDatabaseAsync(AsyncLoader & async_
         [this, mode] (AsyncLoader &, const LoadJobPtr &)
         {
             LOG_TRACE(log, "Starting MaterializeMySQL database");
-            if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
+            if (!settings->allow_startup_database_without_connection_to_mysql
+                && mode < LoadingStrictnessLevel::FORCE_ATTACH)
                 materialize_thread.assertMySQLAvailable();
 
             materialize_thread.startSynchronization();
@@ -169,7 +170,7 @@ void DatabaseMaterializedMySQL::drop(ContextPtr context_)
     fs::path metadata(getMetadataPath() + "/.metadata");
 
     if (fs::exists(metadata))
-        fs::remove(metadata);
+        (void)fs::remove(metadata);
 
     DatabaseAtomic::drop(context_);
 }
