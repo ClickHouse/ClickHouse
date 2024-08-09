@@ -120,7 +120,7 @@ void RoleCache::collectEnabledRoles(EnabledRoles & enabled_roles, SubscriptionsO
     SubscriptionsOnRoles new_subscriptions_on_roles;
     new_subscriptions_on_roles.reserve(subscriptions_on_roles.size());
 
-    auto get_role_function = [this, &subscriptions_on_roles](const UUID & id) TSA_NO_THREAD_SAFETY_ANALYSIS { return getRole(id, subscriptions_on_roles); };
+    auto get_role_function = [this, &new_subscriptions_on_roles](const UUID & id) TSA_NO_THREAD_SAFETY_ANALYSIS { return getRole(id, new_subscriptions_on_roles); };
 
     for (const auto & current_role : enabled_roles.params.current_roles)
         collectRoles(*new_info, skip_ids, get_role_function, current_role, true, false);
