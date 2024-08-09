@@ -30,7 +30,9 @@ SELECT count() FROM t_async_inserts_flush;
 
 SYSTEM FLUSH ASYNC INSERT QUEUE;
 
-SELECT count() FROM system.asynchronous_inserts;
+SELECT count() FROM system.asynchronous_inserts
+WHERE database = currentDatabase() AND table = 't_async_inserts_flush';
+
 SELECT count() FROM t_async_inserts_flush;
 
 DROP TABLE t_async_inserts_flush;
