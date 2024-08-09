@@ -115,6 +115,9 @@ MergeTreeIndexGranuleUSearch<Metric>::MergeTreeIndexGranuleUSearch(
 template <unum::usearch::metric_kind_t Metric>
 void MergeTreeIndexGranuleUSearch<Metric>::serializeBinary(WriteBuffer & ostr) const
 {
+    if (empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty minmax index {}", backQuote(index_name));
+
     /// Number of dimensions is required in the index constructor,
     /// so it must be written and read separately from the other part
     writeIntBinary(static_cast<UInt64>(index->getDimensions()), ostr); // write dimension
