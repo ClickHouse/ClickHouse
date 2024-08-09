@@ -4,6 +4,7 @@ import logging
 import string
 import random
 from helpers.cluster import ClickHouseCluster
+from multiprocessing.dummy import Pool
 
 cluster = ClickHouseCluster(__file__)
 
@@ -15,6 +16,12 @@ def cluster():
         cluster.add_instance(
             "node",
             main_configs=["config.d/backups.xml"],
+            stay_alive=True,
+            with_zookeeper=True,
+        )
+        cluster.add_instance(
+            "node_restart",
+            main_configs=["config.d/dont_start_broken.xml"],
             stay_alive=True,
             with_zookeeper=True,
         )
@@ -630,6 +637,49 @@ def test_broken_on_start(cluster):
 
     # Select works
     check(node, table_name, 0)
+
+
+def test_disappeared_projection_on_start(cluster):
+    node = cluster.instances["node_restart"]
+
+    table_name = "test_disapperead_projection"
+    create_table(node, table_name, 1)
+
+    node.query(f"SYSTEM STOP MERGES {table_name}")
+
+    insert(node, table_name, 0, 5)
+    insert(node, table_name, 5, 5)
+    insert(node, table_name, 10, 5)
+    insert(node, table_name, 15, 5)
+
+    assert ["all_0_0_0", "all_1_1_0", "all_2_2_0", "all_3_3_0"] == get_parts(
+        node, table_name
+    )
+
+    def drop_projection():
+        node.query(
+            f"ALTER TABLE {table_name} DROP PROJECTION proj2",
+            settings={"mutations_sync": "0"},
+        )
+
+    p = Pool(2)
+    p.apply_async(drop_projection)
+
+    for i in range(30):
+        create_query = node.query(f"SHOW CREATE TABLE {table_name}")
+        if "proj2" not in create_query:
+            break
+        time.sleep(0.5)
+
+    assert "proj2" not in create_query
+
+    # Remove 'proj2' for part all_2_2_0
+    break_projection(node, table_name, "proj2", "all_2_2_0", "part")
+
+    node.restart_clickhouse()
+
+    # proj2 is not broken, it doesn't exist, but ok
+    check(node, table_name, 0, expect_broken_part="proj2", do_check_command=0)
 
 
 def test_mutation_with_broken_projection(cluster):
