@@ -1,18 +1,15 @@
 -- Tags: no-fasttest, no-ordinary-database
 
--- Tests vector search in ClickHouse, i.e. Usearch indexes.
-
--- This file contains tests for various bugs and special cases
+-- Tests various bugs and special cases for vector indexes.
 
 SET allow_experimental_usearch_index = 1;
-
 SET enable_analyzer = 1; -- 0 vs. 1 produce slightly different error codes, make it future-proof
 
 DROP TABLE IF EXISTS tab;
 
 SELECT 'Issue #52258: Empty Arrays or Arrays with default values are rejected';
 
-CREATE TABLE tab (id UInt64, vec Array(Float32), INDEX idx vec TYPE usearch()) ENGINE = MergeTree() ORDER BY (id);
+CREATE TABLE tab (id UInt64, vec Array(Float32), INDEX idx vec TYPE usearch()) ENGINE = MergeTree() ORDER BY id;
 INSERT INTO tab VALUES (1, []); -- { serverError INCORRECT_DATA }
 INSERT INTO tab (id) VALUES (1); -- { serverError INCORRECT_DATA }
 DROP TABLE tab;
@@ -34,7 +31,7 @@ DROP TABLE tab;
 
 SELECT 'Correctness of index with > 1 mark';
 
-CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE usearch()) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes=0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, index_granularity=8192; -- disable adaptive granularity due to bug
+CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE usearch()) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, index_granularity = 8192; -- disable adaptive granularity due to bug
 INSERT INTO tab SELECT number, [toFloat32(number), 0.0] from numbers(10000);
 
 WITH [1.0, 0.0] AS reference_vec
