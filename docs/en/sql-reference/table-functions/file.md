@@ -130,9 +130,7 @@ SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 
 ## Globs in path 
 
-Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix. There is one exception that if the path refers to an existing
-directory and does not use globs, a `*` will be implicitly added to the path so
-all the files in the directory are selected.
+Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix.
 
 - `*` — Represents arbitrarily many characters except `/` but including the empty string.
 - `?` — Represents an arbitrary single character.
@@ -163,12 +161,6 @@ An alternative path expression which achieves the same:
 
 ``` sql
 SELECT count(*) FROM file('{some,another}_dir/*', 'TSV', 'name String, value UInt32');
-```
-
-Query the total number of rows in `some_dir` using the implicit `*`:
-
-```sql
-SELECT count(*) FROM file('some_dir', 'TSV', 'name String, value UInt32');
 ```
 
 :::note

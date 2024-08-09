@@ -3,7 +3,6 @@
 
 #include <Coordination/KeeperContext.h>
 
-#include <Coordination/CoordinationSettings.h>
 #include <Coordination/Defines.h>
 #include <Coordination/KeeperConstants.h>
 #include <Server/CloudPlacementInfo.h>

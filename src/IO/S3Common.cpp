@@ -6,7 +6,6 @@
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollections.h>
-#include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "config.h"

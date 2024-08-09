@@ -40,8 +40,6 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/UnionNode.h>
 
-#include <Core/Settings.h>
-
 #include <Databases/IDatabase.h>
 
 #include <Interpreters/StorageID.h>

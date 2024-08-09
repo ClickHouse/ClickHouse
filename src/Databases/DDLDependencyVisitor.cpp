@@ -16,7 +16,6 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Common/KnownObjectNames.h>
-#include <Core/Settings.h>
 #include <Poco/String.h>
 
 

@@ -160,10 +160,6 @@ class CiSettings:
             else:
                 return False
 
-        if CI.is_build_job(job):
-            print(f"Build job [{job}] - always run")
-            return True
-
         if self.exclude_keywords:
             for keyword in self.exclude_keywords:
                 if keyword in normalize_string(job):

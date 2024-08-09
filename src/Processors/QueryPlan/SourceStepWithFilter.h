@@ -8,9 +8,8 @@
 namespace DB
 {
 
-/** Source step that can use filters and limit for more efficient pipeline initialization.
+/** Source step that can use filters for more efficient pipeline initialization.
   * Filters must be added before pipeline initialization.
-  * Limit must be set before pipeline initialization.
   */
 class SourceStepWithFilter : public ISourceStep
 {
@@ -50,11 +49,6 @@ public:
         filter_dags.push_back(std::move(filter_dag));
     }
 
-    void setLimit(size_t limit_value)
-    {
-        limit = limit_value;
-    }
-
     /// Apply filters that can optimize reading from storage.
     void applyFilters()
     {
@@ -78,7 +72,6 @@ protected:
     PrewhereInfoPtr prewhere_info;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
-    std::optional<size_t> limit;
 
     ActionsDAGPtr filter_actions_dag;
 

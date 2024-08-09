@@ -1,7 +1,6 @@
 #include <Storages/IStorageCluster.h>
 
 #include <Common/Exception.h>
-#include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ConnectionTimeouts.h>

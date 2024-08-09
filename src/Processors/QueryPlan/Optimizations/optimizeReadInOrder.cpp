@@ -22,10 +22,9 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
-#include <Storages/KeyDescription.h>
+#include "Storages/KeyDescription.h"
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 
 #include <stack>
 
@@ -177,6 +176,8 @@ static void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expressi
         dag->mergeInplace(std::move(*expression->clone()));
     else
         dag = expression->clone();
+
+    dag->projectInput(false);
 }
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
@@ -920,23 +921,15 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     {
         auto & union_node = node.children.front();
 
-        bool use_buffering = false;
-        const SortDescription * max_sort_descr = nullptr;
-
         std::vector<InputOrderInfoPtr> infos;
+        const SortDescription * max_sort_descr = nullptr;
         infos.reserve(node.children.size());
-
         for (auto * child : union_node->children)
         {
             infos.push_back(buildInputOrderInfo(*sorting, *child, steps_to_update));
 
-            if (infos.back())
-            {
-                if (!max_sort_descr || max_sort_descr->size() < infos.back()->sort_description_for_merging.size())
-                    max_sort_descr = &infos.back()->sort_description_for_merging;
-
-                use_buffering |= infos.back()->limit == 0;
-            }
+            if (infos.back() && (!max_sort_descr || max_sort_descr->size() < infos.back()->sort_description_for_merging.size()))
+                max_sort_descr = &infos.back()->sort_description_for_merging;
         }
 
         if (!max_sort_descr || max_sort_descr->empty())
@@ -981,13 +974,12 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
             }
         }
 
-        sorting->convertToFinishSorting(*max_sort_descr, use_buffering);
+        sorting->convertToFinishSorting(*max_sort_descr);
     }
     else if (auto order_info = buildInputOrderInfo(*sorting, *node.children.front(), steps_to_update))
     {
-        /// Use buffering only if have filter or don't have limit.
-        bool use_buffering = order_info->limit == 0;
-        sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering);
+        sorting->convertToFinishSorting(order_info->sort_description_for_merging);
+        /// update data stream's sorting properties
         updateStepsDataStreams(steps_to_update);
     }
 }
@@ -1101,7 +1093,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
         bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
         if (!can_read)
             return 0;
-        sorting->convertToFinishSorting(order_info->sort_description_for_merging, false);
+        sorting->convertToFinishSorting(order_info->sort_description_for_merging);
     }
 
     return 0;

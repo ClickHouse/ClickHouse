@@ -9,13 +9,13 @@
 #include <fmt/format.h>
 
 
-namespace DB
-{
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
+namespace DB
+{
 
 /// Helper function to get named collection for table engine.
 /// Table engines have collection name as first argument of ast and other arguments are key-value overrides.

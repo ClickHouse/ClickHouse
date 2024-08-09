@@ -206,7 +206,6 @@ public:
     {
         int64_t session_id;
         Coordination::ZooKeeperResponsePtr response;
-        Coordination::ZooKeeperRequestPtr request = nullptr;
     };
     using ResponsesForSessions = std::vector<ResponseForSession>;
 

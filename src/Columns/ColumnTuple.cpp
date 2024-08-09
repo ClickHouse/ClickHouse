@@ -205,11 +205,7 @@ bool ColumnTuple::tryInsert(const Field & x)
     return true;
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
-#else
-void ColumnTuple::doInsertFrom(const IColumn & src_, size_t n)
-#endif
 {
     const ColumnTuple & src = assert_cast<const ColumnTuple &>(src_);
 
@@ -222,11 +218,7 @@ void ColumnTuple::doInsertFrom(const IColumn & src_, size_t n)
         columns[i]->insertFrom(*src.columns[i], n);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnTuple::insertManyFrom(const IColumn & src, size_t position, size_t length)
-#else
-void ColumnTuple::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
-#endif
 {
     const ColumnTuple & src_tuple = assert_cast<const ColumnTuple &>(src);
 
@@ -308,16 +300,15 @@ void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
         column->updateHashWithValue(n, hash);
 }
 
-void ColumnTuple::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnTuple::getWeakHash32() const
 {
     auto s = size();
-
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
+    WeakHash32 hash(s);
 
     for (const auto & column : columns)
-        column->updateWeakHash32(hash);
+        hash.update(column->getWeakHash32());
+
+    return hash;
 }
 
 void ColumnTuple::updateHashFast(SipHash & hash) const
@@ -326,11 +317,7 @@ void ColumnTuple::updateHashFast(SipHash & hash) const
         column->updateHashFast(hash);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t length)
-#else
-void ColumnTuple::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
-#endif
 {
     column_length += length;
     const size_t tuple_size = columns.size();
@@ -482,11 +469,7 @@ int ColumnTuple::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_
     return 0;
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
-#else
-int ColumnTuple::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
-#endif
 {
     return compareAtImpl(n, m, rhs, nan_direction_hint);
 }
@@ -727,13 +710,7 @@ void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_c
 ColumnPtr ColumnTuple::compress() const
 {
     if (columns.empty())
-    {
-        return ColumnCompressed::create(size(), 0,
-            [n = column_length]
-            {
-                return ColumnTuple::create(n);
-            });
-    }
+        return Ptr();
 
     size_t byte_size = 0;
     Columns compressed;

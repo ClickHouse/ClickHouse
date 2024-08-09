@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/QueryPlan/ISourceStep.h>
@@ -15,15 +14,10 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/logger_useful.h>
 #include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
+#include <Storages/MergeTree/checkDataPart.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int MEMORY_LIMIT_EXCEEDED;
-}
-
 
 /// Lightweight (in terms of logic) stream for reading single part from
 /// MergeTree, used for merges and mutations.
@@ -265,10 +259,7 @@ try
                 ++it;
             }
 
-            auto result = Chunk(std::move(res_columns), rows_read);
-            if (add_part_level)
-                result.getChunkInfos().add(std::make_shared<MergeTreePartLevelInfo>(data_part->info.level));
-            return result;
+            return Chunk(std::move(res_columns), rows_read, add_part_level ? std::make_shared<MergeTreePartLevelInfo>(data_part->info.level) : nullptr);
         }
     }
     else
@@ -281,7 +272,7 @@ try
 catch (...)
 {
     /// Suspicion of the broken part. A part is added to the queue for verification.
-    if (getCurrentExceptionCode() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+    if (!isRetryableException(std::current_exception()))
         storage.reportBrokenPart(data_part);
     throw;
 }

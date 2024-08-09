@@ -206,7 +206,7 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
         }
         else
         {
-            [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(old_size);
+            [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
             ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
         }
     }
@@ -239,7 +239,7 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
         void * new_buf = ::realloc(buf, new_size);
         if (nullptr == new_buf)
         {
-            [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(old_size);
+            [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
             throw DB::ErrnoException(
                 DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY,
                 "Allocator: Cannot realloc from {} to {}",

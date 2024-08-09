@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/covarsampmatrix
-sidebar_position: 125
+sidebar_position: 38
 ---
 
 # covarSampMatrix
