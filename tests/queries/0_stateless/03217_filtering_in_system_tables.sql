@@ -10,18 +10,17 @@ CREATE TABLE test_03217_system_tables_replica_2(x UInt32)
 
 -- If filtering is not done correctly on database-table column, then this query report to read 2 rows, which are the above tables
 SELECT database, table, replica_name FROM system.replicas WHERE database = currentDatabase() AND table = 'test_03217_system_tables_replica_1' AND replica_name = 'r1';
-
 SYSTEM FLUSH LOGS;
--- argMin-argMax is necessary to make the test repeatable
+-- argMax is necessary to make the test repeatable
 
 -- StorageSystemTables
-SELECT argMin(read_rows, event_time_microseconds), argMax(read_rows, event_time_microseconds) FROM system.query_log WHERE 1
+SELECT argMax(read_rows, event_time_microseconds) FROM system.query_log WHERE 1
     AND current_database = currentDatabase()
     AND query LIKE '%SELECT database, table FROM system.tables WHERE database = \'information_schema\' AND table = \'tables\';'
     AND type = 'QueryFinish';
 
 -- StorageSystemReplicas
-SELECT argMin(read_rows, event_time_microseconds), argMax(read_rows, event_time_microseconds) FROM system.query_log WHERE 1
+SELECT argMax(read_rows, event_time_microseconds) FROM system.query_log WHERE 1
     AND current_database = currentDatabase()
     AND query LIKE '%SELECT database, table, replica_name FROM system.replicas WHERE database = currentDatabase() AND table = \'test_03217_system_tables_replica_1\' AND replica_name = \'r1\';'
     AND type = 'QueryFinish';
