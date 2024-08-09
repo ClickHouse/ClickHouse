@@ -218,4 +218,5 @@ TEST(S3UriTest, versionIdChecks)
     }
 }
 
+}
 #endif
