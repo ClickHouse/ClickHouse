@@ -43,11 +43,21 @@ CREATE TABLE table
 (
   id Int64,
   vectors Array(Float32),
-  INDEX [index_name vectors TYPE vector_similarity([Distance[, ScalarKind]]) [GRANULARITY [N]]
+  INDEX index_name vec TYPE vector_similarity(method, distance_function[, quantization, connectivity, expansion_add, expansion_search]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY id;
 ```
+
+Parameters:
+- `method`: Supports currently only `hnsw`.
+- `distance_function`: either `L2Distance` (the [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance) - the length of a
+  line between two points in Euclidean space), or `cosineDistance` (the [cosine
+  distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance)- the angle between two non-zero vectors).
+- `quantization`: either `f32`, `f16`, or `i8` for storing the vector with reduced precision (optional, default: `f32`)
+- `m`: the number of neighbors per graph node (optional, default: 16)
+- `ef_construction`: (optional, default: 128)
+- `ef_search`: (optional, default: 64)
 
 Vector similarity indexes are based on the [USearch library](https://github.com/unum-cloud/usearch), which implements the [HNSW
 algorithm](https://arxiv.org/abs/1603.09320), i.e., a hierarchical graph where each point represents a vector and the edges represent
