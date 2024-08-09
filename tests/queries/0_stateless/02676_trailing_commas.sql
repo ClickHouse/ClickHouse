@@ -7,3 +7,5 @@ SELECT (1, 'foo')::Tuple(a Int, b String,);
 SELECT (1, 'foo')::Tuple(a Int, b String,,); -- { clientError SYNTAX_ERROR }
 SELECT (1, 'foo')::Tuple(Int, String,);
 SELECT (1, (2,'foo'))::Tuple(Int, Tuple(Int, String,),);
+SELECT number as a, sum(number) FROM numbers(1) GROUP BY number;
+SELECT number, sum(number) as s, FROM numbers(1) GROUP BY number;
