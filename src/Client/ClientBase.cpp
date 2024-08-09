@@ -2535,6 +2535,7 @@ void ClientBase::runInteractive()
         *suggest,
         history_file,
         getClientConfiguration().has("multiline"),
+        getClientConfiguration().getBool("ignore_shell_suspend", true),
         query_extenders,
         query_delimiters,
         word_break_characters,
