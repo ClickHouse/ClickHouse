@@ -360,7 +360,7 @@ public:
 
     struct UpdateNodeDataDelta
     {
-        
+
         std::string old_data;
         std::string new_data;
         int32_t version{-1};

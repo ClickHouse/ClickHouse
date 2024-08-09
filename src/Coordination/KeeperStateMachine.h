@@ -223,7 +223,7 @@ public:
     uint64_t getLastProcessedZxid() const override;
 
     const KeeperStorageBase::Stats & getStorageStats() const override;
-    
+
     uint64_t getNodesCount() const override;
     uint64_t getTotalWatchesCount() const override;
     uint64_t getWatchedPathsCount() const override;

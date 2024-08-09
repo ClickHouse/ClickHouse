@@ -972,7 +972,8 @@ Coordination::Error KeeperStorage<Container>::commit(std::list<Delta> deltas)
 
                     if constexpr (!use_rocksdb)
                         removeDigest(node_it->value, path);
-                    auto updated_node = container.updateValue(path, [&](auto & node) {
+                    auto updated_node = container.updateValue(path, [&](auto & node)
+                    {
                         if constexpr (std::same_as<DeltaType, KeeperStorage::UpdateNodeStatDelta>)
                             node.stats = operation.new_stats;
                         else
@@ -1376,7 +1377,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         return new_deltas;
     }
 
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override 
+    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
         Coordination::ZooKeeperCreateResponse & response = dynamic_cast<Coordination::ZooKeeperCreateResponse &>(*response_ptr);
@@ -1438,7 +1439,7 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
     }
 
     template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const 
+    Coordination::ZooKeeperResponsePtr processImpl(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const
     {
         Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
         Coordination::ZooKeeperGetResponse & response = dynamic_cast<Coordination::ZooKeeperGetResponse &>(*response_ptr);
@@ -1482,12 +1483,12 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
     }
 
 
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override 
+    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
     {
         return processImpl<false>(storage, std::move(deltas));
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override 
+    Coordination::ZooKeeperResponsePtr processLocal(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
     {
         ProfileEvents::increment(ProfileEvents::KeeperGetRequest);
         return processImpl<true>(storage, std::move(deltas));
@@ -1578,7 +1579,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
         return new_deltas;
     }
 
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override 
+    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
         Coordination::ZooKeeperRemoveResponse & response = dynamic_cast<Coordination::ZooKeeperRemoveResponse &>(*response_ptr);
@@ -1612,7 +1613,7 @@ struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestPr
     }
 
     template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const 
+    Coordination::ZooKeeperResponsePtr processImpl(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const
     {
         Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
         Coordination::ZooKeeperExistsResponse & response = dynamic_cast<Coordination::ZooKeeperExistsResponse &>(*response_ptr);
@@ -1645,12 +1646,12 @@ struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestPr
         return response_ptr;
     }
 
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override 
+    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
     {
         return processImpl<false>(storage, std::move(deltas));
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override 
+    Coordination::ZooKeeperResponsePtr processLocal(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
     {
         ProfileEvents::increment(ProfileEvents::KeeperExistsRequest);
         return processImpl<true>(storage, std::move(deltas));
@@ -1666,7 +1667,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
     }
 
     using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
-    
+
     std::list<KeeperStorageBase::Delta>
     preprocess(Storage & storage, int64_t zxid, int64_t /*session_id*/, int64_t time, uint64_t & digest, const KeeperContext & keeper_context) const override
     {
@@ -1714,7 +1715,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
         return new_deltas;
     }
 
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override 
+    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
     {
         auto & container = storage.container;
 
@@ -1768,7 +1769,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
     }
 
     template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const 
+    Coordination::ZooKeeperResponsePtr processImpl(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const
     {
         Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
         Coordination::ZooKeeperListResponse & response = dynamic_cast<Coordination::ZooKeeperListResponse &>(*response_ptr);
@@ -1857,12 +1858,12 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         return response_ptr;
     }
 
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override  
+    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
     {
         return processImpl<false>(storage, std::move(deltas));
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override  
+    Coordination::ZooKeeperResponsePtr processLocal(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
     {
         ProfileEvents::increment(ProfileEvents::KeeperListRequest);
         return processImpl<true>(storage, std::move(deltas));
@@ -1910,7 +1911,7 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
     }
 
     template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const 
+    Coordination::ZooKeeperResponsePtr processImpl(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const
     {
         Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
         Coordination::ZooKeeperCheckResponse & response = dynamic_cast<Coordination::ZooKeeperCheckResponse &>(*response_ptr);
@@ -1956,12 +1957,12 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
         return response_ptr;
     }
 
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override 
+    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
     {
         return processImpl<false>(storage, std::move(deltas));
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override 
+    Coordination::ZooKeeperResponsePtr processLocal(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
     {
         ProfileEvents::increment(ProfileEvents::KeeperCheckRequest);
         return processImpl<true>(storage, std::move(deltas));
@@ -2022,7 +2023,7 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
         return new_deltas;
     }
 
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override 
+    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
         Coordination::ZooKeeperSetACLResponse & response = dynamic_cast<Coordination::ZooKeeperSetACLResponse &>(*response_ptr);
@@ -2066,7 +2067,7 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
     }
 
     template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const 
+    Coordination::ZooKeeperResponsePtr processImpl(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const
     {
         Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
         Coordination::ZooKeeperGetACLResponse & response = dynamic_cast<Coordination::ZooKeeperGetACLResponse &>(*response_ptr);
@@ -2099,12 +2100,12 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
         return response_ptr;
     }
 
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override 
+    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
     {
         return processImpl<false>(storage, std::move(deltas));
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override 
+    Coordination::ZooKeeperResponsePtr processLocal(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
     {
         return processImpl<true>(storage, std::move(deltas));
     }
@@ -2348,7 +2349,7 @@ struct KeeperStorageAuthRequestProcessor final : public KeeperStorageRequestProc
         return new_deltas;
     }
 
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override 
+    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
         Coordination::ZooKeeperAuthResponse & auth_response = dynamic_cast<Coordination::ZooKeeperAuthResponse &>(*response_ptr);
