@@ -48,22 +48,22 @@ public:
 using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSerialization>;
 
 
-struct MergeTreeIndexGranuleUSearch final : public IMergeTreeIndexGranule
+struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranule
 {
-    MergeTreeIndexGranuleUSearch(
+    MergeTreeIndexGranuleVectorSimilarity(
         const String & index_name_,
         const Block & index_sample_block_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_);
 
-    MergeTreeIndexGranuleUSearch(
+    MergeTreeIndexGranuleVectorSimilarity(
         const String & index_name_,
         const Block & index_sample_block_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
         USearchIndexWithSerializationPtr index_);
 
-    ~MergeTreeIndexGranuleUSearch() override = default;
+    ~MergeTreeIndexGranuleVectorSimilarity() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
@@ -76,7 +76,7 @@ struct MergeTreeIndexGranuleUSearch final : public IMergeTreeIndexGranule
     const unum::usearch::scalar_kind_t scalar_kind;
     USearchIndexWithSerializationPtr index;
 
-    LoggerPtr logger = getLogger("USearchIndex");
+    LoggerPtr logger = getLogger("VectorSimilarityIndex");
 
 private:
     /// The version of the persistence format of USearch index. Increment whenever you change the format.
@@ -87,15 +87,15 @@ private:
 };
 
 
-struct MergeTreeIndexAggregatorUSearch final : IMergeTreeIndexAggregator
+struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregator
 {
-    MergeTreeIndexAggregatorUSearch(
+    MergeTreeIndexAggregatorVectorSimilarity(
         const String & index_name_,
         const Block & index_sample_block,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_);
 
-    ~MergeTreeIndexAggregatorUSearch() override = default;
+    ~MergeTreeIndexAggregatorVectorSimilarity() override = default;
 
     bool empty() const override { return !index || index->size() == 0; }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
@@ -109,16 +109,16 @@ struct MergeTreeIndexAggregatorUSearch final : IMergeTreeIndexAggregator
 };
 
 
-class MergeTreeIndexConditionUSearch final : public IMergeTreeIndexCondition
+class MergeTreeIndexConditionVectorSimilarity final : public IMergeTreeIndexCondition
 {
 public:
-    MergeTreeIndexConditionUSearch(
+    MergeTreeIndexConditionVectorSimilarity(
         const IndexDescription & index_description,
         const SelectQueryInfo & query,
         unum::usearch::metric_kind_t metric_kind_,
         ContextPtr context);
 
-    ~MergeTreeIndexConditionUSearch() override = default;
+    ~MergeTreeIndexConditionVectorSimilarity() override = default;
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const override;
@@ -130,15 +130,15 @@ private:
 };
 
 
-class MergeTreeIndexUSearch : public IMergeTreeIndex
+class MergeTreeIndexVectorSimilarity : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexUSearch(
+    MergeTreeIndexVectorSimilarity(
         const IndexDescription & index_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_);
 
-    ~MergeTreeIndexUSearch() override = default;
+    ~MergeTreeIndexVectorSimilarity() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;

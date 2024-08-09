@@ -129,8 +129,8 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerValidator("hypothesis", hypothesisIndexValidator);
 
 #if USE_USEARCH
-    registerCreator("usearch", usearchIndexCreator);
-    registerValidator("usearch", usearchIndexValidator);
+    registerCreator("vector_similarity", vectorSimilarityIndexCreator);
+    registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
 
     registerCreator("inverted", fullTextIndexCreator);

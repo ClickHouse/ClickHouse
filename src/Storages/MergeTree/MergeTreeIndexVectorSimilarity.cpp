@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeIndexUSearch.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 
 #if USE_USEARCH
 
@@ -90,7 +90,7 @@ void USearchIndexWithSerialization::serialize(WriteBuffer & ostr) const
 
     auto result = Base::save_to_stream(callback);
     if (result.error)
-        throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, "Could not save USearch index, error: " + String(result.error.release()));
+        throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, "Could not save vector similarity index, error: " + String(result.error.release()));
 }
 
 void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
@@ -104,7 +104,7 @@ void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
     auto result = Base::load_from_stream(callback);
     if (result.error)
         /// See the comment in MergeTreeIndexGranuleVectorSimilarity::deserializeBinary why we throw here
-        throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, "Could not load USearch index, error: " + String(result.error.release()) + " Please drop the index and create it again.");
+        throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, "Could not load vector similarity index, error: " + String(result.error.release()) + " Please drop the index and create it again.");
 }
 
 USearchIndexWithSerialization::Statistics USearchIndexWithSerialization::getStatistics() const
@@ -121,16 +121,16 @@ USearchIndexWithSerialization::Statistics USearchIndexWithSerialization::getStat
     return statistics;
 }
 
-MergeTreeIndexGranuleUSearch::MergeTreeIndexGranuleUSearch(
+MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     const String & index_name_,
     const Block & index_sample_block_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_)
-    : MergeTreeIndexGranuleUSearch(index_name_, index_sample_block_, metric_kind_, scalar_kind_, nullptr)
+    : MergeTreeIndexGranuleVectorSimilarity(index_name_, index_sample_block_, metric_kind_, scalar_kind_, nullptr)
 {
 }
 
-MergeTreeIndexGranuleUSearch::MergeTreeIndexGranuleUSearch(
+MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     const String & index_name_,
     const Block & index_sample_block_,
     unum::usearch::metric_kind_t metric_kind_,
@@ -144,7 +144,7 @@ MergeTreeIndexGranuleUSearch::MergeTreeIndexGranuleUSearch(
 {
 }
 
-void MergeTreeIndexGranuleUSearch::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeIndexGranuleVectorSimilarity::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty minmax index {}", backQuote(index_name));
@@ -158,18 +158,18 @@ void MergeTreeIndexGranuleUSearch::serializeBinary(WriteBuffer & ostr) const
     index->serialize(ostr);
 
     auto statistics = index->getStatistics();
-    LOG_TRACE(logger, "Wrote USearch index: max_level = {}, connectivity = {}, size = {}, capacity = {}, memory_usage = {}",
+    LOG_TRACE(logger, "Wrote vector similarity index: max_level = {}, connectivity = {}, size = {}, capacity = {}, memory_usage = {}",
                       statistics.max_level, statistics.connectivity, statistics.size, statistics.capacity, ReadableSize(statistics.memory_usage));
 }
 
-void MergeTreeIndexGranuleUSearch::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
+void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
     UInt64 file_version;
     readIntBinary(file_version, istr);
     if (file_version != FILE_FORMAT_VERSION)
         throw Exception(
             ErrorCodes::FORMAT_VERSION_TOO_OLD,
-            "USearch index could not be loaded because its version is too old (current version: {}, persisted version: {}). Please drop the index and create it again.",
+            "Vector similarity index could not be loaded because its version is too old (current version: {}, persisted version: {}). Please drop the index and create it again.",
             FILE_FORMAT_VERSION, file_version);
         /// More fancy error handling would be: Set a flag on the index that it failed to load. During usage return all granules, i.e.
         /// behave as if the index does not exist. Since format changes are expected to happen only rarely and it is "only" an index, keep it simple for now.
@@ -181,11 +181,11 @@ void MergeTreeIndexGranuleUSearch::deserializeBinary(ReadBuffer & istr, MergeTre
     index->deserialize(istr);
 
     auto statistics = index->getStatistics();
-    LOG_TRACE(logger, "Loaded USearch index: max_level = {}, connectivity = {}, size = {}, capacity = {}, memory_usage = {}",
+    LOG_TRACE(logger, "Loaded vector similarity index: max_level = {}, connectivity = {}, size = {}, capacity = {}, memory_usage = {}",
                       statistics.max_level, statistics.connectivity, statistics.size, statistics.capacity, ReadableSize(statistics.memory_usage));
 }
 
-MergeTreeIndexAggregatorUSearch::MergeTreeIndexAggregatorUSearch(
+MergeTreeIndexAggregatorVectorSimilarity::MergeTreeIndexAggregatorVectorSimilarity(
     const String & index_name_,
     const Block & index_sample_block_,
     unum::usearch::metric_kind_t metric_kind_,
@@ -197,14 +197,14 @@ MergeTreeIndexAggregatorUSearch::MergeTreeIndexAggregatorUSearch(
 {
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexAggregatorUSearch::getGranuleAndReset()
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAndReset()
 {
-    auto granule = std::make_shared<MergeTreeIndexGranuleUSearch>(index_name, index_sample_block, metric_kind, scalar_kind, index);
+    auto granule = std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index_name, index_sample_block, metric_kind, scalar_kind, index);
     index = nullptr;
     return granule;
 }
 
-void MergeTreeIndexAggregatorUSearch::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(
@@ -239,8 +239,8 @@ void MergeTreeIndexAggregatorUSearch::update(const Block & block, size_t * pos, 
         if (column_array->empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Array is unexpectedly empty");
 
-        /// The Usearch algorithm naturally assumes that the indexed vectors have dimension >= 1. This condition is violated if empty arrays
-        /// are INSERTed into an Usearch-indexed column or if no value was specified at all in which case the arrays take on their default
+        /// The vector similarity algorithm naturally assumes that the indexed vectors have dimension >= 1. This condition is violated if empty arrays
+        /// are INSERTed into an vector-similarity-indexed column or if no value was specified at all in which case the arrays take on their default
         /// values which is also empty.
         if (column_array->isDefaultAt(0))
             throw Exception(ErrorCodes::INCORRECT_DATA, "The arrays in column '{}' must not be empty. Did you try to INSERT default values?", index_column_name);
@@ -262,13 +262,13 @@ void MergeTreeIndexAggregatorUSearch::update(const Block & block, size_t * pos, 
 
         /// Reserving space is mandatory
         if (!index->reserve(roundUpToPowerOfTwoOrZero(index->size() + num_rows)))
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for usearch index");
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for vector similarity index");
 
         for (size_t current_row = 0; current_row < num_rows; ++current_row)
         {
             auto rc = index->add(static_cast<UInt32>(index->size()), &column_array_data_float_data[column_array_offsets[current_row - 1]]);
             if (!rc)
-                throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, "Could not add data to USearch index, error: " + String(rc.error.release()));
+                throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, "Could not add data to vector similarity index, error: " + String(rc.error.release()));
 
             ProfileEvents::increment(ProfileEvents::USearchAddCount);
             ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, rc.visited_members);
@@ -281,7 +281,7 @@ void MergeTreeIndexAggregatorUSearch::update(const Block & block, size_t * pos, 
     *pos += rows_read;
 }
 
-MergeTreeIndexConditionUSearch::MergeTreeIndexConditionUSearch(
+MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity(
     const IndexDescription & /*index_description*/,
     const SelectQueryInfo & query,
     unum::usearch::metric_kind_t metric_kind_,
@@ -291,12 +291,12 @@ MergeTreeIndexConditionUSearch::MergeTreeIndexConditionUSearch(
 {
 }
 
-bool MergeTreeIndexConditionUSearch::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
+bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "mayBeTrueOnGranule is not supported for ANN skip indexes");
 }
 
-bool MergeTreeIndexConditionUSearch::alwaysUnknownOrTrue() const
+bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
 {
     String index_distance_function;
     switch (metric_kind)
@@ -308,14 +308,14 @@ bool MergeTreeIndexConditionUSearch::alwaysUnknownOrTrue() const
     return vector_similarity_condition.alwaysUnknownOrTrue(index_distance_function);
 }
 
-std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRanges(MergeTreeIndexGranulePtr granule_) const
+std::vector<size_t> MergeTreeIndexConditionVectorSimilarity::getUsefulRanges(MergeTreeIndexGranulePtr granule_) const
 {
     const UInt64 limit = vector_similarity_condition.getLimit();
     const UInt64 index_granularity = vector_similarity_condition.getIndexGranularity();
 
     const std::vector<float> reference_vector = vector_similarity_condition.getReferenceVector();
 
-    const auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleUSearch>(granule_);
+    const auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleVectorSimilarity>(granule_);
     if (granule == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule has the wrong type");
 
@@ -328,7 +328,7 @@ std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRanges(MergeTreeInd
 
     auto result = index->search(reference_vector.data(), limit);
     if (result.error)
-        throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, "Could not search in USearch index, error: " + String(result.error.release()));
+        throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index, error: " + String(result.error.release()));
 
     ProfileEvents::increment(ProfileEvents::USearchSearchCount);
     ProfileEvents::increment(ProfileEvents::USearchSearchVisitedMembers, result.visited_members);
@@ -350,34 +350,34 @@ std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRanges(MergeTreeInd
     return granules;
 }
 
-MergeTreeIndexUSearch::MergeTreeIndexUSearch(const IndexDescription & index_, unum::usearch::metric_kind_t metric_kind_, unum::usearch::scalar_kind_t scalar_kind_)
+MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(const IndexDescription & index_, unum::usearch::metric_kind_t metric_kind_, unum::usearch::scalar_kind_t scalar_kind_)
     : IMergeTreeIndex(index_)
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
 {
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexUSearch::createIndexGranule() const
+MergeTreeIndexGranulePtr MergeTreeIndexVectorSimilarity::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleUSearch>(index.name, index.sample_block, metric_kind, scalar_kind);
+    return std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index.name, index.sample_block, metric_kind, scalar_kind);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexUSearch::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
-    return std::make_shared<MergeTreeIndexAggregatorUSearch>(index.name, index.sample_block, metric_kind, scalar_kind);
+    return std::make_shared<MergeTreeIndexAggregatorVectorSimilarity>(index.name, index.sample_block, metric_kind, scalar_kind);
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexUSearch::createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const
+MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionUSearch>(index, query, metric_kind, context);
+    return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(index, query, metric_kind, context);
 };
 
-MergeTreeIndexConditionPtr MergeTreeIndexUSearch::createIndexCondition(const ActionsDAG *, ContextPtr) const
+MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(const ActionsDAG *, ContextPtr) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeIndexAnnoy cannot be created with ActionsDAG");
 }
 
-MergeTreeIndexPtr usearchIndexCreator(const IndexDescription & index)
+MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
 {
     static constexpr auto default_metric_kind = unum::usearch::metric_kind_t::l2sq_k;
     auto metric_kind = default_metric_kind;
@@ -389,25 +389,25 @@ MergeTreeIndexPtr usearchIndexCreator(const IndexDescription & index)
     if (index.arguments.size() > 1)
         scalar_kind = quantizationToScalarKind.at(index.arguments[1].safeGet<String>());
 
-    return std::make_shared<MergeTreeIndexUSearch>(index, metric_kind, scalar_kind);
+    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, metric_kind, scalar_kind);
 }
 
-void usearchIndexValidator(const IndexDescription & index, bool /* attach */)
+void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */)
 {
-    /// Check number and type of USearch index arguments:
+    /// Check number and type of index arguments:
 
     if (index.arguments.size() > 2)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "USearch index must not have more than one parameters");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index must not have more than one parameters");
 
     if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::String)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "First argument of USearch index (distance function) must be of type String");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "First argument of vector similarity index (distance function) must be of type String");
     if (index.arguments.size() > 1 && index.arguments[1].getType() != Field::Types::String)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of USearch index (scalar type) must be of type String");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of vector similarity index (scalar type) must be of type String");
 
     /// Check that the index is created on a single column
 
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
-        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "USearch indexes must be created on a single column");
+        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Vector similarity indexes must be created on a single column");
 
     /// Check that a supported metric was passed as first argument
 
@@ -420,16 +420,15 @@ void usearchIndexValidator(const IndexDescription & index, bool /* attach */)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unrecognized scalar kind (second argument) for vector index. Supported kinds are: {}", keysAsString(quantizationToScalarKind));
 
     /// Check data type of indexed column:
-
     DataTypePtr data_type = index.sample_block.getDataTypes()[0];
     if (const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get()))
     {
         TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
         if (!WhichDataType(nested_type_index).isFloat32())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "USearch can only be created on columns of type Array(Float32)");
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity index can only be created on columns of type Array(Float32)");
     }
     else
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "USearch can only be created on columns of type Array(Float32)");
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity index can only be created on columns of type Array(Float32)");
 }
 
 }
