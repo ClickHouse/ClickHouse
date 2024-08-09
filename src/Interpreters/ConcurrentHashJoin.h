@@ -78,8 +78,7 @@ private:
     std::mutex totals_mutex;
     Block totals;
 
-    IColumn::Selector selectDispatchBlock(const Strings & key_columns_names, const Block & from_block);
-    Blocks dispatchBlock(const Strings & key_columns_names, const Block & from_block);
+    HashJoin::ScatteredBlocks dispatchBlock(const Strings & key_columns_names, const Block & from_block);
 };
 
 UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression);
