@@ -15,6 +15,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
+#include "config.h"
 
 constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 
@@ -230,12 +231,12 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
 MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
 void hypothesisIndexValidator(const IndexDescription & index, bool attach);
 
-#ifdef ENABLE_ANNOY
+#if USE_ANNOY
 MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index);
 void annoyIndexValidator(const IndexDescription & index, bool attach);
 #endif
 
-#ifdef ENABLE_USEARCH
+#if USE_USEARCH
 MergeTreeIndexPtr usearchIndexCreator(const IndexDescription& index);
 void usearchIndexValidator(const IndexDescription& index, bool attach);
 #endif

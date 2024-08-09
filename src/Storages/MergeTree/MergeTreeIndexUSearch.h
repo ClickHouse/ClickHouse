@@ -1,6 +1,8 @@
 #pragma once
 
-#ifdef ENABLE_USEARCH
+#include "config.h"
+
+#if USE_USEARCH
 
 #include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 

@@ -1,6 +1,6 @@
-#ifdef ENABLE_ANNOY
-
 #include <Storages/MergeTree/MergeTreeIndexAnnoy.h>
+
+#if USE_ANNOY
 
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
