@@ -506,7 +506,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
         /// We support only INNER/LEFT ASOF join, so rows with NULLs never return from the right joined table.
         /// So filter them out here not to handle in implementation.
         const auto & asof_key_name = table_join->getOnlyClause().key_names_right.back();
-        auto & asof_column = source_block.getByName(asof_key_name);
+        const auto & asof_column = source_block.getByName(asof_key_name);
 
         if (asof_column.type->isNullable())
         {

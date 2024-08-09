@@ -47,7 +47,7 @@ public:
 
     std::string getName() const override { return "ConcurrentHashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & right_block_, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
     void setTotals(const Block & block) override;
