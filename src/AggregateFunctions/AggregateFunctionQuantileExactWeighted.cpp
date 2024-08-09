@@ -8,6 +8,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/NaNUtils.h>
 
+#include <numeric>
 
 namespace DB
 {
@@ -18,7 +19,6 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -46,6 +46,7 @@ struct QuantileExactWeighted
 
     /// When creating, the hash table must be small.
     using Map = HashMapWithStackMemory<UnderlyingType, Weight, Hasher, 4>;
+    using Pair = typename Map::value_type;
 
     Map map;
 
@@ -87,52 +88,14 @@ struct QuantileExactWeighted
     Value get(Float64 level) const
     {
         size_t size = map.size();
-
         if (0 == size)
             return std::numeric_limits<Value>::quiet_NaN();
 
-        /// Copy the data to a temporary array to get the element you need in order.
-        using Pair = typename Map::value_type;
-        std::unique_ptr<Pair[]> array_holder(new Pair[size]);
-        Pair * array = array_holder.get();
-
-        /// Note: 64-bit integer weight can overflow.
-        /// We do some implementation specific behaviour (return approximate or garbage results).
-        /// Float64 is used as accumulator here to get approximate results.
-        /// But weight can be already overflowed in computations in 'add' and 'merge' methods.
-        /// It will be reasonable to change the type of weight to Float64 in the map,
-        /// but we don't do that for compatibility of serialized data.
-
-        size_t i = 0;
-        Float64 sum_weight = 0;
-        for (const auto & pair : map)
-        {
-            sum_weight += pair.getMapped();
-            array[i] = pair.getValue();
-            ++i;
-        }
-
-        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
-
-        Float64 threshold = std::ceil(sum_weight * level);
-        Float64 accumulated = 0;
-
-        const Pair * it = array;
-        const Pair * end = array + size;
-        while (it < end)
-        {
-            accumulated += it->second;
-
-            if (accumulated >= threshold)
-                break;
-
-            ++it;
-        }
-
-        if (it == end)
-            --it;
-
-        return it->first;
+        Float64 res = getFloat(level);
+        if constexpr (is_decimal<Value>)
+            return Value(static_cast<typename Value::NativeType>(res));
+        else
+            return static_cast<Value>(res);
     }
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
@@ -140,7 +103,6 @@ struct QuantileExactWeighted
     void getMany(const Float64 * levels, const size_t * indices, size_t num_levels, Value * result) const
     {
         size_t size = map.size();
-
         if (0 == size)
         {
             for (size_t i = 0; i < num_levels; ++i)
@@ -148,70 +110,126 @@ struct QuantileExactWeighted
             return;
         }
 
+        std::unique_ptr<Float64 []> res_holder(new Float64[num_levels]);
+        Float64 * res = res_holder.get();
+        getManyFloat(levels, indices, num_levels, res);
+        for (size_t i = 0; i < num_levels; ++i)
+        {
+            if constexpr (is_decimal<Value>)
+                result[i] = Value(static_cast<typename Value::NativeType>(res[i]));
+            else
+                result[i] = Value(res[i]);
+        }
+    }
+
+    Float64 NO_SANITIZE_UNDEFINED getFloatImpl(const Pair * array, size_t size, Float64 position) const
+    {
+        /*
+        for (size_t i = 0; i < size; ++i)
+            std::cout << "array[" << i << "]: " << toString(Field(array[i].first)) << ", " << array[i].second << std::endl;
+        std::cout << "position: " << position << std::endl;
+        */
+
+        size_t lower = static_cast<size_t>(std::floor(position));
+        size_t higher = static_cast<size_t>(std::ceil(position));
+        // std::cout << "lower: " << lower << ", higher: " << higher << std::endl;
+
+        const auto * lower_it = std::lower_bound(array, array + size, lower + 1, [](const Pair & a, size_t b) { return a.second < b; });
+        const auto * higher_it = std::lower_bound(array, array + size, higher + 1, [](const Pair & a, size_t b) { return a.second < b; });
+        if (lower_it == array + size)
+            lower_it = array + size - 1;
+        if (higher_it == array + size)
+            higher_it = array + size - 1;
+        // std::cout << "lower_index:" << lower_it - array << ", higher_index:" << higher_it - array << std::endl;
+
+        UnderlyingType lower_key = lower_it->first;
+        UnderlyingType higher_key = higher_it->first;
+
+        if (lower == higher)
+            return static_cast<Float64>(lower_key);
+        if (lower_key == higher_key)
+            return static_cast<Float64>(lower_key);
+
+        return (static_cast<Float64>(higher) - position) * lower_key + (position - static_cast<Float64>(lower)) * higher_key;
+    }
+
+    Float64 getFloat(Float64 level) const
+    {
+        size_t size = map.size();
+
+        if (0 == size)
+            return std::numeric_limits<Float64>::quiet_NaN();
+
         /// Copy the data to a temporary array to get the element you need in order.
-        using Pair = typename Map::value_type;
         std::unique_ptr<Pair[]> array_holder(new Pair[size]);
         Pair * array = array_holder.get();
 
         size_t i = 0;
-        Float64 sum_weight = 0;
         for (const auto & pair : map)
         {
-            sum_weight += pair.getMapped();
             array[i] = pair.getValue();
             ++i;
         }
 
         ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
-
-        Float64 accumulated = 0;
-
-        const Pair * it = array;
-        const Pair * end = array + size;
-
-        size_t level_index = 0;
-        Float64 threshold = std::ceil(sum_weight * levels[indices[level_index]]);
-
-        while (it < end)
-        {
-            accumulated += it->second;
-
-            while (accumulated >= threshold)
-            {
-                result[indices[level_index]] = it->first;
-                ++level_index;
-
-                if (level_index == num_levels)
-                    return;
-
-                threshold = std::ceil(sum_weight * levels[indices[level_index]]);
-            }
-
-            ++it;
-        }
-
-        while (level_index < num_levels)
-        {
-            result[indices[level_index]] = array[size - 1].first;
-            ++level_index;
-        }
+        std::partial_sum(array, array + size, array, [](const Pair & acc, const Pair & p) { return Pair(p.first, acc.second + p.second); });
+        Weight max_position = array[size - 1].second - 1;
+        Float64 position = max_position * level;
+        return getFloatImpl(array, size, position);
     }
 
-    /// The same, but in the case of an empty state, NaN is returned.
-    Float64 getFloat(Float64) const
+    void getManyFloat(const Float64 * levels, const size_t * indices, size_t num_levels, Float64 * result) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat is not implemented for QuantileExact");
-    }
+        size_t size = map.size();
+        if (0 == size)
+        {
+            for (size_t i = 0; i < num_levels; ++i)
+                result[i] = std::numeric_limits<Float64>::quiet_NaN();
+            return;
+        }
 
-    void getManyFloat(const Float64 *, const size_t *, size_t, Float64 *) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getManyFloat is not implemented for QuantileExact");
+        /// Copy the data to a temporary array to get the element you need in order.
+        std::unique_ptr<Pair[]> array_holder(new Pair[size]);
+        Pair * array = array_holder.get();
+
+        size_t i = 0;
+        for (const auto & pair : map)
+        {
+            array[i] = pair.getValue();
+            ++i;
+        }
+
+        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
+        std::partial_sum(array, array + size, array, [](Pair acc, Pair & p) { return Pair(p.first, acc.second + p.second); });
+        Weight max_position = array[size - 1].second - 1;
+
+        for (size_t j = 0; j < num_levels; ++j)
+        {
+            Float64 position = max_position * levels[indices[j]];
+            result[indices[j]] = getFloatImpl(array, size, position);
+        }
     }
 };
 
 
-template <typename Value, bool _> using FuncQuantileExactWeighted = AggregateFunctionQuantile<Value, QuantileExactWeighted<Value>, NameQuantileExactWeighted, true, void, false, false>;
-template <typename Value, bool _> using FuncQuantilesExactWeighted = AggregateFunctionQuantile<Value, QuantileExactWeighted<Value>, NameQuantilesExactWeighted, true, void, true, false>;
+template <typename Value, bool float_return>
+using FuncQuantileExactWeighted = AggregateFunctionQuantile<
+    Value,
+    QuantileExactWeighted<Value>,
+    NameQuantileExactWeighted,
+    true,
+    std::conditional_t<float_return, Float64, void>,
+    false,
+    false>;
+template <typename Value, bool float_return>
+using FuncQuantilesExactWeighted = AggregateFunctionQuantile<
+    Value,
+    QuantileExactWeighted<Value>,
+    NameQuantilesExactWeighted,
+    true,
+    std::conditional_t<float_return, Float64, void>,
+    true,
+    false>;
 
 template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(
@@ -257,6 +275,9 @@ void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory & 
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianExactWeighted", NameQuantileExactWeighted::name);
-}
 
+    factory.registerAlias("quantileInterpolatedWeighted", NameQuantileExactWeighted::name);
+    factory.registerAlias("quantilesInterpolatedWeighted", NameQuantilesExactWeighted::name);
+    factory.registerAlias("medianInterpolatedWeighted", NameQuantileExactWeighted::name);
+}
 }
