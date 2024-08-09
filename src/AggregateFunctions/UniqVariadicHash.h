@@ -67,6 +67,9 @@ struct UniqVariadicHash<false, true>
 {
     static UInt64 apply(size_t num_args, const IColumn ** columns, size_t row_num)
     {
+        if (!num_args)
+            return 0;
+
         UInt64 hash;
 
         const auto & tuple_columns = assert_cast<const ColumnTuple *>(columns[0])->getColumns();
