@@ -4,7 +4,6 @@
 #include <Formats/EscapingRuleUtils.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferValidUTF8.h>
-#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -268,6 +267,9 @@ namespace JSONUtils
         const FormatSettings & format_settings,
         bool yield_strings)
     {
+        static constexpr auto EMPTY_STRING = "\"\"";
+        static constexpr auto EMPTY_STRING_LENGTH = std::string_view(EMPTY_STRING).length();
+
         try
         {
             bool as_nullable = format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type);
@@ -286,11 +288,70 @@ namespace JSONUtils
                 return true;
             }
 
-            if (as_nullable)
-                return SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column, in, format_settings, serialization);
+            auto do_deserialize = [](IColumn & column_, ReadBuffer & buf_, auto && check_for_empty_string, auto && deserialize) -> bool
+            {
+                if (check_for_empty_string(buf_))
+                {
+                    column_.insertDefault();
+                    return false;
+                }
+                else
+                    return deserialize(column_, buf_);
+            };
 
-            serialization->deserializeTextJSON(column, in, format_settings);
-            return true;
+            auto deserialize_impl = [as_nullable, &format_settings, &serialization](IColumn & column_, ReadBuffer & buf_) -> bool
+            {
+                if (as_nullable)
+                    return SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column_, buf_, format_settings, serialization);
+
+                serialization->deserializeTextJSON(column_, buf_, format_settings);
+                return true;
+            };
+
+            if (!format_settings.json.empty_as_default || in.eof() || *in.position() != EMPTY_STRING[0])
+                return deserialize_impl(column, in);
+
+            if (in.available() >= EMPTY_STRING_LENGTH)
+            {
+                /// We have enough data in buffer to check if we have an empty string.
+                auto check_for_empty_string = [](ReadBuffer & buf_)
+                {
+                    auto * pos = buf_.position();
+                    if (checkString(EMPTY_STRING, buf_))
+                        return true;
+                    buf_.position() = pos;
+                    return false;
+                };
+
+                return do_deserialize(column, in, check_for_empty_string, deserialize_impl);
+            }
+
+            /// We don't have enough data in buffer to check if we have an empty string.
+            /// Use PeekableReadBuffer to make a checkpoint before checking for an
+            /// empty string and rollback if check was failed.
+
+            auto check_for_empty_string = [](ReadBuffer & buf_) -> bool
+            {
+                auto & peekable_buf = assert_cast<PeekableReadBuffer &>(buf_);
+                peekable_buf.setCheckpoint();
+                SCOPE_EXIT(peekable_buf.dropCheckpoint());
+                if (checkString(EMPTY_STRING, peekable_buf))
+                    return true;
+                peekable_buf.rollbackToCheckpoint();
+                return false;
+            };
+
+            auto deserialize_impl_with_check = [&deserialize_impl](IColumn & column_, ReadBuffer & buf_) -> bool
+            {
+                auto & peekable_buf = assert_cast<PeekableReadBuffer &>(buf_);
+                bool res = deserialize_impl(column_, peekable_buf);
+                if (unlikely(peekable_buf.hasUnreadData()))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect state while parsing JSON: PeekableReadBuffer has unread data in own memory: {}", String(peekable_buf.position(), peekable_buf.available()));
+                return res;
+            };
+
+            PeekableReadBuffer peekable_buf(in, true);
+            return do_deserialize(column, peekable_buf, check_for_empty_string, deserialize_impl_with_check);
         }
         catch (Exception & e)
         {

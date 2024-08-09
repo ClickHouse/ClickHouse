@@ -84,6 +84,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"allow_archive_path_syntax", true, true, "Added new setting to allow disabling archive path syntax."},
             {"allow_experimental_time_series_table", false, false, "Added new setting to allow the TimeSeries table engine"},
             {"enable_analyzer", 1, 1, "Added an alias to a setting `allow_experimental_analyzer`."},
+            {"input_format_json_empty_as_default", false, false, "Added new setting to allow to treat empty fields in JSON input as default values."}
         }
     },
     {"24.7",

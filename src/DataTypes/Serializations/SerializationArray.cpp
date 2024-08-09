@@ -11,6 +11,7 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/JSONUtils.h>
 
 namespace DB
 {
@@ -614,29 +615,51 @@ void SerializationArray::serializeTextJSONPretty(const IColumn & column, size_t 
     writeChar(']', ostr);
 }
 
+namespace
+{
+template <typename ReturnType>
+ReturnType deserializeEmpyStringAsDefaultOrNested(IColumn & column, ReadBuffer & istr, const SerializationPtr & nested, const FormatSettings & settings)
+{
+    auto deserializer = [&nested](IColumn & column_, ReadBuffer & istr_, auto && deserialize_nested) -> ReturnType
+    {
+        auto adapter = [&deserialize_nested, &istr_, &nested](IColumn & nested_column) -> ReturnType
+        {
+            return deserialize_nested(nested_column, istr_, nested);
+        };
+        return deserializeTextImpl<ReturnType>(column_, istr_, std::move(adapter), false);
+    };
+
+    return JSONUtils::deserializeEmpyStringAsDefaultOrNested<ReturnType>(column, istr, settings, std::move(deserializer));
+}
+}
 
 void SerializationArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeTextImpl(column, istr,
-        [&](IColumn & nested_column)
-        {
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(nested_column, istr, settings, nested);
-            else
-                nested->deserializeTextJSON(nested_column, istr, settings);
-        }, false);
+    if (settings.json.empty_as_default)
+        deserializeEmpyStringAsDefaultOrNested<void>(column, istr, nested, settings);
+    else
+        deserializeTextImpl(column, istr,
+            [&settings, &istr, this](IColumn & nested_column)
+            {
+                if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+                    SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(nested_column, istr, settings, nested);
+                else
+                    nested->deserializeTextJSON(nested_column, istr, settings);
+            }, false);
 }
 
 bool SerializationArray::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    auto read_nested = [&](IColumn & nested_column)
-    {
-        if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
-            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(nested_column, istr, settings, nested);
-        return nested->tryDeserializeTextJSON(nested_column, istr, settings);
-    };
+    if (settings.json.empty_as_default)
+        return deserializeEmpyStringAsDefaultOrNested<bool>(column, istr, nested, settings);
 
-    return deserializeTextImpl<bool>(column, istr, std::move(read_nested), false);
+    return deserializeTextImpl<bool>(column, istr,
+        [&settings, &istr, this](IColumn & nested_column)
+        {
+            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(nested_column))
+                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(nested_column, istr, settings, nested);
+            return nested->tryDeserializeTextJSON(nested_column, istr, settings);
+        }, false);
 }
 
 
