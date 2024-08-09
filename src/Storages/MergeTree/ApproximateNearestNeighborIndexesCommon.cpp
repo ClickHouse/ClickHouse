@@ -40,12 +40,12 @@ void extractReferenceVectorFromLiteral(std::vector<Float32> & reference_vector, 
     }
 }
 
-ApproximateNearestNeighborInformation::Metric stringToMetric(std::string_view metric)
+ApproximateNearestNeighborInformation::DistanceFunction stringToDistanceFunction(std::string_view distance_function)
 {
-    if (metric == "L2Distance")
-        return ApproximateNearestNeighborInformation::Metric::L2;
+    if (distance_function == "L2Distance")
+        return ApproximateNearestNeighborInformation::DistanceFunction::L2;
     else
-        return ApproximateNearestNeighborInformation::Metric::Unknown;
+        return ApproximateNearestNeighborInformation::DistanceFunction::Unknown;
 }
 
 }
@@ -57,12 +57,12 @@ ApproximateNearestNeighborCondition::ApproximateNearestNeighborCondition(const S
     , index_is_useful(checkQueryStructure(query_info))
 {}
 
-bool ApproximateNearestNeighborCondition::alwaysUnknownOrTrue(String metric) const
+bool ApproximateNearestNeighborCondition::alwaysUnknownOrTrue(String distance_function) const
 {
     if (!index_is_useful)
         return true; /// query isn't supported
     /// If query is supported, check if distance function of index is the same as distance function in query
-    return !(stringToMetric(metric) == query_information->metric);
+    return !(stringToDistanceFunction(distance_function) == query_information->distance_function);
 }
 
 UInt64 ApproximateNearestNeighborCondition::getLimit() const
@@ -93,11 +93,11 @@ String ApproximateNearestNeighborCondition::getColumnName() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name was requested for useless or uninitialized index.");
 }
 
-ApproximateNearestNeighborInformation::Metric ApproximateNearestNeighborCondition::getMetricType() const
+ApproximateNearestNeighborInformation::DistanceFunction ApproximateNearestNeighborCondition::getDistanceFunction() const
 {
     if (index_is_useful && query_information.has_value())
-        return query_information->metric;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Metric name was requested for useless or uninitialized index.");
+        return query_information->distance_function;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Distance function was requested for useless or uninitialized index.");
 }
 
 bool ApproximateNearestNeighborCondition::checkQueryStructure(const SelectQueryInfo & query)
@@ -266,7 +266,7 @@ bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, Approximate
     if (iter->function != RPNElement::FUNCTION_DISTANCE)
         return false;
 
-    ann_info.metric = stringToMetric(iter->func_name);
+    ann_info.distance_function = stringToDistanceFunction(iter->func_name);
     ++iter;
 
     if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
