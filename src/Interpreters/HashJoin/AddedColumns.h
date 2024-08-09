@@ -50,8 +50,7 @@ public:
 
     struct LazyOutput
     {
-        PaddedPODArray<UInt64> blocks;
-        PaddedPODArray<UInt32> row_nums;
+        PaddedPODArray<UInt64> row_refs;
     };
 
     AddedColumns(
@@ -76,8 +75,7 @@ public:
         if constexpr (lazy)
         {
             has_columns_to_add = num_columns_to_add > 0;
-            lazy_output.blocks.reserve(rows_to_add);
-            lazy_output.row_nums.reserve(rows_to_add);
+            lazy_output.row_refs.reserve(rows_to_add);
         }
 
         columns.reserve(num_columns_to_add);
@@ -115,24 +113,30 @@ public:
             if (columns[j]->isNullable() && !saved_column->isNullable())
                 nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
         }
+        join_data_avg_perkey_rows = join.getJoinedData()->avgPerKeyRows();
+        output_by_row_list_threshold = join.getTableJoin().outputByRowListPerkeyRowsThreshold();
     }
 
     size_t size() const { return columns.size(); }
 
     void buildOutput();
 
+    void buildJoinGetOutput();
+
     ColumnWithTypeAndName moveColumn(size_t i)
     {
         return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
     }
 
-    void appendFromBlock(const Block & block, size_t row_num, bool has_default);
+    void appendFromBlock(const RowRef * row_ref, bool has_default);
 
     void appendDefaultRow();
 
     void applyLazyDefaults();
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
+
+    static constexpr bool isLazy() { return lazy; }
 
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;
@@ -142,6 +146,9 @@ public:
     size_t rows_to_add;
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
+    bool output_by_row_list = false;
+    size_t join_data_avg_perkey_rows = 0;
+    size_t output_by_row_list_threshold = 0;
     IColumn::Filter filter;
 
     void reserve(bool need_replicate)
@@ -212,15 +219,22 @@ private:
         columns.back()->reserve(src_column.column->size());
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);
     }
+
+    /** Build output from the blocks that extract from `RowRef` or `RowRefList`, to avoid block cache miss which may cause performance slow down.
+     *  And This problem would happen it we directly build output from `RowRef` or `RowRefList`.
+     */
+    template<bool from_row_list>
+    void buildOutputFromBlocks();
 };
 
 /// Adapter class to pass into addFoundRowAll
 /// In joinRightColumnsWithAdditionalFilter we don't want to add rows directly into AddedColumns,
 /// because they need to be filtered by additional_filter_expression.
-class PreSelectedRows : public std::vector<RowRef>
+class PreSelectedRows : public std::vector<const RowRef *>
 {
 public:
-    void appendFromBlock(const Block & block, size_t row_num, bool /* has_default */) { this->emplace_back(&block, row_num); }
+    void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { this->emplace_back(row_ref); }
+    static constexpr bool isLazy() { return false; }
 };
 
 }
