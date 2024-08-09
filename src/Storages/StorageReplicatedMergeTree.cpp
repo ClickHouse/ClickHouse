@@ -3940,7 +3940,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         merge_selecting_task->schedule();
     else
     {
-        LOG_TRACE(log, "Scheduling next merge selecting task after {}ms", merge_selecting_sleep_ms);
+        LOG_TRACE(log, "Scheduling next merge selecting task after {}ms, current attempt status: {}", merge_selecting_sleep_ms, result);
         merge_selecting_task->scheduleAfter(merge_selecting_sleep_ms);
     }
 }
@@ -5604,7 +5604,7 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRows(const Settings & set
     return res;
 }
 
-std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr local_context) const
+std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
 {
     DataPartsVector parts;
     foreachActiveParts([&](auto & part) { parts.push_back(part); }, local_context->getSettingsRef().select_sequential_consistency);
@@ -5794,10 +5794,12 @@ bool StorageReplicatedMergeTree::optimize(
     if (!is_leader)
         throw Exception(ErrorCodes::NOT_A_LEADER, "OPTIMIZE cannot be done on this replica because it is not a leader");
 
-    if (deduplicate && getInMemoryMetadataPtr()->hasProjections())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+    if (deduplicate && getInMemoryMetadataPtr()->hasProjections()
+        && getSettings()->deduplicate_merge_projection_mode == DeduplicateMergeProjectionMode::THROW)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
-                    "User should drop all the projections manually before running the query",
+                    "User should drop all the projections manually before running the query, "
+                    "or consider drop or rebuild option of deduplicate_merge_projection_mode",
                     getStorageID().getTableName());
 
     if (cleanup)

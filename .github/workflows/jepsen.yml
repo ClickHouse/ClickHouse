@@ -64,9 +64,10 @@ jobs:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
       - name: Check Workflow results
+        if: ${{ !cancelled() }}
         run: |
           export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
-          cat >> "$WORKFLOW_RESULT_FILE" << 'EOF'
+          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
           ${{ toJson(needs) }}
           EOF
           python3 ./tests/ci/ci_buddy.py --check-wf-status
