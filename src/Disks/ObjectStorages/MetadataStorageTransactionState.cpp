@@ -17,6 +17,7 @@ std::string toString(MetadataStorageTransactionState state)
         case MetadataStorageTransactionState::PARTIALLY_ROLLED_BACK:
             return "PARTIALLY_ROLLED_BACK";
     }
+    UNREACHABLE();
 }
 
 }

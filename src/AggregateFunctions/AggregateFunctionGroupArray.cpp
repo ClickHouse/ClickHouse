@@ -60,13 +60,14 @@ struct GroupArrayTrait
 template <typename Trait>
 constexpr const char * getNameByTrait()
 {
-    if constexpr (Trait::last)
+    if (Trait::last)
         return "groupArrayLast";
-    switch (Trait::sampler)
-    {
-        case Sampler::NONE: return "groupArray";
-        case Sampler::RNG: return "groupArraySample";
-    }
+    if (Trait::sampler == Sampler::NONE)
+        return "groupArray";
+    else if (Trait::sampler == Sampler::RNG)
+        return "groupArraySample";
+
+    UNREACHABLE();
 }
 
 template <typename T>
@@ -840,8 +841,8 @@ void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
     factory.registerFunction("groupArray", { createAggregateFunctionGroupArray<false>, properties });
-    factory.registerAlias("array_agg", "groupArray", AggregateFunctionFactory::Case::Insensitive);
-    factory.registerAliasUnchecked("array_concat_agg", "groupArrayArray", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("array_agg", "groupArray", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAliasUnchecked("array_concat_agg", "groupArrayArray", AggregateFunctionFactory::CaseInsensitive);
     factory.registerFunction("groupArraySample", { createAggregateFunctionGroupArraySample, properties });
     factory.registerFunction("groupArrayLast", { createAggregateFunctionGroupArray<true>, properties });
 }

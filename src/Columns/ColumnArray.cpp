@@ -271,15 +271,12 @@ void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
         getData().updateHashWithValue(offset + i, hash);
 }
 
-void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnArray::getWeakHash32() const
 {
     auto s = offsets->size();
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", s, hash.getData().size());
+    WeakHash32 hash(s);
 
-    WeakHash32 internal_hash(data->size());
-    data->updateWeakHash32(internal_hash);
+    WeakHash32 internal_hash = data->getWeakHash32();
 
     Offset prev_offset = 0;
     const auto & offsets_data = getOffsets();
@@ -300,6 +297,8 @@ void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
 
         prev_offset = offsets_data[i];
     }
+
+    return hash;
 }
 
 void ColumnArray::updateHashFast(SipHash & hash) const
@@ -337,11 +336,7 @@ bool ColumnArray::tryInsert(const Field & x)
     return true;
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnArray::insertFrom(const IColumn & src_, size_t n)
-#else
-void ColumnArray::doInsertFrom(const IColumn & src_, size_t n)
-#endif
 {
     const ColumnArray & src = assert_cast<const ColumnArray &>(src_);
     size_t size = src.sizeAt(n);
@@ -396,11 +391,7 @@ int ColumnArray::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan
             : 1);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
-#else
-int ColumnArray::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
-#endif
 {
     return compareAtImpl(n, m, rhs_, nan_direction_hint);
 }
@@ -543,11 +534,7 @@ void ColumnArray::getExtremes(Field & min, Field & max) const
 }
 
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t length)
-#else
-void ColumnArray::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
-#endif
 {
     if (length == 0)
         return;
@@ -840,7 +827,7 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
     size_t tuple_size = tuple.tupleSize();
 
     if (tuple_size == 0)
-        return filterGeneric(filt, result_size_hint);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty tuple");
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
@@ -1277,7 +1264,7 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
     size_t tuple_size = tuple.tupleSize();
 
     if (tuple_size == 0)
-        return replicateGeneric(replicate_offsets);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty tuple");
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)

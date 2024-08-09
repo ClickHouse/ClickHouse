@@ -197,9 +197,7 @@ def test_partition_by_string_column(started_cluster):
         started_cluster, bucket, "test_foo/bar.csv"
     )
     assert '3,"йцук"\n' == get_s3_file_content(started_cluster, bucket, "test_йцук.csv")
-    assert '78,"你好"\n' == get_s3_file_content(
-        started_cluster, bucket, "test_你好.csv"
-    )
+    assert '78,"你好"\n' == get_s3_file_content(started_cluster, bucket, "test_你好.csv")
 
 
 def test_partition_by_const_column(started_cluster):
@@ -1135,7 +1133,6 @@ def test_seekable_formats(started_cluster):
     exec_query_with_retry(
         instance,
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
-        timeout=100,
     )
 
     result = instance.query(f"SELECT count() FROM {table_function}")
@@ -1145,7 +1142,6 @@ def test_seekable_formats(started_cluster):
     exec_query_with_retry(
         instance,
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
-        timeout=100,
     )
 
     result = instance.query(
@@ -1173,7 +1169,6 @@ def test_seekable_formats_url(started_cluster):
     exec_query_with_retry(
         instance,
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
-        timeout=100,
     )
 
     result = instance.query(f"SELECT count() FROM {table_function}")
@@ -1183,7 +1178,6 @@ def test_seekable_formats_url(started_cluster):
     exec_query_with_retry(
         instance,
         f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
-        timeout=100,
     )
 
     table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_parquet', 'Parquet', 'a Int32, b String')"
@@ -1822,13 +1816,27 @@ def test_schema_inference_cache(started_cluster):
         check_cache(instance, [])
 
         run_describe_query(instance, files, storage_name, started_cluster, bucket)
-        check_cache_misses(instance, files, storage_name, started_cluster, bucket, 4)
+        check_cache_misses(
+            instance,
+            files,
+            storage_name,
+            started_cluster,
+            bucket,
+            4 if storage_name == "url" else 1,
+        )
 
         instance.query("system drop schema cache")
         check_cache(instance, [])
 
         run_describe_query(instance, files, storage_name, started_cluster, bucket)
-        check_cache_misses(instance, files, storage_name, started_cluster, bucket, 4)
+        check_cache_misses(
+            instance,
+            files,
+            storage_name,
+            started_cluster,
+            bucket,
+            4 if storage_name == "url" else 1,
+        )
 
         instance.query("system drop schema cache")
 
@@ -2155,21 +2163,6 @@ def test_read_subcolumns(started_cluster):
     )
 
 
-def test_read_subcolumn_time(started_cluster):
-    bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["dummy"]
-
-    instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumn_time.tsv', auto, 'a UInt32') select  (42)"
-    )
-
-    res = instance.query(
-        f"select a, dateDiff('minute', _time, now()) < 59 from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_subcolumn_time.tsv', auto, 'a UInt32')"
-    )
-
-    assert res == "42\t1\n"
-
-
 def test_filtering_by_file_or_path(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
@@ -2197,12 +2190,6 @@ def test_filtering_by_file_or_path(started_cluster):
     )
 
     assert int(result) == 1
-
-    assert 0 == int(
-        instance.query(
-            f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_filter*.tsv') where _file = 'kek'"
-        )
-    )
 
 
 def test_union_schema_inference_mode(started_cluster):

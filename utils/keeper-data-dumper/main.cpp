@@ -2,7 +2,6 @@
 
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
-#include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>

@@ -3,7 +3,9 @@
 
 #include "config.h"
 
-#include <Coordination/CoordinationSettings.h>
+#include <chrono>
+#include <mutex>
+#include <string>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -27,10 +29,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-
-#include <chrono>
-#include <mutex>
-#include <string>
 
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #include <fmt/chrono.h>
@@ -368,7 +366,10 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         LockMemoryExceptionInThread::removeUniqueLock();
     };
 
-    asio_opts.thread_pool_size_ = getNumberOfPhysicalCPUCores();
+    /// At least 16 threads for network communication in asio.
+    /// asio is async framework, so even with 1 thread it should be ok, but
+    /// still as safeguard it's better to have some redundant capacity here
+    asio_opts.thread_pool_size_ = std::max(16U, getNumberOfPhysicalCPUCores());
 
     if (state_manager->isSecure())
     {
@@ -995,7 +996,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
         raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/true);
         return Accepted;
     }
-    std::unreachable();
+    UNREACHABLE();
 }
 
 ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config)

@@ -14,7 +14,6 @@
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/HashTable/StringHashSet.h>
 #include <Common/NaNUtils.h>
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
@@ -73,13 +72,10 @@ void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 }
 
 template <typename T>
-void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnVector<T>::getWeakHash32() const
 {
     auto s = data.size();
-
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
+    WeakHash32 hash(s);
 
     const T * begin = data.data();
     const T * end = begin + s;
@@ -91,6 +87,8 @@ void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
         ++begin;
         ++hash_data;
     }
+
+    return hash;
 }
 
 template <typename T>
@@ -414,25 +412,6 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
     }
 }
 
-template<typename T>
-size_t ColumnVector<T>::estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range) const
-{
-    const size_t range_size = equal_range.size();
-    if (range_size <= 1)
-        return range_size;
-
-    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
-    StringHashSet elements;
-    bool inserted = false;
-    for (size_t i = equal_range.from; i < equal_range.to; ++i)
-    {
-        size_t permuted_i = permutation[i];
-        StringRef value = getDataAt(permuted_i);
-        elements.emplace(value, inserted);
-    }
-    return elements.size();
-}
-
 template <typename T>
 MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 {
@@ -503,11 +482,7 @@ bool ColumnVector<T>::tryInsert(const DB::Field & x)
 }
 
 template <typename T>
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
-#else
-void ColumnVector<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
-#endif
 {
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
 

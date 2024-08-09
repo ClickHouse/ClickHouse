@@ -108,11 +108,11 @@ static DataTypePtr create64(const ASTPtr & arguments)
 
 void registerDataTypeDateTime(DataTypeFactory & factory)
 {
-    factory.registerDataType("DateTime", create, DataTypeFactory::Case::Insensitive);
-    factory.registerDataType("DateTime32", create32, DataTypeFactory::Case::Insensitive);
-    factory.registerDataType("DateTime64", create64, DataTypeFactory::Case::Insensitive);
+    factory.registerDataType("DateTime", create, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("DateTime32", create32, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("DateTime64", create64, DataTypeFactory::CaseInsensitive);
 
-    factory.registerAlias("TIMESTAMP", "DateTime", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("TIMESTAMP", "DateTime", DataTypeFactory::CaseInsensitive);
 }
 
 }

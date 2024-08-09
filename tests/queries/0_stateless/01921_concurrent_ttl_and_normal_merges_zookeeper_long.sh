@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper
+# Tags: long, zookeeper, no-parallel
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 
@@ -50,7 +50,7 @@ function insert_thread
 export -f insert_thread;
 export -f optimize_thread;
 
-TIMEOUT=20
+TIMEOUT=30
 
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &

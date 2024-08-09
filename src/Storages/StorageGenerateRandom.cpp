@@ -30,7 +30,6 @@
 
 #include <Common/SipHash.h>
 #include <Common/randomSeed.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 #include <Functions/FunctionFactory.h>
@@ -50,12 +49,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-struct GenerateRandomState
-{
-    std::atomic<UInt64> add_total_rows = 0;
-};
-using GenerateRandomStatePtr = std::shared_ptr<GenerateRandomState>;
 
 void fillBufferWithRandomData(char * __restrict data, size_t limit, size_t size_of_type, pcg64 & rng, [[maybe_unused]] bool flip_bytes = false)
 {
@@ -274,9 +267,6 @@ ColumnPtr fillColumnWithRandomData(
         case TypeIndex::Tuple:
         {
             auto elements = typeid_cast<const DataTypeTuple *>(type.get())->getElements();
-            if (elements.empty())
-                return ColumnTuple::create(limit);
-
             const size_t tuple_size = elements.size();
             Columns tuple_columns(tuple_size);
 
@@ -539,24 +529,10 @@ ColumnPtr fillColumnWithRandomData(
 class GenerateSource : public ISource
 {
 public:
-    GenerateSource(
-        UInt64 block_size_,
-        UInt64 max_array_length_,
-        UInt64 max_string_length_,
-        UInt64 random_seed_,
-        Block block_header_,
-        ContextPtr context_,
-        GenerateRandomStatePtr state_)
+    GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_, Block block_header_, ContextPtr context_)
         : ISource(Nested::flattenNested(prepareBlockToFill(block_header_)))
-        , block_size(block_size_)
-        , max_array_length(max_array_length_)
-        , max_string_length(max_string_length_)
-        , block_to_fill(std::move(block_header_))
-        , rng(random_seed_)
-        , context(context_)
-        , shared_state(state_)
-    {
-    }
+        , block_size(block_size_), max_array_length(max_array_length_), max_string_length(max_string_length_)
+        , block_to_fill(std::move(block_header_)), rng(random_seed_), context(context_) {}
 
     String getName() const override { return "GenerateRandom"; }
 
@@ -570,15 +546,7 @@ protected:
             columns.emplace_back(fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length, rng, context));
 
         columns = Nested::flattenNested(block_to_fill.cloneWithColumns(columns)).getColumns();
-
-        UInt64 total_rows = shared_state->add_total_rows.fetch_and(0);
-        if (total_rows)
-            addTotalRowsApprox(total_rows);
-
-        auto chunk = Chunk{std::move(columns), block_size};
-        progress(chunk.getNumRows(), chunk.bytes());
-
-        return chunk;
+        return {std::move(columns), block_size};
     }
 
 private:
@@ -590,7 +558,6 @@ private:
     pcg64 rng;
 
     ContextPtr context;
-    GenerateRandomStatePtr shared_state;
 
     static Block & prepareBlockToFill(Block & block)
     {
@@ -678,6 +645,9 @@ Pipe StorageGenerateRandom::read(
 {
     storage_snapshot->check(column_names);
 
+    Pipes pipes;
+    pipes.reserve(num_streams);
+
     const ColumnsDescription & our_columns = storage_snapshot->metadata->getColumns();
     Block block_header;
     for (const auto & name : column_names)
@@ -706,24 +676,16 @@ Pipe StorageGenerateRandom::read(
         }
     }
 
-    UInt64 query_limit = query_info.trivial_limit;
-    if (query_limit && num_streams * max_block_size > query_limit)
-    {
-        /// We want to avoid spawning more streams than necessary
-        num_streams = std::min(num_streams, static_cast<size_t>(((query_limit + max_block_size - 1) / max_block_size)));
-    }
-    Pipes pipes;
-    pipes.reserve(num_streams);
-
     /// Will create more seed values for each source from initial seed.
     pcg64 generate(random_seed);
 
-    auto shared_state = std::make_shared<GenerateRandomState>(query_info.trivial_limit);
-
     for (UInt64 i = 0; i < num_streams; ++i)
     {
-        auto source = std::make_shared<GenerateSource>(
-            max_block_size, max_array_length, max_string_length, generate(), block_header, context, shared_state);
+        auto source = std::make_shared<GenerateSource>(max_block_size, max_array_length, max_string_length, generate(), block_header, context);
+
+        if (i == 0 && query_info.limit)
+            source->addTotalRowsApprox(query_info.limit);
+
         pipes.emplace_back(std::move(source));
     }
 

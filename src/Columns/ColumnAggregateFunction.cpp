@@ -267,11 +267,7 @@ bool ColumnAggregateFunction::structureEquals(const IColumn & to) const
 }
 
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start, size_t length)
-#else
-void ColumnAggregateFunction::doInsertRangeFrom(const IColumn & from, size_t start, size_t length)
-#endif
 {
     const ColumnAggregateFunction & from_concrete = assert_cast<const ColumnAggregateFunction &>(from);
 
@@ -330,7 +326,38 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
 
 void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
 {
-    expandDataByMask<char *>(data, mask, inverted);
+    ensureOwnership();
+    Arena & arena = createOrGetArena();
+
+    if (mask.size() < data.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
+
+    ssize_t from = data.size() - 1;
+    ssize_t index = mask.size() - 1;
+    data.resize(mask.size());
+    while (index >= 0)
+    {
+        if (!!mask[index] ^ inverted)
+        {
+            if (from < 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
+
+            /// Copy only if it makes sense.
+            if (index != from)
+                data[index] = data[from];
+            --from;
+        }
+        else
+        {
+            data[index] = arena.alignedAlloc(func->sizeOfData(), func->alignOfData());
+            func->create(data[index]);
+        }
+
+        --index;
+    }
+
+    if (from != -1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
 }
 
 ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
@@ -366,13 +393,10 @@ void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) cons
     hash.update(wbuf.str().c_str(), wbuf.str().size());
 }
 
-void ColumnAggregateFunction::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnAggregateFunction::getWeakHash32() const
 {
     auto s = data.size();
-    if (hash.getData().size() != data.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), hash.getData().size());
-
+    WeakHash32 hash(s);
     auto & hash_data = hash.getData();
 
     std::vector<UInt8> v;
@@ -383,6 +407,8 @@ void ColumnAggregateFunction::updateWeakHash32(WeakHash32 & hash) const
         wbuf.finalize();
         hash_data[i] = ::updateWeakHash32(v.data(), v.size(), hash_data[i]);
     }
+
+    return hash;
 }
 
 void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
@@ -466,11 +492,7 @@ void ColumnAggregateFunction::insertFromWithOwnership(const IColumn & from, size
     insertMergeFrom(from, n);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
 void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
-#else
-void ColumnAggregateFunction::doInsertFrom(const IColumn & from, size_t n)
-#endif
 {
     insertRangeFrom(from, n, 1);
 }

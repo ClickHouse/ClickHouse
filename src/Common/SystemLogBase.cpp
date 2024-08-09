@@ -1,6 +1,5 @@
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/CrashLog.h>
-#include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
@@ -11,7 +10,7 @@
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/ObjectStorageQueueLog.h>
+#include <Interpreters/S3QueueLog.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/ZooKeeperLog.h>
