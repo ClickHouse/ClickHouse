@@ -1582,42 +1582,22 @@ struct ConvertImpl
             if (from == to || arguments[0].column->empty())
                 return arguments[0].column;
 
-            const auto &map = getGranularityMap();
             Int64 conversion_factor = 1;
             Int64 result_value;
 
-            int from_position = map.at(from).first;
-            int to_position = map.at(to).first; // Positions of each interval according to granurality map
+            int from_position = static_cast<int>(from.kind);
+            int to_position = static_cast<int>(to.kind); // Positions of each interval according to granurality map
 
             if (from_position < to_position)
             {
                 for (int i = from_position - 1; i <= to_position; ++i)
-                {
-                    // Find the kind that matches this position
-                    for (const auto &entry : map)
-                    {
-                        if (entry.second.first == i)
-                        {
-                            conversion_factor *= entry.second.second;
-                            break;
-                        }
-                    }
-                }
+                    conversion_factor *= interval_conversions[i];
                 result_value = arguments[0].column->getInt(0) / conversion_factor;
             }
             else
             {
                 for (int i = from_position - 1; i >= to_position; --i)
-                {
-                    for (const auto &entry : map)
-                    {
-                        if (entry.second.first == i)
-                        {
-                            conversion_factor *= entry.second.second;
-                            break;
-                        }
-                    }
-                }
+                    conversion_factor *= interval_conversions[i];
                 result_value = arguments[0].column->getInt(0) * conversion_factor;
             }
 

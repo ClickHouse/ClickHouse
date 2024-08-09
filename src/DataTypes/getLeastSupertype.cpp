@@ -230,8 +230,7 @@ void convertUInt64toInt64IfPossible(const DataTypes & types, TypeIndexSet & type
 
 DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &types_set)
 {
-    const auto& granularity_map = getGranularityMap();
-    int min_granularity = std::get<0>(granularity_map.at(IntervalKind::Kind::Year));
+    auto min_interval = IntervalKind::Kind::Year;
     DataTypePtr smallest_type;
 
     bool is_higher_interval = false; // For Years, Quarters and Months
@@ -240,18 +239,18 @@ DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &
     {
         if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(type.get()))
         {
-            int current_granularity = std::get<0>(granularity_map.at(interval_type->getKind()));
-            if (current_granularity > 8)
+            auto current_interval = interval_type->getKind().kind;
+            if (current_interval > IntervalKind::Kind::Week)
                 is_higher_interval = true;
-            if (current_granularity < min_granularity)
+            if (current_interval < min_interval)
             {
-                min_granularity = current_granularity;
+                min_interval = current_interval;
                 smallest_type = type;
             }
         }
     }
 
-    if (is_higher_interval && min_granularity <= 8)
+    if (is_higher_interval && min_interval <= IntervalKind::Kind::Week)
         throw Exception(ErrorCodes::NO_COMMON_TYPE, "Cannot compare intervals {} and {} because the amount of days in month is not determined", types[0]->getName(), types[1]->getName());
 
     if (smallest_type)

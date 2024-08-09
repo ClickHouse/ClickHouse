@@ -55,28 +55,29 @@ SELECT now() as current_date_time, current_date_time + INTERVAL 4 DAY
 └─────────────────────┴───────────────────────────────┘
 ```
 
-也可以同時使用多個間隔：
+不同类型的间隔不能合并。 你不能使用诸如 `4 DAY 1 HOUR` 的时间间隔. 以小于或等于时间间隔最小单位的单位来指定间隔，例如，时间间隔 `1 day and an hour` 可以表示为 `25 HOUR` 或 `90000 SECOND`.
+
+你不能对 `Interval` 类型的值执行算术运算，但你可以向 `Date` 或 `DateTime` 数据类型的值添加不同类型的时间间隔，例如:
 
 ``` sql
-SELECT now() AS current_date_time, current_date_time + (INTERVAL 4 DAY + INTERVAL 3 HOUR)
+SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
 ```
 
 ``` text
-┌───current_date_time─┬─plus(current_date_time, plus(toIntervalDay(4), toIntervalHour(3)))─┐
-│ 2024-08-08 18:31:39 │                                                2024-08-12 21:31:39 │
-└─────────────────────┴────────────────────────────────────────────────────────────────────┘
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2019-10-23 11:16:28 │                                    2019-10-27 14:16:28 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
 ```
 
-並比較不同直數的值：
+以下查询将导致异常:
 
 ``` sql
-SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
+select now() AS current_date_time, current_date_time + (INTERVAL 4 DAY + INTERVAL 3 HOUR)
 ```
 
 ``` text
-┌─less(toIntervalMicrosecond(179999999), toIntervalMinute(3))─┐
-│                                                           1 │
-└─────────────────────────────────────────────────────────────┘
+Received exception from server (version 19.14.1):
+Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argument types for function plus: if one argument is Interval, then another must be Date or DateTime..
 ```
 
 ## 另请参阅 {#see-also}
