@@ -18,11 +18,13 @@ WITH '(\\w+): (\\d+)' AS pattern,
      AND line NOT LIKE '%Microseconds%'
      AND line NOT LIKE '%S3DiskConnections%'
      AND line NOT LIKE '%S3DiskAddresses') AS pe_map
-SELECT untuple(arrayJoin(pe_map) AS pe)
-WHERE tupleElement(pe, 1) not like '%WriteRequests%'
-UNION ALL
-SELECT 'Successful write requests',
-       (pe_map['S3WriteRequestsCount'] - pe_map['S3WriteRequestsErrors'])::UInt64
+SELECT * FROM (
+    SELECT untuple(arrayJoin(pe_map) AS pe)
+    WHERE tupleElement(pe, 1) not like '%WriteRequests%'
+    UNION ALL
+    SELECT 'Successful write requests',
+           (pe_map['S3WriteRequestsCount'] - pe_map['S3WriteRequestsErrors'])::UInt64
+) ORDER BY 1
 "
 
 echo "CHECK WITH query_log"
