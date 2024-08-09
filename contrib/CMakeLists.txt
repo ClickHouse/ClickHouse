@@ -230,6 +230,8 @@ add_contrib (libssh-cmake libssh)
 
 add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
 
+add_contrib (sz3-cmake sz3)
+
 add_contrib(numactl-cmake numactl)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.

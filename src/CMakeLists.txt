@@ -92,6 +92,9 @@ add_glob(clickhouse_compression_headers Server/ServerType.h)
 add_glob(clickhouse_compression_sources Server/ServerType.cpp)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
 
+if (TARGET ch_contrib::sz3)
+    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::sz3)
+endif()
 
 add_headers_and_sources(dbms Disks/IO)
 add_headers_and_sources(dbms Disks/ObjectStorages)
