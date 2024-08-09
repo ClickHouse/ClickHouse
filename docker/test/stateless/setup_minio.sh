@@ -59,8 +59,8 @@ find_os() {
 download_minio() {
   local os
   local arch
-  local minio_server_version=${MINIO_SERVER_VERSION:-2022-09-07T22-25-02Z}
-  local minio_client_version=${MINIO_CLIENT_VERSION:-2022-08-28T20-08-11Z}
+  local minio_server_version=${MINIO_SERVER_VERSION:-2024-08-03T04-33-23Z}
+  local minio_client_version=${MINIO_CLIENT_VERSION:-2024-07-31T15-58-33Z}
 
   os=$(find_os)
   arch=$(find_arch)
@@ -82,10 +82,10 @@ setup_minio() {
   local test_type=$1
   ./mc alias set clickminio http://localhost:11111 clickhouse clickhouse
   ./mc admin user add clickminio test testtest
-  ./mc admin policy set clickminio readwrite user=test
+  ./mc admin policy attach clickminio readwrite --user=test
   ./mc mb --ignore-existing clickminio/test
   if [ "$test_type" = "stateless" ]; then
-    ./mc policy set public clickminio/test
+    ./mc anonymous set public clickminio/test
   fi
 }
 
