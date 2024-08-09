@@ -993,6 +993,12 @@ Used to regulate how resources are utilized and shared between mutations and oth
 
 Default value: an empty string
 
+## default_compression_codec
+
+Specifies the default compression codec to be used if none is defined for a particular column in the table declaration. If a column has a designated compression codec, it will override this default setting.
+
+Default value: an empty string
+
 **See Also**
 - [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
 

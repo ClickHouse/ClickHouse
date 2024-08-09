@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 
 namespace DB
@@ -101,9 +102,16 @@ SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & colum
 
 ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
-    auto get_codec_or_default = [&](const auto & column_desc)
+    auto get_codec_or_default = [this, &default_codec](const auto & column_desc)
     {
-        return column_desc.codec ? column_desc.codec : default_codec->getFullCodecDesc();
+        if (column_desc.codec)
+            return column_desc.codec;
+
+        auto default_compression_codec_mergetree_settings = storage_settings->default_compression_codec.toString();
+        if (!default_compression_codec_mergetree_settings.empty())
+            return CompressionCodecFactory::instance().get(default_compression_codec_mergetree_settings)->getFullCodecDesc();
+
+        return default_codec->getFullCodecDesc();
     };
 
     const auto & columns = metadata_snapshot->getColumns();
@@ -113,7 +121,7 @@ ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_nam
     if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
         return get_codec_or_default(*virtual_desc);
 
-    return default_codec->getFullCodecDesc();
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
 }
 
 
