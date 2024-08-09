@@ -24,7 +24,7 @@ namespace
 {
 
 template <typename Literal>
-void extractReferenceVectorFromLiteral(ApproximateNearestNeighborInformation::Embedding & reference_vector, Literal literal)
+void extractReferenceVectorFromLiteral(std::vector<Float32> & reference_vector, Literal literal)
 {
     Float64 float_element_of_reference_vector;
     Int64 int_element_of_reference_vector;
