@@ -689,9 +689,6 @@ void ClientBase::initClientContext()
     client_context->setQueryKindInitial();
     client_context->setQueryKind(query_kind);
     client_context->setQueryParameters(query_parameters);
-
-    /// Allow to pass-through unknown settings to the server.
-    client_context->getAccessControl().allowAllSettings();
 }
 
 bool ClientBase::isRegularFile(int fd)
