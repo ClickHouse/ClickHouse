@@ -85,6 +85,8 @@ private:
     size_t current_buf_idx = 0;
     SeekableReadBufferPtr current_buf;
 
+    std::deque<SeekableReadBufferPtr> buffer_cemetery_;
+
     LoggerPtr log;
 };
 

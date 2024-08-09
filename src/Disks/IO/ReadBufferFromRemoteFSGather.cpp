@@ -169,6 +169,7 @@ void ReadBufferFromRemoteFSGather::initialize()
 
 bool ReadBufferFromRemoteFSGather::nextImpl()
 {
+    // LOG_DEBU
     /// Find first available buffer that fits to given offset.
     if (!current_buf)
         initialize();
@@ -230,6 +231,7 @@ void ReadBufferFromRemoteFSGather::reset()
 {
     current_object = StoredObject();
     current_buf_idx = {};
+    // buffer_cemetery_.push_back(current_buf);
     current_buf.reset();
 }
 
