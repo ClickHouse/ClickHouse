@@ -12,6 +12,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/PoolId.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -338,9 +339,12 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
     return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params);
 }
 
-std::vector<UInt8> DatabaseReplicated::tryGetAreReplicasActive(const ClusterPtr & cluster_) const
+ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_) const
 {
     Strings paths;
+
+    paths.emplace_back(fs::path(zookeeper_path) / "max_log_ptr");
+
     const auto & addresses_with_failover = cluster_->getShardsAddresses();
     const auto & shards_info = cluster_->getShardsInfo();
     for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
@@ -349,22 +353,50 @@ std::vector<UInt8> DatabaseReplicated::tryGetAreReplicasActive(const ClusterPtr 
         {
             String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name);
             paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "active");
+            paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "log_ptr");
         }
     }
 
     try
     {
         auto current_zookeeper = getZooKeeper();
-        auto res = current_zookeeper->exists(paths);
+        auto zk_res = current_zookeeper->tryGet(paths);
 
-        std::vector<UInt8> statuses;
-        statuses.resize(paths.size());
+        auto max_log_ptr_zk = zk_res[0];
+        if (max_log_ptr_zk.error != Coordination::Error::ZOK)
+            throw Coordination::Exception(max_log_ptr_zk.error);
 
-        for (size_t i = 0; i < res.size(); ++i)
-            if (res[i].error == Coordination::Error::ZOK)
-                statuses[i] = 1;
+        UInt32 max_log_ptr = parse<UInt32>(max_log_ptr_zk.data);
 
-        return statuses;
+        ReplicasInfo replicas_info;
+        replicas_info.resize((zk_res.size() - 1) / 2);
+
+        size_t global_replica_index = 0;
+        for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
+        {
+            for (const auto & replica : addresses_with_failover[shard_index])
+            {
+                auto replica_active = zk_res[2 * global_replica_index + 1];
+                auto replica_log_ptr = zk_res[2 * global_replica_index + 2];
+
+                UInt64 recovery_time = 0;
+                {
+                    std::lock_guard lock(ddl_worker_mutex);
+                    if (replica.is_local && ddl_worker)
+                        recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+                }
+
+                replicas_info[global_replica_index] = ReplicaInfo{
+                    .is_active = replica_active.error == Coordination::Error::ZOK,
+                    .replication_lag = replica_log_ptr.error != Coordination::Error::ZNONODE ? std::optional(max_log_ptr - parse<UInt32>(replica_log_ptr.data)) : std::nullopt,
+                    .recovery_time = recovery_time,
+                };
+
+                ++global_replica_index;
+            }
+        }
+
+        return replicas_info;
     }
     catch (...)
     {
@@ -372,7 +404,6 @@ std::vector<UInt8> DatabaseReplicated::tryGetAreReplicasActive(const ClusterPtr 
         return {};
     }
 }
-
 
 void DatabaseReplicated::fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config_ref)
 {
@@ -647,12 +678,13 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
             {
                 std::lock_guard lock{ddl_worker_mutex};
                 ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
+                ddl_worker->startup();
+                ddl_worker_initialized = true;
             }
-            ddl_worker->startup();
-            ddl_worker_initialized = true;
         });
     std::scoped_lock lock(mutex);
-    return startup_replicated_database_task = makeLoadTask(async_loader, {job});
+    startup_replicated_database_task = makeLoadTask(async_loader, {job});
+    return startup_replicated_database_task;
 }
 
 void DatabaseReplicated::waitDatabaseStarted() const
@@ -1530,8 +1562,11 @@ void DatabaseReplicated::stopReplication()
 void DatabaseReplicated::shutdown()
 {
     stopReplication();
-    ddl_worker_initialized = false;
-    ddl_worker = nullptr;
+    {
+        std::lock_guard lock{ddl_worker_mutex};
+        ddl_worker_initialized = false;
+        ddl_worker = nullptr;
+    }
     DatabaseAtomic::shutdown();
 }
 
@@ -1679,6 +1714,7 @@ bool DatabaseReplicated::canExecuteReplicatedMetadataAlter() const
     /// It may update the metadata digest (both locally and in ZooKeeper)
     /// before DatabaseReplicatedDDLWorker::initializeReplication() has finished.
     /// We should not update metadata until the database is initialized.
+    std::lock_guard lock{ddl_worker_mutex};
     return ddl_worker_initialized && ddl_worker->isCurrentlyActive();
 }
 
