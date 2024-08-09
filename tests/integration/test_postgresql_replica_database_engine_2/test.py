@@ -1127,9 +1127,13 @@ def test_dependent_loading(started_cluster):
     nested_time = instance.query(
         f"SELECT event_time_microseconds FROM system.text_log WHERE message like 'Loading table default.{uuid}_nested' and message not like '%like%'"
     ).strip()
-    time = instance.query(
-        f"SELECT event_time_microseconds FROM system.text_log WHERE message like 'Loading table default.{table}' and message not like '%like%'"
-    ).strip()
+    time = (
+        instance.query(
+            f"SELECT event_time_microseconds FROM system.text_log WHERE message like 'Loading table default.{table}' and message not like '%like%'"
+        )
+        .strip()
+        .split("\n")[-1]
+    )
     instance.query(
         f"SELECT toDateTime64('{nested_time}', 6) < toDateTime64('{time}', 6)"
     )
