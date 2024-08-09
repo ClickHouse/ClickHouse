@@ -32,6 +32,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int FORMAT_VERSION_TOO_OLD;
     extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_DATA;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
@@ -94,7 +95,10 @@ void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
         return true;
     };
 
-    Base::load_from_stream(callback);
+    auto result = Base::load_from_stream(callback);
+    if (result.error)
+        /// See the comment in MergeTreeIndexGranuleVectorSimilarity::deserializeBinary why we throw here
+        throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, "Could not load USearch index, error: " + String(result.error.release()) + " Please drop the index and create it again.");
 }
 
 USearchIndexWithSerialization::Statistics USearchIndexWithSerialization::getStatistics() const
@@ -143,9 +147,12 @@ void MergeTreeIndexGranuleUSearch::serializeBinary(WriteBuffer & ostr) const
     if (empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty minmax index {}", backQuote(index_name));
 
+    writeIntBinary(FILE_FORMAT_VERSION, ostr);
+
     /// Number of dimensions is required in the index constructor,
     /// so it must be written and read separately from the other part
     writeIntBinary(static_cast<UInt64>(index->dimensions()), ostr); // write dimension
+                                                                    //
     index->serialize(ostr);
 
     auto statistics = index->getStatistics();
@@ -155,9 +162,20 @@ void MergeTreeIndexGranuleUSearch::serializeBinary(WriteBuffer & ostr) const
 
 void MergeTreeIndexGranuleUSearch::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
+    UInt64 file_version;
+    readIntBinary(file_version, istr);
+    if (file_version != FILE_FORMAT_VERSION)
+        throw Exception(
+            ErrorCodes::FORMAT_VERSION_TOO_OLD,
+            "USearch index could not be loaded because its version is too old (current version: {}, persisted version: {}). Please drop the index and create it again.",
+            FILE_FORMAT_VERSION, file_version);
+        /// More fancy error handling would be: Set a flag on the index that it failed to load. During usage return all granules, i.e.
+        /// behave as if the index does not exist. Since format changes are expected to happen only rarely and it is "only" an index, keep it simple for now.
+
     UInt64 dimension;
     readIntBinary(dimension, istr);
     index = std::make_shared<USearchIndexWithSerialization>(dimension, metric_kind, scalar_kind);
+
     index->deserialize(istr);
 
     auto statistics = index->getStatistics();
