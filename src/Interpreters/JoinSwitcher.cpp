@@ -1,6 +1,6 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/JoinSwitcher.h>
-#include <Interpreters/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/JoinUtils.h>
 

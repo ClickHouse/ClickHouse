@@ -31,7 +31,7 @@ public:
             {"URL", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
 
-        validateFunctionArgumentTypes(func, arguments, mandatory_args);
+        validateFunctionArguments(func, arguments, mandatory_args);
     }
 
     void init(const ColumnsWithTypeAndName & /*arguments*/, bool /*max_substrings_includes_remaining_string*/) {}

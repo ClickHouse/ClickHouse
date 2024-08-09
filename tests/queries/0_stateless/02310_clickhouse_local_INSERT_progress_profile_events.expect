@@ -1,4 +1,6 @@
 #!/usr/bin/expect -f
+# Tags: no-debug, no-tsan, no-msan, no-asan, no-ubsan, no-s3-storage, no-cpu-aarch64
+# ^ it can be slower than 60 seconds
 
 # This is the regression for the concurrent access in ProgressIndication,
 # so it is important to read enough rows here (10e6).

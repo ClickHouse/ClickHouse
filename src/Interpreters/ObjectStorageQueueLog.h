@@ -26,7 +26,6 @@ struct ObjectStorageQueueLogElement
         Failed,
     };
     ObjectStorageQueueStatus status;
-    ProfileEvents::Counters::Snapshot counters_snapshot;
     time_t processing_start_time;
     time_t processing_end_time;
     std::string exception;

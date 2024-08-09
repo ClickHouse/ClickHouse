@@ -2,7 +2,9 @@
 #include <Formats/FormatFactory.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/isValidUTF8.h>
+#include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -39,33 +41,18 @@ StorageObjectStorageSink::StorageObjectStorageSink(
         configuration->format, *write_buf, sample_block, context, format_settings_);
 }
 
-void StorageObjectStorageSink::consume(Chunk chunk)
+void StorageObjectStorageSink::consume(Chunk & chunk)
 {
-    std::lock_guard lock(cancel_mutex);
-    if (cancelled)
+    if (isCancelled())
         return;
-    writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
-}
-
-void StorageObjectStorageSink::onCancel()
-{
-    std::lock_guard lock(cancel_mutex);
-    cancelBuffers();
-    releaseBuffers();
-    cancelled = true;
-}
-
-void StorageObjectStorageSink::onException(std::exception_ptr)
-{
-    std::lock_guard lock(cancel_mutex);
-    cancelBuffers();
-    releaseBuffers();
+    writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
 }
 
 void StorageObjectStorageSink::onFinish()
 {
-    std::lock_guard lock(cancel_mutex);
+    chassert(!isCancelled());
     finalizeBuffers();
+    releaseBuffers();
 }
 
 void StorageObjectStorageSink::finalizeBuffers()
@@ -117,6 +104,12 @@ PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     , sample_block(sample_block_)
     , context(context_)
 {
+}
+
+StorageObjectStorageSink::~StorageObjectStorageSink()
+{
+    if (isCancelled())
+        cancelBuffers();
 }
 
 SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String & partition_id)

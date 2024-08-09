@@ -43,6 +43,7 @@ struct Settings;
     M(UInt64, compact_parts_max_granules_to_buffer, 128, "Only available in ClickHouse Cloud", 0) \
     M(UInt64, compact_parts_merge_max_bytes_to_prefetch_part, 16 * 1024 * 1024, "Only available in ClickHouse Cloud", 0) \
     M(Bool, load_existing_rows_count_for_old_parts, false, "Whether to load existing_rows_count for existing parts. If false, existing_rows_count will be equal to rows_count for existing parts.", 0) \
+    M(Bool, use_compact_variant_discriminators_serialization, true, "Use compact version of Variant discriminators serialization.", 0) \
     \
     /** Merge settings. */ \
     M(UInt64, merge_max_block_size, 8192, "How many rows in blocks should be formed for merge operations. By default has the same value as `index_granularity`.", 0) \
@@ -214,6 +215,7 @@ struct Settings;
     M(Float, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns, 0.9f, "If the value of a column of the primary key in data part changes at least in this ratio of times, skip loading next columns in memory. This allows to save memory usage by not loading useless columns of the primary key.", 0) \
     /** Projection settings. */ \
     M(UInt64, max_projections, 25, "The maximum number of merge tree projections.", 0) \
+    M(DeduplicateMergeProjectionMode, deduplicate_merge_projection_mode, DeduplicateMergeProjectionMode::THROW, "Whether to allow create projection for the table with non-classic MergeTree, if allowed, what is the action when merge, drop or rebuild.", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", BaseSettingsHelpers::Flags::OBSOLETE)
@@ -267,17 +269,8 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>, public 
     /// NOTE: will rewrite the AST to add immutable settings.
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach);
 
-    /// We check settings after storage creation
-    static bool isReadonlySetting(const String & name)
-    {
-        return name == "index_granularity" || name == "index_granularity_bytes"
-            || name == "enable_mixed_granularity_parts";
-    }
-
-    static bool isPartFormatSetting(const String & name)
-    {
-        return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part";
-    }
+    static bool isReadonlySetting(const String & name);
+    static bool isPartFormatSetting(const String & name);
 
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks) const;
@@ -294,4 +287,10 @@ namespace MergeTreeColumnSettings
     void validate(const SettingsChanges & changes);
 }
 
+[[maybe_unused]] static bool needSyncPart(size_t input_rows, size_t input_bytes, const MergeTreeSettings & settings)
+{
+    return (
+        (settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
+        || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
+}
 }
