@@ -83,8 +83,7 @@ namespace impl
         {
             assert(key0 && key1);
             assert(key0->size() == key1->size());
-            assert(offsets == nullptr || offsets->size() == key0->size());
-            if (offsets != nullptr)
+            if (offsets != nullptr && !offsets->empty())
                 return offsets->back();
             return key0->size();
         }
@@ -92,13 +91,14 @@ namespace impl
         {
             if (is_const)
                 i = 0;
+            assert(key0->size() == key1->size());
+            assert(key0->size() > i);
             if (offsets != nullptr)
             {
                 const auto *const begin = offsets->begin();
                 const auto * upper = std::upper_bound(begin, offsets->end(), i);
-                if (upper == offsets->end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "offset {} not found in function SipHashKeyColumns::getKey", i);
-                i = upper - begin;
+                if (upper != offsets->end())
+                    i = upper - begin;
             }
             const auto & key0data = assert_cast<const ColumnUInt64 &>(*key0).getData();
             const auto & key1data = assert_cast<const ColumnUInt64 &>(*key1).getData();
