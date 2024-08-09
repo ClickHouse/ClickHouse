@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
+#include <Storages/MergeTree/VectorSimilarityCondition.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTIdentifier.h>
@@ -48,7 +49,6 @@
 #include <Functions/IFunction.h>
 
 #include <IO/WriteBufferFromOStream.h>
-#include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
 namespace CurrentMetrics
 {

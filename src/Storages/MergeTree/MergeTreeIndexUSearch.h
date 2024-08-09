@@ -5,7 +5,7 @@
 #if USE_USEARCH
 
 #include <Common/Logger.h>
-#include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
+#include <Storages/MergeTree/VectorSimilarityCondition.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpass-failed"
@@ -126,7 +126,7 @@ public:
     std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr granule) const override;
 
 private:
-    const ApproximateNearestNeighborCondition ann_condition;
+    const VectorSimilarityCondition vector_similarity_condition;
     const unum::usearch::metric_kind_t metric_kind;
 };
 

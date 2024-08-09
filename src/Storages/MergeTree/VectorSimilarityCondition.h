@@ -62,10 +62,10 @@ struct ApproximateNearestNeighborInformation
 /// - queryHasOrderByClause and queryHasWhereClause return true if query matches the type
 ///
 /// Search query type is also recognized for PREWHERE clause
-class ApproximateNearestNeighborCondition
+class VectorSimilarityCondition
 {
 public:
-    ApproximateNearestNeighborCondition(const SelectQueryInfo & query_info, ContextPtr context);
+    VectorSimilarityCondition(const SelectQueryInfo & query_info, ContextPtr context);
 
     /// Returns false if query can be speeded up by an ANN index, true otherwise.
     bool alwaysUnknownOrTrue(String distance_function) const;
