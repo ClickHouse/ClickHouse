@@ -95,7 +95,7 @@ public:
 class PrometheusRequestHandler::ImplWithContext : public Impl
 {
 public:
-    explicit ImplWithContext(PrometheusRequestHandler & parent) : Impl(parent), default_settings(parent.server.context()->getSettingsRef()) { }
+    explicit ImplWithContext(PrometheusRequestHandler & parent) : Impl(parent), default_settings(server().context()->getSettingsRef()) { }
 
     virtual void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
 
@@ -353,7 +353,7 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
 
-     setResponseDefaultHeaders(response);
+        setResponseDefaultHeaders(response);
 
         impl->beforeHandlingRequest(request);
         impl->handleRequest(request, response);
