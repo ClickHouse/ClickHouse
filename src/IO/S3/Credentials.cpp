@@ -145,12 +145,16 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentialsSecurely() const
 {
     String user_agent_string = awsComputeUserAgentString();
     auto [new_token, response_code] = getEC2MetadataToken(user_agent_string);
-    if (response_code == Aws::Http::HttpResponseCode::BAD_REQUEST)
+    if (response_code == Aws::Http::HttpResponseCode::BAD_REQUEST
+        || response_code == Aws::Http::HttpResponseCode::REQUEST_NOT_MADE)
+    {
+        /// At least the host should be available and reply, otherwise neither IMDSv2 nor IMDSv1 are usable.
         return {};
+    }
     else if (response_code != Aws::Http::HttpResponseCode::OK || new_token.empty())
     {
         LOG_TRACE(logger, "Calling EC2MetadataService to get token failed, "
-                  "falling back to less secure way. HTTP response code: {}", response_code);
+                  "falling back to a less secure way. HTTP response code: {}", response_code);
         return getDefaultCredentials();
     }
 
