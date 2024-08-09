@@ -22,7 +22,11 @@ class USearchIndexWithSerialization : public USearchIndex
     using Base = USearchIndex;
 
 public:
-    USearchIndexWithSerialization(size_t dimensions, unum::usearch::metric_kind_t metric_kind, unum::usearch::scalar_kind_t scalar_kind);
+    USearchIndexWithSerialization(
+        size_t dimensions,
+        unum::usearch::metric_kind_t metric_kind,
+        unum::usearch::scalar_kind_t scalar_kind);
+
     void serialize(WriteBuffer & ostr) const;
     void deserialize(ReadBuffer & istr);
 
@@ -47,8 +51,18 @@ using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSeriali
 
 struct MergeTreeIndexGranuleUSearch final : public IMergeTreeIndexGranule
 {
-    MergeTreeIndexGranuleUSearch(const String & index_name_, const Block & index_sample_block_, unum::usearch::metric_kind_t metric_kind, unum::usearch::scalar_kind_t scalar_kind_);
-    MergeTreeIndexGranuleUSearch(const String & index_name_, const Block & index_sample_block_, unum::usearch::metric_kind_t metric_kind, unum::usearch::scalar_kind_t scalar_kind_, USearchIndexWithSerializationPtr index_);
+    MergeTreeIndexGranuleUSearch(
+        const String & index_name_,
+        const Block & index_sample_block_,
+        unum::usearch::metric_kind_t metric_kind_,
+        unum::usearch::scalar_kind_t scalar_kind_);
+
+    MergeTreeIndexGranuleUSearch(
+        const String & index_name_,
+        const Block & index_sample_block_,
+        unum::usearch::metric_kind_t metric_kind_,
+        unum::usearch::scalar_kind_t scalar_kind_,
+        USearchIndexWithSerializationPtr index_);
 
     ~MergeTreeIndexGranuleUSearch() override = default;
 
@@ -76,7 +90,12 @@ private:
 
 struct MergeTreeIndexAggregatorUSearch final : IMergeTreeIndexAggregator
 {
-    MergeTreeIndexAggregatorUSearch(const String & index_name_, const Block & index_sample_block, unum::usearch::metric_kind_t metric_kind_, unum::usearch::scalar_kind_t scalar_kind_);
+    MergeTreeIndexAggregatorUSearch(
+        const String & index_name_,
+        const Block & index_sample_block,
+        unum::usearch::metric_kind_t metric_kind_,
+        unum::usearch::scalar_kind_t scalar_kind_);
+
     ~MergeTreeIndexAggregatorUSearch() override = default;
 
     bool empty() const override { return !index || index->size() == 0; }
@@ -103,8 +122,8 @@ public:
     ~MergeTreeIndexConditionUSearch() override = default;
 
     bool alwaysUnknownOrTrue() const override;
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
-    std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const override;
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const override;
+    std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr granule) const override;
 
 private:
     const ApproximateNearestNeighborCondition ann_condition;
@@ -115,7 +134,10 @@ private:
 class MergeTreeIndexUSearch : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexUSearch(const IndexDescription & index_, unum::usearch::metric_kind_t metric_kind_, unum::usearch::scalar_kind_t scalar_kind_);
+    MergeTreeIndexUSearch(
+        const IndexDescription & index_,
+        unum::usearch::metric_kind_t metric_kind_,
+        unum::usearch::scalar_kind_t scalar_kind_);
 
     ~MergeTreeIndexUSearch() override = default;
 
