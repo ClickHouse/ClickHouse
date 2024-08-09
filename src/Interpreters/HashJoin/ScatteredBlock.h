@@ -244,15 +244,7 @@ struct ScatteredBlock : private boost::noncopyable
 
         chassert(block);
 
-        LOG_DEBUG(&Poco::Logger::get("debug"), "selector=({})", fmt::join(selector, ","));
-
         auto && [first_num_rows, remaining_selector] = selector.split(num_rows);
-
-        LOG_DEBUG(
-            &Poco::Logger::get("debug"),
-            "first_num_rows=({}), remaining_selector=({})",
-            fmt::join(first_num_rows, ","),
-            fmt::join(remaining_selector, ","));
 
         auto remaining = ScatteredBlock{block, std::move(remaining_selector)};
 
@@ -283,7 +275,7 @@ struct ScatteredBlock : private boost::noncopyable
     }
 
 private:
-    Selector createTrivialSelector(size_t size) { return Selector(0, size - 1); }
+    Selector createTrivialSelector(size_t size) { return Selector(0, size); }
 
     Block block;
     Selector selector;
