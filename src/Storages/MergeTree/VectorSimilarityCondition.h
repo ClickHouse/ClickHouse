@@ -9,33 +9,6 @@
 namespace DB
 {
 
-/// Approximate Nearest Neighbour queries have a similar structure:
-/// - reference vector from which all distances are calculated
-/// - distance function, e.g L2Distance
-/// - name of column with embeddings
-/// - type of query
-/// - maximum number of returned elements (LIMIT)
-///
-/// And one optional parameter:
-/// - distance to compare with (only for where queries)
-///
-/// This struct holds all these components.
-struct ApproximateNearestNeighborInformation
-{
-    enum class DistanceFunction : uint8_t
-    {
-        Unknown,
-        L2
-    };
-
-    std::vector<Float32> reference_vector;
-    DistanceFunction distance_function;
-    String column_name;
-    UInt64 limit;
-    float distance = -1.0;
-};
-
-
 // Class ANNCondition, is responsible for recognizing if the query is an ANN queries which can utilize ANN indexes. It parses the SQL query
 /// and checks if it matches ANNIndexes. Method alwaysUnknownOrTrue returns false if we can speed up the query, and true otherwise. It has
 /// only one argument, the name of the distance function with which index was built. Two main patterns of queries are supported
@@ -67,13 +40,39 @@ class VectorSimilarityCondition
 public:
     VectorSimilarityCondition(const SelectQueryInfo & query_info, ContextPtr context);
 
+    /// Approximate Nearest Neighbour queries have a similar structure:
+    /// - reference vector from which all distances are calculated
+    /// - distance function, e.g L2Distance
+    /// - name of column with embeddings
+    /// - type of query
+    /// - maximum number of returned elements (LIMIT)
+    ///
+    /// And one optional parameter:
+    /// - distance to compare with (only for where queries)
+    ///
+    /// This struct holds all these components.
+    struct Info
+    {
+        enum class DistanceFunction : uint8_t
+        {
+            Unknown,
+            L2
+        };
+
+        std::vector<Float32> reference_vector;
+        DistanceFunction distance_function;
+        String column_name;
+        UInt64 limit;
+        float distance = -1.0;
+    };
+
     /// Returns false if query can be speeded up by an ANN index, true otherwise.
     bool alwaysUnknownOrTrue(String distance_function) const;
 
     std::vector<float> getReferenceVector() const;
     size_t getDimensions() const;
     String getColumnName() const;
-    ApproximateNearestNeighborInformation::DistanceFunction getDistanceFunction() const;
+    Info::DistanceFunction getDistanceFunction() const;
     UInt64 getIndexGranularity() const { return index_granularity; }
     UInt64 getLimit() const;
 
@@ -142,16 +141,16 @@ private:
     void traverseOrderByAST(const ASTPtr & node, RPN & rpn);
 
     /// Returns true and stores ANNExpr if the query has valid WHERE section
-    static bool matchRPNWhere(RPN & rpn, ApproximateNearestNeighborInformation & info);
+    static bool matchRPNWhere(RPN & rpn, Info & info);
 
     /// Returns true and stores ANNExpr if the query has valid ORDERBY section
-    static bool matchRPNOrderBy(RPN & rpn, ApproximateNearestNeighborInformation & info);
+    static bool matchRPNOrderBy(RPN & rpn, Info & info);
 
     /// Returns true and stores Length if we have valid LIMIT clause in query
     static bool matchRPNLimit(RPNElement & rpn, UInt64 & limit);
 
     /// Matches dist function, reference vector, column name
-    static bool matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ApproximateNearestNeighborInformation & info);
+    static bool matchMainParts(RPN::iterator & iter, const RPN::iterator & end, Info & info);
 
     /// Gets float or int from AST node
     static float getFloatOrIntLiteralOrPanic(const RPN::iterator& iter);
@@ -159,7 +158,7 @@ private:
     Block block_with_constants;
 
     /// true if we have one of two supported query types
-    std::optional<ApproximateNearestNeighborInformation> query_information;
+    std::optional<Info> query_information;
 
     // Get from settings ANNIndex parameters
     const UInt64 index_granularity;

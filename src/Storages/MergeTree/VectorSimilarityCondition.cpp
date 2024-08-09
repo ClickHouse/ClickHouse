@@ -40,12 +40,12 @@ void extractReferenceVectorFromLiteral(std::vector<Float32> & reference_vector, 
     }
 }
 
-ApproximateNearestNeighborInformation::DistanceFunction stringToDistanceFunction(std::string_view distance_function)
+VectorSimilarityCondition::Info::DistanceFunction stringToDistanceFunction(std::string_view distance_function)
 {
     if (distance_function == "L2Distance")
-        return ApproximateNearestNeighborInformation::DistanceFunction::L2;
+        return VectorSimilarityCondition::Info::DistanceFunction::L2;
     else
-        return ApproximateNearestNeighborInformation::DistanceFunction::Unknown;
+        return VectorSimilarityCondition::Info::DistanceFunction::Unknown;
 }
 
 }
@@ -93,7 +93,7 @@ String VectorSimilarityCondition::getColumnName() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name was requested for useless or uninitialized index.");
 }
 
-ApproximateNearestNeighborInformation::DistanceFunction VectorSimilarityCondition::getDistanceFunction() const
+VectorSimilarityCondition::Info::DistanceFunction VectorSimilarityCondition::getDistanceFunction() const
 {
     if (index_is_useful && query_information.has_value())
         return query_information->distance_function;
@@ -102,7 +102,7 @@ ApproximateNearestNeighborInformation::DistanceFunction VectorSimilarityConditio
 
 bool VectorSimilarityCondition::checkQueryStructure(const SelectQueryInfo & query)
 {
-    ApproximateNearestNeighborInformation order_by_info;
+    Info order_by_info;
 
     /// Build rpns for query sections
     const auto & select = query.query->as<ASTSelectQuery &>();
@@ -251,7 +251,7 @@ void VectorSimilarityCondition::traverseOrderByAST(const ASTPtr & node, RPN & rp
 }
 
 /// Returns true and stores ANNExpr if the query has valid ORDERBY clause
-bool VectorSimilarityCondition::matchRPNOrderBy(RPN & rpn, ApproximateNearestNeighborInformation & info)
+bool VectorSimilarityCondition::matchRPNOrderBy(RPN & rpn, Info & info)
 {
     /// ORDER BY clause must have at least 3 expressions
     if (rpn.size() < 3)
