@@ -148,7 +148,14 @@ void KeeperDispatcher::requestThread()
                 Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
                 if (configuration_and_settings->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
                 {
-                    LOG_WARNING(log, "Processing requests refused because of max_memory_usage_soft_limit {}, the total used memory is {}, request type is {}", ReadableSize(mem_soft_limit), ReadableSize(total_memory_tracker.get()), request.request->getOpNum());
+                    LOG_WARNING(
+                        log,
+                        "Processing requests refused because of max_memory_usage_soft_limit {}, the total allocated memory is {}, RSS is {}, request type "
+                        "is {}",
+                        ReadableSize(mem_soft_limit),
+                        ReadableSize(total_memory_tracker.get()),
+                        ReadableSize(total_memory_tracker.getRSS()),
+                        request.request->getOpNum());
                     addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
                     continue;
                 }
