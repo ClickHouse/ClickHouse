@@ -231,11 +231,6 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
 MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
 void hypothesisIndexValidator(const IndexDescription & index, bool attach);
 
-#if USE_ANNOY
-MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index);
-void annoyIndexValidator(const IndexDescription & index, bool attach);
-#endif
-
 #if USE_USEARCH
 MergeTreeIndexPtr usearchIndexCreator(const IndexDescription& index);
 void usearchIndexValidator(const IndexDescription& index, bool attach);

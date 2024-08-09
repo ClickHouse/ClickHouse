@@ -205,7 +205,6 @@ add_contrib (morton-nd-cmake morton-nd)
 if (ARCH_S390X)
     add_contrib(crc32-s390x-cmake crc32-s390x)
 endif()
-add_contrib (annoy-cmake annoy)
 
 option(ENABLE_USEARCH "Enable USearch" ${ENABLE_LIBRARIES})
 if (ENABLE_USEARCH)

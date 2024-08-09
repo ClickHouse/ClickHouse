@@ -58,7 +58,6 @@
 #cmakedefine01 USE_FILELOG
 #cmakedefine01 USE_ODBC
 #cmakedefine01 USE_BLAKE3
-#cmakedefine01 USE_ANNOY
 #cmakedefine01 USE_USEARCH
 #cmakedefine01 USE_SKIM
 #cmakedefine01 USE_PRQL
