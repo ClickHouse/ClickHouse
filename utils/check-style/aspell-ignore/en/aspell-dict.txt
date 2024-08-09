@@ -1674,6 +1674,7 @@ fuzzQuery
 fuzzer
 fuzzers
 gRPC
+gaugehistogram
 gccMurmurHash
 gcem
 generateRandom
@@ -2558,6 +2559,7 @@ startsWithUTF
 startswith
 statbox
 stateful
+stateset
 stddev
 stddevPop
 stddevPopStable
@@ -2689,6 +2691,10 @@ themself
 threadpool
 throwIf
 timeDiff
+TimeSeries
+timeSeriesData
+timeSeriesMetrics
+timeSeriesTags
 timeSlot
 timeSlots
 timeZone
