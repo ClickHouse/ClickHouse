@@ -119,7 +119,23 @@ void IdentifierResolveScope::popExpressionNode()
 /// Dump identifier resolve scope
 [[maybe_unused]] void IdentifierResolveScope::dump(WriteBuffer & buffer) const
 {
-    buffer << "Scope node " << scope_node->formatASTForErrorMessage() << '\n';
+    buffer << "Scope node " << scope_node->formatConvertedASTForErrorMessage() << '\n';
+
+    if (auto* query = scope_node->as<QueryNode>())
+    {
+        buffer << "Table expression data: ";
+        auto it = table_expression_node_to_data.find(scope_node);
+        if (it != table_expression_node_to_data.end())
+        {
+            buffer << it->second.dump();
+        }
+        else
+        {
+            buffer << "Not initialized";
+        }
+        buffer << '\n';
+    }
+
     buffer << "Identifier lookup to resolve state " << identifier_lookup_to_resolve_state.size() << '\n';
     for (const auto & [identifier, state] : identifier_lookup_to_resolve_state)
     {

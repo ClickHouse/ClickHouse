@@ -75,6 +75,25 @@ DROP TABLE IF EXISTS trace_log;
 
 SYSTEM FLUSH LOGS;
 
+WITH
+    (
+        SELECT query_start_time_microseconds
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+        ORDER BY query_start_time DESC
+        LIMIT 1
+    ) AS time_with_microseconds,
+    (
+        SELECT
+            inf,
+            query_start_time
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+        ORDER BY query_start_time DESC
+        LIMIT 1
+    ) AS t
+SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = -9223372036854775808, 'ok', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 WITH (
     (
         SELECT query_start_time_microseconds
@@ -92,7 +111,8 @@ WITH (
         ORDER BY query_start_time DESC
         LIMIT 1
     ) AS t)
-SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = -9223372036854775808, 'ok', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = -9223372036854775808, 'ok', '')
+SETTINGS allow_experimental_analyzer = 1; -- { serverError ALIAS_REQUIRED }
 
 WITH (
     (

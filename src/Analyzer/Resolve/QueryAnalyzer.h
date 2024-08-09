@@ -169,11 +169,11 @@ private:
 
     /// Resolve identifier functions
 
-    QueryTreeNodePtr tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup,
+    IdentifierResolveResult tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup,
         IdentifierResolveScope & scope,
         IdentifierResolveSettings identifier_resolve_settings);
 
-    IdentifierResolveResult tryResolveIdentifierInParentScopes(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
+    IdentifierResolveResult tryResolveIdentifierInParentScopes(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, const IdentifierResolveSettings identifier_resolve_settings);
 
     IdentifierResolveResult tryResolveIdentifier(const IdentifierLookup & identifier_lookup,
         IdentifierResolveScope & scope,
