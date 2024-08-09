@@ -45,7 +45,7 @@ struct MergeTreeIndexGranuleUSearch final : public IMergeTreeIndexGranule
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return !index.get(); }
+    bool empty() const override { return !index || index->size() == 0; }
 
     const String index_name;
     const Block index_sample_block;
