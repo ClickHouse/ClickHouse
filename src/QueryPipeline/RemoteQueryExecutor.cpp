@@ -6,6 +6,7 @@
 #include <Common/CurrentThread.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
+#include <Core/Settings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
