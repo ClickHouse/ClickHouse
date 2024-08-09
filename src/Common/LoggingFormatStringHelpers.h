@@ -2,24 +2,17 @@
 
 #include <base/defines.h>
 #include <base/types.h>
-#include <fmt/args.h>
-#include <fmt/core.h>
 #include <fmt/format.h>
 #include <mutex>
-#include <type_traits>
 #include <unordered_map>
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 #include <base/EnumReflection.h>
-#include <Common/Logger.h>
+
 
 struct PreformattedMessage;
 consteval void formatStringCheckArgsNumImpl(std::string_view str, size_t nargs);
 template <typename T> constexpr std::string_view tryGetStaticFormatString(T && x);
-
-[[maybe_unused]] inline void tryGetFormattedArgs(std::vector<std::string>&) {};
-template <typename T, typename... Ts> [[maybe_unused]] inline void tryGetFormattedArgs(std::vector<std::string>&, T &&, Ts && ...);
-template <typename... Args> inline std::string tryGetArgsAndFormat(std::vector<std::string>&, fmt::format_string<Args...>, Args && ...);
 
 /// Extract format string from a string literal and constructs consteval fmt::format_string
 template <typename... Args>
@@ -28,12 +21,12 @@ struct FormatStringHelperImpl
     std::string_view message_format_string;
     fmt::format_string<Args...> fmt_str;
     template<typename T>
-    consteval FormatStringHelperImpl(T && str) : message_format_string(tryGetStaticFormatString(str)), fmt_str(std::forward<T>(str)) /// NOLINT
+    consteval FormatStringHelperImpl(T && str) : message_format_string(tryGetStaticFormatString(str)), fmt_str(std::forward<T>(str))
     {
         formatStringCheckArgsNumImpl(message_format_string, sizeof...(Args));
     }
     template<typename T>
-    FormatStringHelperImpl(fmt::basic_runtime<T> && str) : fmt_str(std::forward<fmt::basic_runtime<T>>(str)) {} /// NOLINT
+    FormatStringHelperImpl(fmt::basic_runtime<T> && str) : message_format_string(), fmt_str(std::forward<fmt::basic_runtime<T>>(str)) {}
 
     PreformattedMessage format(Args && ...args) const;
 };
@@ -46,35 +39,30 @@ struct PreformattedMessage
 {
     std::string text;
     std::string_view format_string;
-    std::vector<std::string> format_string_args;
 
     template <typename... Args>
     static PreformattedMessage create(FormatStringHelper<Args...> fmt, Args &&... args);
 
-    operator const std::string & () const { return text; } /// NOLINT
-    operator std::string () && { return std::move(text); } /// NOLINT
-    operator fmt::format_string<> () const { UNREACHABLE(); } /// NOLINT
+    operator const std::string & () const { return text; }
+    operator std::string () && { return std::move(text); }
+    operator fmt::format_string<> () const { UNREACHABLE(); }
 
-    void apply(std::string & out_text, std::string_view & out_format_string, std::vector<std::string> & out_format_string_args) const &
+    void apply(std::string & out_text, std::string_view & out_format_string) const &
     {
         out_text = text;
         out_format_string = format_string;
-        out_format_string_args = format_string_args;
     }
-    void apply(std::string & out_text, std::string_view & out_format_string, std::vector<std::string> & out_format_string_args) &&
+    void apply(std::string & out_text, std::string_view & out_format_string) &&
     {
         out_text = std::move(text);
         out_format_string = format_string;
-        out_format_string_args = std::move(format_string_args);
     }
 };
 
 template <typename... Args>
 PreformattedMessage FormatStringHelperImpl<Args...>::format(Args && ...args) const
 {
-    std::vector<std::string> out_format_string_args;
-    std::string msg_text = tryGetArgsAndFormat(out_format_string_args, fmt_str, std::forward<Args>(args)...);
-    return PreformattedMessage{.text = msg_text, .format_string = message_format_string, .format_string_args = out_format_string_args};
+    return PreformattedMessage{fmt::format(fmt_str, std::forward<Args>(args)...), message_format_string};
 }
 
 template <typename... Args>
@@ -118,21 +106,11 @@ template <typename T> constexpr std::string_view tryGetStaticFormatString(T && x
             /// Most likely it was a string literal.
             /// Unfortunately, there's no good way to check if something is a string literal.
             /// But fmtlib requires a format string to be compile-time constant unless fmt::runtime is used.
-            static_assert(std::is_nothrow_convertible_v<T, const char * const>);
-            static_assert(!std::is_pointer_v<T>);
+            static_assert(std::is_nothrow_convertible<T, const char * const>::value);
+            static_assert(!std::is_pointer<T>::value);
             return std::string_view(x);
         }
     }
-}
-
-template <typename T, typename... Ts> void tryGetFormattedArgs(std::vector<std::string>& out, T && x, Ts && ...rest)
-{
-    if constexpr (std::is_base_of_v<fmt::detail::view, std::decay_t<T>>)
-        out.push_back(fmt::format("{}", std::remove_reference_t<T>(x)));
-    else
-        out.push_back(fmt::format("{}", std::forward<T>(x)));
-
-    tryGetFormattedArgs(out, std::forward<Ts>(rest)...);
 }
 
 /// Constexpr ifs are not like ifdefs, and compiler still checks that unneeded code can be compiled
@@ -141,7 +119,6 @@ template<bool enable> struct ConstexprIfsAreNotIfdefs
 {
     template <typename T> constexpr static std::string_view getStaticFormatString(T &&) { return {}; }
     template <typename T> static PreformattedMessage getPreformatted(T &&) { return {}; }
-    template <typename... Args> static std::string getArgsAndFormat(std::vector<std::string>&, fmt::format_string<Args...>, Args &&...) { return {}; }
 };
 
 template<> struct ConstexprIfsAreNotIfdefs<true>
@@ -150,24 +127,13 @@ template<> struct ConstexprIfsAreNotIfdefs<true>
     {
         /// See tryGetStaticFormatString(...)
         static_assert(!std::is_same_v<std::string, std::decay_t<T>>);
-        static_assert(std::is_nothrow_convertible_v<T, const char * const>);
-        static_assert(!std::is_pointer_v<T>);
+        static_assert(std::is_nothrow_convertible<T, const char * const>::value);
+        static_assert(!std::is_pointer<T>::value);
         return std::string_view(x);
     }
 
     template <typename T> static T && getPreformatted(T && x) { return std::forward<T>(x); }
-
-    template <typename... Args> static std::string getArgsAndFormat(std::vector<std::string>& out, fmt::format_string<Args...> fmt_str, Args && ...args)
-    {
-        return tryGetArgsAndFormat(out, std::move(fmt_str), std::forward<Args>(args)...);
-    }
 };
-
-template <typename... Args> inline std::string tryGetArgsAndFormat(std::vector<std::string>& out, fmt::format_string<Args...> fmt_str, Args && ...args)
-{
-    tryGetFormattedArgs(out, args...);
-    return fmt::format(fmt_str, std::forward<Args>(args)...);
-}
 
 template <typename... Ts> constexpr size_t numArgs(Ts &&...) { return sizeof...(Ts); }
 template <typename T, typename... Ts> constexpr auto firstArg(T && x, Ts &&...) { return std::forward<T>(x); }
@@ -237,10 +203,10 @@ class LogFrequencyLimiterIml
     static time_t last_cleanup;
     static std::mutex mutex;
 
-    LoggerPtr logger;
+    Poco::Logger * logger;
     time_t min_interval_s;
 public:
-    LogFrequencyLimiterIml(LoggerPtr logger_, time_t min_interval_s_) : logger(std::move(logger_)), min_interval_s(min_interval_s_) {}
+    LogFrequencyLimiterIml(Poco::Logger * logger_, time_t min_interval_s_) : logger(logger_), min_interval_s(min_interval_s_) {}
 
     LogFrequencyLimiterIml & operator -> () { return *this; }
     bool is(Poco::Message::Priority priority) { return logger->is(priority); }
@@ -252,7 +218,7 @@ public:
     /// Clears messages that were logged last time more than too_old_threshold_s seconds ago
     static void cleanup(time_t too_old_threshold_s = 600);
 
-    LoggerPtr getLogger() { return logger; }
+    Poco::Logger * getLogger() { return logger; }
 };
 
 /// This wrapper helps to avoid too noisy log messages from similar objects.
@@ -274,11 +240,11 @@ class LogSeriesLimiter
         return records;
     }
 
-    LoggerPtr logger = nullptr;
+    Poco::Logger * logger = nullptr;
     bool accepted = false;
     String debug_message;
 public:
-    LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, time_t interval_s_);
+    LogSeriesLimiter(Poco::Logger * logger_, size_t allowed_count_, time_t interval_s_);
 
     LogSeriesLimiter & operator -> () { return *this; }
     bool is(Poco::Message::Priority priority) { return logger->is(priority); }
@@ -287,18 +253,18 @@ public:
 
     void log(Poco::Message & message);
 
-    LoggerPtr getLogger() { return logger; }
+    Poco::Logger * getLogger() { return logger; }
 };
 
 /// This wrapper is useful to save formatted message into a String before sending it to a logger
 class LogToStrImpl
 {
     String & out_str;
-    LoggerPtr logger;
+    Poco::Logger * logger;
     std::unique_ptr<LogFrequencyLimiterIml> maybe_nested;
     bool propagate_to_actual_log = true;
 public:
-    LogToStrImpl(String & out_str_, LoggerPtr logger_) : out_str(out_str_), logger(std::move(logger_)) {}
+    LogToStrImpl(String & out_str_, Poco::Logger * logger_) : out_str(out_str_), logger(logger_) {}
     LogToStrImpl(String & out_str_, std::unique_ptr<LogFrequencyLimiterIml> && maybe_nested_)
         : out_str(out_str_), logger(maybe_nested_->getLogger()), maybe_nested(std::move(maybe_nested_)) {}
     LogToStrImpl & operator -> () { return *this; }

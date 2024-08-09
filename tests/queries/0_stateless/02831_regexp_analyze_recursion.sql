@@ -1,1 +1,1 @@
-SELECT match('', repeat('(', 100000)); -- { serverError CANNOT_COMPILE_REGEXP }
+SELECT match('', repeat('(', 100000)); -- { serverError 427 }

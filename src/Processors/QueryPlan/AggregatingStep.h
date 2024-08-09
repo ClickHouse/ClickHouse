@@ -59,7 +59,6 @@ public:
     const Aggregator::Params & getParams() const { return params; }
 
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
-    bool isGroupByUseNulls() const { return group_by_use_nulls; }
 
     bool inOrder() const { return !sort_description_for_merging.empty(); }
     bool explicitSortingRequired() const { return explicit_sorting_required_for_aggregation_in_order; }
@@ -92,7 +91,7 @@ private:
     bool storage_has_evenly_distributed_read;
     bool group_by_use_nulls;
 
-    /// Both sort descriptions are needed for aggregate-in-order optimization.
+    /// Both sort descriptions are needed for aggregate-in-order optimisation.
     /// Both sort descriptions are subset of GROUP BY key columns (or monotonic functions over it).
     /// Sort description for merging is a sort description for input and a prefix of group_by_sort_description.
     /// group_by_sort_description contains all GROUP BY keys and is used for final merging of aggregated data.

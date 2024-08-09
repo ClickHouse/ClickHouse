@@ -4,7 +4,15 @@
 #include <limits>
 
 #include <base/extended_types.h>
-#include <base/defines.h>
+
+// Also defined in Core/Defines.h
+#if !defined(NO_SANITIZE_UNDEFINED)
+#if defined(__clang__)
+    #define NO_SANITIZE_UNDEFINED __attribute__((__no_sanitize__("undefined")))
+#else
+    #define NO_SANITIZE_UNDEFINED
+#endif
+#endif
 
 
 /// On overflow, the function returns unspecified value.
@@ -13,7 +21,7 @@ inline NO_SANITIZE_UNDEFINED uint64_t intExp2(int x)
     return 1ULL << x;
 }
 
-constexpr uint64_t intExp10(int x)
+constexpr inline uint64_t intExp10(int x)
 {
     if (x < 0)
         return 0;
@@ -37,7 +45,7 @@ constexpr uint64_t intExp10(int x)
 namespace common
 {
 
-constexpr int exp10_i32(int x)
+constexpr inline int exp10_i32(int x)
 {
     if (x < 0)
         return 0;
@@ -60,7 +68,7 @@ constexpr int exp10_i32(int x)
     return values[x];
 }
 
-constexpr int64_t exp10_i64(int x)
+constexpr inline int64_t exp10_i64(int x)
 {
     if (x < 0)
         return 0;
@@ -92,7 +100,7 @@ constexpr int64_t exp10_i64(int x)
     return values[x];
 }
 
-constexpr Int128 exp10_i128(int x)
+constexpr inline Int128 exp10_i128(int x)
 {
     if (x < 0)
         return 0;
@@ -241,7 +249,7 @@ inline Int256 exp10_i256(int x)
 
 /// intExp10 returning the type T.
 template <typename T>
-constexpr T intExp10OfSize(int x)
+constexpr inline T intExp10OfSize(int x)
 {
     if constexpr (sizeof(T) <= 4)
         return static_cast<T>(common::exp10_i32(x));

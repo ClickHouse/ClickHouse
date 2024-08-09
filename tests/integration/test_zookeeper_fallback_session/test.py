@@ -45,13 +45,14 @@ def started_cluster():
 
 def assert_uses_zk_node(node: ClickHouseInstance, zk_node):
     def check_callback(host):
-        return host.strip() == zk_node
+        return host.strip() == expected_zk_ip_addr
 
-    # We don't convert the column 'host' of system.zookeeper_connection to ip address any more.
+    expected_zk_ip_addr = node.cluster.get_instance_ip(zk_node)
+
     host = node.query_with_retry(
         "select host from system.zookeeper_connection", check_callback=check_callback
     )
-    assert host.strip() == zk_node
+    assert host.strip() == expected_zk_ip_addr
 
 
 def test_fallback_session(started_cluster: ClickHouseCluster):
@@ -84,28 +85,10 @@ def test_fallback_session(started_cluster: ClickHouseCluster):
             )
 
     # at this point network partitioning has been reverted.
-    # the nodes should switch to zoo1 because of `in_order` load-balancing.
+    # the nodes should switch to zoo1 automatically because of `in_order` load-balancing.
     # otherwise they would connect to a random replica
-
-    # but there's no reason to reconnect because current session works
-    # and there's no "optimal" node with `in_order` load-balancing
-    # so we need to break the current session
-
     for node in [node1, node2, node3]:
-        assert_uses_zk_node(node, "zoo3")
-
-    with PartitionManager() as pm:
-        for node in started_cluster.instances.values():
-            pm._add_rule(
-                {
-                    "source": node.ip_address,
-                    "destination": cluster.get_instance_ip("zoo3"),
-                    "action": "REJECT --reject-with tcp-reset",
-                }
-            )
-
-        for node in [node1, node2, node3]:
-            assert_uses_zk_node(node, "zoo1")
+        assert_uses_zk_node(node, "zoo1")
 
     node1.query_with_retry("INSERT INTO simple VALUES ({0}, {0})".format(2))
     for node in [node2, node3]:

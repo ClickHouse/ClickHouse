@@ -16,13 +16,8 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
-# shellcheck source=../stateless/attach_gdb.lib
-source /attach_gdb.lib
-# shellcheck source=../stateless/stress_tests.lib
-source /stress_tests.lib
-
-# shellcheck disable=SC1091
-source /utils.lib
+source /usr/share/clickhouse-test/ci/attach_gdb.lib
+source /usr/share/clickhouse-test/ci/stress_tests.lib
 
 install_packages package_folder
 
@@ -30,7 +25,7 @@ install_packages package_folder
 # and find more potential issues.
 export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
 export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
-export THREAD_FUZZER_SLEEP_TIME_US_MAX=100000
+export THREAD_FUZZER_SLEEP_TIME_US=100000
 
 export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
 export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
@@ -41,11 +36,11 @@ export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
 export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
 export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
 export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX=10000
+export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
 
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX=10000
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX=10000
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX=10000
+export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
+export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
+export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
 
 export THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY=0.01
 export THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY=0.01
@@ -55,72 +50,28 @@ export ZOOKEEPER_FAULT_INJECTION=1
 # available for dump via clickhouse-local
 configure
 
+azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateless # to have a proper environment
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
-start_server
+start
 
 setup_logs_replication
 
-clickhouse-client --query "CREATE DATABASE datasets"
-clickhouse-client --multiquery < create.sql
-clickhouse-client --query "SHOW TABLES FROM datasets"
-
+# shellcheck disable=SC2086 # No quotes because I want to split it into words.
+/s3downloader --url-prefix "$S3_URL" --dataset-names $DATASETS
+chmod 777 -R /var/lib/clickhouse
+clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordinary"
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
 
-stop_server
+stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
 
-# Randomize cache policies.
-cache_policy=""
-if [ $((RANDOM % 2)) -eq 1 ]; then
-    cache_policy="SLRU"
-else
-    cache_policy="LRU"
-fi
-
-echo "Using cache policy: $cache_policy"
-
-if [ "$cache_policy" = "SLRU" ]; then
-    sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
-    | sed "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" \
-    > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
-    mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
-fi
-
-# Disable experimental WINDOW VIEW tests for stress tests, since they may be
-# created with old analyzer and then, after server restart it will refuse to
-# start.
-# FIXME: remove once the support for WINDOW VIEW will be implemented in analyzer.
-sudo cat /etc/clickhouse-server/users.d/stress_tests_overrides.xml <<EOL
-<clickhouse>
-    <profiles>
-        <default>
-            <allow_experimental_window_view>false</allow_experimental_window_view>
-            <constraints>
-               <allow_experimental_window_view>
-                   <readonly/>
-               </allow_experimental_window_view>
-            </constraints>
-        </default>
-    </profiles>
-</clickhouse>
-EOL
-
-start_server
+start
 
 clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM test"
-
-if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
-    TEMP_POLICY="s3_cache"
-elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
-    TEMP_POLICY="azure_cache"
-else
-    TEMP_POLICY="default"
-fi
-
 
 clickhouse-client --query "CREATE TABLE test.hits_s3 (WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,
     EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,
@@ -147,7 +98,7 @@ clickhouse-client --query "CREATE TABLE test.hits_s3 (WatchID UInt64,  JavaEnabl
     URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,
     ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64),
     IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8) ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate)
-    ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='$TEMP_POLICY'"
+    ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='s3_cache'"
 clickhouse-client --query "CREATE TABLE test.hits (WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,
     EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,
     UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,
@@ -173,7 +124,7 @@ clickhouse-client --query "CREATE TABLE test.hits (WatchID UInt64,  JavaEnable U
     URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,
     ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64),
     IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8) ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate)
-    ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='$TEMP_POLICY'"
+    ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='s3_cache'"
 clickhouse-client --query "CREATE TABLE test.visits (CounterID UInt32,  StartDate Date,  Sign Int8,  IsNew UInt8,
     VisitID UInt64,  UserID UInt64,  StartTime DateTime,  Duration UInt32,  UTCStartTime DateTime,  PageViews Int32,
     Hits Int32,  IsBounce UInt8,  Referer String,  StartURL String,  RefererDomain String,  StartURLDomain String,
@@ -207,11 +158,11 @@ clickhouse-client --query "CREATE TABLE test.visits (CounterID UInt32,  StartDat
     Market Nested(Type UInt8, GoalID UInt32, OrderID String,  OrderPrice Int64,  PP UInt32,  DirectPlaceID UInt32,  DirectOrderID  UInt32,
     DirectBannerID UInt32,  GoodID String, GoodName String, GoodQuantity Int32,  GoodPrice Int64),  IslandID FixedString(16))
     ENGINE = CollapsingMergeTree(Sign) PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
-    SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='$TEMP_POLICY'"
+    SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='s3_cache'"
 
-clickhouse-client --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-clickhouse-client --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-clickhouse-client --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+clickhouse-client --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0"
+clickhouse-client --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0"
+clickhouse-client --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0"
 
 clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
 clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
@@ -220,52 +171,27 @@ clickhouse-client --query "SHOW TABLES FROM test"
 
 clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
 
-stop_server
+stop
 
 # Let's enable S3 storage by default
-export RANDOMIZE_OBJECT_KEY_TYPE=1
+export USE_S3_STORAGE_FOR_MERGE_TREE=1
 export ZOOKEEPER_FAULT_INJECTION=1
-export THREAD_POOL_FAULT_INJECTION=1
 configure
 
-if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
-    # But we still need default disk because some tables loaded only into it
-    sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
-      | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" \
-      > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
-    mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
-    sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
-    sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
-elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
-    # But we still need default disk because some tables loaded only into it
-    sudo cat /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml \
-      | sed "s|<main><disk>azure</disk></main>|<main><disk>azure</disk></main><default><disk>default</disk></default>|" \
-      > /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml.tmp
-    mv /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml
-    sudo chown clickhouse /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml
-    sudo chgrp clickhouse /etc/clickhouse-server/config.d/azure_storage_policy_by_default.xml
-fi
-
+# But we still need default disk because some tables loaded only into it
+sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
+  | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" \
+  > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
+mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
 sudo cat /etc/clickhouse-server/config.d/logger_trace.xml \
    | sed "s|<level>trace</level>|<level>test</level>|" \
    > /etc/clickhouse-server/config.d/logger_trace.xml.tmp
 mv /etc/clickhouse-server/config.d/logger_trace.xml.tmp /etc/clickhouse-server/config.d/logger_trace.xml
 
-if [ "$cache_policy" = "SLRU" ]; then
-    sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
-    | sed "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" \
-    > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
-    mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
-fi
-
-# Randomize async_load_databases
-if [ $(( $(date +%-d) % 2 )) -eq 1 ]; then
-    sudo echo "<clickhouse><async_load_databases>true</async_load_databases></clickhouse>" \
-        > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
-fi
-
-start_server
+start
 
 stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
@@ -275,18 +201,18 @@ stress --hung-check --drop-databases --output-folder test_output --skip-func-tes
 rg -Fa "No queries hung" /test_output/test_results.tsv | grep -Fa "OK" \
   || echo -e "Hung check failed, possible deadlock found (see hung_check.log)$FAIL$(head_escaped /test_output/hung_check.log)" >> /test_output/test_results.tsv
 
-stop_server
+stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
 
 # NOTE Disable thread fuzzer before server start with data after stress test.
 # In debug build it can take a lot of time.
 unset "${!THREAD_@}"
 
-start_server
+start
 
 check_server_start
 
-stop_server
+stop
 
 [ -f /var/log/clickhouse-server/clickhouse-server.log ] || echo -e "Server log does not exist\tFAIL"
 [ -f /var/log/clickhouse-server/stderr.log ] || echo -e "Stderr log does not exist\tFAIL"
@@ -315,7 +241,7 @@ clickhouse-local --structure "test String, res String, time Nullable(Float32), d
 (test like '%Signal 9%') DESC,
 (test like '%Fatal message%') DESC,
 rowNumberInAllBlocks()
-LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo -e "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
+LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
 # But OOMs in stress test are allowed

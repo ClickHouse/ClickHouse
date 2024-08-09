@@ -6,7 +6,7 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <Core/UUID.h>
 #include <memory>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -16,13 +16,21 @@ namespace DB
 
 struct HDFSObjectStorageSettings
 {
-    HDFSObjectStorageSettings(int min_bytes_for_seek_, int replication_)
-        : min_bytes_for_seek(min_bytes_for_seek_)
-        , replication(replication_)
-    {}
+
+    HDFSObjectStorageSettings() = default;
 
     size_t min_bytes_for_seek;
+    int objects_chunk_size_to_delete;
     int replication;
+
+    HDFSObjectStorageSettings(
+            int min_bytes_for_seek_,
+            int objects_chunk_size_to_delete_,
+            int replication_)
+        : min_bytes_for_seek(min_bytes_for_seek_)
+        , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
+        , replication(replication_)
+    {}
 };
 
 
@@ -35,31 +43,24 @@ public:
     HDFSObjectStorage(
         const String & hdfs_root_path_,
         SettingsPtr settings_,
-        const Poco::Util::AbstractConfiguration & config_,
-        bool lazy_initialize)
+        const Poco::Util::AbstractConfiguration & config_)
         : config(config_)
+        , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
+        , hdfs_fs(createHDFSFS(hdfs_builder.get()))
         , settings(std::move(settings_))
-        , log(getLogger("HDFSObjectStorage(" + hdfs_root_path_ + ")"))
     {
-        const size_t begin_of_path = hdfs_root_path_.find('/', hdfs_root_path_.find("//") + 2);
-        url = hdfs_root_path_;
-        url_without_path = url.substr(0, begin_of_path);
-        if (begin_of_path < url.size())
-            data_directory = url.substr(begin_of_path);
-        else
-            data_directory = "/";
-
-        if (!lazy_initialize)
-            initializeHDFSFS();
+        data_source_description.type = DataSourceType::HDFS;
+        data_source_description.description = hdfs_root_path_;
+        data_source_description.is_cached = false;
+        data_source_description.is_encrypted = false;
     }
 
     std::string getName() const override { return "HDFSObjectStorage"; }
 
-    std::string getCommonKeyPrefix() const override { return url; }
-
-    std::string getDescription() const override { return url; }
-
-    ObjectStorageType getType() const override { return ObjectStorageType::HDFS; }
+    DataSourceDescription getDataSourceDescription() const override
+    {
+        return data_source_description;
+    }
 
     bool exists(const StoredObject & object) const override;
 
@@ -97,11 +98,11 @@ public:
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
-    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
+    void shutdown() override;
+
+    void startup() override;
 
     String getObjectsNamespace() const override { return ""; }
 
@@ -111,32 +112,19 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
+    std::string generateBlobNameForPath(const std::string & path) override;
 
     bool isRemote() const override { return true; }
 
-    void startup() override { }
-
-    void shutdown() override { }
-
 private:
-    void initializeHDFSFS() const;
-    std::string extractObjectKeyFromURL(const StoredObject & object) const;
-
     const Poco::Util::AbstractConfiguration & config;
 
-    mutable HDFSBuilderWrapper hdfs_builder;
-    mutable HDFSFSPtr hdfs_fs;
-
-    mutable std::mutex init_mutex;
-    mutable std::atomic_bool initialized{false};
+    HDFSBuilderWrapper hdfs_builder;
+    HDFSFSPtr hdfs_fs;
 
     SettingsPtr settings;
-    std::string url;
-    std::string url_without_path;
-    std::string data_directory;
 
-    LoggerPtr log;
+    DataSourceDescription data_source_description;
 };
 
 }

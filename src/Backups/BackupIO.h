@@ -9,7 +9,7 @@ class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class SeekableReadBuffer;
 class WriteBuffer;
-enum class WriteMode : uint8_t;
+enum class WriteMode;
 struct WriteSettings;
 struct ReadSettings;
 
@@ -60,8 +60,6 @@ public:
     /// `copy_encrypted` specify whether this function should copy encrypted data of the file `src_path` to the backup.
     virtual void copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
                                   bool copy_encrypted, UInt64 start_pos, UInt64 length) = 0;
-
-    virtual void copyFile(const String & destination, const String & source, size_t size) = 0;
 
     virtual void removeFile(const String & file_name) = 0;
     virtual void removeFiles(const Strings & file_names) = 0;

@@ -1,8 +1,6 @@
 #include <Access/AccessRights.h>
-#include <base/sort.h>
-#include <Common/Exception.h>
 #include <Common/logger_useful.h>
-
+#include <base/sort.h>
 #include <boost/container/small_vector.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <unordered_map>
@@ -56,7 +54,7 @@ namespace
             res.access_flags = access_flags;
             res.grant_option = grant_option;
             res.is_partial_revoke = is_partial_revoke;
-            switch (full_name.size()) // NOLINT(bugprone-switch-missing-default-case)
+            switch (full_name.size())
             {
                 case 0:
                 {
@@ -233,7 +231,7 @@ namespace
 
     /**
      *  Levels:
-     *  1. GLOBAL
+     *                    1. GLOBAL
      *  2. DATABASE_LEVEL          2. GLOBAL_WITH_PARAMETER (parameter example: named collection)
      *  3. TABLE_LEVEL
      *  4. COLUMN_LEVEL
@@ -241,12 +239,11 @@ namespace
 
     enum Level
     {
-        GLOBAL_LEVEL = 0,
-        DATABASE_LEVEL = 1,
+        GLOBAL_LEVEL,
+        DATABASE_LEVEL,
         GLOBAL_WITH_PARAMETER = DATABASE_LEVEL,
-        TABLE_LEVEL = 2,
-        COLUMN_LEVEL = 3,
-        MAX = COLUMN_LEVEL,
+        TABLE_LEVEL,
+        COLUMN_LEVEL,
     };
 
     AccessFlags getAllGrantableFlags(Level level)
@@ -258,7 +255,7 @@ namespace
             case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel();
             case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel();
         }
-        chassert(false);
+        UNREACHABLE();
     }
 }
 
@@ -411,65 +408,6 @@ public:
 
     friend bool operator!=(const Node & left, const Node & right) { return !(left == right); }
 
-    bool contains(const Node & other)
-    {
-        if (min_flags_with_children.contains(other.max_flags_with_children))
-            return true;
-
-        if (!flags.contains(other.flags))
-            return false;
-
-        /// Let's assume that the current node has the following rights:
-        ///
-        /// SELECT ON *.* TO user1;
-        /// REVOKE SELECT ON system.* FROM user1;
-        /// REVOKE SELECT ON mydb.* FROM user1;
-        ///
-        /// And the other node has the rights:
-        ///
-        /// SELECT ON *.* TO user2;
-        /// REVOKE SELECT ON system.* FROM user2;
-        ///
-        /// First, we check that each child from the other node is present in the current node:
-        ///
-        /// SELECT ON *.* TO user1;  -- checked
-        /// REVOKE SELECT ON system.* FROM user1; -- checked
-        if (other.children)
-        {
-            for (const auto & [name, node] : *other.children)
-            {
-                const auto & child = tryGetChild(name);
-                if (child == nullptr)
-                {
-                    if (!flags.contains(node.flags))
-                        return false;
-                }
-                else
-                {
-                    if (!child->contains(node))
-                        return false;
-                }
-            }
-        }
-
-        if (!children)
-            return true;
-
-        /// Then we check that each of our children has no other rights revoked.
-        ///
-        /// REVOKE SELECT ON mydb.* FROM user1; -- check failed, returning false
-        for (const auto & [name, node] : *children)
-        {
-            if (other.children && other.children->contains(name))
-                continue;
-
-            if (!node.flags.contains(other.flags))
-                return false;
-        }
-
-        return true;
-    }
-
     void makeUnion(const Node & other)
     {
         makeUnionRec(other);
@@ -505,7 +443,7 @@ public:
             optimizeTree();
     }
 
-    void logTree(LoggerPtr log, const String & title) const
+    void logTree(Poco::Logger * log, const String & title) const
     {
         LOG_TRACE(log, "Tree({}): level={}, name={}, flags={}, min_flags={}, max_flags={}, num_children={}",
             title, level, node_name ? *node_name : "NULL", flags.toString(),
@@ -521,7 +459,7 @@ public:
 
 private:
     AccessFlags getAllGrantableFlags() const { return ::DB::getAllGrantableFlags(level); }
-    AccessFlags getChildAllGrantableFlags() const { return ::DB::getAllGrantableFlags(static_cast<Level>(level == Level::MAX ? level : (level + 1))); }
+    AccessFlags getChildAllGrantableFlags() const { return ::DB::getAllGrantableFlags(static_cast<Level>(level + 1)); }
 
     Node * tryGetChild(std::string_view name) const
     {
@@ -1067,24 +1005,6 @@ bool AccessRights::isGrantedImpl(const AccessFlags & flags, const Args &... args
 }
 
 template <bool grant_option>
-bool AccessRights::containsImpl(const AccessRights & other) const
-{
-    auto helper = [&](const std::unique_ptr<Node> & root_node) -> bool
-    {
-        if (!root_node)
-            return !other.root;
-        if (!other.root)
-            return true;
-        return root_node->contains(*other.root);
-    };
-    if constexpr (grant_option)
-        return helper(root_with_grant_option);
-    else
-        return helper(root);
-}
-
-
-template <bool grant_option>
 bool AccessRights::isGrantedImplHelper(const AccessRightsElement & element) const
 {
     assert(!element.grant_option || grant_option);
@@ -1148,8 +1068,6 @@ bool AccessRights::hasGrantOption(const AccessFlags & flags, std::string_view da
 bool AccessRights::hasGrantOption(const AccessRightsElement & element) const { return isGrantedImpl<true>(element); }
 bool AccessRights::hasGrantOption(const AccessRightsElements & elements) const { return isGrantedImpl<true>(elements); }
 
-bool AccessRights::contains(const AccessRights & access_rights) const { return containsImpl<false>(access_rights); }
-bool AccessRights::containsWithGrantOption(const AccessRights & access_rights) const { return containsImpl<true>(access_rights); }
 
 bool operator ==(const AccessRights & left, const AccessRights & right)
 {
@@ -1240,7 +1158,7 @@ AccessRights AccessRights::getFullAccess()
 
 void AccessRights::logTree() const
 {
-    auto log = getLogger("AccessRights");
+    auto * log = &Poco::Logger::get("AccessRights");
     if (root)
     {
         root->logTree(log, "");

@@ -28,6 +28,8 @@ namespace DB
   *     [DROP INDEX [IF EXISTS] index_name]
   *     [CLEAR INDEX [IF EXISTS] index_name IN PARTITION partition]
   *     [MATERIALIZE INDEX [IF EXISTS] index_name [IN PARTITION partition]]
+  * ALTER LIVE VIEW [db.name]
+  *     [REFRESH]
   */
 
 class ParserAlterQuery : public IParserBase
@@ -47,7 +49,7 @@ protected:
 public:
     ASTAlterQuery::AlterObjectType alter_object;
 
-    explicit ParserAlterCommandList(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE)
+    ParserAlterCommandList(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE)
         : alter_object(alter_object_) {}
 };
 
@@ -59,15 +61,10 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:
-    bool with_round_bracket;
     ASTAlterQuery::AlterObjectType alter_object;
 
-
-    explicit ParserAlterCommand(
-        bool with_round_bracket_, ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE)
-        : with_round_bracket(with_round_bracket_), alter_object(alter_object_)
-    {
-    }
+    ParserAlterCommand(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE)
+        : alter_object(alter_object_) {}
 };
 
 

@@ -202,10 +202,7 @@ uint64_t readU64(std::string_view & sp)
 {
     SAFE_CHECK(sp.size() >= N, "underflow");
     uint64_t x = 0;
-    if constexpr (std::endian::native == std::endian::little)
-        memcpy(&x, sp.data(), N);
-    else
-        memcpy(reinterpret_cast<char*>(&x) + sizeof(uint64_t) - N, sp.data(), N);
+    memcpy(&x, sp.data(), N);
     sp.remove_prefix(N);
     return x;
 }
@@ -803,7 +800,7 @@ Dwarf::CompilationUnit Dwarf::getCompilationUnit(uint64_t offset) const
         die,
         [&](const Attribute & attr)
         {
-            switch (attr.spec.name) // NOLINT(bugprone-switch-missing-default-case)
+            switch (attr.spec.name)
             {
                 case DW_AT_addr_base:
                 case DW_AT_GNU_addr_base:
@@ -974,50 +971,6 @@ Dwarf::Die Dwarf::getDieAtOffset(const CompilationUnit & cu, uint64_t offset) co
     return die;
 }
 
-std::optional<std::pair<std::optional<Dwarf::CompilationUnit>, uint64_t>> Dwarf::getReferenceAttribute(
-    const CompilationUnit & cu, const Die & die, uint64_t attr_name) const
-{
-    bool found = false;
-    uint64_t value;
-    uint64_t form;
-    forEachAttribute(cu, die, [&](const Attribute & attr)
-    {
-        if (attr.spec.name == attr_name)
-        {
-            found = true;
-            value = std::get<uint64_t>(attr.attr_value);
-            form = attr.spec.form;
-            return false;
-        }
-        return true;
-    });
-    if (!found)
-        return std::nullopt;
-    switch (form)
-    {
-        case DW_FORM_ref1:
-        case DW_FORM_ref2:
-        case DW_FORM_ref4:
-        case DW_FORM_ref8:
-        case DW_FORM_ref_udata:
-            return std::make_pair(std::nullopt, cu.offset + value);
-
-        case DW_FORM_ref_addr:
-            return std::make_pair(findCompilationUnit(value), value);
-
-        case DW_FORM_ref_sig8:
-            /// Currently we don't use this parser for types, so no need to support this.
-            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Type signatures are not supported (DIE at 0x{:x}, attr 0x{:x}).", die.offset, attr_name);
-
-        case DW_FORM_ref_sup4:
-        case DW_FORM_ref_sup8:
-            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Supplementary object files are not supported (DIE at 0x{:x}, attr 0x{:x}).", die.offset, attr_name);
-
-        default:
-            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Unexpected form of attribute 0x{:x}: 0x{:x} (DIE at 0x{:x}).", attr_name, form, die.offset);
-    }
-}
-
 /**
  * Find the @locationInfo for @address in the compilation unit represented
  * by the @sp .debug_info entry.
@@ -1029,8 +982,7 @@ bool Dwarf::findLocation(
     const LocationInfoMode mode,
     CompilationUnit & cu,
     LocationInfo & info,
-    std::vector<SymbolizedFrame> & inline_frames,
-    bool assume_in_cu_range) const
+    std::vector<SymbolizedFrame> & inline_frames) const
 {
     Die die = getDieAtOffset(cu, cu.first_die);
     // Partial compilation unit (DW_TAG_partial_unit) is not supported.
@@ -1042,14 +994,9 @@ bool Dwarf::findLocation(
     std::optional<std::string_view> main_file_name;
     std::optional<uint64_t> base_addr_cu;
 
-    std::optional<uint64_t> low_pc;
-    std::optional<uint64_t> high_pc;
-    std::optional<bool> is_high_pc_addr;
-    std::optional<uint64_t> range_offset;
-
     forEachAttribute(cu, die, [&](const Attribute & attr)
     {
-        switch (attr.spec.name) // NOLINT(bugprone-switch-missing-default-case)
+        switch (attr.spec.name)
         {
             case DW_AT_stmt_list:
                 // Offset in .debug_line for the line number VM program for this
@@ -1064,46 +1011,17 @@ bool Dwarf::findLocation(
                 // File name of main file being compiled
                 main_file_name = std::get<std::string_view>(attr.attr_value);
                 break;
+            case DW_AT_low_pc:
             case DW_AT_entry_pc:
                 // 2.17.1: historically DW_AT_low_pc was used. DW_AT_entry_pc was
                 // introduced in DWARF3. Support either to determine the base address of
                 // the CU.
                 base_addr_cu = std::get<uint64_t>(attr.attr_value);
                 break;
-            case DW_AT_ranges:
-                range_offset = std::get<uint64_t>(attr.attr_value);
-                break;
-            case DW_AT_low_pc:
-                low_pc = std::get<uint64_t>(attr.attr_value);
-                base_addr_cu = std::get<uint64_t>(attr.attr_value);
-                break;
-            case DW_AT_high_pc:
-                // The value of the DW_AT_high_pc attribute can be
-                // an address (DW_FORM_addr*) or an offset (DW_FORM_data*).
-                is_high_pc_addr = attr.spec.form == DW_FORM_addr || //
-                    attr.spec.form == DW_FORM_addrx || //
-                    attr.spec.form == DW_FORM_addrx1 || //
-                    attr.spec.form == DW_FORM_addrx2 || //
-                    attr.spec.form == DW_FORM_addrx3 || //
-                    attr.spec.form == DW_FORM_addrx4;
-                high_pc = std::get<uint64_t>(attr.attr_value);
-                break;
         }
         // Iterate through all attributes until find all above.
         return true;
     });
-
-    /// Check if the address falls inside this unit's address ranges.
-    if (!assume_in_cu_range && ((low_pc && high_pc) || range_offset))
-    {
-        bool pc_match = low_pc && high_pc && is_high_pc_addr && address >= *low_pc
-            && (address < (*is_high_pc_addr ? *high_pc : *low_pc + *high_pc));
-        bool range_match = range_offset && isAddrInRangeList(cu, address, base_addr_cu, range_offset.value(), cu.addr_size);
-        if (!pc_match && !range_match)
-        {
-            return false;
-        }
-    }
 
     if (main_file_name)
     {
@@ -1225,7 +1143,7 @@ void Dwarf::findSubProgramDieForAddress(const CompilationUnit & cu,
             std::optional<uint64_t> range_offset;
             forEachAttribute(cu, child_die, [&](const Attribute & attr)
             {
-                switch (attr.spec.name) // NOLINT(bugprone-switch-missing-default-case)
+                switch (attr.spec.name)
                 {
                     case DW_AT_ranges:
                         range_offset = std::get<uint64_t>(attr.attr_value);
@@ -1316,7 +1234,7 @@ void Dwarf::findInlinedSubroutineDieForAddress(
         std::optional<uint64_t> range_offset;
         forEachAttribute(cu, child_die, [&](const Attribute & attr)
         {
-            switch (attr.spec.name) // NOLINT(bugprone-switch-missing-default-case)
+            switch (attr.spec.name)
             {
                 case DW_AT_ranges:
                     range_offset = std::get<uint64_t>(attr.attr_value);
@@ -1382,29 +1300,56 @@ void Dwarf::findInlinedSubroutineDieForAddress(
         location.file = line_vm.getFullFileName(*call_file);
         location.line = *call_line;
 
+        /// Something wrong with receiving debug info about inline.
+        /// If set to true we stop parsing DWARF.
+        bool die_for_inline_broken = false;
+
         auto get_function_name = [&](const CompilationUnit & srcu, uint64_t die_offset)
         {
-            Die die_to_look_for_name = getDieAtOffset(srcu, die_offset);
+            Die decl_die = getDieAtOffset(srcu, die_offset);
+            auto & die_to_look_for_name = decl_die;
 
+            Die def_die;
             // Jump to the actual function definition instead of declaration for name
             // and line info.
             // DW_AT_specification: Incomplete, non-defining, or separate declaration
             // corresponding to a declaration
-            auto def = getReferenceAttribute(srcu, die_to_look_for_name, DW_AT_specification);
-            if (def.has_value())
+            auto offset = getAttribute<uint64_t>(srcu, decl_die, DW_AT_specification);
+            if (offset)
             {
-                auto [def_cu, def_offset] = std::move(def.value());
-                const CompilationUnit & def_cu_ref = def_cu.has_value() ? def_cu.value() : srcu;
-                die_to_look_for_name = getDieAtOffset(def_cu_ref, def_offset);
+                /// FIXME: actually it's a bug in our DWARF parser.
+                ///
+                /// Most of the times compilation unit offset (srcu.offset) is some big number inside .debug_info (like 434782255).
+                /// Offset of DIE definition is some small relative number to srcu.offset (like 3518).
+                /// However in some unknown cases offset looks like global, non relative number (like 434672579) and in this
+                /// case we obviously doing something wrong parsing DWARF.
+                ///
+                /// What is important -- this bug? reproduces only with -flto=thin in release mode.
+                /// Also llvm-dwarfdump --verify ./clickhouse says that our DWARF is ok, so it's another prove
+                /// that we just doing something wrong.
+                ///
+                /// FIXME: Currently we just give up parsing DWARF for inlines when we got into this situation.
+                if (srcu.offset + offset.value() >= info_.size())
+                {
+                    die_for_inline_broken = true;
+                }
+                else
+                {
+                    def_die = getDieAtOffset(srcu, srcu.offset + offset.value());
+                    die_to_look_for_name = def_die;
+                }
             }
 
             std::string_view name;
+
+            if (die_for_inline_broken)
+                return name;
 
             // The file and line will be set in the next inline subroutine based on
             // its DW_AT_call_file and DW_AT_call_line.
             forEachAttribute(srcu, die_to_look_for_name, [&](const Attribute & attr)
             {
-                switch (attr.spec.name) // NOLINT(bugprone-switch-missing-default-case)
+                switch (attr.spec.name)
                 {
                     case DW_AT_linkage_name:
                         name = std::get<std::string_view>(attr.attr_value);
@@ -1440,6 +1385,10 @@ void Dwarf::findInlinedSubroutineDieForAddress(
         location.name = (*abstract_origin_ref_type != DW_FORM_ref_addr)
             ? get_function_name(cu, cu.offset + *abstract_origin)
             : get_function_name(findCompilationUnit(*abstract_origin), *abstract_origin);
+
+        /// FIXME: see comment above
+        if (die_for_inline_broken)
+            return false;
 
         locations.push_back(location);
 
@@ -1477,7 +1426,7 @@ bool Dwarf::findAddress(
             {
                 return false;
             }
-            findLocation(address, mode, unit, locationInfo, inline_frames, /*assume_in_cu_range*/ true);
+            findLocation(address, mode, unit, locationInfo, inline_frames);
             return locationInfo.has_file_and_line;
         }
         else if (mode == LocationInfoMode::FAST)
@@ -1506,7 +1455,7 @@ bool Dwarf::findAddress(
         {
             continue;
         }
-        findLocation(address, mode, unit, locationInfo, inline_frames, /*assume_in_cu_range*/ false);
+        findLocation(address, mode, unit, locationInfo, inline_frames);
     }
 
     return locationInfo.has_file_and_line;
@@ -1594,7 +1543,8 @@ bool Dwarf::isAddrInRangeList(const CompilationUnit & cu,
                     auto sp_start = addr_.substr(*cu.addr_base + index_start * sizeof(uint64_t));
                     auto start = read<uint64_t>(sp_start);
 
-                    auto end = start + length;
+                    auto sp_end = addr_.substr(*cu.addr_base + index_start * sizeof(uint64_t) + length);
+                    auto end = read<uint64_t>(sp_end);
                     if (start != end && address >= start && address < end)
                     {
                         return true;
@@ -1960,7 +1910,7 @@ Dwarf::LineNumberVM::FileName Dwarf::LineNumberVM::getFileName(uint64_t index) c
                 auto attr = readLineNumberAttribute(is64Bit_, format, file_names, debugStr_, debugLineStr_);
                 if (i == index)
                 {
-                    switch (attr.content_type_code) // NOLINT(bugprone-switch-missing-default-case)
+                    switch (attr.content_type_code)
                     {
                         case DW_LNCT_path:
                             fn.relativeName = std::get<std::string_view>(attr.attr_value);
@@ -2104,7 +2054,7 @@ Dwarf::LineNumberVM::StepResult Dwarf::LineNumberVM::step(std::string_view & pro
     if (opcode != 0)
     { // standard opcode
         // Only interpret opcodes that are recognized by the version we're parsing;
-        // the others are vendor extensions, and we should ignore them.
+        // the others are vendor extensions and we should ignore them.
         switch (opcode)
         {
             case DW_LNS_copy:
@@ -2158,7 +2108,6 @@ Dwarf::LineNumberVM::StepResult Dwarf::LineNumberVM::step(std::string_view & pro
                 }
                 isa_ = readULEB(program);
                 return CONTINUE;
-            default:
         }
 
         // Unrecognized standard opcode, slurp the appropriate number of LEB
@@ -2178,7 +2127,7 @@ Dwarf::LineNumberVM::StepResult Dwarf::LineNumberVM::step(std::string_view & pro
     auto extended_opcode = read<uint8_t>(program);
     --length;
 
-    switch (extended_opcode) // NOLINT(bugprone-switch-missing-default-case)
+    switch (extended_opcode)
     {
         case DW_LNE_end_sequence:
             return END;

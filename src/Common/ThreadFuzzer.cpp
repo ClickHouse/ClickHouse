@@ -12,14 +12,12 @@
 #include <base/sleep.h>
 
 #include <IO/ReadHelpers.h>
-
-#include <Common/CurrentMemoryTracker.h>
-#include <Common/Exception.h>
-#include <Common/MemoryTracker.h>
-#include <Common/ThreadFuzzer.h>
 #include <Common/logger_useful.h>
+
+#include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
 
+#include <Common/ThreadFuzzer.h>
 #include "config.h" // USE_JEMALLOC
 
 
@@ -52,16 +50,11 @@ namespace ErrorCodes
 ThreadFuzzer::ThreadFuzzer()
 {
     initConfiguration();
-    if (needsSetup())
-        setup();
-
     if (!isEffective())
-    {
-        /// It has no effect - disable it
-        stop();
         return;
-    }
+    setup();
 }
+
 
 template <typename T>
 static void initFromEnv(T & what, const char * name)
@@ -89,12 +82,12 @@ static std::atomic<int> num_cpus = 0;
         static std::atomic<double> NAME##_before_yield_probability = 0; \
         static std::atomic<double> NAME##_before_migrate_probability = 0; \
         static std::atomic<double> NAME##_before_sleep_probability = 0; \
-        static std::atomic<double> NAME##_before_sleep_time_us_max = 0; \
+        static std::atomic<double> NAME##_before_sleep_time_us = 0; \
 \
         static std::atomic<double> NAME##_after_yield_probability = 0; \
         static std::atomic<double> NAME##_after_migrate_probability = 0; \
         static std::atomic<double> NAME##_after_sleep_probability = 0; \
-        static std::atomic<double> NAME##_after_sleep_time_us_max = 0;
+        static std::atomic<double> NAME##_after_sleep_time_us = 0;
 
 FOR_EACH_WRAPPED_FUNCTION(DEFINE_WRAPPER_PARAMS)
 
@@ -113,7 +106,7 @@ void ThreadFuzzer::initConfiguration()
     initFromEnv(yield_probability, "THREAD_FUZZER_YIELD_PROBABILITY");
     initFromEnv(migrate_probability, "THREAD_FUZZER_MIGRATE_PROBABILITY");
     initFromEnv(sleep_probability, "THREAD_FUZZER_SLEEP_PROBABILITY");
-    initFromEnv(sleep_time_us_max, "THREAD_FUZZER_SLEEP_TIME_US_MAX");
+    initFromEnv(sleep_time_us, "THREAD_FUZZER_SLEEP_TIME_US");
     initFromEnv(explicit_sleep_probability, "THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY");
     initFromEnv(explicit_memory_exception_probability, "THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY");
 
@@ -122,12 +115,13 @@ void ThreadFuzzer::initConfiguration()
         initFromEnv(NAME##_before_yield_probability, "THREAD_FUZZER_" #NAME "_BEFORE_YIELD_PROBABILITY"); \
         initFromEnv(NAME##_before_migrate_probability, "THREAD_FUZZER_" #NAME "_BEFORE_MIGRATE_PROBABILITY"); \
         initFromEnv(NAME##_before_sleep_probability, "THREAD_FUZZER_" #NAME "_BEFORE_SLEEP_PROBABILITY"); \
-        initFromEnv(NAME##_before_sleep_time_us_max, "THREAD_FUZZER_" #NAME "_BEFORE_SLEEP_TIME_US_MAX"); \
+        initFromEnv(NAME##_before_sleep_time_us, "THREAD_FUZZER_" #NAME "_BEFORE_SLEEP_TIME_US"); \
 \
         initFromEnv(NAME##_after_yield_probability, "THREAD_FUZZER_" #NAME "_AFTER_YIELD_PROBABILITY"); \
         initFromEnv(NAME##_after_migrate_probability, "THREAD_FUZZER_" #NAME "_AFTER_MIGRATE_PROBABILITY"); \
         initFromEnv(NAME##_after_sleep_probability, "THREAD_FUZZER_" #NAME "_AFTER_SLEEP_PROBABILITY"); \
-        initFromEnv(NAME##_after_sleep_time_us_max, "THREAD_FUZZER_" #NAME "_AFTER_SLEEP_TIME_US_MAX");
+        initFromEnv(NAME##_after_sleep_time_us, "THREAD_FUZZER_" #NAME "_AFTER_SLEEP_TIME_US");
+
     FOR_EACH_WRAPPED_FUNCTION(INIT_WRAPPER_PARAMS)
 
 #    undef INIT_WRAPPER_PARAMS
@@ -135,16 +129,10 @@ void ThreadFuzzer::initConfiguration()
 }
 
 
-bool ThreadFuzzer::needsSetup() const
-{
-    return cpu_time_period_us != 0
-        && (yield_probability > 0 || migrate_probability > 0 || (sleep_probability > 0 && sleep_time_us_max > 0));
-}
-
 bool ThreadFuzzer::isEffective() const
 {
-    if (needsSetup())
-        return true;
+    if (!isStarted())
+        return false;
 
 #if THREAD_FUZZER_WRAP_PTHREAD
 #    define CHECK_WRAPPER_PARAMS(RET, NAME, ...) \
@@ -154,7 +142,7 @@ bool ThreadFuzzer::isEffective() const
             return true; \
         if (NAME##_before_sleep_probability.load(std::memory_order_relaxed) > 0.0) \
             return true; \
-        if (NAME##_before_sleep_time_us_max.load(std::memory_order_relaxed) > 0.0) \
+        if (NAME##_before_sleep_time_us.load(std::memory_order_relaxed) > 0.0) \
             return true; \
 \
         if (NAME##_after_yield_probability.load(std::memory_order_relaxed) > 0.0) \
@@ -163,7 +151,7 @@ bool ThreadFuzzer::isEffective() const
             return true; \
         if (NAME##_after_sleep_probability.load(std::memory_order_relaxed) > 0.0) \
             return true; \
-        if (NAME##_after_sleep_time_us_max.load(std::memory_order_relaxed) > 0.0) \
+        if (NAME##_after_sleep_time_us.load(std::memory_order_relaxed) > 0.0) \
             return true;
 
     FOR_EACH_WRAPPED_FUNCTION(CHECK_WRAPPER_PARAMS)
@@ -171,13 +159,10 @@ bool ThreadFuzzer::isEffective() const
 #    undef INIT_WRAPPER_PARAMS
 #endif
 
-    if (explicit_sleep_probability > 0 && sleep_time_us_max > 0)
-        return true;
-
-    if (explicit_memory_exception_probability > 0)
-        return true;
-
-    return false;
+    return cpu_time_period_us != 0
+        && (yield_probability > 0
+            || migrate_probability > 0
+            || (sleep_probability > 0 && sleep_time_us > 0));
 }
 
 void ThreadFuzzer::stop()
@@ -187,8 +172,6 @@ void ThreadFuzzer::stop()
 
 void ThreadFuzzer::start()
 {
-    if (!instance().isEffective())
-        return;
     started.store(true, std::memory_order_relaxed);
 }
 
@@ -197,11 +180,11 @@ bool ThreadFuzzer::isStarted()
     return started.load(std::memory_order_relaxed);
 }
 
-static void injectionImpl(
+static void injection(
     double yield_probability,
     double migrate_probability,
     double sleep_probability,
-    double sleep_time_us_max)
+    double sleep_time_us [[maybe_unused]])
 {
     DENY_ALLOCATIONS_IN_SCOPE;
     if (!ThreadFuzzer::isStarted())
@@ -231,29 +214,18 @@ static void injectionImpl(
     UNUSED(migrate_probability);
 #endif
 
-    if (sleep_probability > 0 && sleep_time_us_max > 0.001 && std::bernoulli_distribution(sleep_probability)(thread_local_rng))
+    if (sleep_probability > 0
+        && sleep_time_us > 0
+        && std::bernoulli_distribution(sleep_probability)(thread_local_rng))
     {
-        sleepForNanoseconds((thread_local_rng() % static_cast<uint64_t>(sleep_time_us_max * 1000)));
+        sleepForNanoseconds(static_cast<uint64_t>(sleep_time_us * 1000));
     }
-}
-
-static ALWAYS_INLINE void injection(
-    double yield_probability,
-    double migrate_probability,
-    double sleep_probability,
-    double sleep_time_us_max)
-{
-    DENY_ALLOCATIONS_IN_SCOPE;
-    if (!ThreadFuzzer::isStarted())
-        return;
-
-    injectionImpl(yield_probability, migrate_probability, sleep_probability, sleep_time_us_max);
 }
 
 void ThreadFuzzer::maybeInjectSleep()
 {
     auto & fuzzer = ThreadFuzzer::instance();
-    injection(fuzzer.yield_probability, fuzzer.migrate_probability, fuzzer.explicit_sleep_probability, fuzzer.sleep_time_us_max);
+    injection(fuzzer.yield_probability, fuzzer.migrate_probability, fuzzer.explicit_sleep_probability, fuzzer.sleep_time_us);
 }
 
 /// Sometimes maybeInjectSleep() is not enough and we need to inject an exception.
@@ -274,7 +246,7 @@ void ThreadFuzzer::signalHandler(int)
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;
     auto & fuzzer = ThreadFuzzer::instance();
-    injection(fuzzer.yield_probability, fuzzer.migrate_probability, fuzzer.sleep_probability, fuzzer.sleep_time_us_max);
+    injection(fuzzer.yield_probability, fuzzer.migrate_probability, fuzzer.sleep_probability, fuzzer.sleep_time_us);
     errno = saved_errno;
 }
 
@@ -286,10 +258,10 @@ void ThreadFuzzer::setup() const
 
 #if defined(OS_LINUX)
     if (sigemptyset(&sa.sa_mask))
-        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to clean signal mask for thread fuzzer");
+        throwFromErrno("Failed to clean signal mask for thread fuzzer", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
 
     if (sigaddset(&sa.sa_mask, SIGPROF))
-        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to add signal to mask for thread fuzzer");
+        throwFromErrno("Failed to add signal to mask for thread fuzzer", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
 #else
     // the two following functions always return 0 under mac
     sigemptyset(&sa.sa_mask);
@@ -297,7 +269,7 @@ void ThreadFuzzer::setup() const
 #endif
 
     if (sigaction(SIGPROF, &sa, nullptr))
-        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Failed to setup signal handler for thread fuzzer");
+        throwFromErrno("Failed to setup signal handler for thread fuzzer", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
     static constexpr UInt32 timer_precision = 1000000;
 
@@ -308,23 +280,23 @@ void ThreadFuzzer::setup() const
     struct itimerval timer = {.it_interval = interval, .it_value = interval};
 
     if (0 != setitimer(ITIMER_PROF, &timer, nullptr))
-        throw ErrnoException(ErrorCodes::CANNOT_CREATE_TIMER, "Failed to create profiling timer");
+        throwFromErrno("Failed to create profiling timer", ErrorCodes::CANNOT_CREATE_TIMER);
 }
 
 
 #if THREAD_FUZZER_WRAP_PTHREAD
 #define INJECTION_BEFORE(NAME) \
-    injectionImpl(                                                         \
+    injection(                                                             \
         NAME##_before_yield_probability.load(std::memory_order_relaxed),   \
         NAME##_before_migrate_probability.load(std::memory_order_relaxed), \
         NAME##_before_sleep_probability.load(std::memory_order_relaxed),   \
-        NAME##_before_sleep_time_us_max.load(std::memory_order_relaxed));
+        NAME##_before_sleep_time_us.load(std::memory_order_relaxed));
 #define INJECTION_AFTER(NAME) \
-    injectionImpl(                                                         \
+    injection(                                                             \
         NAME##_after_yield_probability.load(std::memory_order_relaxed),    \
         NAME##_after_migrate_probability.load(std::memory_order_relaxed),  \
         NAME##_after_sleep_probability.load(std::memory_order_relaxed),    \
-        NAME##_after_sleep_time_us_max.load(std::memory_order_relaxed));
+        NAME##_after_sleep_time_us.load(std::memory_order_relaxed));
 
 /// ThreadFuzzer intercepts pthread_mutex_lock()/pthread_mutex_unlock().
 ///
@@ -370,7 +342,7 @@ void ThreadFuzzer::setup() const
 
 /// Starting from glibc 2.34 there are no internal symbols without version,
 /// so not __pthread_mutex_lock but __pthread_mutex_lock@2.2.5
-#if defined(OS_LINUX) and !defined(USE_MUSL) and !defined(__loongarch64)
+#if defined(OS_LINUX) and !defined(USE_MUSL)
     /// You can get version from glibc/sysdeps/unix/sysv/linux/$ARCH/$BITS_OR_BYTE_ORDER/libc.abilist
     #if defined(__amd64__)
     #    define GLIBC_SYMVER "GLIBC_2.2.5"
@@ -392,8 +364,7 @@ void ThreadFuzzer::setup() const
     GLIBC_COMPAT_SYMBOL(__pthread_mutex_lock)
 #endif
 
-/// The loongarch64's glibc_version is 2.36
-#if defined(ADDRESS_SANITIZER) || defined(__loongarch64)
+#if defined(ADDRESS_SANITIZER)
 #if USE_JEMALLOC
 #error "ASan cannot be used with jemalloc"
 #endif
@@ -412,16 +383,13 @@ static void * getFunctionAddress(const char * name)
     static constinit RET(*real_##NAME)(__VA_ARGS__) = nullptr;                    \
     extern "C" RET NAME(__VA_ARGS__)                                              \
     {                                                                             \
-        bool thread_fuzzer_enabled = ThreadFuzzer::isStarted();                   \
-        if (thread_fuzzer_enabled)                                                \
-            INJECTION_BEFORE(NAME);                                               \
+        INJECTION_BEFORE(NAME);                                                   \
         if (unlikely(!real_##NAME)) {                                             \
             real_##NAME =                                                         \
                 reinterpret_cast<RET(*)(__VA_ARGS__)>(getFunctionAddress(#NAME)); \
         }                                                                         \
         auto && ret{real_##NAME(arg)};                                            \
-        if (thread_fuzzer_enabled)                                                \
-            INJECTION_AFTER(NAME);                                                \
+        INJECTION_AFTER(NAME);                                                    \
         return ret;                                                               \
     }
 FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER_USING_DLSYM)
@@ -431,17 +399,10 @@ FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER_USING_DLSYM)
     extern "C" RET __##NAME(__VA_ARGS__);                   \
     extern "C" RET NAME(__VA_ARGS__)                        \
     {                                                       \
-        if (!ThreadFuzzer::isStarted())                     \
-        {                                                   \
-            return __##NAME(arg);                           \
-        }                                                   \
-        else                                                \
-        {                                                   \
-            INJECTION_BEFORE(NAME);                         \
-            auto && ret{__##NAME(arg)};                     \
-            INJECTION_AFTER(NAME);                          \
-            return ret;                                     \
-        }                                                   \
+        INJECTION_BEFORE(NAME);                             \
+        auto && ret{__##NAME(arg)};                         \
+        INJECTION_AFTER(NAME);                              \
+        return ret;                                         \
     }
 FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER_USING_INTERNAL_SYMBOLS)
 #undef MAKE_WRAPPER_USING_INTERNAL_SYMBOLS

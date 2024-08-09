@@ -6,8 +6,9 @@
 #include <Common/CurrentMetrics.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-#include <Storages/ColumnsDescription.h>
 
+#include <vector>
+#include <atomic>
 #include <ctime>
 
 
@@ -24,9 +25,20 @@ struct AsynchronousMetricLogElement
     double value;
 
     static std::string name() { return "AsynchronousMetricLog"; }
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
+
+    /// Returns the list of columns as in CREATE TABLE statement or nullptr.
+    /// If it's not nullptr, this list of columns will be used to create the table.
+    /// Otherwise the list will be constructed from LogElement::getNamesAndTypes and LogElement::getNamesAndAliases.
+    static const char * getCustomColumnList()
+    {
+        return "event_date Date CODEC(Delta(2), ZSTD(1)), "
+               "event_time DateTime CODEC(Delta(4), ZSTD(1)), "
+               "metric LowCardinality(String) CODEC(ZSTD(1)), "
+               "value Float64 CODEC(ZSTD(3))";
+    }
 };
 
 class AsynchronousMetricLog : public SystemLog<AsynchronousMetricLogElement>

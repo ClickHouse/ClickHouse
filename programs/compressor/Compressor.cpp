@@ -100,7 +100,6 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             std::cout << "Usage: " << argv[0] << " [options] < INPUT > OUTPUT" << std::endl;
             std::cout << "Usage: " << argv[0] << " [options] INPUT OUTPUT" << std::endl;
             std::cout << desc << std::endl;
-            std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-compressor/\n";
             return 0;
         }
 
@@ -143,7 +142,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             ParserCodec codec_parser;
 
             std::string codecs_line = boost::algorithm::join(codecs, ",");
-            auto ast = parseQuery(codec_parser, "(" + codecs_line + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            auto ast = parseQuery(codec_parser, "(" + codecs_line + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
             codec = CompressionCodecFactory::instance().get(ast, nullptr);
         }
         else

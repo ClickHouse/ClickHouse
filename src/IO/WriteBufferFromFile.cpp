@@ -46,14 +46,14 @@ WriteBufferFromFile::WriteBufferFromFile(
     fd = ::open(file_name.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT | O_CLOEXEC : flags | O_CLOEXEC, mode);
 
     if (-1 == fd)
-        ErrnoException::throwFromPath(
-            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot open file {}", file_name);
+        throwFromErrnoWithPath("Cannot open file " + file_name, file_name,
+                               errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 
 #ifdef OS_DARWIN
     if (o_direct)
     {
         if (fcntl(fd, F_NOCACHE, 1) == -1)
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot set F_NOCACHE on file {}", file_name);
+            throwFromErrnoWithPath("Cannot set F_NOCACHE on file " + file_name, file_name, ErrorCodes::CANNOT_OPEN_FILE);
     }
 #endif
 }
@@ -77,16 +77,7 @@ WriteBufferFromFile::~WriteBufferFromFile()
     if (fd < 0)
         return;
 
-    try
-    {
-        if (!canceled)
-            finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
+    finalize();
     int err = ::close(fd);
     /// Everything except for EBADF should be ignored in dtor, since all of
     /// others (EINTR/EIO/ENOSPC/EDQUOT) could be possible during writing to
@@ -112,14 +103,10 @@ void WriteBufferFromFile::close()
     if (fd < 0)
         return;
 
-    if (!canceled)
-        finalize();
+    finalize();
 
     if (0 != ::close(fd))
-    {
-        fd = -1;
         throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
-    }
 
     fd = -1;
     metric_increment.destroy();

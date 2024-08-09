@@ -2,13 +2,8 @@
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
-if {[info exists env(CLICKHOUSE_TMP)]} {
-    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
-} else {
-    set CLICKHOUSE_TMP "."
-}
-exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
-set history_file $CLICKHOUSE_TMP/$basename.history
+exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+set history_file $env(CLICKHOUSE_TMP)/$basename.history
 
 log_user 0
 set timeout 60
@@ -26,21 +21,20 @@ expect ":) "
 send -- "DROP TABLE IF EXISTS test_01179\r"
 expect "Ok."
 
-send -- "CREATE TABLE test_01179 (val String) ENGINE=Memory()\r"
+send -- "CREATE TABLE test_01179 (date DateTime64(3)) ENGINE=Memory()\r"
 expect "Ok."
 
-send -- "INSERT INTO test_01179 values ('foo')\r"
-
+send -- "INSERT INTO test_01179 values ('2020-01-01')\r"
 expect "Ok."
 
-send -- "INSERT INTO test_01179 values ('foo'); \r"
+send -- "INSERT INTO test_01179 values ('2020-01-01'); \r"
 expect "Ok."
 
-send -- "INSERT INTO test_01179 values ('foo'); ('bar') \r"
-expect "Syntax error"
+send -- "INSERT INTO test_01179 values ('2020-01-01 0'); (1) \r"
+expect "Cannot read data after semicolon"
 
-send -- "SELECT val, count() FROM test_01179 GROUP BY val FORMAT TSV\r"
-expect "foo\t3"
+send -- "SELECT date, count() FROM test_01179 GROUP BY date FORMAT TSV\r"
+expect "2020-01-01 00:00:00.000\t2"
 
 send -- "DROP TABLE test_01179\r"
 expect "Ok."

@@ -15,7 +15,7 @@ struct ArrayHasAnySelectArraySourcePair : public ArraySourcePairSelector<ArrayHa
                              bool is_second_const, bool is_second_nullable, SecondSource && second,
                              ColumnUInt8 & result)
     {
-        using SourceType = typename std::decay_t<SecondSource>;
+        using SourceType = typename std::decay<SecondSource>::type;
 
         if (is_second_nullable)
         {
@@ -40,7 +40,7 @@ struct ArrayHasAnySelectArraySourcePair : public ArraySourcePairSelector<ArrayHa
                                  bool is_second_const, bool is_second_nullable, SecondSource && second,
                                  ColumnUInt8 & result)
     {
-        using SourceType = typename std::decay_t<FirstSource>;
+        using SourceType = typename std::decay<FirstSource>::type;
 
         if (is_first_nullable)
         {

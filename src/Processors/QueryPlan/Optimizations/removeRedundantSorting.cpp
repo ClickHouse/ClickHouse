@@ -158,9 +158,7 @@ private:
             auto const & aggregates = parent_aggr->getParams().aggregates;
             for (const auto & aggregate : aggregates)
             {
-                auto action = NullsAction::EMPTY;
-                auto aggregate_function_properties
-                    = AggregateFunctionFactory::instance().tryGetProperties(aggregate.function->getName(), action);
+                auto aggregate_function_properties = AggregateFunctionFactory::instance().tryGetProperties(aggregate.function->getName());
                 if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
                     return false;
 
@@ -213,12 +211,12 @@ private:
             logStep("checking for stateful function", node);
             if (const auto * expr = typeid_cast<const ExpressionStep *>(step); expr)
             {
-                if (expr->getExpression().hasStatefulFunctions())
+                if (expr->getExpression()->hasStatefulFunctions())
                     return false;
             }
             else if (const auto * filter = typeid_cast<const FilterStep *>(step); filter)
             {
-                if (filter->getExpression().hasStatefulFunctions())
+                if (filter->getExpression()->hasStatefulFunctions())
                     return false;
             }
             else

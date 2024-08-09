@@ -3,11 +3,14 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 
 namespace DB
 {
+
+class IDataType;
 
 /// Reads the data between pairs of marks in the same part. When reading consecutive ranges, avoids unnecessary seeks.
 /// When ranges are almost consecutive, seeks are fast because they are performed inside the buffer.
@@ -16,13 +19,11 @@ class IMergeTreeReader : private boost::noncopyable
 {
 public:
     using ValueSizeMap = std::map<std::string, double>;
-    using VirtualFields = std::unordered_map<String, Field>;
     using DeserializeBinaryBulkStateMap = std::map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
 
     IMergeTreeReader(
         MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
         const NamesAndTypesList & columns_,
-        const VirtualFields & virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
@@ -41,9 +42,6 @@ public:
     virtual ~IMergeTreeReader() = default;
 
     const ValueSizeMap & getAvgValueSizeHints() const;
-
-    /// Add virtual columns that are not present in the block.
-    void fillVirtualColumns(Columns & columns, size_t rows) const;
 
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
@@ -68,14 +66,14 @@ public:
 protected:
     /// Returns actual column name in part, which can differ from table metadata.
     String getColumnNameInPart(const NameAndTypePair & required_column) const;
+
     /// Returns actual column name and type in part, which can differ from table metadata.
     NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
     /// Returns actual serialization in part, which can differ from table metadata.
     SerializationPtr getSerializationInPart(const NameAndTypePair & required_column) const;
-    /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
-    bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
+
     String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
@@ -89,18 +87,18 @@ protected:
     /// Actual serialization of columns in part.
     Serializations serializations;
 
-    UncompressedCache * const uncompressed_cache;
-    MarkCache * const mark_cache;
+    UncompressedCache * uncompressed_cache;
+    MarkCache * mark_cache;
 
     MergeTreeReaderSettings settings;
 
-    const StorageSnapshotPtr storage_snapshot;
-    const MarkRanges all_mark_ranges;
+    StorageSnapshotPtr storage_snapshot;
+    MarkRanges all_mark_ranges;
 
     /// Position and level (of nesting).
     using ColumnNameLevel = std::optional<std::pair<String, size_t>>;
 
-    /// In case of part of the nested column does not exist, offsets should be
+    /// In case of part of the nested column does not exists, offsets should be
     /// read, but only the offsets for the current column, that is why it
     /// returns pair of size_t, not just one.
     ColumnNameLevel findColumnForOffsets(const NameAndTypePair & column) const;
@@ -112,16 +110,10 @@ protected:
 
 private:
     /// Columns that are requested to read.
-    NamesAndTypesList original_requested_columns;
-
-    /// The same as above but with converted Arrays to subcolumns of Nested.
     NamesAndTypesList requested_columns;
 
     /// Actual columns description in part.
     const ColumnsDescription & part_columns;
-
-    /// Fields of virtual columns that were filled in previous stages.
-    VirtualFields virtual_fields;
 };
 
 }

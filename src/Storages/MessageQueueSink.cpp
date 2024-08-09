@@ -1,7 +1,6 @@
 #include <Storages/MessageQueueSink.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -21,7 +20,7 @@ MessageQueueSink::MessageQueueSink(
 void MessageQueueSink::onStart()
 {
     LOG_TEST(
-        getLogger("MessageQueueSink"),
+        &Poco::Logger::get("MessageQueueSink"),
         "Executing startup for MessageQueueSink");
 
     initialize();
@@ -41,7 +40,7 @@ void MessageQueueSink::onFinish()
     producer->finish();
 }
 
-void MessageQueueSink::consume(Chunk & chunk)
+void MessageQueueSink::consume(Chunk chunk)
 {
     const auto & columns = chunk.getColumns();
     if (columns.empty())
@@ -79,17 +78,5 @@ void MessageQueueSink::consume(Chunk & chunk)
     }
 }
 
-
-void MessageQueueSink::onCancel() noexcept
-{
-    try
-    {
-        onFinish();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(getLogger("MessageQueueSink"), "Error occurs on cancellation.");
-    }
-}
 
 }

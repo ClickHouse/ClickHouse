@@ -4,7 +4,6 @@
 
 #if USE_MINIZIP
 #include <IO/Archives/IArchiveWriter.h>
-#include <base/defines.h>
 #include <mutex>
 
 
@@ -23,7 +22,7 @@ public:
     /// Constructs an archive that will be written by using a specified `archive_write_buffer_`.
     ZipArchiveWriter(const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_);
 
-    /// Call finalize() before destructing IArchiveWriter.
+    /// Destructors finalizes writing the archive.
     ~ZipArchiveWriter() override;
 
     /// Starts writing a file to the archive. The function returns a write buffer,
@@ -32,16 +31,9 @@ public:
     /// of the function `writeFile()` should be destroyed before next call of `writeFile()`.
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & filename) override;
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & filename, size_t size) override;
-
-
     /// Returns true if there is an active instance of WriteBuffer returned by writeFile().
     /// This function should be used mostly for debugging purposes.
     bool isWritingFile() const override;
-
-    /// Finalizes writing of the archive. This function must be always called at the end of writing.
-    /// (Unless an error appeared and the archive is in fact no longer needed.)
-    void finalize() override;
 
     /// Supported compression methods.
     static constexpr const char kStore[] = "store";
@@ -52,7 +44,7 @@ public:
     static constexpr const char kXz[] = "xz";
 
     /// Some compression levels.
-    enum class CompressionLevels : int8_t
+    enum class CompressionLevels
     {
         kDefault = kDefaultCompressionLevel,
         kFast = 2,
@@ -76,27 +68,22 @@ public:
     static void checkEncryptionIsEnabled();
 
 private:
-    class StreamInfo;
-    using ZipHandle = void *;
     class WriteBufferFromZipArchive;
+    class HandleHolder;
+    using RawHandle = void *;
 
-    int getCompressionMethod() const;
-    int getCompressionLevel() const;
-    String getPassword() const;
+    HandleHolder acquireHandle();
+    RawHandle acquireRawHandle();
+    void releaseRawHandle(RawHandle raw_handle_);
 
-    ZipHandle startWritingFile();
-    void endWritingFile();
-
-    void checkResultCode(int code) const;
+    void checkResult(int code) const;
+    [[noreturn]] void showError(const String & message) const;
 
     const String path_to_archive;
-    std::unique_ptr<StreamInfo> TSA_GUARDED_BY(mutex) stream_info;
-    int compression_method TSA_GUARDED_BY(mutex); /// By default the compression method is "deflate".
-    int compression_level TSA_GUARDED_BY(mutex) = kDefaultCompressionLevel;
-    String password TSA_GUARDED_BY(mutex);
-    ZipHandle zip_handle TSA_GUARDED_BY(mutex) = nullptr;
-    bool is_writing_file TSA_GUARDED_BY(mutex) = false;
-    bool finalized TSA_GUARDED_BY(mutex) = false;
+    int compression_method; /// By default the compression method is "deflate".
+    int compression_level = kDefaultCompressionLevel;
+    String password;
+    RawHandle handle = nullptr;
     mutable std::mutex mutex;
 };
 

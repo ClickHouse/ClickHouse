@@ -7,8 +7,6 @@
 #include <vector>
 #include <memory>
 
-#include <Common/Logger.h>
-
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/DOMParser.h>
 #include <Poco/DOM/DOMWriter.h>
@@ -46,6 +44,8 @@ public:
         bool log_to_console = false,
         const Substitutions & substitutions = Substitutions());
 
+    ~ConfigProcessor();
+
     /// Perform config includes and substitutions and return the resulting XML-document.
     ///
     /// Suppose path is "/path/file.xml"
@@ -64,8 +64,6 @@ public:
         bool * has_zk_includes = nullptr,
         zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr,
         const zkutil::EventPtr & zk_changed_event = nullptr);
-
-    XMLDocumentPtr parseConfig(const std::string & config_path);
 
     /// These configurations will be used if there is no configuration file.
     static void registerEmbeddedConfig(std::string name, std::string_view content);
@@ -127,7 +125,7 @@ private:
 
     bool throw_on_bad_incl;
 
-    LoggerPtr log;
+    Poco::Logger * log;
     Poco::AutoPtr<Poco::Channel> channel_ptr;
 
     Substitutions substitutions;

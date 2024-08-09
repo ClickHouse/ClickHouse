@@ -4,6 +4,7 @@
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <QueryPipeline/Pipe.h>
 #include <Core/UUID.h>
+#include <atomic>
 
 namespace DB
 {
@@ -22,7 +23,6 @@ public:
     ~RemoteSource() override;
 
     Status prepare() override;
-    void work() override;
     String getName() const override { return "Remote"; }
 
     void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit.swap(counter); }
@@ -32,18 +32,15 @@ public:
 
     int schedule() override { return fd; }
 
-    void onAsyncJobReady() override;
-
     void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
 
 protected:
     std::optional<Chunk> tryGenerate() override;
-    void onCancel() noexcept override;
+    void onCancel() override;
 
 private:
+    std::atomic<bool> was_query_canceled = false;
     bool was_query_sent = false;
-    bool need_drain = false;
-    bool executor_finished = false;
     bool add_aggregation_info = false;
     RemoteQueryExecutorPtr query_executor;
     RowsBeforeLimitCounterPtr rows_before_limit;
@@ -54,7 +51,6 @@ private:
     int fd = -1;
     size_t rows = 0;
     bool manually_add_rows_before_limit_counter = false;
-    bool preprocessed_packet = false;
 };
 
 /// Totals source from RemoteQueryExecutor.

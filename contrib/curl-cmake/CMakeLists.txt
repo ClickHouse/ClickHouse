@@ -10,7 +10,7 @@ set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/curl")
 set (SRCS
     "${LIBRARY_DIR}/lib/altsvc.c"
     "${LIBRARY_DIR}/lib/amigaos.c"
-    "${LIBRARY_DIR}/lib/asyn-ares.c"
+    "${LIBRARY_DIR}/lib/asyn-thread.c"
     "${LIBRARY_DIR}/lib/base64.c"
     "${LIBRARY_DIR}/lib/bufq.c"
     "${LIBRARY_DIR}/lib/bufref.c"
@@ -33,15 +33,14 @@ set (SRCS
     "${LIBRARY_DIR}/lib/curl_memrchr.c"
     "${LIBRARY_DIR}/lib/curl_multibyte.c"
     "${LIBRARY_DIR}/lib/curl_ntlm_core.c"
+    "${LIBRARY_DIR}/lib/curl_ntlm_wb.c"
     "${LIBRARY_DIR}/lib/curl_path.c"
     "${LIBRARY_DIR}/lib/curl_range.c"
     "${LIBRARY_DIR}/lib/curl_rtmp.c"
     "${LIBRARY_DIR}/lib/curl_sasl.c"
-    "${LIBRARY_DIR}/lib/curl_sha512_256.c"
     "${LIBRARY_DIR}/lib/curl_sspi.c"
     "${LIBRARY_DIR}/lib/curl_threads.c"
     "${LIBRARY_DIR}/lib/curl_trc.c"
-    "${LIBRARY_DIR}/lib/cw-out.c"
     "${LIBRARY_DIR}/lib/dict.c"
     "${LIBRARY_DIR}/lib/doh.c"
     "${LIBRARY_DIR}/lib/dynbuf.c"
@@ -99,7 +98,6 @@ set (SRCS
     "${LIBRARY_DIR}/lib/psl.c"
     "${LIBRARY_DIR}/lib/rand.c"
     "${LIBRARY_DIR}/lib/rename.c"
-    "${LIBRARY_DIR}/lib/request.c"
     "${LIBRARY_DIR}/lib/rtsp.c"
     "${LIBRARY_DIR}/lib/select.c"
     "${LIBRARY_DIR}/lib/sendf.c"
@@ -167,14 +165,13 @@ target_compile_definitions (_curl PRIVATE
     libcurl_EXPORTS
     OS="${CMAKE_SYSTEM_NAME}"
 )
-
 target_include_directories (_curl SYSTEM PUBLIC
     "${LIBRARY_DIR}/include"
     "${LIBRARY_DIR}/lib"
     . # curl_config.h
 )
 
-target_link_libraries (_curl PRIVATE OpenSSL::SSL ch_contrib::c-ares)
+target_link_libraries (_curl PRIVATE OpenSSL::SSL)
 
 # The library is large - avoid bloat (XXX: is it?)
 if (OMIT_HEAVY_DEBUG_SYMBOLS)

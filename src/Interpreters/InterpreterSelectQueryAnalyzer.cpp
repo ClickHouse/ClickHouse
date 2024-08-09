@@ -1,12 +1,9 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTIdentifier.h>
 
 #include <DataTypes/DataTypesNumber.h>
 
@@ -40,47 +37,22 @@ namespace ErrorCodes
 namespace
 {
 
-ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_names)
+ASTPtr normalizeAndValidateQuery(const ASTPtr & query)
 {
-    ASTPtr result_query;
-
     if (query->as<ASTSelectWithUnionQuery>() || query->as<ASTSelectQuery>())
-        result_query = query;
+    {
+        return query;
+    }
     else if (auto * subquery = query->as<ASTSubquery>())
-        result_query = subquery->children[0];
+    {
+        return subquery->children[0];
+    }
     else
+    {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Expected ASTSelectWithUnionQuery or ASTSelectQuery. Actual {}",
             query->formatForErrorMessage());
-
-    if (column_names.empty())
-        return result_query;
-
-    /// The initial query the VIEW references to is wrapped here with another SELECT query to allow reading only necessary columns.
-    auto select_query = std::make_shared<ASTSelectQuery>();
-
-    auto result_table_expression_ast = std::make_shared<ASTTableExpression>();
-    result_table_expression_ast->children.push_back(std::make_shared<ASTSubquery>(std::move(result_query)));
-    result_table_expression_ast->subquery = result_table_expression_ast->children.back();
-
-    auto tables_in_select_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
-    tables_in_select_query_element_ast->children.push_back(std::move(result_table_expression_ast));
-    tables_in_select_query_element_ast->table_expression = tables_in_select_query_element_ast->children.back();
-
-    ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
-    tables_in_select_query_ast->children.push_back(std::move(tables_in_select_query_element_ast));
-
-    select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
-
-    auto projection_expression_list_ast = std::make_shared<ASTExpressionList>();
-    projection_expression_list_ast->children.reserve(column_names.size());
-
-    for (const auto & column_name : column_names)
-        projection_expression_list_ast->children.push_back(std::make_shared<ASTIdentifier>(column_name));
-
-    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_expression_list_ast));
-
-    return select_query;
+    }
 }
 
 ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOptions & select_query_options)
@@ -101,26 +73,56 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
 {
-    auto nodes = extractAllTableReferences(query_tree);
-    IQueryTreeNode::ReplacementMap replacement_map;
+    auto query_to_replace_table_expression = query_tree;
+    QueryTreeNodePtr table_expression_to_replace;
 
-    for (auto & node : nodes)
+    while (!table_expression_to_replace)
     {
-        auto & table_node = node->as<TableNode &>();
+        if (auto * union_node = query_to_replace_table_expression->as<UnionNode>())
+            query_to_replace_table_expression = union_node->getQueries().getNodes().at(0);
 
-        /// Don't replace storage if table name differs
-        if (table_node.getStorageID().getFullNameNotQuoted() != storage->getStorageID().getFullNameNotQuoted())
-            continue;
+        auto & query_to_replace_table_expression_typed = query_to_replace_table_expression->as<QueryNode &>();
+        auto left_table_expression = extractLeftTableExpression(query_to_replace_table_expression_typed.getJoinTree());
+        auto left_table_expression_node_type = left_table_expression->getNodeType();
 
-        auto replacement_table_expression = std::make_shared<TableNode>(storage, context);
-        replacement_table_expression->setAlias(node->getAlias());
-
-        if (auto table_expression_modifiers = table_node.getTableExpressionModifiers())
-            replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
-
-        replacement_map.emplace(node.get(), std::move(replacement_table_expression));
+        switch (left_table_expression_node_type)
+        {
+            case QueryTreeNodeType::QUERY:
+            case QueryTreeNodeType::UNION:
+            {
+                query_to_replace_table_expression = std::move(left_table_expression);
+                break;
+            }
+            case QueryTreeNodeType::TABLE:
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            case QueryTreeNodeType::IDENTIFIER:
+            {
+                table_expression_to_replace = std::move(left_table_expression);
+                break;
+            }
+            default:
+            {
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "Expected table, table function or identifier node to replace with storage. Actual {}",
+                    left_table_expression->formatASTForErrorMessage());
+            }
+        }
     }
-    query_tree = query_tree->cloneAndReplace(replacement_map);
+
+    auto replacement_table_expression = std::make_shared<TableNode>(storage, context);
+    std::optional<TableExpressionModifiers> table_expression_modifiers;
+
+    if (auto * table_node = table_expression_to_replace->as<TableNode>())
+        table_expression_modifiers = table_node->getTableExpressionModifiers();
+    else if (auto * table_function_node = table_expression_to_replace->as<TableFunctionNode>())
+        table_expression_modifiers = table_function_node->getTableExpressionModifiers();
+    else if (auto * identifier_node = table_expression_to_replace->as<IdentifierNode>())
+        table_expression_modifiers = identifier_node->getTableExpressionModifiers();
+
+    if (table_expression_modifiers)
+        replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
+
+    query_tree = query_tree->cloneAndReplace(table_expression_to_replace, std::move(replacement_table_expression));
 }
 
 QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
@@ -131,13 +133,13 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
-    addQueryTreePasses(query_tree_pass_manager, select_query_options.only_analyze);
+    addQueryTreePasses(query_tree_pass_manager);
 
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-        query_tree_pass_manager.runOnlyResolve(query_tree);
+        query_tree_pass_manager.run(query_tree, 1 /*up_to_pass_index*/);
     else
         query_tree_pass_manager.run(query_tree);
 
@@ -152,9 +154,8 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ASTPtr & query_,
     const ContextPtr & context_,
-    const SelectQueryOptions & select_query_options_,
-    const Names & column_names)
-    : query(normalizeAndValidateQuery(query_, column_names))
+    const SelectQueryOptions & select_query_options_)
+    : query(normalizeAndValidateQuery(query_))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
@@ -166,9 +167,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ASTPtr & query_,
     const ContextPtr & context_,
     const StoragePtr & storage_,
-    const SelectQueryOptions & select_query_options_,
-    const Names & column_names)
-    : query(normalizeAndValidateQuery(query_, column_names))
+    const SelectQueryOptions & select_query_options_)
+    : query(normalizeAndValidateQuery(query_))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
@@ -205,7 +205,7 @@ Block InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & qu
 {
     auto select_query_options_copy = select_query_options;
     select_query_options_copy.only_analyze = true;
-    InterpreterSelectQueryAnalyzer interpreter(query_tree, context, select_query_options_copy);
+    InterpreterSelectQueryAnalyzer interpreter(query_tree, context, select_query_options);
 
     return interpreter.getSampleBlock();
 }
@@ -255,21 +255,6 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)
 {
     planner.addStorageLimits(storage_limits);
-}
-
-void InterpreterSelectQueryAnalyzer::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context*/) const
-{
-    for (const auto & used_row_policy : planner.getUsedRowPolicies())
-        elem.used_row_policies.emplace(used_row_policy);
-}
-
-void registerInterpreterSelectQueryAnalyzer(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterSelectQueryAnalyzer>(args.query, args.context, args.options);
-    };
-    factory.registerInterpreter("InterpreterSelectQueryAnalyzer", create_fn);
 }
 
 }

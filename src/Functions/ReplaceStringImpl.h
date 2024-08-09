@@ -15,7 +15,7 @@ namespace ErrorCodes
 
 struct ReplaceStringTraits
 {
-    enum class Replace : uint8_t
+    enum class Replace
     {
         First,
         All
@@ -35,8 +35,7 @@ struct ReplaceStringImpl
         const String & needle,
         const String & replacement,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+        ColumnString::Offsets & res_offsets)
     {
         if (needle.empty())
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
@@ -47,7 +46,8 @@ struct ReplaceStringImpl
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
-        res_offsets.resize(input_rows_count);
+        const size_t haystack_size = haystack_offsets.size();
+        res_offsets.resize(haystack_size);
 
         /// The current index in the array of strings.
         size_t i = 0;
@@ -124,20 +124,21 @@ struct ReplaceStringImpl
         const ColumnString::Offsets & needle_offsets,
         const String & replacement,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+        ColumnString::Offsets & res_offsets)
     {
         chassert(haystack_offsets.size() == needle_offsets.size());
 
+        const size_t haystack_size = haystack_offsets.size();
+
         res_data.reserve(haystack_data.size());
-        res_offsets.resize(input_rows_count);
+        res_offsets.resize(haystack_size);
 
         ColumnString::Offset res_offset = 0;
 
         size_t prev_haystack_offset = 0;
         size_t prev_needle_offset = 0;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < haystack_size; ++i)
         {
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
             const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
@@ -194,23 +195,24 @@ struct ReplaceStringImpl
         const ColumnString::Chars & replacement_data,
         const ColumnString::Offsets & replacement_offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+        ColumnString::Offsets & res_offsets)
     {
         chassert(haystack_offsets.size() == replacement_offsets.size());
 
         if (needle.empty())
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
 
+        const size_t haystack_size = haystack_offsets.size();
+
         res_data.reserve(haystack_data.size());
-        res_offsets.resize(input_rows_count);
+        res_offsets.resize(haystack_size);
 
         ColumnString::Offset res_offset = 0;
 
         size_t prev_haystack_offset = 0;
         size_t prev_replacement_offset = 0;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < haystack_size; ++i)
         {
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
             const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
@@ -265,14 +267,15 @@ struct ReplaceStringImpl
         const ColumnString::Chars & replacement_data,
         const ColumnString::Offsets & replacement_offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+        ColumnString::Offsets & res_offsets)
     {
         chassert(haystack_offsets.size() == needle_offsets.size());
         chassert(needle_offsets.size() == replacement_offsets.size());
 
+        const size_t haystack_size = haystack_offsets.size();
+
         res_data.reserve(haystack_data.size());
-        res_offsets.resize(input_rows_count);
+        res_offsets.resize(haystack_size);
 
         ColumnString::Offset res_offset = 0;
 
@@ -280,7 +283,7 @@ struct ReplaceStringImpl
         size_t prev_needle_offset = 0;
         size_t prev_replacement_offset = 0;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < haystack_size; ++i)
         {
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
             const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
@@ -342,8 +345,7 @@ struct ReplaceStringImpl
         const String & needle,
         const String & replacement,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+        ColumnString::Offsets & res_offsets)
     {
         if (needle.empty())
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
@@ -353,8 +355,9 @@ struct ReplaceStringImpl
         const UInt8 * pos = begin;
 
         ColumnString::Offset res_offset = 0;
+        size_t haystack_size = haystack_data.size() / n;
         res_data.reserve(haystack_data.size());
-        res_offsets.resize(input_rows_count);
+        res_offsets.resize(haystack_size);
 
         /// The current index in the string array.
         size_t i = 0;
@@ -381,13 +384,13 @@ struct ReplaceStringImpl
 
             /// Copy skipped strings without any changes but
             /// add zero byte to the end of each string.
-            while (i < input_rows_count && begin + n * (i + 1) <= match)
+            while (i < haystack_size && begin + n * (i + 1) <= match)
             {
                 COPY_REST_OF_CURRENT_STRING();
             }
 
             /// If you have reached the end, it's time to stop
-            if (i == input_rows_count)
+            if (i == haystack_size)
                 break;
 
             /// Copy unchanged part of current string.

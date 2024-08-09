@@ -21,7 +21,6 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Databases/MySQL/FetchTablesColumnsList.h>
 
@@ -56,7 +55,7 @@ StorageMySQL::StorageMySQL(
     , on_duplicate_clause{on_duplicate_clause_}
     , mysql_settings(mysql_settings_)
     , pool(std::make_shared<mysqlxx::PoolWithFailover>(pool_))
-    , log(getLogger("StorageMySQL (" + table_id_.table_name + ")"))
+    , log(&Poco::Logger::get("StorageMySQL (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -152,9 +151,9 @@ public:
 
     String getName() const override { return "StorageMySQLSink"; }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
-        auto block = getHeader().cloneWithColumns(chunk.getColumns());
+        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
         auto blocks = splitBlocks(block, max_batch_rows);
         mysqlxx::Transaction trans(entry);
         try

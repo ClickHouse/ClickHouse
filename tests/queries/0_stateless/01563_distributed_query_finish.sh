@@ -19,25 +19,20 @@ create table dist_01247 as data_01247 engine=Distributed(test_cluster_two_shards
 select * from dist_01247 format Null;
 EOL
 
-# NOTE: it is possible to got NETWORK_ERROR even with no-parallel, at least due to system.*_log_sender to the cloud
-for ((i = 0; i < 100; ++i)); do
-    network_errors_before=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.errors WHERE name = 'NETWORK_ERROR'")
+network_errors_before=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.errors WHERE name = 'NETWORK_ERROR'")
 
-    opts=(
-        "--max_distributed_connections=1"
-        "--optimize_skip_unused_shards=1"
-        "--optimize_distributed_group_by_sharding_key=1"
-        "--prefer_localhost_replica=0"
-    )
-    $CLICKHOUSE_CLIENT "${opts[@]}" --format CSV -nm -q "select count(), * from dist_01247 group by number order by number limit 1 format Null"
+opts=(
+    "--max_distributed_connections=1"
+    "--optimize_skip_unused_shards=1"
+    "--optimize_distributed_group_by_sharding_key=1"
+    "--prefer_localhost_replica=0"
+)
+$CLICKHOUSE_CLIENT "${opts[@]}" --format CSV -nm <<EOL
+select count(), * from dist_01247 group by number limit 1;
+EOL
 
-    # expect zero new network errors
-    network_errors_after=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.errors WHERE name = 'NETWORK_ERROR'")
-
-    if [[ $((network_errors_after-network_errors_before)) -eq 0 ]]; then
-        break
-    fi
-done
+# expect zero new network errors
+network_errors_after=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.errors WHERE name = 'NETWORK_ERROR'")
 echo NETWORK_ERROR=$(( network_errors_after-network_errors_before ))
 
 $CLICKHOUSE_CLIENT -q "drop table data_01247"

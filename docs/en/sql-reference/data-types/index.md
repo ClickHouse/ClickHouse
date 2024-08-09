@@ -1,10 +1,10 @@
 ---
 slug: /en/sql-reference/data-types/
 sidebar_label: List of data types
-sidebar_position: 1
+sidebar_position: 37
 ---
 
-# Data Types in ClickHouse
+# ClickHouse Data Types
 
 ClickHouse can store various kinds of data in table cells. This section describes the supported data types and special considerations for using and/or implementing them if any.
 

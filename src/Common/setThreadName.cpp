@@ -28,31 +28,25 @@ namespace ErrorCodes
 static thread_local char thread_name[THREAD_NAME_SIZE]{};
 
 
-void setThreadName(const char * name, bool truncate)
+void setThreadName(const char * name)
 {
-    size_t name_len = strlen(name);
-    if (!truncate && name_len > THREAD_NAME_SIZE - 1)
+    if (strlen(name) > THREAD_NAME_SIZE - 1)
         throw DB::Exception(DB::ErrorCodes::PTHREAD_ERROR, "Thread name cannot be longer than 15 bytes");
 
-    size_t name_capped_len = std::min<size_t>(1 + name_len, THREAD_NAME_SIZE - 1);
-    char name_capped[THREAD_NAME_SIZE];
-    memcpy(name_capped, name, name_capped_len);
-    name_capped[name_capped_len] = '\0';
-
 #if defined(OS_FREEBSD)
-    pthread_set_name_np(pthread_self(), name_capped);
+    pthread_set_name_np(pthread_self(), name);
     if ((false))
 #elif defined(OS_DARWIN)
-    if (0 != pthread_setname_np(name_capped))
+    if (0 != pthread_setname_np(name))
 #elif defined(OS_SUNOS)
-    if (0 != pthread_setname_np(pthread_self(), name_capped))
+    if (0 != pthread_setname_np(pthread_self(), name))
 #else
-    if (0 != prctl(PR_SET_NAME, name_capped, 0, 0, 0))
+    if (0 != prctl(PR_SET_NAME, name, 0, 0, 0))
 #endif
         if (errno != ENOSYS && errno != EPERM)    /// It's ok if the syscall is unsupported or not allowed in some environments.
-            throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot set thread name with prctl(PR_SET_NAME, ...)");
+            DB::throwFromErrno("Cannot set thread name with prctl(PR_SET_NAME, ...)", DB::ErrorCodes::PTHREAD_ERROR);
 
-    memcpy(thread_name, name_capped, name_capped_len);
+    memcpy(thread_name, name, std::min<size_t>(1 + strlen(name), THREAD_NAME_SIZE - 1));
 }
 
 const char * getThreadName()
@@ -70,7 +64,7 @@ const char * getThreadName()
 #else
     if (0 != prctl(PR_GET_NAME, thread_name, 0, 0, 0))
         if (errno != ENOSYS && errno != EPERM)    /// It's ok if the syscall is unsupported or not allowed in some environments.
-            throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with prctl(PR_GET_NAME)");
+            DB::throwFromErrno("Cannot get thread name with prctl(PR_GET_NAME)", DB::ErrorCodes::PTHREAD_ERROR);
 #endif
 
     return thread_name;

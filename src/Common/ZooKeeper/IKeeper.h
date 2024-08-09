@@ -8,7 +8,6 @@
 #include <vector>
 #include <memory>
 #include <cstdint>
-#include <span>
 #include <functional>
 
 /** Generic interface for ZooKeeper-like services.
@@ -110,8 +109,7 @@ enum class Error : int32_t
     ZAUTHFAILED = -115,                 /// Client authentication failed
     ZCLOSING = -116,                    /// ZooKeeper is closing
     ZNOTHING = -117,                    /// (not error) no server responses to process
-    ZSESSIONMOVED = -118,               /// Session moved to another server, so operation is ignored
-    ZNOTREADONLY = -119,                /// State-changing request is passed to read-only server
+    ZSESSIONMOVED = -118                /// Session moved to another server, so operation is ignored
 };
 
 /// Network errors and similar. You should reinitialize ZooKeeper session in case of these errors
@@ -213,9 +211,6 @@ struct CreateRequest : virtual Request
     bool is_ephemeral = false;
     bool is_sequential = false;
     ACLs acls;
-
-    /// should it succeed if node already exists
-    bool not_exists = false;
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
@@ -447,7 +442,6 @@ enum State
     CONNECTING = 1,
     ASSOCIATING = 2,
     CONNECTED = 3,
-    READONLY = 5,
     NOTCONNECTED = 999
 };
 
@@ -466,37 +460,37 @@ class Exception : public DB::Exception
 {
 private:
     /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
-    Exception(const std::string & msg, Error code_, int); /// NOLINT
-    Exception(PreformattedMessage && msg, Error code_);
+    Exception(const std::string & msg, const Error code_, int); /// NOLINT
+    Exception(PreformattedMessage && msg, const Error code_);
 
     /// Message must be a compile-time constant
     template <typename T>
     requires std::is_convertible_v<T, String>
-    Exception(T && message, Error code_) : DB::Exception(std::forward<T>(message), DB::ErrorCodes::KEEPER_EXCEPTION, /* remote_= */ false), code(code_)
+    Exception(T && message, const Error code_) : DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, std::forward<T>(message)), code(code_)
     {
         incrementErrorMetrics(code);
     }
 
-    static void incrementErrorMetrics(Error code_);
+    static void incrementErrorMetrics(const Error code_);
 
 public:
-    explicit Exception(Error code_); /// NOLINT
+    explicit Exception(const Error code_); /// NOLINT
     Exception(const Exception & exc);
 
     template <typename... Args>
-    Exception(Error code_, FormatStringHelper<Args...> fmt, Args &&... args)
+    Exception(const Error code_, FormatStringHelper<Args...> fmt, Args &&... args)
         : DB::Exception(DB::ErrorCodes::KEEPER_EXCEPTION, std::move(fmt), std::forward<Args>(args)...)
         , code(code_)
     {
         incrementErrorMetrics(code);
     }
 
-    static Exception createDeprecated(const std::string & msg, Error code_)
+    inline static Exception createDeprecated(const std::string & msg, const Error code_)
     {
         return Exception(msg, code_, 0);
     }
 
-    static Exception fromPath(Error code_, const std::string & path)
+    inline static Exception fromPath(const Error code_, const std::string & path)
     {
         return Exception(code_, "Coordination error: {}, path {}", errorMessage(code_), path);
     }
@@ -504,7 +498,7 @@ public:
     /// Message must be a compile-time constant
     template <typename T>
     requires std::is_convertible_v<T, String>
-    static Exception fromMessage(Error code_, T && message)
+    inline static Exception fromMessage(const Error code_, T && message)
     {
         return Exception(std::forward<T>(message), code_);
     }
@@ -514,18 +508,6 @@ public:
     Exception * clone() const override { return new Exception(*this); }
 
     const Error code;
-};
-
-class SimpleFaultInjection
-{
-public:
-    SimpleFaultInjection(Float64 probability_before, Float64 probability_after_, const String & description_);
-    ~SimpleFaultInjection() noexcept(false);
-
-private:
-    Float64 probability_after = 0;
-    String description;
-    int exceptions_level = 0;
 };
 
 
@@ -547,19 +529,8 @@ public:
     /// If expired, you can only destroy the object. All other methods will throw exception.
     virtual bool isExpired() const = 0;
 
-    /// Get the current connected node idx.
-    virtual std::optional<int8_t> getConnectedNodeIdx() const = 0;
-
-    /// Get the current connected host and port.
-    virtual String getConnectedHostPort() const = 0;
-
-    /// Get the xid of current connection.
-    virtual int32_t getConnectionXid() const = 0;
-
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
-
-    virtual String tryGetAvailabilityZone() { return ""; }
 
     /// If the method will throw an exception, callbacks won't be called.
     ///
@@ -626,16 +597,16 @@ public:
         ReconfigCallback callback) = 0;
 
     virtual void multi(
-        std::span<const RequestPtr> requests,
-        MultiCallback callback) = 0;
-
-    virtual void multi(
         const Requests & requests,
         MultiCallback callback) = 0;
 
     virtual bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const = 0;
 
     virtual const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return nullptr; }
+
+    /// A ZooKeeper session can have an optional deadline set on it.
+    /// After it has been reached, the session needs to be finalized.
+    virtual bool hasReachedDeadline() const = 0;
 
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;
@@ -645,7 +616,7 @@ public:
 
 template <> struct fmt::formatter<Coordination::Error> : fmt::formatter<std::string_view>
 {
-    constexpr auto format(Coordination::Error code, auto & ctx) const
+    constexpr auto format(Coordination::Error code, auto & ctx)
     {
         return formatter<string_view>::format(Coordination::errorMessage(code), ctx);
     }

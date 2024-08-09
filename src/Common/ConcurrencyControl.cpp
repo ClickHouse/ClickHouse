@@ -12,10 +12,10 @@ namespace ErrorCodes
 
 ConcurrencyControl::Slot::~Slot()
 {
-    static_cast<ConcurrencyControl::Allocation&>(*allocation).release();
+    allocation->release();
 }
 
-ConcurrencyControl::Slot::Slot(SlotAllocationPtr && allocation_)
+ConcurrencyControl::Slot::Slot(AllocationPtr && allocation_)
     : allocation(std::move(allocation_))
 {
 }
@@ -27,7 +27,7 @@ ConcurrencyControl::Allocation::~Allocation()
     parent.free(this);
 }
 
-[[nodiscard]] AcquiredSlotPtr ConcurrencyControl::Allocation::tryAcquire()
+[[nodiscard]] ConcurrencyControl::SlotPtr ConcurrencyControl::Allocation::tryAcquire()
 {
     SlotCount value = granted.load();
     while (value)
@@ -35,21 +35,15 @@ ConcurrencyControl::Allocation::~Allocation()
         if (granted.compare_exchange_strong(value, value - 1))
         {
             std::unique_lock lock{mutex};
-            return AcquiredSlotPtr(new Slot(shared_from_this())); // can't use std::make_shared due to private ctor
+            return SlotPtr(new Slot(shared_from_this())); // can't use std::make_shared due to private ctor
         }
     }
     return {}; // avoid unnecessary locking
 }
 
-SlotCount ConcurrencyControl::Allocation::grantedCount() const
+ConcurrencyControl::SlotCount ConcurrencyControl::Allocation::grantedCount() const
 {
-    return granted.load();
-}
-
-SlotCount ConcurrencyControl::Allocation::allocatedCount() const
-{
-    std::unique_lock lock{mutex};
-    return allocated;
+    return granted;
 }
 
 ConcurrencyControl::Allocation::Allocation(ConcurrencyControl & parent_, SlotCount limit_, SlotCount granted_, Waiters::iterator waiter_)
@@ -63,7 +57,7 @@ ConcurrencyControl::Allocation::Allocation(ConcurrencyControl & parent_, SlotCou
         *waiter = this;
 }
 
-// Grant single slot to allocation returns true iff more slot(s) are required
+// Grant single slot to allocation, returns true iff more slot(s) are required
 bool ConcurrencyControl::Allocation::grant()
 {
     std::unique_lock lock{mutex};
@@ -93,7 +87,7 @@ ConcurrencyControl::~ConcurrencyControl()
         abort();
 }
 
-[[nodiscard]] SlotAllocationPtr ConcurrencyControl::allocate(SlotCount min, SlotCount max)
+[[nodiscard]] ConcurrencyControl::AllocationPtr ConcurrencyControl::allocate(SlotCount min, SlotCount max)
 {
     if (min > max)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ConcurrencyControl: invalid allocation requirements");
@@ -106,13 +100,13 @@ ConcurrencyControl::~ConcurrencyControl()
 
     // Create allocation and start waiting if more slots are required
     if (granted < max)
-        return SlotAllocationPtr(new Allocation(*this, max, granted,
+        return AllocationPtr(new Allocation(*this, max, granted,
             waiters.insert(cur_waiter, nullptr /* pointer is set by Allocation ctor */)));
     else
-        return SlotAllocationPtr(new Allocation(*this, max, granted));
+        return AllocationPtr(new Allocation(*this, max, granted));
 }
 
-void ConcurrencyControl::setMaxConcurrency(SlotCount value)
+void ConcurrencyControl::setMaxConcurrency(ConcurrencyControl::SlotCount value)
 {
     std::unique_lock lock{mutex};
     max_concurrency = std::max<SlotCount>(1, value); // never allow max_concurrency to be zero
@@ -168,7 +162,7 @@ void ConcurrencyControl::schedule(std::unique_lock<std::mutex> &)
     }
 }
 
-SlotCount ConcurrencyControl::available(std::unique_lock<std::mutex> &) const
+ConcurrencyControl::SlotCount ConcurrencyControl::available(std::unique_lock<std::mutex> &) const
 {
     if (cur_concurrency < max_concurrency)
         return max_concurrency - cur_concurrency;

@@ -1,7 +1,5 @@
 #include <Analyzer/FunctionNode.h>
 
-#include <Columns/ColumnConst.h>
-
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -60,20 +58,12 @@ ColumnsWithTypeAndName FunctionNode::getArgumentColumns() const
 
         ColumnWithTypeAndName argument_column;
 
-        auto * constant = argument->as<ConstantNode>();
         if (isNameOfInFunction(function_name) && i == 1)
-        {
             argument_column.type = std::make_shared<DataTypeSet>();
-            if (constant)
-            {
-                /// Created but not filled for the analysis during function resolution.
-                FutureSetPtr empty_set;
-                argument_column.column = ColumnConst::create(ColumnSet::create(1, empty_set), 1);
-            }
-        }
         else
             argument_column.type = argument->getResultType();
 
+        auto * constant = argument->as<ConstantNode>();
         if (constant && !isNotCreatable(argument_column.type))
             argument_column.column = argument_column.type->createColumnConst(1, constant->getValue());
 
@@ -123,11 +113,6 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 
     buffer << ", function_type: " << function_type;
 
-    if (nulls_action == NullsAction::RESPECT_NULLS)
-        buffer << ", nulls_action : RESPECT_NULLS";
-    else if (nulls_action == NullsAction::IGNORE_NULLS)
-        buffer << ", nulls_action : IGNORE_NULLS";
-
     if (function)
         buffer << ", result_type: " + getResultType()->getName();
 
@@ -152,16 +137,14 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     }
 }
 
-bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
+bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
-    if (function_name != rhs_typed.function_name || isAggregateFunction() != rhs_typed.isAggregateFunction()
-        || isOrdinaryFunction() != rhs_typed.isOrdinaryFunction() || isWindowFunction() != rhs_typed.isWindowFunction()
-        || nulls_action != rhs_typed.nulls_action)
+    if (function_name != rhs_typed.function_name ||
+        isAggregateFunction() != rhs_typed.isAggregateFunction() ||
+        isOrdinaryFunction() != rhs_typed.isOrdinaryFunction() ||
+        isWindowFunction() != rhs_typed.isWindowFunction())
         return false;
-
-    if (!compare_options.compare_types)
-        return true;
 
     if (isResolved() != rhs_typed.isResolved())
         return false;
@@ -181,17 +164,13 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
     return true;
 }
 
-void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const
+void FunctionNode::updateTreeHashImpl(HashState & hash_state) const
 {
     hash_state.update(function_name.size());
     hash_state.update(function_name);
     hash_state.update(isOrdinaryFunction());
     hash_state.update(isAggregateFunction());
     hash_state.update(isWindowFunction());
-    hash_state.update(nulls_action);
-
-    if (!compare_options.compare_types)
-        return;
 
     if (!isResolved())
         return;
@@ -213,7 +192,6 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
       */
     result_function->function = function;
     result_function->kind = kind;
-    result_function->nulls_action = nulls_action;
     result_function->wrap_with_nullable = wrap_with_nullable;
 
     return result_function;
@@ -224,7 +202,6 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     auto function_ast = std::make_shared<ASTFunction>();
 
     function_ast->name = function_name;
-    function_ast->nulls_action = nulls_action;
 
     if (isWindowFunction())
     {
@@ -232,17 +209,9 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
         function_ast->kind = ASTFunction::Kind::WINDOW_FUNCTION;
     }
 
-    const auto & arguments = getArguments();
     auto new_options = options;
-    const auto & argument_nodes = arguments.getNodes();
     /// To avoid surrounding constants with several internal casts.
-    if (function_name == "_CAST" && !argument_nodes.empty() && argument_nodes[0]->getNodeType() == QueryTreeNodeType::CONSTANT)
-        new_options.add_cast_for_constants = false;
-
-    /// Avoid cast for `IN tuple(...)` expression.
-    /// Tuples could be quite big, and adding a type may significantly increase query size.
-    /// It should be safe because set type for `column IN tuple` is deduced from `column` type.
-    if (isNameOfInFunction(function_name) && argument_nodes.size() > 1 &&  argument_nodes[1]->getNodeType() == QueryTreeNodeType::CONSTANT)
+    if (function_name == "_CAST" && (*getArguments().begin())->getNodeType() == QueryTreeNodeType::CONSTANT)
         new_options.add_cast_for_constants = false;
 
     const auto & parameters = getParameters();
@@ -252,6 +221,7 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
         function_ast->parameters = function_ast->children.back();
     }
 
+    const auto & arguments = getArguments();
     function_ast->children.push_back(arguments.toAST(new_options));
     function_ast->arguments = function_ast->children.back();
 

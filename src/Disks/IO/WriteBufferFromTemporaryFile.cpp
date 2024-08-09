@@ -29,7 +29,8 @@ public:
 
         off_t res = lseek(fd, 0, SEEK_SET);
         if (-1 == res)
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, file_name, "Cannot reread temporary file {}", file_name);
+            throwFromErrnoWithPath("Cannot reread temporary file " + file_name, file_name,
+                                   ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
         return std::make_unique<ReadBufferFromTemporaryWriteBuffer>(fd, file_name, std::move(origin->tmp_file));
     }

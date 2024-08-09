@@ -6,8 +6,6 @@
 #include <base/errnoToString.h>
 #include <zip.h>
 #include <boost/algorithm/string/predicate.hpp>
-#include <Common/logger_useful.h>
-#include <Poco/Logger.h>
 
 
 namespace DB
@@ -17,56 +15,86 @@ namespace ErrorCodes
     extern const int CANNOT_PACK_ARCHIVE;
     extern const int SUPPORT_IS_DISABLED;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
+using RawHandle = zipFile;
 
-namespace
+
+/// Holds a raw handle, calls acquireRawHandle() in the constructor and releaseRawHandle() in the destructor.
+class ZipArchiveWriter::HandleHolder
 {
-    void checkResultCodeImpl(int code, const String & file_name)
-    {
-        if (code >= ZIP_OK)
-            return;
+public:
+    HandleHolder() = default;
 
-        String message = "Code = ";
-        switch (code)
+    explicit HandleHolder(const std::shared_ptr<ZipArchiveWriter> & writer_) : writer(writer_), raw_handle(writer->acquireRawHandle()) { }
+
+    ~HandleHolder()
+    {
+        if (raw_handle)
         {
-            case ZIP_ERRNO: message += "ERRNO, errno = " + errnoToString(); break;
-            case ZIP_PARAMERROR: message += "PARAMERROR"; break;
-            case ZIP_BADZIPFILE: message += "BADZIPFILE"; break;
-            case ZIP_INTERNALERROR: message += "INTERNALERROR"; break;
-            default: message += std::to_string(code); break;
+            try
+            {
+                int err = zipCloseFileInZip(raw_handle);
+                /// If err == ZIP_PARAMERROR the file is already closed.
+                if (err != ZIP_PARAMERROR)
+                    checkResult(err);
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ZipArchiveWriter");
+            }
+            writer->releaseRawHandle(raw_handle);
         }
-        throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Couldn't pack zip archive: {}, filename={}", message, quoteString(file_name));
     }
-}
+
+    HandleHolder(HandleHolder && src) noexcept
+    {
+        *this = std::move(src);
+    }
+
+    HandleHolder & operator=(HandleHolder && src) noexcept
+    {
+        writer = std::exchange(src.writer, nullptr);
+        raw_handle = std::exchange(src.raw_handle, nullptr);
+        return *this;
+    }
+
+    RawHandle getRawHandle() const { return raw_handle; }
+    std::shared_ptr<ZipArchiveWriter> getWriter() const { return writer; }
+
+    void checkResult(int code) const { writer->checkResult(code); }
+
+private:
+    std::shared_ptr<ZipArchiveWriter> writer;
+    RawHandle raw_handle = nullptr;
+};
 
 
 /// This class represents a WriteBuffer actually returned by writeFile().
 class ZipArchiveWriter::WriteBufferFromZipArchive : public WriteBufferFromFileBase
 {
 public:
-    WriteBufferFromZipArchive(std::shared_ptr<ZipArchiveWriter> archive_writer_, const String & filename_)
+    WriteBufferFromZipArchive(HandleHolder && handle_, const String & filename_)
         : WriteBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
+        , handle(std::move(handle_))
         , filename(filename_)
     {
-        zip_handle = archive_writer_->startWritingFile();
-        archive_writer = archive_writer_;
-
-        auto compress_method = archive_writer_->getCompressionMethod();
-        auto compress_level = archive_writer_->getCompressionLevel();
+        auto compress_method = handle.getWriter()->compression_method;
+        auto compress_level = handle.getWriter()->compression_level;
         checkCompressionMethodIsEnabled(compress_method);
 
         const char * password_cstr = nullptr;
-        String current_password = archive_writer_->getPassword();
-        if (!current_password.empty())
+        const String & password_str = handle.getWriter()->password;
+        if (!password_str.empty())
         {
             checkEncryptionIsEnabled();
-            password_cstr = current_password.c_str();
+            password_cstr = password_str.c_str();
         }
 
-        int code = zipOpenNewFileInZip3_64(
-            zip_handle,
+        RawHandle raw_handle = handle.getRawHandle();
+
+        checkResult(zipOpenNewFileInZip3_64(
+            raw_handle,
             filename_.c_str(),
             /* zipfi= */ nullptr,
             /* extrafield_local= */ nullptr,
@@ -82,28 +110,19 @@ public:
             /* strategy= */ 0,
             password_cstr,
             /* crc_for_crypting= */ 0,
-            /* zip64= */ true);
-        checkResultCode(code);
+            /* zip64= */ true));
     }
 
     ~WriteBufferFromZipArchive() override
     {
         try
         {
-            closeFile(/* throw_if_error= */ false);
-            endWritingFile();
+            finalize();
         }
         catch (...)
         {
-            tryLogCurrentException("WriteBufferFromZipArchive");
+            tryLogCurrentException("ZipArchiveWriter");
         }
-    }
-
-    void finalizeImpl() override
-    {
-        next();
-        closeFile(/* throw_if_error= */ true);
-        endWritingFile();
     }
 
     void sync() override { next(); }
@@ -114,106 +133,110 @@ private:
     {
         if (!offset())
             return;
-        chassert(zip_handle);
-        int code = zipWriteInFileInZip(zip_handle, working_buffer.begin(), static_cast<uint32_t>(offset()));
-        checkResultCode(code);
+        RawHandle raw_handle = handle.getRawHandle();
+        int code = zipWriteInFileInZip(raw_handle, working_buffer.begin(), static_cast<uint32_t>(offset()));
+        checkResult(code);
     }
 
-    void closeFile(bool throw_if_error)
-    {
-        if (zip_handle)
-        {
-            int code = zipCloseFileInZip(zip_handle);
-            zip_handle = nullptr;
-            if (throw_if_error)
-                checkResultCode(code);
-        }
-    }
+    void checkResult(int code) const { handle.checkResult(code); }
 
-    void endWritingFile()
-    {
-        if (auto archive_writer_ptr = archive_writer.lock())
-        {
-            archive_writer_ptr->endWritingFile();
-            archive_writer.reset();
-        }
-    }
-
-    void checkResultCode(int code) const { checkResultCodeImpl(code, filename); }
-
-    std::weak_ptr<ZipArchiveWriter> archive_writer;
-    const String filename;
-    ZipHandle zip_handle;
+    HandleHolder handle;
+    String filename;
 };
 
 
-/// Provides a set of functions allowing the minizip library to write its output
-/// to a WriteBuffer instead of an ordinary file in the local filesystem.
-class ZipArchiveWriter::StreamInfo
+namespace
 {
-public:
-    explicit StreamInfo(std::unique_ptr<WriteBuffer> write_buffer_)
-        : write_buffer(std::move(write_buffer_)), start_offset(write_buffer->count())
+    /// Provides a set of functions allowing the minizip library to write its output
+    /// to a WriteBuffer instead of an ordinary file in the local filesystem.
+    class StreamFromWriteBuffer
     {
-    }
+    public:
+        static RawHandle open(std::unique_ptr<WriteBuffer> archive_write_buffer)
+        {
+            Opaque opaque{std::move(archive_write_buffer)};
 
-    ~StreamInfo() = default;
+            zlib_filefunc64_def func_def;
+            func_def.zopen64_file = &StreamFromWriteBuffer::openFileFunc;
+            func_def.zclose_file = &StreamFromWriteBuffer::closeFileFunc;
+            func_def.zread_file = &StreamFromWriteBuffer::readFileFunc;
+            func_def.zwrite_file = &StreamFromWriteBuffer::writeFileFunc;
+            func_def.zseek64_file = &StreamFromWriteBuffer::seekFunc;
+            func_def.ztell64_file = &StreamFromWriteBuffer::tellFunc;
+            func_def.zerror_file = &StreamFromWriteBuffer::testErrorFunc;
+            func_def.opaque = &opaque;
 
-    ZipHandle makeZipHandle()
-    {
-        zlib_filefunc64_def func_def;
-        func_def.zopen64_file = &StreamInfo::openFileFunc;
-        func_def.zclose_file = &StreamInfo::closeFileFunc;
-        func_def.zread_file = &StreamInfo::readFileFunc;
-        func_def.zwrite_file = &StreamInfo::writeFileFunc;
-        func_def.zseek64_file = &StreamInfo::seekFunc;
-        func_def.ztell64_file = &StreamInfo::tellFunc;
-        func_def.zerror_file = &StreamInfo::testErrorFunc;
-        func_def.opaque = this;
+            return zipOpen2_64(
+                /* path= */ nullptr,
+                /* append= */ false,
+                /* globalcomment= */ nullptr,
+                &func_def);
+        }
 
-        return zipOpen2_64(
-            /* path= */ nullptr,
-            /* append= */ false,
-            /* globalcomment= */ nullptr,
-            &func_def);
-    }
+    private:
+        std::unique_ptr<WriteBuffer> write_buffer;
+        UInt64 start_offset = 0;
 
-    WriteBuffer & getWriteBuffer() { return *write_buffer; }
+        struct Opaque
+        {
+            std::unique_ptr<WriteBuffer> write_buffer;
+        };
 
-private:
-    /// We do nothing in openFileFunc() and in closeFileFunc() because we already have `write_buffer` (file is already opened).
-    static void * openFileFunc(void * opaque, const void *, int) { return opaque; }
-    static int closeFileFunc(void *, void *) { return ZIP_OK; }
+        static void * openFileFunc(void * opaque, const void *, int)
+        {
+            Opaque & opq = *reinterpret_cast<Opaque *>(opaque);
+            return new StreamFromWriteBuffer(std::move(opq.write_buffer));
+        }
 
-    static unsigned long writeFileFunc(void * opaque, void *, const void * buf, unsigned long size) // NOLINT(google-runtime-int)
-    {
-        auto * stream_info = reinterpret_cast<StreamInfo *>(opaque);
-        stream_info->write_buffer->write(reinterpret_cast<const char *>(buf), size);
-        return size;
-    }
+        explicit StreamFromWriteBuffer(std::unique_ptr<WriteBuffer> write_buffer_)
+            : write_buffer(std::move(write_buffer_)), start_offset(write_buffer->count()) {}
 
-    static int testErrorFunc(void *, void *) { return ZIP_OK; }
+        ~StreamFromWriteBuffer()
+        {
+            write_buffer->finalize();
+        }
 
-    static ZPOS64_T tellFunc(void * opaque, void *)
-    {
-        auto * stream_info = reinterpret_cast<StreamInfo *>(opaque);
-        auto pos = stream_info->write_buffer->count() - stream_info->start_offset;
-        return pos;
-    }
+        static int closeFileFunc(void *, void * stream)
+        {
+            delete reinterpret_cast<StreamFromWriteBuffer *>(stream);
+            return ZIP_OK;
+        }
 
-    static long seekFunc(void *, void *, ZPOS64_T, int) // NOLINT(google-runtime-int)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::seek() is not implemented");
-    }
+        static StreamFromWriteBuffer & get(void * ptr)
+        {
+            return *reinterpret_cast<StreamFromWriteBuffer *>(ptr);
+        }
 
-    static unsigned long readFileFunc(void *, void *, void *, unsigned long) // NOLINT(google-runtime-int)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StreamInfo::readFile() is not implemented");
-    }
+        static unsigned long writeFileFunc(void *, void * stream, const void * buf, unsigned long size) // NOLINT(google-runtime-int)
+        {
+            auto & strm = get(stream);
+            strm.write_buffer->write(reinterpret_cast<const char *>(buf), size);
+            return size;
+        }
 
-    std::unique_ptr<WriteBuffer> write_buffer;
-    UInt64 start_offset;
-};
+        static int testErrorFunc(void *, void *)
+        {
+            return ZIP_OK;
+        }
+
+        static ZPOS64_T tellFunc(void *, void * stream)
+        {
+            auto & strm = get(stream);
+            auto pos = strm.write_buffer->count() - strm.start_offset;
+            return pos;
+        }
+
+        static long seekFunc(void *, void *, ZPOS64_T, int) // NOLINT(google-runtime-int)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "StreamFromWriteBuffer::seek must not be called");
+        }
+
+        static unsigned long readFileFunc(void *, void *, void *, unsigned long) // NOLINT(google-runtime-int)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "StreamFromWriteBuffer::readFile must not be called");
+        }
+    };
+}
 
 
 ZipArchiveWriter::ZipArchiveWriter(const String & path_to_archive_)
@@ -225,42 +248,21 @@ ZipArchiveWriter::ZipArchiveWriter(const String & path_to_archive_, std::unique_
     : path_to_archive(path_to_archive_), compression_method(MZ_COMPRESS_METHOD_DEFLATE)
 {
     if (archive_write_buffer_)
-    {
-        stream_info = std::make_unique<StreamInfo>(std::move(archive_write_buffer_));
-        zip_handle = stream_info->makeZipHandle();
-    }
+        handle = StreamFromWriteBuffer::open(std::move(archive_write_buffer_));
     else
-    {
-        zip_handle = zipOpen64(path_to_archive.c_str(), /* append= */ false);
-    }
-
-    if (!zip_handle)
+        handle = zipOpen64(path_to_archive.c_str(), /* append= */ false);
+    if (!handle)
         throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Couldn't create zip archive {}", quoteString(path_to_archive));
+
 }
 
 ZipArchiveWriter::~ZipArchiveWriter()
 {
-    if (!finalized)
-    {
-        /// It is totally OK to destroy instance without finalization when an exception occurs.
-        /// However it is suspicious to destroy instance without finalization at the green path.
-        if (!std::uncaught_exceptions() && std::current_exception() == nullptr)
-        {
-            LoggerPtr log = getLogger("ZipArchiveWriter");
-            LOG_ERROR(log,
-                       "ZipArchiveWriter is not finalized when destructor is called. "
-                       "The zip archive might not be written at all or might be truncated. "
-                       "Stack trace: {}", StackTrace().toString());
-            chassert(false && "ZipArchiveWriter is not finalized in destructor.");
-        }
-    }
-
-    if (zip_handle)
+    if (handle)
     {
         try
         {
-            zipCloseFileInZip(zip_handle);
-            zipClose(zip_handle, /* global_comment= */ nullptr);
+            checkResult(zipClose(handle, /* global_comment= */ nullptr));
         }
         catch (...)
         {
@@ -271,43 +273,13 @@ ZipArchiveWriter::~ZipArchiveWriter()
 
 std::unique_ptr<WriteBufferFromFileBase> ZipArchiveWriter::writeFile(const String & filename)
 {
-    return std::make_unique<WriteBufferFromZipArchive>(std::static_pointer_cast<ZipArchiveWriter>(shared_from_this()), filename);
-}
-
-std::unique_ptr<WriteBufferFromFileBase> ZipArchiveWriter::writeFile(const String & filename, [[maybe_unused]] size_t size)
-{
-    return ZipArchiveWriter::writeFile(filename);
+    return std::make_unique<WriteBufferFromZipArchive>(acquireHandle(), filename);
 }
 
 bool ZipArchiveWriter::isWritingFile() const
 {
     std::lock_guard lock{mutex};
-    return is_writing_file;
-}
-
-void ZipArchiveWriter::finalize()
-{
-    std::lock_guard lock{mutex};
-    if (finalized)
-        return;
-
-    if (is_writing_file)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ZipArchiveWriter::finalize() is called in the middle of writing a file into the zip archive. That's not allowed");
-
-    if (zip_handle)
-    {
-        int code = zipClose(zip_handle, /* global_comment= */ nullptr);
-        zip_handle = nullptr;
-        checkResultCode(code);
-    }
-
-    if (stream_info)
-    {
-        stream_info->getWriteBuffer().finalize();
-        stream_info.reset();
-    }
-
-    finalized = true;
+    return !handle;
 }
 
 void ZipArchiveWriter::setCompression(const String & compression_method_, int compression_level_)
@@ -317,28 +289,10 @@ void ZipArchiveWriter::setCompression(const String & compression_method_, int co
     compression_level = compression_level_;
 }
 
-int ZipArchiveWriter::getCompressionMethod() const
-{
-    std::lock_guard lock{mutex};
-    return compression_method;
-}
-
-int ZipArchiveWriter::getCompressionLevel() const
-{
-    std::lock_guard lock{mutex};
-    return compression_level;
-}
-
 void ZipArchiveWriter::setPassword(const String & password_)
 {
     std::lock_guard lock{mutex};
     password = password_;
-}
-
-String ZipArchiveWriter::getPassword() const
-{
-    std::lock_guard lock{mutex};
-    return password;
 }
 
 int ZipArchiveWriter::compressionMethodToInt(const String & compression_method_)
@@ -363,7 +317,7 @@ int ZipArchiveWriter::compressionMethodToInt(const String & compression_method_)
 
 String ZipArchiveWriter::intToCompressionMethod(int compression_method_)
 {
-    switch (compression_method_) // NOLINT(bugprone-switch-missing-default-case)
+    switch (compression_method_)
     {
         case MZ_COMPRESS_METHOD_STORE:   return kStore;
         case MZ_COMPRESS_METHOD_DEFLATE: return kDeflate;
@@ -378,7 +332,7 @@ String ZipArchiveWriter::intToCompressionMethod(int compression_method_)
 /// Checks that a passed compression method can be used.
 void ZipArchiveWriter::checkCompressionMethodIsEnabled(int compression_method_)
 {
-    switch (compression_method_) // NOLINT(bugprone-switch-missing-default-case)
+    switch (compression_method_)
     {
         case MZ_COMPRESS_METHOD_STORE: [[fallthrough]];
         case MZ_COMPRESS_METHOD_DEFLATE:
@@ -407,24 +361,45 @@ void ZipArchiveWriter::checkEncryptionIsEnabled()
 #endif
 }
 
-ZipArchiveWriter::ZipHandle ZipArchiveWriter::startWritingFile()
+ZipArchiveWriter::HandleHolder ZipArchiveWriter::acquireHandle()
 {
-    std::lock_guard lock{mutex};
-    if (is_writing_file)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot write two files to a zip archive in parallel");
-    is_writing_file = true;
-    return zip_handle;
+    return HandleHolder{std::static_pointer_cast<ZipArchiveWriter>(shared_from_this())};
 }
 
-void ZipArchiveWriter::endWritingFile()
+RawHandle ZipArchiveWriter::acquireRawHandle()
 {
     std::lock_guard lock{mutex};
-    is_writing_file = false;
+    if (!handle)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot have more than one write buffer while writing a zip archive");
+    return std::exchange(handle, nullptr);
 }
 
-void ZipArchiveWriter::checkResultCode(int code) const
+void ZipArchiveWriter::releaseRawHandle(RawHandle raw_handle_)
 {
-    checkResultCodeImpl(code, path_to_archive);
+    std::lock_guard lock{mutex};
+    handle = raw_handle_;
+}
+
+void ZipArchiveWriter::checkResult(int code) const
+{
+    if (code >= ZIP_OK)
+        return;
+
+    String message = "Code = ";
+    switch (code)
+    {
+        case ZIP_ERRNO: message += "ERRNO, errno = " + errnoToString(); break;
+        case ZIP_PARAMERROR: message += "PARAMERROR"; break;
+        case ZIP_BADZIPFILE: message += "BADZIPFILE"; break;
+        case ZIP_INTERNALERROR: message += "INTERNALERROR"; break;
+        default: message += std::to_string(code); break;
+    }
+    showError(message);
+}
+
+void ZipArchiveWriter::showError(const String & message) const
+{
+    throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Couldn't pack zip archive {}: {}", quoteString(path_to_archive), message);
 }
 
 }

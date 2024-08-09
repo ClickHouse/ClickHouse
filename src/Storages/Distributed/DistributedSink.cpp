@@ -31,8 +31,9 @@
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>
+#include <base/range.h>
+#include <base/scope_guard.h>
 #include <Common/scope_guard_safe.h>
-#include <Core/Settings.h>
 
 #include <filesystem>
 
@@ -42,7 +43,6 @@ namespace CurrentMetrics
     extern const Metric DistributedSend;
     extern const Metric DistributedInsertThreads;
     extern const Metric DistributedInsertThreadsActive;
-    extern const Metric DistributedInsertThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -63,7 +63,7 @@ namespace ErrorCodes
     extern const int ABORTED;
 }
 
-static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log)
+static Block adoptBlock(const Block & header, const Block & block, Poco::Logger * log)
 {
     if (blocksHaveEqualStructure(header, block))
         return block;
@@ -85,7 +85,7 @@ static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log
 }
 
 
-static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & block, size_t repeats, LoggerPtr log)
+static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & block, size_t repeats, Poco::Logger * log)
 {
     Block adopted_block = adoptBlock(executor.getHeader(), block, log);
     for (size_t i = 0; i < repeats; ++i)
@@ -113,19 +113,21 @@ DistributedSink::DistributedSink(
     const ClusterPtr & cluster_,
     bool insert_sync_,
     UInt64 insert_timeout_,
+    StorageID main_table_,
     const Names & columns_to_send_)
     : SinkToStorage(metadata_snapshot_->getSampleBlock())
     , context(Context::createCopy(context_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
-    , query_ast(createInsertToRemoteTableQuery(storage.remote_storage.database_name, storage.remote_storage.table_name, columns_to_send_))
+    , query_ast(createInsertToRemoteTableQuery(main_table_.database_name, main_table_.table_name, columns_to_send_))
     , query_string(queryToString(query_ast))
     , cluster(cluster_)
     , insert_sync(insert_sync_)
     , allow_materialized(context->getSettingsRef().insert_allow_materialized_columns)
     , insert_timeout(insert_timeout_)
+    , main_table(main_table_)
     , columns_to_send(columns_to_send_.begin(), columns_to_send_.end())
-    , log(getLogger("DistributedSink"))
+    , log(&Poco::Logger::get("DistributedSink"))
 {
     const auto & settings = context->getSettingsRef();
     if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
@@ -135,7 +137,7 @@ DistributedSink::DistributedSink(
 }
 
 
-void DistributedSink::consume(Chunk & chunk)
+void DistributedSink::consume(Chunk chunk)
 {
     if (is_first_chunk)
     {
@@ -143,7 +145,7 @@ void DistributedSink::consume(Chunk & chunk)
         is_first_chunk = false;
     }
 
-    auto ordinary_block = getHeader().cloneWithColumns(chunk.getColumns());
+    auto ordinary_block = getHeader().cloneWithColumns(chunk.detachColumns());
 
     if (insert_sync)
         writeSync(ordinary_block);
@@ -174,10 +176,7 @@ void DistributedSink::writeAsync(const Block & block)
     else
     {
         if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
-        {
-            writeSplitAsync(block);
-            return;
-        }
+            return writeSplitAsync(block);
 
         writeAsyncImpl(block);
         ++inserted_blocks;
@@ -374,14 +373,11 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "There are several writing job for an automatically replicated shard");
 
                     /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
-                    /// NOTE: INSERT will also take into account max_replica_delay_for_distributed_queries
-                    /// (anyway fallback_to_stale_replicas_for_distributed_queries=true by default)
-                    auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-                    auto result = results.front();
-                    if (shard_info.pool->isTryResultInvalid(result, settings.distributed_insert_skip_read_only_replicas))
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got an invalid connection result");
+                    auto results = shard_info.pool->getManyChecked(timeouts, &settings, PoolMode::GET_ONE, main_table.getQualifiedName());
+                    if (results.empty() || results.front().entry.isNull())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection for shard {}", toString(job.shard_index));
 
-                    job.connection_entry = std::move(result.entry);
+                    job.connection_entry = std::move(results.front().entry);
                 }
                 else
                 {
@@ -391,7 +387,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     if (!connection_pool)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection pool for replica {} does not exist", replica.readableString());
 
-                    job.connection_entry = connection_pool->get(timeouts, settings);
+                    job.connection_entry = connection_pool->get(timeouts, &settings);
                     if (job.connection_entry.isNull())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty connection for replica{}", replica.readableString());
                 }
@@ -425,13 +421,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 /// to resolve tables (in InterpreterInsertQuery::getTable())
                 auto copy_query_ast = query_ast->clone();
 
-                InterpreterInsertQuery interp(
-                    copy_query_ast,
-                    job.local_context,
-                    allow_materialized,
-                    /* no_squash */ false,
-                    /* no_destination */ false,
-                    /* async_isnert */ false);
+                InterpreterInsertQuery interp(copy_query_ast, job.local_context, allow_materialized);
                 auto block_io = interp.execute();
 
                 job.pipeline = std::move(block_io.pipeline);
@@ -450,10 +440,6 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 
 void DistributedSink::writeSync(const Block & block)
 {
-    std::lock_guard lock(execution_mutex);
-    if (isCancelled())
-        return;
-
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
     const Settings & settings = context->getSettingsRef();
@@ -479,7 +465,6 @@ void DistributedSink::writeSync(const Block & block)
         pool.emplace(
             CurrentMetrics::DistributedInsertThreads,
             CurrentMetrics::DistributedInsertThreadsActive,
-            CurrentMetrics::DistributedInsertThreadsScheduled,
             max_threads, max_threads, jobs_count);
 
         if (!throttler && (settings.max_network_bandwidth || settings.max_network_bytes))
@@ -555,10 +540,6 @@ void DistributedSink::onFinish()
         LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
     };
 
-    std::lock_guard lock(execution_mutex);
-    if (isCancelled())
-        return;
-
     /// Pool finished means that some exception had been thrown before,
     /// and scheduling new jobs will return "Cannot schedule a task" error.
     if (insert_sync && pool && !pool->finished())
@@ -572,15 +553,8 @@ void DistributedSink::onFinish()
                 {
                     if (job.executor)
                     {
-                        pool->scheduleOrThrowOnError([&job, thread_group = CurrentThread::getGroup()]()
+                        pool->scheduleOrThrowOnError([&job]()
                         {
-                            SCOPE_EXIT_SAFE(
-                                if (thread_group)
-                                    CurrentThread::detachFromGroupIfNotDetached();
-                            );
-                            if (thread_group)
-                                CurrentThread::attachToGroupIfDetached(thread_group);
-
                             job.executor->finish();
                         });
                     }
@@ -607,9 +581,8 @@ void DistributedSink::onFinish()
     }
 }
 
-void DistributedSink::onCancel() noexcept
+void DistributedSink::onCancel()
 {
-    std::lock_guard lock(execution_mutex);
     if (pool && !pool->finished())
     {
         try
@@ -618,26 +591,14 @@ void DistributedSink::onCancel() noexcept
         }
         catch (...)
         {
-            tryLogCurrentException(storage.log, "Error occurs on cancellation.");
+            tryLogCurrentException(storage.log);
         }
     }
 
     for (auto & shard_jobs : per_shard_jobs)
-    {
         for (JobReplica & job : shard_jobs.replicas_jobs)
-        {
-            try
-            {
-                if (job.executor)
-                    job.executor->cancel();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(storage.log, "Error occurs on cancellation.");
-            }
-        }
-    }
-
+            if (job.executor)
+                job.executor->cancel();
 }
 
 
@@ -648,7 +609,7 @@ IColumn::Selector DistributedSink::createSelector(const Block & source_block) co
 
     const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
 
-    return StorageDistributed::createSelector(cluster, key_column);
+    return storage.createSelector(cluster, key_column);
 }
 
 
@@ -738,13 +699,7 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
 
     try
     {
-        InterpreterInsertQuery interp(
-            query_ast,
-            context,
-            allow_materialized,
-            /* no_squash */ false,
-            /* no_destination */ false,
-            /* async_isnert */ false);
+        InterpreterInsertQuery interp(query_ast, context, allow_materialized);
 
         auto block_io = interp.execute();
         PushingPipelineExecutor executor(block_io.pipeline);
@@ -778,7 +733,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     if (compression_method == "ZSTD")
         compression_level = settings.network_zstd_compression_level;
 
-    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs, settings.allow_experimental_codecs, settings.enable_deflate_qpl_codec, settings.enable_zstd_qat_codec);
+    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs, settings.allow_experimental_codecs, settings.enable_deflate_qpl_codec);
     CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
 
     /// tmp directory is used to ensure atomicity of transactions
@@ -801,7 +756,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         return guard;
     };
 
-    auto sleep_ms = context->getSettingsRef().distributed_background_insert_sleep_time_ms.totalMilliseconds();
+    auto sleep_ms = context->getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds();
     size_t file_size;
 
     auto it = dir_names.begin();
@@ -827,7 +782,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             NativeWriter stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
 
             /// Prepare the header.
-            /// See also DistributedAsyncInsertHeader::read() in DistributedInsertQueue (for reading side)
+            /// See also readDistributedHeader() in DirectoryMonitor (for reading side)
             ///
             /// We wrap the header into a string for compatibility with older versions:
             /// a shard will able to read the header partly and ignore other parts based on its version.
