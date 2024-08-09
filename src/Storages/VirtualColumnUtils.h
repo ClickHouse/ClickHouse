@@ -18,8 +18,16 @@ class NamesAndTypesList;
 namespace VirtualColumnUtils
 {
 
-/// Similar to filterBlockWithQuery, but uses ActionsDAG as a predicate.
-/// Basically it is filterBlockWithDAG(splitFilterDagForAllowedInputs).
+/// The filtering functions are tricky to use correctly.
+/// There are 2 ways:
+///  1. Call filterBlockWithPredicate() or filterBlockWithExpression() inside SourceStepWithFilter::applyFilters().
+///  2. Call splitFilterDagForAllowedInputs() and buildSetsForDAG() inside SourceStepWithFilter::applyFilters().
+///     Then call filterBlockWithPredicate() or filterBlockWithExpression() in initializePipeline().
+///
+/// Otherwise calling filter*() outside applyFilters() will throw "Not-ready Set is passed"
+/// if there are subqueries.
+
+/// Similar to filterBlockWithExpression(buildFilterExpression(splitFilterDagForAllowedInputs(...))).
 void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context);
 
 /// Just filters block. Block should contain all the required columns.
@@ -75,7 +83,7 @@ struct VirtualsForFileLikeStorage
     std::optional<size_t> size { std::nullopt };
     const String * filename { nullptr };
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
-
+    const String * etag { nullptr };
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(

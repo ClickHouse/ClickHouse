@@ -1,7 +1,7 @@
 
 clickhouse_add_executable (mergetree_checksum_fuzzer mergetree_checksum_fuzzer.cpp)
 # Look at comment around fuzz_compression target declaration
-target_link_libraries (mergetree_checksum_fuzzer PRIVATE dbms)
+target_link_libraries (mergetree_checksum_fuzzer PRIVATE dbms clickhouse_functions)
 
 clickhouse_add_executable (columns_description_fuzzer columns_description_fuzzer.cpp)
 target_link_libraries (columns_description_fuzzer PRIVATE dbms clickhouse_functions)
