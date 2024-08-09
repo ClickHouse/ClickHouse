@@ -71,7 +71,10 @@ String keysAsString(const T & t)
 
 }
 
-USearchIndexWithSerialization::USearchIndexWithSerialization(size_t dimensions, unum::usearch::metric_kind_t metric_kind, unum::usearch::scalar_kind_t scalar_kind)
+USearchIndexWithSerialization::USearchIndexWithSerialization(
+    size_t dimensions,
+    unum::usearch::metric_kind_t metric_kind,
+    unum::usearch::scalar_kind_t scalar_kind)
     : Base(Base::make(unum::usearch::metric_punned_t(dimensions, metric_kind, scalar_kind)))
 {
 }
@@ -122,11 +125,7 @@ MergeTreeIndexGranuleUSearch::MergeTreeIndexGranuleUSearch(
     const Block & index_sample_block_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_)
-    : index_name(index_name_)
-    , index_sample_block(index_sample_block_)
-    , metric_kind(metric_kind_)
-    , scalar_kind(scalar_kind_)
-    , index(nullptr)
+    : MergeTreeIndexGranuleUSearch(index_name_, index_sample_block_, metric_kind_, scalar_kind_, nullptr)
 {
 }
 
@@ -291,7 +290,7 @@ MergeTreeIndexConditionUSearch::MergeTreeIndexConditionUSearch(
 {
 }
 
-bool MergeTreeIndexConditionUSearch::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /*idx_granule*/) const
+bool MergeTreeIndexConditionUSearch::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "mayBeTrueOnGranule is not supported for ANN skip indexes");
 }
@@ -308,14 +307,14 @@ bool MergeTreeIndexConditionUSearch::alwaysUnknownOrTrue() const
     return ann_condition.alwaysUnknownOrTrue(index_distance_function);
 }
 
-std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
+std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRanges(MergeTreeIndexGranulePtr granule_) const
 {
     const UInt64 limit = ann_condition.getLimit();
     const UInt64 index_granularity = ann_condition.getIndexGranularity();
 
     const std::vector<float> reference_vector = ann_condition.getReferenceVector();
 
-    const auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleUSearch>(idx_granule);
+    const auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleUSearch>(granule_);
     if (granule == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule has the wrong type");
 
