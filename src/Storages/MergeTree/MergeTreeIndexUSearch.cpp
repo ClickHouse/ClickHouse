@@ -421,23 +421,15 @@ void usearchIndexValidator(const IndexDescription & index, bool /* attach */)
 
     /// Check data type of indexed column:
 
-    auto throw_unsupported_underlying_column_exception = []()
-    {
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "USearch can only be created on columns of type Array(Float32)");
-    };
-
     DataTypePtr data_type = index.sample_block.getDataTypes()[0];
-
     if (const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get()))
     {
         TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
         if (!WhichDataType(nested_type_index).isFloat32())
-            throw_unsupported_underlying_column_exception();
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "USearch can only be created on columns of type Array(Float32)");
     }
     else
-        throw_unsupported_underlying_column_exception();
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "USearch can only be created on columns of type Array(Float32)");
 }
 
 }

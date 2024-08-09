@@ -9,8 +9,8 @@
 namespace DB
 {
 
-// Class ANNCondition, is responsible for recognizing if the query is an ANN queries which can utilize ANN indexes. It parses the SQL query
-/// and checks if it matches ANNIndexes. Method alwaysUnknownOrTrue returns false if we can speed up the query, and true otherwise. It has
+/// Class VectorSimilarityCondition is responsible for recognizing if the query can utilize vector similarity indexes.
+/// Method alwaysUnknownOrTrue returns false if we can speed up the query, and true otherwise. It has
 /// only one argument, the name of the distance function with which index was built. Two main patterns of queries are supported
 ///
 /// - 1. WHERE queries:
@@ -23,7 +23,8 @@ namespace DB
 /// If the query is both of type 1. and 2., than we can't use the index and alwaysUnknownOrTrue returns true.
 /// reference_vector should have float coordinates, e.g. [0.2, 0.1, .., 0.5]
 ///
-/// If the query matches one of these two types, then this class extracts the main information needed for ANN indexes from the query.
+/// If the query matches one of these two types, then this class extracts the main information needed for vector similarity indexes from the
+/// query.
 ///
 /// From matching query it extracts
 /// - referenceVector
@@ -40,7 +41,7 @@ class VectorSimilarityCondition
 public:
     VectorSimilarityCondition(const SelectQueryInfo & query_info, ContextPtr context);
 
-    /// Approximate Nearest Neighbour queries have a similar structure:
+    /// Approximate nearest neighbour (ANN) / vector similarity queries have a similar structure:
     /// - reference vector from which all distances are calculated
     /// - distance function, e.g L2Distance
     /// - name of column with embeddings
