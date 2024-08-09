@@ -264,11 +264,22 @@ function run_tests()
     TIMEOUT=$((MAX_RUN_TIME - 800 > 8400 ? 8400 : MAX_RUN_TIME - 800))
     START_TIME=${SECONDS}
     set +e
-    timeout --preserve-status --signal TERM --kill-after 60m ${TIMEOUT}s \
-        clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
-            --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
-    | ts '%Y-%m-%d %H:%M:%S' \
-    | tee -a test_output/test_result.txt
+
+    TEST_ARGS=(
+        --testname
+        --shard
+        --zookeeper
+        --check-zookeeper-session
+        --hung-check
+        --print-time
+        --no-drop-if-fail
+        --capture-client-stacktrace
+        --test-runs "$NUM_TRIES"
+        "${ADDITIONAL_OPTIONS[@]}"
+    )
+    timeout --preserve-status --signal TERM --kill-after 60m ${TIMEOUT}s clickhouse-test "${TEST_ARGS[@]}" 2>&1 \
+        | ts '%Y-%m-%d %H:%M:%S' \
+        | tee -a test_output/test_result.txt
     set -e
     DURATION=$((SECONDS - START_TIME))
 
