@@ -447,7 +447,11 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
                 CurrentMetrics::sub(metric_loaded, size);
-            updateMemoryCredits();
+
+            size_t previous_value = amount.load(std::memory_order_relaxed);
+            amount.store(previous_value + size, std::memory_order_relaxed); // Simulate the addition
+            size_t current_value = amount.load(std::memory_order_relaxed);
+            updateMemoryCredits(previous_value, current_value);
         }
 
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
@@ -490,7 +494,11 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
         return loaded_next->free(size, _sample_probability);
 
-    updateMemoryCredits();
+    size_t previous_value = amount.load(std::memory_order_relaxed); // Capture current memory usage
+    amount.fetch_sub(size, std::memory_order_relaxed); // Perform the operation
+    size_t current_value = amount.load(std::memory_order_relaxed); // Capture new memory usage after operation
+    updateMemoryCredits(previous_value, current_value);
+
 
     return AllocationTrace(_sample_probability);
 }
