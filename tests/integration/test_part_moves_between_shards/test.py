@@ -54,7 +54,7 @@ def test_move(started_cluster):
         for replica_ix, r in enumerate(rs):
             r.query(
                 """
-            DROP TABLE IF EXISTS test_move;
+            DROP TABLE IF EXISTS test_move SYNC;
             CREATE TABLE test_move(v UInt64)
             ENGINE ReplicatedMergeTree('/clickhouse/shard_{}/tables/test_move', '{}')
             ORDER BY tuple()
@@ -108,7 +108,7 @@ def test_deduplication_while_move(started_cluster):
         for replica_ix, r in enumerate(rs):
             r.query(
                 """
-            DROP TABLE IF EXISTS test_deduplication;
+            DROP TABLE IF EXISTS test_deduplication SYNC;
             CREATE TABLE test_deduplication(v UInt64)
             ENGINE ReplicatedMergeTree('/clickhouse/shard_{}/tables/test_deduplication', '{}')
             ORDER BY tuple()
@@ -119,7 +119,7 @@ def test_deduplication_while_move(started_cluster):
 
             r.query(
                 """
-            DROP TABLE IF EXISTS test_deduplication_d;
+            DROP TABLE IF EXISTS test_deduplication_d SYNC;
             CREATE TABLE test_deduplication_d AS test_deduplication
             ENGINE Distributed('test_cluster', '', test_deduplication)
             """
@@ -182,7 +182,7 @@ def test_part_move_step_by_step(started_cluster):
         for replica_ix, r in enumerate(rs):
             r.query(
                 """
-            DROP TABLE IF EXISTS test_part_move_step_by_step;
+            DROP TABLE IF EXISTS test_part_move_step_by_step SYNC;
             CREATE TABLE test_part_move_step_by_step(v UInt64)
             ENGINE ReplicatedMergeTree('/clickhouse/shard_{}/tables/test_part_move_step_by_step', '{}')
             ORDER BY tuple()
@@ -193,7 +193,7 @@ def test_part_move_step_by_step(started_cluster):
 
             r.query(
                 """
-            DROP TABLE IF EXISTS test_part_move_step_by_step_d;
+            DROP TABLE IF EXISTS test_part_move_step_by_step_d SYNC;
             CREATE TABLE test_part_move_step_by_step_d AS test_part_move_step_by_step
             ENGINE Distributed('test_cluster', currentDatabase(), test_part_move_step_by_step)
             """
@@ -300,7 +300,7 @@ def test_part_move_step_by_step_kill(started_cluster):
         for replica_ix, r in enumerate(rs):
             r.query(
                 """
-            DROP TABLE IF EXISTS test_part_move_step_by_step_kill;
+            DROP TABLE IF EXISTS test_part_move_step_by_step_kill SYNC;
             CREATE TABLE test_part_move_step_by_step_kill(v UInt64)
             ENGINE ReplicatedMergeTree('/clickhouse/shard_{}/tables/test_part_move_step_by_step_kill', '{}')
             ORDER BY tuple()
@@ -311,7 +311,7 @@ def test_part_move_step_by_step_kill(started_cluster):
 
             r.query(
                 """
-            DROP TABLE IF EXISTS test_part_move_step_by_step_kill_d;
+            DROP TABLE IF EXISTS test_part_move_step_by_step_kill_d SYNC;
             CREATE TABLE test_part_move_step_by_step_kill_d AS test_part_move_step_by_step_kill
             ENGINE Distributed('test_cluster', currentDatabase(), test_part_move_step_by_step_kill)
             """
@@ -446,7 +446,7 @@ def test_move_not_permitted(started_cluster):
     for ix, n in enumerate([s0r0, s1r0]):
         n.query(
             """
-        DROP TABLE IF EXISTS not_permitted_columns;
+        DROP TABLE IF EXISTS not_permitted_columns SYNC;
         
         CREATE TABLE not_permitted_columns(v_{ix} UInt64)
         ENGINE ReplicatedMergeTree('/clickhouse/shard_{ix}/tables/not_permitted_columns', 'r')
@@ -462,7 +462,7 @@ def test_move_not_permitted(started_cluster):
 
         n.query(
             """
-        DROP TABLE IF EXISTS not_permitted_partition;
+        DROP TABLE IF EXISTS not_permitted_partition SYNC;
         CREATE TABLE not_permitted_partition(date Date, v UInt64)
         ENGINE ReplicatedMergeTree('/clickhouse/shard_{ix}/tables/not_permitted_partition', 'r')
         PARTITION BY ({partition})
