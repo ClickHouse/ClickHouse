@@ -128,7 +128,7 @@ def test_smoke():
     instance.query("ALTER USER robin SETTINGS PROFILE xyz")
     assert (
         instance.query("SHOW CREATE USER robin")
-        == "CREATE USER robin SETTINGS PROFILE `xyz`\n"
+        == "CREATE USER robin IDENTIFIED WITH no_password SETTINGS PROFILE `xyz`\n"
     )
     assert (
         instance.query(
@@ -152,7 +152,10 @@ def test_smoke():
     ]
 
     instance.query("ALTER USER robin SETTINGS NONE")
-    assert instance.query("SHOW CREATE USER robin") == "CREATE USER robin\n"
+    assert (
+        instance.query("SHOW CREATE USER robin")
+        == "CREATE USER robin IDENTIFIED WITH no_password\n"
+    )
     assert (
         instance.query(
             "SELECT value FROM system.settings WHERE name = 'max_memory_usage'",

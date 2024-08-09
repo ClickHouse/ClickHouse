@@ -44,7 +44,7 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
 {
     if (type && *type == AuthenticationType::NO_PASSWORD)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NOT IDENTIFIED"
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " no_password"
                       << (settings.hilite ? IAST::hilite_none : "");
         return;
     }
@@ -160,12 +160,9 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
             auth_type_name = AuthenticationTypeInfo::get(*type).name;
     }
 
-    settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED" << (settings.hilite ? IAST::hilite_none : "");
-
     if (!auth_type_name.empty())
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WITH " << auth_type_name
-                        << (settings.hilite ? IAST::hilite_none : "");
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << auth_type_name << (settings.hilite ? IAST::hilite_none : "");
     }
 
     if (!prefix.empty())

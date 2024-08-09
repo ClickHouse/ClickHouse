@@ -33,12 +33,14 @@ namespace
     void updateUserFromQueryImpl(
         User & user,
         const ASTCreateUserQuery & query,
-        const std::optional<AuthenticationData> auth_data,
+        const std::vector<AuthenticationData> authentication_methods,
         const std::shared_ptr<ASTUserNameWithHost> & override_name,
         const std::optional<RolesOrUsersSet> & override_default_roles,
         const std::optional<SettingsProfileElements> & override_settings,
         const std::optional<RolesOrUsersSet> & override_grantees,
         const std::optional<time_t> & valid_until,
+        bool reset_authentication_methods,
+        bool replace_authentication_methods,
         bool allow_implicit_no_password,
         bool allow_no_password,
         bool allow_plaintext_password)
@@ -50,25 +52,60 @@ namespace
         else if (query.names->size() == 1)
             user.setName(query.names->front()->toString());
 
-        if (!query.attach && !query.alter && !auth_data && !allow_implicit_no_password)
+        if (!query.attach && !query.alter && authentication_methods.empty() && !allow_implicit_no_password)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Authentication type NO_PASSWORD must "
                             "be explicitly specified, check the setting allow_implicit_no_password "
                             "in the server configuration");
 
-        if (auth_data)
-            user.auth_data = *auth_data;
-
-        if (auth_data || !query.alter)
+        // if user does not have an authentication method and it has not been specified in the query,
+        // add a default one
+        if (user.authentication_methods.empty() && authentication_methods.empty())
         {
-            auto auth_type = user.auth_data.getType();
-            if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
-                ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)  && !allow_plaintext_password))
+            user.authentication_methods.emplace_back();
+        }
+
+        bool has_no_password_authentication_method = std::find_if(
+                                                         user.authentication_methods.begin(),
+                                                         user.authentication_methods.end(),
+                                                         [](const AuthenticationData & authentication_method)
+                                                         {
+                                                             return authentication_method.getType() == AuthenticationType::NO_PASSWORD;
+                                                         }) != user.authentication_methods.end();
+
+        // 1. an IDENTIFIED WITH will drop existing authentication methods in favor of new ones.
+        // 2. if the user contains an auth method of type NO_PASSWORD and another one is being added, NO_PASSWORD must be dropped
+        if (replace_authentication_methods || (has_no_password_authentication_method && !authentication_methods.empty()))
+        {
+            user.authentication_methods.clear();
+        }
+
+        for (const auto & authentication_method : authentication_methods)
+        {
+            user.authentication_methods.emplace_back(authentication_method);
+        }
+
+        // drop existing ones and keep the most recent
+        if (reset_authentication_methods)
+        {
+            auto backup_authentication_method = user.authentication_methods.back();
+            user.authentication_methods.clear();
+            user.authentication_methods.emplace_back(backup_authentication_method);
+        }
+
+        if (!query.alter)
+        {
+            for (const auto & authentication_method : user.authentication_methods)
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
-                                toString(auth_type),
-                                AuthenticationTypeInfo::get(auth_type).name);
+                auto auth_type = authentication_method.getType();
+                if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
+                    ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)  && !allow_plaintext_password))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Authentication type {} is not allowed, check the setting allow_{} in the server configuration",
+                                    toString(auth_type),
+                                    AuthenticationTypeInfo::get(auth_type).name);
+                }
             }
         }
 
@@ -156,9 +193,14 @@ BlockIO InterpreterCreateUserQuery::execute()
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
 
-    std::optional<AuthenticationData> auth_data;
-    if (query.auth_data)
-        auth_data = AuthenticationData::fromAST(*query.auth_data, getContext(), !query.attach);
+    std::vector<AuthenticationData> authentication_methods;
+    if (!query.authentication_methods.empty())
+    {
+        for (const auto & authentication_method_ast : query.authentication_methods)
+        {
+            authentication_methods.push_back(AuthenticationData::fromAST(*authentication_method_ast, getContext(), !query.attach));
+        }
+    }
 
     std::optional<time_t> valid_until;
     if (query.valid_until)
@@ -207,8 +249,9 @@ BlockIO InterpreterCreateUserQuery::execute()
         {
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
             updateUserFromQueryImpl(
-                *updated_user, query, auth_data, {}, default_roles_from_query, settings_from_query, grantees_from_query,
-                valid_until, implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
+                *updated_user, query, authentication_methods, {}, default_roles_from_query, settings_from_query, grantees_from_query,
+                valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
+                implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
             return updated_user;
         };
 
@@ -227,8 +270,9 @@ BlockIO InterpreterCreateUserQuery::execute()
         {
             auto new_user = std::make_shared<User>();
             updateUserFromQueryImpl(
-                *new_user, query, auth_data, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
-                valid_until, implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
+                *new_user, query, authentication_methods, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
+                valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
+                implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
             new_users.emplace_back(std::move(new_user));
         }
 
@@ -267,15 +311,33 @@ BlockIO InterpreterCreateUserQuery::execute()
 
 void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreateUserQuery & query, bool allow_no_password, bool allow_plaintext_password)
 {
-    std::optional<AuthenticationData> auth_data;
-    if (query.auth_data)
-        auth_data = AuthenticationData::fromAST(*query.auth_data, {}, !query.attach);
+    std::vector<AuthenticationData> authentication_methods;
+    if (!query.authentication_methods.empty())
+    {
+        for (const auto & authentication_method_ast : query.authentication_methods)
+        {
+            authentication_methods.emplace_back(AuthenticationData::fromAST(*authentication_method_ast, {}, !query.attach));
+        }
+    }
 
     std::optional<time_t> valid_until;
     if (query.valid_until)
         valid_until = getValidUntilFromAST(query.valid_until, {});
 
-    updateUserFromQueryImpl(user, query, auth_data, {}, {}, {}, {}, valid_until, allow_no_password, allow_plaintext_password, true);
+    updateUserFromQueryImpl(
+        user,
+        query,
+        authentication_methods,
+        {},
+        {},
+        {},
+        {},
+        valid_until,
+        query.reset_authentication_methods_to_new,
+        query.replace_authentication_methods,
+        allow_no_password,
+        allow_plaintext_password,
+        true);
 }
 
 void registerInterpreterCreateUserQuery(InterpreterFactory & factory)
