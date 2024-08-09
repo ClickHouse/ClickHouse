@@ -8,7 +8,7 @@ SET allow_experimental_usearch_index = 1;
 
 SET enable_analyzer = 0;
 
-SELECT 'ARRAY, 10 rows, index_granularity = 8192, GRANULARITY = 1 million --> 1 granule, 1 indexed block';
+SELECT '10 rows, index_granularity = 8192, GRANULARITY = 1 million --> 1 granule, 1 indexed block';
 
 DROP TABLE IF EXISTS tab_usearch;
 
@@ -49,7 +49,7 @@ LIMIT 3;
 DROP TABLE tab_usearch;
 
 
-SELECT 'ARRAY vectors, 12 rows, index_granularity = 3, GRANULARITY = 2 --> 4 granules, 2 indexed block';
+SELECT '12 rows, index_granularity = 3, GRANULARITY = 2 --> 4 granules, 2 indexed block';
 
 CREATE TABLE tab_usearch(id Int32, vec Array(Float32), INDEX idx vec TYPE usearch() GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
 INSERT INTO tab_usearch VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
@@ -87,29 +87,28 @@ LIMIT 3;
 DROP TABLE tab_usearch;
 
 
-SELECT 'TUPLE vectors and special cases';
--- Not a systematic test, just to check that no bad things happen.
+SELECT 'Special cases'; -- Not a systematic test, just to check that no bad things happen.
 -- Just for jun, use metric = 'cosineDistance', scalarKind = 'f64'
 
-CREATE TABLE tab_usearch(id Int32, vec Tuple(Float32, Float32), INDEX idx vec TYPE usearch('cosineDistance', 'f64') GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
-INSERT INTO tab_usearch VALUES (0, (4.6, 2.3)), (1, (2.0, 3.2)), (2, (4.2, 3.4)), (3, (5.3, 2.9)), (4, (2.4, 5.2)), (5, (5.3, 2.3)), (6, (1.0, 9.3)), (7, (5.5, 4.7)), (8, (6.4, 3.5)), (9, (5.3, 2.5)), (10, (6.4, 3.4)), (11, (6.4, 3.2));
+CREATE TABLE tab_usearch(id Int32, vec Array(Float32), INDEX idx vec TYPE usearch('cosineDistance', 'f64') GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
+INSERT INTO tab_usearch VALUES (0, [4.6, 2.3]), (1, [2.0, 3.2]), (2, [4.2, 3.4]), (3, [5.3, 2.9]), (4, [2.4, 5.2]), (5, [5.3, 2.3]), (6, [1.0, 9.3]), (7, [5.5, 4.7]), (8, [6.4, 3.5]), (9, [5.3, 2.5]), (10, [6.4, 3.4]), (11, [6.4, 3.2]);
 
 SELECT '- Usearch: WHERE-type';
-WITH (0.0, 2.0) AS reference_vec
+WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
 FROM tab_usearch
 WHERE cosineDistance(vec, reference_vec) < 1.0
 LIMIT 3;
 
 SELECT '- Usearch: ORDER-BY-type';
-WITH (0.0, 2.0) AS reference_vec
+WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
 FROM tab_usearch
 ORDER BY cosineDistance(vec, reference_vec)
 LIMIT 3;
 
 SELECT '- Special case: MaximumDistance is negative';
-WITH (0.0, 2.0) as reference_vec
+WITH [0.0, 2.0] as reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
 FROM tab_usearch
 WHERE cosineDistance(vec, reference_vec) < -1.0
@@ -117,7 +116,7 @@ LIMIT 3; -- { serverError INCORRECT_QUERY }
 
 SELECT '- Special case: setting "max_limit_for_ann_queries"';
 EXPLAIN indexes=1
-WITH (0.0, 2.0) as reference_vec
+WITH [0.0, 2.0] as reference_vec
 SELECT id, vec, cosineDistance(vec, reference_vec)
 FROM tab_usearch
 ORDER BY cosineDistance(vec, reference_vec)
