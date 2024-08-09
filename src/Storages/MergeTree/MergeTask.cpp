@@ -502,10 +502,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Blo
     {
         const auto & projection = *global_ctx->projections_to_rebuild[i];
         Block block_to_squash = projection.calculate(block, global_ctx->context);
-        auto chunk = ctx->projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()});
-        if (chunk)
+        ctx->projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
+        auto squashed_chunk = Squashing::squash(ctx->projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}));
+        if (squashed_chunk)
         {
-            auto result = ctx->projection_squashes[i].getHeader().cloneWithColumns(chunk.detachColumns());
+            auto result = ctx->projection_squashes[i].getHeader().cloneWithColumns(squashed_chunk.detachColumns());
             auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
                 *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num);
             tmp_part.finalize();
@@ -590,8 +591,41 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
         return true;
     }
 
-    // finalize projections
-    calculateProjections(global_ctx->merging_executor->getHeader().cloneEmpty());
+    /// finalize projections
+    // calculateProjections(global_ctx->merging_executor->getHeader().cloneEmpty());
+
+    // for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
+    // {
+    //     const auto & projection = *global_ctx->projections_to_rebuild[i];
+    //     Block block_to_squash = projection.calculate(block, global_ctx->context);
+    //     ctx->projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
+    //     auto squashed_chunk = Squashing::squash(ctx->projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}));
+    //     if (squashed_chunk)
+    //     {
+    //         auto result = ctx->projection_squashes[i].getHeader().cloneWithColumns(squashed_chunk.detachColumns());
+    //         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
+    //             *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num);
+    //         tmp_part.finalize();
+    //         tmp_part.part->getDataPartStorage().commitTransaction();
+    //         ctx->projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
+    //     }
+    // }
+
+    for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
+    {
+        const auto & projection = *global_ctx->projections_to_rebuild[i];
+        auto & projection_squash_plan = ctx->projection_squashes[i];
+        auto squashed_chunk = Squashing::squash(projection_squash_plan.flush());
+        if (squashed_chunk)
+        {
+            auto result = projection_squash_plan.getHeader().cloneWithColumns(squashed_chunk.detachColumns());
+            auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
+                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num);
+            temp_part.finalize();
+            temp_part.part->getDataPartStorage().commitTransaction();
+            ctx->projection_parts[projection.name].emplace_back(std::move(temp_part.part));
+        }
+    }
 
     ctx->projection_parts_iterator = std::make_move_iterator(ctx->projection_parts.begin());
     if (ctx->projection_parts_iterator != std::make_move_iterator(ctx->projection_parts.end()))
