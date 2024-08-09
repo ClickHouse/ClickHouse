@@ -75,7 +75,7 @@ def get_run_command(
         f"--volume={result_path}:/test_output "
         "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
         f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image} "
-        "python3 ./utils/runner.py"
+        "python3 /usr/share/clickhouse-test/fuzz/runner.py"
     )
 
 

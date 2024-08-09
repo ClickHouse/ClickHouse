@@ -108,7 +108,8 @@ if [ -n "$MAKE_DEB" ]; then
   bash -x /build/packages/build
 fi
 
-mv ./programs/clickhouse* /output || mv ./programs/*_fuzzer /output
+mv ./programs/clickhouse* /output ||:
+mv ./programs/*_fuzzer /output ||:
 [ -x ./programs/self-extracting/clickhouse ] && mv ./programs/self-extracting/clickhouse /output
 [ -x ./programs/self-extracting/clickhouse-stripped ] && mv ./programs/self-extracting/clickhouse-stripped /output
 [ -x ./programs/self-extracting/clickhouse-keeper ] && mv ./programs/self-extracting/clickhouse-keeper /output
