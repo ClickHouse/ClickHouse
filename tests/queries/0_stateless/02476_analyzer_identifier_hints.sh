@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS test_table;
     CREATE TABLE test_table
     (
@@ -74,7 +74,7 @@ $CLICKHOUSE_CLIENT -q "SELECT 1 AS constant_value, arrayMap(lambda_argument -> l
 $CLICKHOUSE_CLIENT -q "WITH 1 AS constant_value SELECT (SELECT constant_valu) SETTINGS enable_analyzer = 1;" 2>&1 \
     | grep "Maybe you meant: \['constant_value'\]" &>/dev/null;
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS test_table_compound;
     CREATE TABLE test_table_compound
     (
@@ -142,7 +142,7 @@ $CLICKHOUSE_CLIENT -q "SELECT cast(tuple(1), 'Tuple(value_1 String)') AS constan
 $CLICKHOUSE_CLIENT -q "WITH cast(tuple(1), 'Tuple(value_1 String)') AS constant_value SELECT (SELECT constant_value.value_) SETTINGS enable_analyzer = 1;" 2>&1 \
     | grep "Maybe you meant: \['constant_value.value_1'\]" &>/dev/null;
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS test_table_1;
     CREATE TABLE test_table_1
     (
@@ -185,7 +185,7 @@ $CLICKHOUSE_CLIENT -q "SELECT ((1))::Tuple(a Tuple(b UInt32)) AS t, t.a.c SETTIN
 
 $CLICKHOUSE_CLIENT -q "SELECT 1";
 
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
     DROP TABLE test_table;
     DROP TABLE test_table_compound;
     DROP TABLE test_table_1;

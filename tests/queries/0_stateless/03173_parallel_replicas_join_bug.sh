@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-$CLICKHOUSE_CLIENT -nq "
+$CLICKHOUSE_CLIENT -q "
   CREATE TABLE ids (id UUID, whatever String) Engine=MergeTree ORDER BY tuple();
   INSERT INTO ids VALUES ('a1451105-722e-4fe7-bfaa-65ad2ae249c2', 'whatever');
 

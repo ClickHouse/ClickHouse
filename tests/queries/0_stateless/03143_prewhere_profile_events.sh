@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} -nq "
+${CLICKHOUSE_CLIENT} -q "
   DROP TABLE IF EXISTS t;
 
   CREATE TABLE t(a UInt32, b UInt32, c UInt32, d UInt32) ENGINE=MergeTree ORDER BY a SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
@@ -25,7 +25,7 @@ client_opts=(
   --max_threads    8
 )
 
-${CLICKHOUSE_CLIENT} "${client_opts[@]}" --query_id "$query_id_1" -nq "
+${CLICKHOUSE_CLIENT} "${client_opts[@]}" --query_id "$query_id_1" -q "
   SELECT *
     FROM t
 PREWHERE (b % 8192) = 42
@@ -33,7 +33,7 @@ PREWHERE (b % 8192) = 42
   FORMAT Null
 "
 
-${CLICKHOUSE_CLIENT} "${client_opts[@]}" --query_id "$query_id_2" -nq "
+${CLICKHOUSE_CLIENT} "${client_opts[@]}" --query_id "$query_id_2" -q "
   SELECT *
     FROM t
 PREWHERE (b % 8192) = 42 AND (c % 8192) = 42
@@ -42,7 +42,7 @@ PREWHERE (b % 8192) = 42 AND (c % 8192) = 42
 settings enable_multiple_prewhere_read_steps=1;
 "
 
-${CLICKHOUSE_CLIENT} "${client_opts[@]}" --query_id "$query_id_3" -nq "
+${CLICKHOUSE_CLIENT} "${client_opts[@]}" --query_id "$query_id_3" -q "
   SELECT *
     FROM t
 PREWHERE (b % 8192) = 42 AND (c % 16384) = 42
@@ -51,7 +51,7 @@ PREWHERE (b % 8192) = 42 AND (c % 16384) = 42
 settings enable_multiple_prewhere_read_steps=0;
 "
 
-${CLICKHOUSE_CLIENT} "${client_opts[@]}" --query_id "$query_id_4" -nq "
+${CLICKHOUSE_CLIENT} "${client_opts[@]}" --query_id "$query_id_4" -q "
   SELECT b, c
     FROM t
 PREWHERE (b % 8192) = 42 AND (c % 8192) = 42
@@ -59,7 +59,7 @@ PREWHERE (b % 8192) = 42 AND (c % 8192) = 42
 settings enable_multiple_prewhere_read_steps=1;
 "
 
-${CLICKHOUSE_CLIENT} -nq "
+${CLICKHOUSE_CLIENT} -q "
   SYSTEM FLUSH LOGS;
 
   -- 52503 which is 43 * number of granules, 10000000
