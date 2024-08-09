@@ -7,6 +7,7 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpass-failed"
 #  include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
+#  include <Common/Logger.h>
 #  include <usearch/index_dense.hpp>
 #pragma clang diagnostic pop
 
@@ -23,6 +24,21 @@ public:
     USearchIndexWithSerialization(size_t dimensions, unum::usearch::metric_kind_t metric_kind, unum::usearch::scalar_kind_t scalar_kind);
     void serialize(WriteBuffer & ostr) const;
     void deserialize(ReadBuffer & istr);
+
+    struct Statistics
+    {
+        size_t max_level;
+        size_t connectivity;
+        size_t size;
+        size_t capacity;
+        size_t memory_usage;
+        /// advanced stats:
+        size_t bytes_per_vector;
+        size_t scalar_words;
+        Base::stats_t statistics;
+    };
+
+    Statistics getStatistics() const;
 };
 
 using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSerialization>;
@@ -45,6 +61,8 @@ struct MergeTreeIndexGranuleUSearch final : public IMergeTreeIndexGranule
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
     USearchIndexWithSerializationPtr index;
+
+    LoggerPtr logger = getLogger("USearchIndex");
 };
 
 
