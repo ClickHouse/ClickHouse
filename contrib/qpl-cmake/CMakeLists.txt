@@ -728,10 +728,6 @@ add_library(_qpl STATIC ${LIB_DEPS})
 target_include_directories(_qpl
         PUBLIC $<BUILD_INTERFACE:${QPL_PROJECT_DIR}/include/> $<INSTALL_INTERFACE:include>)
 
-
-target_compile_definitions(_qpl
-        PUBLIC -DENABLE_QPL_COMPRESSION)
-
 target_link_libraries(_qpl
         PRIVATE ch_contrib::accel-config)
 
