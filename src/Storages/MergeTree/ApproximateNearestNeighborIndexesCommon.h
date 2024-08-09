@@ -38,13 +38,6 @@ struct ApproximateNearestNeighborInformation
     String column_name;
     UInt64 limit;
 
-    enum class Type : uint8_t
-    {
-        OrderBy,
-        Where
-    };
-    Type type;
-
     float distance = -1.0;
 };
 
@@ -83,9 +76,6 @@ public:
     /// Returns false if query can be speeded up by an ANN index, true otherwise.
     bool alwaysUnknownOrTrue(String metric) const;
 
-    /// Returns the distance to compare with for search query
-    float getComparisonDistanceForWhereQuery() const;
-
     /// Distance should be calculated regarding to referenceVector
     std::vector<float> getReferenceVector() const;
 
@@ -95,8 +85,6 @@ public:
     String getColumnName() const;
 
     ApproximateNearestNeighborInformation::Metric getMetricType() const;
-
-    ApproximateNearestNeighborInformation::Type getQueryType() const;
 
     UInt64 getIndexGranularity() const { return index_granularity; }
 
