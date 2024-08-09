@@ -82,12 +82,6 @@ void USearchIndexWithSerialization<Metric>::deserialize(ReadBuffer & istr)
 }
 
 template <unum::usearch::metric_kind_t Metric>
-size_t USearchIndexWithSerialization<Metric>::getDimensions() const
-{
-    return Base::dimensions();
-}
-
-template <unum::usearch::metric_kind_t Metric>
 MergeTreeIndexGranuleUSearch<Metric>::MergeTreeIndexGranuleUSearch(
     const String & index_name_,
     const Block & index_sample_block_,
@@ -120,7 +114,7 @@ void MergeTreeIndexGranuleUSearch<Metric>::serializeBinary(WriteBuffer & ostr) c
 
     /// Number of dimensions is required in the index constructor,
     /// so it must be written and read separately from the other part
-    writeIntBinary(static_cast<UInt64>(index->getDimensions()), ostr); // write dimension
+    writeIntBinary(static_cast<UInt64>(index->dimensions()), ostr); // write dimension
     index->serialize(ostr);
 }
 
@@ -195,19 +189,19 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
             throw Exception(ErrorCodes::INCORRECT_DATA, "The arrays in column '{}' must not be empty. Did you try to INSERT default values?", index_column_name);
 
         /// Check all sizes are the same
-        size_t dimension = column_array_offsets[0];
+        const size_t dimensions = column_array_offsets[0];
         for (size_t i = 0; i < num_rows - 1; ++i)
-            if (column_array_offsets[i + 1] - column_array_offsets[i] != dimension)
+            if (column_array_offsets[i + 1] - column_array_offsets[i] != dimensions)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column '{}' must have equal length", index_column_name);
 
         /// Also check that previously inserted blocks have the same size as this block.
         /// Note that this guarantees consistency of dimension only within parts. We are unable to detect inconsistent dimensions across
         /// parts - for this, a little help from the user is needed, e.g. CONSTRAINT cnstr CHECK length(array) = 42.
-        if (index && index->getDimensions() != dimension)
+        if (index && index->dimensions() != dimensions)
             throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column '{}' must have equal length", index_column_name);
 
         if (!index)
-            index = std::make_shared<USearchIndexWithSerialization<Metric>>(dimension, scalar_kind);
+            index = std::make_shared<USearchIndexWithSerialization<Metric>>(dimensions, scalar_kind);
 
         /// Add all rows of block
         if (!index->reserve(unum::usearch::ceil2(index->size() + num_rows)))
