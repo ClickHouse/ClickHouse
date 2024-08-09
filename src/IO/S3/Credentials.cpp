@@ -251,7 +251,7 @@ static Aws::String getAWSMetadataEndpoint()
     return ec2_metadata_service_endpoint;
 }
 
-std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
+std::shared_ptr<AWSEC2MetadataClient> createEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
 {
     auto endpoint = getAWSMetadataEndpoint();
     return std::make_shared<AWSEC2MetadataClient>(client_configuration, endpoint.c_str());
@@ -785,11 +785,11 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
 
             /// EC2MetadataService throttles by delaying the response so the service client should set a large read timeout.
             /// EC2MetadataService delay is in order of seconds so it only make sense to retry after a couple of seconds.
-            aws_client_configuration.connectTimeoutMs = 1000;
+            aws_client_configuration.connectTimeoutMs = 10;
             aws_client_configuration.requestTimeoutMs = 1000;
 
             aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
-            auto ec2_metadata_client = InitEC2MetadataClient(aws_client_configuration);
+            auto ec2_metadata_client = createEC2MetadataClient(aws_client_configuration);
             auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, !credentials_configuration.use_insecure_imds_request);
 
             AddProvider(std::make_shared<AWSInstanceProfileCredentialsProvider>(config_loader));
