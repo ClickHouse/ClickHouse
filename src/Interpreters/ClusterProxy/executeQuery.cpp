@@ -162,7 +162,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
             }
         }
         if (disable_parallel_replicas)
-            new_settings.allow_experimental_parallel_reading_from_replicas = 0;
+            new_settings.enable_parallel_replicas = 0;
     }
 
     if (settings.max_execution_time_leaf.value > 0)
@@ -240,7 +240,7 @@ getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context,
 
     return [my_custom_key_ast = std::move(custom_key_ast),
             column_description = columns,
-            custom_key_type = settings.parallel_replicas_custom_key_filter_type.value,
+            custom_key_type = settings.parallel_replicas_mode.value,
             custom_key_range_lower = settings.parallel_replicas_custom_key_range_lower.value,
             custom_key_range_upper = settings.parallel_replicas_custom_key_range_upper.value,
             query_context = context,
@@ -286,9 +286,9 @@ void executeQuery(
     auto cluster = query_info.getCluster();
     auto new_context = updateSettingsAndClientInfoForCluster(*cluster, is_remote_function, context,
         settings, main_table, query_info.additional_filter_ast, log, &distributed_settings);
-    if (context->getSettingsRef().allow_experimental_parallel_reading_from_replicas
-        && context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value
-           != new_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value)
+    if (context->getSettingsRef().enable_parallel_replicas
+        && context->getSettingsRef().enable_parallel_replicas.value
+           != new_context->getSettingsRef().enable_parallel_replicas.value)
     {
         LOG_TRACE(
             log,
@@ -459,14 +459,14 @@ void executeQueryWithParallelReplicas(
         {
             LOG_WARNING(
                 getLogger("executeQueryWithParallelReplicas"),
-                "Setting 'use_hedged_requests' explicitly with enabled 'allow_experimental_parallel_reading_from_replicas' has no effect. "
+                "Setting 'use_hedged_requests' explicitly with enabled 'enable_parallel_replicas' has no effect. "
                 "Hedged connections are not used for parallel reading from replicas");
         }
         else
         {
             LOG_INFO(
                 getLogger("executeQueryWithParallelReplicas"),
-                "Disabling 'use_hedged_requests' in favor of 'allow_experimental_parallel_reading_from_replicas'. Hedged connections are "
+                "Disabling 'use_hedged_requests' in favor of 'enable_parallel_replicas'. Hedged connections are "
                 "not used for parallel reading from replicas");
         }
 

@@ -83,6 +83,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"allow_archive_path_syntax", true, true, "Added new setting to allow disabling archive path syntax."},
             {"allow_experimental_time_series_table", false, false, "Added new setting to allow the TimeSeries table engine"},
             {"enable_analyzer", 1, 1, "Added an alias to a setting `allow_experimental_analyzer`."},
+            {"enable_parallel_replicas", false, false, "Parallel replicas with read tasks became the Beta tier feature."},
+            {"parallel_replicas_mode", "read_tasks", "read_tasks", "This setting was introduced as a part of making parallel replicas feature Beta"},
         }
     },
     {"24.7",
