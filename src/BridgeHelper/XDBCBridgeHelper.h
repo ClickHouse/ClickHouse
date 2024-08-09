@@ -100,6 +100,7 @@ protected:
             auto buf = BuilderRWBufferFromHTTP(getPingURI())
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                            .withTimeouts(getHTTPTimeouts())
+                           .withSettings(getContext()->getReadSettings())
                            .create(credentials);
 
             return checkString(PING_OK_ANSWER, *buf);
@@ -206,6 +207,7 @@ protected:
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                            .withTimeouts(getHTTPTimeouts())
+                           .withSettings(getContext()->getReadSettings())
                            .create(credentials);
 
             bool res = false;
@@ -232,6 +234,7 @@ protected:
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                            .withTimeouts(getHTTPTimeouts())
+                           .withSettings(getContext()->getReadSettings())
                            .create(credentials);
 
             std::string character;
