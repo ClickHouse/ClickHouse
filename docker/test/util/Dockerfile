@@ -56,5 +56,3 @@ RUN apt-get update \
         --yes --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
-
-COPY process_functional_tests_result.py /
