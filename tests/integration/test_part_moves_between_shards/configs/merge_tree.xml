@@ -1,0 +1,6 @@
+<clickhouse>
+    <merge_tree>
+        <assign_part_uuids>1</assign_part_uuids>
+        <part_moves_between_shards_enable>1</part_moves_between_shards_enable>
+    </merge_tree>
+</clickhouse>

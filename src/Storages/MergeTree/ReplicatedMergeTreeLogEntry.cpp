@@ -181,7 +181,12 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
         out << "storage_type: " << storage_type.toString() << "\n";
 
     if (quorum)
-        out << "quorum: " << quorum << '\n';
+        out << "quorum: " << quorum << "\n";
+
+    if (!task_name.empty())
+        out << "task_name: " << task_name << "\n";
+    if (!task_entry_zk_path.empty())
+        out << "task_entry_zk_path: " << task_entry_zk_path << "\n";
 }
 
 void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFormatVersion partition_format_version)
@@ -375,10 +380,15 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
     }
     else
         new_part_format.storage_type = MergeTreeDataPartStorageType::Full;
-
     /// Optional field.
-    if (!in.eof())
-        in >> "quorum: " >> quorum >> "\n";
+    if (!in.eof() && checkString("quorum: ", in))
+            in >>  quorum >> "\n";
+
+    if (!in.eof() && checkString("task_name: ", in))
+            in >> task_name >> "\n";
+
+    if (!in.eof() && checkString("task_entry_zk_path: ", in))
+            in >>  task_entry_zk_path >> "\n";
 }
 
 void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::writeText(WriteBuffer & out) const
