@@ -24,6 +24,13 @@ void registerDataTypeDomainGeo(DataTypeFactory & factory)
             std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeLineStringName>()));
     });
 
+    // Custom type for multiple lines stored as Array(LineString)
+    factory.registerSimpleDataTypeCustom("MultiLineString", []
+    {
+        return std::make_pair(DataTypeFactory::instance().get("Array(LineString)"),
+            std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeMultiLineStringName>()));
+    });
+
     // Custom type for simple polygon without holes stored as Array(Point)
     factory.registerSimpleDataTypeCustom("Ring", []
     {
