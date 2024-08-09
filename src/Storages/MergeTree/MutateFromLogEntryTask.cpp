@@ -237,10 +237,11 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
     if (data_part_storage.hasActiveTransaction())
         data_part_storage.precommitTransaction();
 
-    storage.renameTempPartAndReplace(new_part, *transaction_ptr);
+    storage.renameTempPartAndReplace(new_part, *transaction_ptr, /*rename_in_transaction=*/ true);
 
     try
     {
+        transaction_ptr->renameParts();
         storage.checkPartChecksumsAndCommit(*transaction_ptr, new_part, mutate_task->getHardlinkedFiles());
     }
     catch (const Exception & e)
