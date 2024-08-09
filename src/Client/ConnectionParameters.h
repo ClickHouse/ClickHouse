@@ -20,6 +20,8 @@ struct ConnectionParameters
     std::string default_database;
     std::string user;
     std::string password;
+    std::string proto_send_chunked = "notchunked";
+    std::string proto_recv_chunked = "notchunked";
     std::string quota_key;
     SSHKey ssh_private_key;
     std::string jwt;
