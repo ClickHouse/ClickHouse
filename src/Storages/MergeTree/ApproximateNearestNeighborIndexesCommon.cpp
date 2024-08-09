@@ -44,8 +44,6 @@ ApproximateNearestNeighborInformation::Metric stringToMetric(std::string_view me
 {
     if (metric == "L2Distance")
         return ApproximateNearestNeighborInformation::Metric::L2;
-    else if (metric == "LpDistance")
-        return ApproximateNearestNeighborInformation::Metric::Lp;
     else
         return ApproximateNearestNeighborInformation::Metric::Unknown;
 }
@@ -110,13 +108,6 @@ ApproximateNearestNeighborInformation::Metric ApproximateNearestNeighborConditio
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Metric name was requested for useless or uninitialized index.");
 }
 
-float ApproximateNearestNeighborCondition::getPValueForLpDistance() const
-{
-    if (index_is_useful && query_information.has_value())
-        return query_information->p_for_lp_dist;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "P from LPDistance was requested for useless or uninitialized index.");
-}
-
 ApproximateNearestNeighborInformation::Type ApproximateNearestNeighborCondition::getQueryType() const
 {
     if (index_is_useful && query_information.has_value())
@@ -152,7 +143,8 @@ bool ApproximateNearestNeighborCondition::checkQueryStructure(const SelectQueryI
     if (select.limitLength())
         traverseAtomAST(select.limitLength(), rpn_limit);
 
-    if (select.orderBy()) // If query has ORDERBY clause
+    // If query has ORDER BY clause
+    if (select.orderBy())
         traverseOrderByAST(select.orderBy(), rpn_order_by_clause);
 
     /// Reverse RPNs for conveniences during parsing
@@ -224,8 +216,7 @@ bool ApproximateNearestNeighborCondition::traverseAtomAST(const ASTPtr & node, R
             function->name == "L2Distance" ||
             function->name == "LinfDistance" ||
             function->name == "cosineDistance" ||
-            function->name == "dotProduct" ||
-            function->name == "LpDistance")
+            function->name == "dotProduct")
             out.function = RPNElement::FUNCTION_DISTANCE;
         else if (function->name == "array")
             out.function = RPNElement::FUNCTION_ARRAY;
@@ -316,7 +307,6 @@ void ApproximateNearestNeighborCondition::traverseOrderByAST(const ASTPtr & node
 /// Returns true and stores ApproximateNearestNeighborInformation if the query has valid WHERE clause
 bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNearestNeighborInformation & ann_info)
 {
-    /// Fill query type field
     ann_info.type = ApproximateNearestNeighborInformation::Type::Where;
 
     /// WHERE section must have at least 5 expressions
@@ -371,7 +361,6 @@ bool ApproximateNearestNeighborCondition::matchRPNWhere(RPN & rpn, ApproximateNe
 /// Returns true and stores ANNExpr if the query has valid ORDERBY clause
 bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, ApproximateNearestNeighborInformation & ann_info)
 {
-    /// Fill query type field
     ann_info.type = ApproximateNearestNeighborInformation::Type::OrderBy;
 
     // ORDER BY clause must have at least 3 expressions
@@ -396,7 +385,7 @@ bool ApproximateNearestNeighborCondition::matchRPNLimit(RPNElement & rpn, UInt64
     return false;
 }
 
-/// Matches dist function, referencer vector, column name
+/// Matches dist function, reference vector, column name
 bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ApproximateNearestNeighborInformation & ann_info)
 {
     bool identifier_found = false;
@@ -407,15 +396,6 @@ bool ApproximateNearestNeighborCondition::matchMainParts(RPN::iterator & iter, c
 
     ann_info.metric = stringToMetric(iter->func_name);
     ++iter;
-
-    if (ann_info.metric == ApproximateNearestNeighborInformation::Metric::Lp)
-    {
-        if (iter->function != RPNElement::FUNCTION_FLOAT_LITERAL &&
-            iter->function != RPNElement::FUNCTION_INT_LITERAL)
-            return false;
-        ann_info.p_for_lp_dist = getFloatOrIntLiteralOrPanic(iter);
-        ++iter;
-    }
 
     if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
     {
