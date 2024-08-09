@@ -7,6 +7,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
 #include <Common/AllocationTrace.h>
+#include <Common/Stopwatch.h>
+
 
 #if !defined(NDEBUG)
 #define MEMORY_TRACKER_DEBUG_CHECKS
@@ -59,6 +61,8 @@ private:
     std::atomic<Int64> profiler_limit {0};
     std::atomic_bool allow_use_jemalloc_memory {true};
 
+    Stopwatch stopwatch;
+
     static std::atomic<Int64> free_memory_in_allocator_arenas;
 
     Int64 profiler_step = 0;
@@ -103,7 +107,6 @@ private:
     [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);
     [[nodiscard]] AllocationTrace free(Int64 size, double _sample_probability = -1.0);
 public:
-
     static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
     static constexpr auto PEAK_USAGE_EVENT_NAME = "MemoryTrackerPeakUsage";
 
@@ -258,6 +261,7 @@ public:
     void logPeakMemoryUsage();
 
     void debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]]);
+    void updateMemoryCredits(size_t previous_value, size_t current_value);
 };
 
 extern MemoryTracker total_memory_tracker;
