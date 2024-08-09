@@ -251,7 +251,7 @@ void ApproximateNearestNeighborCondition::traverseOrderByAST(const ASTPtr & node
 }
 
 /// Returns true and stores ANNExpr if the query has valid ORDERBY clause
-bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, ApproximateNearestNeighborInformation & ann_info)
+bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, ApproximateNearestNeighborInformation & info)
 {
     /// ORDER BY clause must have at least 3 expressions
     if (rpn.size() < 3)
@@ -266,13 +266,13 @@ bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, Approximate
     if (iter->function != RPNElement::FUNCTION_DISTANCE)
         return false;
 
-    ann_info.distance_function = stringToDistanceFunction(iter->func_name);
+    info.distance_function = stringToDistanceFunction(iter->func_name);
     ++iter;
 
     if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
     {
         identifier_found = true;
-        ann_info.column_name = std::move(iter->identifier.value());
+        info.column_name = std::move(iter->identifier.value());
         ++iter;
     }
 
@@ -281,7 +281,7 @@ bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, Approximate
 
     if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
     {
-        extractReferenceVectorFromLiteral(ann_info.reference_vector, iter->array_literal);
+        extractReferenceVectorFromLiteral(info.reference_vector, iter->array_literal);
         ++iter;
     }
 
@@ -296,7 +296,7 @@ bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, Approximate
         ++iter;
         if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
         {
-            extractReferenceVectorFromLiteral(ann_info.reference_vector, iter->array_literal);
+            extractReferenceVectorFromLiteral(info.reference_vector, iter->array_literal);
             ++iter;
         }
         else
@@ -307,12 +307,12 @@ bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, Approximate
     {
         if (iter->function == RPNElement::FUNCTION_FLOAT_LITERAL ||
             iter->function == RPNElement::FUNCTION_INT_LITERAL)
-            ann_info.reference_vector.emplace_back(getFloatOrIntLiteralOrPanic(iter));
+            info.reference_vector.emplace_back(getFloatOrIntLiteralOrPanic(iter));
         else if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
         {
             if (identifier_found)
                 return false;
-            ann_info.column_name = std::move(iter->identifier.value());
+            info.column_name = std::move(iter->identifier.value());
             identifier_found = true;
         }
         else
@@ -322,7 +322,7 @@ bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, Approximate
     }
 
     /// Final checks of correctness
-    return identifier_found && !ann_info.reference_vector.empty();
+    return identifier_found && !info.reference_vector.empty();
 }
 
 /// Returns true and stores Length if we have valid LIMIT clause in query

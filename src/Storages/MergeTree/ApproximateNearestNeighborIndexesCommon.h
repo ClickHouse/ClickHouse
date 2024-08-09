@@ -142,16 +142,16 @@ private:
     void traverseOrderByAST(const ASTPtr & node, RPN & rpn);
 
     /// Returns true and stores ANNExpr if the query has valid WHERE section
-    static bool matchRPNWhere(RPN & rpn, ApproximateNearestNeighborInformation & ann_info);
+    static bool matchRPNWhere(RPN & rpn, ApproximateNearestNeighborInformation & info);
 
     /// Returns true and stores ANNExpr if the query has valid ORDERBY section
-    static bool matchRPNOrderBy(RPN & rpn, ApproximateNearestNeighborInformation & ann_info);
+    static bool matchRPNOrderBy(RPN & rpn, ApproximateNearestNeighborInformation & info);
 
     /// Returns true and stores Length if we have valid LIMIT clause in query
     static bool matchRPNLimit(RPNElement & rpn, UInt64 & limit);
 
     /// Matches dist function, reference vector, column name
-    static bool matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ApproximateNearestNeighborInformation & ann_info);
+    static bool matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ApproximateNearestNeighborInformation & info);
 
     /// Gets float or int from AST node
     static float getFloatOrIntLiteralOrPanic(const RPN::iterator& iter);
