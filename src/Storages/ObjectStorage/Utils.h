@@ -19,6 +19,7 @@ void resolveSchemaAndFormat(
     ObjectStoragePtr object_storage,
     const StorageObjectStorage::ConfigurationPtr & configuration,
     std::optional<FormatSettings> format_settings,
+    std::string & sample_path,
     const ContextPtr & context);
 
 }

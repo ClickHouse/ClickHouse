@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Core/ColumnWithTypeAndName.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -33,6 +34,33 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+String StorageObjectStorage::getPathSample(StorageInMemoryMetadata metadata, ContextPtr context)
+{
+    auto query_settings = configuration->getQuerySettings(context);
+    /// We don't want to throw an exception if there are no files with specified path.
+    query_settings.throw_on_zero_files_match = false;
+
+    bool local_distributed_processing = distributed_processing;
+    if (context->getSettingsRef().use_hive_partitioning)
+        local_distributed_processing = false;
+
+    auto file_iterator = StorageObjectStorageSource::createFileIterator(
+        configuration,
+        query_settings,
+        object_storage,
+        local_distributed_processing,
+        context,
+        {}, // predicate
+        metadata.getColumns().getAll(), // virtual_columns
+        nullptr, // read_keys
+        {} // file_progress_callback
+    );
+
+    if (auto file = file_iterator->next(0))
+        return file->getPath();
+    return "";
+}
+
 StorageObjectStorage::StorageObjectStorage(
     ConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
@@ -53,7 +81,9 @@ StorageObjectStorage::StorageObjectStorage(
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
     ColumnsDescription columns{columns_};
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, context);
+
+    std::string sample_path;
+    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     configuration->check(context);
 
     StorageInMemoryMetadata metadata;
@@ -61,7 +91,10 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns()));
+    if (sample_path.empty() && context->getSettingsRef().use_hive_partitioning)
+        sample_path = getPathSample(metadata, context);
+
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns(), context, sample_path, format_settings));
     setInMemoryMetadata(metadata);
 }
 
@@ -198,7 +231,7 @@ private:
             return;
         auto context = getContext();
         iterator_wrapper = StorageObjectStorageSource::createFileIterator(
-            configuration, object_storage, distributed_processing,
+            configuration, configuration->getQuerySettings(context), object_storage, distributed_processing,
             context, predicate, virtual_columns, nullptr, context->getFileProgressCallback());
     }
 };
@@ -350,6 +383,7 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
 {
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
+        configuration->getQuerySettings(context),
         object_storage,
         false/* distributed_processing */,
         context,
@@ -366,33 +400,41 @@ ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
     const ObjectStoragePtr & object_storage,
     const ConfigurationPtr & configuration,
     const std::optional<FormatSettings> & format_settings,
+    std::string & sample_path,
     const ContextPtr & context)
 {
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
-    return readSchemaFromFormat(configuration->format, format_settings, *iterator, context);
+    auto schema = readSchemaFromFormat(configuration->format, format_settings, *iterator, context);
+    sample_path = iterator->getLastFilePath();
+    return schema;
 }
 
 std::string StorageObjectStorage::resolveFormatFromData(
     const ObjectStoragePtr & object_storage,
     const ConfigurationPtr & configuration,
     const std::optional<FormatSettings> & format_settings,
+    std::string & sample_path,
     const ContextPtr & context)
 {
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
-    return detectFormatAndReadSchema(format_settings, *iterator, context).second;
+    auto format_and_schema = detectFormatAndReadSchema(format_settings, *iterator, context).second;
+    sample_path = iterator->getLastFilePath();
+    return format_and_schema;
 }
 
 std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAndFormatFromData(
     const ObjectStoragePtr & object_storage,
     const ConfigurationPtr & configuration,
     const std::optional<FormatSettings> & format_settings,
+    std::string & sample_path,
     const ContextPtr & context)
 {
     ObjectInfos read_keys;
     auto iterator = createReadBufferIterator(object_storage, configuration, format_settings, read_keys, context);
     auto [columns, format] = detectFormatAndReadSchema(format_settings, *iterator, context);
+    sample_path = iterator->getLastFilePath();
     configuration->format = format;
     return std::pair(columns, format);
 }

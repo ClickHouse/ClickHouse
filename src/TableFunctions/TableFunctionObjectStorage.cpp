@@ -84,7 +84,8 @@ ColumnsDescription TableFunctionObjectStorage<
         context->checkAccess(getSourceAccessType());
         ColumnsDescription columns;
         auto storage = getObjectStorage(context, !is_insert_query);
-        resolveSchemaAndFormat(columns, configuration->format, storage, configuration, std::nullopt, context);
+        std::string sample_path;
+        resolveSchemaAndFormat(columns, configuration->format, storage, configuration, std::nullopt, sample_path, context);
         return columns;
     }
     else

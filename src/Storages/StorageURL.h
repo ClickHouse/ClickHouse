@@ -141,6 +141,9 @@ private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 };
 
+bool urlWithGlobs(const String & uri);
+
+String getSampleURI(String uri, ContextPtr context);
 
 class StorageURLSource : public SourceWithKeyCondition, WithContext
 {
