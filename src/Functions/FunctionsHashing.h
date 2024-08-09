@@ -83,8 +83,7 @@ namespace impl
         {
             assert(key0 && key1);
             assert(key0->size() == key1->size());
-            assert(offsets == nullptr || offsets->size() == key0->size());
-            if (offsets != nullptr)
+            if (offsets != nullptr && !offsets->empty())
                 return offsets->back();
             return key0->size();
         }
@@ -92,6 +91,8 @@ namespace impl
         {
             if (is_const)
                 i = 0;
+            assert(key0->size() == key1->size());
+            assert(key0->size() > i);
             if (offsets != nullptr)
             {
                 const auto *const begin = offsets->begin();

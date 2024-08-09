@@ -351,3 +351,5 @@ SELECT sipHash64Keyed((1::UInt64, 2::UInt64), []::Array(UInt8));
 SELECT hex(sipHash128Keyed((1::UInt64, 2::UInt64), []::Array(UInt8)));
 SELECT sipHash64Keyed((1::UInt64, 2::UInt64), mapFromArrays([], []));
 SELECT hex(sipHash128Keyed((1::UInt64, 2::UInt64), mapFromArrays([], [])));
+SELECT sipHash64Keyed((1::UInt64, 2::UInt64), map([0], 1, [2], 3));
+SELECT hex(sipHash128Keyed((0::UInt64, 0::UInt64), map([0], 1, [2], 3)));
