@@ -139,9 +139,9 @@ EOL
                 </table_function_remote_max_addresses>
 
                 <!-- Don't waste cycles testing the old interpreter. Spend time in the new analyzer instead -->
-                <allow_experimental_analyzer>
+                <enable_analyzer>
                     <readonly/>
-                </allow_experimental_analyzer>
+                </enable_analyzer>
 
                 <!-- This feature is broken, deprecated and will be removed. We don't want more reports about it -->
                 <allow_experimental_object_type>
@@ -308,7 +308,8 @@ function collect_query_and_trace_logs()
 {
     for table in query_log trace_log metric_log
     do
-        clickhouse-local --config-file=/etc/clickhouse-server/config.xml --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
+        # Don't ignore errors here, it leads to ignore sanitizer reports when running clickhouse-local
+        clickhouse-local --config-file=/etc/clickhouse-server/config.xml --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst
     done
 }
 

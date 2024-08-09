@@ -166,6 +166,7 @@ def _get_statless_tests_to_run(pr_info: PRInfo) -> List[str]:
 
 
 def process_results(
+    ret_code: int,
     result_directory: Path,
     server_log_path: Path,
 ) -> Tuple[StatusType, str, TestResults, List[Path]]:
@@ -192,6 +193,9 @@ def process_results(
         logging.info("Files in result folder %s", os.listdir(result_directory))
         return ERROR, "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
+    if ret_code != 0:
+        state = ERROR
+        description += " (but script exited with an error)"
 
     try:
         results_path = result_directory / "test_results.tsv"
@@ -339,7 +343,7 @@ def main():
         ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
 
         state, description, test_results, additional_logs = process_results(
-            result_path, server_log_path
+            retcode, result_path, server_log_path
         )
     else:
         print(

@@ -1,6 +1,7 @@
 #include <Storages/MessageQueueSink.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -79,4 +80,17 @@ void MessageQueueSink::consume(Chunk & chunk)
         format->resetFormatter();
     }
 }
+
+void MessageQueueSink::onCancel() noexcept
+{
+    try
+    {
+        onFinish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("MessageQueueSink"), "Error occurs on cancellation.");
+    }
+}
+
 }

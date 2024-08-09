@@ -78,8 +78,12 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
     remove_keeper_config "latest_logs_cache_size_threshold" "[[:digit:]]\+"
 fi
 
+export IS_FLAKY_CHECK=0
+
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
+    export IS_FLAKY_CHECK=1
+
     export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
     export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
     export THREAD_FUZZER_SLEEP_TIME_US_MAX=100000
@@ -170,7 +174,7 @@ do
 done
 
 setup_logs_replication
-attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
+attach_gdb_to_clickhouse
 
 function fn_exists() {
     declare -F "$1" > /dev/null;
@@ -260,13 +264,24 @@ function run_tests()
     TIMEOUT=$((MAX_RUN_TIME - 800 > 8400 ? 8400 : MAX_RUN_TIME - 800))
     START_TIME=${SECONDS}
     set +e
-    timeout --preserve-status --signal TERM --kill-after 60m ${TIMEOUT}s \
-        clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
-            --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
-    | ts '%Y-%m-%d %H:%M:%S' \
-    | tee -a test_output/test_result.txt
+
+    TEST_ARGS=(
+        --testname
+        --shard
+        --zookeeper
+        --check-zookeeper-session
+        --hung-check
+        --print-time
+        --no-drop-if-fail
+        --capture-client-stacktrace
+        --test-runs "$NUM_TRIES"
+        "${ADDITIONAL_OPTIONS[@]}"
+    )
+    timeout --preserve-status --signal TERM --kill-after 60m ${TIMEOUT}s clickhouse-test "${TEST_ARGS[@]}" 2>&1 \
+        | ts '%Y-%m-%d %H:%M:%S' \
+        | tee -a test_output/test_result.txt
     set -e
-    DURATION=$((START_TIME - SECONDS))
+    DURATION=$((SECONDS - START_TIME))
 
     echo "Elapsed ${DURATION} seconds."
     if [[ $DURATION -ge $TIMEOUT ]]
@@ -393,6 +408,8 @@ do
         | zstd --threads=0 > "/test_output/trace-log-$trace_type-flamegraph.tsv.zst" ||:
 done
 
+# Grep logs for sanitizer asserts, crashes and other critical errors
+check_logs_for_critical_errors
 
 # Compressed (FIXME: remove once only github actions will be left)
 rm /var/log/clickhouse-server/clickhouse-server.log
@@ -425,8 +442,5 @@ if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
     tar -chf /test_output/coordination1.tar /var/lib/clickhouse1/coordination ||:
 fi
-
-# Grep logs for sanitizer asserts, crashes and other critical errors
-check_logs_for_critical_errors
 
 collect_core_dumps

@@ -106,6 +106,17 @@ Chunk Squashing::convertToChunk(CurrentData && data) const
 
 Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoCollection && infos)
 {
+    if (input_chunks.size() == 1)
+    {
+        /// this is just optimization, no logic changes
+        Chunk result = std::move(input_chunks.front());
+        infos.appendIfUniq(std::move(result.getChunkInfos()));
+        result.setChunkInfos(infos);
+
+        chassert(result);
+        return result;
+    }
+
     std::vector<IColumn::MutablePtr> mutable_columns = {};
     size_t rows = 0;
     for (const Chunk & chunk : input_chunks)
