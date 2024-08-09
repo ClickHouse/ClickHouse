@@ -7,7 +7,6 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
 #include <Common/TraceSender.h>
 #include <Common/VariableContext.h>
