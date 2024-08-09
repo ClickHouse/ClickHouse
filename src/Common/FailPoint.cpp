@@ -60,6 +60,7 @@ static struct InitFiu
     ONCE(receive_timeout_on_table_status_response) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(lazy_pipe_fds_fail_close) \
+    PAUSEABLE(infinite_sleep) \
 
 
 namespace FailPoints

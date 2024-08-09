@@ -19,7 +19,7 @@ void ConditionSelectivityEstimator::ColumnSelectivityEstimator::merge(String par
 Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateLess(const Field & val, Float64 rows) const
 {
     if (part_statistics.empty())
-        return default_normal_cond_factor * rows;
+        return default_cond_range_factor * rows;
     Float64 result = 0;
     Float64 part_rows = 0;
     for (const auto & [key, estimator] : part_statistics)
@@ -39,13 +39,7 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual
 {
     if (part_statistics.empty())
     {
-        auto float_val = StatisticsUtils::tryConvertToFloat64(val);
-        if (!float_val)
-            return default_unknown_cond_factor * rows;
-        else if (float_val.value() < - threshold || float_val.value() > threshold)
-            return default_normal_cond_factor * rows;
-        else
-            return default_good_cond_factor * rows;
+        return default_cond_equal_factor * rows;
     }
     Float64 result = 0;
     Float64 partial_cnt = 0;
@@ -149,30 +143,22 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
 
     auto [op, val] = extractBinaryOp(node, col);
 
+    if (dummy)
+    {
+        if (op == "equals")
+            return default_cond_equal_factor * total_rows;
+        else if (op == "less" || op == "lessOrEquals" || op == "greater" || op == "greaterOrEquals")
+            return default_cond_range_factor * total_rows;
+        else
+            return default_unknown_cond_factor * total_rows;
+    }
+
     if (op == "equals")
-    {
-        if (dummy)
-        {
-            auto float_val = StatisticsUtils::tryConvertToFloat64(val);
-            if (!float_val || (float_val < - threshold || float_val > threshold))
-                return default_normal_cond_factor * total_rows;
-            else
-                return default_good_cond_factor * total_rows;
-        }
         return estimator.estimateEqual(val, total_rows);
-    }
     else if (op == "less" || op == "lessOrEquals")
-    {
-        if (dummy)
-            return default_normal_cond_factor * total_rows;
         return estimator.estimateLess(val, total_rows);
-    }
     else if (op == "greater" || op == "greaterOrEquals")
-    {
-        if (dummy)
-            return default_normal_cond_factor * total_rows;
         return estimator.estimateGreater(val, total_rows);
-    }
     else
         return default_unknown_cond_factor * total_rows;
 }

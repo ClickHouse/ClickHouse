@@ -21,6 +21,11 @@ public:
     String getName() const override { return "TemplateBlockOutputFormat"; }
 
     void setRowsBeforeLimit(size_t rows_before_limit_) override { statistics.rows_before_limit = rows_before_limit_; statistics.applied_limit = true; }
+    void setRowsBeforeAggregation(size_t rows_before_aggregation_) override
+    {
+        statistics.rows_before_aggregation = rows_before_aggregation_;
+        statistics.applied_aggregation = true;
+    }
     void onProgress(const Progress & progress_) override { statistics.progress.incrementPiecewiseAtomically(progress_); }
 
     enum class ResultsetPart : size_t
@@ -33,7 +38,8 @@ public:
         RowsBeforeLimit,
         TimeElapsed,
         RowsRead,
-        BytesRead
+        BytesRead,
+        RowsBeforeAggregation
     };
 
     static ResultsetPart stringToResultsetPart(const String & part);
