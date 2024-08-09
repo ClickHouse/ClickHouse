@@ -64,7 +64,9 @@ void USearchIndexWithSerialization<Metric>::serialize(WriteBuffer & ostr) const
         return true;
     };
 
-    Base::save_to_stream(callback);
+    auto result = Base::save_to_stream(callback);
+    if (result.error)
+        throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, "Could not save USearch index, error: " + String(result.error.release()));
 }
 
 template <unum::usearch::metric_kind_t Metric>
@@ -212,7 +214,7 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
         {
             auto rc = index->add(static_cast<uint32_t>(index->size()), &column_array_data_float_data[column_array_offsets[current_row - 1]]);
             if (!rc)
-                throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, rc.error.release());
+                throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, "Could not add data to USearch index, error: " + String(rc.error.release()));
 
             ProfileEvents::increment(ProfileEvents::USearchAddCount);
             ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, rc.visited_members);
@@ -274,6 +276,8 @@ std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRangesImpl(MergeTre
             ann_condition.getDimensions(), index->dimensions());
 
     auto result = index->search(reference_vector.data(), limit);
+    if (result.error)
+        throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, "Could not search in USearch index, error: " + String(result.error.release()));
 
     ProfileEvents::increment(ProfileEvents::USearchSearchCount);
     ProfileEvents::increment(ProfileEvents::USearchSearchVisitedMembers, result.visited_members);
