@@ -11,6 +11,7 @@
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+#include "Interpreters/HashJoin/ScatteredBlock.h"
 
 
 namespace DB
@@ -77,7 +78,7 @@ public:
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
         Block * stored_block,
-        const IColumn::Selector & selector,
+        const ScatteredBlock::Selector & selector,
         ConstNullMapPtr null_map,
         UInt8ColumnDataPtr join_mask,
         Arena & pool,
@@ -113,7 +114,7 @@ public:
         const MapsTemplateVector & maps_,
         bool is_join_get = false)
     {
-        HashJoin::ScatteredBlock scattered_block{block};
+        ScatteredBlock scattered_block{block};
         auto ret = joinBlockImpl(join, scattered_block, block_with_columns_to_add, maps_, is_join_get);
         ret.filterBySelector();
         scattered_block.filterBySelector();
@@ -121,9 +122,9 @@ public:
         return ret.getSourceBlock();
     }
 
-    static HashJoin::ScatteredBlock joinBlockImpl(
+    static ScatteredBlock joinBlockImpl(
         const HashJoin & join,
-        HashJoin::ScatteredBlock & block,
+        ScatteredBlock & block,
         const Block & block_with_columns_to_add,
         const MapsTemplateVector & maps_,
         bool is_join_get = false)
@@ -247,7 +248,7 @@ private:
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
         Block * stored_block,
-        const IColumn::Selector & selector,
+        const ScatteredBlock::Selector & selector,
         ConstNullMapPtr null_map,
         UInt8ColumnDataPtr join_mask,
         Arena & pool,

@@ -55,7 +55,7 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
         DB::getHashTablesStatistics().update(sum_of_sizes, *median_size, params);
 }
 
-Block concatenateBlocks(const HashJoin::ScatteredBlocks & blocks)
+Block concatenateBlocks(const ScatteredBlocks & blocks)
 {
     Blocks inner_blocks;
     for (const auto & block : blocks)
@@ -332,7 +332,7 @@ IColumn::Selector selectDispatchBlock(size_t num_shards, const Strings & key_col
     return hashToSelector(hash, num_shards);
 }
 
-HashJoin::ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, const Block & from_block)
+ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, const Block & from_block)
 {
     size_t num_shards = hash_joins.size();
     IColumn::Selector selector = selectDispatchBlock(num_shards, key_columns_names, from_block);
@@ -344,7 +344,7 @@ HashJoin::ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_
         const size_t shard = selector[i];
         selectors[shard].push_back(i);
     }
-    HashJoin::ScatteredBlocks result;
+    ScatteredBlocks result;
     result.reserve(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
         result.emplace_back(from_block, std::move(selectors[i]));

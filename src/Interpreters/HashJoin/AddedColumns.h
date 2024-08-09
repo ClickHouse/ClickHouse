@@ -14,7 +14,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct JoinOnKeyColumns
 {
-    const HashJoin::ScatteredBlock & block;
+    const ScatteredBlock & block;
 
     Names key_names;
 
@@ -30,7 +30,7 @@ struct JoinOnKeyColumns
     Sizes key_sizes;
 
     JoinOnKeyColumns(
-        const HashJoin::ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_);
+        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_);
 
     bool isRowFiltered(size_t i) const
     {
@@ -62,7 +62,7 @@ public:
     };
 
     AddedColumns(
-        const HashJoin::ScatteredBlock & left_block_,
+        const ScatteredBlock & left_block_,
         const Block & block_with_columns_to_add,
         const Block & saved_block_sample,
         const HashJoin & join,
@@ -142,7 +142,7 @@ public:
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
 
-    const HashJoin::ScatteredBlock & src_block;
+    const ScatteredBlock & src_block;
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;
     ExpressionActionsPtr additional_filter_expression;

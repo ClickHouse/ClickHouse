@@ -3,24 +3,161 @@
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Common/PODArray.h>
+#include "base/defines.h"
 
+#include <boost/math/distributions/fwd.hpp>
 #include <boost/noncopyable.hpp>
+
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
 
+namespace detail
+{
+
+class Selector
+{
+public:
+    using Range = std::pair<size_t, size_t>;
+
+    /// [begin, end)
+    Selector(size_t begin, size_t end) : data(Range{begin, end}) { }
+    Selector() : Selector(0, 0) { }
+
+    Selector(IColumn::Selector && selector_) : data(initializeFromSelector(std::move(selector_))) { }
+
+    class Iterator
+    {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = size_t;
+        using difference_type = std::ptrdiff_t;
+        using pointer = size_t *;
+        using reference = size_t &;
+
+        Iterator(const Selector & selector_, size_t idx_) : selector(selector_), idx(idx_) { }
+
+        size_t operator*() const
+        {
+            chassert(idx < selector.size());
+            if (idx >= selector.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} out of range size {}", idx, selector.size());
+            return selector[idx];
+        }
+
+        Iterator & operator++()
+        {
+            if (idx >= selector.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} out of range size {}", idx, selector.size());
+            ++idx;
+            return *this;
+        }
+
+        bool operator!=(const Iterator & other) const { return idx != other.idx; }
+
+    private:
+        const Selector & selector;
+        size_t idx;
+    };
+
+    Iterator begin() const { return Iterator(*this, 0); }
+
+    Iterator end() const { return Iterator(*this, size()); }
+
+    size_t operator[](size_t idx) const
+    {
+        chassert(idx < size());
+        if (idx >= size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} out of range size {}", idx, size());
+
+        if (std::holds_alternative<Range>(data))
+        {
+            auto range = std::get<Range>(data);
+            return range.first + idx;
+        }
+        else
+        {
+            return std::get<IColumn::Selector>(data)[idx];
+        }
+    }
+
+    size_t size() const
+    {
+        if (std::holds_alternative<Range>(data))
+        {
+            auto range = std::get<Range>(data);
+            return range.second - range.first;
+        }
+        else
+        {
+            return std::get<IColumn::Selector>(data).size();
+        }
+    }
+
+    std::pair<Selector, Selector> split(size_t num_rows)
+    {
+        if (num_rows > size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} out of range size {}", num_rows, size());
+
+        if (std::holds_alternative<Range>(data))
+        {
+            auto range = std::get<Range>(data);
+
+            if (num_rows == 0)
+                return {Selector(), Selector{range.first, range.second}};
+
+            if (num_rows == size())
+                return {Selector{range.first, range.second}, Selector()};
+
+            return {Selector(range.first, range.first + num_rows), Selector(range.first + num_rows, range.second)};
+        }
+        else
+        {
+            auto & selector = std::get<IColumn::Selector>(data);
+            return {
+                Selector(IColumn::Selector(selector.begin(), selector.begin() + num_rows)),
+                Selector(IColumn::Selector(selector.begin() + num_rows, selector.end()))};
+        }
+    }
+
+private:
+    using Data = std::variant<Range, IColumn::Selector>;
+
+    Data initializeFromSelector(IColumn::Selector && selector)
+    {
+        if (selector.empty())
+            return Range{0, 0};
+
+        /// selector represents continuous range
+        if (selector.back() == selector.front() + selector.size() - 1)
+            return Range{selector.front(), selector.front() + selector.size()};
+
+        return std::move(selector);
+    }
+
+    Data data;
+};
+
+}
+
 struct ScatteredBlock : private boost::noncopyable
 {
+    using Selector = detail::Selector;
+
     ScatteredBlock() = default;
 
     explicit ScatteredBlock(Block block_) : block(std::move(block_)), selector(createTrivialSelector(block.rows())) { }
 
     ScatteredBlock(Block block_, IColumn::Selector && selector_) : block(std::move(block_)), selector(std::move(selector_)) { }
 
+    ScatteredBlock(Block block_, Selector selector_) : block(std::move(block_)), selector(std::move(selector_)) { }
+
     ScatteredBlock(ScatteredBlock && other) noexcept : block(std::move(other.block)), selector(std::move(other.selector))
     {
         other.block.clear();
-        other.selector.clear();
+        other.selector = {};
     }
 
     ScatteredBlock & operator=(ScatteredBlock && other) noexcept
@@ -31,7 +168,7 @@ struct ScatteredBlock : private boost::noncopyable
             selector = std::move(other.selector);
 
             other.block.clear();
-            other.selector.clear();
+            other.selector = {};
         }
         return *this;
     }
@@ -67,8 +204,10 @@ struct ScatteredBlock : private boost::noncopyable
     void filter(const IColumn::Filter & filter)
     {
         chassert(block && block.rows() == filter.size());
-        auto * it = std::remove_if(selector.begin(), selector.end(), [&](size_t idx) { return !filter[idx]; });
-        selector.resize(std::distance(selector.begin(), it));
+        IColumn::Selector new_selector;
+        new_selector.reserve(selector.size());
+        std::copy_if(selector.begin(), selector.end(), std::back_inserter(new_selector), [&](size_t idx) { return filter[idx]; });
+        selector = std::move(new_selector);
     }
 
     /// Applies selector to block in place
@@ -105,10 +244,19 @@ struct ScatteredBlock : private boost::noncopyable
 
         chassert(block);
 
-        IColumn::Selector remaining_selector(selector.begin() + num_rows, selector.end());
+        LOG_DEBUG(&Poco::Logger::get("debug"), "selector=({})", fmt::join(selector, ","));
+
+        auto && [first_num_rows, remaining_selector] = selector.split(num_rows);
+
+        LOG_DEBUG(
+            &Poco::Logger::get("debug"),
+            "first_num_rows=({}), remaining_selector=({})",
+            fmt::join(first_num_rows, ","),
+            fmt::join(remaining_selector, ","));
+
         auto remaining = ScatteredBlock{block, std::move(remaining_selector)};
 
-        selector.erase(selector.begin() + num_rows, selector.end());
+        selector = std::move(first_num_rows);
 
         return remaining;
     }
@@ -135,15 +283,10 @@ struct ScatteredBlock : private boost::noncopyable
     }
 
 private:
-    IColumn::Selector createTrivialSelector(size_t size)
-    {
-        IColumn::Selector res(size);
-        std::iota(res.begin(), res.end(), 0);
-        return res;
-    }
+    Selector createTrivialSelector(size_t size) { return Selector(0, size - 1); }
 
     Block block;
-    IColumn::Selector selector;
+    Selector selector;
 };
 
 using ScatteredBlocks = std::vector<ScatteredBlock>;

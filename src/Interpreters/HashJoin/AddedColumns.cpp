@@ -4,7 +4,7 @@
 namespace DB
 {
 JoinOnKeyColumns::JoinOnKeyColumns(
-    const HashJoin::ScatteredBlock & block_, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
+    const ScatteredBlock & block_, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
     : block(block_)
     , key_names(key_names_)
     /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
