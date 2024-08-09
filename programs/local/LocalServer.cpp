@@ -1,6 +1,7 @@
 #include "LocalServer.h"
 
 #include <sys/resource.h>
+#include <Common/Config/getLocalConfigPath.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Core/UUID.h>
@@ -127,10 +128,21 @@ void LocalServer::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
 
+    const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
+    if (home_path_cstr)
+        home_path = home_path_cstr;
+
     /// Load config files if exists
-    if (getClientConfiguration().has("config-file") || fs::exists("config.xml"))
+    std::string config_path;
+    if (getClientConfiguration().has("config-file"))
+        config_path = getClientConfiguration().getString("config-file");
+    else if (config_path.empty() && fs::exists("config.xml"))
+        config_path = "config.xml";
+    else if (config_path.empty())
+        config_path = getLocalConfigPath(home_path).value_or("");
+
+    if (fs::exists(config_path))
     {
-        const auto config_path = getClientConfiguration().getString("config-file", "config.xml");
         ConfigProcessor config_processor(config_path, false, true);
         ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();

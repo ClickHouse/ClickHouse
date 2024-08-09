@@ -14,7 +14,7 @@ namespace DB
 class StatisticsCountMinSketch : public IStatistics
 {
 public:
-    StatisticsCountMinSketch(const SingleStatisticsDescription & stat_, DataTypePtr data_type_);
+    StatisticsCountMinSketch(const SingleStatisticsDescription & description, const DataTypePtr & data_type_);
 
     Float64 estimateEqual(const Field & val) const override;
 
@@ -31,8 +31,8 @@ private:
 };
 
 
-void countMinSketchValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
-StatisticsPtr countMinSketchCreator(const SingleStatisticsDescription & stat, DataTypePtr);
+void countMinSketchStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+StatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 
 }
 
