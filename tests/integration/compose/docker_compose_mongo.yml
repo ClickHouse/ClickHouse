@@ -1,7 +1,7 @@
 version: '2.3'
 services:
     mongo1:
-        image: mongo:5.0
+        image: mongo:6.0
         restart: always
         environment:
             MONGO_INITDB_ROOT_USERNAME: root
@@ -10,8 +10,20 @@ services:
             - ${MONGO_EXTERNAL_PORT:-27017}:${MONGO_INTERNAL_PORT:-27017}
         command: --profile=2 --verbose
 
-    mongo2:
-        image: mongo:5.0
+    mongo_no_cred:
+        image: mongo:6.0
         restart: always
         ports:
             - ${MONGO_NO_CRED_EXTERNAL_PORT:-27017}:${MONGO_NO_CRED_INTERNAL_PORT:-27017}
+
+    mongo_secure:
+        image: mongo:6.0
+        restart: always
+        environment:
+            MONGO_INITDB_ROOT_USERNAME: root
+            MONGO_INITDB_ROOT_PASSWORD: clickhouse
+        volumes:
+            - ${MONGO_SECURE_CONFIG_DIR:-}:/mongo/
+        ports:
+            - ${MONGO_SECURE_EXTERNAL_PORT:-27017}:${MONGO_SECURE_INTERNAL_PORT:-27017}
+        command: --config /mongo/mongo_secure.conf --profile=2 --verbose

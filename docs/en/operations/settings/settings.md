@@ -5626,3 +5626,11 @@ Default value: `False`
 Disable all insert and mutations (alter table update / alter table delete / alter table drop partition). Set to true, can make this node focus on reading queries.
 
 Default value: `false`.
+
+## mongodb_throw_on_unsupported_query
+
+If enabled, MongoDB tables will return an error when a MongoDB query can't be built.
+
+Not applied for the legacy implementation, or when 'allow_experimental_analyzer=0`.
+
+Default value: `true`.
