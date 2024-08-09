@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
+#include <Storages/MergeTree/VectorSimilarityCondition.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTIdentifier.h>
@@ -48,7 +49,6 @@
 #include <Functions/IFunction.h>
 
 #include <IO/WriteBufferFromOStream.h>
-#include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
 namespace CurrentMetrics
 {
@@ -1406,11 +1406,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 reader.read(granule);
 
-            auto ann_condition = std::dynamic_pointer_cast<IMergeTreeIndexConditionApproximateNearestNeighbor>(condition);
-            if (ann_condition != nullptr)
+            if (index_helper->isVectorSimilarityIndex())
             {
                 /// An array of indices of useful ranges.
-                auto result = ann_condition->getUsefulRanges(granule);
+                auto result = condition->getUsefulRanges(granule);
 
                 for (auto range : result)
                 {
