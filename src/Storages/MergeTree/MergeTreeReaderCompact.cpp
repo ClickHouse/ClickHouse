@@ -48,7 +48,6 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     , profile_callback(profile_callback_)
     , clock_type(clock_type_)
 {
-    marks_loader->startAsyncLoad();
 }
 
 void MergeTreeReaderCompact::fillColumnPositions()
@@ -196,7 +195,7 @@ void MergeTreeReaderCompact::readPrefix(
             deserialize_settings.getter = buffer_getter_for_prefix;
             ISerialization::DeserializeBinaryBulkStatePtr state_for_prefix;
 
-            serialization_for_prefix->deserializeBinaryBulkStatePrefix(deserialize_settings, state_for_prefix, nullptr);
+            serialization_for_prefix->deserializeBinaryBulkStatePrefix(deserialize_settings, state_for_prefix);
         }
 
         SerializationPtr serialization;
@@ -205,9 +204,9 @@ void MergeTreeReaderCompact::readPrefix(
         else
             serialization = getSerializationInPart(name_and_type);
 
+
         deserialize_settings.getter = buffer_getter;
-        deserialize_settings.dynamic_read_statistics = true;
-        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name_and_type.name], nullptr);
+        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name_and_type.name]);
     }
     catch (Exception & e)
     {
@@ -233,7 +232,7 @@ bool MergeTreeReaderCompact::needSkipStream(size_t column_pos, const ISerializat
     ///
     /// Consider the following columns in nested "root":
     /// - root.array Array(UInt8) - exists
-    /// - root.nested_array Array(Array(UInt8)) - does not exist (only_offsets_level=1)
+    /// - root.nested_array Array(Array(UInt8)) - does not exists (only_offsets_level=1)
     ///
     /// For root.nested_array it will try to read multiple streams:
     /// - offsets (substream_path = {ArraySizes})

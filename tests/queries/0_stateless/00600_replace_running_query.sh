@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 
@@ -6,10 +7,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-TEST_PREFIX=$RANDOM
-${CLICKHOUSE_CLIENT} -q "drop user if exists u_00600${TEST_PREFIX}"
-${CLICKHOUSE_CLIENT} -q "create user u_00600${TEST_PREFIX} settings max_execution_time=60, readonly=1"
-${CLICKHOUSE_CLIENT} -q "grant select on system.numbers to u_00600${TEST_PREFIX}"
+${CLICKHOUSE_CLIENT} -q "drop user if exists u_00600"
+${CLICKHOUSE_CLIENT} -q "create user u_00600 settings max_execution_time=60, readonly=1"
+${CLICKHOUSE_CLIENT} -q "grant select on system.numbers to u_00600"
 
 function wait_for_query_to_start()
 {
@@ -26,7 +26,7 @@ $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL&query_id=hello&replace_running_query=1" -d
 # Wait for it to be replaced
 wait
 
-${CLICKHOUSE_CLIENT_BINARY} --user=u_00600${TEST_PREFIX} --query_id=42 --query='SELECT 2, count() FROM system.numbers' 2>&1 | grep -cF 'was cancelled' &
+${CLICKHOUSE_CLIENT_BINARY} --user=u_00600 --query_id=42 --query='SELECT 2, count() FROM system.numbers' 2>&1 | grep -cF 'was cancelled' &
 wait_for_query_to_start '42'
 
 # Trying to run another query with the same query_id
@@ -43,4 +43,4 @@ wait_for_query_to_start '42'
 ${CLICKHOUSE_CLIENT} --query_id=42 --replace_running_query=1 --replace_running_query_max_wait_ms=500 --query='SELECT 43' 2>&1 | grep -F "can't be stopped" > /dev/null
 wait
 ${CLICKHOUSE_CLIENT} --query_id=42 --replace_running_query=1 --query='SELECT 44'
-${CLICKHOUSE_CLIENT} -q "drop user u_00600${TEST_PREFIX}"
+${CLICKHOUSE_CLIENT} -q "drop user u_00600"

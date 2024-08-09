@@ -67,4 +67,5 @@ from
        select throwIf(uniq((test, query)) != 1) from table
    ) check_single_query -- this subselect checks that there is only one query in the input table;
                         -- written this way so that it is not optimized away (#10523)
+SETTINGS allow_experimental_analyzer = 0
 ;

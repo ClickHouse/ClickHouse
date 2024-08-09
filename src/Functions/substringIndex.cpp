@@ -7,7 +7,6 @@
 #include <Functions/PositionImpl.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/find_symbols.h>
-#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/register_objects.h>
 
@@ -130,10 +129,8 @@ namespace
             res_data.reserve(str_column->getChars().size() / 2);
             res_offsets.reserve(rows);
 
-            bool all_ascii = isAllASCII(str_column->getChars().data(), str_column->getChars().size())
-                && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size());
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
-                = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
+                = !is_utf8 ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
 
             for (size_t i = 0; i < rows; ++i)
             {
@@ -143,12 +140,10 @@ namespace
                 StringRef res_ref;
                 if constexpr (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
-                else if (all_ascii)
-                    res_ref = substringIndex(str_ref, delim[0], count);
                 else
                     res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
 
-                appendToResultColumn<true>(res_ref, res_data, res_offsets);
+                appendToResultColumn(res_ref, res_data, res_offsets);
             }
         }
 
@@ -163,10 +158,8 @@ namespace
             res_data.reserve(str_column->getChars().size() / 2);
             res_offsets.reserve(rows);
 
-            bool all_ascii = isAllASCII(str_column->getChars().data(), str_column->getChars().size())
-                && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size());
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
-                = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
+                = !is_utf8 ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
 
             for (size_t i = 0; i < rows; ++i)
             {
@@ -175,12 +168,10 @@ namespace
                 StringRef res_ref;
                 if constexpr (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
-                else if (all_ascii)
-                    res_ref = substringIndex(str_ref, delim[0], count);
                 else
                     res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
 
-                appendToResultColumn<true>(res_ref, res_data, res_offsets);
+                appendToResultColumn(res_ref, res_data, res_offsets);
             }
         }
 
@@ -195,10 +186,8 @@ namespace
             res_data.reserve(str.size() * rows / 2);
             res_offsets.reserve(rows);
 
-            bool all_ascii = isAllASCII(reinterpret_cast<const UInt8 *>(str.data()), str.size())
-                && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size());
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
-                = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
+                = !is_utf8 ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
 
             StringRef str_ref{str.data(), str.size()};
             for (size_t i = 0; i < rows; ++i)
@@ -208,26 +197,18 @@ namespace
                 StringRef res_ref;
                 if constexpr (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
-                else if (all_ascii)
-                    res_ref = substringIndex(str_ref, delim[0], count);
                 else
                     res_ref = substringIndexUTF8(searcher.get(), str_ref, delim, count);
 
-                appendToResultColumn<false>(res_ref, res_data, res_offsets);
+                appendToResultColumn(res_ref, res_data, res_offsets);
             }
         }
 
-        template <bool padded>
         static void appendToResultColumn(const StringRef & res_ref, ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
         {
             size_t res_offset = res_data.size();
             res_data.resize(res_offset + res_ref.size + 1);
-
-            if constexpr (padded)
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], res_ref.data, res_ref.size);
-            else
-                memcpy(&res_data[res_offset], res_ref.data, res_ref.size);
-
+            memcpy(&res_data[res_offset], res_ref.data, res_ref.size);
             res_offset += res_ref.size;
             res_data[res_offset] = 0;
             ++res_offset;
@@ -314,7 +295,7 @@ REGISTER_FUNCTION(SubstringIndex)
     factory.registerFunction<FunctionSubstringIndex<false>>(); /// substringIndex
     factory.registerFunction<FunctionSubstringIndex<true>>(); /// substringIndexUTF8
 
-    factory.registerAlias("SUBSTRING_INDEX", "substringIndex", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("SUBSTRING_INDEX", "substringIndex", FunctionFactory::CaseInsensitive);
 }
 
 

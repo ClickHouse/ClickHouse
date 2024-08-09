@@ -1,6 +1,5 @@
 #include <filesystem>
 
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
@@ -16,6 +15,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -31,7 +31,6 @@
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Core/Defines.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -46,7 +45,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int NOT_IMPLEMENTED;
-    extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
 }
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
@@ -79,20 +77,6 @@ static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr contex
     String replica_path = server_settings.default_replica_path;
     String replica_name = server_settings.default_replica_name;
 
-    /// Check that replica path doesn't exist
-    Macros::MacroExpansionInfo info;
-    StorageID table_id = StorageID(create_query->getDatabase(), create_query->getTable(), create_query->uuid);
-    info.table_id = table_id;
-    info.expand_special_macros_only = false;
-
-    String zookeeper_path = context->getMacros()->expand(replica_path, info);
-    if (context->getZooKeeper()->exists(zookeeper_path))
-        throw Exception(
-            ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER,
-            "Found existing ZooKeeper path {} while trying to convert table {} to replicated. Table will not be converted.",
-            zookeeper_path, backQuote(table_id.getFullTableName())
-        );
-
     auto args = std::make_shared<ASTExpressionList>();
     args->children.push_back(std::make_shared<ASTLiteral>(replica_path));
     args->children.push_back(std::make_shared<ASTLiteral>(replica_name));
@@ -112,21 +96,16 @@ static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr contex
     create_query->storage->set(create_query->storage->engine, engine->clone());
 }
 
-String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, const StoragePolicyPtr storage_policy, bool tableStarted)
+String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, bool tableStarted)
 {
     fs::path data_path;
-    if (storage_policy->getDisks().empty())
-        data_path = getContext()->getPath();
-    else
-        data_path = storage_policy->getDisks()[0]->getPath();
-
     if (!tableStarted)
     {
         auto create_query = tryGetCreateTableQuery(name, getContext());
-        data_path = data_path / getTableDataPath(create_query->as<ASTCreateQuery &>());
+        data_path = fs::path(getContext()->getPath()) / getTableDataPath(create_query->as<ASTCreateQuery &>());
     }
     else
-        data_path = data_path / getTableDataPath(name);
+        data_path = fs::path(getContext()->getPath()) / getTableDataPath(name);
 
     return (data_path / CONVERT_TO_REPLICATED_FLAG_NAME).string();
 }
@@ -142,14 +121,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     if (!create_query->storage || !create_query->storage->engine->name.ends_with("MergeTree") || create_query->storage->engine->name.starts_with("Replicated") || create_query->storage->engine->name.starts_with("Shared"))
         return;
 
-    /// Get table's storage policy
-    MergeTreeSettings default_settings = getContext()->getMergeTreeSettings();
-    auto policy = getContext()->getStoragePolicy(default_settings.storage_policy);
-    if (auto * query_settings = create_query->storage->settings)
-        if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
-            policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
-
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, policy, false);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, false);
 
     if (!fs::exists(convert_to_replicated_flag_path))
         return;
@@ -197,10 +169,10 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
         try
         {
-            auto ast = parseQueryFromMetadata(log, local_context, full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
+            auto ast = parseQueryFromMetadata(log, getContext(), full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
             if (ast)
             {
-                FunctionNameNormalizer::visit(ast.get());
+                FunctionNameNormalizer().visit(ast.get());
                 auto * create_query = ast->as<ASTCreateQuery>();
                 /// NOTE No concurrent writes are possible during database loading
                 create_query->setDatabase(TSA_SUPPRESS_WARNING_FOR_READ(database_name));
@@ -226,23 +198,8 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 if (fs::exists(full_path.string() + detached_suffix))
                 {
                     const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
-                    LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
-
-                    std::lock_guard lock(mutex);
                     permanently_detached_tables.push_back(table_name);
-
-                    const auto detached_table_name = create_query->getTable();
-
-                    snapshot_detached_tables.emplace(
-                        detached_table_name,
-                        SnapshotDetachedTable{
-                            .database = create_query->getDatabase(),
-                            .table = detached_table_name,
-                            .uuid = create_query->uuid,
-                            .metadata_path = getObjectMetadataPath(detached_table_name),
-                            .is_permanently = true});
-
-                    LOG_TRACE(log, "Add permanently detached table {} to system.detached_tables", detached_table_name);
+                    LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
                     return;
                 }
 
@@ -250,6 +207,8 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
                 convertMergeTreeToReplicatedIfNeeded(ast, qualified_name, file_name);
 
+                NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef().union_default_mode};
+                NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
                 metadata.total_dictionaries += create_query->is_dictionary;
@@ -332,11 +291,11 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     if (!rmt)
         return;
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, table->getStoragePolicy(), true);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, true);
     if (!fs::exists(convert_to_replicated_flag_path))
         return;
 
-    (void)fs::remove(convert_to_replicated_flag_path);
+    fs::remove(convert_to_replicated_flag_path);
     LOG_INFO
     (
         log,
@@ -482,46 +441,24 @@ void DatabaseOrdinary::stopLoading()
     stop_load_table.clear();
 }
 
-DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
+DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
 {
-    if (!skip_not_loaded)
-    {
-        // Wait for every table (matching the filter) to be loaded and started up before we make the snapshot.
-        // It is important, because otherwise table might be:
-        //  - not attached and thus will be missed in the snapshot;
-        //  - not started, which is not good for DDL operations.
-        LoadTaskPtrs tasks_to_wait;
-        {
-            std::lock_guard lock(mutex);
-            if (!filter_by_table_name)
-                tasks_to_wait.reserve(startup_table.size());
-            for (const auto & [table_name, task] : startup_table)
-                if (!filter_by_table_name || filter_by_table_name(table_name))
-                    tasks_to_wait.emplace_back(task);
-        }
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), tasks_to_wait);
-    }
-    return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
-}
-
-DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOrdinary::getDetachedTablesIterator(
-    ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
-{
-    return DatabaseWithOwnTablesBase::getDetachedTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
-}
-
-Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
-{
-    std::set<String> unique_names;
+    // Wait for every table (matching the filter) to be loaded and started up before we make the snapshot.
+    // It is important, because otherwise table might be:
+    //  - not attached and thus will be missed in the snapshot;
+    //  - not started, which is not good for DDL operations.
+    LoadTaskPtrs tasks_to_wait;
     {
         std::lock_guard lock(mutex);
-        for (const auto & [table_name, _] : tables)
-            unique_names.emplace(table_name);
-        // Not yet loaded table are not listed in `tables`, so we have to add table names from tasks
-        for (const auto & [table_name, _] : startup_table)
-            unique_names.emplace(table_name);
+        if (!filter_by_table_name)
+            tasks_to_wait.reserve(startup_table.size());
+        for (const auto & [table_name, task] : startup_table)
+            if (!filter_by_table_name || filter_by_table_name(table_name))
+                tasks_to_wait.emplace_back(task);
     }
-    return {unique_names.begin(), unique_names.end()};
+    waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), tasks_to_wait);
+
+    return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name);
 }
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
@@ -562,7 +499,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     }
 
     /// The create query of the table has been just changed, we need to update dependencies too.
-    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
+    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies, loading_dependencies);
 
@@ -578,7 +515,7 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
     }
     catch (...)
     {
-        (void)fs::remove(table_metadata_tmp_path);
+        fs::remove(table_metadata_tmp_path);
         throw;
     }
 }

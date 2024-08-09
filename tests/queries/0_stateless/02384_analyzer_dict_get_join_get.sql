@@ -30,7 +30,7 @@ SELECT dictGet(test_dictionary, 'value', toUInt64(0));
 
 WITH 'test_dictionary' AS dictionary SELECT dictGet(dictionary, 'value', toUInt64(0));
 
-WITH 'invalid_dictionary' AS dictionary SELECT dictGet(dictionary, 'value', toUInt64(0)); -- { serverError BAD_ARGUMENTS }
+WITH 'invalid_dictionary' AS dictionary SELECT dictGet(dictionary, 'value', toUInt64(0)); -- { serverError 36 }
 
 DROP DICTIONARY test_dictionary;
 DROP TABLE test_table;
@@ -54,6 +54,6 @@ SELECT joinGet(test_table_join, 'value', toUInt64(0));
 
 WITH 'test_table_join' AS join_table SELECT joinGet(join_table, 'value', toUInt64(0));
 
-WITH 'invalid_test_table_join' AS join_table SELECT joinGet(join_table, 'value', toUInt64(0)); -- { serverError UNKNOWN_TABLE }
+WITH 'invalid_test_table_join' AS join_table SELECT joinGet(join_table, 'value', toUInt64(0)); -- { serverError 60 }
 
 DROP TABLE test_table_join;

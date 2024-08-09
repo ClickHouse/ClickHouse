@@ -1,7 +1,8 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 
+#include <Common/config_version.h>
 #include <Common/checkStackSize.h>
-#include <Core/Settings.h>
+#include <Core/ProtocolDefines.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>

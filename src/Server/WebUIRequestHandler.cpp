@@ -5,9 +5,8 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
-#include <Core/ServerSettings.h>
-#include <IO/HTTPCommon.h>
 #include <Interpreters/Context.h>
+#include <IO/HTTPCommon.h>
 #include <Common/re2.h>
 
 #include <incbin.h>

@@ -3,7 +3,6 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Types.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NumberTraits.h>
@@ -16,7 +15,6 @@
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
 #include <Common/register_objects.h>
-#include <base/range.h>
 
 #include <algorithm>
 #include <iterator>
@@ -287,7 +285,7 @@ Result:
         .categories{"Mathematical"},
     });
 
-    factory.registerAlias("width_bucket", "widthBucket", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("width_bucket", "widthBucket", FunctionFactory::CaseInsensitive);
 }
 
 }

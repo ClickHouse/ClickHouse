@@ -14,7 +14,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-#include <Core/Settings.h>
+
 
 namespace DB
 {
@@ -35,6 +35,7 @@ namespace
             case UserDefinedSQLObjectType::Function:
                 return "function_";
         }
+        UNREACHABLE();
     }
 
     constexpr std::string_view sql_extension = ".sql";
@@ -48,7 +49,7 @@ namespace
 
 UserDefinedSQLObjectsZooKeeperStorage::UserDefinedSQLObjectsZooKeeperStorage(
     const ContextPtr & global_context_, const String & zookeeper_path_)
-    : global_context{global_context_}
+    : UserDefinedSQLObjectsStorageBase(global_context_)
     , zookeeper_getter{[global_context_]() { return global_context_->getZooKeeper(); }}
     , zookeeper_path{zookeeper_path_}
     , watch_queue{std::make_shared<ConcurrentBoundedQueue<std::pair<UserDefinedSQLObjectType, String>>>(std::numeric_limits<size_t>::max())}
@@ -297,6 +298,7 @@ bool UserDefinedSQLObjectsZooKeeperStorage::getObjectDataAndSetWatch(
     };
 
     Coordination::Stat entity_stat;
+    String object_create_query;
     return zookeeper->tryGetWatch(path, data, &entity_stat, object_watcher);
 }
 

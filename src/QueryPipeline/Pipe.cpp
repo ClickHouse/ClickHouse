@@ -13,6 +13,8 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Columns/ColumnConst.h>
 
+#include <QueryPipeline/printPipeline.h>
+
 namespace DB
 {
 

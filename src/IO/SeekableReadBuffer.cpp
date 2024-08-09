@@ -1,6 +1,5 @@
 #include <IO/SeekableReadBuffer.h>
 
-#include <istream>
 
 namespace DB
 {

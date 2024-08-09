@@ -1,7 +1,7 @@
 #include <cassert>
 #include <base/defines.h>
 #include <Parsers/Lexer.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <base/find_symbols.h>
 
 namespace DB
@@ -11,9 +11,8 @@ namespace
 {
 
 /// This must be consistent with functions in ReadHelpers.h
-template <char quote>
-Token quotedString(const char *& pos, const char * const token_begin, const char * const end,
-    TokenType success_token, TokenType error_token)
+template <char quote, TokenType success_token, TokenType error_token>
+Token quotedString(const char *& pos, const char * const token_begin, const char * const end)
 {
     ++pos;
     while (true)
@@ -42,31 +41,7 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
             continue;
         }
 
-        chassert(false);
-    }
-}
-
-Token quotedStringWithUnicodeQuotes(const char *& pos, const char * const token_begin, const char * const end,
-    char expected_end_byte, TokenType success_token, TokenType error_token)
-{
-    /// ‘: e2 80 98
-    /// ’: e2 80 99
-    /// “: e2 80 9c
-    /// ”: e2 80 9d
-
-    while (true)
-    {
-        pos = find_first_symbols<'\xE2'>(pos, end);
-        if (pos + 2 >= end)
-            return Token(error_token, token_begin, end);
-
-        if (pos[0] == '\xE2' && pos[1] == '\x80' && pos[2] == expected_end_byte)
-        {
-            pos += 3;
-            return Token(success_token, token_begin, pos);
-        }
-
-        ++pos;
+        UNREACHABLE();
     }
 }
 
@@ -249,11 +224,11 @@ Token Lexer::nextTokenImpl()
         }
 
         case '\'':
-            return quotedString<'\''>(pos, token_begin, end, TokenType::StringLiteral, TokenType::ErrorSingleQuoteIsNotClosed);
+            return quotedString<'\'', TokenType::StringLiteral, TokenType::ErrorSingleQuoteIsNotClosed>(pos, token_begin, end);
         case '"':
-            return quotedString<'"'>(pos, token_begin, end, TokenType::QuotedIdentifier, TokenType::ErrorDoubleQuoteIsNotClosed);
+            return quotedString<'"', TokenType::QuotedIdentifier, TokenType::ErrorDoubleQuoteIsNotClosed>(pos, token_begin, end);
         case '`':
-            return quotedString<'`'>(pos, token_begin, end, TokenType::QuotedIdentifier, TokenType::ErrorBackQuoteIsNotClosed);
+            return quotedString<'`', TokenType::QuotedIdentifier, TokenType::ErrorBackQuoteIsNotClosed>(pos, token_begin, end);
 
         case '(':
             return Token(TokenType::OpeningRoundBracket, token_begin, ++pos);
@@ -459,15 +434,6 @@ Token Lexer::nextTokenImpl()
                 pos += 3;
                 return Token(TokenType::Minus, token_begin, pos);
             }
-            /// Unicode quoted string, ‘Hello’ or “World”.
-            if (pos + 5 < end && pos[0] == '\xE2' && pos[1] == '\x80' && (pos[2] == '\x98' || pos[2] == '\x9C'))
-            {
-                const char expected_end_byte = pos[2] + 1;
-                TokenType success_token = pos[2] == '\x98' ? TokenType::StringLiteral : TokenType::QuotedIdentifier;
-                TokenType error_token = pos[2] == '\x98' ? TokenType::ErrorSingleQuoteIsNotClosed : TokenType::ErrorDoubleQuoteIsNotClosed;
-                pos += 3;
-                return quotedStringWithUnicodeQuotes(pos, token_begin, end, expected_end_byte, success_token, error_token);
-            }
             /// Other characters starting at E2 can be parsed, see skipWhitespacesUTF8
             [[fallthrough]];
         }
@@ -481,7 +447,7 @@ Token Lexer::nextTokenImpl()
                 if (heredoc_name_end_position != std::string::npos)
                 {
                     size_t heredoc_size = heredoc_name_end_position + 1;
-                    std::string_view heredoc = {token_stream.data(), heredoc_size}; // NOLINT
+                    std::string_view heredoc = {token_stream.data(), heredoc_size};
 
                     size_t heredoc_end_position = token_stream.find(heredoc, heredoc_size);
                     if (heredoc_end_position != std::string::npos)
@@ -535,6 +501,8 @@ const char * getTokenName(TokenType type)
 APPLY_FOR_TOKENS(M)
 #undef M
     }
+
+    UNREACHABLE();
 }
 
 

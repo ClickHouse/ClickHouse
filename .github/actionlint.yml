@@ -7,4 +7,3 @@ self-hosted-runner:
     - stress-tester
     - style-checker
     - style-checker-aarch64
-    - release-maker
