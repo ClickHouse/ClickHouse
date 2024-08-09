@@ -15,8 +15,11 @@ class WriteBufferFromHTTPServerResponse;
 class PrometheusRequestHandler : public HTTPRequestHandler
 {
 public:
-    PrometheusRequestHandler(IServer & server_, const PrometheusRequestHandlerConfig & config_,
-                             const AsynchronousMetrics & async_metrics_, std::shared_ptr<PrometheusMetricsWriter> metrics_writer_);
+    PrometheusRequestHandler(
+        IServer & server_,
+        const PrometheusRequestHandlerConfig & config_,
+        const AsynchronousMetrics & async_metrics_,
+        std::shared_ptr<PrometheusMetricsWriter> metrics_writer_);
     ~PrometheusRequestHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event_) override;
