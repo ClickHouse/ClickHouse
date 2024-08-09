@@ -38,7 +38,10 @@
 
 namespace ProfileEvents
 {
-extern const Event MutateTaskProjectionsCalculationMicroseconds;
+    extern const Event MutationTotalParts;
+    extern const Event MutationUntouchedParts;
+    extern const Event MutationTimeMilliseconds;
+    extern const Event MutateTaskProjectionsCalculationMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -2034,6 +2037,9 @@ bool MutateTask::execute()
             if (task->executeStep())
                 return true;
 
+            auto total_elapsed_ms = (*ctx->mutate_entry)->watch.elapsedMilliseconds();
+            ProfileEvents::increment(ProfileEvents::MutationTimeMilliseconds, total_elapsed_ms);
+
             // The `new_data_part` is a shared pointer and must be moved to allow
             // part deletion in case it is needed in `MutateFromLogEntryTask::finalize`.
             //
@@ -2118,6 +2124,7 @@ bool MutateTask::prepare()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to mutate {} parts, not one. "
             "This is a bug.", ctx->future_part->parts.size());
 
+    ProfileEvents::increment(ProfileEvents::MutationTotalParts);
     ctx->num_mutations = std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::PartMutation);
 
     auto context_for_reading = Context::createCopy(ctx->context);
@@ -2174,6 +2181,7 @@ bool MutateTask::prepare()
             ctx->temporary_directory_lock = std::move(lock);
         }
 
+        ProfileEvents::increment(ProfileEvents::MutationUntouchedParts);
         promise.set_value(std::move(part));
         return false;
     }

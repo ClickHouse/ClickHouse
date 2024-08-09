@@ -5,9 +5,14 @@
 #include <memory>
 #include <fmt/format.h>
 
+#include "Common/ElapsedTimeProfileEventIncrement.h"
+#include "Common/Logger.h"
+#include "Common/Stopwatch.h"
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Core/Settings.h>
+#include <Common/ProfileEvents.h>
+#include "base/types.h"
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -38,6 +43,16 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+
+namespace ProfileEvents
+{
+    extern const Event Merge;
+    extern const Event MergeTotalMilliseconds;
+    extern const Event MergeExecuteMilliseconds;
+    extern const Event MergeHorizontalStageExecuteMilliseconds;
+    extern const Event MergeVerticalStageExecuteMilliseconds;
+    extern const Event MergeProjectionStageExecuteMilliseconds;
+}
 
 namespace DB
 {
@@ -185,6 +200,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     /// throw exception
     if (isTTLMergeType(global_ctx->future_part->merge_type) && global_ctx->ttl_merges_blocker->isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with TTL");
+
+    ProfileEvents::increment(ProfileEvents::Merge);
 
     LOG_DEBUG(ctx->log, "Merging {} parts: from {} to {} into {} with storage {}",
         global_ctx->future_part->parts.size(),
@@ -446,6 +463,9 @@ void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const Str
 
 MergeTask::StageRuntimeContextPtr MergeTask::ExecuteAndFinalizeHorizontalPart::getContextForNextStage()
 {
+    ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    ProfileEvents::increment(ProfileEvents::MergeHorizontalStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+
     auto new_ctx = std::make_shared<VerticalMergeRuntimeContext>();
 
     new_ctx->rows_sources_write_buf = std::move(ctx->rows_sources_write_buf);
@@ -463,8 +483,10 @@ MergeTask::StageRuntimeContextPtr MergeTask::ExecuteAndFinalizeHorizontalPart::g
 
 MergeTask::StageRuntimeContextPtr MergeTask::VerticalMergeStage::getContextForNextStage()
 {
-    auto new_ctx = std::make_shared<MergeProjectionsRuntimeContext>();
+    ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    ProfileEvents::increment(ProfileEvents::MergeVerticalStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
 
+    auto new_ctx = std::make_shared<MergeProjectionsRuntimeContext>();
     new_ctx->need_sync = std::move(ctx->need_sync);
 
     ctx.reset();
@@ -474,9 +496,14 @@ MergeTask::StageRuntimeContextPtr MergeTask::VerticalMergeStage::getContextForNe
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
 {
-    assert(subtasks_iterator != subtasks.end());
-    if ((this->**subtasks_iterator)())
-        return true;
+    chassert(subtasks_iterator != subtasks.end());
+
+    Stopwatch watch;
+    bool res = (this->**subtasks_iterator)();
+    ctx->elapsed_execute_ns += watch.elapsedNanoseconds();
+
+    if (res)
+        return res;
 
     /// Move to the next subtask in an array of subtasks
     ++subtasks_iterator;
@@ -486,11 +513,20 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
 {
-    Block block;
-    if (!ctx->is_cancelled() && (global_ctx->merging_executor->pull(block)))
-    {
-        global_ctx->rows_written += block.rows();
+    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+    UInt64 step_time_ms = global_ctx->data->getSettings()->merge_preferred_step_execution_time_ms.totalMilliseconds();
 
+    do
+    {
+        Block block;
+
+        if (ctx->is_cancelled() || !global_ctx->merging_executor->pull(block))
+        {
+            finalize();
+            return false;
+        }
+
+        global_ctx->rows_written += block.rows();
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
         UInt64 result_rows = 0;
@@ -510,11 +546,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
 
             global_ctx->space_reservation->update(static_cast<size_t>((1. - progress) * ctx->initial_reservation));
         }
+    } while (watch.elapsedMilliseconds() < step_time_ms);
 
-        /// Need execute again
-        return true;
-    }
+    /// Need execute again
+    return true;
+}
 
+void MergeTask::ExecuteAndFinalizeHorizontalPart::finalize() const
+{
     global_ctx->merging_executor.reset();
     global_ctx->merged_pipeline.reset();
 
@@ -524,17 +563,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with expired TTL");
 
-    const auto data_settings = global_ctx->data->getSettings();
     const size_t sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
-    ctx->need_sync = needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound, *data_settings);
-
-    return false;
+    ctx->need_sync = needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound, *global_ctx->data->getSettings());
 }
-
 
 bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 {
-     /// No need to execute this part if it is horizontal merge.
+    /// No need to execute this part if it is horizontal merge.
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
         return false;
 
@@ -708,17 +743,24 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 
 bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
 {
-    Block block;
-    if (!global_ctx->merges_blocker->isCancelled() && !global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed)
-        && ctx->executor->pull(block))
+    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+    UInt64 step_time_ms = global_ctx->data->getSettings()->merge_preferred_step_execution_time_ms.totalMilliseconds();
+
+    do
     {
+        Block block;
+
+        if (global_ctx->merges_blocker->isCancelled()
+            || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed)
+            || !ctx->executor->pull(block))
+            return false;
+
         ctx->column_elems_written += block.rows();
         ctx->column_to->write(block);
+    } while (watch.elapsedMilliseconds() < step_time_ms);
 
-        /// Need execute again
-        return true;
-    }
-    return false;
+    /// Need execute again
+    return true;
 }
 
 
@@ -906,12 +948,24 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     return false;
 }
 
+MergeTask::StageRuntimeContextPtr MergeTask::MergeProjectionsStage::getContextForNextStage()
+{
+    ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    ProfileEvents::increment(ProfileEvents::MergeProjectionStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+
+    return nullptr;
+}
 
 bool MergeTask::VerticalMergeStage::execute()
 {
-    assert(subtasks_iterator != subtasks.end());
-    if ((this->**subtasks_iterator)())
-        return true;
+    chassert(subtasks_iterator != subtasks.end());
+
+    Stopwatch watch;
+    bool res = (this->**subtasks_iterator)();
+    ctx->elapsed_execute_ns += watch.elapsedNanoseconds();
+
+    if (res)
+        return res;
 
     /// Move to the next subtask in an array of subtasks
     ++subtasks_iterator;
@@ -920,9 +974,14 @@ bool MergeTask::VerticalMergeStage::execute()
 
 bool MergeTask::MergeProjectionsStage::execute()
 {
-    assert(subtasks_iterator != subtasks.end());
-    if ((this->**subtasks_iterator)())
-        return true;
+    chassert(subtasks_iterator != subtasks.end());
+
+    Stopwatch watch;
+    bool res = (this->**subtasks_iterator)();
+    ctx->elapsed_execute_ns += watch.elapsedNanoseconds();
+
+    if (res)
+        return res;
 
     /// Move to the next subtask in an array of subtasks
     ++subtasks_iterator;
@@ -969,12 +1028,22 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForAllColumns() const
 
 bool MergeTask::execute()
 {
-    assert(stages_iterator != stages.end());
-    if ((*stages_iterator)->execute())
+    chassert(stages_iterator != stages.end());
+    const auto & current_stage = *stages_iterator;
+
+    if (current_stage->execute())
         return true;
 
-    /// Stage is finished, need initialize context for the next stage
-    auto next_stage_context = (*stages_iterator)->getContextForNextStage();
+    /// Stage is finished, need to initialize context for the next stage and update profile events.
+
+    UInt64 current_elapsed_ms = global_ctx->merge_list_element_ptr->watch.elapsedMilliseconds();
+    UInt64 stage_elapsed_ms = current_elapsed_ms - global_ctx->prev_elapesed_ms;
+    global_ctx->prev_elapesed_ms = current_elapsed_ms;
+
+    ProfileEvents::increment(current_stage->getTotalTimeProfileEvent(), stage_elapsed_ms);
+    ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, stage_elapsed_ms);
+
+    auto next_stage_context = current_stage->getContextForNextStage();
 
     /// Move to the next stage in an array of stages
     ++stages_iterator;
@@ -1099,7 +1168,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
                 /* limit_= */0,
                 /* always_read_till_end_= */false,
                 ctx->rows_sources_write_buf.get(),
-                true,
                 ctx->blocks_are_granules_size);
             break;
 
