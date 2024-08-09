@@ -286,7 +286,7 @@ MergeTreeIndexConditionUSearch::MergeTreeIndexConditionUSearch(
     const SelectQueryInfo & query,
     unum::usearch::metric_kind_t metric_kind_,
     ContextPtr context)
-    : ann_condition(query, context)
+    : vector_similarity_condition(query, context)
     , metric_kind(metric_kind_)
 {
 }
@@ -305,15 +305,15 @@ bool MergeTreeIndexConditionUSearch::alwaysUnknownOrTrue() const
         case unum::usearch::metric_kind_t::cos_k:  index_distance_function = "cosineDistance"; break;
         default: std::unreachable();
     }
-    return ann_condition.alwaysUnknownOrTrue(index_distance_function);
+    return vector_similarity_condition.alwaysUnknownOrTrue(index_distance_function);
 }
 
 std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRanges(MergeTreeIndexGranulePtr granule_) const
 {
-    const UInt64 limit = ann_condition.getLimit();
-    const UInt64 index_granularity = ann_condition.getIndexGranularity();
+    const UInt64 limit = vector_similarity_condition.getLimit();
+    const UInt64 index_granularity = vector_similarity_condition.getIndexGranularity();
 
-    const std::vector<float> reference_vector = ann_condition.getReferenceVector();
+    const std::vector<float> reference_vector = vector_similarity_condition.getReferenceVector();
 
     const auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleUSearch>(granule_);
     if (granule == nullptr)
@@ -321,10 +321,10 @@ std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRanges(MergeTreeInd
 
     const USearchIndexWithSerializationPtr index = granule->index;
 
-    if (ann_condition.getDimensions() != index->dimensions())
+    if (vector_similarity_condition.getDimensions() != index->dimensions())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the space in the request ({}) "
             "does not match the dimension in the index ({})",
-            ann_condition.getDimensions(), index->dimensions());
+            vector_similarity_condition.getDimensions(), index->dimensions());
 
     auto result = index->search(reference_vector.data(), limit);
     if (result.error)
