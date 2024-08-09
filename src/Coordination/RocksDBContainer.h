@@ -155,11 +155,11 @@ public:
                 ReadBufferFromOwnString buffer(iter->value().ToStringView());
                 typename Node::Meta & meta = new_pair->value;
                 readPODBinary(meta, buffer);
-                readVarUInt(new_pair->value.data_size, buffer);
-                if (new_pair->value.data_size)
+                readVarUInt(new_pair->value.stats.data_size, buffer);
+                if (new_pair->value.stats.data_size)
                 {
-                    new_pair->value.data = std::unique_ptr<char[]>(new char[new_pair->value.data_size]);
-                    buffer.readStrict(new_pair->value.data.get(), new_pair->value.data_size);
+                    new_pair->value.data = std::unique_ptr<char[]>(new char[new_pair->value.stats.data_size]);
+                    buffer.readStrict(new_pair->value.data.get(), new_pair->value.stats.data_size);
                 }
                 pair = new_pair;
             }
@@ -268,11 +268,11 @@ public:
         typename Node::Meta & meta = kv->value;
         readPODBinary(meta, buffer);
         /// TODO: Sometimes we don't need to load data.
-        readVarUInt(kv->value.data_size, buffer);
-        if (kv->value.data_size)
+        readVarUInt(kv->value.stats.data_size, buffer);
+        if (kv->value.stats.data_size)
         {
-            kv->value.data = std::unique_ptr<char[]>(new char[kv->value.data_size]);
-            buffer.readStrict(kv->value.data.get(), kv->value.data_size);
+            kv->value.data = std::unique_ptr<char[]>(new char[kv->value.stats.data_size]);
+            buffer.readStrict(kv->value.data.get(), kv->value.stats.data_size);
         }
         return const_iterator(kv);
     }
@@ -281,7 +281,7 @@ public:
     {
         auto it = find(key);
         chassert(it != end());
-        return MockNode(it->value.numChildren(), it->value.getData());
+        return MockNode(it->value.stats.numChildren(), it->value.getData());
     }
 
     const_iterator updateValue(StringRef key_, ValueUpdater updater)

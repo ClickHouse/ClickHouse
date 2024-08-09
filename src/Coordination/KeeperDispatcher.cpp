@@ -292,7 +292,7 @@ void KeeperDispatcher::requestThread()
                 if (has_read_request)
                 {
                     if (server->isLeaderAlive())
-                        server->putLocalReadRequest(request);
+                        server->putLocalReadRequest({request});
                     else
                         addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
                 }
