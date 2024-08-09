@@ -6,28 +6,24 @@
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpass-failed"
-
-#include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
-
-#include <usearch/index_dense.hpp>
-
+#  include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
+#  include <usearch/index_dense.hpp>
 #pragma clang diagnostic pop
 
 namespace DB
 {
 
-using USearchImplType = unum::usearch::index_dense_gt</* key_at */ uint32_t, /* compressed_slot_at */ uint32_t>;
+using USearchIndex = unum::usearch::index_dense_gt</*key_at*/ uint32_t, /*compressed_slot_at*/ uint32_t>;
 
 template <unum::usearch::metric_kind_t Metric>
-class USearchIndexWithSerialization : public USearchImplType
+class USearchIndexWithSerialization : public USearchIndex
 {
-    using Base = USearchImplType;
+    using Base = USearchIndex;
 
 public:
     USearchIndexWithSerialization(size_t dimensions, unum::usearch::scalar_kind_t scalar_kind);
     void serialize(WriteBuffer & ostr) const;
     void deserialize(ReadBuffer & istr);
-    size_t getDimensions() const;
 };
 
 template <unum::usearch::metric_kind_t Metric>
