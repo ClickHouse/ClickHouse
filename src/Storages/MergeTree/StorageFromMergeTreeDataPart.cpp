@@ -30,7 +30,7 @@ void StorageFromMergeTreeDataPart::read(
 {
     query_plan.addStep(MergeTreeDataSelectExecutor(storage).readFromParts(
         parts,
-        alter_conversions,
+        mutations_snapshot,
         column_names,
         storage_snapshot,
         query_info,

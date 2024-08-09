@@ -147,8 +147,10 @@ private:
     DataParts currently_merging_mutating_parts;
 
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
-    /// Unfinished mutations that is required AlterConversions (see getAlterMutationCommandsForPart())
-    std::atomic<ssize_t> alter_conversions_mutations = 0;
+
+    /// Unfinished mutations that are required for AlterConversions.
+    Int64 num_data_mutations_to_apply = 0;
+    Int64 num_metadata_mutations_to_apply = 0;
 
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};
@@ -308,9 +310,20 @@ private:
         ContextPtr context;
     };
 
-protected:
-    /// Collect mutations that have to be applied on the fly: currently they are only RENAME COLUMN.
-    MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    struct MutationsSnapshot : public IMutationsSnapshot
+    {
+        MutationsSnapshot() = default;
+        MutationsSnapshot(Params params_, Info info_) : IMutationsSnapshot(std::move(params_), std::move(info_)) {}
+
+        using MutationsByVersion = std::map<UInt64, std::shared_ptr<const MutationCommands>>;
+        MutationsByVersion mutations_by_version;
+
+        MutationCommands getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
+        std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
+        NameSet getAllUpdatedColumns() const override;
+    };
+
+    MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
 };
 
 }

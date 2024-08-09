@@ -18,10 +18,12 @@ class StorageFromMergeTreeDataPart final : public IStorage
 {
 public:
     /// Used in part mutation.
-    explicit StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
+    explicit StorageFromMergeTreeDataPart(
+        const MergeTreeData::DataPartPtr & part_,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot_)
         : IStorage(getIDFromPart(part_))
         , parts({part_})
-        , alter_conversions({part_->storage.getAlterConversionsForPart(part_)})
+        , mutations_snapshot(mutations_snapshot_)
         , storage(part_->storage)
         , partition_id(part_->info.partition_id)
     {
@@ -81,7 +83,7 @@ public:
 
 private:
     const MergeTreeData::DataPartsVector parts;
-    const std::vector<AlterConversionsPtr> alter_conversions;
+    const MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
     const MergeTreeData & storage;
     const String partition_id;
     const ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr;

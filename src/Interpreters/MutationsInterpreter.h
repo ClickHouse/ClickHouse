@@ -21,6 +21,7 @@ using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 bool isStorageTouchedByMutations(
     MergeTreeData & storage,
     MergeTreeData::DataPartPtr source_part,
+    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context
@@ -71,6 +72,7 @@ public:
     MutationsInterpreter(
         MergeTreeData & storage_,
         MergeTreeData::DataPartPtr source_part_,
+        AlterConversionsPtr alter_conversions_,
         StorageMetadataPtr metadata_snapshot_,
         MutationCommands commands_,
         Names available_columns_,
@@ -138,7 +140,7 @@ public:
             bool can_execute_) const;
 
         explicit Source(StoragePtr storage_);
-        Source(MergeTreeData & storage_, MergeTreeData::DataPartPtr source_part_);
+        Source(MergeTreeData & storage_, MergeTreeData::DataPartPtr source_part_, AlterConversionsPtr alter_conversions_);
 
     private:
         StoragePtr storage;
@@ -146,6 +148,7 @@ public:
         /// Special case for *MergeTree.
         MergeTreeData * data = nullptr;
         MergeTreeData::DataPartPtr part;
+        AlterConversionsPtr alter_conversions;
     };
 
 private:

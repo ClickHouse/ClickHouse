@@ -932,7 +932,7 @@ private:
     void waitMutationToFinishOnReplicas(
         const Strings & replicas, const String & mutation_id) const;
 
-    MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
 
     void startBackgroundMovesIfNeeded() override;
 
