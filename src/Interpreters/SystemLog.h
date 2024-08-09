@@ -60,11 +60,13 @@ namespace DB
     };
     */
 
+/// NOLINTBEGIN(bugprone-macro-parentheses)
 #define FORWARD_DECLARATION(log_type, member, descr) \
     class log_type; \
 
 LIST_OF_ALL_SYSTEM_LOGS(FORWARD_DECLARATION)
 #undef FORWARD_DECLARATION
+/// NOLINTEND(bugprone-macro-parentheses)
 
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
