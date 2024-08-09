@@ -1280,7 +1280,9 @@ bool KeyCondition::tryPrepareSetIndex(
 
             set_element_type = removeNullable(set_element_type);
             const auto & set_column_nullable = assert_cast<const ColumnNullable &>(*set_column);
-            set_column_null_map = &set_column_nullable.getNullMapData();
+            const auto & null_map_data = set_column_nullable.getNullMapData();
+            if (!null_map_data.empty())
+                set_column_null_map = &null_map_data;
             set_column = set_column_nullable.getNestedColumnPtr();
         }
 
