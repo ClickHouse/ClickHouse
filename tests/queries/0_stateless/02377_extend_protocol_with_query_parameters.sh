@@ -24,7 +24,7 @@ $CLICKHOUSE_CLIENT \
 
 
 table_name="t_02377_extend_protocol_with_query_parameters_$RANDOM$RANDOM"
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
   create table $table_name(
     id Int64,
     arr Array(UInt8),
@@ -57,17 +57,17 @@ $CLICKHOUSE_CLIENT \
 
 
 # it is possible to set parameter for the current session
-$CLICKHOUSE_CLIENT -n -q "set param_n = 42; select {n: UInt8}"
+$CLICKHOUSE_CLIENT -q "set param_n = 42; select {n: UInt8}"
 # and it will not be visible to other sessions
-$CLICKHOUSE_CLIENT -n -q "select {n: UInt8} -- { serverError 456 }"
+$CLICKHOUSE_CLIENT -q "select {n: UInt8} -- { serverError 456 }"
 
 
 # the same parameter could be set multiple times within one session (new value overrides the previous one)
-$CLICKHOUSE_CLIENT -n -q "set param_n = 12; set param_n = 13; select {n: UInt8}"
+$CLICKHOUSE_CLIENT -q "set param_n = 12; set param_n = 13; select {n: UInt8}"
 
 
 # multiple different parameters could be defined within each session
-$CLICKHOUSE_CLIENT -n -q "
+$CLICKHOUSE_CLIENT -q "
   set param_a = 13, param_b = 'str';
   set param_c = '2022-08-04 18:30:53';
   set param_d = '{\'10\': [11, 12], \'13\': [14, 15]}';
