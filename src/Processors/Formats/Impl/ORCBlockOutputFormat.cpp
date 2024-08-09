@@ -280,19 +280,27 @@ void ORCBlockOutputFormat::writeColumn(
     DataTypePtr & type,
     const PaddedPODArray<UInt8> * null_bytemap)
 {
-    orc_column.numElements = column.size();
+    size_t rows = column.size();
+    orc_column.resize(rows);
+    orc_column.numElements = rows;
+
+    /// Calculate orc_column.hasNulls
     if (null_bytemap)
-    {
         orc_column.hasNulls = !memoryIsZero(null_bytemap->data(), 0, null_bytemap->size());
-        if (orc_column.hasNulls)
-        {
-            orc_column.notNull.resize(null_bytemap->size());
-            for (size_t i = 0; i < null_bytemap->size(); ++i)
-                orc_column.notNull[i] = !(*null_bytemap)[i];
-        }
-    }
     else
         orc_column.hasNulls = false;
+
+    /// Fill orc_column.notNull
+    if (orc_column.hasNulls)
+    {
+        for (size_t i = 0; i < rows; ++i)
+            orc_column.notNull[i] = !(*null_bytemap)[i];
+    }
+    else
+    {
+        for (size_t i = 0; i < rows; ++i)
+            orc_column.notNull[i] = 1;
+    }
 
     /// ORC doesn't have unsigned types, so cast everything to signed and sign-extend to Int64 to
     /// make the ORC library calculate min and max correctly.
@@ -514,27 +522,6 @@ void ORCBlockOutputFormat::writeColumn(
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for ORC output format", type->getName());
     }
-}
-
-size_t ORCBlockOutputFormat::getColumnSize(const IColumn & column, DataTypePtr & type)
-{
-    if (type->getTypeId() == TypeIndex::Array)
-    {
-        auto nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
-        const IColumn & nested_column = assert_cast<const ColumnArray &>(column).getData();
-        return std::max(column.size(), getColumnSize(nested_column, nested_type));
-    }
-
-    return column.size();
-}
-
-size_t ORCBlockOutputFormat::getMaxColumnSize(Chunk & chunk)
-{
-    size_t columns_num = chunk.getNumColumns();
-    size_t max_column_size = 0;
-    for (size_t i = 0; i != columns_num; ++i)
-        max_column_size = std::max(max_column_size, getColumnSize(*chunk.getColumns()[i], data_types[i]));
-    return max_column_size;
 }
 
 void ORCBlockOutputFormat::consume(Chunk chunk)
