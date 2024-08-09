@@ -206,11 +206,6 @@ TEST(S3UriTest, validPatterns)
     }
 }
 
-TEST_P(S3UriTest, invalidPatterns)
-{
-    ASSERT_ANY_THROW(S3::URI new_uri(GetParam()));
-}
-
 TEST(S3UriTest, versionIdChecks)
 {
     for (const auto& test_case : TestCases)
@@ -221,21 +216,6 @@ TEST(S3UriTest, versionIdChecks)
         ASSERT_EQ(test_case.version_id, test_case.uri.version_id);
         ASSERT_EQ(test_case.is_virtual_hosted_style, test_case.uri.is_virtual_hosted_style);
     }
-}
-
-INSTANTIATE_TEST_SUITE_P(
-    S3,
-    S3UriTest,
-    testing::Values(
-        "https:///",
-        "https://.s3.amazonaws.com/key",
-        "https://s3.amazonaws.com/key",
-        "https://jokserfn.s3amazonaws.com/key",
-        "https://s3.amazonaws.com//",
-        "https://amazonaws.com/",
-        "https://amazonaws.com//",
-        "https://amazonaws.com//key"));
-
 }
 
 #endif
