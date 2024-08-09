@@ -73,6 +73,7 @@ ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
     ln -sf $SRC_PATH/config.d/replicated_access_storage.xml $DEST_SERVER_PATH/config.d/
+fi
 
 # Not supported with fasttest.
 if [ "${DEST_SERVER_PATH}" = "/etc/clickhouse-server" ]
