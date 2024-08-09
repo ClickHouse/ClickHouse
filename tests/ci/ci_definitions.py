@@ -331,7 +331,7 @@ class JobConfig:
     # will be triggered for the job if omitted in CI workflow yml
     run_command: str = ""
     # job timeout, seconds
-    timeout: Optional[int] = None
+    timeout: Optional[int] = 5400
     # sets number of batches for a multi-batch job
     num_batches: int = 1
     # label that enables job in CI, if set digest isn't used
@@ -420,7 +420,8 @@ class CommonJobConfigs:
         ),
         run_command='functional_test_check.py "$CHECK_NAME"',
         runner_type=Runners.FUNC_TESTER,
-        timeout=9000,
+        # TEST
+        timeout=800,
     )
     STATEFUL_TEST = JobConfig(
         job_name_keyword="stateful",
@@ -437,7 +438,8 @@ class CommonJobConfigs:
         ),
         run_command='functional_test_check.py "$CHECK_NAME"',
         runner_type=Runners.FUNC_TESTER,
-        timeout=3600,
+        # TEST
+        timeout=800,
     )
     STRESS_TEST = JobConfig(
         job_name_keyword="stress",
