@@ -55,6 +55,9 @@ public:
 protected:
     DateLUT();
 
+    friend class BaseDaemon;
+    static void setPreferSystemTZData();
+
 private:
     static DateLUT & getInstance();
 
