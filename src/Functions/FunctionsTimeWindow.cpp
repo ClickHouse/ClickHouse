@@ -267,7 +267,12 @@ struct TimeWindowImpl<TUMBLE_START>
         {
             auto type = WhichDataType(arguments[0].type);
             if (type.isTuple())
-                return std::static_pointer_cast<const DataTypeTuple>(arguments[0].type)->getElement(0);
+            {
+                const auto & tuple_elems = std::static_pointer_cast<const DataTypeTuple>(arguments[0].type)->getElements();
+                if (tuple_elems.empty())
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Tuple passed to {} should not be empty", function_name);
+                return tuple_elems[0];
+            }
             else if (type.isUInt32())
                 return std::make_shared<DataTypeDateTime>();
             else
@@ -622,7 +627,12 @@ struct TimeWindowImpl<HOP_START>
         {
             auto type = WhichDataType(arguments[0].type);
             if (type.isTuple())
-                return std::static_pointer_cast<const DataTypeTuple>(arguments[0].type)->getElement(0);
+            {
+                const auto & tuple_elems = std::static_pointer_cast<const DataTypeTuple>(arguments[0].type)->getElements();
+                if (tuple_elems.empty())
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Tuple passed to {} should not be empty", function_name);
+                return tuple_elems[0];
+            }
             else if (type.isUInt32())
                 return std::make_shared<DataTypeDateTime>();
             else
