@@ -446,6 +446,18 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
     }
 }
 
+void HashJoin::materializeColumnsFromLeftBlock(Block & block) const
+{
+    /** If you use FULL or RIGHT JOIN, then the columns from the "left" table must be materialized.
+      * Because if they are constants, then in the "not joined" rows, they may have different values
+      *  - default values, which can differ from the values of these constants.
+      */
+    if (kind == JoinKind::Right || kind == JoinKind::Full)
+    {
+        materializeBlockInplace(block);
+    }
+}
+
 Block HashJoin::materializeColumnsFromRightBlock(Block block) const
 {
     return DB::materializeColumnsFromRightBlock(std::move(block), savedBlockSample(), table_join->getAllNames(JoinTableSide::Right));
@@ -943,10 +955,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         return;
     }
 
-    if (kind == JoinKind::Right || kind == JoinKind::Full)
-    {
-        materializeBlockInplace(block);
-    }
+    materializeColumnsFromLeftBlock(block);
 
     {
         std::vector<const std::decay_t<decltype(data->maps[0])> * > maps_vector;

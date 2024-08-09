@@ -140,15 +140,6 @@ public:
         auto & source_block = block.getSourceBlock();
         size_t existing_columns = source_block.columns();
 
-        /** If you use FULL or RIGHT JOIN, then the columns from the "left" table must be materialized.
-          * Because if they are constants, then in the "not joined" rows, they may have different values
-          *  - default values, which can differ from the values of these constants.
-          */
-        if constexpr (join_features.right || join_features.full)
-        {
-            materializeBlockInplace(source_block);
-        }
-
         /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
           * For FULL/RIGHT JOIN, the saved blocks contain keys;
           *  but they will not be used at this stage of joining (and will be in `AdderNonJoined`), and they need to be skipped.

@@ -526,6 +526,7 @@ public:
 
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
 
+    void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
 
 private:
