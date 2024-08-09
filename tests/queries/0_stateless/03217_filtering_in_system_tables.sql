@@ -8,6 +8,8 @@ CREATE TABLE test_03217_system_tables_replica_2(x UInt32)
     ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_03217_system_tables_replica', 'r2')
     ORDER BY x;
 
+-- Make sure we can read both replicas
+SELECT 'both', database, table, replica_name FROM system.replicas WHERE database = currentDatabase();
 -- If filtering is not done correctly on database-table column, then this query report to read 2 rows, which are the above tables
 SELECT database, table, replica_name FROM system.replicas WHERE database = currentDatabase() AND table = 'test_03217_system_tables_replica_1' AND replica_name = 'r1';
 SYSTEM FLUSH LOGS;
