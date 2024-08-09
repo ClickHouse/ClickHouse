@@ -6,6 +6,8 @@
 #pragma clang diagnostic ignored "-Wpass-failed"
 
 #include <Columns/ColumnArray.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -95,6 +97,20 @@ void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
     Base::load_from_stream(callback);
 }
 
+USearchIndexWithSerialization::Statistics USearchIndexWithSerialization::getStatistics() const
+{
+    Statistics statistics = {
+        .max_level = max_level(),
+        .connectivity = connectivity(),
+        .size = size(),                         /// number of vectors
+        .capacity = capacity(),                 /// number of vectors reserved
+        .memory_usage = memory_usage(),         /// in bytes, the value is not exact
+        .bytes_per_vector = bytes_per_vector(),
+        .scalar_words = scalar_words(),
+        .statistics = stats()};
+    return statistics;
+}
+
 MergeTreeIndexGranuleUSearch::MergeTreeIndexGranuleUSearch(
     const String & index_name_,
     const Block & index_sample_block_,
@@ -131,6 +147,10 @@ void MergeTreeIndexGranuleUSearch::serializeBinary(WriteBuffer & ostr) const
     /// so it must be written and read separately from the other part
     writeIntBinary(static_cast<UInt64>(index->dimensions()), ostr); // write dimension
     index->serialize(ostr);
+
+    auto statistics = index->getStatistics();
+    LOG_TRACE(logger, "Wrote USearch index: max_level = {}, connectivity = {}, size = {}, capacity = {}, memory_usage = {}",
+                      statistics.max_level, statistics.connectivity, statistics.size, statistics.capacity, ReadableSize(statistics.memory_usage));
 }
 
 void MergeTreeIndexGranuleUSearch::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
@@ -139,6 +159,10 @@ void MergeTreeIndexGranuleUSearch::deserializeBinary(ReadBuffer & istr, MergeTre
     readIntBinary(dimension, istr);
     index = std::make_shared<USearchIndexWithSerialization>(dimension, metric_kind, scalar_kind);
     index->deserialize(istr);
+
+    auto statistics = index->getStatistics();
+    LOG_TRACE(logger, "Loaded USearch index: max_level = {}, connectivity = {}, size = {}, capacity = {}, memory_usage = {}",
+                      statistics.max_level, statistics.connectivity, statistics.size, statistics.capacity, ReadableSize(statistics.memory_usage));
 }
 
 MergeTreeIndexAggregatorUSearch::MergeTreeIndexAggregatorUSearch(
