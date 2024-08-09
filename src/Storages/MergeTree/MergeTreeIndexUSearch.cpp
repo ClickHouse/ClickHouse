@@ -1,9 +1,9 @@
-#ifdef ENABLE_USEARCH
+#include <Storages/MergeTree/MergeTreeIndexUSearch.h>
+
+#if USE_USEARCH
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpass-failed"
-
-#include <Storages/MergeTree/MergeTreeIndexUSearch.h>
 
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>

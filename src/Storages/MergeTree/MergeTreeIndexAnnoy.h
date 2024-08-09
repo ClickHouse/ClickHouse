@@ -1,6 +1,8 @@
 #pragma once
 
-#ifdef ENABLE_ANNOY
+#include "config.h"
+
+#if USE_ANNOY
 
 #include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 

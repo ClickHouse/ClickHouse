@@ -127,12 +127,12 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("hypothesis", hypothesisIndexCreator);
 
     registerValidator("hypothesis", hypothesisIndexValidator);
-#ifdef ENABLE_ANNOY
+#if USE_ANNOY
     registerCreator("annoy", annoyIndexCreator);
     registerValidator("annoy", annoyIndexValidator);
 #endif
 
-#ifdef ENABLE_USEARCH
+#if USE_USEARCH
     registerCreator("usearch", usearchIndexCreator);
     registerValidator("usearch", usearchIndexValidator);
 #endif

@@ -12,4 +12,3 @@ target_include_directories(_usearch SYSTEM INTERFACE
     ${USEARCH_PROJECT_DIR}/include)
 
 add_library(ch_contrib::usearch ALIAS _usearch)
-target_compile_definitions(_usearch INTERFACE ENABLE_USEARCH)

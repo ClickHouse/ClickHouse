@@ -1,12 +1,16 @@
 #pragma once
 
-#ifdef ENABLE_USEARCH
+#include "config.h"
 
-#include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
+#if USE_USEARCH
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpass-failed"
+
+#include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
+
 #include <usearch/index_dense.hpp>
+
 #pragma clang diagnostic pop
 
 namespace DB
