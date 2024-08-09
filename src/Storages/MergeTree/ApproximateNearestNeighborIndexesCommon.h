@@ -23,18 +23,17 @@ namespace DB
 struct ApproximateNearestNeighborInformation
 {
     using Embedding = std::vector<float>;
-    Embedding reference_vector;
 
     enum class Metric : uint8_t
     {
         Unknown,
         L2
     };
-    Metric metric;
 
+    Embedding reference_vector;
+    Metric metric;
     String column_name;
     UInt64 limit;
-
     float distance = -1.0;
 };
 
@@ -51,7 +50,7 @@ struct ApproximateNearestNeighborInformation
 ///
 /// Queries without LIMIT count are not supported
 /// If the query is both of type 1. and 2., than we can't use the index and alwaysUnknownOrTrue returns true.
-/// reference_vector should have float coordinates, e.g. (0.2, 0.1, .., 0.5)
+/// reference_vector should have float coordinates, e.g. [0.2, 0.1, .., 0.5]
 ///
 /// If the query matches one of these two types, then this class extracts the main information needed for ANN indexes from the query.
 ///
@@ -73,19 +72,11 @@ public:
     /// Returns false if query can be speeded up by an ANN index, true otherwise.
     bool alwaysUnknownOrTrue(String metric) const;
 
-    /// Distance should be calculated regarding to referenceVector
     std::vector<float> getReferenceVector() const;
-
-    /// Reference vector's dimension count
     size_t getDimensions() const;
-
     String getColumnName() const;
-
     ApproximateNearestNeighborInformation::Metric getMetricType() const;
-
     UInt64 getIndexGranularity() const { return index_granularity; }
-
-    /// Length's value from LIMIT clause
     UInt64 getLimit() const;
 
 private:
@@ -126,18 +117,14 @@ private:
 
         explicit RPNElement(Function function_ = FUNCTION_UNKNOWN)
             : function(function_)
-            , func_name("Unknown")
-            , float_literal(std::nullopt)
-            , identifier(std::nullopt)
         {}
 
         Function function;
-        String func_name;
+        String func_name = "Unknown";
 
         std::optional<float> float_literal;
         std::optional<String> identifier;
         std::optional<int64_t> int_literal;
-
         std::optional<Array> array_literal;
 
         UInt32 dim = 0;
@@ -165,7 +152,7 @@ private:
     /// Returns true and stores Length if we have valid LIMIT clause in query
     static bool matchRPNLimit(RPNElement & rpn, UInt64 & limit);
 
-    /* Matches dist function, reference vector, column name */
+    /// Matches dist function, reference vector, column name
     static bool matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ApproximateNearestNeighborInformation & ann_info);
 
     /// Gets float or int from AST node

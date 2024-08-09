@@ -232,11 +232,11 @@ MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
 void hypothesisIndexValidator(const IndexDescription & index, bool attach);
 
 #if USE_USEARCH
-MergeTreeIndexPtr usearchIndexCreator(const IndexDescription& index);
-void usearchIndexValidator(const IndexDescription& index, bool attach);
+MergeTreeIndexPtr usearchIndexCreator(const IndexDescription & index);
+void usearchIndexValidator(const IndexDescription & index, bool attach);
 #endif
 
-MergeTreeIndexPtr fullTextIndexCreator(const IndexDescription& index);
-void fullTextIndexValidator(const IndexDescription& index, bool attach);
+MergeTreeIndexPtr fullTextIndexCreator(const IndexDescription & index);
+void fullTextIndexValidator(const IndexDescription & index, bool attach);
 
 }

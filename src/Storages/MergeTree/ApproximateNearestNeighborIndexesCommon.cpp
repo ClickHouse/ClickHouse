@@ -60,8 +60,8 @@ ApproximateNearestNeighborCondition::ApproximateNearestNeighborCondition(const S
 bool ApproximateNearestNeighborCondition::alwaysUnknownOrTrue(String metric) const
 {
     if (!index_is_useful)
-        return true; // Query isn't supported
-    // If query is supported, check metrics for match
+        return true; /// query isn't supported
+    /// If query is supported, check if distance function of index is the same as distance function in query
     return !(stringToMetric(metric) == query_information->metric);
 }
 
@@ -138,11 +138,11 @@ bool ApproximateNearestNeighborCondition::checkQueryStructure(const SelectQueryI
 
 void ApproximateNearestNeighborCondition::traverseAST(const ASTPtr & node, RPN & rpn)
 {
-    // If the node is ASTFunction, it may have children nodes
+    /// If the node is ASTFunction, it may have children nodes
     if (const auto * func = node->as<ASTFunction>())
     {
         const ASTs & children = func->arguments->children;
-        // Traverse children nodes
+        /// Traverse children nodes
         for (const auto& child : children)
             traverseAST(child, rpn);
     }
@@ -253,7 +253,7 @@ void ApproximateNearestNeighborCondition::traverseOrderByAST(const ASTPtr & node
 /// Returns true and stores ANNExpr if the query has valid ORDERBY clause
 bool ApproximateNearestNeighborCondition::matchRPNOrderBy(RPN & rpn, ApproximateNearestNeighborInformation & ann_info)
 {
-    // ORDER BY clause must have at least 3 expressions
+    /// ORDER BY clause must have at least 3 expressions
     if (rpn.size() < 3)
         return false;
 
