@@ -29,4 +29,6 @@ FROM cluster('test_cluster_two_shards', currentDatabase(), r)
 WHERE a = 'x'
 settings prefer_localhost_replica=0;
 
+SELECT quantilesTimingMerge(0.95)(q), quantilesTimingMerge(toInt64(1))(q) FROM remote('127.0.0.{1,2}', currentDatabase(), r);
+
 DROP TABLE r;
