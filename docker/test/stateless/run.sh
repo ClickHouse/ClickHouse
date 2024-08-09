@@ -178,7 +178,7 @@ attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 202
 clickhouse-client --query "CREATE TABLE minio_audit_logs
 (
     log String,
-    event_time DateTime64(9) MATERIALIZED parseDateTime64BestEffortOrZero(substring(JSONExtractRaw(log, 'time'), 2, 29), 9, 'UTC')
+    event_time DateTime64(9) MATERIALIZED parseDateTime64BestEffortOrZero(trim(BOTH '"' FROM JSONExtractRaw(log, 'time')), 9, 'UTC')
 )
 ENGINE = MergeTree
 ORDER BY tuple()"
@@ -186,7 +186,7 @@ ORDER BY tuple()"
 clickhouse-client --query "CREATE TABLE minio_server_logs
 (
     log String,
-    event_time DateTime64(9) MATERIALIZED parseDateTime64BestEffortOrZero(substring(JSONExtractRaw(log, 'time'), 2, 29), 9, 'UTC')
+    event_time DateTime64(9) MATERIALIZED parseDateTime64BestEffortOrZero(trim(BOTH '"' FROM JSONExtractRaw(log, 'time')), 9, 'UTC')
 )
 ENGINE = MergeTree
 ORDER BY tuple()"
