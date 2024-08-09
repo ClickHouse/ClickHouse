@@ -136,7 +136,16 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         validateBucket(bucket, uri);
     }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket or key name are invalid in S3 URI.");
+    {
+        /// Custom endpoint, e.g. a public domain of Cloudflare R2,
+        /// which could be served by a custom server-side code.
+        storage_name = "S3";
+        bucket = "default";
+        is_virtual_hosted_style = false;
+        endpoint = uri.getScheme() + "://" + uri.getAuthority();
+        if (!uri.getPath().empty())
+            key = uri.getPath().substr(1);
+    }
 }
 
 void URI::addRegionToURI(const std::string &region)
