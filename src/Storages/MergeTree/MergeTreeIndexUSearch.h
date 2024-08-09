@@ -15,26 +15,23 @@ namespace DB
 
 using USearchIndex = unum::usearch::index_dense_gt</*key_at*/ uint32_t, /*compressed_slot_at*/ uint32_t>;
 
-template <unum::usearch::metric_kind_t Metric>
 class USearchIndexWithSerialization : public USearchIndex
 {
     using Base = USearchIndex;
 
 public:
-    USearchIndexWithSerialization(size_t dimensions, unum::usearch::scalar_kind_t scalar_kind);
+    USearchIndexWithSerialization(size_t dimensions, unum::usearch::metric_kind_t metric_kind, unum::usearch::scalar_kind_t scalar_kind);
     void serialize(WriteBuffer & ostr) const;
     void deserialize(ReadBuffer & istr);
 };
 
-template <unum::usearch::metric_kind_t Metric>
-using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSerialization<Metric>>;
+using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSerialization>;
 
 
-template <unum::usearch::metric_kind_t Metric>
 struct MergeTreeIndexGranuleUSearch final : public IMergeTreeIndexGranule
 {
-    MergeTreeIndexGranuleUSearch(const String & index_name_, const Block & index_sample_block_, unum::usearch::scalar_kind_t scalar_kind_);
-    MergeTreeIndexGranuleUSearch(const String & index_name_, const Block & index_sample_block_, unum::usearch::scalar_kind_t scalar_kind_, USearchIndexWithSerializationPtr<Metric> index_);
+    MergeTreeIndexGranuleUSearch(const String & index_name_, const Block & index_sample_block_, unum::usearch::metric_kind_t metric_kind, unum::usearch::scalar_kind_t scalar_kind_);
+    MergeTreeIndexGranuleUSearch(const String & index_name_, const Block & index_sample_block_, unum::usearch::metric_kind_t metric_kind, unum::usearch::scalar_kind_t scalar_kind_, USearchIndexWithSerializationPtr index_);
 
     ~MergeTreeIndexGranuleUSearch() override = default;
 
@@ -45,15 +42,15 @@ struct MergeTreeIndexGranuleUSearch final : public IMergeTreeIndexGranule
 
     const String index_name;
     const Block index_sample_block;
+    const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
-    USearchIndexWithSerializationPtr<Metric> index;
+    USearchIndexWithSerializationPtr index;
 };
 
 
-template <unum::usearch::metric_kind_t Metric>
 struct MergeTreeIndexAggregatorUSearch final : IMergeTreeIndexAggregator
 {
-    MergeTreeIndexAggregatorUSearch(const String & index_name_, const Block & index_sample_block, unum::usearch::scalar_kind_t scalar_kind_);
+    MergeTreeIndexAggregatorUSearch(const String & index_name_, const Block & index_sample_block, unum::usearch::metric_kind_t metric_kind_, unum::usearch::scalar_kind_t scalar_kind_);
     ~MergeTreeIndexAggregatorUSearch() override = default;
 
     bool empty() const override { return !index || index->size() == 0; }
@@ -62,8 +59,9 @@ struct MergeTreeIndexAggregatorUSearch final : IMergeTreeIndexAggregator
 
     const String index_name;
     const Block index_sample_block;
+    const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
-    USearchIndexWithSerializationPtr<Metric> index;
+    USearchIndexWithSerializationPtr index;
 };
 
 
@@ -73,7 +71,7 @@ public:
     MergeTreeIndexConditionUSearch(
         const IndexDescription & index_description,
         const SelectQueryInfo & query,
-        const String & distance_function,
+        unum::usearch::metric_kind_t metric_kind_,
         ContextPtr context);
 
     ~MergeTreeIndexConditionUSearch() override = default;
@@ -83,18 +81,15 @@ public:
     std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const override;
 
 private:
-    template <unum::usearch::metric_kind_t Metric>
-    std::vector<size_t> getUsefulRangesImpl(MergeTreeIndexGranulePtr idx_granule) const;
-
     const ApproximateNearestNeighborCondition ann_condition;
-    const String distance_function;
+    const unum::usearch::metric_kind_t metric_kind;
 };
 
 
 class MergeTreeIndexUSearch : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexUSearch(const IndexDescription & index_, const String & distance_function_, unum::usearch::scalar_kind_t scalar_kind_);
+    MergeTreeIndexUSearch(const IndexDescription & index_, unum::usearch::metric_kind_t metric_kind_, unum::usearch::scalar_kind_t scalar_kind_);
 
     ~MergeTreeIndexUSearch() override = default;
 
@@ -105,7 +100,7 @@ public:
     bool isVectorSearch() const override { return true; }
 
 private:
-    const String distance_function;
+    const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
 };
 
