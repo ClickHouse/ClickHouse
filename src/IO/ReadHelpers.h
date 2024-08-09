@@ -258,6 +258,14 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
     char tmp = '0';
     readChar(tmp, buf);
     x = tmp != '0';
+
+    if (!buf.eof() && isAlphaASCII(*buf.position()))
+    {
+        if (tmp == 't')
+            assertString("rue", buf);
+        else if (tmp == 'T')
+            assertString("RUE", buf);
+    }
 }
 
 template <typename ReturnType = void>
