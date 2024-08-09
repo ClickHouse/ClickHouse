@@ -5627,6 +5627,17 @@ Disable all insert and mutations (alter table update / alter table delete / alte
 
 Default value: `false`.
 
+## allow_experimental_time_series_table {#allow-experimental-time-series-table}
+
+Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.
+
+Possible values:
+
+- 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
+- 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
+
+Default value: `0`.
+
 ## mongodb_throw_on_unsupported_query
 
 If enabled, MongoDB tables will return an error when a MongoDB query can't be built.

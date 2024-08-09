@@ -30,6 +30,7 @@ void registerTableFunctions(bool use_legacy_mongodb_integration [[maybe_unused]]
 #endif
     registerTableFunctionRedis(factory);
     registerTableFunctionMergeTreeIndex(factory);
+    registerTableFunctionFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerTableFunctionFuzzJSON(factory);
 #endif
