@@ -45,6 +45,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/CastOverloadResolver.h>
@@ -1573,6 +1574,35 @@ struct ConvertImpl
                         arguments, result_type, input_rows_count, additions);
             }
         }
+        else if constexpr (std::is_same_v<FromDataType, DataTypeInterval> && std::is_same_v<ToDataType, DataTypeInterval>)
+        {
+            IntervalKind to = typeid_cast<const DataTypeInterval *>(result_type.get())->getKind();
+            IntervalKind from = typeid_cast<const DataTypeInterval *>(arguments[0].type.get())->getKind();
+
+            if (from == to || arguments[0].column->empty())
+                return arguments[0].column;
+
+            Int64 conversion_factor = 1;
+            Int64 result_value;
+
+            int from_position = static_cast<int>(from.kind);
+            int to_position = static_cast<int>(to.kind); // Positions of each interval according to granurality map
+
+            if (from_position < to_position)
+            {
+                for (int i = from_position - 1; i <= to_position; ++i)
+                    conversion_factor *= interval_conversions[i];
+                result_value = arguments[0].column->getInt(0) / conversion_factor;
+            }
+            else
+            {
+                for (int i = from_position - 1; i >= to_position; --i)
+                    conversion_factor *= interval_conversions[i];
+                result_value = arguments[0].column->getInt(0) * conversion_factor;
+            }
+
+            return ColumnConst::create(ColumnInt64::create(1, result_value), input_rows_count);
+        }
         else
         {
             using FromFieldType = typename FromDataType::FieldType;
@@ -2181,7 +2211,7 @@ private:
         const DataTypePtr from_type = removeNullable(arguments[0].type);
         ColumnPtr result_column;
 
-        [[maybe_unused]] FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
+        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
 
         if (context)
             date_time_overflow_behavior = context->getSettingsRef().date_time_overflow_behavior.value;
@@ -2277,7 +2307,7 @@ private:
                 }
             }
             else
-                  result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, from_string_tag);
+                result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, from_string_tag);
 
             return true;
         };
@@ -2333,6 +2363,11 @@ private:
                     done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag);
                 else
                     done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag);
+            }
+
+            if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
+            {
+                done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag);
             }
         }
 
