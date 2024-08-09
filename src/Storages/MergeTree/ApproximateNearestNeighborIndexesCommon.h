@@ -11,7 +11,7 @@ namespace DB
 
 /// Approximate Nearest Neighbour queries have a similar structure:
 /// - reference vector from which all distances are calculated
-/// - metric name, e.g L2Distance
+/// - distance function, e.g L2Distance
 /// - name of column with embeddings
 /// - type of query
 /// - maximum number of returned elements (LIMIT)
@@ -22,14 +22,14 @@ namespace DB
 /// This struct holds all these components.
 struct ApproximateNearestNeighborInformation
 {
-    enum class Metric : uint8_t
+    enum class DistanceFunction : uint8_t
     {
         Unknown,
         L2
     };
 
     std::vector<Float32> reference_vector;
-    Metric metric;
+    DistanceFunction distance_function;
     String column_name;
     UInt64 limit;
     float distance = -1.0;
@@ -38,7 +38,7 @@ struct ApproximateNearestNeighborInformation
 
 // Class ANNCondition, is responsible for recognizing if the query is an ANN queries which can utilize ANN indexes. It parses the SQL query
 /// and checks if it matches ANNIndexes. Method alwaysUnknownOrTrue returns false if we can speed up the query, and true otherwise. It has
-/// only one argument, the name of the metric with which index was built. Two main patterns of queries are supported
+/// only one argument, the name of the distance function with which index was built. Two main patterns of queries are supported
 ///
 /// - 1. WHERE queries:
 ///   SELECT * FROM * WHERE DistanceFunc(column, reference_vector) < floatLiteral LIMIT count
@@ -54,7 +54,7 @@ struct ApproximateNearestNeighborInformation
 ///
 /// From matching query it extracts
 /// - referenceVector
-/// - metricName(DistanceFunction)
+/// - distance function
 /// - distance to compare(ONLY for search types, otherwise you get exception)
 /// - spaceDimension(which is referenceVector's components count)
 /// - column
@@ -68,12 +68,12 @@ public:
     ApproximateNearestNeighborCondition(const SelectQueryInfo & query_info, ContextPtr context);
 
     /// Returns false if query can be speeded up by an ANN index, true otherwise.
-    bool alwaysUnknownOrTrue(String metric) const;
+    bool alwaysUnknownOrTrue(String distance_function) const;
 
     std::vector<float> getReferenceVector() const;
     size_t getDimensions() const;
     String getColumnName() const;
-    ApproximateNearestNeighborInformation::Metric getMetricType() const;
+    ApproximateNearestNeighborInformation::DistanceFunction getDistanceFunction() const;
     UInt64 getIndexGranularity() const { return index_granularity; }
     UInt64 getLimit() const;
 
