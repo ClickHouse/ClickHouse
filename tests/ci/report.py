@@ -770,10 +770,12 @@ def create_test_html_report(
             row.append(f'<td {fail_id}style="{style}">{test_result.status}</td>')
             colspan += 1
 
+            row.append("<td>")
             if test_result.time is not None:
                 has_test_time = True
-                row.append(f"<td>{test_result.time}</td>")
-                colspan += 1
+                row.append(str(test_result.time))
+            row.append("</td>")
+            colspan += 1
 
             if test_result.log_urls is not None:
                 has_log_urls = True
