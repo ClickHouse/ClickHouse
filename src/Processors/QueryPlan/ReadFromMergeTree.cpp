@@ -1475,11 +1475,11 @@ static void buildIndexes(
             else
             {
                 MergeTreeIndexConditionPtr condition;
-                if (index_helper->isVectorSearch())
+                if (index_helper->isVectorSimilarityIndex())
                 {
 #if USE_USEARCH
-                    if (const auto * usearch = typeid_cast<const MergeTreeIndexUSearch *>(index_helper.get()))
-                        condition = usearch->createIndexCondition(query_info, context);
+                    if (const auto * usearch_index = typeid_cast<const MergeTreeIndexUSearch *>(index_helper.get()))
+                        condition = usearch_index->createIndexCondition(query_info, context);
 #endif
                     if (!condition)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);

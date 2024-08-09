@@ -170,7 +170,7 @@ struct IMergeTreeIndex
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG * filter_actions_dag, ContextPtr context) const = 0;
 
-    virtual bool isVectorSearch() const { return false; }
+    virtual bool isVectorSimilarityIndex() const { return false; }
 
     virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const

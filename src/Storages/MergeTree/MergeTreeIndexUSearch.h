@@ -144,7 +144,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG *, ContextPtr) const override;
-    bool isVectorSearch() const override { return true; }
+    bool isVectorSimilarityIndex() const override { return true; }
 
 private:
     const unum::usearch::metric_kind_t metric_kind;
