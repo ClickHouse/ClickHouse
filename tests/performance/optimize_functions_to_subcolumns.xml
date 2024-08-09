@@ -1,6 +1,5 @@
 <test>
     <settings>
-        <optimize_functions_to_subcolumns>1</optimize_functions_to_subcolumns>
         <max_insert_threads>4</max_insert_threads>
     </settings>
 
