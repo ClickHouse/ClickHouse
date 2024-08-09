@@ -329,3 +329,25 @@ FROM
     ORDER BY number DESC
 )"
 run_query "$query"
+
+echo "-- presence of an inner OFFSET retains the ORDER BY"
+query="WITH
+  t1 AS (
+    SELECT SUM(a) AS a, b
+    FROM
+      VALUES (
+        'b UInt32, a Int32',
+        (1, 1),
+        (2, 0)
+      )
+    GROUP BY 2
+  )
+SELECT
+  SUM(a)
+FROM (
+  SELECT a, b
+  FROM t1
+  ORDER BY 1 DESC, 2
+  OFFSET 1
+) t2"
+run_query "$query"
