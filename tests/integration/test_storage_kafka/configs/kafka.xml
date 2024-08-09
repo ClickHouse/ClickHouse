@@ -48,7 +48,7 @@
                 <!-- This is only producer setting, if it was applied to consumer,
                  it would create warning message in logs. -->
                 <!-- default 30000 -->
-                <request_timeout_ms>30001</request_timeout_ms> 
+                <request_timeout_ms>30001</request_timeout_ms>
             </kafka_topic>
             <!-- default 60000 -->
             <transaction_timeout_ms>60001</transaction_timeout_ms>
