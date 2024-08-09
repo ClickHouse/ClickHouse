@@ -93,6 +93,13 @@ public:
     virtual bool alwaysUnknownOrTrue() const = 0;
 
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
+
+    /// Special stuff for vector similarity indexes
+    /// - Returns vector of indexes of ranges in granule which are useful for query.
+    virtual std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for non-vector-similarity indexes.");
+    }
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
