@@ -22,8 +22,5 @@ RUN apt-get update -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-COPY run.sh /
-
 ENV EXPORT_S3_STORAGE_POLICIES=1
 
-CMD ["/bin/bash", "/run.sh"]
