@@ -88,15 +88,19 @@ StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) co
 }
 
 
-bool DiskObjectStorage::exists(const String & path) const
+bool DiskObjectStorage::existsFile(const String & path) const
 {
-    return metadata_storage->exists(path);
+    return metadata_storage->existsFile(path);
 }
 
-
-bool DiskObjectStorage::isFile(const String & path) const
+bool DiskObjectStorage::existsDirectory(const String & path) const
 {
-    return metadata_storage->isFile(path);
+    return metadata_storage->existsDirectory(path);
+}
+
+bool DiskObjectStorage::existsFileOrDirectory(const String & path) const
+{
+    return metadata_storage->existsFileOrDirectory(path);
 }
 
 
@@ -172,7 +176,7 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
 
 void DiskObjectStorage::replaceFile(const String & from_path, const String & to_path)
 {
-    if (exists(to_path))
+    if (existsFile(to_path))
     {
         auto transaction = createObjectStorageTransaction();
         transaction->replaceFile(from_path, to_path);
@@ -252,12 +256,6 @@ void DiskObjectStorage::setReadOnly(const String & path)
     auto transaction = createObjectStorageTransaction();
     transaction->setReadOnly(path);
     transaction->commit();
-}
-
-
-bool DiskObjectStorage::isDirectory(const String & path) const
-{
-    return metadata_storage->isDirectory(path);
 }
 
 

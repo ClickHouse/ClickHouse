@@ -111,8 +111,8 @@ public:
     virtual bool exists() const = 0;
 
     /// File inside part directory exists. Specified path is relative to the part path.
-    virtual bool exists(const std::string & name) const = 0;
-    virtual bool isDirectory(const std::string & name) const = 0;
+    virtual bool existsFile(const std::string & name) const = 0;
+    virtual bool existsDirectory(const std::string & name) const = 0;
 
     /// Modification time for part directory.
     virtual Poco::Timestamp getLastModified() const = 0;

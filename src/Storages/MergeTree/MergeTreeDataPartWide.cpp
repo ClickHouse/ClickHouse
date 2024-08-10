@@ -121,7 +121,7 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
 
     /// We can use any column, it doesn't matter
     std::string marks_file_path = index_granularity_info_.getMarksFilePath(any_column_file_name);
-    if (!data_part_storage_.exists(marks_file_path))
+    if (!data_part_storage_.existsFile(marks_file_path))
         throw Exception(
             ErrorCodes::NO_FILE_IN_DATA_PART, "Marks file '{}' doesn't exist",
             std::string(fs::path(data_part_storage_.getFullPath()) / marks_file_path));
@@ -186,6 +186,11 @@ void MergeTreeDataPartWide::loadIndexGranularity()
 bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const
 {
     return getDataPartStorage().isStoredOnRemoteDisk();
+}
+
+bool MergeTreeDataPartWide::isStoredOnReadonlyDisk() const
+{
+    return getDataPartStorage().isReadonly();
 }
 
 bool MergeTreeDataPartWide::isStoredOnRemoteDiskWithZeroCopySupport() const

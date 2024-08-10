@@ -15,7 +15,7 @@ namespace DB
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
-/// Store metadata on a separate disk
+/// Stores metadata on a separate disk
 /// (used for object storages, like S3 and related).
 class MetadataStorageFromDisk final : public IMetadataStorage
 {
@@ -35,11 +35,9 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::Local; }
 
-    bool exists(const std::string & path) const override;
-
-    bool isFile(const std::string & path) const override;
-
-    bool isDirectory(const std::string & path) const override;
+    bool existsFile(const std::string & path) const override;
+    bool existsDirectory(const std::string & path) const override;
+    bool existsFileOrDirectory(const std::string & path) const override;
 
     uint64_t getFileSize(const String & path) const override;
 

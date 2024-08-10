@@ -21,7 +21,7 @@ std::unique_ptr<ReadBuffer> PartMetadataManagerOrdinary::read(const String & fil
 
 bool PartMetadataManagerOrdinary::exists(const String & file_name) const
 {
-    return part->getDataPartStorage().exists(file_name);
+    return part->getDataPartStorage().existsFile(file_name);
 }
 
 

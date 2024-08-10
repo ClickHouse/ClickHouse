@@ -103,7 +103,7 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeDataPartCompact cannot be created with non-adaptive granulary.");
 
     auto marks_file_path = index_granularity_info_.getMarksFilePath("data");
-    if (!data_part_storage_.exists(marks_file_path))
+    if (!data_part_storage_.existsFile(marks_file_path))
         throw Exception(
             ErrorCodes::NO_FILE_IN_DATA_PART,
             "Marks file '{}' doesn't exist",
@@ -188,7 +188,7 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
         {
             /// count.txt should be present even in non custom-partitioned parts
             std::string file_path = "count.txt";
-            if (!getDataPartStorage().exists(file_path) || getDataPartStorage().getFileSize(file_path) == 0)
+            if (!getDataPartStorage().existsFile(file_path) || getDataPartStorage().getFileSize(file_path) == 0)
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                     "Part {} is broken: {} is empty",
@@ -198,7 +198,7 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
 
         /// Check that marks are nonempty and have the consistent size with columns number.
 
-        if (getDataPartStorage().exists(mrk_file_name))
+        if (getDataPartStorage().existsFile(mrk_file_name))
         {
             UInt64 file_size = getDataPartStorage().getFileSize(mrk_file_name);
              if (!file_size)
@@ -223,6 +223,11 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
 bool MergeTreeDataPartCompact::isStoredOnRemoteDisk() const
 {
     return getDataPartStorage().isStoredOnRemoteDisk();
+}
+
+bool MergeTreeDataPartCompact::isStoredOnReadonlyDisk() const
+{
+    return getDataPartStorage().isReadonly();
 }
 
 bool MergeTreeDataPartCompact::isStoredOnRemoteDiskWithZeroCopySupport() const

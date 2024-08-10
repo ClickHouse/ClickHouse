@@ -3,12 +3,14 @@
 #include <Disks/ObjectStorages/InMemoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
+#include <Disks/ObjectStorages/StoredObject.h>
 
 #include <Common/filesystemHelpers.h>
 
 #include <filesystem>
 #include <tuple>
 #include <unordered_set>
+
 
 namespace DB
 {
@@ -39,27 +41,28 @@ const std::string & MetadataStorageFromPlainObjectStorage::getPath() const
     return storage_path_prefix;
 }
 
-bool MetadataStorageFromPlainObjectStorage::exists(const std::string & path) const
+bool MetadataStorageFromPlainObjectStorage::existsFile(const std::string & path) const
 {
-    /// NOTE: exists() cannot be used here since it works only for existing
-    /// key, and does not work for some intermediate path.
-    auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
-    return object_storage->existsOrHasAnyChild(object_key.serialize());
+    ObjectStorageKey object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+    StoredObject object(object_key.serialize(), path);
+    return object_storage->exists(object);
 }
 
-bool MetadataStorageFromPlainObjectStorage::isFile(const std::string & path) const
-{
-    /// NOTE: This check is inaccurate and has excessive API calls
-    return exists(path) && !isDirectory(path);
-}
-
-bool MetadataStorageFromPlainObjectStorage::isDirectory(const std::string & path) const
+bool MetadataStorageFromPlainObjectStorage::existsDirectory(const std::string & path) const
 {
     auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
     auto directory = std::filesystem::path(std::move(key_prefix)) / "";
-
     return object_storage->existsOrHasAnyChild(directory);
 }
+
+bool MetadataStorageFromPlainObjectStorage::existsFileOrDirectory(const std::string & path) const
+{
+    /// NOTE: exists() cannot be used here since it works only for existing
+    /// key, and does not work for some intermediate path.
+    auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
+    return object_storage->existsOrHasAnyChild(key_prefix);
+}
+
 
 uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path) const
 {

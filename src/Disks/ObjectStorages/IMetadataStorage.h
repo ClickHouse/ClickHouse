@@ -182,11 +182,9 @@ public:
 
     /// ==== General purpose methods. Define properties of object storage file based on metadata files ====
 
-    virtual bool exists(const std::string & path) const = 0;
-
-    virtual bool isFile(const std::string & path) const = 0;
-
-    virtual bool isDirectory(const std::string & path) const = 0;
+    virtual bool existsFile(const std::string & path) const = 0;
+    virtual bool existsDirectory(const std::string & path) const = 0;
+    virtual bool existsFileOrDirectory(const std::string & path) const = 0;
 
     virtual uint64_t getFileSize(const std::string & path) const = 0;
 

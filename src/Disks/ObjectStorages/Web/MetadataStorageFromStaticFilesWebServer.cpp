@@ -32,14 +32,14 @@ const std::string & MetadataStorageFromStaticFilesWebServer::getPath() const
     return no_root;
 }
 
-bool MetadataStorageFromStaticFilesWebServer::exists(const std::string & path) const
+bool MetadataStorageFromStaticFilesWebServer::existsFileOrDirectory(const std::string & path) const
 {
     return object_storage.exists(path);
 }
 
 void MetadataStorageFromStaticFilesWebServer::assertExists(const std::string & path) const
 {
-    if (!exists(path))
+    if (!existsFileOrDirectory(path))
 #ifdef NDEBUG
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no path {}", path);
 #else
@@ -57,18 +57,16 @@ void MetadataStorageFromStaticFilesWebServer::assertExists(const std::string & p
 #endif
 }
 
-bool MetadataStorageFromStaticFilesWebServer::isFile(const std::string & path) const
+bool MetadataStorageFromStaticFilesWebServer::existsFile(const std::string & path) const
 {
-    assertExists(path);
     auto file_info = object_storage.getFileInfo(path);
-    return file_info->type == WebObjectStorage::FileType::File;
+    return file_info && file_info->type == WebObjectStorage::FileType::File;
 }
 
-bool MetadataStorageFromStaticFilesWebServer::isDirectory(const std::string & path) const
+bool MetadataStorageFromStaticFilesWebServer::existsDirectory(const std::string & path) const
 {
-    assertExists(path);
     auto file_info = object_storage.getFileInfo(path);
-    return file_info->type == WebObjectStorage::FileType::Directory;
+    return file_info && file_info->type == WebObjectStorage::FileType::Directory;
 }
 
 uint64_t MetadataStorageFromStaticFilesWebServer::getFileSize(const String & path) const
@@ -106,7 +104,7 @@ DirectoryIteratorPtr MetadataStorageFromStaticFilesWebServer::iterateDirectory(c
 {
     std::vector<fs::path> dir_file_paths;
 
-    if (!exists(path))
+    if (!existsDirectory(path))
         return std::make_unique<StaticDirectoryIterator>(std::move(dir_file_paths));
 
     dir_file_paths = object_storage.listDirectory(path);

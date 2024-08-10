@@ -169,7 +169,7 @@ StorageFileLog::StorageFileLog(
     {
         if (mode < LoadingStrictnessLevel::ATTACH)
         {
-            if (disk->exists(metadata_base_path))
+            if (disk->existsDirectory(metadata_base_path))
             {
                 throw Exception(
                     ErrorCodes::TABLE_METADATA_ALREADY_EXISTS,
@@ -227,7 +227,7 @@ void StorageFileLog::loadMetaFiles(bool attach)
     if (attach)
     {
         /// Meta file may lost, log and create directory
-        if (!disk->exists(metadata_base_path))
+        if (!disk->existsDirectory(metadata_base_path))
         {
             /// Create metadata_base_path directory when store meta data
             LOG_ERROR(log, "Metadata files of table {} are lost.", getStorageID().getTableName());
@@ -324,7 +324,7 @@ void StorageFileLog::serialize() const
 void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
 {
     auto full_path = getFullMetaPath(file_meta.file_name);
-    if (disk->exists(full_path))
+    if (disk->existsFile(full_path))
     {
         checkOffsetIsValid(file_meta.file_name, file_meta.last_writen_position);
     }
@@ -350,7 +350,7 @@ void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
 
 void StorageFileLog::deserialize()
 {
-    if (!disk->exists(metadata_base_path))
+    if (!disk->existsDirectory(metadata_base_path))
         return;
 
     std::vector<std::string> files_to_remove;
@@ -542,7 +542,7 @@ void StorageFileLog::checkOffsetIsValid(const String & filename, UInt64 offset) 
 StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & filename) const
 {
     auto full_path = getFullMetaPath(filename);
-    if (!disk->isFile(full_path))
+    if (!disk->existsFile(full_path))
     {
         throw Exception(
             ErrorCodes::BAD_FILE_TYPE,

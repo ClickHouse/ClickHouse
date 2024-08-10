@@ -819,7 +819,7 @@ void IMergeTreeDataPart::loadProjections(
     for (const auto & projection : metadata_snapshot->projections)
     {
         auto path = projection.name + ".proj";
-        if (getDataPartStorage().exists(path))
+        if (getDataPartStorage().existsFile(path))
         {
             if (hasProjection(projection.name))
             {
@@ -972,13 +972,13 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
     NameSet result = {"checksums.txt", "columns.txt"};
 
-    if (getDataPartStorage().exists(DEFAULT_COMPRESSION_CODEC_FILE_NAME))
+    if (getDataPartStorage().existsFile(DEFAULT_COMPRESSION_CODEC_FILE_NAME))
         result.emplace(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
 
-    if (getDataPartStorage().exists(TXN_VERSION_METADATA_FILE_NAME))
+    if (getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME))
         result.emplace(TXN_VERSION_METADATA_FILE_NAME);
 
-    if (getDataPartStorage().exists(METADATA_VERSION_FILE_NAME))
+    if (getDataPartStorage().existsFile(METADATA_VERSION_FILE_NAME))
         result.emplace(METADATA_VERSION_FILE_NAME);
 
     return result;
@@ -1055,7 +1055,7 @@ void IMergeTreeDataPart::writeMetadata(const String & filename, const WriteSetti
     {
         try
         {
-            if (data_part_storage.exists(tmp_filename))
+            if (data_part_storage.existsFile(tmp_filename))
             {
                 data_part_storage.removeFile(tmp_filename);
                 data_part_storage.commitTransaction();
@@ -1090,7 +1090,7 @@ void IMergeTreeDataPart::writeColumns(const NamesAndTypesList & columns_, const 
 
 void IMergeTreeDataPart::writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const
 {
-    static constexpr auto filename = "txn_version.txt";
+    static constexpr auto filename = TXN_VERSION_METADATA_FILE_NAME;
     static constexpr auto tmp_filename = "txn_version.txt.tmp";
     auto & data_part_storage = const_cast<IDataPartStorage &>(getDataPartStorage());
 
@@ -1117,7 +1117,7 @@ void IMergeTreeDataPart::writeVersionMetadata(const VersionMetadata & version_, 
     {
         try
         {
-            if (data_part_storage.exists(tmp_filename))
+            if (data_part_storage.existsFile(tmp_filename))
                 data_part_storage.removeFile(tmp_filename);
         }
         catch (...)
@@ -1136,7 +1136,7 @@ void IMergeTreeDataPart::removeDeleteOnDestroyMarker()
 
 void IMergeTreeDataPart::removeVersionMetadata()
 {
-    getDataPartStorage().removeFileIfExists("txn_version.txt");
+    getDataPartStorage().removeFileIfExists(TXN_VERSION_METADATA_FILE_NAME);
 }
 
 
@@ -1310,7 +1310,7 @@ void IMergeTreeDataPart::loadRowsCountFileForUnexpectedPart()
     }
     else
     {
-        if (getDataPartStorage().exists("count.txt"))
+        if (getDataPartStorage().existsFile("count.txt"))
         {
             read_rows_count();
             return;
@@ -1408,7 +1408,7 @@ void IMergeTreeDataPart::loadRowsCount()
     }
     else
     {
-        if (getDataPartStorage().exists("count.txt"))
+        if (getDataPartStorage().existsFile("count.txt"))
         {
             read_rows_count();
             return;
@@ -1756,7 +1756,7 @@ static std::unique_ptr<ReadBufferFromFileBase> openForReading(const IDataPartSto
 void IMergeTreeDataPart::loadVersionMetadata() const
 try
 {
-    static constexpr auto version_file_name = "txn_version.txt";
+    static constexpr auto version_file_name = TXN_VERSION_METADATA_FILE_NAME;
     static constexpr auto tmp_version_file_name = "txn_version.txt.tmp";
     auto & data_part_storage = const_cast<IDataPartStorage &>(getDataPartStorage());
 
@@ -1772,11 +1772,12 @@ try
         data_part_storage.removeFile(tmp_version_file_name);
     };
 
-    if (data_part_storage.exists(version_file_name))
+    if (data_part_storage.existsFile(version_file_name))
     {
         auto buf = openForReading(data_part_storage, version_file_name);
         version.read(*buf);
-        if (data_part_storage.exists(tmp_version_file_name))
+
+        if (!isStoredOnReadonlyDisk() && data_part_storage.existsFile(tmp_version_file_name))
             remove_tmp_file();
         return;
     }
@@ -1787,7 +1788,7 @@ try
     /// 3. Version metadata were written to *.tmp file, but hard restart happened before fsync.
     /// 4. Fsyncs in storeVersionMetadata() work incorrectly.
 
-    if (!data_part_storage.exists(tmp_version_file_name))
+    if (isStoredOnReadonlyDisk() || !data_part_storage.existsFile(tmp_version_file_name))
     {
         /// Case 1.
         /// We do not have version metadata and transactions history for old parts,
@@ -1805,7 +1806,9 @@ try
     /// Transaction was not committed if *.tmp file was not renamed, so we should complete rollback by removing part.
     version.setCreationTID(Tx::DummyTID, nullptr);
     version.creation_csn = Tx::RolledBackCSN;
-    remove_tmp_file();
+
+    if (!isStoredOnReadonlyDisk())
+        remove_tmp_file();
 }
 catch (Exception & e)
 {
@@ -2148,7 +2151,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
         auto check_file_not_empty = [this](const String & file_path)
         {
             UInt64 file_size;
-            if (!getDataPartStorage().exists(file_path) || (file_size = getDataPartStorage().getFileSize(file_path)) == 0)
+            if (!getDataPartStorage().existsFile(file_path) || (file_size = getDataPartStorage().getFileSize(file_path)) == 0)
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                     "Part {} is broken: {} is empty",
@@ -2395,11 +2398,11 @@ std::optional<String> IMergeTreeDataPart::getStreamNameOrHash(
     const String & extension,
     const IDataPartStorage & storage_)
 {
-    if (storage_.exists(stream_name + extension))
+    if (storage_.existsFile(stream_name + extension))
         return stream_name;
 
     auto hash = sipHash128String(stream_name);
-    if (storage_.exists(hash + extension))
+    if (storage_.existsFile(hash + extension))
         return hash;
 
     return {};

@@ -895,7 +895,7 @@ void StorageMergeTree::loadDeduplicationLog()
     std::string path = fs::path(relative_data_path) / "deduplication_logs";
 
     /// If either there is already a deduplication log, or we will be able to use it.
-    if (!disk->isReadOnly() || disk->exists(path))
+    if (!disk->isReadOnly() || disk->existsDirectory(path))
     {
         deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, settings->non_replicated_deduplication_window, format_version, disk);
         deduplication_log->load();
@@ -2361,7 +2361,7 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         static constexpr auto checksums_path = "checksums.txt";
         bool noop;
-        if (part->isStoredOnDisk() && !part->getDataPartStorage().exists(checksums_path))
+        if (part->isStoredOnDisk() && !part->getDataPartStorage().existsFile(checksums_path))
         {
             try
             {

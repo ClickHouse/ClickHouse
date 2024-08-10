@@ -47,11 +47,9 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::Plain; }
 
-    bool exists(const std::string & path) const override;
-
-    bool isFile(const std::string & path) const override;
-
-    bool isDirectory(const std::string & path) const override;
+    bool existsFile(const std::string & path) const override;
+    bool existsDirectory(const std::string & path) const override;
+    bool existsFileOrDirectory(const std::string & path) const override;
 
     uint64_t getFileSize(const String & path) const override;
 

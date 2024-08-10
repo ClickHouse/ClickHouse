@@ -211,9 +211,9 @@ MetadataStorageFromPlainRewritableObjectStorage::~MetadataStorageFromPlainRewrit
     CurrentMetrics::sub(metric, path_map->map.size());
 }
 
-bool MetadataStorageFromPlainRewritableObjectStorage::exists(const std::string & path) const
+bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(const std::string & path) const
 {
-    if (MetadataStorageFromPlainObjectStorage::exists(path))
+    if (MetadataStorageFromPlainObjectStorage::existsFileOrDirectory(path))
         return true;
 
     if (useSeparateLayoutForMetadata())
@@ -225,7 +225,12 @@ bool MetadataStorageFromPlainRewritableObjectStorage::exists(const std::string &
     return false;
 }
 
-bool MetadataStorageFromPlainRewritableObjectStorage::isDirectory(const std::string & path) const
+bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
+{
+    return MetadataStorageFromPlainObjectStorage::existsFile(path);
+}
+
+bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std::string & path) const
 {
     if (useSeparateLayoutForMetadata())
     {
@@ -233,7 +238,7 @@ bool MetadataStorageFromPlainRewritableObjectStorage::isDirectory(const std::str
         return object_storage->existsOrHasAnyChild(directory);
     }
     else
-        return MetadataStorageFromPlainObjectStorage::isDirectory(path);
+        return MetadataStorageFromPlainObjectStorage::existsDirectory(path);
 }
 
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const
