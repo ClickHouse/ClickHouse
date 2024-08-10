@@ -228,7 +228,6 @@ public:
         bool allow_backup_broken_projection) const = 0;
 
     /// Creates hardlinks into 'to/dir_path' for every file in data part.
-    /// Callback is called after hardlinks are created, but before 'delete-on-destroy.txt' marker is removed.
     /// Some files can be copied instead of hardlinks. It's because of details of zero copy replication
     /// implementation which relies on paths of some blobs in S3. For example if we want to hardlink
     /// the whole part during mutation we shouldn't hardlink checksums.txt, because otherwise

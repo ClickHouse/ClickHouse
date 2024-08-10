@@ -1380,7 +1380,6 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     auto data_part_storage = std::make_shared<DataPartStorageOnDiskFull>(single_disk_volume, relative_data_path, part_name);
 
     String part_path = fs::path(relative_data_path) / part_name;
-    String marker_path = fs::path(part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED;
 
     /// Ignore broken parts that can appear as a result of hard server restart.
     auto mark_broken = [&]
@@ -1425,22 +1424,6 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
         LOG_DEBUG(log, "Failed to load data part {} with exception: {}", part_name, getExceptionMessage(std::current_exception(), false));
         mark_broken();
-        return res;
-    }
-
-    if (part_disk_ptr->existsFile(marker_path))
-    {
-        /// NOTE: getBytesOnDisk() cannot be used here, since it may be zero if checksums.txt does not exist.
-        res.size_of_part = calculatePartSizeSafe(res.part, log.load());
-        res.is_broken = true;
-
-        auto part_size_str = res.size_of_part ? formatReadableSizeWithBinarySuffix(*res.size_of_part) : "failed to calculate size";
-
-        LOG_WARNING(log,
-            "Detaching stale part {} (size: {}), which should have been deleted after a move. "
-            "That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.",
-            res.part->getDataPartStorage().getFullPath(), part_size_str);
-
         return res;
     }
 
