@@ -15,7 +15,7 @@ INSERT INTO c VALUES (1, 1, 'a'), (2, 2, 'b'), (3, 3, 'c');
 CREATE TABLE d (k UInt64, d1 UInt64, d2 String) ENGINE = Memory;
 INSERT INTO d VALUES (1, 1, 'a'), (2, 2, 'b'), (3, 3, 'c');
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 -- { echoOn }
 

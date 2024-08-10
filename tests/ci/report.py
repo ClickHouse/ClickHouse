@@ -22,7 +22,6 @@ from typing import (
 
 from build_download_helper import get_gh_api
 from ci_config import CI
-from ci_utils import normalize_string
 from env_helper import REPORT_PATH, GITHUB_WORKSPACE
 
 logger = logging.getLogger(__name__)
@@ -622,7 +621,7 @@ class BuildResult:
 
     def write_json(self, directory: Union[Path, str] = REPORT_PATH) -> Path:
         path = Path(directory) / self.get_report_name(
-            self.build_name, self.pr_number or normalize_string(self.head_ref)
+            self.build_name, self.pr_number or CI.Utils.normalize_string(self.head_ref)
         )
         path.write_text(
             json.dumps(
@@ -771,10 +770,12 @@ def create_test_html_report(
             row.append(f'<td {fail_id}style="{style}">{test_result.status}</td>')
             colspan += 1
 
+            row.append("<td>")
             if test_result.time is not None:
                 has_test_time = True
-                row.append(f"<td>{test_result.time}</td>")
-                colspan += 1
+                row.append(str(test_result.time))
+            row.append("</td>")
+            colspan += 1
 
             if test_result.log_urls is not None:
                 has_log_urls = True

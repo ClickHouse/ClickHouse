@@ -65,7 +65,7 @@ void SystemLogQueue<LogElement>::push(LogElement&& element)
     /// Memory can be allocated while resizing on queue.push_back.
     /// The size of allocation can be in order of a few megabytes.
     /// But this should not be accounted for query memory usage.
-    /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flacky.
+    /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flaky.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     /// Should not log messages under mutex.
