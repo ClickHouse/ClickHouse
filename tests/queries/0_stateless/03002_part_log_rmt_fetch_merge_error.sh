@@ -21,9 +21,9 @@ $CLICKHOUSE_CLIENT -nm -q "
     drop table if exists rmt_master;
     drop table if exists rmt_slave;
 
-    create table rmt_master (key Int) engine=ReplicatedMergeTree('/clickhouse/{database}', 'master') order by key settings always_fetch_merged_part=0;
+    create table rmt_master (key Int) engine=ReplicatedMergeTree('/clickhouse/{database}', 'master') order by key settings always_fetch_merged_part=0, old_parts_lifetime=600;
     -- always_fetch_merged_part=1, consider this table as a 'slave'
-    create table rmt_slave (key Int) engine=ReplicatedMergeTree('/clickhouse/{database}', 'slave') order by key settings always_fetch_merged_part=1;
+    create table rmt_slave (key Int) engine=ReplicatedMergeTree('/clickhouse/{database}', 'slave') order by key settings always_fetch_merged_part=1, old_parts_lifetime=600;
 
     insert into rmt_master values (1);
 

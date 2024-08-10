@@ -291,12 +291,13 @@ void HashJoin::dataMapInit(MapsVariant & map)
 {
     if (kind == JoinKind::Cross)
         return;
-    joinDispatchInit(kind, strictness, map);
-    joinDispatch(kind, strictness, map, [&](auto, auto, auto & map_) { map_.create(data->type); });
+    auto prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
+    joinDispatchInit(kind, strictness, map, prefer_use_maps_all);
+    joinDispatch(kind, strictness, map, prefer_use_maps_all, [&](auto, auto, auto & map_) { map_.create(data->type); });
 
     if (reserve_num)
     {
-        joinDispatch(kind, strictness, map, [&](auto, auto, auto & map_) { map_.reserve(data->type, reserve_num); });
+        joinDispatch(kind, strictness, map, prefer_use_maps_all, [&](auto, auto, auto & map_) { map_.reserve(data->type, reserve_num); });
     }
 
     if (!data)
@@ -327,9 +328,10 @@ size_t HashJoin::getTotalRowCount() const
     }
     else
     {
+        auto prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
         for (const auto & map : data->maps)
         {
-            joinDispatch(kind, strictness, map, [&](auto, auto, auto & map_) { res += map_.getTotalRowCount(data->type); });
+            joinDispatch(kind, strictness, map, prefer_use_maps_all, [&](auto, auto, auto & map_) { res += map_.getTotalRowCount(data->type); });
         }
     }
 
@@ -367,9 +369,10 @@ size_t HashJoin::getTotalByteCount() const
 
     if (data->type != Type::CROSS)
     {
+        auto prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
         for (const auto & map : data->maps)
         {
-            joinDispatch(kind, strictness, map, [&](auto, auto, auto & map_) { res += map_.getTotalByteCountImpl(data->type); });
+            joinDispatch(kind, strictness, map, prefer_use_maps_all, [&](auto, auto, auto & map_) { res += map_.getTotalByteCountImpl(data->type); });
         }
     }
     return res;
@@ -520,6 +523,8 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
         return true;
     }
 
+    bool prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
+
     size_t total_rows = 0;
     size_t total_bytes = 0;
     {
@@ -592,7 +597,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
             bool is_inserted = false;
             if (kind != JoinKind::Cross)
             {
-                joinDispatch(kind, strictness, data->maps[onexpr_idx], [&](auto kind_, auto strictness_, auto & map)
+                joinDispatch(kind, strictness, data->maps[onexpr_idx], prefer_use_maps_all, [&](auto kind_, auto strictness_, auto & map)
                 {
                     size_t size = HashJoinMethods<kind_, strictness_, std::decay_t<decltype(map)>>::insertFromBlockImpl(
                             *this,
@@ -608,10 +613,10 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
                             is_inserted);
 
                     if (flag_per_row)
-                        used_flags->reinit<kind_, strictness_>(stored_block);
+                        used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(stored_block);
                     else if (is_inserted)
                         /// Number of buckets + 1 value from zero storage
-                        used_flags->reinit<kind_, strictness_>(size + 1);
+                        used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(size + 1);
                 });
             }
 
@@ -648,10 +653,8 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
-void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join)
+void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize)
 {
-    if (shrink_blocks)
-        return; /// Already shrunk
 
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
     Int64 query_memory_usage_delta = current_memory_usage - memory_usage_before_adding_blocks;
@@ -659,15 +662,21 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join)
 
     auto max_total_bytes_in_join = table_join->sizeLimits().max_bytes;
 
-    /** If accounted data size is more than half of `max_bytes_in_join`
-      * or query memory consumption growth from the beginning of adding blocks (estimation of memory consumed by join using memory tracker)
-      * is bigger than half of all memory available for query,
-      * then shrink stored blocks to fit.
-      */
-    shrink_blocks = (max_total_bytes_in_join && total_bytes_in_join > max_total_bytes_in_join / 2) ||
-                    (max_total_bytes_for_query && query_memory_usage_delta > max_total_bytes_for_query / 2);
-    if (!shrink_blocks)
-        return;
+    if (!force_optimize)
+    {
+        if (shrink_blocks)
+            return; /// Already shrunk
+
+        /** If accounted data size is more than half of `max_bytes_in_join`
+        * or query memory consumption growth from the beginning of adding blocks (estimation of memory consumed by join using memory tracker)
+        * is bigger than half of all memory available for query,
+        * then shrink stored blocks to fit.
+        */
+        shrink_blocks = (max_total_bytes_in_join && total_bytes_in_join > max_total_bytes_in_join / 2) ||
+                        (max_total_bytes_for_query && query_memory_usage_delta > max_total_bytes_for_query / 2);
+        if (!shrink_blocks)
+            return;
+    }
 
     LOG_DEBUG(log, "Shrinking stored blocks, memory consumption is {} {} calculated by join, {} {} by memory tracker",
         ReadableSize(total_bytes_in_join), max_total_bytes_in_join ? fmt::format("/ {}", ReadableSize(max_total_bytes_in_join)) : "",
@@ -869,7 +878,7 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
         keys.insert(std::move(key));
     }
 
-    static_assert(!MapGetter<JoinKind::Left, JoinStrictness::Any>::flagged,
+    static_assert(!MapGetter<JoinKind::Left, JoinStrictness::Any, false>::flagged,
                   "joinGet are not protected from hash table changes between block processing");
 
     std::vector<const MapsOne *> maps_vector;
@@ -910,16 +919,34 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         materializeBlockInplace(block);
     }
 
+    bool prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
     {
         std::vector<const std::decay_t<decltype(data->maps[0])> * > maps_vector;
         for (size_t i = 0; i < table_join->getClauses().size(); ++i)
             maps_vector.push_back(&data->maps[i]);
 
-        if (joinDispatch(kind, strictness, maps_vector, [&](auto kind_, auto strictness_, auto & maps_vector_)
+        if (joinDispatch(kind, strictness, maps_vector, prefer_use_maps_all, [&](auto kind_, auto strictness_, auto & maps_vector_)
         {
-            using MapType = typename MapGetter<kind_, strictness_>::Map;
-            Block remaining_block = HashJoinMethods<kind_, strictness_, MapType>::joinBlockImpl(
-                *this, block, sample_block_with_columns_to_add, maps_vector_);
+            Block remaining_block;
+            if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsAll *>>)
+            {
+                remaining_block = HashJoinMethods<kind_, strictness_, MapsAll>::joinBlockImpl(
+                    *this, block, sample_block_with_columns_to_add, maps_vector_);
+            }
+            else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsOne *>>)
+            {
+                remaining_block = HashJoinMethods<kind_, strictness_, MapsOne>::joinBlockImpl(
+                    *this, block, sample_block_with_columns_to_add, maps_vector_);
+            }
+            else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsAsof *>>)
+            {
+                remaining_block = HashJoinMethods<kind_, strictness_, MapsAsof>::joinBlockImpl(
+                    *this, block, sample_block_with_columns_to_add, maps_vector_);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown maps type");
+            }
             if (remaining_block.rows())
                 not_processed = std::make_shared<ExtraBlock>(ExtraBlock{std::move(remaining_block)});
             else
@@ -1019,7 +1046,8 @@ public:
                 rows_added = fillColumnsFromMap(map, columns_right);
             };
 
-            if (!joinDispatch(parent.kind, parent.strictness, parent.data->maps.front(), fill_callback))
+            bool prefer_use_maps_all = parent.table_join->getMixedJoinExpression() != nullptr;
+            if (!joinDispatch(parent.kind, parent.strictness, parent.data->maps.front(), prefer_use_maps_all, fill_callback))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness '{}' (must be on of: ANY, ALL, ASOF)", parent.strictness);
         }
 
@@ -1216,11 +1244,12 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
     if (flag_per_row)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin with ORs is not supported");
 
+    bool prefer_use_maps_all = join.table_join->getMixedJoinExpression() != nullptr;
     for (auto & map : data->maps)
     {
-        joinDispatch(kind, strictness, map, [this](auto kind_, auto strictness_, auto & map_)
+        joinDispatch(kind, strictness, map, prefer_use_maps_all, [this](auto kind_, auto strictness_, auto & map_)
         {
-            used_flags->reinit<kind_, strictness_>(map_.getBufferSizeInCells(data->type) + 1);
+            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map_)>, MapsAll>>(map_.getBufferSizeInCells(data->type) + 1);
         });
     }
 }
@@ -1300,7 +1329,9 @@ void HashJoin::validateAdditionalFilterExpression(ExpressionActionsPtr additiona
             additional_filter_expression->dumpActions());
     }
 
-    bool is_supported = (strictness == JoinStrictness::All) && (isInnerOrLeft(kind) || isRightOrFull(kind));
+    bool is_supported = ((strictness == JoinStrictness::All) && (isInnerOrLeft(kind) || isRightOrFull(kind)))
+        || ((strictness == JoinStrictness::Semi || strictness == JoinStrictness::Any || strictness == JoinStrictness::Anti)
+                && (isLeft(kind) || isRight(kind))) || (strictness == JoinStrictness::Any && (isInner(kind)));
     if (!is_supported)
     {
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
