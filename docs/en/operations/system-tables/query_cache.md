@@ -14,6 +14,7 @@ Columns:
 - `compressed` ([UInt8](../../sql-reference/data-types/int-uint.md)) — If the query cache entry is compressed.
 - `expires_at` ([DateTime](../../sql-reference/data-types/datetime.md)) — When the query cache entry becomes stale.
 - `key_hash` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — A hash of the query string, used as a key to find query cache entries.
+- `tag` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) — An arbitrary string to separate entries in the query cache.
 
 **Example**
 
@@ -31,6 +32,7 @@ shared:      0
 compressed:  1
 expires_at:  2023-10-13 13:35:45
 key_hash:    12188185624808016954
+tag:
 
 1 row in set. Elapsed: 0.004 sec.
 ```

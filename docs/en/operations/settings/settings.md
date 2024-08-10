@@ -1800,6 +1800,17 @@ Possible values:
 
 Default value: `0`.
 
+## query_cache_tag {#query-cache-tag}
+
+An arbitrary string to separate entries in the [query cache](../query-cache.md).
+Queries with different values of this setting are considered different.
+
+Possible values:
+
+- string: name of query cache tag
+
+Default value: `''`.
+
 ## query_cache_max_size_in_bytes {#query-cache-max-size-in-bytes}
 
 The maximum amount of memory (in bytes) the current user may allocate in the [query cache](../query-cache.md). 0 means unlimited.

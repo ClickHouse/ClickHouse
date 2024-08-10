@@ -1129,7 +1129,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings.enable_reads_from_query_cache)
                 {
-                    QueryCache::Key key(ast, context->getCurrentDatabase(), *settings_copy, context->getUserID(), context->getCurrentRoles());
+                    QueryCache::Key key(ast, context->getCurrentDatabase(), *settings_copy, context->getUserID(), context->getCurrentRoles(), settings.query_cache_tag);
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1258,7 +1258,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings.query_cache_share_between_users,
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
-                                settings.query_cache_compress_entries);
+                                settings.query_cache_compress_entries,
+                                settings.query_cache_tag);
 
                             const size_t num_query_runs = settings.query_cache_min_query_runs ? query_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
                             if (num_query_runs <= settings.query_cache_min_query_runs)

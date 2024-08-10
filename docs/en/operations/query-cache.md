@@ -143,6 +143,16 @@ value can be specified at session, profile or query level using setting [query_c
 Entries in the query cache are compressed by default. This reduces the overall memory consumption at the cost of slower writes into / reads
 from the query cache. To disable compression, use setting [query_cache_compress_entries](settings/settings.md#query-cache-compress-entries).
 
+Entries in the query cache can separate by tag, using setting [query_cache_tag](settings/settings.md#query-cache-tag). Queries with different tags are considered different entries. For example, the result of query
+
+``` sql
+SELECT 1 SETTINGS use_query_cache = true;
+SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'one';
+SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'one diff';
+```
+
+have different entries in the query cache, find the specified tag in system table [system.query_cache](system-tables/query_cache.md)
+
 ClickHouse reads table data in blocks of [max_block_size](settings/settings.md#setting-max_block_size) rows. Due to filtering, aggregation,
 etc., result blocks are typically much smaller than 'max_block_size' but there are also cases where they are much bigger. Setting
 [query_cache_squash_partial_results](settings/settings.md#query-cache-squash-partial-results) (enabled by default) controls if result blocks

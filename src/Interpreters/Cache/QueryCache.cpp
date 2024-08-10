@@ -182,7 +182,7 @@ ASTPtr removeQueryCacheSettings(ASTPtr ast)
     return transformed_ast;
 }
 
-IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
+IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings, const String & tag)
 {
     ast = removeQueryCacheSettings(ast);
 
@@ -193,6 +193,10 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
     /// Also hash the database specified via SQL `USE db`, otherwise identifiers in same query (AST) may mean different columns in different
     /// tables (issue #64136)
     hash.update(current_database);
+
+    /// Need to hash the tag since queries with different tags are considered different query cache entries.
+    if (!tag.empty())
+        hash.update(tag);
 
     /// Finally, hash the (changed) settings as they might affect the query result (e.g. think of settings `additional_table_filters` and `limit`).
     /// Note: allChanged() returns the settings in random order. Also, update()-s of the composite hash must be done in deterministic order.
@@ -233,8 +237,9 @@ QueryCache::Key::Key(
     std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
-    bool is_compressed_)
-    : ast_hash(calculateAstHash(ast_, current_database, settings))
+    bool is_compressed_,
+    const String & tag_)
+    : ast_hash(calculateAstHash(ast_, current_database, settings, tag_))
     , header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
@@ -242,11 +247,12 @@ QueryCache::Key::Key(
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
     , query_string(queryStringFromAST(ast_))
+    , tag(tag_)
 {
 }
 
-QueryCache::Key::Key(ASTPtr ast_, const String & current_database, const Settings & settings, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_)
-    : QueryCache::Key(ast_, current_database, settings, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST, current database, user name/roles
+QueryCache::Key::Key(ASTPtr ast_, const String & current_database, const Settings & settings, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_, const String & tag_)
+    : QueryCache::Key(ast_, current_database, settings, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false, tag_) /// dummy values for everything != AST, current database, user name/roles
 {
 }
 
