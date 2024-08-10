@@ -1613,7 +1613,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     {
-        auto get_metric_name_doc = [](const String & name) -> std::pair<const char *, const char *>
+        auto threads_get_metric_name_doc = [](const String & name) -> std::pair<const char *, const char *>
         {
             static std::map<String, std::pair<const char *, const char *>> metric_map =
             {
@@ -1637,11 +1637,38 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 return it->second;
         };
 
+        auto rejected_connections_get_metric_name_doc = [](const String & name) -> std::pair<const char *, const char *>
+        {
+            static std::map<String, std::pair<const char *, const char *>> metric_map =
+                {
+                    {"tcp_port", {"TCPRejectedConnections", "Number of rejected connections for the TCP protocol (without TLS)."}},
+                    {"tcp_port_secure", {"TCPSecureRejectedConnections", "Number of rejected connections for the TCP protocol (with TLS)."}},
+                    {"http_port", {"HTTPRejectedConnections", "Number of rejected connections for the HTTP interface (without TLS)."}},
+                    {"https_port", {"HTTPSecureRejectedConnections", "Number of rejected connections for the HTTPS interface."}},
+                    {"interserver_http_port", {"InterserverRejectedConnections", "Number of rejected connections for the replicas communication protocol (without TLS)."}},
+                    {"interserver_https_port", {"InterserverSecureRejectedConnections", "Number of rejected connections for the replicas communication protocol (with TLS)."}},
+                    {"mysql_port", {"MySQLRejectedConnections", "Number of rejected connections for the MySQL compatibility protocol."}},
+                    {"postgresql_port", {"PostgreSQLRejectedConnections", "Number of rejected connections for the PostgreSQL compatibility protocol."}},
+                    {"grpc_port", {"GRPCRejectedConnections", "Number of rejected connections for the GRPC protocol."}},
+                    {"prometheus.port", {"PrometheusRejectedConnections", "Number of rejected connections for the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
+                    {"keeper_server.tcp_port", {"KeeperTCPRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (without TLS)."}},
+                    {"keeper_server.tcp_port_secure", {"KeeperTCPSecureRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (with TLS)."}}
+                };
+            auto it = metric_map.find(name);
+            if (it == metric_map.end())
+                return { nullptr, nullptr };
+            else
+                return it->second;
+        };
+
         const auto server_metrics = protocol_server_metrics_func();
         for (const auto & server_metric : server_metrics)
         {
-            if (auto name_doc = get_metric_name_doc(server_metric.port_name); name_doc.first != nullptr)
+            if (auto name_doc = threads_get_metric_name_doc(server_metric.port_name); name_doc.first != nullptr)
                 new_values[name_doc.first] = { server_metric.current_threads, name_doc.second };
+
+            if (auto name_doc = rejected_connections_get_metric_name_doc(server_metric.port_name); name_doc.first != nullptr)
+                new_values[name_doc.first] = { server_metric.rejected_connections, name_doc.second };
         }
     }
 
