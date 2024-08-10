@@ -51,7 +51,7 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
     const ColumnWithTypeAndName & data = block.getByName(name);
     size_t rows = block.rows();
     for (size_t i = 0; i < rows; ++i)
-        res.insert((*data.column)[i].get<T>());
+        res.insert((*data.column)[i].safeGet<T>());
     return res;
 }
 

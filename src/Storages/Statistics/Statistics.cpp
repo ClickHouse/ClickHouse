@@ -32,19 +32,19 @@ std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & field)
     switch (field.getType())
     {
         case Field::Types::Int64:
-            return field.get<Int64>();
+            return field.safeGet<Int64>();
         case Field::Types::UInt64:
-            return field.get<UInt64>();
+            return field.safeGet<UInt64>();
         case Field::Types::Float64:
-            return field.get<Float64>();
+            return field.safeGet<Float64>();
         case Field::Types::Int128:
-            return field.get<Int128>();
+            return field.safeGet<Int128>();
         case Field::Types::UInt128:
-            return field.get<UInt128>();
+            return field.safeGet<UInt128>();
         case Field::Types::Int256:
-            return field.get<Int256>();
+            return field.safeGet<Int256>();
         case Field::Types::UInt256:
-            return field.get<UInt256>();
+            return field.safeGet<UInt256>();
         default:
             return {};
     }
@@ -53,7 +53,7 @@ std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & field)
 std::optional<String> StatisticsUtils::tryConvertToString(const DB::Field & field)
 {
     if (field.getType() == Field::Types::String)
-        return field.get<String>();
+        return field.safeGet<String>();
     return {};
 }
 

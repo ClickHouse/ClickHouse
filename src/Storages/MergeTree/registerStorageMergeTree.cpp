@@ -591,7 +591,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             if (ast->value.getType() != Field::Types::String)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, format_str, error_msg);
 
-            graphite_config_name = ast->value.get<String>();
+            graphite_config_name = ast->value.safeGet<String>();
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, format_str, error_msg);

@@ -922,7 +922,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->is_create_empty = is_create_empty;
 
     if (from_path)
-        query->attach_from_path = from_path->as<ASTLiteral &>().value.get<String>();
+        query->attach_from_path = from_path->as<ASTLiteral &>().value.safeGet<String>();
 
     return true;
 }
@@ -1431,7 +1431,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         ASTPtr ast_uuid;
         if (!uuid_p.parse(pos, ast_uuid, expected))
             return false;
-        uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.get<String>());
+        uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
     }
 
     if (s_on.ignore(pos, expected))

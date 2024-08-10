@@ -689,7 +689,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Neither default value expression nor type is provided for a column");
 
         if (col_decl.comment)
-            column.comment = col_decl.comment->as<ASTLiteral &>().value.get<String>();
+            column.comment = col_decl.comment->as<ASTLiteral &>().value.safeGet<String>();
 
         if (col_decl.codec)
         {
@@ -1875,7 +1875,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
         if (has_explicit_zk_path_arg)
         {
-            String zk_path = create.storage->engine->arguments->children[0]->as<ASTLiteral>()->value.get<String>();
+            String zk_path = create.storage->engine->arguments->children[0]->as<ASTLiteral>()->value.safeGet<String>();
             Macros::MacroExpansionInfo info;
             info.table_id.uuid = create.uuid;
             info.ignore_unknown = true;

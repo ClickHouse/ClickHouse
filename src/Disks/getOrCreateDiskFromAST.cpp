@@ -113,7 +113,7 @@ std::string getOrCreateDiskFromDiskAST(const ASTPtr & disk_function, ContextPtr 
     FlattenDiskConfigurationVisitor::Data data{context, attach};
     FlattenDiskConfigurationVisitor{data}.visit(ast);
 
-    auto disk_name = assert_cast<const ASTLiteral &>(*ast).value.get<String>();
+    auto disk_name = assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
     LOG_TRACE(getLogger("getOrCreateDiskFromDiskAST"), "Result disk name: {}", disk_name);
     return disk_name;
 }

@@ -107,7 +107,7 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
     using ValueType = typename ColumnType::ValueType;
     // Note that the storage type of offset returned by get<> is different, so
     // we need to specify the type explicitly.
-    const ValueType offset = static_cast<ValueType>(_offset.get<ValueType>());
+    const ValueType offset = static_cast<ValueType>(_offset.safeGet<ValueType>());
     assert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
@@ -162,7 +162,7 @@ static int compareValuesWithOffsetFloat(const IColumn * _compared_column,
         _compared_column);
     const auto * reference_column = assert_cast<const ColumnType *>(
         _reference_column);
-    const auto offset = _offset.get<typename ColumnType::ValueType>();
+    const auto offset = _offset.safeGet<typename ColumnType::ValueType>();
     chassert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
@@ -631,7 +631,7 @@ void WindowTransform::advanceFrameStartRowsOffset()
 {
     // Just recalculate it each time by walking blocks.
     const auto [moved_row, offset_left] = moveRowNumber(current_row,
-        window_description.frame.begin_offset.get<UInt64>()
+        window_description.frame.begin_offset.safeGet<UInt64>()
             * (window_description.frame.begin_preceding ? -1 : 1));
 
     frame_start = moved_row;
@@ -870,7 +870,7 @@ void WindowTransform::advanceFrameEndRowsOffset()
     // Walk the specified offset from the current row. The "+1" is needed
     // because the frame_end is a past-the-end pointer.
     const auto [moved_row, offset_left] = moveRowNumber(current_row,
-        window_description.frame.end_offset.get<UInt64>()
+        window_description.frame.end_offset.safeGet<UInt64>()
             * (window_description.frame.end_preceding ? -1 : 1)
             + 1);
 
@@ -2192,13 +2192,13 @@ namespace
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be a constant");
             auto type_id = argument_types[0]->getTypeId();
             if (type_id == TypeIndex::UInt8)
-                buckets = arg_col[transform->current_row.row].get<UInt8>();
+                buckets = arg_col[transform->current_row.row].safeGet<UInt8>();
             else if (type_id == TypeIndex::UInt16)
-                buckets = arg_col[transform->current_row.row].get<UInt16>();
+                buckets = arg_col[transform->current_row.row].safeGet<UInt16>();
             else if (type_id == TypeIndex::UInt32)
-                buckets = arg_col[transform->current_row.row].get<UInt32>();
+                buckets = arg_col[transform->current_row.row].safeGet<UInt32>();
             else if (type_id == TypeIndex::UInt64)
-                buckets = arg_col[transform->current_row.row].get<UInt64>();
+                buckets = arg_col[transform->current_row.row].safeGet<UInt64>();
 
             if (!buckets)
             {
@@ -2490,7 +2490,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
         {
             offset = (*current_block.input_columns[
                     workspace.argument_column_indices[1]])[
-                        transform->current_row.row].get<Int64>();
+                        transform->current_row.row].safeGet<Int64>();
 
             /// Either overflow or really negative value, both is not acceptable.
             if (offset < 0)
@@ -2576,7 +2576,7 @@ struct WindowFunctionNthValue final : public WindowFunction
 
         Int64 offset = (*current_block.input_columns[
                 workspace.argument_column_indices[1]])[
-            transform->current_row.row].get<Int64>();
+            transform->current_row.row].safeGet<Int64>();
 
         /// Either overflow or really negative value, both is not acceptable.
         if (offset <= 0)

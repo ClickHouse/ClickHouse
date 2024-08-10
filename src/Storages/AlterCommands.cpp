@@ -109,7 +109,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.comment)
         {
             const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.comment);
-            command.comment = ast_comment.value.get<String>();
+            command.comment = ast_comment.value.safeGet<String>();
         }
 
         if (ast_col_decl.codec)
@@ -167,7 +167,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.comment)
         {
             const auto & ast_comment = ast_col_decl.comment->as<ASTLiteral &>();
-            command.comment.emplace(ast_comment.value.get<String>());
+            command.comment.emplace(ast_comment.value.safeGet<String>());
         }
 
         if (ast_col_decl.ttl)
@@ -210,7 +210,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.type = COMMENT_COLUMN;
         command.column_name = getIdentifierName(command_ast->column);
         const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
-        command.comment = ast_comment.value.get<String>();
+        command.comment = ast_comment.value.safeGet<String>();
         command.if_exists = command_ast->if_exists;
         return command;
     }
@@ -220,7 +220,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.type = COMMENT_TABLE;
         const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
-        command.comment = ast_comment.value.get<String>();
+        command.comment = ast_comment.value.safeGet<String>();
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)

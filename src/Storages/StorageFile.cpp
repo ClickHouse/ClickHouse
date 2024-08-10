@@ -2203,11 +2203,11 @@ void registerStorageFile(StorageFactory & factory)
             {
                 auto type = literal->value.getType();
                 if (type == Field::Types::Int64)
-                    source_fd = static_cast<int>(literal->value.get<Int64>());
+                    source_fd = static_cast<int>(literal->value.safeGet<Int64>());
                 else if (type == Field::Types::UInt64)
-                    source_fd = static_cast<int>(literal->value.get<UInt64>());
+                    source_fd = static_cast<int>(literal->value.safeGet<UInt64>());
                 else if (type == Field::Types::String)
-                    StorageFile::parseFileSource(literal->value.get<String>(), source_path, storage_args.path_to_archive);
+                    StorageFile::parseFileSource(literal->value.safeGet<String>(), source_path, storage_args.path_to_archive);
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
             }

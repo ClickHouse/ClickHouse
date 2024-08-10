@@ -31,7 +31,7 @@ namespace
         {
             if (field.getType() == Field::Types::String)
             {
-                const String & str = field.get<const String &>();
+                const String & str = field.safeGet<const String &>();
                 if (str == "1" || boost::iequals(str, "true") || boost::iequals(str, "create"))
                 {
                     value = RestoreTableCreationMode::kCreate;
@@ -54,7 +54,7 @@ namespace
 
             if (field.getType() == Field::Types::UInt64)
             {
-                UInt64 number = field.get<UInt64>();
+                UInt64 number = field.safeGet<UInt64>();
                 if (number == 1)
                 {
                     value = RestoreTableCreationMode::kCreate;
@@ -95,7 +95,7 @@ namespace
         {
             if (field.getType() == Field::Types::String)
             {
-                const String & str = field.get<const String &>();
+                const String & str = field.safeGet<const String &>();
                 if (str == "1" || boost::iequals(str, "true") || boost::iequals(str, "create"))
                 {
                     value = RestoreAccessCreationMode::kCreate;
@@ -118,7 +118,7 @@ namespace
 
             if (field.getType() == Field::Types::UInt64)
             {
-                UInt64 number = field.get<UInt64>();
+                UInt64 number = field.safeGet<UInt64>();
                 if (number == 1)
                 {
                     value = RestoreAccessCreationMode::kCreate;
