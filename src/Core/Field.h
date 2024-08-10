@@ -882,8 +882,11 @@ auto & Field::safeGet()
     const Types::Which target = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
 
     /// bool is stored as uint64, will be returned as UInt64 when requested as bool or UInt64, as Int64 when requested as Int64
-    if (target != which && !(which == Field::Types::Bool && (target == Field::Types::UInt64 || target == Field::Types::Int64)))
-        throw Exception(ErrorCodes::BAD_GET, "Bad get: has {}, requested {}", getTypeName(), target);
+    /// also allow UInt64 <-> Int64 conversion
+    if (target != which &&
+        !(which == Field::Types::Bool && (target == Field::Types::UInt64 || target == Field::Types::Int64)) &&
+        !(isInt64OrUInt64FieldType(which) && isInt64OrUInt64FieldType(target)))
+            throw Exception(ErrorCodes::BAD_GET, "Bad get: has {}, requested {}", getTypeName(), target);
 
     return get<T>();
 }
