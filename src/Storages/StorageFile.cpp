@@ -25,6 +25,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/IArchiveReader.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <Disks/IO/IOUringReader.h>
@@ -52,6 +53,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
+#include "base/defines.h"
 
 #include <Core/Settings.h>
 
@@ -1766,6 +1768,12 @@ public:
         initialize();
     }
 
+    ~StorageFileSink() override
+    {
+        if (isCancelled())
+            cancelBuffers();
+    }
+
     void initialize()
     {
         std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer;
@@ -1799,37 +1807,14 @@ public:
 
     void consume(Chunk & chunk) override
     {
-        std::lock_guard cancel_lock(cancel_mutex);
-        if (cancelled)
+        if (isCancelled())
             return;
         writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
     }
 
-    void onCancel() override
-    {
-        std::lock_guard cancel_lock(cancel_mutex);
-        cancelBuffers();
-        releaseBuffers();
-        cancelled = true;
-    }
-
-    void onException(std::exception_ptr exception) override
-    {
-        std::lock_guard cancel_lock(cancel_mutex);
-        try
-        {
-            std::rethrow_exception(exception);
-        }
-        catch (...)
-        {
-            /// An exception context is needed to proper delete write buffers without finalization
-            releaseBuffers();
-        }
-    }
-
     void onFinish() override
     {
-        std::lock_guard cancel_lock(cancel_mutex);
+        chassert(!isCancelled());
         finalizeBuffers();
     }
 
@@ -1884,9 +1869,6 @@ private:
 
     int flags;
     std::unique_lock<std::shared_timed_mutex> lock;
-
-    std::mutex cancel_mutex;
-    bool cancelled = false;
 };
 
 class PartitionedStorageFileSink : public PartitionedSink
@@ -2207,7 +2189,11 @@ void registerStorageFile(StorageFactory & factory)
                 else if (type == Field::Types::UInt64)
                     source_fd = static_cast<int>(literal->value.get<UInt64>());
                 else if (type == Field::Types::String)
-                    StorageFile::parseFileSource(literal->value.get<String>(), source_path, storage_args.path_to_archive);
+                    StorageFile::parseFileSource(
+                        literal->value.get<String>(),
+                        source_path,
+                        storage_args.path_to_archive,
+                        factory_args.getLocalContext()->getSettingsRef().allow_archive_path_syntax);
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
             }
@@ -2234,8 +2220,14 @@ SchemaCache & StorageFile::getSchemaCache(const ContextPtr & context)
     return schema_cache;
 }
 
-void StorageFile::parseFileSource(String source, String & filename, String & path_to_archive)
+void StorageFile::parseFileSource(String source, String & filename, String & path_to_archive, bool allow_archive_path_syntax)
 {
+    if (!allow_archive_path_syntax)
+    {
+        filename = std::move(source);
+        return;
+    }
+
     size_t pos = source.find("::");
     if (pos == String::npos)
     {
@@ -2247,18 +2239,21 @@ void StorageFile::parseFileSource(String source, String & filename, String & pat
     while (path_to_archive_view.ends_with(' '))
         path_to_archive_view.remove_suffix(1);
 
-    if (path_to_archive_view.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path to archive is empty");
-
-    path_to_archive = path_to_archive_view;
-
     std::string_view filename_view = std::string_view{source}.substr(pos + 2);
-    while (filename_view.front() == ' ')
+    while (filename_view.starts_with(' '))
         filename_view.remove_prefix(1);
 
-    if (filename_view.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filename is empty");
+    /// possible situations when the first part can be archive is only if one of the following is true:
+    /// - it contains supported extension
+    /// - it contains characters that could mean glob expression
+    if (filename_view.empty() || path_to_archive_view.empty()
+        || (!hasSupportedArchiveExtension(path_to_archive_view) && path_to_archive_view.find_first_of("*?{") == std::string_view::npos))
+    {
+        filename = std::move(source);
+        return;
+    }
 
+    path_to_archive = path_to_archive_view;
     filename = filename_view;
 }
 
