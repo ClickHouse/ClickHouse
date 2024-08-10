@@ -89,7 +89,7 @@ public:
             return std::make_shared<DataTypeNumber<PointType>>();
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    bool allocatesMemoryInArena() const override { return true; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {

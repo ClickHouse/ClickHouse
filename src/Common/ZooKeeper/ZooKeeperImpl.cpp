@@ -901,6 +901,10 @@ void ZooKeeper::receiveEvent()
 
     if (request_info.callback)
         request_info.callback(*response);
+
+    /// Finalize current session if we receive a hardware error from ZooKeeper
+    if (err != Error::ZOK && isHardwareError(err))
+        finalize(/*error_send*/ false, /*error_receive*/ true, fmt::format("Hardware error: {}", err));
 }
 
 

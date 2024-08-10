@@ -340,7 +340,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             if (query.kind == ASTDropQuery::Kind::Detach && query.permanently)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH PERMANENTLY is not implemented for databases");
 
-            if (database->hasReplicationThread())
+            if (!truncate && database->hasReplicationThread())
                 database->stopReplication();
 
             if (database->shouldBeEmptyOnDetach())

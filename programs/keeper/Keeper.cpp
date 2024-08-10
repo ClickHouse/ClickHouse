@@ -319,9 +319,10 @@ try
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
     GlobalThreadPool::initialize(
-        config().getUInt("max_thread_pool_size", 100),
-        config().getUInt("max_thread_pool_free_size", 1000),
-        config().getUInt("thread_pool_queue_size", 10000)
+        /// We need to have sufficient amount of threads for connections + nuraft workers + keeper workers, 1000 is an estimation
+        std::min(1000U, config().getUInt("max_thread_pool_size", 1000)),
+        config().getUInt("max_thread_pool_free_size", 100),
+        config().getUInt("thread_pool_queue_size", 1000)
     );
 
     static ServerErrorHandler error_handler;
