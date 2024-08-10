@@ -8,6 +8,8 @@ endif ()
 # when instantiated from JSON.cpp. Try again when libcxx(abi) and Clang are upgraded to 16.
 set (CMAKE_CXX_STANDARD 20)
 
+configure_file(GitHash.cpp.in GitHash.generated.cpp)
+
 set (SRCS
     argsToConfig.cpp
     cgroupsv2.cpp
@@ -33,6 +35,7 @@ set (SRCS
     safeExit.cpp
     throwError.cpp
     Numa.cpp
+    GitHash.generated.cpp
 )
 
 add_library (common ${SRCS})
