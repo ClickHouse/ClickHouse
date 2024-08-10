@@ -869,6 +869,13 @@ constexpr bool isInt64OrUInt64FieldType(Field::Types::Which t)
         || t == Field::Types::UInt64;
 }
 
+constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
+{
+    return t == Field::Types::Int64
+        || t == Field::Types::UInt64
+        || t == Field::Types::Bool;
+}
+
 template <typename T>
 auto & Field::safeGet()
 {
