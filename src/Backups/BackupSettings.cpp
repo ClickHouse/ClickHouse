@@ -29,6 +29,7 @@ namespace ErrorCodes
     M(Bool, allow_s3_native_copy) \
     M(Bool, allow_azure_native_copy) \
     M(Bool, use_same_s3_credentials_for_base_backup) \
+    M(Bool, use_same_password_for_base_backup) \
     M(Bool, azure_attempt_to_create_container) \
     M(Bool, read_from_filesystem_cache) \
     M(UInt64, shard_num) \

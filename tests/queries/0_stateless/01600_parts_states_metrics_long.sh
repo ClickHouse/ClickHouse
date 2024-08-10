@@ -24,7 +24,7 @@ verify()
 
         if [[ $i -eq 5000 ]]
         then
-            $CLICKHOUSE_CLIENT --multiquery "
+            $CLICKHOUSE_CLIENT "
               SELECT sumIf(value, metric = 'PartsActive'), sumIf(value, metric = 'PartsOutdated') FROM system.metrics;
               SELECT sum(active), sum(NOT active) FROM system.parts;
               SELECT sum(active), sum(NOT active) FROM system.projection_parts;

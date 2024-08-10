@@ -371,67 +371,78 @@ bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTre
 
 bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent)
 {
-    bool maybe_useful = false;
+    if (!node.isFunction())
+        return false;
 
-    if (node.isFunction())
+    const auto function = node.toFunctionNode();
+    auto arguments_size = function.getArgumentsSize();
+    auto function_name = function.getFunctionName();
+
+    if (parent == nullptr)
     {
-        const auto function = node.toFunctionNode();
-        auto arguments_size = function.getArgumentsSize();
-        auto function_name = function.getFunctionName();
-
+        /// Recurse a little bit for indexOf().
         for (size_t i = 0; i < arguments_size; ++i)
         {
             auto argument = function.getArgumentAt(i);
             if (traverseFunction(argument, out, &node))
-                maybe_useful = true;
-        }
-
-        if (arguments_size != 2)
-            return false;
-
-        auto lhs_argument = function.getArgumentAt(0);
-        auto rhs_argument = function.getArgumentAt(1);
-
-        if (functionIsInOrGlobalInOperator(function_name))
-        {
-            if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)
-            {
-                if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext()); prepared_set)
-                {
-                    if (prepared_set->hasExplicitSetElements())
-                    {
-                        const auto prepared_info = getPreparedSetInfo(prepared_set);
-                        if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
-                            maybe_useful = true;
-                    }
-                }
-            }
-        }
-        else if (function_name == "equals" ||
-                 function_name == "notEquals" ||
-                 function_name == "has" ||
-                 function_name == "mapContains" ||
-                 function_name == "indexOf" ||
-                 function_name == "hasAny" ||
-                 function_name == "hasAll")
-        {
-            Field const_value;
-            DataTypePtr const_type;
-
-            if (rhs_argument.tryGetConstant(const_value, const_type))
-            {
-                if (traverseTreeEquals(function_name, lhs_argument, const_type, const_value, out, parent))
-                    maybe_useful = true;
-            }
-            else if (lhs_argument.tryGetConstant(const_value, const_type))
-            {
-                if (traverseTreeEquals(function_name, rhs_argument, const_type, const_value, out, parent))
-                    maybe_useful = true;
-            }
+                return true;
         }
     }
 
-    return maybe_useful;
+    if (arguments_size != 2)
+        return false;
+
+    /// indexOf() should be inside comparison function, e.g. greater(indexOf(key, 42), 0).
+    /// Other conditions should be at top level, e.g. equals(key, 42), not equals(equals(key, 42), 1).
+    if ((function_name == "indexOf") != (parent != nullptr))
+        return false;
+
+    auto lhs_argument = function.getArgumentAt(0);
+    auto rhs_argument = function.getArgumentAt(1);
+
+    if (functionIsInOrGlobalInOperator(function_name))
+    {
+        if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)
+        {
+            if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext()); prepared_set)
+            {
+                if (prepared_set->hasExplicitSetElements())
+                {
+                    const auto prepared_info = getPreparedSetInfo(prepared_set);
+                    if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
+                        return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    if (function_name == "equals" ||
+        function_name == "notEquals" ||
+        function_name == "has" ||
+        function_name == "mapContains" ||
+        function_name == "indexOf" ||
+        function_name == "hasAny" ||
+        function_name == "hasAll")
+    {
+        Field const_value;
+        DataTypePtr const_type;
+
+        if (rhs_argument.tryGetConstant(const_value, const_type))
+        {
+            if (traverseTreeEquals(function_name, lhs_argument, const_type, const_value, out, parent))
+                return true;
+        }
+        else if (lhs_argument.tryGetConstant(const_value, const_type) && (function_name == "equals" || function_name == "notEquals"))
+        {
+            if (traverseTreeEquals(function_name, rhs_argument, const_type, const_value, out, parent))
+                return true;
+        }
+
+        return false;
+    }
+
+    return false;
 }
 
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(

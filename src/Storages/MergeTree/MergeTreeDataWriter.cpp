@@ -240,6 +240,14 @@ std::vector<AsyncInsertInfoPtr> scatterAsyncInsertInfoBySelector(AsyncInsertInfo
             ++offset_idx;
         }
     }
+    if (offset_idx != async_insert_info->offsets.size())
+    {
+        LOG_ERROR(
+            getLogger("MergeTreeDataWriter"),
+            "ChunkInfo of async insert offsets doesn't match the selector size {}. Offsets content is ({})",
+            selector.size(), fmt::join(async_insert_info->offsets.begin(), async_insert_info->offsets.end(), ","));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error for async deduplicated insert, please check error logs");
+    }
     return result;
 }
 
@@ -317,8 +325,10 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     {
         if (async_insert_info_with_partition[i] == nullptr)
         {
-            LOG_ERROR(getLogger("MergeTreeDataWriter"), "The {}th element in async_insert_info_with_partition is nullptr. There are totally {} partitions in the insert. Selector content is {}",
-                      i, partitions_count, fmt::join(selector.begin(), selector.end(), ","));
+            LOG_ERROR(
+                getLogger("MergeTreeDataWriter"),
+                "The {}th element in async_insert_info_with_partition is nullptr. There are totally {} partitions in the insert. Selector content is ({}). Offsets content is ({})",
+                i, partitions_count, fmt::join(selector.begin(), selector.end(), ","), fmt::join(async_insert_info->offsets.begin(), async_insert_info->offsets.end(), ","));
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error for async deduplicated insert, please check error logs");
         }
         result[i].offsets = std::move(async_insert_info_with_partition[i]->offsets);

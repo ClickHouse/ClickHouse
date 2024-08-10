@@ -696,6 +696,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr table;
     ASTPtr columns_list;
     std::shared_ptr<ASTStorage> storage;
+    bool is_time_series_table = false;
     ASTPtr targets;
     ASTPtr as_database;
     ASTPtr as_table;
@@ -784,6 +785,13 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return false;
 
         storage = typeid_cast<std::shared_ptr<ASTStorage>>(ast);
+
+        if (storage && storage->engine && (storage->engine->name == "TimeSeries"))
+        {
+            is_time_series_table = true;
+            ParserViewTargets({ViewTarget::Data, ViewTarget::Tags, ViewTarget::Metrics}).parse(pos, targets, expected);
+        }
+
         return true;
     };
 
@@ -873,6 +881,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->create_or_replace = or_replace;
     query->if_not_exists = if_not_exists;
     query->temporary = is_temporary;
+    query->is_time_series_table = is_time_series_table;
 
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();

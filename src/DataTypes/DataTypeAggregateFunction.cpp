@@ -33,6 +33,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
+DataTypeAggregateFunction::DataTypeAggregateFunction(AggregateFunctionPtr function_, const DataTypes & argument_types_,
+                            const Array & parameters_, std::optional<size_t> version_)
+    : function(std::move(function_))
+    , argument_types(argument_types_)
+    , parameters(parameters_)
+    , version(version_)
+{
+}
+
 String DataTypeAggregateFunction::getFunctionName() const
 {
     return function->getName();

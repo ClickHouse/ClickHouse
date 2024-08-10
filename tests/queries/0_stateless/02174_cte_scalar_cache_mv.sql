@@ -14,7 +14,7 @@ CREATE MATERIALIZED VIEW mv1 TO t2 AS
     FROM t1
     LIMIT 5;
 
-set allow_experimental_analyzer = 0;
+set enable_analyzer = 0;
 
 -- FIRST INSERT
 INSERT INTO t1
@@ -61,7 +61,7 @@ WHERE
   AND event_date >= yesterday() AND event_time > now() - interval 10 minute;
 
 truncate table t2;
-set allow_experimental_analyzer = 1;
+set enable_analyzer = 1;
 
 -- FIRST INSERT ANALYZER
 INSERT INTO t1
@@ -100,7 +100,7 @@ WHERE
 
 DROP TABLE mv1;
 
-set allow_experimental_analyzer = 0;
+set enable_analyzer = 0;
 
 CREATE TABLE t3 (z Int64) ENGINE = Memory;
 CREATE MATERIALIZED VIEW mv2 TO t3 AS
@@ -134,7 +134,7 @@ WHERE
   AND event_date >= yesterday() AND event_time > now() - interval 10 minute;
 
 truncate table t3;
-set allow_experimental_analyzer = 1;
+set enable_analyzer = 1;
 
 -- SECOND INSERT ANALYZER
 INSERT INTO t1
@@ -162,7 +162,7 @@ WHERE
 
 DROP TABLE mv2;
 
-set allow_experimental_analyzer = 0;
+set enable_analyzer = 0;
 
 CREATE TABLE t4 (z Int64) ENGINE = Memory;
 CREATE MATERIALIZED VIEW mv3 TO t4 AS
@@ -197,7 +197,7 @@ WHERE
   AND event_date >= yesterday() AND event_time > now() - interval 10 minute;
 
 truncate table t4;
-set allow_experimental_analyzer = 1;
+set enable_analyzer = 1;
 
 -- THIRD INSERT ANALYZER
 INSERT INTO t1

@@ -214,6 +214,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     else if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
     {
+        /// Bool is not represented in which_type, so we need to type it separately
+        if (isInt64OrUInt64orBoolFieldType(src.getType()) && type.getName() == "Bool")
+            return bool(src.safeGet<bool>());
+
         if (which_type.isUInt8()) return convertNumericType<UInt8>(src, type);
         if (which_type.isUInt16()) return convertNumericType<UInt16>(src, type);
         if (which_type.isUInt32()) return convertNumericType<UInt32>(src, type);

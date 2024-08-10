@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 EXPLAIN QUERY TREE run_passes = 0 SELECT 1;
 

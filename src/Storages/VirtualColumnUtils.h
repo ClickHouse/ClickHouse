@@ -18,8 +18,16 @@ class NamesAndTypesList;
 namespace VirtualColumnUtils
 {
 
-/// Similar to filterBlockWithQuery, but uses ActionsDAG as a predicate.
-/// Basically it is filterBlockWithDAG(splitFilterDagForAllowedInputs).
+/// The filtering functions are tricky to use correctly.
+/// There are 2 ways:
+///  1. Call filterBlockWithPredicate() or filterBlockWithExpression() inside SourceStepWithFilter::applyFilters().
+///  2. Call splitFilterDagForAllowedInputs() and buildSetsForDAG() inside SourceStepWithFilter::applyFilters().
+///     Then call filterBlockWithPredicate() or filterBlockWithExpression() in initializePipeline().
+///
+/// Otherwise calling filter*() outside applyFilters() will throw "Not-ready Set is passed"
+/// if there are subqueries.
+
+/// Similar to filterBlockWithExpression(buildFilterExpression(splitFilterDagForAllowedInputs(...))).
 void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context);
 
 /// Just filters block. Block should contain all the required columns.
@@ -33,15 +41,7 @@ void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 
 /// Extract a part of predicate that can be evaluated using only columns from input_names.
-/// When allow_non_deterministic_functions is true then even if the predicate contains non-deterministic
-/// functions, we still allow to extract a part of the predicate, otherwise we return nullptr.
-/// allow_non_deterministic_functions must be false when we are going to use the result to filter parts in
-/// MergeTreeData::totalRowsByPartitionPredicateImp. For example, if the query is
-/// `SELECT count() FROM table  WHERE _partition_id = '0' AND rowNumberInBlock() = 1`
-/// The predicate will be `_partition_id = '0' AND rowNumberInBlock() = 1`, and `rowNumberInBlock()` is
-/// non-deterministic. If we still extract the part `_partition_id = '0'` for filtering parts, then trivial
-/// count optimization will be mistakenly applied to the query.
-std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, bool allow_non_deterministic_functions = true);
+std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs);
 
 /// Extract from the input stream a set of `name` column values
 template <typename T>
@@ -83,7 +83,7 @@ struct VirtualsForFileLikeStorage
     std::optional<size_t> size { std::nullopt };
     const String * filename { nullptr };
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
-
+    const String * etag { nullptr };
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(
