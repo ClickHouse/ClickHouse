@@ -64,9 +64,8 @@ toInt8(expr)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -251,9 +250,8 @@ toInt8OrDefault(expr[, default])
 - `default` (optional) — The default value to return if parsing to type `Int8` is unsuccessful. [Int8](../data-types/int-uint.md).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Arguments for which the default value is returned:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -314,9 +312,8 @@ toInt16(expr)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -501,9 +498,8 @@ toInt16OrDefault(expr[, default])
 - `default` (optional) — The default value to return if parsing to type `Int16` is unsuccessful. [Int16](../data-types/int-uint.md).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Arguments for which the default value is returned:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -564,9 +560,8 @@ toInt32(expr)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -750,9 +745,8 @@ toInt32OrDefault(expr[, default])
 - `default` (optional) — The default value to return if parsing to type `Int32` is unsuccessful. [Int32](../data-types/int-uint.md).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Arguments for which the default value is returned:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -813,9 +807,8 @@ toInt64(expr)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Unsupported types:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -1000,9 +993,8 @@ toInt64OrDefault(expr[, default])
 - `default` (optional) — The default value to return if parsing to type `Int64` is unsuccessful. [Int64](../data-types/int-uint.md).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Arguments for which the default value is returned:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -1063,9 +1055,8 @@ toInt128(expr)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -1312,9 +1303,8 @@ toInt256(expr)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -1498,9 +1488,8 @@ toInt256OrDefault(expr[, default])
 - `default` (optional) — The default value to return if parsing to type `Int256` is unsuccessful. [Int256](../data-types/int-uint.md).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Arguments for which the default value is returned:
 - String representations of Float32/64 values, including `NaN` and `Inf`
@@ -1561,9 +1550,8 @@ toUInt8(expr)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -1748,9 +1736,8 @@ toUInt8OrDefault(expr[, default])
 - `default` (optional) — The default value to return if parsing to type `UInt8` is unsuccessful. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Arguments for which the default value is returned:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -1811,9 +1798,8 @@ toUInt16(expr)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -1998,9 +1984,8 @@ toUInt16OrDefault(expr[, default])
 - `default` (optional) — The default value to return if parsing to type `UInt16` is unsuccessful. [UInt16](../data-types/int-uint.md).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Arguments for which the default value is returned:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -2061,9 +2046,8 @@ toUInt32(expr)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -2249,9 +2233,8 @@ toUInt32OrDefault(expr[, default])
 - `default` (optional) — The default value to return if parsing to type `UInt32` is unsuccessful. [UInt32](../data-types/int-uint.md).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Arguments for which the default value is returned:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -2312,9 +2295,8 @@ toUInt64(expr)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Unsupported types:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -2499,9 +2481,8 @@ toUInt64OrDefault(expr[, default])
 - `defauult` (optional) — The default value to return if parsing to type `UInt64` is unsuccessful. [UInt64](../data-types/int-uint.md).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Arguments for which the default value is returned:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -2562,9 +2543,8 @@ toUInt128(expr)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -2811,9 +2791,8 @@ toUInt256(expr)
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Unsupported arguments:
 - String representations of Float32/64 values, including `NaN` and `Inf`.
@@ -2997,9 +2976,8 @@ toUInt256OrDefault(expr[, default])
 - `default` (optional) — The default value to return if parsing to type `UInt256` is unsuccessful. [UInt256](../data-types/int-uint.md).
 
 Supported arguments:
-- Values of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type (U)Int8/16/32/64/128/256.
 - Values of type Float32/64.
-- String representations of (U)Int8/16/32/128/256.
 
 Arguments for which the default value is returned:
 - String representations of Float32/64 values, including `NaN` and `Inf`
@@ -3555,7 +3533,7 @@ toDecimal32(expr, S)
 **Arguments**
 
 - `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
-- `S` — Scale parameter from [ 1 : 9 ] specifying how many decimal digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `S` — Scale parameter between 0 and 9, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
 - Values or string representations of type (U)Int8/16/32/64/128/256.
@@ -3566,7 +3544,7 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32('0xc0fe', 1);`.
 
 :::note
-Integer overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`. 
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`. 
 Excessive digits in a fraction are discarded (not rounded). 
 Excessive digits in the integer part will lead to an exception.
 :::
@@ -3619,20 +3597,20 @@ toDecimal32OrZero(expr, S)
 **Arguments**
 
 - `expr` — A String representation of a number. [String](../data-types/string.md).
-- `S` — Scale parameter from [ 1 : 9 ] specifying how many decimal digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `S` — Scale parameter between 0 and 9, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
 - String representations of type (U)Int8/16/32/64/128/256.
 - String representations of type Float32/64.
 
 Unsupported arguments:
-- String representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- String representations of Float32/64 values `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32OrZero('0xc0fe', 1);`.
 
 :::note
-Integer overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`.
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`.
 Excessive digits in a fraction are discarded (not rounded).
-Excessive digits in the integer part will lead to an exception.
+Excessive digits in the integer part will lead to an error.
 :::
 
 **Returned value**
@@ -3645,8 +3623,10 @@ Query:
 
 ``` sql
 SELECT
-    toDecimal32OrZero(toString(-1.111), 5) AS val,
-    toTypeName(val)
+    toDecimal32OrZero(toString(-1.111), 5) AS a,
+    toTypeName(a),
+    toDecimal32OrZero(toString('Inf'), 5) as b,
+    toTypeName(b)
 FORMAT Vertical;
 ```
 
@@ -3655,26 +3635,10 @@ Result:
 ```response
 Row 1:
 ──────
-val:             -1.111
-toTypeName(val): Decimal(9, 5)
-```
-
-Query:
-
-``` sql
-SELECT
-    toDecimal32OrZero(toString(-1.111), 2) AS val,
-    toTypeName(val)
-FORMAT Vertical;
-```
-
-Result:
-
-```response
-Row 1:
-──────
-val:             -1.11
-toTypeName(val): Decimal(9, 2)
+a:             -1.111
+toTypeName(a): Decimal(9, 5)
+b:             0
+toTypeName(b): Decimal(9, 5)
 ```
 
 **See also**
@@ -3696,20 +3660,20 @@ toDecimal32OrNull(expr, S)
 **Arguments**
 
 - `expr` — A String representation of a number. [String](../data-types/string.md).
-- `S` — Scale parameter from [ 1 : 9 ] specifying how many decimal digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `S` — Scale parameter between 0 and 9, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
 
 Supported arguments:
 - String representations of type (U)Int8/16/32/64/128/256.
 - String representations of type Float32/64.
 
 Unsupported arguments:
-- String representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- String representations of Float32/64 values `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32OrNull('0xc0fe', 1);`.
 
 :::note
-Integer overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`.
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`.
 Excessive digits in a fraction are discarded (not rounded).
-Excessive digits in the integer part will lead to an exception.
+Excessive digits in the integer part will lead to an error.
 :::
 
 **Returned value**
@@ -3722,8 +3686,10 @@ Query:
 
 ``` sql
 SELECT
-    toDecimal32OrNull(toString(-1.111), 5) AS val,
-    toTypeName(val)
+    toDecimal32OrNull(toString(-1.111), 5) AS a,
+    toTypeName(a),
+    toDecimal32OrNull(toString('Inf'), 5) as b,
+    toTypeName(b)
 FORMAT Vertical;
 ```
 
@@ -3732,26 +3698,10 @@ Result:
 ```response
 Row 1:
 ──────
-val:             -1.111
-toTypeName(val): Nullable(Decimal(9, 5))
-```
-
-Query:
-
-``` sql
-SELECT
-    toDecimal32OrNull(toString(-1.111), 2) AS val,
-    toTypeName(val)
-FORMAT Vertical;
-```
-
-Result:
-
-```response
-Row 1:
-──────
-val:             -1.11
-toTypeName(val): Nullable(Decimal(9, 2))
+a:             -1.111
+toTypeName(a): Nullable(Decimal(9, 5))
+b:             ᴺᵁᴸᴸ
+toTypeName(b): Nullable(Decimal(9, 5))
 ```
 
 **See also**
@@ -3773,21 +3723,21 @@ toDecimal32OrDefault(expr, S[, default])
 **Arguments**
 
 - `expr` — A String representation of a number. [String](../data-types/string.md).
-- `S` — Scale parameter from [ 1 : 9 ] specifying how many decimal digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
-- `default` (optional) — The default value to return if parsing to type `Decimal32(S)` is unsuccessful. [Decimal32(S](../data-types/decimal.md).
+- `S` — Scale parameter between 0 and 9, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `default` (optional) — The default value to return if parsing to type `Decimal32(S)` is unsuccessful. [Decimal32(S)](../data-types/decimal.md).
 
 Supported arguments:
 - String representations of type (U)Int8/16/32/64/128/256.
 - String representations of type Float32/64.
 
 Unsupported arguments:
-- String representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- String representations of Float32/64 values `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32OrDefault('0xc0fe', 1);`.
 
 :::note
-Integer overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`.
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`.
 Excessive digits in a fraction are discarded (not rounded).
-Excessive digits in the integer part will lead to an exception.
+Excessive digits in the integer part will lead to an error.
 :::
 
 **Returned value**
@@ -3800,8 +3750,10 @@ Query:
 
 ``` sql
 SELECT
-    toDecimal32OrDefault(toString(-1.111), 5) AS val,
-    toTypeName(val)
+    toDecimal32OrDefault(toString(0.0001), 5) AS a,
+    toTypeName(a),
+    toDecimal32OrDefault('Inf', 0, CAST('-1', 'Decimal32(0)')) AS b,
+    toTypeName(b)
 FORMAT Vertical;
 ```
 
@@ -3810,16 +3762,125 @@ Result:
 ```response
 Row 1:
 ──────
-val:             -1.111
-toTypeName(val): Decimal(9, 5)
+a:             0.0001
+toTypeName(a): Decimal(9, 5)
+b:             -1
+toTypeName(b): Decimal(9, 0)
 ```
+
+**See also**
+
+- [`toDecimal32`](#todecimal32).
+- [`toDecimal32OrZero`](#todecimal32orzero).
+- [`toDecimal32OrNull`](#todecimal32ornull).
+
+## toDecimal64
+
+Converts an input value to a value of type [`Decimal(18, S)`](../data-types/decimal.md) with scale of `S`. Throws an exception in case of an error.
+
+**Syntax**
+
+```sql
+toDecimal64(expr, S)
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
+- `S` — Scale parameter between 0 and 18, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+
+Supported arguments:
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type Float32/64.
+
+Unsupported arguments:
+- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal64('0xc0fe', 1);`.
+
+:::note
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`: `( -1 * 10^(18 - S), 1 * 10^(18 - S) )`.
+Excessive digits in a fraction are discarded (not rounded).
+Excessive digits in the integer part will lead to an exception.
+:::
+
+**Returned value**
+
+- Value of type `Decimal(18, S)`. [Decimal64(S)](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toDecimal64(2, 1) AS a, toTypeName(a) AS type_a,
+    toDecimal64(4.2, 2) AS b, toTypeName(b) AS type_b,
+    toDecimal64('4.2', 3) AS c, toTypeName(c) AS type_c
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+a:      2
+type_a: Decimal(18, 1)
+b:      4.2
+type_b: Decimal(18, 2)
+c:      4.2
+type_c: Decimal(18, 3)
+```
+
+**See also**
+
+- [`toDecimal64OrZero`](#todecimal64orzero).
+- [`toDecimal64OrNull`](#todecimal64ornull).
+- [`toDecimal64OrDefault`](#todecimal64ordefault).
+
+## toDecimal64OrZero
+
+Like [`toDecimal64`](#todecimal64), this function converts an input value to a value of type [Decimal(18, S)](../data-types/decimal.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toDecimal64OrZero(expr, S)
+```
+
+**Arguments**
+
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 18, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+
+Supported arguments:
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
+
+Unsupported arguments:
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal64OrZero('0xc0fe', 1);`.
+
+:::note
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`: `( -1 * 10^(18 - S), 1 * 10^(18 - S) )`.
+Excessive digits in a fraction are discarded (not rounded).
+Excessive digits in the integer part will lead to an error.
+:::
+
+**Returned value**
+
+- Value of type `Decimal(18, S)` if successful, otherwise `0` with `S` decimal places. [Decimal64(S)](../data-types/decimal.md).
+
+**Example**
 
 Query:
 
 ``` sql
 SELECT
-    toDecimal32OrDefault(toString(-1.111), 2) AS val,
-    toTypeName(val)
+    toDecimal64OrZero(toString(0.0001), 18) AS a,
+    toTypeName(a),
+    toDecimal64OrZero(toString('Inf'), 18) as b,
+    toTypeName(b)
 FORMAT Vertical;
 ```
 
@@ -3828,16 +3889,61 @@ Result:
 ```response
 Row 1:
 ──────
-val:             -1.11
-toTypeName(val): Decimal(9, 2)
+a:             0.0001
+toTypeName(a): Decimal(18, 18)
+b:             0
+toTypeName(b): Decimal(18, 18)
 ```
+
+**See also**
+
+- [`toDecimal64`](#todecimal64).
+- [`toDecimal64OrNull`](#todecimal64ornull).
+- [`toDecimal64OrDefault`](#todecimal64ordefault).
+
+## toDecimal64OrNull
+
+Like [`toDecimal64`](#todecimal64), this function converts an input value to a value of type [Nullable(Decimal(18, S))](../data-types/decimal.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toDecimal64OrNull(expr, S)
+```
+
+**Arguments**
+
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 18, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+
+Supported arguments:
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
+
+Unsupported arguments:
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal64OrNull('0xc0fe', 1);`.
+
+:::note
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`: `( -1 * 10^(18 - S), 1 * 10^(18 - S) )`.
+Excessive digits in a fraction are discarded (not rounded).
+Excessive digits in the integer part will lead to an error.
+:::
+
+**Returned value**
+
+- Value of type `Nullable(Decimal(18, S))` if successful, otherwise value `NULL` of the same type. [Decimal64(S)](../data-types/decimal.md).
+
+**Examples**
 
 Query:
 
 ``` sql
 SELECT
-    toDecimal32OrDefault('Inf', 2, CAST('0', 'Decimal32(2)')) AS val,
-    toTypeName(val)
+    toDecimal64OrNull(toString(0.0001), 18) AS a,
+    toTypeName(a),
+    toDecimal64OrNull(toString('Inf'), 18) as b,
+    toTypeName(b)
 FORMAT Vertical;
 ```
 
@@ -3846,9 +3952,589 @@ Result:
 ```response
 Row 1:
 ──────
-val:             0
-toTypeName(val): Decimal(9, 2)
+a:             0.0001
+toTypeName(a): Nullable(Decimal(18, 18))
+b:             ᴺᵁᴸᴸ
+toTypeName(b): Nullable(Decimal(18, 18))
 ```
+
+**See also**
+
+- [`toDecimal64`](#todecimal64).
+- [`toDecimal64OrZero`](#todecimal64orzero).
+- [`toDecimal64OrDefault`](#todecimal64ordefault).
+
+## toDecimal64OrDefault
+
+Like [`toDecimal64`](#todecimal64), this function converts an input value to a value of type [Decimal(18, S)](../data-types/decimal.md) but returns the default value in case of an error.
+
+**Syntax**
+
+```sql
+toDecimal64OrDefault(expr, S[, default])
+```
+
+**Arguments**
+
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 18, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `default` (optional) — The default value to return if parsing to type `Decimal64(S)` is unsuccessful. [Decimal64(S)](../data-types/decimal.md).
+
+Supported arguments:
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
+
+Unsupported arguments:
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal64OrDefault('0xc0fe', 1);`.
+
+:::note
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`: `( -1 * 10^(18 - S), 1 * 10^(18 - S) )`.
+Excessive digits in a fraction are discarded (not rounded).
+Excessive digits in the integer part will lead to an error.
+:::
+
+**Returned value**
+
+- Value of type `Decimal(18, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal64(S)](../data-types/decimal.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT
+    toDecimal64OrDefault(toString(0.0001), 18) AS a,
+    toTypeName(a),
+    toDecimal64OrDefault('Inf', 0, CAST('-1', 'Decimal64(0)')) AS b,
+    toTypeName(b)
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+a:             0.0001
+toTypeName(a): Decimal(18, 18)
+b:             -1
+toTypeName(b): Decimal(18, 0)
+```
+
+**See also**
+
+- [`toDecimal64`](#todecimal64).
+- [`toDecimal64OrZero`](#todecimal64orzero).
+- [`toDecimal64OrNull`](#todecimal64ornull).
+
+## toDecimal128
+
+Converts an input value to a value of type [`Decimal(38, S)`](../data-types/decimal.md) with scale of `S`. Throws an exception in case of an error.
+
+**Syntax**
+
+```sql
+toDecimal128(expr, S)
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
+- `S` — Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+
+Supported arguments:
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type Float32/64.
+
+Unsupported arguments:
+- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal128('0xc0fe', 1);`.
+
+:::note
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`: `( -1 * 10^(38 - S), 1 * 10^(38 - S) )`.
+Excessive digits in a fraction are discarded (not rounded).
+Excessive digits in the integer part will lead to an exception.
+:::
+
+**Returned value**
+
+- Value of type `Decimal(38, S)`. [Decimal128(S)](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toDecimal128(99, 1) AS a, toTypeName(a) AS type_a,
+    toDecimal128(99.67, 2) AS b, toTypeName(b) AS type_b,
+    toDecimal128('99.67', 3) AS c, toTypeName(c) AS type_c
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+a:      99
+type_a: Decimal(38, 1)
+b:      99.67
+type_b: Decimal(38, 2)
+c:      99.67
+type_c: Decimal(38, 3)
+```
+
+**See also**
+
+- [`toDecimal128OrZero`](#todecimal128orzero).
+- [`toDecimal128OrNull`](#todecimal128ornull).
+- [`toDecimal128OrDefault`](#todecimal128ordefault).
+
+## toDecimal128OrZero
+
+Like [`toDecimal128`](#todecimal128), this function converts an input value to a value of type [Decimal(38, S)](../data-types/decimal.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toDecimal128OrZero(expr, S)
+```
+
+**Arguments**
+
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+
+Supported arguments:
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
+
+Unsupported arguments:
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal128OrZero('0xc0fe', 1);`.
+
+:::note
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`: `( -1 * 10^(38 - S), 1 * 10^(38 - S) )`.
+Excessive digits in a fraction are discarded (not rounded).
+Excessive digits in the integer part will lead to an error.
+:::
+
+**Returned value**
+
+- Value of type `Decimal(38, S)` if successful, otherwise `0` with `S` decimal places. [Decimal128(S)](../data-types/decimal.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toDecimal128OrZero(toString(0.0001), 38) AS a,
+    toTypeName(a),
+    toDecimal128OrZero(toString('Inf'), 38) as b,
+    toTypeName(b)
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+a:             0.0001
+toTypeName(a): Decimal(38, 38)
+b:             0
+toTypeName(b): Decimal(38, 38)
+```
+
+**See also**
+
+- [`toDecimal128`](#todecimal128).
+- [`toDecimal128OrNull`](#todecimal128ornull).
+- [`toDecimal128OrDefault`](#todecimal128ordefault).
+
+## toDecimal128OrNull
+
+Like [`toDecimal128`](#todecimal128), this function converts an input value to a value of type [Nullable(Decimal(38, S))](../data-types/decimal.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toDecimal128OrNull(expr, S)
+```
+
+**Arguments**
+
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+
+Supported arguments:
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
+
+Unsupported arguments:
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal128OrNull('0xc0fe', 1);`.
+
+:::note
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`: `( -1 * 10^(38 - S), 1 * 10^(38 - S) )`.
+Excessive digits in a fraction are discarded (not rounded).
+Excessive digits in the integer part will lead to an error.
+:::
+
+**Returned value**
+
+- Value of type `Nullable(Decimal(38, S))` if successful, otherwise value `NULL` of the same type. [Decimal128(S)](../data-types/decimal.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT
+    toDecimal128OrNull(toString(1/42), 38) AS a,
+    toTypeName(a),
+    toDecimal128OrNull(toString('Inf'), 38) as b,
+    toTypeName(b)
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+a:             0.023809523809523808
+toTypeName(a): Nullable(Decimal(38, 38))
+b:             ᴺᵁᴸᴸ
+toTypeName(b): Nullable(Decimal(38, 38))
+```
+
+**See also**
+
+- [`toDecimal128`](#todecimal128).
+- [`toDecimal128OrZero`](#todecimal128orzero).
+- [`toDecimal128OrDefault`](#todecimal128ordefault).
+
+## toDecimal128OrDefault
+
+Like [`toDecimal128`](#todecimal128), this function converts an input value to a value of type [Decimal(38, S)](../data-types/decimal.md) but returns the default value in case of an error.
+
+**Syntax**
+
+```sql
+toDecimal128OrDefault(expr, S[, default])
+```
+
+**Arguments**
+
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 38, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `default` (optional) — The default value to return if parsing to type `Decimal128(S)` is unsuccessful. [Decimal128(S)](../data-types/decimal.md).
+
+Supported arguments:
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
+
+Unsupported arguments:
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal128OrDefault('0xc0fe', 1);`.
+
+:::note
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`: `( -1 * 10^(38 - S), 1 * 10^(38 - S) )`.
+Excessive digits in a fraction are discarded (not rounded).
+Excessive digits in the integer part will lead to an error.
+:::
+
+**Returned value**
+
+- Value of type `Decimal(38, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal128(S)](../data-types/decimal.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT
+    toDecimal128OrDefault(toString(1/42), 18) AS a,
+    toTypeName(a),
+    toDecimal128OrDefault('Inf', 0, CAST('-1', 'Decimal128(0)')) AS b,
+    toTypeName(b)
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+a:             0.023809523809523808
+toTypeName(a): Decimal(38, 18)
+b:             -1
+toTypeName(b): Decimal(38, 0)
+```
+
+**See also**
+
+- [`toDecimal128`](#todecimal128).
+- [`toDecimal128OrZero`](#todecimal128orzero).
+- [`toDecimal128OrNull`](#todecimal128ornull).
+
+## toDecimal256
+
+Converts an input value to a value of type [`Decimal(76, S)`](../data-types/decimal.md) with scale of `S`. Throws an exception in case of an error.
+
+**Syntax**
+
+```sql
+toDecimal256(expr, S)
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string representation of a number. [Expression](../syntax.md/#syntax-expressions).
+- `S` — Scale parameter between 0 and 76, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+
+Supported arguments:
+- Values or string representations of type (U)Int8/16/32/64/128/256.
+- Values or string representations of type Float32/64.
+
+Unsupported arguments:
+- Values or string representations of Float32/64 values `NaN` and `Inf` (case-insensitive).
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal256('0xc0fe', 1);`.
+
+:::note
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`: `( -1 * 10^(76 - S), 1 * 10^(76 - S) )`.
+Excessive digits in a fraction are discarded (not rounded).
+Excessive digits in the integer part will lead to an exception.
+:::
+
+**Returned value**
+
+- Value of type `Decimal(76, S)`. [Decimal256(S)](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toDecimal256(99, 1) AS a, toTypeName(a) AS type_a,
+    toDecimal256(99.67, 2) AS b, toTypeName(b) AS type_b,
+    toDecimal256('99.67', 3) AS c, toTypeName(c) AS type_c
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+a:      99
+type_a: Decimal(76, 1)
+b:      99.67
+type_b: Decimal(76, 2)
+c:      99.67
+type_c: Decimal(76, 3)
+```
+
+**See also**
+
+- [`toDecimal256OrZero`](#todecimal256orzero).
+- [`toDecimal256OrNull`](#todecimal256ornull).
+- [`toDecimal256OrDefault`](#todecimal256ordefault).
+
+## toDecimal256OrZero
+
+Like [`toDecimal256`](#todecimal256), this function converts an input value to a value of type [Decimal(76, S)](../data-types/decimal.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toDecimal256OrZero(expr, S)
+```
+
+**Arguments**
+
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 76, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+
+Supported arguments:
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
+
+Unsupported arguments:
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal256OrZero('0xc0fe', 1);`.
+
+:::note
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`: `( -1 * 10^(76 - S), 1 * 10^(76 - S) )`.
+Excessive digits in a fraction are discarded (not rounded).
+Excessive digits in the integer part will lead to an error.
+:::
+
+**Returned value**
+
+- Value of type `Decimal(76, S)` if successful, otherwise `0` with `S` decimal places. [Decimal256(S)](../data-types/decimal.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    toDecimal256OrZero(toString(0.0001), 76) AS a,
+    toTypeName(a),
+    toDecimal256OrZero(toString('Inf'), 76) as b,
+    toTypeName(b)
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+a:             0.0001
+toTypeName(a): Decimal(76, 76)
+b:             0
+toTypeName(b): Decimal(76, 76)
+```
+
+**See also**
+
+- [`toDecimal256`](#todecimal256).
+- [`toDecimal256OrNull`](#todecimal256ornull).
+- [`toDecimal256OrDefault`](#todecimal256ordefault).
+
+## toDecimal256OrNull
+
+Like [`toDecimal256`](#todecimal256), this function converts an input value to a value of type [Nullable(Decimal(76, S))](../data-types/decimal.md) but returns `0` in case of an error.
+
+**Syntax**
+
+```sql
+toDecimal256OrNull(expr, S)
+```
+
+**Arguments**
+
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 76, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+
+Supported arguments:
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
+
+Unsupported arguments:
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal256OrNull('0xc0fe', 1);`.
+
+:::note
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`: `( -1 * 10^(76 - S), 1 * 10^(76 - S) )`.
+Excessive digits in a fraction are discarded (not rounded).
+Excessive digits in the integer part will lead to an error.
+:::
+
+**Returned value**
+
+- Value of type `Nullable(Decimal(76, S))` if successful, otherwise value `NULL` of the same type. [Decimal256(S)](../data-types/decimal.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT
+    toDecimal256OrNull(toString(1/42), 76) AS a,
+    toTypeName(a),
+    toDecimal256OrNull(toString('Inf'), 76) as b,
+    toTypeName(b)
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+a:             0.023809523809523808
+toTypeName(a): Nullable(Decimal(76, 76))
+b:             ᴺᵁᴸᴸ
+toTypeName(b): Nullable(Decimal(76, 76))
+```
+
+**See also**
+
+- [`toDecimal256`](#todecimal256).
+- [`toDecimal256OrZero`](#todecimal256orzero).
+- [`toDecimal256OrDefault`](#todecimal256ordefault).
+
+## toDecimal256OrDefault
+
+Like [`toDecimal256`](#todecimal256), this function converts an input value to a value of type [Decimal(76, S)](../data-types/decimal.md) but returns the default value in case of an error.
+
+**Syntax**
+
+```sql
+toDecimal256OrDefault(expr, S[, default])
+```
+
+**Arguments**
+
+- `expr` — A String representation of a number. [String](../data-types/string.md).
+- `S` — Scale parameter between 0 and 76, specifying how many digits the fractional part of a number can have. [UInt8](../data-types/int-uint.md).
+- `default` (optional) — The default value to return if parsing to type `Decimal256(S)` is unsuccessful. [Decimal256(S)](../data-types/decimal.md).
+
+Supported arguments:
+- String representations of type (U)Int8/16/32/64/128/256.
+- String representations of type Float32/64.
+
+Unsupported arguments:
+- String representations of Float32/64 values `NaN` and `Inf`.
+- String representations of binary and hexadecimal values, e.g. `SELECT toDecimal256OrDefault('0xc0fe', 1);`.
+
+:::note
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`: `( -1 * 10^(76 - S), 1 * 10^(76 - S) )`.
+Excessive digits in a fraction are discarded (not rounded).
+Excessive digits in the integer part will lead to an error.
+:::
+
+**Returned value**
+
+- Value of type `Decimal(76, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal256(S)](../data-types/decimal.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT
+    toDecimal256OrDefault(toString(1/42), 76) AS a,
+    toTypeName(a),
+    toDecimal256OrDefault('Inf', 0, CAST('-1', 'Decimal256(0)')) AS b,
+    toTypeName(b)
+FORMAT Vertical;
+```
+
+Result:
+
+```response
+Row 1:
+──────
+a:             0.023809523809523808
+toTypeName(a): Decimal(76, 76)
+b:             -1
+toTypeName(b): Decimal(76, 0)
+```
+
+**See also**
+
+- [`toDecimal256`](#todecimal256).
+- [`toDecimal256OrZero`](#todecimal256orzero).
+- [`toDecimal256OrNull`](#todecimal256ornull).
 
 ## toString
 
