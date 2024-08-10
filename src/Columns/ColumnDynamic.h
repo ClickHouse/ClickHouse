@@ -37,7 +37,7 @@ public:
             MERGE, /// Statistics were calculated during merge of several MergeTree parts.
         };
 
-        Statistics(Source source_) : source(source_) {}
+        explicit Statistics(Source source_) : source(source_) {}
 
         /// Source of the statistics.
         Source source;

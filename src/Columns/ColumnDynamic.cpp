@@ -325,7 +325,7 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
     /// Check if we insert from shared variant and process it separately.
     if (src_global_discr == dynamic_src.getSharedVariantDiscriminator())
     {
-        auto & src_shared_variant = dynamic_src.getSharedVariant();
+        const auto & src_shared_variant = dynamic_src.getSharedVariant();
         auto value = src_shared_variant.getDataAt(src_offset);
         /// Decode data type of this value.
         ReadBufferFromMemory buf(value.data, value.size);
@@ -469,9 +469,9 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
     if (variant_info.variant_names.size() - 1 == max_dynamic_types)
     {
         auto shared_variant_discr = getSharedVariantDiscriminator();
-        for (size_t i = 0; i != dynamic_src.variant_info.variant_names.size(); ++i)
+        for (const auto & variant_name : dynamic_src.variant_info.variant_names)
         {
-            auto it = variant_info.variant_name_to_discriminator.find(dynamic_src.variant_info.variant_names[i]);
+            auto it = variant_info.variant_name_to_discriminator.find(variant_name);
             if (it == variant_info.variant_name_to_discriminator.end())
                 other_to_new_discriminators.push_back(shared_variant_discr);
             else
@@ -618,7 +618,7 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
     /// Check if we insert from shared variant and process it separately.
     if (src_global_discr == dynamic_src.getSharedVariantDiscriminator())
     {
-        auto & src_shared_variant = dynamic_src.getSharedVariant();
+        const auto & src_shared_variant = dynamic_src.getSharedVariant();
         auto value = src_shared_variant.getDataAt(src_offset);
         /// Decode data type of this value.
         ReadBufferFromMemory buf(value.data, value.size);
