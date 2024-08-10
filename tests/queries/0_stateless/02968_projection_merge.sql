@@ -11,7 +11,8 @@ CREATE TABLE tp
     )
 )
 ENGINE = ReplacingMergeTree
-ORDER BY type;
+ORDER BY type
+SETTINGS deduplicate_merge_projection_mode = 'rebuild';
 
 INSERT INTO tp SELECT number%3, 1 FROM numbers(3);
 INSERT INTO tp SELECT number%3, 2 FROM numbers(3);
@@ -39,7 +40,8 @@ CREATE TABLE tp
     )
 )
 ENGINE = CollapsingMergeTree(sign)
-ORDER BY type;
+ORDER BY type
+SETTINGS deduplicate_merge_projection_mode = 'rebuild';
 
 INSERT INTO tp SELECT number % 3, 1, 1 FROM numbers(3);
 INSERT INTO tp SELECT number % 3, 1, -1 FROM numbers(3);
@@ -70,7 +72,8 @@ CREATE TABLE tp
     )
 )
 ENGINE = VersionedCollapsingMergeTree(sign,version)
-ORDER BY type;
+ORDER BY type
+SETTINGS deduplicate_merge_projection_mode = 'rebuild';
 
 INSERT INTO tp SELECT number % 3, 1, -1, 0 FROM numbers(3);
 INSERT INTO tp SELECT number % 3, 2, 1, 1 FROM numbers(3);
@@ -97,7 +100,8 @@ CREATE TABLE tp
     )
 )
 ENGINE = MergeTree
-ORDER BY type;
+ORDER BY type
+SETTINGS deduplicate_merge_projection_mode = 'rebuild';
 
 INSERT INTO tp SELECT number % 3, 1 FROM numbers(3);
 INSERT INTO tp SELECT number % 3, 2 FROM numbers(3);
