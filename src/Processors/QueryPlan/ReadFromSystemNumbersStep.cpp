@@ -119,7 +119,7 @@ using RangesWithStep = std::vector<RangeWithStep>;
 
 std::optional<RangeWithStep> steppedRangeFromRange(const Range & range, UInt64 step, UInt64 remainder)
 {
-    if ((range.right.get<UInt64>() == 0) && (!range.right_included))
+    if (!range.right_included && range.right.get<UInt64>() == 0)
         return std::nullopt;
 
     UInt64 begin = (range.left.get<UInt64>() / step) * step;
@@ -142,7 +142,18 @@ std::optional<RangeWithStep> steppedRangeFromRange(const Range & range, UInt64 s
     if (!range.right_included)
         right_edge_included -= 1;
 
-    return RangeWithStep{begin, step, (right_edge_included - begin) / step + 1};
+    UInt64 size = 0;
+    if (step == 1)
+    {
+        if (begin == 0 && right_edge_included == std::numeric_limits<UInt64>::max())
+            size = right_edge_included;
+        else
+            size = right_edge_included - begin + 1;
+    }
+    else
+        size = (right_edge_included - begin) / step + 1;
+
+    return RangeWithStep{begin, step, size};
 }
 
 UInt64 sizeOfRanges(const RangesWithStep & ranges)
@@ -500,6 +511,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             {
                 auto range_with_step
                     = steppedRangeFromRange(intersected_range.value(), numbers_storage.step, numbers_storage.offset % numbers_storage.step);
+
                 if (range_with_step.has_value())
                     intersected_ranges.push_back(*range_with_step);
             }
