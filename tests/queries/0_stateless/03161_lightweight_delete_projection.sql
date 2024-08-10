@@ -1,5 +1,7 @@
+-- For cloud version, should also consider min_bytes_for_full_part_storage since packed storage exists,
+-- but for less redundancy, just let CI test the parameter.
 
-SET max_threads = 1, lightweight_deletes_sync = 2, alter_sync = 2;
+SET lightweight_deletes_sync = 2, alter_sync = 2;
 
 DROP TABLE IF EXISTS users_compact;
 
