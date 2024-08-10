@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -20,7 +22,7 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 struct ReplicaInfo
 {
     bool is_active;
-    UInt32 replication_lag;
+    std::optional<UInt32> replication_lag;
     UInt64 recovery_time;
 };
 using ReplicasInfo = std::vector<ReplicaInfo>;
