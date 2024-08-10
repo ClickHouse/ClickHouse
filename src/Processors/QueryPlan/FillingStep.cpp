@@ -2,6 +2,7 @@
 #include <Processors/Transforms/FillingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -58,14 +59,25 @@ void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
 void FillingStep::describeActions(FormatSettings & settings) const
 {
-    settings.out << String(settings.offset, ' ');
+    String prefix(settings.offset, settings.indent_char);
+    settings.out << prefix;
     dumpSortDescription(sort_description, settings.out);
     settings.out << '\n';
+    if (interpolate_description)
+    {
+        auto expression = std::make_shared<ExpressionActions>(interpolate_description->actions.clone());
+        expression->describeActions(settings.out, prefix);
+    }
 }
 
 void FillingStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     map.add("Sort Description", explainSortDescription(sort_description));
+    if (interpolate_description)
+    {
+        auto expression = std::make_shared<ExpressionActions>(interpolate_description->actions.clone());
+        map.add("Expression", expression->toTree());
+    }
 }
 
 void FillingStep::updateOutputStream()

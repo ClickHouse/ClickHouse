@@ -123,6 +123,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.import_nested_json = settings.input_format_import_nested_json;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
+    format_settings.json.max_depth = settings.input_format_json_max_depth;
     format_settings.json.array_of_rows = settings.output_format_json_array_of_rows;
     format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;
     format_settings.json.write_named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
@@ -150,7 +151,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.try_infer_objects_as_tuples = settings.input_format_json_try_infer_named_tuples_from_objects;
     format_settings.json.throw_on_bad_escape_sequence = settings.input_format_json_throw_on_bad_escape_sequence;
     format_settings.json.ignore_unnecessary_fields = settings.input_format_json_ignore_unnecessary_fields;
-    format_settings.json.case_insensitive_column_matching = settings.input_format_json_case_insensitive_column_matching;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.force_null_for_omitted_fields = settings.input_format_force_null_for_omitted_fields;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;

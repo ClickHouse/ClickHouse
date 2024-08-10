@@ -21,8 +21,8 @@ class IQueryPlanStep;
 struct StorageLimits;
 using StorageLimitsList = std::list<StorageLimits>;
 
-class RowsBeforeLimitCounter;
-using RowsBeforeLimitCounterPtr = std::shared_ptr<RowsBeforeLimitCounter>;
+class RowsBeforeStepCounter;
+using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
@@ -255,7 +255,7 @@ public:
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
     bool isCancelled() const { return is_cancelled.load(std::memory_order_acquire); }
-    void cancel();
+    void cancel() noexcept;
 
     /// Additional method which is called in case if ports were updated while work() method.
     /// May be used to stop execution in rare cases.
@@ -377,10 +377,14 @@ public:
 
     /// Set rows_before_limit counter for current processor.
     /// This counter is used to calculate the number of rows right before any filtration of LimitTransform.
-    virtual void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr /* counter */) {}
+    virtual void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr /* counter */) { }
+
+    /// Set rows_before_aggregation counter for current processor.
+    /// This counter is used to calculate the number of rows right before AggregatingTransform.
+    virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
 
 protected:
-    virtual void onCancel() {}
+    virtual void onCancel() noexcept {}
 
     std::atomic<bool> is_cancelled{false};
 
