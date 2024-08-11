@@ -5637,3 +5637,9 @@ Possible values:
 - 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
 
 Default value: `0`.
+
+## create_if_not_exists
+
+Enable IF NOT EXISTS for CREATE statements by default. If either this setting or IF NOT EXISTS is specified, then no Exception will be thrown when trying to create a new table.
+
+Default value: `false`.
