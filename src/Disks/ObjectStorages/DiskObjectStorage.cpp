@@ -503,6 +503,28 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         file_size);
 }
 
+std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileIfExists(
+    const String & path,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
+{
+    if (auto storage_objects = metadata_storage->getStorageObjectsIfExist(path))
+    {
+        const bool file_can_be_empty = !file_size.has_value() || *file_size == 0;
+        if (storage_objects->empty() && file_can_be_empty)
+            return std::make_unique<ReadBufferFromEmptyFile>();
+
+        return object_storage->readObjects(
+            *storage_objects,
+            updateResourceLink(settings, getReadResourceName()),
+            read_hint,
+            file_size);
+    }
+    else
+        return {};
+}
+
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     const String & path,
     size_t buf_size,

@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int FILE_DOESNT_EXIST;
+}
+
 namespace
 {
 
@@ -66,11 +71,18 @@ bool MetadataStorageFromPlainObjectStorage::existsFileOrDirectory(const std::str
 
 uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path) const
 {
+    if (auto res = getFileSizeIfExists(path))
+        return *res;
+    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist on plain object storage", path);
+}
+
+std::optional<uint64_t> MetadataStorageFromPlainObjectStorage::getFileSizeIfExists(const String & path) const
+{
     auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize());
     if (metadata)
         return metadata->size_bytes;
-    return 0;
+    return std::nullopt;
 }
 
 std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(const std::string & path) const
@@ -115,6 +127,16 @@ StoredObjects MetadataStorageFromPlainObjectStorage::getStorageObjects(const std
     size_t object_size = getFileSize(path);
     auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     return {StoredObject(object_key.serialize(), path, object_size)};
+}
+
+std::optional<StoredObjects> MetadataStorageFromPlainObjectStorage::getStorageObjectsIfExist(const std::string & path) const
+{
+    if (auto object_size = getFileSizeIfExists(path))
+    {
+        auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+        return StoredObjects{StoredObject(object_key.serialize(), path, *object_size)};
+    }
+    return std::nullopt;
 }
 
 const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getStorageForNonTransactionalReads() const

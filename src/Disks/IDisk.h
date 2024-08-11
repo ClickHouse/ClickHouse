@@ -314,6 +314,13 @@ public:
             getDataSourceDescription().toString());
     }
 
+    virtual std::optional<StoredObjects> getStorageObjectsIfExist(const String & path) const
+    {
+        if (existsFile(path))
+            return getStorageObjects(path);
+        return std::nullopt;
+    }
+
     /// For one local path there might be multiple remote paths in case of Log family engines.
     struct LocalPathWithObjectStoragePaths
     {

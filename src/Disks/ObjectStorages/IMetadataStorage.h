@@ -188,6 +188,13 @@ public:
 
     virtual uint64_t getFileSize(const std::string & path) const = 0;
 
+    virtual std::optional<uint64_t> getFileSizeIfExists(const std::string & path) const
+    {
+        if (existsFile(path))
+            return getFileSize(path);
+        return std::nullopt;
+    }
+
     virtual Poco::Timestamp getLastModified(const std::string & path) const = 0;
 
     virtual time_t getLastChanged(const std::string & /* path */) const
@@ -239,6 +246,13 @@ public:
     /// Return object information (absolute_path, bytes_size, ...) for metadata path.
     /// object_storage_path is absolute.
     virtual StoredObjects getStorageObjects(const std::string & path) const = 0;
+
+    virtual std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const
+    {
+        if (existsFile(path))
+            return getStorageObjects(path);
+        return std::nullopt;
+    }
 
 protected:
     [[noreturn]] static void throwNotImplemented()

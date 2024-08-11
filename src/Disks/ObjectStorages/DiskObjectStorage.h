@@ -140,6 +140,12 @@ public:
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const override;
 
+    std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
+
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
