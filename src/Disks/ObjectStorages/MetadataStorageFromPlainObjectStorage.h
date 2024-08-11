@@ -5,10 +5,12 @@
 #include <Disks/ObjectStorages/InMemoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataOperationsHolder.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
+#include <Common/CacheBase.h>
 
 #include <map>
 #include <string>
 #include <unordered_set>
+
 
 namespace DB
 {
@@ -31,6 +33,7 @@ class MetadataStorageFromPlainObjectStorage : public IMetadataStorage
 {
 private:
     friend class MetadataStorageFromPlainObjectStorageTransaction;
+    mutable std::optional<CacheBase<String, size_t>> file_sizes_cache;
 
 protected:
     ObjectStoragePtr object_storage;
@@ -39,7 +42,7 @@ protected:
     mutable SharedMutex metadata_mutex;
 
 public:
-    MetadataStorageFromPlainObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_);
+    MetadataStorageFromPlainObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t file_sizes_cache_size);
 
     MetadataTransactionPtr createTransaction() override;
 

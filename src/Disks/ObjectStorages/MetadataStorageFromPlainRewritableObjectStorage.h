@@ -16,7 +16,7 @@ private:
     std::shared_ptr<InMemoryPathMap> path_map;
 
 public:
-    MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_);
+    MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t file_sizes_cache_size);
     ~MetadataStorageFromPlainRewritableObjectStorage() override;
 
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }

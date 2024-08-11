@@ -30,10 +30,12 @@ std::filesystem::path normalizeDirectoryPath(const std::filesystem::path & path)
 
 }
 
-MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_)
+MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t file_sizes_cache_size)
     : object_storage(object_storage_)
     , storage_path_prefix(std::move(storage_path_prefix_))
 {
+    if (file_sizes_cache_size)
+        file_sizes_cache.emplace(file_sizes_cache_size);
 }
 
 MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction()
@@ -78,10 +80,23 @@ uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path)
 
 std::optional<uint64_t> MetadataStorageFromPlainObjectStorage::getFileSizeIfExists(const String & path) const
 {
-    auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
-    auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize());
-    if (metadata)
-        return metadata->size_bytes;
+    auto get = [&] -> std::shared_ptr<uint64_t>
+    {
+        auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+        auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize());
+        if (metadata)
+            return std::make_shared<uint64_t>(metadata->size_bytes);
+        return nullptr;
+    };
+
+    std::shared_ptr<uint64_t> res;
+    if (file_sizes_cache)
+        res = file_sizes_cache->getOrSet(path, get).first;
+    else
+        res = get();
+
+    if (res)
+        return *res;
     return std::nullopt;
 }
 

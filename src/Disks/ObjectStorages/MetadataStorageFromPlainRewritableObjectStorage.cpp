@@ -7,9 +7,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
-#include "Common/SharedLockGuard.h"
-#include "Common/SharedMutex.h"
-#include <Common/ErrorCodes.h>
+#include <Common/SharedLockGuard.h>
+#include <Common/SharedMutex.h>
 #include <Common/logger_useful.h>
 #include "CommonPathPrefixKeyGenerator.h"
 
@@ -181,8 +180,8 @@ void getDirectChildrenOnDiskImpl(
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(
-    ObjectStoragePtr object_storage_, String storage_path_prefix_)
-    : MetadataStorageFromPlainObjectStorage(object_storage_, storage_path_prefix_)
+    ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t file_sizes_cache_size)
+    : MetadataStorageFromPlainObjectStorage(object_storage_, storage_path_prefix_, file_sizes_cache_size)
     , metadata_key_prefix(DB::getMetadataKeyPrefix(object_storage))
     , path_map(loadPathPrefixMap(metadata_key_prefix, object_storage))
 {
