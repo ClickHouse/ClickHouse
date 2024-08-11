@@ -125,7 +125,7 @@ void OptimizeShardingKeyRewriteInMatcher::visit(ASTFunction & function, Data & d
         {
             Tuple new_tuple;
 
-            for (const auto & child : tuple)
+            for (auto & child : tuple)
                 if (shardContains(child, name, data))
                     new_tuple.emplace_back(std::move(child));
 
