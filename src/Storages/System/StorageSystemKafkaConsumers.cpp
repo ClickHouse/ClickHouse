@@ -79,7 +79,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     auto & num_rebalance_revocations = assert_cast<ColumnUInt64 &>(*res_columns[index++]);
     auto & num_rebalance_assigments = assert_cast<ColumnUInt64 &>(*res_columns[index++]);
     auto & is_currently_used = assert_cast<ColumnUInt8 &>(*res_columns[index++]);
-    auto & last_used = assert_cast<ColumnDateTime64 &>(*res_columns[index++]);
+    auto & last_used = assert_cast<ColumnUInt64 &>(*res_columns[index++]);
     auto & rdkafka_stat = assert_cast<ColumnString &>(*res_columns[index++]);
 
     const auto access = context->getAccess();
