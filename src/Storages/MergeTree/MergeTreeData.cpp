@@ -323,6 +323,8 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             throw Exception(ErrorCodes::METADATA_MISMATCH, "MergeTree data format version on disk doesn't support custom partitioning");
     }
 }
+
+
 DataPartsLock::DataPartsLock(std::mutex & data_parts_mutex_)
     : wait_watch(Stopwatch(CLOCK_MONOTONIC))
     , lock(data_parts_mutex_)
@@ -1754,17 +1756,21 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         auto & disk_parts = parts_to_load_by_disk[i];
         auto & unexpected_disk_parts = unexpected_parts_to_load_by_disk[i];
 
-        runner([&, disk_ptr]()
+        std::mutex loading_mutex;
+
+        runner([&expected_parts, &unexpected_disk_parts, &disk_parts, &loading_mutex, this, disk_ptr]()
         {
             for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
             {
                 /// Skip temporary directories, file 'format_version.txt' and directory 'detached'.
-                if (startsWith(it->name(), "tmp") || it->name() == MergeTreeData::FORMAT_VERSION_FILE_NAME
+                if (startsWith(it->name(), "tmp")
+                    || it->name() == MergeTreeData::FORMAT_VERSION_FILE_NAME
                     || it->name() == DETACHED_DIR_NAME)
                     continue;
 
                 if (auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version))
                 {
+                    std::lock_guard lock(loading_mutex);
                     if (expected_parts && !expected_parts->contains(it->name()))
                         unexpected_disk_parts.emplace_back(*part_info, it->name(), disk_ptr);
                     else
