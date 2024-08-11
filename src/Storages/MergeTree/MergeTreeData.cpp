@@ -1972,7 +1972,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     }
 
     watch.stop();
-    LOG_DEBUG(log, "Loaded data parts ({} items) took {} seconds", data_parts_indexes.size(), watch.elapsed());
+    LOG_DEBUG(log, "Loaded data parts ({} items) took {} seconds", data_parts_indexes.size(), watch.elapsedSeconds());
     ProfileEvents::increment(ProfileEvents::LoadedDataParts, data_parts_indexes.size());
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
     data_parts_loading_finished = true;
