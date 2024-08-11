@@ -785,6 +785,8 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
 
             /// EC2MetadataService throttles by delaying the response so the service client should set a large read timeout.
             /// EC2MetadataService delay is in order of seconds so it only make sense to retry after a couple of seconds.
+            /// But the connection timeout should be small because there is the case when there is no IMDS at all,
+            /// like outside of the cloud, on your own machines.
             aws_client_configuration.connectTimeoutMs = 10;
             aws_client_configuration.requestTimeoutMs = 1000;
 
