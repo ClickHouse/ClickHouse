@@ -90,18 +90,18 @@ std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(co
     auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
 
     RelativePathsWithMetadata files;
-    std::string abs_key = key_prefix;
-    if (!abs_key.ends_with('/'))
-        abs_key += '/';
+    std::string absolute_key = key_prefix;
+    if (!absolute_key.ends_with('/'))
+        absolute_key += '/';
 
-    object_storage->listObjects(abs_key, files, 0);
+    object_storage->listObjects(absolute_key, files, 0);
 
     std::unordered_set<std::string> result;
     for (const auto & elem : files)
     {
         const auto & p = elem->relative_path;
-        chassert(p.find(abs_key) == 0);
-        const auto child_pos = abs_key.size();
+        chassert(p.find(absolute_key) == 0);
+        const auto child_pos = absolute_key.size();
         /// string::npos is ok.
         const auto slash_pos = p.find('/', child_pos);
         if (slash_pos == std::string::npos)

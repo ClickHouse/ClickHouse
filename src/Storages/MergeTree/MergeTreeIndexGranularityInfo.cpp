@@ -94,11 +94,9 @@ std::string MarkType::describe() const
 
 std::optional<MarkType> MergeTreeIndexGranularityInfo::getMarksTypeFromFilesystem(const IDataPartStorage & data_part_storage)
 {
-    if (data_part_storage.exists())
-        for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
-            if (it->isFile())
-                if (std::string ext = fs::path(it->name()).extension(); MarkType::isMarkFileExtension(ext))
-                    return MarkType(ext);
+    for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
+        if (std::string ext = fs::path(it->name()).extension(); MarkType::isMarkFileExtension(ext))
+            return MarkType(ext);
     return {};
 }
 
