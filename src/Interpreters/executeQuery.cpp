@@ -153,9 +153,9 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
             transaction_info = fmt::format(" (TID: {}, TIDH: {})", txn->tid, txn->tid.getHash());
 
         std::istringstream iss(query);
-        std::string token;
+        std::string line;
 
-        for(UInt64 i = 0; std::getline(iss, token, '\n'); i++)
+        for(UInt64 i = 0; std::getline(iss, line, '\n'); i++)
         {
             LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{}{} {} (stage: {})",
                 client_info.current_address.toString(),
@@ -164,7 +164,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
                 transaction_info,
                 comment,
                 line_number != 0 ? ", line number: " + std::to_string(line_number + i) : std::string(),
-                token,
+                line,
                 QueryProcessingStage::toString(stage));
         }
 
@@ -213,25 +213,25 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
     message.format_string_args = elem.exception_format_string_args;
 
     std::istringstream iss(elem.query);
-    std::string token;
+    std::string line;
 
     if (elem.stack_trace.empty() || !log_error)
-        for(UInt64 i = 0; std::getline(iss, token, '\n'); i++)
+        for(UInt64 i = 0; std::getline(iss, line, '\n'); i++)
             message.text = fmt::format("{} (from {}){}{} (in query: {})", elem.exception,
                 context->getClientInfo().current_address.toString(),
                 comment,
                 elem.script_line_number != 0 ? fmt::format(" (line number: {})", elem.script_line_number + i) : std::string(),
-                token);
+                line);
 
     else
-        for(UInt64 i = 0; std::getline(iss, token, '\n'); i++)
+        for(UInt64 i = 0; std::getline(iss, line, '\n'); i++)
             message.text = fmt::format(
             "{} (from {}){}{} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
                 elem.exception,
                 context->getClientInfo().current_address.toString(),
                 comment,
                 elem.script_line_number != 0 ? fmt::format(" (line number: {})", elem.script_line_number + i) : std::string(),
-                token,
+                line,
                 elem.stack_trace);
 
 
@@ -736,6 +736,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     ReadBuffer * istr)
 {
     const bool internal = flags.internal;
+
     /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
     /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',
     /// to make sure SpanHolders in current stack ends in correct order, we disable this span for these internal queries
@@ -769,6 +770,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     assert(internal || CurrentThread::get().getQueryContext());
     assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
+
     const Settings & settings = context->getSettingsRef();
 
     size_t max_query_size = settings.max_query_size;
