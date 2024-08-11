@@ -137,6 +137,8 @@ namespace ProfileEvents
     extern const Event DelayedMutationsMilliseconds;
     extern const Event PartsLockWaitMicroseconds;
     extern const Event PartsLockHoldMicroseconds;
+    extern const Event LoadedDataParts;
+    extern const Event LoadedDataPartsMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -1662,6 +1664,7 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
 
 void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts)
 {
+    Stopwatch watch;
     LOG_DEBUG(log, "Loading data parts");
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -1968,7 +1971,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             [this] { loadOutdatedDataParts(/*is_async=*/ true); });
     }
 
-    LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
+    watch.stop();
+    LOG_DEBUG(log, "Loaded data parts ({} items) took {} seconds", data_parts_indexes.size(), watch.elapsed());
+    ProfileEvents::increment(ProfileEvents::LoadedDataParts, data_parts_indexes.size());
+    ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
     data_parts_loading_finished = true;
 }
 

@@ -201,6 +201,8 @@
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.") \
     M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).") \
     M(RowsReadByPrewhereReaders, "Number of rows read from MergeTree tables (in total) by prewhere readers.") \
+    M(LoadedDataParts, "Number of data parts loaded by MergeTree tables during initialization.") \
+    M(LoadedDataPartsMicroseconds, "Microseconds spent by MergeTree tables for loading data parts during initialization.") \
     \
     M(WaitMarksLoadMicroseconds, "Time spent loading marks") \
     M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks") \
