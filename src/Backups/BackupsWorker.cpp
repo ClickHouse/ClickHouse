@@ -504,6 +504,8 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
                  context_in_use,
                  mutable_context,
                  on_exception,
+                 /// Capture original context to preserve Settings/current_database in system.processes
+                 context,
                  process_list_element_holder = process_list_element ? process_list_element->getProcessListEntry() : nullptr]
                 {
                     BackupMutablePtr backup_async;
@@ -866,6 +868,8 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
                  restore_coordination,
                  context_in_use,
                  on_exception,
+                 /// Capture original context to preserve Settings/current_database in system.processes
+                 context,
                  process_list_element_holder = process_list_element ? process_list_element->getProcessListEntry() : nullptr]
                 {
                     try
