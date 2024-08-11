@@ -103,16 +103,13 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeDataPartCompact cannot be created with non-adaptive granulary.");
 
     auto marks_file_path = index_granularity_info_.getMarksFilePath("data");
-    if (!data_part_storage_.existsFile(marks_file_path))
+
+    std::unique_ptr<ReadBufferFromFileBase> buffer = data_part_storage_.readFileIfExists(marks_file_path, {}, {}, {});
+    if (!buffer)
         throw Exception(
             ErrorCodes::NO_FILE_IN_DATA_PART,
             "Marks file '{}' doesn't exist",
             std::string(fs::path(data_part_storage_.getFullPath()) / marks_file_path));
-
-    size_t marks_file_size = data_part_storage_.getFileSize(marks_file_path);
-
-    std::unique_ptr<ReadBufferFromFileBase> buffer = data_part_storage_.readFile(
-        marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
 
     std::unique_ptr<ReadBuffer> marks_reader;
     bool marks_compressed = index_granularity_info_.mark_type.compressed;
