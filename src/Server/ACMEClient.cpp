@@ -4,6 +4,7 @@
 #include <Common/logger_useful.h>
 #include "Core/BackgroundSchedulePool.h"
 #include "Interpreters/Context.h"
+#include "Storages/MergeTree/LeaderElection.h"
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3/Credentials.h>
@@ -16,10 +17,6 @@
 namespace DB
 {
 
-// namespace ErrorCodes
-// {
-//     // extern const int LOGICAL_ERROR;
-// }
 
 namespace ACMEClient
 {
@@ -59,7 +56,7 @@ try
     auto context = Context::getGlobalContextInstance();
     auto zk = context->getZooKeeper();
 
-    zk->createIfNotExists("/acme", "");
+    zk->createIfNotExists("/clickhouse/acme", "");
 
     BackgroundSchedulePool & bgpool = context->getSchedulePool();
 
@@ -68,6 +65,7 @@ try
 
         election_task->scheduleAfter(1000);
 
+        zkutil::checkNoOldLeaders(log, *zk, fs::path("/clickhouse/acme") / "leader_election");
         auto leader = zkutil::EphemeralNodeHolder::tryCreate("/acme/leader", *zk);
         if (leader)
             leader_node = std::move(leader);
