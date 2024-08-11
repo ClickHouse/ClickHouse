@@ -74,6 +74,19 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
+namespace
+{
+
+String getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage)
+{
+    if (data_part_storage.existsFile("primary" + getIndexExtension(true)))
+        return getIndexExtension(true);
+    else
+        return {".idx"};
+}
+
+}
+
 
 void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const PartMetadataManagerPtr & manager)
 {
@@ -712,7 +725,8 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
     try
     {
-        loadUUID();
+        if (!isStoredOnReadonlyDisk())
+            loadUUID();
         loadColumns(require_columns_checksums);
         loadChecksums(require_columns_checksums);
         loadIndexGranularity();
@@ -727,7 +741,9 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         bool has_broken_projections = false;
         if (!parent_part)
         {
-            loadTTLInfos();
+            if (!isStoredOnReadonlyDisk())
+                loadTTLInfos();
+
             loadProjections(require_columns_checksums, check_consistency, has_broken_projections, false /* if_not_loaded */);
         }
 
@@ -769,14 +785,19 @@ void IMergeTreeDataPart::appendFilesOfColumnsChecksumsIndexes(Strings & files, b
 {
     if (isStoredOnDisk())
     {
-        appendFilesOfUUID(files);
+        if (!isStoredOnReadonlyDisk())
+            appendFilesOfUUID(files);
+
         appendFilesOfColumns(files);
         appendFilesOfChecksums(files);
         appendFilesOfIndexGranularity(files);
         appendFilesOfIndex(files);
         appendFilesOfRowsCount(files);
         appendFilesOfPartitionAndMinMaxIndex(files);
-        appendFilesOfTTLInfos(files);
+
+        if (!isStoredOnReadonlyDisk())
+            appendFilesOfTTLInfos(files);
+
         appendFilesOfDefaultCompressionCodec(files);
         appendFilesOfMetadataVersion(files);
     }
@@ -2490,14 +2511,6 @@ bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 bool isWidePart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::Wide);
-}
-
-String getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage)
-{
-    if (data_part_storage.existsFile("primary" + getIndexExtension(true)))
-        return getIndexExtension(true);
-    else
-        return {".idx"};
 }
 
 bool isCompressedFromIndexExtension(const String & index_extension)
