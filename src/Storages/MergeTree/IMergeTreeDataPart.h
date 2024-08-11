@@ -751,7 +751,7 @@ bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
 
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
-std::optional<String> getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage);
+String getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage);
 bool isCompressedFromIndexExtension(const String & index_extension);
 
 using MergeTreeDataPartsVector = std::vector<MergeTreeDataPartPtr>;

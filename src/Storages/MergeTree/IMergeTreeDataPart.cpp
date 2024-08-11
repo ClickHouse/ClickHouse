@@ -898,7 +898,7 @@ void IMergeTreeDataPart::loadIndex() const
             loaded_index[i]->reserve(index_granularity.getMarksCount());
         }
 
-        String index_name = "primary" + getIndexExtensionFromFilesystem(getDataPartStorage()).value();
+        String index_name = "primary" + getIndexExtensionFromFilesystem(getDataPartStorage());
         String index_path = fs::path(getDataPartStorage().getRelativePath()) / index_name;
         auto index_file = metadata_manager->read(index_name);
         size_t marks_count = index_granularity.getMarksCount();
@@ -959,7 +959,7 @@ void IMergeTreeDataPart::appendFilesOfIndex(Strings & files) const
 
     if (metadata_snapshot->hasPrimaryKey())
     {
-        String index_name = "primary" + getIndexExtensionFromFilesystem(getDataPartStorage()).value();
+        String index_name = "primary" + getIndexExtensionFromFilesystem(getDataPartStorage());
         files.push_back(index_name);
     }
 }
@@ -2141,7 +2141,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
         /// Check that the primary key index is not empty.
         if (!pk.column_names.empty())
         {
-            String index_name = "primary" + getIndexExtensionFromFilesystem(getDataPartStorage()).value();
+            String index_name = "primary" + getIndexExtensionFromFilesystem(getDataPartStorage());
             check_file_not_empty(index_name);
         }
 
@@ -2492,15 +2492,12 @@ bool isWidePart(const MergeTreeDataPartPtr & data_part)
     return (data_part && data_part->getType() == MergeTreeDataPartType::Wide);
 }
 
-std::optional<std::string> getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage)
+String getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage)
 {
-    for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
-    {
-        const auto & extension = fs::path(it->name()).extension();
-        if (extension == getIndexExtension(true))
-            return extension;
-    }
-    return {".idx"};
+    if (data_part_storage.existsFile("primary" + getIndexExtension(true)))
+        return getIndexExtension(true);
+    else
+        return {".idx"};
 }
 
 bool isCompressedFromIndexExtension(const String & index_extension)
