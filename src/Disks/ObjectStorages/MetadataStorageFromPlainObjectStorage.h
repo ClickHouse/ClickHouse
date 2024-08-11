@@ -2,14 +2,18 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/ObjectStorages/InMemoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataOperationsHolder.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 
 #include <map>
+#include <string>
+#include <unordered_set>
 
 namespace DB
 {
 
+struct InMemoryPathMap;
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
@@ -25,10 +29,6 @@ using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFile
 /// structure as on disk MergeTree, and does not require metadata from a local disk to restore.
 class MetadataStorageFromPlainObjectStorage : public IMetadataStorage
 {
-public:
-    /// Local path prefixes mapped to storage key prefixes.
-    using PathMap = std::map<std::filesystem::path, std::string>;
-
 private:
     friend class MetadataStorageFromPlainObjectStorageTransaction;
 
@@ -78,10 +78,11 @@ public:
     bool supportsStat() const override { return false; }
 
 protected:
-    virtual std::shared_ptr<PathMap> getPathMap() const { throwNotImplemented(); }
+    /// Get the object storage prefix for storing metadata files.
+    virtual std::string getMetadataKeyPrefix() const { return object_storage->getCommonKeyPrefix(); }
 
-    virtual std::vector<std::string> getDirectChildrenOnDisk(
-        const std::string & storage_key, const RelativePathsWithMetadata & remote_paths, const std::string & local_path) const;
+    /// Returns a map of virtual filesystem paths to paths in the object storage.
+    virtual std::shared_ptr<InMemoryPathMap> getPathMap() const { throwNotImplemented(); }
 };
 
 class MetadataStorageFromPlainObjectStorageTransaction final : public IMetadataTransaction, private MetadataOperationsHolder

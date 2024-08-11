@@ -185,7 +185,7 @@ public:
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
-    StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
+    StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
@@ -229,8 +229,6 @@ private:
 
     const MergeTreeData & data;
     ExpressionActionsSettings actions_settings;
-
-    StorageMetadataPtr metadata_for_reading;
 
     const MergeTreeReadTask::BlockSizeParams block_size;
 
