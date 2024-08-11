@@ -768,11 +768,10 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
                 for (auto it = getDataPartStorage().iterate(); it->isValid(); it->next())
                 {
                     std::string file_info;
-                    if (!getDataPartStorage().isDirectory(it->name()))
+                    if (!getDataPartStorage().existsDirectory(it->name()))
                         file_info = fmt::format(" ({} bytes)", getDataPartStorage().getFileSize(it->name()));
 
                     files_in_part += fmt::format("{}{}{}", (files_in_part.empty() ? "" : ", "), it->name(), file_info);
-
                 }
                 if (!files_in_part.empty())
                     e->addMessage("Part contains files: {}", files_in_part);
