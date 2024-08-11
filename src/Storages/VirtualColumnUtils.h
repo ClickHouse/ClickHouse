@@ -18,21 +18,12 @@ class NamesAndTypesList;
 namespace VirtualColumnUtils
 {
 
-/// The filtering functions are tricky to use correctly.
-/// There are 2 ways:
-///  1. Call filterBlockWithPredicate() or filterBlockWithExpression() inside SourceStepWithFilter::applyFilters().
-///  2. Call splitFilterDagForAllowedInputs() and buildSetsForDAG() inside SourceStepWithFilter::applyFilters().
-///     Then call filterBlockWithPredicate() or filterBlockWithExpression() in initializePipeline().
-///
-/// Otherwise calling filter*() outside applyFilters() will throw "Not-ready Set is passed"
-/// if there are subqueries.
-
-/// Similar to filterBlockWithExpression(buildFilterExpression(splitFilterDagForAllowedInputs(...))).
+/// Similar to filterBlockWithQuery, but uses ActionsDAG as a predicate.
+/// Basically it is filterBlockWithDAG(splitFilterDagForAllowedInputs).
 void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context);
 
 /// Just filters block. Block should contain all the required columns.
-ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context);
-void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block);
+void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context);
 
 /// Builds sets used by ActionsDAG inplace.
 void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
@@ -41,7 +32,7 @@ void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 
 /// Extract a part of predicate that can be evaluated using only columns from input_names.
-std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs);
+ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs);
 
 /// Extract from the input stream a set of `name` column values
 template <typename T>
@@ -58,14 +49,14 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
 NameSet getVirtualNamesForFileLikeStorage();
 VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns);
 
-std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
+ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
 
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns);
+ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ActionsDAGPtr & dag, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
 
 template <typename T>
-void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns)
+void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & paths, const ActionsDAGPtr & dag, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
 {
-    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns);
+    auto indexes_column = getFilterByPathAndFileIndexes(paths, dag, virtual_columns, context);
     const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
     if (indexes.size() == sources.size())
         return;

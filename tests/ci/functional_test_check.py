@@ -17,19 +17,9 @@ from download_release_packages import download_last_release
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
-from report import (
-    ERROR,
-    SUCCESS,
-    JobReport,
-    StatusType,
-    TestResults,
-    read_test_results,
-    FAILURE,
-)
+from report import ERROR, SUCCESS, JobReport, StatusType, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from ci_config import CI
-from ci_utils import Utils
 
 NO_CHANGES_MSG = "Nothing to run"
 
@@ -112,8 +102,8 @@ def get_run_command(
     ]
 
     if flaky_check:
-        envs.append("-e NUM_TRIES=50")
-        envs.append("-e MAX_RUN_TIME=2800")
+        envs.append("-e NUM_TRIES=100")
+        envs.append("-e MAX_RUN_TIME=1800")
 
     envs += [f"-e {e}" for e in additional_envs]
 
@@ -126,11 +116,8 @@ def get_run_command(
 
     return (
         f"docker run --volume={builds_path}:/package_folder "
-        # For dmesg and sysctl
-        "--privileged "
         f"{ci_logs_args}"
         f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
-        f"--volume={repo_path}/utils/grpc-client:/usr/share/clickhouse-utils/grpc-client "
         f"{volume_with_broken_test}"
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "
@@ -147,10 +134,6 @@ def _get_statless_tests_to_run(pr_info: PRInfo) -> List[str]:
 
     for fpath in pr_info.changed_files:
         if re.match(r"tests/queries/0_stateless/[0-9]{5}", fpath):
-            path_ = Path(REPO_COPY + "/" + fpath)
-            if not path_.exists():
-                logging.info("File '%s' is removed - skip", fpath)
-                continue
             logging.info("File '%s' is changed and seems like a test", fpath)
             fname = fpath.split("/")[3]
             fname_without_ext = os.path.splitext(fname)[0]
@@ -166,7 +149,6 @@ def _get_statless_tests_to_run(pr_info: PRInfo) -> List[str]:
 
 
 def process_results(
-    ret_code: int,
     result_directory: Path,
     server_log_path: Path,
 ) -> Tuple[StatusType, str, TestResults, List[Path]]:
@@ -193,9 +175,6 @@ def process_results(
         logging.info("Files in result folder %s", os.listdir(result_directory))
         return ERROR, "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
-    if ret_code != 0:
-        state = ERROR
-        description += " (but script exited with an error)"
 
     try:
         results_path = result_directory / "test_results.tsv"
@@ -285,7 +264,7 @@ def main():
     packages_path.mkdir(parents=True, exist_ok=True)
 
     if validate_bugfix_check:
-        download_last_release(packages_path, debug=True)
+        download_last_release(packages_path)
     else:
         download_all_deb_packages(check_name, reports_path, packages_path)
 
@@ -343,7 +322,7 @@ def main():
         ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
 
         state, description, test_results, additional_logs = process_results(
-            retcode, result_path, server_log_path
+            result_path, server_log_path
         )
     else:
         print(
@@ -365,23 +344,7 @@ def main():
         additional_files=additional_logs,
     ).dump(to_file=args.report_to_file if args.report_to_file else None)
 
-    should_block_ci = False
     if state != SUCCESS:
-        should_block_ci = True
-
-    if state == FAILURE and CI.is_required(check_name):
-        failed_cnt = Utils.get_failed_tests_number(description)
-        print(
-            f"Job status is [{state}] with [{failed_cnt}] failed test cases. status description [{description}]"
-        )
-        if (
-            failed_cnt
-            and failed_cnt <= CI.MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI
-        ):
-            print(f"Won't block the CI workflow")
-            should_block_ci = False
-
-    if should_block_ci:
         sys.exit(1)
 
 

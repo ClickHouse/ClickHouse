@@ -15,7 +15,6 @@
 #include <IO/S3/copyS3File.h>
 #include <Interpreters/Context.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Core/Settings.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
 #include <Disks/ObjectStorages/S3/diskSettings.h>
@@ -294,8 +293,6 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
 ObjectStorageIteratorPtr S3ObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
 {
     auto settings_ptr = s3_settings.get();
-    if (!max_keys)
-        max_keys = settings_ptr->list_object_keys_size;
     return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys);
 }
 
@@ -624,12 +621,12 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
         std::move(new_client), std::move(new_s3_settings), new_uri, s3_capabilities, key_generator, disk_name);
 }
 
-ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const
+ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path) const
 {
     if (!key_generator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
 
-    return key_generator->generate(path, /* is_directory */ false, key_prefix);
+    return key_generator->generate(path, /* is_directory */ false);
 }
 
 std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()

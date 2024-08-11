@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import logging
-import re
 import sys
 from typing import Tuple
 
@@ -16,149 +15,22 @@ from commit_status_helper import (
 )
 from env_helper import GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
-from ci_config import CI
+from lambda_shared_package.lambda_shared.pr import (
+    CATEGORY_TO_LABEL,
+    TRUSTED_CONTRIBUTORS,
+    Labels,
+    check_pr_description,
+)
 from pr_info import PRInfo
 from report import FAILURE, PENDING, SUCCESS, StatusType
-
+from ci_config import CI
 
 TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
 }
 
-TRUSTED_CONTRIBUTORS = {
-    e.lower()
-    for e in [
-        "amosbird",
-        "azat",  # SEMRush
-        "bharatnc",  # Many contributions.
-        "cwurm",  # ClickHouse, Inc
-        "den-crane",  # Documentation contributor
-        "ildus",  # adjust, ex-pgpro
-        "nvartolomei",  # Seasoned contributor, CloudFlare
-        "taiyang-li",
-        "ucasFL",  # Amos Bird's friend
-        "thomoco",  # ClickHouse, Inc
-        "tonickkozlov",  # Cloudflare
-        "tylerhannan",  # ClickHouse, Inc
-        "tsolodov",  # ClickHouse, Inc
-        "justindeguzman",  # ClickHouse, Inc
-        "XuJia0210",  # ClickHouse, Inc
-    ]
-}
-
-OK_SKIP_LABELS = {CI.Labels.RELEASE, CI.Labels.PR_BACKPORT, CI.Labels.PR_CHERRYPICK}
+OK_SKIP_LABELS = {Labels.RELEASE, Labels.PR_BACKPORT, Labels.PR_CHERRYPICK}
 PR_CHECK = "PR Check"
-
-
-LABEL_CATEGORIES = {
-    "pr-backward-incompatible": ["Backward Incompatible Change"],
-    "pr-bugfix": [
-        "Bug Fix",
-        "Bug Fix (user-visible misbehavior in an official stable release)",
-        "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
-        "Bug Fix (user-visible misbehavior in official stable or prestable release)",
-    ],
-    "pr-critical-bugfix": ["Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)"],
-    "pr-build": [
-        "Build/Testing/Packaging Improvement",
-        "Build Improvement",
-        "Build/Testing Improvement",
-        "Build",
-        "Packaging Improvement",
-    ],
-    "pr-documentation": [
-        "Documentation (changelog entry is not required)",
-        "Documentation",
-    ],
-    "pr-feature": ["New Feature"],
-    "pr-improvement": ["Improvement"],
-    "pr-not-for-changelog": [
-        "Not for changelog (changelog entry is not required)",
-        "Not for changelog",
-    ],
-    "pr-performance": ["Performance Improvement"],
-    "pr-ci": ["CI Fix or Improvement (changelog entry is not required)"],
-}
-
-CATEGORY_TO_LABEL = {
-    c: lb for lb, categories in LABEL_CATEGORIES.items() for c in categories
-}
-
-
-def check_pr_description(pr_body: str, repo_name: str) -> Tuple[str, str]:
-    """The function checks the body to being properly formatted according to
-    .github/PULL_REQUEST_TEMPLATE.md, if the first returned string is not empty,
-    then there is an error."""
-    lines = list(map(lambda x: x.strip(), pr_body.split("\n") if pr_body else []))
-    lines = [re.sub(r"\s+", " ", line) for line in lines]
-
-    # Check if body contains "Reverts ClickHouse/ClickHouse#36337"
-    if [True for line in lines if re.match(rf"\AReverts {repo_name}#[\d]+\Z", line)]:
-        return "", LABEL_CATEGORIES["pr-not-for-changelog"][0]
-
-    category = ""
-    entry = ""
-    description_error = ""
-
-    i = 0
-    while i < len(lines):
-        if re.match(r"(?i)^[#>*_ ]*change\s*log\s*category", lines[i]):
-            i += 1
-            if i >= len(lines):
-                break
-            # Can have one empty line between header and the category
-            # itself. Filter it out.
-            if not lines[i]:
-                i += 1
-                if i >= len(lines):
-                    break
-            category = re.sub(r"^[-*\s]*", "", lines[i])
-            i += 1
-
-            # Should not have more than one category. Require empty line
-            # after the first found category.
-            if i >= len(lines):
-                break
-            if lines[i]:
-                second_category = re.sub(r"^[-*\s]*", "", lines[i])
-                description_error = (
-                    "More than one changelog category specified: "
-                    f"'{category}', '{second_category}'"
-                )
-                return description_error, category
-
-        elif re.match(
-            r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
-        ):
-            i += 1
-            # Can have one empty line between header and the entry itself.
-            # Filter it out.
-            if i < len(lines) and not lines[i]:
-                i += 1
-            # All following lines until empty one are the changelog entry.
-            entry_lines = []
-            while i < len(lines) and lines[i]:
-                entry_lines.append(lines[i])
-                i += 1
-            entry = " ".join(entry_lines)
-            # Don't accept changelog entries like '...'.
-            entry = re.sub(r"[#>*_.\- ]", "", entry)
-            # Don't accept changelog entries like 'Close #12345'.
-            entry = re.sub(r"^[\w\-\s]{0,10}#?\d{5,6}\.?$", "", entry)
-        else:
-            i += 1
-
-    if not category:
-        description_error = "Changelog category is empty"
-    # Filter out the PR categories that are not for changelog.
-    elif "(changelog entry is not required)" in category:
-        pass  # to not check the rest of the conditions
-    elif category not in CATEGORY_TO_LABEL:
-        description_error, category = f"Category '{category}' is not valid", ""
-    elif not entry:
-        description_error = f"Changelog entry required for category '{category}'"
-
-    return description_error, category
 
 
 def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
@@ -191,13 +63,13 @@ def should_run_ci_for_pr(pr_info: PRInfo) -> Tuple[bool, str]:
     if OK_SKIP_LABELS.intersection(pr_info.labels):
         return True, "Don't try new checks for release/backports/cherry-picks"
 
-    if CI.Labels.CAN_BE_TESTED not in pr_info.labels and not pr_is_by_trusted_user(
+    if Labels.CAN_BE_TESTED not in pr_info.labels and not pr_is_by_trusted_user(
         pr_info.user_login, pr_info.user_orgs
     ):
         logging.info(
             "PRs by untrusted users need the '%s' label - "
             "please contact a member of the core team",
-            CI.Labels.CAN_BE_TESTED,
+            Labels.CAN_BE_TESTED,
         )
         return False, "Needs 'can be tested' label"
 
@@ -242,12 +114,12 @@ def main():
             pr_labels_to_remove.append(label)
 
     if pr_info.has_changes_in_submodules():
-        pr_labels_to_add.append(CI.Labels.SUBMODULE_CHANGED)
-    elif CI.Labels.SUBMODULE_CHANGED in pr_info.labels:
-        pr_labels_to_remove.append(CI.Labels.SUBMODULE_CHANGED)
+        pr_labels_to_add.append(Labels.SUBMODULE_CHANGED)
+    elif Labels.SUBMODULE_CHANGED in pr_info.labels:
+        pr_labels_to_remove.append(Labels.SUBMODULE_CHANGED)
 
-    if any(label in CI.Labels.AUTO_BACKPORT for label in pr_labels_to_add):
-        backport_labels = [CI.Labels.MUST_BACKPORT, CI.Labels.MUST_BACKPORT_CLOUD]
+    if any(label in Labels.AUTO_BACKPORT for label in pr_labels_to_add):
+        backport_labels = [Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_CLOUD]
         pr_labels_to_add += [
             label for label in backport_labels if label not in pr_info.labels
         ]
@@ -292,15 +164,15 @@ def main():
 
     # 2. Then we check if the documentation is not created to fail the Mergeable check
     if (
-        CI.Labels.PR_FEATURE in pr_info.labels
+        Labels.PR_FEATURE in pr_info.labels
         and not pr_info.has_changes_in_documentation()
     ):
         print(
-            f"::error ::The '{CI.Labels.PR_FEATURE}' in the labels, "
+            f"::error ::The '{Labels.PR_FEATURE}' in the labels, "
             "but there's no changed documentation"
         )
         status = FAILURE
-        description = f"expect adding docs for {CI.Labels.PR_FEATURE}"
+        description = f"expect adding docs for {Labels.PR_FEATURE}"
     # 3. But we allow the workflow to continue
 
     # 4. And post only a single commit status on a failure

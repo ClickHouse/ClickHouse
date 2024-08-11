@@ -1,11 +1,11 @@
 #include <Backups/DDLAdjustingForBackupVisitor.h>
-#include <Core/ServerSettings.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/formatAST.h>
+#include <Interpreters/Context.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+
+#include <Parsers/formatAST.h>
 
 
 namespace DB

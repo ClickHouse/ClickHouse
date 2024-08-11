@@ -59,7 +59,8 @@ public:
         if (requests.empty())
             busy_periods++;
         queue_cost -= result->cost;
-        incrementDequeued(result->cost);
+        dequeued_requests++;
+        dequeued_cost += result->cost;
         return {result, !requests.empty()};
     }
 

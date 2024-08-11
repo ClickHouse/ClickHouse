@@ -34,16 +34,14 @@ FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
     return cache->createKeyForPath(path);
 }
 
-ObjectStorageKey
-CachedObjectStorage::generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const
+ObjectStorageKey CachedObjectStorage::generateObjectKeyForPath(const std::string & path) const
 {
-    return object_storage->generateObjectKeyForPath(path, key_prefix);
+    return object_storage->generateObjectKeyForPath(path);
 }
 
-ObjectStorageKey
-CachedObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const
+ObjectStorageKey CachedObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string & path) const
 {
-    return object_storage->generateObjectKeyPrefixForDirectoryPath(path, key_prefix);
+    return object_storage->generateObjectKeyPrefixForDirectoryPath(path);
 }
 
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const

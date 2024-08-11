@@ -37,11 +37,10 @@ struct CountSubstringsImpl
         const std::string & needle,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null,
-        size_t input_rows_count)
+        [[maybe_unused]] ColumnUInt8 * res_null)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        chassert(!res_null);
+        assert(!res_null);
 
         const UInt8 * const begin = haystack_data.data();
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
@@ -81,8 +80,6 @@ struct CountSubstringsImpl
             }
             pos = begin + haystack_offsets[i];
             ++i;
-
-            chassert(i < input_rows_count);
         }
     }
 
@@ -118,7 +115,7 @@ struct CountSubstringsImpl
         [[maybe_unused]] ColumnUInt8 * res_null)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        chassert(!res_null);
+        assert(!res_null);
 
         Impl::toLowerIfNeed(haystack);
         Impl::toLowerIfNeed(needle);
@@ -153,18 +150,17 @@ struct CountSubstringsImpl
         const ColumnString::Offsets & needle_offsets,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null,
-        size_t input_rows_count)
+        [[maybe_unused]] ColumnUInt8 * res_null)
     {
-        chassert(input_rows_count == haystack_offsets.size());
-
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        chassert(!res_null);
+        assert(!res_null);
 
         ColumnString::Offset prev_haystack_offset = 0;
         ColumnString::Offset prev_needle_offset = 0;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        size_t size = haystack_offsets.size();
+
+        for (size_t i = 0; i < size; ++i)
         {
             size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
             size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
@@ -211,18 +207,17 @@ struct CountSubstringsImpl
         const ColumnString::Offsets & needle_offsets,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null,
-        size_t input_rows_count)
+        [[maybe_unused]] ColumnUInt8 * res_null)
     {
-        chassert(input_rows_count == needle_offsets.size());
-
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        chassert(!res_null);
+        assert(!res_null);
 
         /// NOTE You could use haystack indexing. But this is a rare case.
         ColumnString::Offset prev_needle_offset = 0;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        size_t size = needle_offsets.size();
+
+        for (size_t i = 0; i < size; ++i)
         {
             res[i] = 0;
             auto start = start_pos != nullptr ? std::max(start_pos->getUInt(i), UInt64(1)) : UInt64(1);

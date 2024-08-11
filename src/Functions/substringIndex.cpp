@@ -68,7 +68,7 @@ namespace
             return std::make_shared<DataTypeString>();
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
         {
             ColumnPtr column_string = arguments[0].column;
             ColumnPtr column_delim = arguments[1].column;
@@ -110,10 +110,10 @@ namespace
                 if (is_count_const)
                 {
                     Int64 count = column_count->getInt(0);
-                    vectorConstant(col_str, delim, count, vec_res, offsets_res, input_rows_count);
+                    vectorConstant(col_str, delim, count, vec_res, offsets_res);
                 }
                 else
-                    vectorVector(col_str, delim, column_count.get(), vec_res, offsets_res, input_rows_count);
+                    vectorVector(col_str, delim, column_count.get(), vec_res, offsets_res);
             }
             return column_res;
         }
@@ -124,18 +124,18 @@ namespace
             const String & delim,
             const IColumn * count_column,
             ColumnString::Chars & res_data,
-            ColumnString::Offsets & res_offsets,
-            size_t input_rows_count)
+            ColumnString::Offsets & res_offsets)
         {
+            size_t rows = str_column->size();
             res_data.reserve(str_column->getChars().size() / 2);
-            res_offsets.reserve(input_rows_count);
+            res_offsets.reserve(rows);
 
             bool all_ascii = isAllASCII(str_column->getChars().data(), str_column->getChars().size())
                 && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size());
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
                 = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < rows; ++i)
             {
                 StringRef str_ref = str_column->getDataAt(i);
                 Int64 count = count_column->getInt(i);
@@ -157,18 +157,18 @@ namespace
             const String & delim,
             Int64 count,
             ColumnString::Chars & res_data,
-            ColumnString::Offsets & res_offsets,
-            size_t input_rows_count)
+            ColumnString::Offsets & res_offsets)
         {
+            size_t rows = str_column->size();
             res_data.reserve(str_column->getChars().size() / 2);
-            res_offsets.reserve(input_rows_count);
+            res_offsets.reserve(rows);
 
             bool all_ascii = isAllASCII(str_column->getChars().data(), str_column->getChars().size())
                 && isAllASCII(reinterpret_cast<const UInt8 *>(delim.data()), delim.size());
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
                 = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < rows; ++i)
             {
                 StringRef str_ref = str_column->getDataAt(i);
 
@@ -314,7 +314,7 @@ REGISTER_FUNCTION(SubstringIndex)
     factory.registerFunction<FunctionSubstringIndex<false>>(); /// substringIndex
     factory.registerFunction<FunctionSubstringIndex<true>>(); /// substringIndexUTF8
 
-    factory.registerAlias("SUBSTRING_INDEX", "substringIndex", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("SUBSTRING_INDEX", "substringIndex", FunctionFactory::CaseInsensitive);
 }
 
 
