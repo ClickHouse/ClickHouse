@@ -894,8 +894,8 @@ void StorageMergeTree::loadDeduplicationLog()
     auto disk = getDisks()[0];
     std::string path = fs::path(relative_data_path) / "deduplication_logs";
 
-    /// If either there is already a deduplication log, or we will be able to use it.
-    if (!disk->isReadOnly() || disk->existsDirectory(path))
+    /// Deduplication log only matters on INSERTs.
+    if (!disk->isReadOnly())
     {
         deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, settings->non_replicated_deduplication_window, format_version, disk);
         deduplication_log->load();
