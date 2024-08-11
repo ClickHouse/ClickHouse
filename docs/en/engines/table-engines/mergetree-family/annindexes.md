@@ -43,7 +43,7 @@ CREATE TABLE table
 (
   id Int64,
   vectors Array(Float32),
-  INDEX index_name vec TYPE vector_similarity(method, distance_function[, quantization, connectivity, expansion_add, expansion_search]) [GRANULARITY N]
+  INDEX index_name vectors TYPE vector_similarity(method, distance_function[, quantization, connectivity, expansion_add, expansion_search]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -58,6 +58,19 @@ Parameters:
 - `m`: the number of neighbors per graph node (optional, default: 16)
 - `ef_construction`: (optional, default: 128)
 - `ef_search`: (optional, default: 64)
+
+Example:
+
+```sql
+CREATE TABLE table
+(
+  id Int64,
+  vectors Array(Float32),
+  INDEX idx vectors TYPE vector_similarity('hnsw', 'L2Distance') -- Alternative syntax: TYPE vector_similarity(hnsw, L2Distance)
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
 
 Vector similarity indexes are based on the [USearch library](https://github.com/unum-cloud/usearch), which implements the [HNSW
 algorithm](https://arxiv.org/abs/1603.09320), i.e., a hierarchical graph where each point represents a vector and the edges represent
