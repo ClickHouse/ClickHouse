@@ -104,11 +104,14 @@ void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
         fs::create_directories(metadata_path);
         auto metadata_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, metadata_keep_free_space_bytes, config, config_prefix);
         String key_compatibility_prefix;
-        if (requires_object_storage) {
-            if (!object_storage) {
+        if (requires_object_storage)
+        {
+            if (!object_storage)
+            {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "MetadataStorageFactory: object_storage is nullptr when requires_object_storage is true in creating disk metadata storage");
-            } else {
+            } else
+            {
                 key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
             }
         }
@@ -125,7 +128,8 @@ void registerPlainMetadataStorage(MetadataStorageFactory & factory)
         ObjectStoragePtr object_storage,
         bool requires_object_storage) -> MetadataStoragePtr
     {
-        if (!requires_object_storage) {
+        if (!requires_object_storage)
+        {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "MetadataStorageFactory: requires_object_storage can be false only in case of disk metadata storages");
         }
@@ -144,7 +148,8 @@ void registerPlainRewritableMetadataStorage(MetadataStorageFactory & factory)
            ObjectStoragePtr object_storage,
            bool requires_object_storage) -> MetadataStoragePtr
     {
-        if (!requires_object_storage) {
+        if (!requires_object_storage)
+        {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "MetadataStorageFactory: requires_object_storage can be false only in case of disk metadata storages");
         }
@@ -162,7 +167,8 @@ void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & fa
         ObjectStoragePtr object_storage,
         bool requires_object_storage) -> MetadataStoragePtr
     {
-        if (!requires_object_storage) {
+        if (!requires_object_storage)
+        {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "MetadataStorageFactory: requires_object_storage can be false only in case of disk metadata storages");
         }
