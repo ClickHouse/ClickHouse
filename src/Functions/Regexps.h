@@ -23,11 +23,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event RegexpWithMultipleNeedlesCreated;
-    extern const Event RegexpWithMultipleNeedlesGlobalCacheHit;
-    extern const Event RegexpWithMultipleNeedlesGlobalCacheMiss;
-    extern const Event RegexpLocalCacheHit;
-    extern const Event RegexpLocalCacheMiss;
+extern const Event RegexpCreated;
 }
 
 
@@ -76,28 +72,18 @@ public:
         Bucket & bucket = known_regexps[hasher(pattern) % CACHE_SIZE];
 
         if (bucket.regexp == nullptr) [[unlikely]]
-        {
             /// insert new entry
-            ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss);
             bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive>(pattern))};
-        }
         else
-        {
             if (pattern != bucket.pattern)
-            {
                 /// replace existing entry
-                ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss);
                 bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive>(pattern))};
-            }
-            else
-                ProfileEvents::increment(ProfileEvents::RegexpLocalCacheHit);
-        }
 
         return bucket.regexp;
     }
 
 private:
-    constexpr static size_t CACHE_SIZE = 1'000; /// collision probability
+    constexpr static size_t CACHE_SIZE = 100; /// collision probability
 
     std::hash<String> hasher;
     struct Bucket
@@ -258,7 +244,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", str_patterns[error->expression], String(error->message));
     }
 
-    ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesCreated);
+    ProfileEvents::increment(ProfileEvents::RegexpCreated);
 
     /// We allocate the scratch space only once, then copy it across multiple threads with hs_clone_scratch
     /// function which is faster than allocating scratch space each time in each thread.
@@ -336,11 +322,9 @@ inline DeferredConstructedRegexpsPtr getOrSet(const std::vector<std::string_view
                 {
                     return constructRegexps<save_indices, with_edit_distance>(str_patterns, edit_distance);
                 });
-        ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesGlobalCacheMiss);
         bucket = {std::move(str_patterns), edit_distance, deferred_constructed_regexps};
     }
     else
-    {
         if (bucket.patterns != str_patterns || bucket.edit_distance != edit_distance)
         {
             /// replace existing entry
@@ -349,12 +333,8 @@ inline DeferredConstructedRegexpsPtr getOrSet(const std::vector<std::string_view
                     {
                         return constructRegexps<save_indices, with_edit_distance>(str_patterns, edit_distance);
                     });
-            ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesGlobalCacheMiss);
             bucket = {std::move(str_patterns), edit_distance, deferred_constructed_regexps};
         }
-        else
-            ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesGlobalCacheHit);
-    }
 
     return bucket.regexps;
 }

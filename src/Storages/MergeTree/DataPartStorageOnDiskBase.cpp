@@ -8,7 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/Backup.h>
+#include <Storages/MergeTree/localBackup.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryWrappedWith.h>
@@ -73,7 +73,12 @@ std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Logger
 
     for (int try_no = 0; try_no < 10; ++try_no)
     {
-        res = getPartDirForPrefix(prefix, detached, try_no);
+        if (prefix.empty())
+            res = part_dir + (try_no ? "_try" + DB::toString(try_no) : "");
+        else if (prefix.ends_with("_"))
+            res = prefix + part_dir + (try_no ? "_try" + DB::toString(try_no) : "");
+        else
+            res = prefix + "_" + part_dir + (try_no ? "_try" + DB::toString(try_no) : "");
 
         if (!volume->getDisk()->exists(full_relative_path / res))
             return res;
@@ -92,36 +97,6 @@ std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Logger
 
         LOG_WARNING(log, "Directory {} (to detach to) already exists. Will detach to directory with '_tryN' suffix.", res);
     }
-
-    return res;
-}
-
-String DataPartStorageOnDiskBase::getPartDirForPrefix(const String & prefix, bool detached, int try_no) const
-{
-    /// This function joins `prefix` and the part name and an attempt number returning something like "<prefix>_<part_name>_<tryN>".
-    String res = prefix;
-    if (!prefix.empty() && !prefix.ends_with("_"))
-        res += "_";
-
-    /// During RESTORE temporary part directories are created with names like "tmp_restore_all_2_2_0-XXXXXXXX".
-    /// To detach such a directory we need to rename it replacing "tmp_restore_" with a specified prefix,
-    /// and a random suffix with an attempt number.
-    String part_name;
-    if (detached && part_dir.starts_with("tmp_restore_"))
-    {
-        part_name = part_dir.substr(strlen("tmp_restore_"));
-        size_t endpos = part_name.find('-');
-        if (endpos != String::npos)
-            part_name.erase(endpos, String::npos);
-    }
-
-    if (!part_name.empty())
-        res += part_name;
-    else
-        res += part_dir;
-
-    if (try_no)
-        res += "_try" + DB::toString(try_no);
 
     return res;
 }
@@ -254,7 +229,7 @@ bool DataPartStorageOnDiskBase::isBroken() const
 
 bool DataPartStorageOnDiskBase::isReadonly() const
 {
-    return volume->getDisk()->isReadOnly() || volume->getDisk()->isWriteOnce();
+    return volume->getDisk()->isReadOnly();
 }
 
 void DataPartStorageOnDiskBase::syncRevision(UInt64 revision) const
@@ -484,8 +459,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     else
         disk->createDirectories(to);
 
-    Backup(
-        disk,
+    localBackup(
         disk,
         getRelativePath(),
         fs::path(to) / dir_path,
@@ -516,62 +490,6 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     }
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
-
-    /// Do not initialize storage in case of DETACH because part may be broken.
-    bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
-    return create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
-}
-
-MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
-    const std::string & to,
-    const std::string & dir_path,
-    const DiskPtr & dst_disk,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    std::function<void(const DiskPtr &)> save_metadata_callback,
-    const ClonePartParams & params) const
-{
-    auto src_disk = volume->getDisk();
-    if (params.external_transaction)
-        params.external_transaction->createDirectories(to);
-    else
-        dst_disk->createDirectories(to);
-
-    /// freezeRemote() using copy instead of hardlinks for all files
-    /// In this case, files_to_copy_intead_of_hardlinks is set by empty
-    Backup(
-        src_disk,
-        dst_disk,
-        getRelativePath(),
-        fs::path(to) / dir_path,
-        read_settings,
-        write_settings,
-        params.make_source_readonly,
-        /* max_level= */ {},
-        true,
-        /* files_to_copy_intead_of_hardlinks= */ {},
-        params.external_transaction);
-
-    /// The save_metadata_callback function acts on the target dist.
-    if (save_metadata_callback)
-        save_metadata_callback(dst_disk);
-
-    if (params.external_transaction)
-    {
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
-        if (!params.keep_metadata_version)
-            params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
-    }
-    else
-    {
-        dst_disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        dst_disk->removeFileIfExists(fs::path(to) / dir_path / "txn_version.txt");
-        if (!params.keep_metadata_version)
-            dst_disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
-    }
-
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>(dst_disk->getName(), dst_disk, 0);
 
     /// Do not initialize storage in case of DETACH because part may be broken.
     bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));

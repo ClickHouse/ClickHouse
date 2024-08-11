@@ -4,13 +4,9 @@ from typing import Optional
 from env_helper import (
     S3_BUILDS_BUCKET,
     TEMP_PATH,
-    GITHUB_UPSTREAM_REPOSITORY,
-    GITHUB_REPOSITORY,
-    S3_BUILDS_BUCKET_PUBLIC,
 )
 from s3_helper import S3Helper
-from ci_utils import GH
-from synchronizer_utils import SYNC_BRANCH_PREFIX
+from ci_utils import GHActions
 
 
 # pylint: disable=too-many-lines
@@ -26,14 +22,13 @@ class CiMetadata:
     _LOCAL_PATH = Path(TEMP_PATH) / "ci_meta"
     _FILE_SUFFIX = ".cimd"
     _FILENAME_RUN_ID = "run_id" + _FILE_SUFFIX
-    _FILENAME_SYNC_PR_RUN_ID = "sync_pr_run_id" + _FILE_SUFFIX
 
     def __init__(
         self,
         s3: S3Helper,
         pr_number: Optional[int] = None,
-        git_ref: Optional[str] = None,
         sha: Optional[str] = None,
+        git_ref: Optional[str] = None,
     ):
         assert pr_number or (sha and git_ref)
 
@@ -42,24 +37,11 @@ class CiMetadata:
         self.git_ref = git_ref
         self.s3 = s3
         self.run_id = 0
-        self.upstream_pr_number = 0
-        self.sync_pr_run_id = 0
 
         if self.pr_number:
             self.s3_path = f"{self._S3_PREFIX}/PRs/{self.pr_number}/"
         else:
             self.s3_path = f"{self._S3_PREFIX}/{self.git_ref}/{self.sha}/"
-
-        # Process upstream StatusNames.SYNC:
-        # metadata path for upstream pr
-        self.s3_path_upstream = ""
-        if (
-            self.git_ref
-            and self.git_ref.startswith(f"{SYNC_BRANCH_PREFIX}/pr/")
-            and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
-        ):
-            self.upstream_pr_number = int(self.git_ref.split("/pr/", maxsplit=1)[1])
-            self.s3_path_upstream = f"{self._S3_PREFIX}/PRs/{self.upstream_pr_number}/"
 
         self._updated = False
 
@@ -91,8 +73,6 @@ class CiMetadata:
                 assert len(lines) == 1
             if file_name.name == self._FILENAME_RUN_ID:
                 self.run_id = int(lines[0])
-            elif file_name.name == self._FILENAME_SYNC_PR_RUN_ID:
-                self.sync_pr_run_id = int(lines[0])
 
         self._updated = True
         return self
@@ -104,15 +84,8 @@ class CiMetadata:
         Uploads meta on s3
         """
         assert self.run_id
-        assert self.git_ref, "Push meta only with full info"
-
-        if not self.upstream_pr_number:
-            log_title = f"Storing workflow metadata: PR [{self.pr_number}]"
-        else:
-            log_title = f"Storing workflow metadata: PR [{self.pr_number}], upstream PR [{self.upstream_pr_number}]"
-
-        GH.print_in_group(
-            log_title,
+        GHActions.print_in_group(
+            f"Storing workflow metadata: PR [{self.pr_number}]",
             [f"run_id: {self.run_id}"],
         )
 
@@ -123,16 +96,8 @@ class CiMetadata:
         _ = self.s3.upload_file(
             bucket=S3_BUILDS_BUCKET,
             file_path=local_file,
-            s3_path=self.s3_path + self._FILENAME_RUN_ID,
+            s3_path=self.s3_path + local_file.name,
         )
-
-        if self.upstream_pr_number:
-            # store run id in upstream pr meta as well
-            _ = self.s3.upload_file(
-                bucket=S3_BUILDS_BUCKET_PUBLIC,
-                file_path=local_file,
-                s3_path=self.s3_path_upstream + self._FILENAME_SYNC_PR_RUN_ID,
-            )
 
 
 if __name__ == "__main__":

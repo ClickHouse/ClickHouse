@@ -53,7 +53,7 @@ public:
     bool nextImpl() override;
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
-    std::optional<size_t> tryGetFileSize() override { return remote_file_size; }
+    size_t getFileSize() override { return remote_file_size; }
 
 private:
     std::unique_ptr<LocalFileHolder> local_file_holder;
@@ -70,7 +70,7 @@ public:
 
     void initOnce(ContextPtr context, const String & root_dir_, size_t limit_size_, size_t bytes_read_before_flush_);
 
-    bool isInitialized() const { return initialized; }
+    inline bool isInitialized() const { return initialized; }
 
     std::pair<std::unique_ptr<LocalFileHolder>, std::unique_ptr<ReadBuffer>>
     createReader(ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> & read_buffer, bool is_random_accessed);

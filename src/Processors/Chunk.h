@@ -1,9 +1,7 @@
 #pragma once
 
-#include <Common/CollectionOfDerived.h>
 #include <Columns/IColumn.h>
-
-#include <memory>
+#include <unordered_map>
 
 namespace DB
 {
@@ -11,29 +9,11 @@ namespace DB
 class ChunkInfo
 {
 public:
-    using Ptr = std::shared_ptr<ChunkInfo>;
-
-    ChunkInfo() = default;
-    ChunkInfo(const ChunkInfo&) = default;
-    ChunkInfo(ChunkInfo&&) = default;
-
-    virtual Ptr clone() const = 0;
     virtual ~ChunkInfo() = default;
+    ChunkInfo() = default;
 };
 
-
-template <typename Derived>
-class ChunkInfoCloneable : public ChunkInfo
-{
-public:
-    ChunkInfoCloneable() = default;
-    ChunkInfoCloneable(const ChunkInfoCloneable & other) = default;
-
-    Ptr clone() const override
-    {
-        return std::static_pointer_cast<ChunkInfo>(std::make_shared<Derived>(*static_cast<const Derived*>(this)));
-    }
-};
+using ChunkInfoPtr = std::shared_ptr<const ChunkInfo>;
 
 /**
  * Chunk is a list of columns with the same length.
@@ -52,26 +32,26 @@ public:
 class Chunk
 {
 public:
-    using ChunkInfoCollection = CollectionOfDerivedItems<ChunkInfo>;
-
     Chunk() = default;
     Chunk(const Chunk & other) = delete;
     Chunk(Chunk && other) noexcept
         : columns(std::move(other.columns))
         , num_rows(other.num_rows)
-        , chunk_infos(std::move(other.chunk_infos))
+        , chunk_info(std::move(other.chunk_info))
     {
         other.num_rows = 0;
     }
 
     Chunk(Columns columns_, UInt64 num_rows_);
+    Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_);
     Chunk(MutableColumns columns_, UInt64 num_rows_);
+    Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_);
 
     Chunk & operator=(const Chunk & other) = delete;
     Chunk & operator=(Chunk && other) noexcept
     {
         columns = std::move(other.columns);
-        chunk_infos = std::move(other.chunk_infos);
+        chunk_info = std::move(other.chunk_info);
         num_rows = other.num_rows;
         other.num_rows = 0;
         return *this;
@@ -82,15 +62,15 @@ public:
     void swap(Chunk & other) noexcept
     {
         columns.swap(other.columns);
+        chunk_info.swap(other.chunk_info);
         std::swap(num_rows, other.num_rows);
-        chunk_infos.swap(other.chunk_infos);
     }
 
     void clear()
     {
         num_rows = 0;
         columns.clear();
-        chunk_infos.clear();
+        chunk_info.reset();
     }
 
     const Columns & getColumns() const { return columns; }
@@ -101,9 +81,9 @@ public:
     /** Get empty columns with the same types as in block. */
     MutableColumns cloneEmptyColumns() const;
 
-    ChunkInfoCollection & getChunkInfos() { return chunk_infos; }
-    const ChunkInfoCollection & getChunkInfos() const { return chunk_infos; }
-    void setChunkInfos(ChunkInfoCollection chunk_infos_) { chunk_infos = std::move(chunk_infos_); }
+    const ChunkInfoPtr & getChunkInfo() const { return chunk_info; }
+    bool hasChunkInfo() const { return chunk_info != nullptr; }
+    void setChunkInfo(ChunkInfoPtr chunk_info_) { chunk_info = std::move(chunk_info_); }
 
     UInt64 getNumRows() const { return num_rows; }
     UInt64 getNumColumns() const { return columns.size(); }
@@ -127,7 +107,7 @@ public:
 private:
     Columns columns;
     UInt64 num_rows = 0;
-    ChunkInfoCollection chunk_infos;
+    ChunkInfoPtr chunk_info;
 
     void checkNumRowsIsConsistent();
 };
@@ -137,15 +117,11 @@ using Chunks = std::vector<Chunk>;
 /// AsyncInsert needs two kinds of information:
 /// - offsets of different sub-chunks
 /// - tokens of different sub-chunks, which are assigned by setting `insert_deduplication_token`.
-class AsyncInsertInfo : public ChunkInfoCloneable<AsyncInsertInfo>
+class AsyncInsertInfo : public ChunkInfo
 {
 public:
     AsyncInsertInfo() = default;
-    AsyncInsertInfo(const AsyncInsertInfo & other) = default;
-    AsyncInsertInfo(const std::vector<size_t> & offsets_, const std::vector<String> & tokens_)
-        : offsets(offsets_)
-        , tokens(tokens_)
-    {}
+    explicit AsyncInsertInfo(const std::vector<size_t> & offsets_, const std::vector<String> & tokens_) : offsets(offsets_), tokens(tokens_) {}
 
     std::vector<size_t> offsets;
     std::vector<String> tokens;
@@ -154,11 +130,9 @@ public:
 using AsyncInsertInfoPtr = std::shared_ptr<AsyncInsertInfo>;
 
 /// Extension to support delayed defaults. AddingDefaultsProcessor uses it to replace missing values with column defaults.
-class ChunkMissingValues : public ChunkInfoCloneable<ChunkMissingValues>
+class ChunkMissingValues : public ChunkInfo
 {
 public:
-    ChunkMissingValues(const ChunkMissingValues & other) = default;
-
     using RowsBitMask = std::vector<bool>; /// a bit per row for a column
 
     const RowsBitMask & getDefaultsBitmask(size_t column_idx) const;

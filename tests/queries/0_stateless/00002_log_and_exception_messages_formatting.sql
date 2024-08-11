@@ -1,7 +1,5 @@
--- Tags: no-parallel, no-fasttest, no-ubsan, no-batch, no-flaky-check
+-- Tags: no-parallel, no-fasttest
 -- no-parallel because we want to run this test when most of the other tests already passed
--- This is not a regular test. It is intended to run once after other tests to validate certain statistics about the whole test runs.
--- TODO: I advise to put in inside clickhouse-test instead.
 
 -- If this test fails, see the "Top patterns of log messages" diagnostics in the end of run.log
 
@@ -165,10 +163,7 @@ create temporary table known_short_messages (s String) as select * from (select 
     '{} -> {}',
     '{} {}',
     '{}%',
-    '{}: {}',
-    'Unknown data type family: {}',
-    'Cannot load time zone {}',
-    'Unknown table engine {}'
+    '{}: {}'
     ] as arr) array join arr;
 
 -- Check that we don't have too many short meaningless message patterns.

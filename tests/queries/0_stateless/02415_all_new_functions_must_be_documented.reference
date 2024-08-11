@@ -562,7 +562,6 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF8
 positionUTF8
 pow
-printf
 proportionsZTest
 protocol
 queryID
@@ -877,6 +876,7 @@ tryBase58Decode
 tumble
 tumbleEnd
 tumbleStart
+tuple
 tupleConcat
 tupleDivide
 tupleDivideByNumber

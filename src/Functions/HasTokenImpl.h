@@ -35,13 +35,12 @@ struct HasTokenImpl
         const std::string & pattern,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt8> & res,
-        ColumnUInt8 * res_null,
-        size_t input_rows_count)
+        ColumnUInt8 * res_null)
     {
         if (start_pos != nullptr)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' does not support start_pos argument", name);
 
-        if (input_rows_count == 0)
+        if (haystack_offsets.empty())
             return;
 
         const UInt8 * const begin = haystack_data.data();

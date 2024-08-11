@@ -103,53 +103,40 @@ private:
             sorted_labels[i].label = label;
         }
 
-        /// Sorting scores in descending order to traverse the ROC curve from left to right
-        std::sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
+        /// Stable sort is required for for labels to apply in same order if score is equal
+        std::stable_sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
 
         /// We will first calculate non-normalized area.
 
-        Float64 area = 0.0;
-        Float64 prev_score = sorted_labels[0].score;
-        size_t prev_fp = 0, prev_tp = 0;
-        size_t curr_fp = 0, curr_tp = 0;
+        size_t area = 0;
+        size_t count_positive = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            // Only increment the area when the score changes
-            if (sorted_labels[i].score != prev_score)
-            {
-                area += (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0; // Trapezoidal area under curve (might degenerate to zero or to a rectangle)
-                prev_fp = curr_fp;
-                prev_tp = curr_tp;
-                prev_score = sorted_labels[i].score;
-            }
-
             if (sorted_labels[i].label)
-                curr_tp += 1; /// The curve moves one step up.
+                ++count_positive; /// The curve moves one step up. No area increase.
             else
-                curr_fp += 1; /// The curve moves one step right.
+                area += count_positive; /// The curve moves one step right. Area is increased by 1 * height = count_positive.
         }
 
-        area += (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0;
+        /// Then divide the area to the area of rectangle.
 
-        /// Then normalize it dividing by the area to the area of rectangle.
-
-        if (curr_tp == 0 || curr_tp == size)
+        if (count_positive == 0 || count_positive == size)
             return std::numeric_limits<Float64>::quiet_NaN();
 
-        return area / curr_tp / (size - curr_tp);
+        return static_cast<Float64>(area) / count_positive / (size - count_positive);
     }
 
     static void vector(
         const IColumn & scores,
         const IColumn & labels,
         const ColumnArray::Offsets & offsets,
-        PaddedPODArray<Float64> & result,
-        size_t input_rows_count)
+        PaddedPODArray<Float64> & result)
     {
-        result.resize(input_rows_count);
+        size_t size = offsets.size();
+        result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < size; ++i)
         {
             auto next_offset = offsets[i];
             result[i] = apply(scores, labels, current_offset, next_offset);
@@ -179,7 +166,7 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         ColumnPtr col1 = arguments[0].column->convertToFullColumnIfConst();
         ColumnPtr col2 = arguments[1].column->convertToFullColumnIfConst();
@@ -203,8 +190,7 @@ public:
             col_array1->getData(),
             col_array2->getData(),
             col_array1->getOffsets(),
-            col_res->getData(),
-            input_rows_count);
+            col_res->getData());
 
         return col_res;
     }

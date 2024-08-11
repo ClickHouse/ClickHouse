@@ -537,7 +537,7 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
         for (const auto & object_from : source_blobs)
         {
-            auto object_key = destination_object_storage.generateObjectKeyForPath(to_path, std::nullopt /* key_prefix */);
+            auto object_key = destination_object_storage.generateObjectKeyForPath(to_path);
             auto object_to = StoredObject(object_key.serialize());
 
             object_storage.copyObjectToAnotherObjectStorage(object_from, object_to,read_settings,write_settings, destination_object_storage);
@@ -738,7 +738,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     const WriteSettings & settings,
     bool autocommit)
 {
-    auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+    auto object_key = object_storage.generateObjectKeyForPath(path);
     std::optional<ObjectAttributes> object_attributes;
 
     if (metadata_helper)
@@ -835,7 +835,7 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
     const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
 {
     /// This function is a simplified and adapted version of DiskObjectStorageTransaction::writeFile().
-    auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+    auto object_key = object_storage.generateObjectKeyForPath(path);
     std::optional<ObjectAttributes> object_attributes;
 
     if (metadata_helper)
@@ -874,9 +874,7 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
     /// Create metadata (see create_metadata_callback in DiskObjectStorageTransaction::writeFile()).
     if (mode == WriteMode::Rewrite)
     {
-        /// Otherwise we will produce lost blobs which nobody points to
-        /// WriteOnce storages are not affected by the issue
-        if (!object_storage.isPlain() && metadata_storage.exists(path))
+        if (!object_storage.isWriteOnce() && metadata_storage.exists(path))
             object_storage.removeObjectsIfExist(metadata_storage.getStorageObjects(path));
 
         metadata_transaction->createMetadataFile(path, std::move(object_key), object_size);
