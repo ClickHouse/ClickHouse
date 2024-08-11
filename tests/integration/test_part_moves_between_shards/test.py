@@ -512,10 +512,6 @@ def test_move_not_permitted(started_cluster):
             "ALTER TABLE not_permitted_partition MOVE PART '20210903_0_0_0' TO SHARD '/clickhouse/shard_1/tables/not_permitted_partition'"
         )
 
-    for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
-        for replica_ix, r in enumerate(rs):
-            r.query("DROP TABLE not_permitted_partition SYNC")
-
 def wait_for_state(
     desired_state,
     instance,
