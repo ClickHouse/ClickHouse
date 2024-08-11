@@ -102,6 +102,9 @@ def test_move(started_cluster):
     for n in [s1r0, s1r1]:
         assert "0" == n.query("SELECT count() FROM test_move").strip()
 
+    for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
+        for replica_ix, r in enumerate(rs):
+            r.query("DROP TABLE test_move SYNC")
 
 def test_deduplication_while_move(started_cluster):
     for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
@@ -176,6 +179,9 @@ def test_deduplication_while_move(started_cluster):
 
     deduplication_invariant.stop_and_assert_no_exception()
 
+    for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
+        for replica_ix, r in enumerate(rs):
+            r.query("DROP TABLE test_deduplication SYNC")
 
 def test_part_move_step_by_step(started_cluster):
     for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
@@ -294,6 +300,9 @@ def test_part_move_step_by_step(started_cluster):
 
     deduplication_invariant.stop_and_assert_no_exception()
 
+    for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
+        for replica_ix, r in enumerate(rs):
+            r.query("DROP TABLE test_part_move_step_by_step SYNC")
 
 def test_part_move_step_by_step_kill(started_cluster):
     for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
@@ -434,6 +443,10 @@ def test_part_move_step_by_step_kill(started_cluster):
 
     deduplication_invariant.stop_and_assert_no_exception()
 
+    for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
+        for replica_ix, r in enumerate(rs):
+            r.query("DROP TABLE test_part_move_step_by_step_kill SYNC")
+
 
 def test_move_not_permitted(started_cluster):
     # Verify that invariants for part compatibility are checked.
@@ -498,7 +511,6 @@ def test_move_not_permitted(started_cluster):
         s0r0.query(
             "ALTER TABLE not_permitted_partition MOVE PART '20210903_0_0_0' TO SHARD '/clickhouse/shard_1/tables/not_permitted_partition'"
         )
-
 
 def wait_for_state(
     desired_state,
