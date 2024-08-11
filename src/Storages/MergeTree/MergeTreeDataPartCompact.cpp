@@ -126,9 +126,6 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
         index_granularity_.appendMark(granularity);
     }
 
-    if (!marks_compressed && index_granularity_.getMarksCount() * index_granularity_info_.getMarkSizeInBytes(columns_count) != marks_file_size)
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all marks from file {}", marks_file_path);
-
     index_granularity_.setInitialized();
 }
 
