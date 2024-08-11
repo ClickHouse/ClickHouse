@@ -994,14 +994,9 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
     }
 
     String path = fs::path(getDataPartStorage().getRelativePath()) / DEFAULT_COMPRESSION_CODEC_FILE_NAME;
-    bool exists = metadata_manager->exists(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
-    if (!exists)
+
+    if (auto file_buf = metadata_manager->readIfExists(DEFAULT_COMPRESSION_CODEC_FILE_NAME))
     {
-        default_codec = detectDefaultCompressionCodec();
-    }
-    else
-    {
-        auto file_buf = metadata_manager->read(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
         String codec_line;
         readEscapedStringUntilEOL(codec_line, *file_buf);
 
@@ -1031,6 +1026,8 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
             default_codec = detectDefaultCompressionCodec();
         }
     }
+    else
+        default_codec = detectDefaultCompressionCodec();
 }
 
 template <typename Writer>

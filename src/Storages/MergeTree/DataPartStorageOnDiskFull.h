@@ -32,6 +32,12 @@ public:
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const override;
 
+    std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
+
     void createProjection(const std::string & name) override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
