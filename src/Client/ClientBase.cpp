@@ -1821,11 +1821,6 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     client_exception.reset();
     server_exception.reset();
 
-    Settings settings = client_context->getSettingsCopy();
-    settings.script_line_number = settings.script_line_number + 1;
-    client_context->setSettings(settings);
-
-
     if (echo_query_ && *echo_query_)
     {
         writeString(full_query, std_out);
@@ -2176,6 +2171,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     const char * this_query_begin = all_queries_text.data() + test_tags_length;
     const char * this_query_end;
     const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
+    UInt64 current_line = std::count(all_queries_text.c_str(), this_query_begin, '\n');
 
     String full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
     String query_to_execute;
@@ -2188,6 +2184,13 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     {
         auto stage = analyzeMultiQueryText(this_query_begin, this_query_end, all_queries_end,
                                            query_to_execute, parsed_query, all_queries_text, current_exception);
+
+        //very expensive calls, will try to remove them.
+        current_line = std::count(all_queries_text.c_str(), this_query_begin, '\n') + 1;
+        Settings settings = client_context->getSettingsCopy();
+        settings.script_line_number = current_line;
+        client_context->setSettings(settings);
+
         switch (stage)
         {
             case MultiQueryProcessingStage::QUERIES_END:

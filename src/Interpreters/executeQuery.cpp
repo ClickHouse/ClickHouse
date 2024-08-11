@@ -152,15 +152,22 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
         if (auto txn = context->getCurrentTransaction())
             transaction_info = fmt::format(" (TID: {}, TIDH: {})", txn->tid, txn->tid.getHash());
 
-        LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{}{} {} (stage: {})",
-            client_info.current_address.toString(),
-            (current_user != "default" ? ", user: " + current_user : ""),
-            (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
-            transaction_info,
-            comment,
-            ", line number:" + std::to_string(line_number),
-            toOneLineQuery(query),
-            QueryProcessingStage::toString(stage));
+        std::istringstream iss(query);
+        std::string token;
+
+        for(UInt64 i = 0; std::getline(iss, token, '\n'); i++)
+        {
+            LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{}{} {} (stage: {})",
+                client_info.current_address.toString(),
+                (current_user != "default" ? ", user: " + current_user : ""),
+                (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
+                transaction_info,
+                comment,
+                ", line number: " + std::to_string(line_number + i),
+                token,
+                QueryProcessingStage::toString(stage));
+        }
+
 
         if (client_info.client_trace_context.trace_id != UUID())
         {
@@ -198,7 +205,6 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
     String line_number;
     if (!elem.log_comment.empty())
         comment = fmt::format(" (comment: {})", elem.log_comment);
-    line_number = fmt::format(" (line number {})", std::to_string(elem.script_line_number));
 
     /// Message patterns like "{} (from {}){} (in query: {})" are not really informative,
     /// so we pass elem.exception_format_string as format string instead.
@@ -206,21 +212,28 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
     message.format_string = elem.exception_format_string;
     message.format_string_args = elem.exception_format_string_args;
 
+    std::istringstream iss(elem.query);
+    std::string token;
+
     if (elem.stack_trace.empty() || !log_error)
-        message.text = fmt::format("{} (from {}){}{} (in query: {})", elem.exception,
-                        context->getClientInfo().current_address.toString(),
-                        comment,
-                        line_number,
-                        toOneLineQuery(elem.query));
+        for(UInt64 i = 0; std::getline(iss, token, '\n'); i++)
+            message.text = fmt::format("{} (from {}){}{} (in query: {})", elem.exception,
+                context->getClientInfo().current_address.toString(),
+                comment,
+                fmt::format(" (line number: {})", elem.script_line_number + i),
+                token);
+
     else
-        message.text = fmt::format(
+        for(UInt64 i = 0; std::getline(iss, token, '\n'); i++)
+            message.text = fmt::format(
             "{} (from {}){}{} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
-            elem.exception,
-            context->getClientInfo().current_address.toString(),
-            comment,
-            line_number,
-            toOneLineQuery(elem.query),
-            elem.stack_trace);
+                elem.exception,
+                context->getClientInfo().current_address.toString(),
+                comment,
+                line_number = fmt::format(" (line number: {})", elem.script_line_number + i),
+                token,
+                elem.stack_trace);
+
 
     if (log_error)
         LOG_ERROR(getLogger("executeQuery"), message);
