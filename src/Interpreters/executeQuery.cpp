@@ -163,7 +163,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
                 (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
                 transaction_info,
                 comment,
-                ", line number: " + std::to_string(line_number + i),
+                line_number != 0 ? ", line number: " + std::to_string(line_number + i) : std::string(),
                 token,
                 QueryProcessingStage::toString(stage));
         }
@@ -220,7 +220,7 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
             message.text = fmt::format("{} (from {}){}{} (in query: {})", elem.exception,
                 context->getClientInfo().current_address.toString(),
                 comment,
-                fmt::format(" (line number: {})", elem.script_line_number + i),
+                elem.script_line_number != 0 ? fmt::format(" (line number: {})", elem.script_line_number + i) : std::string(),
                 token);
 
     else
@@ -230,7 +230,7 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
                 elem.exception,
                 context->getClientInfo().current_address.toString(),
                 comment,
-                line_number = fmt::format(" (line number: {})", elem.script_line_number + i),
+                elem.script_line_number != 0 ? fmt::format(" (line number: {})", elem.script_line_number + i) : std::string(),
                 token,
                 elem.stack_trace);
 

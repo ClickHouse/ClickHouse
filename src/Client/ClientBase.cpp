@@ -2182,14 +2182,12 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
     while (true)
     {
+        const char * last_query_begin = this_query_begin;
         auto stage = analyzeMultiQueryText(this_query_begin, this_query_end, all_queries_end,
                                            query_to_execute, parsed_query, all_queries_text, current_exception);
 
-        //very expensive calls, will try to remove them.
-        current_line = std::count(all_queries_text.c_str(), this_query_begin, '\n') + 1;
-        Settings settings = client_context->getSettingsCopy();
-        settings.script_line_number = current_line;
-        client_context->setSettings(settings);
+        current_line += std::count(last_query_begin, this_query_begin, '\n') + 1;
+        client_context->setSetting("script_line_number", current_line);
 
         switch (stage)
         {
