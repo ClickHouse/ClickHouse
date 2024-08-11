@@ -141,8 +141,13 @@ void registerPlainRewritableMetadataStorage(MetadataStorageFactory & factory)
         [](const std::string & /* name */,
            const Poco::Util::AbstractConfiguration & config,
            const std::string & config_prefix,
-           ObjectStoragePtr object_storage) -> MetadataStoragePtr
-        {
+           ObjectStoragePtr object_storage,
+           bool requires_object_storage) -> MetadataStoragePtr
+    {
+        if (!requires_object_storage) {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "MetadataStorageFactory: requires_object_storage can be false only in case of disk metadata storages");
+        }
             auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
             return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, key_compatibility_prefix);
         });
