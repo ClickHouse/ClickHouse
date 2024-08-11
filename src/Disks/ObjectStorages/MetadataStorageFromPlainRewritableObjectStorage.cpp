@@ -246,21 +246,12 @@ std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDi
     auto key_prefix = object_storage->generateObjectKeyForPath(path, "" /* key_prefix */).serialize();
 
     RelativePathsWithMetadata files;
-    auto abs_key = std::filesystem::path(object_storage->getCommonKeyPrefix()) / key_prefix / "";
+    auto absolute_key = std::filesystem::path(object_storage->getCommonKeyPrefix()) / key_prefix / "";
 
-    object_storage->listObjects(abs_key, files, 0);
+    object_storage->listObjects(absolute_key, files, 0);
 
     std::unordered_set<std::string> directories;
-    getDirectChildrenOnDisk(abs_key, files, std::filesystem::path(path) / "", directories);
-    /// List empty directories that are identified by the `prefix.path` metadata files. This is required to, e.g., remove
-    /// metadata along with regular files.
-    if (useSeparateLayoutForMetadata())
-    {
-        auto metadata_key = std::filesystem::path(getMetadataKeyPrefix()) / key_prefix / "";
-        RelativePathsWithMetadata metadata_files;
-        object_storage->listObjects(metadata_key, metadata_files, 0);
-        getDirectChildrenOnDisk(metadata_key, metadata_files, std::filesystem::path(path) / "", directories);
-    }
+    getDirectChildrenOnDisk(absolute_key, files, std::filesystem::path(path) / "", directories);
 
     return std::vector<std::string>(std::make_move_iterator(directories.begin()), std::make_move_iterator(directories.end()));
 }
