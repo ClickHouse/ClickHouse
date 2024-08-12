@@ -38,6 +38,6 @@ CREATE DATABASE example_database;
 echo $?
 
 $CLICKHOUSE_CLIENT -mn -q "
-DROP DATABASE example_database;
-DROP TABLE example_table;
+DROP DATABASE IF EXISTS example_database;
+DROP TABLE IF EXISTS example_table;
 "
