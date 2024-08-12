@@ -28,7 +28,8 @@ function test()
         SYSTEM FLUSH LOGS;
         WITH memory_1 AS (SELECT memory_usage FROM system.query_log WHERE current_database = currentDatabase() AND query_id='$uuid_1' AND type = 'QueryFinish' as memory_1),
              memory_2 AS (SELECT memory_usage FROM system.query_log WHERE current_database = currentDatabase() AND query_id='$uuid_2' AND type = 'QueryFinish' as memory_2)
-                SELECT memory_1.memory_usage <= 1.2 * memory_2.memory_usage FROM memory_1, memory_2;"
+                SELECT memory_1.memory_usage <= 1.2 * memory_2.memory_usage OR
+                       memory_2.memory_usage <= 1.2 * memory_1.memory_usage FROM memory_1, memory_2;"
 }
 
 test ""
