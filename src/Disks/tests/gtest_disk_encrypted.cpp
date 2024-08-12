@@ -59,7 +59,7 @@ protected:
 
     String getFileContents(const String & file_name, std::optional<size_t> file_size = {})
     {
-        auto buf = encrypted_disk->readFile(file_name, /* settings= */ getReadSettings(), /* read_hint= */ {}, file_size);
+        auto buf = encrypted_disk->readFile(file_name, /* settings= */ {}, /* read_hint= */ {}, file_size);
         String str;
         readStringUntilEOF(str, *buf);
         return str;
@@ -67,7 +67,7 @@ protected:
 
     static String getBinaryRepresentation(const String & abs_path)
     {
-        auto buf = createReadBufferFromFileBase(abs_path, /* settings= */ getReadSettings());
+        auto buf = createReadBufferFromFileBase(abs_path, /* settings= */ {});
         String str;
         readStringUntilEOF(str, *buf);
         return str;

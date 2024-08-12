@@ -190,7 +190,7 @@ UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
     /// Read id in file
     UInt32 result = 0;
     {
-        std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(file_name, getReadSettings(), std::nullopt, std::nullopt);
+        std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(file_name, {}, std::nullopt, std::nullopt);
 
         /// Skip version
         istr->seek(1, SEEK_SET);
@@ -236,7 +236,7 @@ UInt32 GinIndexStore::getNumOfSegments()
 
     UInt32 result = 0;
     {
-        std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(segment_id_file_name, getReadSettings(), std::nullopt, std::nullopt);
+        std::unique_ptr<DB::ReadBufferFromFileBase> istr = this->storage->readFile(segment_id_file_name, {}, std::nullopt, std::nullopt);
 
         uint8_t version = 0;
         readBinary(version, *istr);
@@ -361,11 +361,10 @@ void GinIndexStoreDeserializer::initFileStreams()
     String metadata_file_name = store->getName() + GinIndexStore::GIN_SEGMENT_METADATA_FILE_TYPE;
     String dict_file_name = store->getName() + GinIndexStore::GIN_DICTIONARY_FILE_TYPE;
     String postings_file_name = store->getName() + GinIndexStore::GIN_POSTINGS_FILE_TYPE;
-    auto read_settings = getReadSettings();
 
-    metadata_file_stream = store->storage->readFile(metadata_file_name, read_settings, std::nullopt, std::nullopt);
-    dict_file_stream = store->storage->readFile(dict_file_name, read_settings, std::nullopt, std::nullopt);
-    postings_file_stream = store->storage->readFile(postings_file_name, read_settings, std::nullopt, std::nullopt);
+    metadata_file_stream = store->storage->readFile(metadata_file_name, {}, std::nullopt, std::nullopt);
+    dict_file_stream = store->storage->readFile(dict_file_name, {}, std::nullopt, std::nullopt);
+    postings_file_stream = store->storage->readFile(postings_file_name, {}, std::nullopt, std::nullopt);
 }
 void GinIndexStoreDeserializer::readSegments()
 {

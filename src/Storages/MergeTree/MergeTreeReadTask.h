@@ -81,7 +81,7 @@ public:
     {
         UncompressedCache * uncompressed_cache = nullptr;
         MarkCache * mark_cache = nullptr;
-        MergeTreeReaderSettings reader_settings;
+        MergeTreeReaderSettings reader_settings{};
         StorageSnapshotPtr storage_snapshot{};
         IMergeTreeReader::ValueSizeMap value_size_map{};
         ReadBufferFromFileBase::ProfileCallback profile_callback{};

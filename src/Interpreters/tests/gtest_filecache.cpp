@@ -1074,7 +1074,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     settings.max_elements = 10;
     settings.boundary_alignment = 1;
 
-    ReadSettings read_settings = getReadSettings();
+    ReadSettings read_settings;
     read_settings.enable_filesystem_cache = true;
     read_settings.local_fs_method = LocalFSReadMethod::pread;
 
@@ -1285,7 +1285,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
     }
 
     {
-        ReadSettings read_settings = getReadSettings();
+        ReadSettings read_settings;
         read_settings.enable_filesystem_cache = true;
         read_settings.local_fs_method = LocalFSReadMethod::pread;
 

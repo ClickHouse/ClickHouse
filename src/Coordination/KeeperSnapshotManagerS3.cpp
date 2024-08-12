@@ -173,8 +173,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
 
         LOG_INFO(log, "Will try to upload snapshot on {} to S3", snapshot_path);
 
-        auto read_settings = getReadSettings();
-        auto snapshot_file = snapshot_disk->readFile(snapshot_path, read_settings);
+        auto snapshot_file = snapshot_disk->readFile(snapshot_path, getReadSettings());
 
         auto snapshot_name = fs::path(snapshot_path).filename().string();
         auto lock_file = fmt::format(".{}_LOCK", snapshot_name);
@@ -209,7 +208,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
             lock_file,
             "",
             request_settings_2,
-            read_settings
+            {}
         };
 
         std::string read_uuid;

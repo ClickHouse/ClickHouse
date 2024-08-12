@@ -63,16 +63,10 @@ enum class RemoteFSReadMethod : uint8_t
 class MMappedFileCache;
 class PageCache;
 class Context;
-struct ReadSettings;
 
 struct ReadSettings
 {
-    friend ReadSettings getReadSettings();
-
-private:
     ReadSettings() = default;
-
-public:
     explicit ReadSettings(const Context & context);
 
     /// Method to use reading from local filesystem.

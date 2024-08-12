@@ -107,7 +107,7 @@ void moveFileBetweenDisks(
             "creating temporary file"))
         return;
 
-    if (!run_with_retries([&] { disk_from->copyFile(from_path, *disk_to, path_to, getReadSettings()); }, "copying file"))
+    if (!run_with_retries([&] { disk_from->copyFile(from_path, *disk_to, path_to, {}); }, "copying file"))
         return;
 
     if (!run_with_retries([&] { disk_to->removeFileIfExists(tmp_file_name); }, "removing temporary file"))

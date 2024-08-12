@@ -21,7 +21,7 @@ public:
         const String & url_,
         ContextPtr context_,
         size_t file_size_,
-        const ReadSettings & settings_,
+        const ReadSettings & settings_ = {},
         bool use_external_buffer_ = false,
         size_t read_until_position = 0);
 

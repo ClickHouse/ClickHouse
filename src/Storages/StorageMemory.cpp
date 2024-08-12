@@ -545,7 +545,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
             auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getAbsolutePath());
             copyData(*in, *out);
             out.reset();
-            in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), getReadSettings());
+            in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
         }
         std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
         CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};

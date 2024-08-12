@@ -105,7 +105,7 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
     if (validate_content)
     {
         std::string data;
-        auto read_buf = object_storage->readObject(object, getReadSettings());
+        auto read_buf = object_storage->readObject(object, ReadSettings{});
         readStringUntilEOF(data, *read_buf);
         if (data != path_from)
             throw Exception(

@@ -209,7 +209,7 @@ void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, co
         fs::path(source_on_disk->getRelativePath()) / from,
         *volume->getDisk(),
         fs::path(root_path) / part_dir / to,
-        getReadSettings());
+        Context::getGlobalContextInstance()->getReadSettings());
 }
 
 void DataPartStorageOnDiskFull::createProjection(const std::string & name)

@@ -391,7 +391,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             }
         }
 
-        auto read_settings = getReadSettings();
+        ReadSettings read_settings;
         read_settings.enable_filesystem_cache = false;
 
         return checkDataPart(
@@ -409,7 +409,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
     try
     {
-        auto read_settings = getReadSettings();
+        ReadSettings read_settings;
         return checkDataPart(
             data_part,
             data_part->getDataPartStorage(),
