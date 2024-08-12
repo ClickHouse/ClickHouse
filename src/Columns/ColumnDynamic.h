@@ -270,6 +270,8 @@ public:
         variant_column->reserve(n);
     }
 
+    void prepareForSquashing(const Columns & source_columns) override;
+
     void ensureOwnership() override
     {
         variant_column->ensureOwnership();
