@@ -23,7 +23,7 @@ icebergLocal(named_collection[, option=value [,..]])
 
 ## Arguments
 
-Description of the arguments coincides with decription of arguments in table functions `s3`, `azureBlobStorage` and `file` correspondingly.
+Description of the arguments coincides with description of arguments in table functions `s3`, `azureBlobStorage` and `file` correspondingly.
 `format` stands for the format of data files in the Iceberg table.
 
 **Returned value**

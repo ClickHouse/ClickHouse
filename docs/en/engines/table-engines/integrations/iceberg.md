@@ -25,7 +25,7 @@ CREATE TABLE iceberg_table_local
 
 **Engine arguments**
 
-Description of the arguments coincides with decription of arguments in engines `S3`, `AzureBlobStorage` and `File` correspondingly.
+Description of the arguments coincides with description of arguments in engines `S3`, `AzureBlobStorage` and `File` correspondingly.
 `format` stands for the format of data files in the Iceberg table.
 
 Engine parameters can be specified using [Named Collections](../../../operations/named-collections.md)
