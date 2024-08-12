@@ -3,30 +3,32 @@
 
 SYSTEM DROP QUERY CACHE;
 
--- Cache the query after the query invocation
-SELECT 1 SETTINGS use_query_cache = true;
-SELECT COUNT(*) FROM system.query_cache;
+-- Store the result a single query with a tag in the query cache and check that the system table knows about the tag
+SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'abc';
+
+SELECT query, tag FROM system.query_cache;
 
 SELECT '---';
 
 SYSTEM DROP QUERY CACHE;
 
--- Queries with tag value of this setting or not are considered different cache entries.
-SELECT 1 SETTINGS use_query_cache = true;
-SELECT COUNT(*) FROM system.query_cache;
-SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'one';
-SELECT COUNT(*) FROM system.query_cache;
+-- Store the result of the same query with two different tags. The cache should store two entries.
+SELECT 1 SETTINGS use_query_cache = true; -- default query_cache_tag = ''
+SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'abc';
+SELECT query, tag FROM system.query_cache ORDER BY ALL;
 
 SELECT '---';
 
 SYSTEM DROP QUERY CACHE;
 
--- Queries with different tags values of this setting are considered different cache entries.
+-- Like before but the tag is set standalone.
+
+SET query_cache_tag = 'abc';
 SELECT 1 SETTINGS use_query_cache = true;
-SELECT COUNT(*) FROM system.query_cache;
-SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'one';
-SELECT COUNT(*) FROM system.query_cache;
-SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'one diff';
-SELECT COUNT(*) FROM system.query_cache;
+
+SET query_cache_tag = 'def';
+SELECT 1 SETTINGS use_query_cache = true;
+
+SELECT query, tag FROM system.query_cache ORDER BY ALL;
 
 SYSTEM DROP QUERY CACHE;

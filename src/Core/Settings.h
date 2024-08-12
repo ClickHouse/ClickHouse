@@ -676,7 +676,7 @@ class IColumn;
     M(Bool, query_cache_squash_partial_results, true, "Squash partial result blocks to blocks of size 'max_block_size'. Reduces performance of inserts into the query cache but improves the compressability of cache entries.", 0) \
     M(Seconds, query_cache_ttl, 60, "After this time in seconds entries in the query cache become stale", 0) \
     M(Bool, query_cache_share_between_users, false, "Allow other users to read entry in the query cache", 0) \
-    M(String, query_cache_tag, "", "An arbitrary string to separate entries in the query cache. Queries with different values of this setting are considered different.", 0) \
+    M(String, query_cache_tag, "", "A string which acts as a label for query cache entries. The same queries with different tags are considered different by the query cache.", 0) \
     M(Bool, enable_sharing_sets_for_mutations, true, "Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption", 0) \
     \
     M(Bool, optimize_rewrite_sum_if_to_count_if, true, "Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent", 0) \

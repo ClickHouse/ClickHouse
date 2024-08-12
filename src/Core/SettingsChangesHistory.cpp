@@ -82,9 +82,9 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"merge_tree_min_bytes_per_task_for_remote_reading", 4194304, 2097152, "Value is unified with `filesystem_prefetch_min_bytes_for_single_read_task`"},
             {"allow_experimental_kafka_offsets_storage_in_keeper", false, false, "Allow the usage of experimental Kafka storage engine that stores the committed offsets in ClickHouse Keeper"},
             {"allow_archive_path_syntax", true, true, "Added new setting to allow disabling archive path syntax."},
+            {"query_cache_tag", "", "", "New setting for labeling query cache settings."},
             {"allow_experimental_time_series_table", false, false, "Added new setting to allow the TimeSeries table engine"},
             {"enable_analyzer", 1, 1, "Added an alias to a setting `allow_experimental_analyzer`."},
-            {"query_cache_tag", "", "", "Add a setting to separate entries in the query cache using an arbitrary string. Queries with different values of this setting are considered different."},
             {"optimize_functions_to_subcolumns", false, true, "Enabled settings by default"},
         }
     },

@@ -88,8 +88,9 @@ public:
         /// SYSTEM.QUERY_CACHE.
         const String query_string;
 
-        /// An arbitrary string to separate entries in the query cache.
-        /// Queries with different values of this setting are considered different.
+        /// A tag (namespace) for distinguish multiple entries of the same query.
+        /// This member has currently no use besides that SYSTEM.QUERY_CACHE can populate the 'tag' column conveniently without having to
+        /// compute the tag from the query AST.
         const String tag;
 
         /// Ctor to construct a Key for writing into query cache.
@@ -100,15 +101,13 @@ public:
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
-            bool is_compressed,
-            const String & tag_);
+            bool is_compressed);
 
         /// Ctor to construct a Key for reading from query cache (this operation only needs the AST + user name).
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
-            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
-            const String & tag_);
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
 
         bool operator==(const Key & other) const;
     };
