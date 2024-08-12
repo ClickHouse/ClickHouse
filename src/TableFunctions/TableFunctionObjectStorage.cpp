@@ -222,5 +222,5 @@ template class TableFunctionObjectStorage<OSSDefinition, StorageS3Configuration>
 template class TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>;
 template class TableFunctionObjectStorage<HDFSClusterDefinition, StorageHDFSConfiguration>;
 #endif
-
+template class TableFunctionObjectStorage<LocalDefinition, StorageLocalConfiguration>;
 }
