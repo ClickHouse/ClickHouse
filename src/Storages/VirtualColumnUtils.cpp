@@ -38,7 +38,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Common/re2.h>
 #include <Common/typeid_cast.h>
@@ -46,15 +45,7 @@
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Core/Settings.h>
-#include "Functions/FunctionsLogical.h"
-#include "Functions/IFunction.h"
-#include "Functions/IFunctionAdaptors.h"
-#include "Functions/indexHint.h"
 #include <Interpreters/convertFieldToType.h>
-#include <Parsers/makeASTForLogicalFunction.h>
-#include <Columns/ColumnSet.h>
-#include <Functions/FunctionHelpers.h>
-#include <Interpreters/ActionsVisitor.h>
 
 
 namespace DB
