@@ -710,6 +710,27 @@ Controls validation of UTF-8 sequences in JSON output formats, doesn't impact fo
 
 Disabled by default.
 
+## output_format_json_content_type_header {#output_format_json_content_type_header}
+
+Allow user to set Content-Type header when using JSON output format e.g. `JSONEachRow` [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) format in URL function.
+This setting is useful when using materialized view with URL table engine to push data to external service
+
+Default value: ``. 
+
+**Example of a query with the enabled setting**
+
+Query:
+
+```sql
+CREATE MATERIALIZED VIEW default.test
+ENGINE = URL('http://external/service', 'JSONEachRow')
+SETTINGS output_format_json_named_tuples_as_objects = 1,
+    output_format_json_array_of_rows = 0,
+    output_format_json_content_type_header = 'application/json; charset=UTF-8' 
+AS
+    SELECT number FROM numbers(10)
+```
+
 ## format_json_object_each_row_column_for_object_name {#format_json_object_each_row_column_for_object_name}
 
 The name of column that will be used for storing/writing object names in [JSONObjectEachRow](../../interfaces/formats.md/#jsonobjecteachrow) format.
