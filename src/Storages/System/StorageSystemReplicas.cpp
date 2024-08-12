@@ -280,14 +280,26 @@ private:
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
     const bool with_zk_fields;
     std::shared_ptr<StorageSystemReplicasImpl> impl;
-    const ActionsDAG::Node * predicate = nullptr;
+    ActionsDAGPtr virtual_columns_filter;
 };
 
 void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
+    {
+        Block block_to_filter
+        {
+            { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
+            { ColumnString::create(), std::make_shared<DataTypeString>(), "table" },
+            { ColumnString::create(), std::make_shared<DataTypeString>(), "engine" },
+        };
+
+        virtual_columns_filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+
+        if (virtual_columns_filter)
+            VirtualColumnUtils::buildSetsForDAG(virtual_columns_filter, context);
+    }
 }
 
 void StorageSystemReplicas::read(
@@ -384,7 +396,8 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
             { col_engine, std::make_shared<DataTypeString>(), "engine" },
         };
 
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
+        if (virtual_columns_filter)
+            VirtualColumnUtils::filterBlockWithDAG(virtual_columns_filter, filtered_block, context);
 
         if (!filtered_block.rows())
         {
