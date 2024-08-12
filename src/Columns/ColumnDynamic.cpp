@@ -987,7 +987,8 @@ void ColumnDynamic::prepareForSquashing(const Columns & source_columns)
     /// Internal variants of source dynamic columns may differ.
     /// We want to preallocate memory for all variants we will have after squashing.
     /// It may happen that the total number of variants in source columns will
-    /// exceed the limit, in this case we will choose the most frequent variants.
+    /// exceed the limit, in this case we will choose the most frequent variants
+    /// and insert the rest types into the shared variant.
 
     /// First, preallocate memory for variant discriminators and offsets.
     size_t new_size = size();
@@ -1030,17 +1031,14 @@ void ColumnDynamic::prepareForSquashing(const Columns & source_columns)
 
     DataTypePtr result_variant_type;
     /// Check if the number of all variants exceeds the limit.
-    if (all_variants.size() > max_dynamic_types || (all_variants.size() == max_dynamic_types && !total_variant_sizes.contains("String")))
+    if (!canAddNewVariants(0, all_variants.size()))
     {
         /// We want to keep the most frequent variants in the resulting dynamic column.
         DataTypes result_variants;
-        result_variants.reserve(max_dynamic_types);
+        result_variants.reserve(max_dynamic_types + 1); /// +1 for shared variant.
         /// Add variants from current variant column as we will not rewrite it.
         for (const auto & variant : assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants())
             result_variants.push_back(variant);
-        /// Add String variant in advance (if we didn't add it yet) as we must have it across variants when we reach the limit.
-        if (!variant_info.variant_name_to_discriminator.contains("String"))
-            result_variants.push_back(std::make_shared<DataTypeString>());
 
         /// Create list of remaining variants with their sizes and sort it.
         std::vector<std::pair<size_t, DataTypePtr>> variants_with_sizes;
@@ -1049,15 +1047,18 @@ void ColumnDynamic::prepareForSquashing(const Columns & source_columns)
         {
             /// Add variant to the list only of we didn't add it yet.
             auto variant_name = variant->getName();
-            if (variant_name != "String" && !variant_info.variant_name_to_discriminator.contains(variant_name))
-                variants_with_sizes.emplace_back(total_variant_sizes[variant->getName()], variant);
+            if (!variant_info.variant_name_to_discriminator.contains(variant_name))
+                variants_with_sizes.emplace_back(total_variant_sizes[variant_name], variant);
         }
 
         std::sort(variants_with_sizes.begin(), variants_with_sizes.end(), std::greater());
         /// Add the most frequent variants until we reach max_dynamic_types.
-        size_t num_new_variants = max_dynamic_types - result_variants.size();
-        for (size_t i = 0; i != num_new_variants; ++i)
-            result_variants.push_back(variants_with_sizes[i].second);
+        for (const auto & [_, new_variant] : variants_with_sizes)
+        {
+            if (!canAddNewVariant(result_variants.size()))
+                break;
+            result_variants.push_back(new_variant);
+        }
 
         result_variant_type = std::make_shared<DataTypeVariant>(result_variants);
     }
