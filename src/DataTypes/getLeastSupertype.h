@@ -51,6 +51,6 @@ DataTypePtr getLeastSupertypeOrString(const TypeIndexSet & types);
 DataTypePtr tryGetLeastSupertype(const TypeIndexSet & types);
 
 /// A vector that shows the conversion rates to the next Interval type starting from NanoSecond
-static std::vector<int> interval_conversions = {1000, 1000, 1000, 60, 60, 24, 7, 4, 3, 4, 1};
+static std::vector<int> interval_conversions = {1, 1000, 1000, 1000, 60, 60, 24, 7, 4, 3, 4};
 
 }

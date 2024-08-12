@@ -1586,17 +1586,17 @@ struct ConvertImpl
             Int64 result_value;
 
             int from_position = static_cast<int>(from.kind);
-            int to_position = static_cast<int>(to.kind); // Positions of each interval according to granurality map
+            int to_position = static_cast<int>(to.kind); /// Positions of each interval according to granularity map
 
             if (from_position < to_position)
             {
-                for (int i = from_position - 1; i <= to_position; ++i)
+                for (int i = from_position; i < to_position; ++i)
                     conversion_factor *= interval_conversions[i];
                 result_value = arguments[0].column->getInt(0) / conversion_factor;
             }
             else
             {
-                for (int i = from_position - 1; i >= to_position; --i)
+                for (int i = from_position; i > to_position; --i)
                     conversion_factor *= interval_conversions[i];
                 result_value = arguments[0].column->getInt(0) * conversion_factor;
             }
@@ -2366,9 +2366,8 @@ private:
             }
 
             if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
-            {
-                done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag);
-            }
+                if (WhichDataType(from_type).isInterval())
+                    done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag);
         }
 
         if (!done)
