@@ -78,7 +78,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"input_format_json_max_depth", 1000000, 1000, "It was unlimited in previous versions, but that was unsafe."},
             {"merge_tree_min_bytes_per_task_for_remote_reading", 4194304, 2097152, "Value is unified with `filesystem_prefetch_min_bytes_for_single_read_task`"},
             {"allow_archive_path_syntax", true, true, "Added new setting to allow disabling archive path syntax."},
-            {"allow_materialized_view_with_bad_select", true, false, "Stricter validation in CREATE MATERIALIZED VIEW"},
+            {"allow_materialized_view_with_bad_select", true, true, "Support (but not enable yet) stricter validation in CREATE MATERIALIZED VIEW"},
         }
     },
     {"24.7",
