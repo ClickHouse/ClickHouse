@@ -4073,7 +4073,7 @@ getSubcolumn(col_name, subcol_name)
 
 **Returned value**
 
-- Returns the extracted sub-colum.
+- Returns the extracted sub-column.
 
 **Example**
 
