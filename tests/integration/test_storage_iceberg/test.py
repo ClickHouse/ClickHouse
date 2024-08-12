@@ -95,24 +95,19 @@ def started_cluster():
 
         cluster.azure_container_name = "mycontainer"
 
-        # connection_string = (
-        #     f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
-        #     f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
-        #     f"BlobEndpoint=http://azurite1:{cluster.env_variables['AZURITE_PORT']}/devstoreaccount1;"
-        # )
-        # local_blob_service_client = BlobServiceClient.from_connection_string(
-        #     cluster.env_variables["AZURITE_CONNECTION_STRING"]
-        # )
+        cluster.blob_service_client = cluster.blob_service_client
 
-        local_blob_service_client = cluster.blob_service_client
-
-        container_client = local_blob_service_client.create_container(
+        container_client = cluster.blob_service_client.create_container(
             cluster.azure_container_name
         )
 
         cluster.container_client = container_client
 
-        cluster.default_azure_uploader = AzureUploader(container_client)
+        cluster.default_azure_uploader = AzureUploader(
+            cluster.blob_service_client, cluster.azure_container_name
+        )
+
+        cluster.default_local_uploader = LocalUploader(cluster.instances["node1"])
 
         yield cluster
 
@@ -187,13 +182,12 @@ def create_iceberg_table(
     table_function=False,
     **kwargs,
 ):
-    if storage_type == "local":
-        pass
-    elif storage_type == "s3":
+    if storage_type == "s3":
         if "bucket" in kwargs:
             bucket = kwargs["bucket"]
         else:
             bucket = cluster.minio_bucket
+        print(bucket)
         if table_function:
             return f"icebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
         node.query(
@@ -213,8 +207,19 @@ def create_iceberg_table(
             CREATE TABLE {table_name}
             ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})"""
         )
+    elif storage_type == "local":
+        if table_function:
+            return f"""
+                icebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})
+            """
+        node.query(
+            f"""
+            DROP TABLE IF EXISTS {table_name};
+            CREATE TABLE {table_name}
+            ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format});"""
+        )
     else:
-        raise Exception("Unknown iceberg storage type: {}", storage_type)
+        raise Exception(f"Unknown iceberg storage type: {storage_type}")
 
 
 def create_initial_data_file(
@@ -236,23 +241,28 @@ def create_initial_data_file(
     return result_path
 
 
-def default_upload_directory(started_cluster, storage_type, local_path, remote_path):
+def default_upload_directory(
+    started_cluster, storage_type, local_path, remote_path, **kwargs
+):
     if storage_type == "local":
-        return LocalUploader().upload_directory(local_path, remote_path)
+        return started_cluster.default_local_uploader.upload_directory(
+            local_path, remote_path, **kwargs
+        )
     elif storage_type == "s3":
+        print(kwargs)
         return started_cluster.default_s3_uploader.upload_directory(
-            local_path, remote_path
+            local_path, remote_path, **kwargs
         )
     elif storage_type == "azure":
         return started_cluster.default_azure_uploader.upload_directory(
-            local_path, remote_path
+            local_path, remote_path, **kwargs
         )
     else:
-        raise Exception("Unknown iceberg storage type: {}", storage_type)
+        raise Exception(f"Unknown iceberg storage type: {storage_type}")
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_single_iceberg_file(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -264,7 +274,7 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type):
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
@@ -273,11 +283,9 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type):
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
-    # assert 0 == 1
-
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_partition_by(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -293,7 +301,10 @@ def test_partition_by(started_cluster, format_version, storage_type):
     )
 
     files = default_upload_directory(
-        started_cluster, storage_type, f"/iceberg_data/default/{TABLE_NAME}/", ""
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
     assert len(files) == 14  # 10 partitiions + 4 metadata files
 
@@ -302,7 +313,7 @@ def test_partition_by(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_multiple_iceberg_files(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -322,7 +333,7 @@ def test_multiple_iceberg_files(started_cluster, format_version, storage_type):
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
     # ['/iceberg_data/default/test_multiple_iceberg_files/data/00000-1-35302d56-f1ed-494e-a85b-fbf85c05ab39-00001.parquet',
@@ -357,7 +368,7 @@ def test_multiple_iceberg_files(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_types(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -391,7 +402,7 @@ def test_types(started_cluster, format_version, storage_type):
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
@@ -421,7 +432,7 @@ def test_types(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_delete_files(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -441,7 +452,7 @@ def test_delete_files(started_cluster, format_version, storage_type):
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
 
@@ -487,7 +498,7 @@ def test_delete_files(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_evolved_schema(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -507,7 +518,7 @@ def test_evolved_schema(started_cluster, format_version, storage_type):
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
@@ -533,7 +544,7 @@ def test_evolved_schema(started_cluster, format_version, storage_type):
     assert data == expected_data
 
 
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_row_based_deletes(started_cluster, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -552,7 +563,7 @@ def test_row_based_deletes(started_cluster, storage_type):
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
@@ -572,7 +583,7 @@ def test_row_based_deletes(started_cluster, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_schema_inference(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -598,7 +609,7 @@ def test_schema_inference(started_cluster, format_version, storage_type):
             started_cluster,
             storage_type,
             f"/iceberg_data/default/{TABLE_NAME}/",
-            "",
+            f"/iceberg_data/default/{TABLE_NAME}/",
         )
 
         create_iceberg_table(
@@ -638,7 +649,7 @@ def test_schema_inference(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_metadata_file_selection(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -657,7 +668,7 @@ def test_metadata_file_selection(started_cluster, format_version, storage_type):
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
@@ -666,7 +677,7 @@ def test_metadata_file_selection(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_metadata_file_format_with_uuid(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -693,7 +704,7 @@ def test_metadata_file_format_with_uuid(started_cluster, format_version, storage
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
-        "",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
@@ -701,58 +712,63 @@ def test_metadata_file_format_with_uuid(started_cluster, format_version, storage
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 500
 
 
-# @pytest.mark.parametrize("storage_type", ["s3", "azure"])
-# def test_restart_broken(started_cluster):
-#     instance = started_cluster.instances["node1"]
-#     spark = started_cluster.spark_session
-#     minio_client = started_cluster.minio_client
-#     bucket = "broken2"
-#     TABLE_NAME = "test_restart_broken_table_function"
+def test_restart_broken_s3(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = "test_restart_broken_table_function_s3"
 
-#     if not minio_client.bucket_exists(bucket):
-#         minio_client.make_bucket(bucket)
+    minio_client = started_cluster.minio_client
+    bucket = "broken2"
 
-#     parquet_data_path = create_initial_data_file(
-#         started_cluster,
-#         instance,
-#         "SELECT number, toString(number) FROM numbers(100)",
-#         TABLE_NAME,
-#     )
+    if not minio_client.bucket_exists(bucket):
+        minio_client.make_bucket(bucket)
 
-#     write_iceberg_from_file(spark, parquet_data_path, TABLE_NAME, format_version="1")
-#     files = default_upload_directory(
-#         started_cluster,
-#         storage_type,
-#         f"/iceberg_data/default/{TABLE_NAME}/",
-#         "",
-#     )
-#     create_iceberg_table(instance, TABLE_NAME, bucket=bucket)
-#     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    write_iceberg_from_df(
+        spark,
+        generate_data(spark, 0, 100),
+        TABLE_NAME,
+        mode="overwrite",
+        format_version="1",
+    )
 
-#     s3_objects = list_s3_objects(minio_client, bucket, prefix="")
-#     assert (
-#         len(
-#             list(
-#                 minio_client.remove_objects(
-#                     bucket,
-#                     [DeleteObject(obj) for obj in s3_objects],
-#                 )
-#             )
-#         )
-#         == 0
-#     )
-#     minio_client.remove_bucket(bucket)
+    files = default_upload_directory(
+        started_cluster,
+        "s3",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        bucket=bucket,
+    )
+    create_iceberg_table("s3", instance, TABLE_NAME, started_cluster, bucket=bucket)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
-#     instance.restart_clickhouse()
+    s3_objects = list_s3_objects(minio_client, bucket, prefix="")
+    assert (
+        len(
+            list(
+                minio_client.remove_objects(
+                    bucket,
+                    [DeleteObject(obj) for obj in s3_objects],
+                )
+            )
+        )
+        == 0
+    )
+    minio_client.remove_bucket(bucket)
 
-#     assert "NoSuchBucket" in instance.query_and_get_error(
-#         f"SELECT count() FROM {TABLE_NAME}"
-#     )
+    instance.restart_clickhouse()
 
-#     minio_client.make_bucket(bucket)
+    assert "NoSuchBucket" in instance.query_and_get_error(
+        f"SELECT count() FROM {TABLE_NAME}"
+    )
 
-#     files = default_upload_directory(
-#         S3Uploader(minio_client, bucket), f"/iceberg_data/default/{TABLE_NAME}/", ""
-#     )
+    minio_client.make_bucket(bucket)
 
-#     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    files = default_upload_directory(
+        started_cluster,
+        "s3",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        bucket=bucket,
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
