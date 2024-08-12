@@ -1,14 +1,15 @@
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
-#include <Storages/ObjectStorage/HDFS/Configuration.h>
-#include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
 
 namespace DB
 {
+
+#if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS
 
 namespace ErrorCodes
 {
@@ -68,6 +69,8 @@ static std::shared_ptr<StorageObjectStorage> createStorageObjectStorage(
         /* distributed_processing */ false,
         partition_by);
 }
+
+#endif
 
 #if USE_AZURE_BLOB_STORAGE
 void registerStorageAzure(StorageFactory & factory)
@@ -136,27 +139,8 @@ void registerStorageHDFS(StorageFactory & factory)
 }
 #endif
 
-void registerStorageLocal(StorageFactory & factory)
-{
-    factory.registerStorage(
-        "Local",
-        [=](const StorageFactory::Arguments & args)
-        {
-            auto configuration = std::make_shared<StorageLocalConfiguration>();
-            return createStorageObjectStorage(args, configuration, args.getLocalContext());
-        },
-        {
-            .supports_settings = true,
-            .supports_sort_order = true, // for partition by
-            .supports_schema_inference = true,
-            .source_access_type = AccessType::FILE,
-        });
-}
-
-
 void registerStorageObjectStorage(StorageFactory & factory)
 {
-    registerStorageLocal(factory);
 #if USE_AWS_S3
     registerStorageS3(factory);
     registerStorageCOS(factory);
