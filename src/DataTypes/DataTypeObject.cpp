@@ -45,9 +45,9 @@ DataTypeObject::DataTypeObject(
     size_t max_dynamic_paths_,
     size_t max_dynamic_types_)
     : schema_format(schema_format_)
-    , typed_paths(typed_paths_)
-    , paths_to_skip(paths_to_skip_)
-    , path_regexps_to_skip(path_regexps_to_skip_)
+    , typed_paths(std::move(typed_paths_))
+    , paths_to_skip(std::move(paths_to_skip_))
+    , path_regexps_to_skip(std::move(path_regexps_to_skip_))
     , max_dynamic_paths(max_dynamic_paths_)
     , max_dynamic_types(max_dynamic_types_)
 {
