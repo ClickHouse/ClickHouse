@@ -4796,7 +4796,7 @@ def test_max_rows_per_message(kafka_cluster, create_query_generator):
             DROP TABLE IF EXISTS test.kafka;
             {create_query};
 
-            CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY key, value AS
+            CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY (key, value) AS
                 SELECT key, value FROM test.kafka;
         """
         )
@@ -4875,7 +4875,7 @@ def test_row_based_formats(kafka_cluster, create_query_generator):
 
                 {create_query};
 
-                CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY key, value AS
+                CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY (key, value) AS
                     SELECT key, value FROM test.{table_name};
 
                 INSERT INTO test.{table_name} SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows});
@@ -4982,7 +4982,7 @@ def test_block_based_formats_2(kafka_cluster, create_query_generator):
 
                 {create_query};
 
-                CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY key, value AS
+                CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY (key, value) AS
                     SELECT key, value FROM test.{table_name};
 
                 INSERT INTO test.{table_name} SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows}) settings max_block_size=12, optimize_trivial_insert_select=0;
@@ -5362,7 +5362,7 @@ def test_formats_errors(kafka_cluster):
                             input_format_with_names_use_header=0,
                             format_schema='key_value_message:Message';
 
-                CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY key, value AS
+                CREATE MATERIALIZED VIEW test.view ENGINE=MergeTree ORDER BY (key, value) AS
                     SELECT key, value FROM test.{table_name};
             """
             )
