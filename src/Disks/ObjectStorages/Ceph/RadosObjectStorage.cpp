@@ -11,7 +11,7 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Disks/ObjectStorages/Ceph/CephUtils.h>
+#include <Disks/ObjectStorages/Ceph/RadosUtils.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
 #include <Disks/ObjectStorages/StoredObject.h>
@@ -57,7 +57,7 @@ class RadosIteratorAsync final : public IObjectStorageIteratorAsync
 {
 public:
     RadosIteratorAsync(
-        std::shared_ptr<RadosIOContext> io_ctx_,
+        std::shared_ptr<const RadosObjectStorage> object_storage_,
         RadosIterator begin_,
         RadosIterator end_,
         const String & prefix_,
@@ -66,12 +66,12 @@ public:
               CurrentMetrics::ObjectStorageRadosThreads,
               CurrentMetrics::ObjectStorageRadosThreadsActive,
               CurrentMetrics::ObjectStorageRadosThreadsScheduled,
-              "ListObjectCephAsync")
-        , io_ctx(std::move(io_ctx_))
+              "ListObjectRados")
+        , object_storage(std::move(object_storage_))
         , current(begin_)
         , end(end_)
         , prefix(prefix_)
-        , max_list_size(max_list_size_)
+        , max_list_size(max_list_size_ ? max_list_size_ : UINT64_MAX)
     {
     }
 
@@ -84,17 +84,17 @@ private:
         while (current != end && count < max_list_size)
         {
             auto object_id = current->get_oid();
-            if (!RadosStriper::isOrdinaryObject(object_id) || !RadosStriper::isFirstChunkInObject(io_ctx, object_id)
-                || !object_id.starts_with(prefix))
-                continue;
-            batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object_id, io_ctx->getMetadata(object_id)));
             ++current;
-            ++count;
+            if (RadosStriper::isOrdinaryObject(object_id) && object_id.starts_with(prefix))
+            {
+                batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object_id, object_storage->getObjectMetadata(object_id)));
+                ++count;
+            }
         }
         return true;
     }
 
-    std::shared_ptr<RadosIOContext> io_ctx;
+    std::shared_ptr<const RadosObjectStorage> object_storage;
     librados::NObjectIterator current;
     const librados::NObjectIterator end;
     const String prefix;
@@ -153,20 +153,25 @@ std::unique_ptr<WriteBufferFromFileBase> RadosObjectStorage::writeObject( /// NO
 
 ObjectStorageIteratorPtr RadosObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
 {
-    return std::make_shared<RadosIteratorAsync>(io_ctx, io_ctx->begin(), io_ctx->end(), path_prefix, max_keys);
+    return std::make_shared<RadosIteratorAsync>(shared_from_this(), io_ctx->begin(), io_ctx->end(), path_prefix, max_keys);
 }
 
 void RadosObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     size_t count = 0;
-    for (auto it = io_ctx->begin(); it != io_ctx->end() && count < max_keys; ++it)
+    if (max_keys == 0)
+        max_keys = UINT64_MAX;
+    /// TODO: use object_list_slice for scanning in parallel
+    auto begin = io_ctx->begin();
+    auto end = io_ctx->end();
+    for (auto it = begin; it != end && count < max_keys; ++it)
     {
         auto object_id = it->get_oid();
-        if (!RadosStriper::isOrdinaryObject(object_id) || !RadosStriper::isFirstChunkInObject(io_ctx, object_id)
-            || !object_id.starts_with(path))
-            continue;
-        children.emplace_back(std::make_shared<RelativePathWithMetadata>(object_id, io_ctx->getMetadata(object_id)));
-        ++count;
+        if (RadosStriper::isOrdinaryObject(object_id) && object_id.starts_with(path))
+        {
+            children.emplace_back(std::make_shared<RelativePathWithMetadata>(object_id, getObjectMetadata(object_id)));
+            ++count;
+        }
     }
 }
 
@@ -319,7 +324,7 @@ std::unique_ptr<IObjectStorage> RadosObjectStorage::cloneObjectStorage(
 ObjectStorageKey RadosObjectStorage::generateObjectKeyForPath(const std::string & /*path*/) const
 {
     constexpr size_t key_name_total_size = 32;
-    return ObjectStorageKey::createAsRelative(endpoint.nspace, getRandomASCIIString(key_name_total_size));
+    return ObjectStorageKey::createAsRelative(getRandomASCIIString(key_name_total_size));
 }
 
 std::unique_ptr<ReadBufferFromFileBase> RadosObjectStorage::readObjectsImpl( /// NOLINT
@@ -401,12 +406,13 @@ StoredObjects RadosObjectStorage::getRadosObjects(const StoredObjects & objects,
 
         rados_objects.push_back(object);
 
+        if (with_size)
+            io_ctx->stat(rados_objects.back().remote_path, &rados_objects.back().bytes_size, nullptr);
+
+        /// Need to recalculate the size of the objects
         if (!get_attribute_result.value)
             continue;
 
-        /// Need to recalculate the size of the objects
-        if (with_size)
-            io_ctx->stat(rados_objects.back().remote_path, &rados_objects.back().bytes_size, nullptr);
         auto stripe_count = std::stoull(*get_attribute_result.value);
         for (size_t i = 1; i < stripe_count; ++i)
         {

@@ -59,15 +59,40 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             throwBadConfiguration("expected the key (key=value) to be identifier");
 
         const std::string & key = key_identifier->name();
-        Poco::AutoPtr<Poco::XML::Element> key_element(xml_document->createElement(key));
-        root->appendChild(key_element);
 
-        if (!function_args[1]->as<ASTLiteral>() && !function_args[1]->as<ASTIdentifier>())
-            throwBadConfiguration("expected values to be literals or identifiers");
+        /// Split by '.' to support nested keys
+        std::vector<std::string> key_parts;
+        size_t pos = 0;
+        while (pos < key.size())
+        {
+            auto next_pos = key.find('.', pos);
+            key_parts.push_back(key.substr(pos, next_pos - pos));
+            pos = next_pos == std::string::npos ? key.size() : next_pos + 1;
+        }
 
-        auto value = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
-        Poco::AutoPtr<Poco::XML::Text> value_element(xml_document->createTextNode(convertFieldToString(value->as<ASTLiteral>()->value)));
-        key_element->appendChild(value_element);
+        auto * parent = root.get();
+        for (size_t i = 0; i < key_parts.size(); ++i)
+        {
+            LOG_DEBUG(getLogger("DiskConfiguration"), "key_parts[{}]: {}", i, key_parts[i]);
+            auto * key_element = parent->getChildElement(key_parts[i]);
+            if (!key_element)
+            {
+                key_element = xml_document->createElement(key_parts[i]);
+                parent->appendChild(key_element);
+            }
+
+            if (i == key_parts.size() - 1)
+            {
+                if (!function_args[1]->as<ASTLiteral>() && !function_args[1]->as<ASTIdentifier>())
+                    throwBadConfiguration("expected values to be literals or identifiers");
+
+                auto value = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
+                Poco::AutoPtr<Poco::XML::Text> value_element(xml_document->createTextNode(convertFieldToString(value->as<ASTLiteral>()->value)));
+                key_element->appendChild(value_element);
+            }
+            else
+                parent = key_element;
+        }
     }
 
     return xml_document;

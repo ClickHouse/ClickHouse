@@ -51,6 +51,8 @@ private:
 
     String current_chunk_name;
     size_t current_chunk_size_bytes = INT64_MAX;
+    bool first_write = true;
+
     bool all_chunks_finished = true;
     size_t writeImpl(const char * begin, size_t len);
 

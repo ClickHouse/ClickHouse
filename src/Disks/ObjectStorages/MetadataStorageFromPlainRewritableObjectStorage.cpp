@@ -37,7 +37,7 @@ MetadataStorageFromPlainObjectStorage::PathMap loadPathPrefixMap(const std::stri
     settings.remote_fs_method = RemoteFSReadMethod::read;
     settings.remote_fs_buffer_size = 1024;  /// These files are small.
 
-    LOG_DEBUG(log, "Loading metadata");
+    LOG_DEBUG(log, "Loading metadata from path {}", root);
     size_t num_files = 0;
     for (auto iterator = object_storage->iterate(root, 0); iterator->isValid(); iterator->next())
     {

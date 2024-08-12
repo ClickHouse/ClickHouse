@@ -8,7 +8,7 @@
 
 #include <memory>
 #include <IO/Ceph/RadosIOContext.h>
-#include <Disks/ObjectStorages/Ceph/CephUtils.h>
+#include <Disks/ObjectStorages/Ceph/RadosUtils.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/MultiVersion.h>
 #include <Common/ObjectStorageKeyGenerator.h>
@@ -106,10 +106,8 @@ struct RadosObjectStorageSettings
 };
 
 /// Rados cluster include many pool (equivalent to S3 bucket). In each pool, we can have many namespace.
-/// RadosObjectStorage associated with a pool and a namespace. The object name will have namespace as prefix.
-/// listObject and iterate with prefix implementation is sub-par, so we cannot use RadosObjectStorage with plain
-/// metadata type yet.
-class RadosObjectStorage : public IObjectStorage
+/// RadosObjectStorage associated with a pool and a namespace. listObject and iterate with prefix implementation is sub-par
+class RadosObjectStorage : public IObjectStorage, public std::enable_shared_from_this<RadosObjectStorage>
 {
 private:
     RadosObjectStorage(
@@ -126,9 +124,6 @@ private:
         , log(getLogger(logger_name))
         , for_disk_ceph(for_disk_ceph_)
     {
-        /// Not allow using empty namespace if this is for disk
-        if (for_disk_ceph && (endpoint.nspace.empty() || endpoint.nspace == LIBRADOS_ALL_NSPACES))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "RadosObjectStorage: namespace cannot be empty if it's created for disk");
         io_ctx = std::make_unique<RadosIOContext>(rados, endpoint.pool, endpoint.nspace);
     }
 
@@ -141,9 +136,9 @@ public:
 
     ~RadosObjectStorage() override = default;
 
-    String getCommonKeyPrefix() const override { return endpoint.nspace; }
+    String getCommonKeyPrefix() const override { return endpoint.getRelativePath(); }
 
-    String getDescription() const override { return endpoint.mon_hosts + "/" + endpoint.pool; }
+    String getDescription() const override { return endpoint.getDescription(); }
 
     std::string getName() const override { return "RadosObjectStorage"; }
 

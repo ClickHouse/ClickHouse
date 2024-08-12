@@ -3,9 +3,9 @@
 
 #if USE_CEPH
 #include <map>
-#include <librados.hpp>
-#include <base/types.h>
 #include <Core/Types.h>
+#include <base/types.h>
+#include <librados.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
@@ -16,7 +16,11 @@ struct RadosEndpoint
     String mon_hosts;
     String pool;
     String nspace;
-    String snapshot;
+    String path;
+
+    String getRelativePath() const { return path; }
+
+    String getDescription() const { return mon_hosts + "/" + pool + "/" + getRelativePath(); }
 };
 
 struct RadosOptions : public std::map<String, String>

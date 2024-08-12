@@ -185,6 +185,7 @@
     M(DiskPlainRewritableAzureDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
     M(DiskPlainRewritableLocalDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for LocalObjectStorage.") \
     M(DiskPlainRewritableS3DirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for S3ObjectStorage.") \
+    M(DiskPlainRewritableRadosDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for RadosObjectStorage.") \
     \
     M(MergeTreePartsLoaderThreads, "Number of threads in the MergeTree parts loader thread pool.") \
     M(MergeTreePartsLoaderThreadsActive, "Number of threads in the MergeTree parts loader thread pool running a task.") \

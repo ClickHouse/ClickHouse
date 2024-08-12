@@ -80,7 +80,7 @@ ObjectStoragePtr createObjectStorage(
         /// HDFS object storage currently does not support iteration and does not implement listObjects method.
         /// StaticWeb object storage is read-only and works with its dedicated metadata type.
         constexpr auto supported_object_storage_types
-            = std::array{ObjectStorageType::S3, ObjectStorageType::Local, ObjectStorageType::Azure};
+            = std::array{ObjectStorageType::S3, ObjectStorageType::Local, ObjectStorageType::Azure, ObjectStorageType::Rados};
         if (std::find(supported_object_storage_types.begin(), supported_object_storage_types.end(), type)
             == supported_object_storage_types.end())
             throw Exception(
@@ -344,7 +344,7 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
 #endif
 
 #if USE_CEPH
-void registerCephObjectStorage(ObjectStorageFactory & factory)
+void registerRadosObjectStorage(ObjectStorageFactory & factory)
 {
     auto creator = [](
         const String & name,
@@ -363,9 +363,10 @@ void registerCephObjectStorage(ObjectStorageFactory & factory)
                 throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Failed to set Ceph option: {}. Error: {}", key, strerror(-ec));
         }
         RadosEndpoint endpoint;
-        endpoint.mon_hosts = settings->global_options["mon_host"]; /// Redundant
+        endpoint.mon_hosts = settings->global_options["mon_host"]; /// Redundant, only for description
         endpoint.pool = config.getString(config_prefix + ".pool");
-        endpoint.nspace = config.getString(config_prefix + ".namespace");
+        endpoint.nspace = config.getString(config_prefix + ".namespace", "");
+        endpoint.path = config.getString(config_prefix + ".path", "");
         return createObjectStorage<RadosObjectStorage>(ObjectStorageType::Rados, config, config_prefix, std::move(rados), std::move(settings), endpoint, name);
     };
     factory.registerObjectStorageType("rados", creator);
@@ -439,7 +440,7 @@ void registerObjectStorages()
 #endif
 
 #if USE_CEPH
-    registerCephObjectStorage(factory);
+    registerRadosObjectStorage(factory);
 #endif
 
     registerWebObjectStorage(factory);

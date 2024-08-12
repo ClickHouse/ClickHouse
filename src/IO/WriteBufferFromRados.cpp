@@ -45,11 +45,7 @@ WriteBufferFromRados::WriteBufferFromRados(
     , object_id(object_id_)
     , osd_settings(osd_settings_)
     , write_settings(write_settings_)
-    , object_metadata(std::move(object_metadata_))
-{
-    if (io_ctx->exists(object_id))
-        throw Exception(ErrorCodes::CEPH_ERROR, "Object {} already exists", object_id);
-}
+    , object_metadata(std::move(object_metadata_)) {}
 
 size_t WriteBufferFromRados::writeImpl(const char * begin, size_t len)
 {
@@ -58,7 +54,13 @@ size_t WriteBufferFromRados::writeImpl(const char * begin, size_t len)
     try
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WriteBufferFromRadosMicroseconds);
-        bytes_written = io_ctx->append(current_chunk_name, begin, len);
+        if (first_write)
+        {
+            bytes_written = io_ctx->writeFull(current_chunk_name, begin, len);
+            first_write = false;
+        }
+        else
+            bytes_written = io_ctx->append(current_chunk_name, begin, len);
 
         if (write_settings.remote_throttler)
             write_settings.remote_throttler->add(len, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
@@ -96,8 +98,9 @@ void WriteBufferFromRados::nextImpl()
 
 void WriteBufferFromRados::finalizeImpl()
 {
+    WriteBuffer::finalizeImpl();
     chassert(offset() == 0);
-
+    LOG_TEST(log, "WriteBufferFromRados write to object {} {} bytes with {} chunks.", getFileName(), total_size, chunk_count);
     /// There can be empty objects, for example, spare columns
     if (chunk_count == 0 && total_size == 0)
         io_ctx->create(object_id);
@@ -157,6 +160,7 @@ void WriteBufferFromRados::startNewChunk()
 {
     current_chunk_name = chunk_count == 0 ? object_id : RadosStriper::getChunkName(object_id, chunk_count);
     current_chunk_size_bytes = 0;
+    first_write = true;
     chunk_count++;
 }
 

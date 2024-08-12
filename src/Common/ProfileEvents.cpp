@@ -432,6 +432,8 @@ The server successfully detected this situation and will download merged part fr
     M(DiskPlainRewritableLocalDirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for LocalObjectStorage.") \
     M(DiskPlainRewritableS3DirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for S3ObjectStorage.") \
     M(DiskPlainRewritableS3DirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.") \
+    M(DiskPlainRewritableRadosDirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for RadosObjectStorage.") \
+    M(DiskPlainRewritableRadosDirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for RadosObjectStorage.") \
     \
     M(S3Clients, "Number of created S3 clients.") \
     M(TinyS3Clients, "Number of S3 clients copies which reuse an existing auth provider from another client.") \

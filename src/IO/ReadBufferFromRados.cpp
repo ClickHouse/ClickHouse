@@ -3,15 +3,15 @@
 
 #if USE_CEPH
 
-#    include <memory>
-#    include <optional>
-#    include <IO/Ceph/RadosIOContext.h>
-#    include <Common/ElapsedTimeProfileEventIncrement.h>
-#    include <Common/Exception.h>
-#    include <Common/Scheduler/ResourceGuard.h>
-#    include <Common/Throttler.h>
-#    include <Common/logger_useful.h>
-#    include <Common/safe_cast.h>
+#include <memory>
+#include <optional>
+#include <IO/Ceph/RadosIOContext.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/Exception.h>
+#include <Common/Scheduler/ResourceGuard.h>
+#include <Common/Throttler.h>
+#include <Common/logger_useful.h>
+#include <Common/safe_cast.h>
 
 namespace ProfileEvents
 {
@@ -122,7 +122,6 @@ bool ReadBufferFromRados::nextImpl()
         return true;
     }
 
-    LOG_TEST(log, "No more data to read from offset {}", file_offset);
     return false;
 }
 

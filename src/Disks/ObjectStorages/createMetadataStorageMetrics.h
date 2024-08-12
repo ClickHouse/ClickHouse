@@ -8,6 +8,9 @@
 #if USE_AZURE_BLOB_STORAGE
 #    include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #endif
+#if USE_CEPH
+#include <Disks/ObjectStorages/Ceph/RadosObjectStorage.h>
+#endif
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageMetrics.h>
 
@@ -19,6 +22,8 @@ extern const Event DiskPlainRewritableLocalDirectoryCreated;
 extern const Event DiskPlainRewritableLocalDirectoryRemoved;
 extern const Event DiskPlainRewritableS3DirectoryCreated;
 extern const Event DiskPlainRewritableS3DirectoryRemoved;
+extern const Event DiskPlainRewritableRadosDirectoryCreated;
+extern const Event DiskPlainRewritableRadosDirectoryRemoved;
 }
 
 namespace CurrentMetrics
@@ -50,6 +55,17 @@ inline MetadataStorageMetrics MetadataStorageMetrics::create<AzureObjectStorage,
         .directory_created = ProfileEvents::DiskPlainRewritableAzureDirectoryCreated,
         .directory_removed = ProfileEvents::DiskPlainRewritableAzureDirectoryRemoved,
         .directory_map_size = CurrentMetrics::DiskPlainRewritableAzureDirectoryMapSize};
+}
+#endif
+
+#if USE_CEPH
+template <>
+inline MetadataStorageMetrics MetadataStorageMetrics::create<RadosObjectStorage, MetadataStorageType::PlainRewritable>()
+{
+    return MetadataStorageMetrics{
+        .directory_created = ProfileEvents::DiskPlainRewritableS3DirectoryCreated,
+        .directory_removed = ProfileEvents::DiskPlainRewritableS3DirectoryRemoved,
+        .directory_map_size = CurrentMetrics::DiskPlainRewritableS3DirectoryMapSize};
 }
 #endif
 
