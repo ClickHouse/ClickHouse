@@ -2351,7 +2351,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
                         /// We don't control the amount of refs for temporary parts so we cannot decide can we remove blobs
                         /// or not. So we are not doing it
                         bool keep_shared = false;
-                        if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
+                        if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication && supportsReplication())
                         {
                             LOG_WARNING(log, "Since zero-copy replication is enabled we are not going to remove blobs from shared storage for {}", full_path);
                             keep_shared = true;
