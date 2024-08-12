@@ -85,6 +85,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"allow_experimental_time_series_table", false, false, "Added new setting to allow the TimeSeries table engine"},
             {"enable_analyzer", 1, 1, "Added an alias to a setting `allow_experimental_analyzer`."},
             {"mongodb_throw_on_unsupported_query", 1, 1, "New setting."},
+            {"optimize_functions_to_subcolumns", false, true, "Enabled settings by default"},
         }
     },
     {"24.7",

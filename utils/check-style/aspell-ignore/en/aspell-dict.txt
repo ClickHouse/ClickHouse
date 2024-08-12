@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2942 
+personal_ws-1.1 en 2942
 AArch
 ACLs
 ALTERs
@@ -565,6 +565,7 @@ Mongo
 Mongodb
 Monotonicity
 MsgPack
+MultiLineString
 MultiPolygon
 Multiline
 Multiqueries
@@ -2094,6 +2095,7 @@ multiSearchFirstPositionUTF
 multibyte
 multidirectory
 multiline
+multilinestring
 multiplyDecimal
 multipolygon
 multisearchany
@@ -2371,6 +2373,7 @@ rankCorr
 rapidjson
 rawblob
 readWKTLineString
+readWKTMultiLineString
 readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
