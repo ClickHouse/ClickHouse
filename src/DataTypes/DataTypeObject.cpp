@@ -26,8 +26,6 @@
 #endif
 #include <Common/JSONParsers/DummyJSONParser.h>
 
-
-
 namespace DB
 {
 

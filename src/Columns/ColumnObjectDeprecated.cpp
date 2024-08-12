@@ -698,7 +698,7 @@ void ColumnObjectDeprecated::forEachSubcolumnRecursively(RecursiveMutableColumnC
 
 void ColumnObjectDeprecated::insert(const Field & field)
 {
-    const auto & object = field.get<const Object &>();
+    const auto & object = field.safeGet<const Object &>();
 
     HashSet<StringRef, StringRefHash> inserted_paths;
     size_t old_size = size();
@@ -754,7 +754,7 @@ void ColumnObjectDeprecated::get(size_t n, Field & res) const
 {
     assert(n < size());
     res = Object();
-    auto & object = res.get<Object &>();
+    auto & object = res.safeGet<Object &>();
 
     for (const auto & entry : subcolumns)
     {
