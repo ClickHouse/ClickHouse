@@ -137,7 +137,7 @@ private:
 
     Chunk read() final;
 
-    void onCancel() final
+    void onCancel() noexcept final
     {
         /*
          * The format parsers themselves are not being cancelled here, so we'll
@@ -292,7 +292,7 @@ private:
             first_parser_finished.wait();
     }
 
-    void finishAndWait()
+    void finishAndWait() noexcept
     {
         /// Defending concurrent segmentator thread join
         std::lock_guard finish_and_wait_lock(finish_and_wait_mutex);

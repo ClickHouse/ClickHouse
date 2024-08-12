@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS t;
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS tj;
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SET single_join_prefer_left_table = 0;
 
 CREATE TABLE tj (key2 UInt64, key1 Int64, a UInt64, b UInt64, x UInt64, y UInt64) ENGINE = Join(ALL, RIGHT, key1, key2);
