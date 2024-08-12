@@ -2,6 +2,8 @@
 
 #include <string>
 #include <boost/core/noncopyable.hpp>
+#include <Poco/Crypto/RSAKey.h>
+#include <Poco/Crypto/X509Certificate.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "Common/ZooKeeper/ZooKeeper.h"
@@ -17,6 +19,7 @@ namespace ACMEClient
 {
 
 static constexpr auto ACME_CHALLENGE_PATH = "/.well-known/acme-challenge";
+static constexpr auto ZOOKEEPER_ACME_BASE_PATH = "/clickhouse/acme";
 
 /// A singleton
 class ACMEClient : private boost::noncopyable
@@ -42,6 +45,9 @@ private:
     zkutil::EphemeralNodeHolderPtr leader_node;
 
     std::vector<std::string> domains;
+    std::string requestNonce();
+    void getDirectory();
+    void authenticate(Poco::Crypto::RSAKey & cert);
 };
 
 }
