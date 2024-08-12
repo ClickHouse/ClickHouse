@@ -60,8 +60,8 @@ std::optional<std::string> getCgroupsV2PathContainingFile(std::string_view file_
     if (current_cgroup.empty())
         return {};
 
-    /// Return the bottom-most nested current memory file. If there is no such file at the current
-    /// level, try again at the parent level as memory settings are inherited.
+    /// Return the bottom-most nested file. If there is no such file at the current
+    /// level, try again at the parent level as settings are inherited.
     while (current_cgroup != default_cgroups_mount.parent_path())
     {
         const auto path = current_cgroup / file_name;
