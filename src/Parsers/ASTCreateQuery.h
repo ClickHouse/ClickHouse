@@ -97,6 +97,7 @@ public:
     bool is_materialized_view{false};
     bool is_live_view{false};
     bool is_window_view{false};
+    bool is_time_series_table{false}; /// CREATE TABLE ... ENGINE=TimeSeries() ...
     bool is_populate{false};
     bool is_create_empty{false};    /// CREATE TABLE ... EMPTY AS SELECT ...
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
