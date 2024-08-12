@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <boost/algorithm/string.hpp>
 
 #if USE_SIMDJSON
 #include <Common/JSONParsers/SimdJSONParser.h>
@@ -50,6 +51,8 @@ struct PathElements
                 last_dot_pos = pos;
             }
         }
+
+        boost::split(elements, path, boost::is_any_of("."));
 
         elements.emplace_back(last_dot_pos + 1, size_t(pos - last_dot_pos - 1));
     }
@@ -108,12 +111,12 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
     const auto & dynamic_paths = column_object.getDynamicPaths();
     const auto & shared_data_offsets = column_object.getSharedDataOffsets();
     const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
-    size_t shared_data_offset = shared_data_offsets[ssize_t(row_num) - 1];
-    size_t shared_data_end = shared_data_offsets[ssize_t(row_num)];
+    size_t shared_data_offset = shared_data_offsets[static_cast<ssize_t>(row_num) - 1];
+    size_t shared_data_end = shared_data_offsets[static_cast<ssize_t>(row_num)];
 
     /// We need to convert the set of paths in this row to a JSON object.
     /// To do it, we first collect all the paths from current row, then we sort them
-    /// and construct the resulting JSON object by iterating over sorter list of paths.
+    /// and construct the resulting JSON object by iterating over sorted list of paths.
     /// For example:
     /// b.c, a.b, a.a, b.e, g, h.u.t -> a.a, a.b, b.c, b.e, g, h.u.t -> {"a" : {"a" : ..., "b" : ...}, "b" : {"c" : ..., "e" : ...}, "g" : ..., "h" : {"u" : {"t" : ...}}}.
     std::vector<String> sorted_paths;

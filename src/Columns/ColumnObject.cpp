@@ -193,7 +193,7 @@ Field ColumnObject::operator[](size_t n) const
 
     const auto & shared_data_offsets = getSharedDataOffsets();
     const auto [shared_paths, shared_values] = getSharedDataPathsAndValues();
-    size_t start = shared_data_offsets[ssize_t(n) - 1];
+    size_t start = shared_data_offsets[static_cast<ssize_t>(n) - 1];
     size_t end = shared_data_offsets[n];
     for (size_t i = start; i != end; ++i)
     {
@@ -495,7 +495,7 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
 
     /// Check if src object doesn't have any paths in shared data in specified range.
     const auto & src_shared_data_offsets = src_object_column.getSharedDataOffsets();
-    if (src_shared_data_offsets[ssize_t(start) - 1] == src_shared_data_offsets[ssize_t(start) + length - 1])
+    if (src_shared_data_offsets[static_cast<ssize_t>(start) - 1] == src_shared_data_offsets[static_cast<ssize_t>(start) + length - 1])
     {
         size_t current_size = size();
 
@@ -537,7 +537,7 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
         size_t current_size = shared_data_offsets.size();
         /// Use separate index to iterate over sorted src_dynamic_paths_for_shared_data.
         size_t src_dynamic_paths_for_shared_data_index = 0;
-        size_t offset = src_shared_data_offsets[ssize_t(row) - 1];
+        size_t offset = src_shared_data_offsets[static_cast<ssize_t>(row) - 1];
         size_t end = src_shared_data_offsets[row];
         for (size_t i = offset; i != end; ++i)
         {
@@ -639,8 +639,8 @@ StringRef ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, const c
     StringRef res(begin, 0);
     // Serialize all paths and values in binary format.
     const auto & shared_data_offsets = getSharedDataOffsets();
-    size_t offset = shared_data_offsets[ssize_t(n) - 1];
-    size_t end = shared_data_offsets[ssize_t(n)];
+    size_t offset = shared_data_offsets[static_cast<ssize_t>(n) - 1];
+    size_t end = shared_data_offsets[static_cast<ssize_t>(n)];
     size_t num_paths = typed_paths.size() + dynamic_paths.size() + (end - offset);
     char * pos = arena.allocContinue(sizeof(size_t), begin);
     memcpy(pos, &num_paths, sizeof(size_t));
@@ -1259,8 +1259,8 @@ void ColumnObject::fillPathColumnFromSharedData(IColumn & path_column, StringRef
 {
     const auto & shared_data_array = assert_cast<const ColumnArray &>(*shared_data_column);
     const auto & shared_data_offsets = shared_data_array.getOffsets();
-    size_t first_offset = shared_data_offsets[ssize_t(start) - 1];
-    size_t last_offset = shared_data_offsets[ssize_t(end) - 1];
+    size_t first_offset = shared_data_offsets[static_cast<ssize_t>(start) - 1];
+    size_t last_offset = shared_data_offsets[static_cast<ssize_t>(end) - 1];
     /// Check if we have at least one row with data.
     if (first_offset == last_offset)
     {
@@ -1274,8 +1274,8 @@ void ColumnObject::fillPathColumnFromSharedData(IColumn & path_column, StringRef
     const auto & dynamic_serialization = getDynamicSerialization();
     for (size_t i = start; i != end; ++i)
     {
-        size_t paths_start = shared_data_offsets[ssize_t(i) - 1];
-        size_t paths_end = shared_data_offsets[ssize_t(i)];
+        size_t paths_start = shared_data_offsets[static_cast<ssize_t>(i) - 1];
+        size_t paths_end = shared_data_offsets[static_cast<ssize_t>(i)];
         auto lower_bound_path_index = ColumnObject::findPathLowerBoundInSharedData(path, shared_data_paths, paths_start, paths_end);
         if (lower_bound_path_index != paths_end && shared_data_paths.getDataAt(lower_bound_path_index) == path)
         {

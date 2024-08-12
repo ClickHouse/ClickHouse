@@ -213,8 +213,8 @@ void MergeTreeReaderWide::addStreams(
 
     ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
-        /// Don't create streams for fictitious subcolumns that don't store any real data.
-        if (ISerialization::isFictitiousSubcolumn(substream_path, substream_path.size()))
+        /// Don't create streams for ephemeral subcolumns that don't store any real data.
+        if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
             return;
 
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
@@ -352,8 +352,8 @@ void MergeTreeReaderWide::prefetchForColumn(
     deserializePrefix(serialization, name_and_type, current_task_last_mark, cache, deserialize_states_cache);
     auto callback = [&](const ISerialization::SubstreamPath & substream_path)
     {
-        /// Skip fictitious subcolumns that don't store any real data.
-        if (ISerialization::isFictitiousSubcolumn(substream_path, substream_path.size()))
+        /// Skip ephemeral subcolumns that don't store any real data.
+        if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
             return;
 
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());

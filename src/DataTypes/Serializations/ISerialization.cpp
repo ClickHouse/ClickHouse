@@ -411,7 +411,7 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
             || path[last_elem].type == Substream::ObjectTypedPath;
 }
 
-bool ISerialization::isFictitiousSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
+bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
 {
     if (prefix_len == 0 || prefix_len > path.size())
         return false;

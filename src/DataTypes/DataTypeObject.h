@@ -25,9 +25,9 @@ public:
 
     explicit DataTypeObject(
         const SchemaFormat & schema_format_,
-        const std::unordered_map<String, DataTypePtr> & typed_paths_ = {},
-        const std::unordered_set<String> & paths_to_skip_ = {},
-        const std::vector<String> & path_regexps_to_skip_ = {},
+        std::unordered_map<String, DataTypePtr> typed_paths_ = {},
+        std::unordered_set<String> paths_to_skip_ = {},
+        std::vector<String> path_regexps_to_skip_ = {},
         size_t max_dynamic_paths_ = DEFAULT_MAX_SEPARATELY_STORED_PATHS,
         size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES);
 

@@ -178,8 +178,8 @@ private:
         const auto [shared_data_paths, _] = column_object.getSharedDataPathsAndValues();
         for (size_t i = 0; i != shared_data_offsets.size(); ++i)
         {
-            size_t start = shared_data_offsets[ssize_t(i) - 1];
-            size_t end = shared_data_offsets[ssize_t(i)];
+            size_t start = shared_data_offsets[static_cast<ssize_t>(i) - 1];
+            size_t end = shared_data_offsets[static_cast<ssize_t>(i)];
             /// Merge sorted list of paths from shared data and sorted_dynamic_and_typed_paths
             size_t sorted_paths_index = 0;
             for (size_t j = start; j != end; ++j)
@@ -187,7 +187,7 @@ private:
                 auto shared_data_path = shared_data_paths->getDataAt(j);
                 while (sorted_paths_index != sorted_dynamic_and_typed_paths.size() && sorted_dynamic_and_typed_paths[sorted_paths_index] < shared_data_path)
                 {
-                    auto path = sorted_dynamic_and_typed_paths[sorted_paths_index];
+                    const auto & path = sorted_dynamic_and_typed_paths[sorted_paths_index];
                     /// If it's dynamic path include it only if it's not NULL.
                     if (auto it = dynamic_path_columns.find(path); it == dynamic_path_columns.end() || !it->second->isNullAt(i))
                         data.insertData(path.data(), path.size());
@@ -199,7 +199,7 @@ private:
 
             for (; sorted_paths_index != sorted_dynamic_and_typed_paths.size(); ++sorted_paths_index)
             {
-                auto path = sorted_dynamic_and_typed_paths[sorted_paths_index];
+                const auto & path = sorted_dynamic_and_typed_paths[sorted_paths_index];
                 if (auto it = dynamic_path_columns.find(path); it == dynamic_path_columns.end() || !it->second->isNullAt(i))
                     data.insertData(path.data(), path.size());
             }
@@ -254,8 +254,8 @@ private:
             /// Iterate over all rows and extract types from dynamic values in shared data.
             for (size_t i = 0; i != shared_data_offsets.size(); ++i)
             {
-                size_t start = shared_data_offsets[ssize_t(i) - 1];
-                size_t end = shared_data_offsets[ssize_t(i)];
+                size_t start = shared_data_offsets[static_cast<ssize_t>(i) - 1];
+                size_t end = shared_data_offsets[static_cast<ssize_t>(i)];
                 for (size_t j = start; j != end; ++j)
                 {
                     if (auto type_name = getDynamicValueTypeFromSharedData(shared_data_values->getDataAt(j)))
@@ -288,8 +288,8 @@ private:
         const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
         for (size_t i = 0; i != shared_data_offsets.size(); ++i)
         {
-            size_t start = shared_data_offsets[ssize_t(i) - 1];
-            size_t end = shared_data_offsets[ssize_t(i)];
+            size_t start = shared_data_offsets[static_cast<ssize_t>(i) - 1];
+            size_t end = shared_data_offsets[static_cast<ssize_t>(i)];
             /// Merge sorted list of paths and values from shared data and sorted_typed_and_dynamic_paths_with_types
             size_t sorted_paths_index = 0;
             for (size_t j = start; j != end; ++j)

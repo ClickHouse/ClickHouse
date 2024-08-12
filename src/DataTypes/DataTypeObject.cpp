@@ -39,9 +39,9 @@ namespace ErrorCodes
 
 DataTypeObject::DataTypeObject(
     const SchemaFormat & schema_format_,
-    const std::unordered_map<String, DataTypePtr> & typed_paths_,
-    const std::unordered_set<String> & paths_to_skip_,
-    const std::vector<String> & path_regexps_to_skip_,
+    std::unordered_map<String, DataTypePtr> typed_paths_,
+    std::unordered_set<String> paths_to_skip_,
+    std::vector<String> path_regexps_to_skip_,
     size_t max_dynamic_paths_,
     size_t max_dynamic_types_)
     : schema_format(schema_format_)
@@ -59,10 +59,10 @@ DataTypeObject::DataTypeObject(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and matches the SKIP path prefix '{}'", typed_path, type->getName(), path_to_skip);
         }
 
-        for (const auto & path_regext_to_skip : paths_to_skip)
+        for (const auto & path_regex_to_skip : path_regexps_to_skip)
         {
-            if (re2::RE2::FullMatch(typed_path, re2::RE2(path_regext_to_skip)))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and matches the SKIP REGEXP '{}'", typed_path, type->getName(), path_regext_to_skip);
+            if (re2::RE2::FullMatch(typed_path, re2::RE2(path_regex_to_skip)))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and matches the SKIP REGEXP '{}'", typed_path, type->getName(), path_regex_to_skip);
         }
     }
 }
@@ -220,7 +220,13 @@ void replaceJSONTypeNameIfNeeded(String & type_name, size_t max_dynamic_paths, s
     {
         /// Replace only if we don't already have parameters in JSON type declaration.
         if (pos + 4 == type_name.size() || type_name[pos + 4] != '(')
-            type_name.replace(pos, 4, fmt::format("JSON(max_dynamic_paths={}, max_dynamic_types={})", max_dynamic_paths / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR, std::max(max_dynamic_types / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR, 1lu)));
+            type_name.replace(
+                pos,
+                4,
+                fmt::format(
+                    "JSON(max_dynamic_paths={}, max_dynamic_types={})",
+                    max_dynamic_paths / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR,
+                    std::max(max_dynamic_types / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR, 1lu)));
         pos = type_name.find("JSON", pos + 4);
     }
 }
@@ -275,7 +281,7 @@ String getSubPath(const String & path, const String & prefix)
     return path.substr(prefix.size() + 1);
 }
 
-std::string_view getSubPath(const std::string_view & path, const String & prefix)
+std::string_view getSubPath(std::string_view path, const String & prefix)
 {
     return path.substr(prefix.size() + 1);
 }
@@ -305,7 +311,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
         }
 
         std::unique_ptr<SubstreamData> res = std::make_unique<SubstreamData>(std::make_shared<SerializationSubObject>(prefix, typed_paths_serializations));
-        /// Keep all current constrains like limits and skip paths/prefixes/regexps.
+        /// Keep all current constraints like limits and skip paths/prefixes/regexps.
         res->type = std::make_shared<DataTypeObject>(schema_format, typed_sub_paths, paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
         /// If column was provided, we should create a column for the requested subcolumn.
         if (data.column)
@@ -491,7 +497,7 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
     }
 
     std::sort(path_regexps_to_skip.begin(), path_regexps_to_skip.end());
-    return std::make_shared<DataTypeObject>(schema_format, typed_paths, paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
+    return std::make_shared<DataTypeObject>(schema_format, std::move(typed_paths), std::move(paths_to_skip), std::move(path_regexps_to_skip), max_dynamic_paths, max_dynamic_types);
 }
 
 static DataTypePtr createJSON(const ASTPtr & arguments)

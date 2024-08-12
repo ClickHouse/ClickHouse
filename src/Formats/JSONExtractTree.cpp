@@ -1761,9 +1761,12 @@ private:
         if (paths_to_skip.contains(path))
             return true;
 
-        auto it = std::lower_bound(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end(), path);
-        if (it != sorted_paths_to_skip.end() && it != sorted_paths_to_skip.begin() && path.starts_with(*std::prev(it)))
-            return true;
+        if (!sorted_paths_to_skip.empty())
+        {
+            auto it = std::lower_bound(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end(), path);
+            if (it != sorted_paths_to_skip.begin() && path.starts_with(*std::prev(it)))
+                return true;
+        }
 
         for (const auto & regexp : path_regexps_to_skip)
         {
