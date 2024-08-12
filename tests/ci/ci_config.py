@@ -316,6 +316,7 @@ class CI:
         JobNames.STATEFUL_TEST_PARALLEL_REPL_TSAN: CommonJobConfigs.STATEFUL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
             random_bucket="parrepl_with_sanitizer",
+            timeout=3600,
         ),
         JobNames.STATELESS_TEST_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2
@@ -346,7 +347,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_RELEASE], num_batches=4
         ),
         JobNames.STATELESS_TEST_S3_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=2
+            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=1
         ),
         JobNames.STATELESS_TEST_AZURE_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN], num_batches=3, release_only=True
@@ -401,14 +402,14 @@ class CI:
             required_builds=[BuildNames.PACKAGE_ASAN], release_only=True, num_batches=4
         ),
         JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER: CommonJobConfigs.INTEGRATION_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=6
+            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=4
         ),
         JobNames.INTEGRATION_TEST_TSAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN], num_batches=6
         ),
         JobNames.INTEGRATION_TEST_ARM: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
-            num_batches=6,
+            num_batches=3,
             runner_type=Runners.FUNC_TESTER_ARM,
         ),
         JobNames.INTEGRATION_TEST: CommonJobConfigs.INTEGRATION_TEST.with_properties(

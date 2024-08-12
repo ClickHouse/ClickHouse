@@ -465,6 +465,7 @@ class CommonJobConfigs:
         ),
         run_command="upgrade_check.py",
         runner_type=Runners.STRESS_TESTER,
+        timeout=3600,
     )
     INTEGRATION_TEST = JobConfig(
         job_name_keyword="integration",
