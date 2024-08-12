@@ -5627,6 +5627,29 @@ Disable all insert and mutations (alter table update / alter table delete / alte
 
 Default value: `false`.
 
+## allow_experimental_drop_detached_table {#allow_experimental_drop_detached_table}
+
+Allows drop detached table.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+SET allow_experimental_drop_detached_table=1;
+CREATE TABLE test_table  (number UInt64) ENGINE=MergeTree ORDER BY number;
+INSERT INTO test_table SELECT number FROM system.numbers LIMIT 6;
+DETACH TABLE test_table;
+DROP DETACHED TABLE test_table SYNC;
+```
+
 ## allow_experimental_time_series_table {#allow-experimental-time-series-table}
 
 Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.
