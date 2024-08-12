@@ -5640,6 +5640,6 @@ Default value: `0`.
 
 ## create_if_not_exists
 
-Enable IF NOT EXISTS for CREATE statements by default. If either this setting or IF NOT EXISTS is specified, then no Exception will be thrown when trying to create a new table.
+Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
 
 Default value: `false`.
