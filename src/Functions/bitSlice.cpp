@@ -18,7 +18,9 @@ using namespace GatherUtils;
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 class FunctionBitSlice : public IFunction
@@ -38,22 +40,28 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String"},
-            {"offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), nullptr, "(U)Int8/16/32/64 or Float"},
-        };
+        const size_t number_of_arguments = arguments.size();
 
-        FunctionArgumentDescriptors optional_args{
-            {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), nullptr, "(U)Int8/16/32/64 or Float"},
-        };
+        if (number_of_arguments < 2 || number_of_arguments > 3)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                getName(), number_of_arguments);
 
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        if (!isString(arguments[0]) && !isStringOrFixedString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
+        if (arguments[0]->onlyNull())
+            return arguments[0];
 
-        const auto & type = arguments[0].type;
-        if (type->onlyNull())
-            return type;
+        if (!isNativeNumber(arguments[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
+                arguments[1]->getName(), getName());
+
+        if (number_of_arguments == 3 && !isNativeNumber(arguments[2]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
+                arguments[2]->getName(), getName());
 
         return std::make_shared<DataTypeString>();
     }

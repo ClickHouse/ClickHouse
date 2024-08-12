@@ -26,9 +26,6 @@ void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
 void registerStorageLoop(StorageFactory & factory);
-void registerStorageFuzzQuery(StorageFactory & factory);
-void registerStorageTimeSeries(StorageFactory & factory);
-
 #if USE_RAPIDJSON || USE_SIMDJSON
 void registerStorageFuzzJSON(StorageFactory & factory);
 #endif
@@ -37,6 +34,7 @@ void registerStorageFuzzJSON(StorageFactory & factory);
 void registerStorageS3(StorageFactory & factory);
 void registerStorageHudi(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory);
+void registerStorageAzureQueue(StorageFactory & factory);
 
 #if USE_PARQUET
 void registerStorageDeltaLake(StorageFactory & factory);
@@ -44,10 +42,6 @@ void registerStorageDeltaLake(StorageFactory & factory);
 #if USE_AVRO
 void registerStorageIceberg(StorageFactory & factory);
 #endif
-#endif
-
-#if USE_AZURE_BLOB_STORAGE
-void registerStorageAzureQueue(StorageFactory & factory);
 #endif
 
 #if USE_HDFS
@@ -129,9 +123,6 @@ void registerStorages()
     registerStorageExecutable(factory);
     registerStorageWindowView(factory);
     registerStorageLoop(factory);
-    registerStorageFuzzQuery(factory);
-    registerStorageTimeSeries(factory);
-
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerStorageFuzzJSON(factory);
 #endif

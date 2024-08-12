@@ -9,7 +9,6 @@ The following operations with [partitions](/docs/en/engines/table-engines/merget
 
 - [DETACH PARTITION\|PART](#detach-partitionpart) — Moves a partition or part to the `detached` directory and forget it.
 - [DROP PARTITION\|PART](#drop-partitionpart) — Deletes a partition or part.
-- [DROP DETACHED PARTITION\|PART](#drop-detached-partitionpart) - Delete a part or all parts of a partition from `detached`.
 - [FORGET PARTITION](#forget-partition) — Deletes a partition metadata from zookeeper if it's empty.
 - [ATTACH PARTITION\|PART](#attach-partitionpart) — Adds a partition or part from the `detached` directory to the table.
 - [ATTACH PARTITION FROM](#attach-partition-from) — Copies the data partition from one table to another and adds.
@@ -69,7 +68,7 @@ ALTER TABLE mt DROP PART 'all_4_4_0';
 ## DROP DETACHED PARTITION\|PART
 
 ``` sql
-ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|partition_expr
+ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART partition_expr
 ```
 
 Removes the specified part or all parts of the specified partition from `detached`.

@@ -3,20 +3,10 @@
 #include <Common/ThreadPool.h>
 
 #include <chrono>
-#include <memory>
 #include <mutex>
 
 namespace DB
 {
-
-struct ICgroupsReader
-{
-    virtual ~ICgroupsReader() = default;
-
-    virtual uint64_t readMemoryUsage() = 0;
-
-    virtual std::string dumpAllStats() = 0;
-};
 
 /// Does two things:
 /// 1. Periodically reads the memory usage of the process from Linux cgroups.
@@ -71,20 +61,32 @@ private:
     uint64_t last_memory_usage = 0;        /// how much memory does the process use
     uint64_t last_available_memory_amount; /// how much memory can the process use
 
+    /// Represents the cgroup virtual file that shows the memory consumption of the process's cgroup.
+    struct MemoryUsageFile
+    {
+    public:
+        explicit MemoryUsageFile(LoggerPtr log_);
+        ~MemoryUsageFile();
+        uint64_t readMemoryUsage() const;
+    private:
+        LoggerPtr log;
+        mutable std::mutex mutex;
+        int fd TSA_GUARDED_BY(mutex) = -1;
+        CgroupsVersion version;
+        std::string file_name;
+    };
+
+    MemoryUsageFile memory_usage_file;
+
     void stopThread();
 
     void runThread();
-
-    std::unique_ptr<ICgroupsReader> cgroup_reader;
 
     std::mutex thread_mutex;
     std::condition_variable cond;
     ThreadFromGlobalPool thread;
     bool quit = false;
 };
-
-std::unique_ptr<ICgroupsReader>
-createCgroupsReader(CgroupsMemoryUsageObserver::CgroupsVersion version, const std::filesystem::path & cgroup_path);
 
 #else
 class CgroupsMemoryUsageObserver

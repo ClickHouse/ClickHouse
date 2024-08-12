@@ -1,5 +1,4 @@
 #include <Compression/CompressionFactory.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -35,9 +34,9 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <ranges>
 
@@ -1059,7 +1058,7 @@ bool AlterCommand::isRemovingProperty() const
 
 bool AlterCommand::isDropSomething() const
 {
-    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX || type == Type::DROP_STATISTICS
+    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX
         || type == Type::DROP_CONSTRAINT || type == Type::DROP_PROJECTION;
 }
 

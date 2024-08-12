@@ -6,8 +6,6 @@
 #include <Core/Range.h>
 #include <Core/PlainRanges.h>
 
-#include <DataTypes/Serializations/ISerialization.h>
-
 #include <Parsers/ASTExpressionList.h>
 
 #include <Interpreters/Set.h>
@@ -43,7 +41,7 @@ class KeyCondition
 public:
     /// Construct key condition from ActionsDAG nodes
     KeyCondition(
-        const ActionsDAG * filter_dag,
+        ActionsDAGPtr filter_dag,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
@@ -135,7 +133,7 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
-    static ActionsDAG cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
+    static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
 
     bool matchesExactContinuousRange() const;
 
@@ -255,12 +253,13 @@ private:
         DataTypePtr & out_key_column_type,
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
-    bool extractMonotonicFunctionsChainFromKey(
+    bool transformConstantWithValidFunctions(
         ContextPtr context,
         const String & expr_name,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
-        MonotonicFunctionsChain & out_functions_chain,
+        Field & out_value,
+        DataTypePtr & out_type,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
     bool canConstantBeWrappedByMonotonicFunctions(
@@ -277,25 +276,13 @@ private:
         Field & out_value,
         DataTypePtr & out_type);
 
-    /// Checks if node is a subexpression of any of key columns expressions,
-    /// wrapped by deterministic functions, and if so, returns `true`, and
-    /// specifies key column position / type. Besides that it produces the
-    /// chain of functions which should be executed on set, to transform it
-    /// into key column values.
-    bool canSetValuesBeWrappedByFunctions(
-        const RPNBuilderTreeNode & node,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_res_column_type,
-        MonotonicFunctionsChain & out_functions_chain);
-
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
     /// do it and return true.
     bool tryPrepareSetIndex(
         const RPNBuilderFunctionTreeNode & func,
         RPNElement & out,
-        size_t & out_key_column_num,
-        bool & is_constant_transformed);
+        size_t & out_key_column_num);
 
     /// Checks that the index can not be used.
     ///

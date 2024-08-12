@@ -424,7 +424,7 @@ static void logUnexpectedSyscallError(std::string name)
 {
     std::string message = fmt::format("{} failed: {}", name, errnoToString());
     LOG_WARNING(&Poco::Logger::get("PageCache"), "{}", message);
-#if defined(DEBUG_OR_SANITIZER_BUILD)
+#if defined(ABORT_ON_LOGICAL_ERROR)
     volatile bool true_ = true;
     if (true_) // suppress warning about missing [[noreturn]]
         abortOnFailedAssertion(message);

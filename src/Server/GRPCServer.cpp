@@ -11,7 +11,6 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <Interpreters/Context.h>
@@ -1083,8 +1082,8 @@ namespace
         read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), input_compression_method);
 
         assert(!pipeline);
-        auto source
-            = query_context->getInputFormat(input_format, *read_buffer, header, query_context->getSettingsRef().max_insert_block_size);
+        auto source = query_context->getInputFormat(
+            input_format, *read_buffer, header, query_context->getSettings().max_insert_block_size);
 
         pipeline = std::make_unique<QueryPipeline>(std::move(source));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -1152,7 +1151,8 @@ namespace
                         external_table_context->applySettingsChanges(settings_changes);
                     }
                     auto in = external_table_context->getInputFormat(
-                        format, *buf, metadata_snapshot->getSampleBlock(), external_table_context->getSettingsRef().max_insert_block_size);
+                        format, *buf, metadata_snapshot->getSampleBlock(),
+                        external_table_context->getSettings().max_insert_block_size);
 
                     QueryPipelineBuilder cur_pipeline;
                     cur_pipeline.init(Pipe(std::move(in)));
@@ -1577,8 +1577,6 @@ namespace
         stats.set_allocated_bytes(info.bytes);
         stats.set_applied_limit(info.hasAppliedLimit());
         stats.set_rows_before_limit(info.getRowsBeforeLimit());
-        stats.set_applied_aggregation(info.hasAppliedAggregation());
-        stats.set_rows_before_aggregation(info.getRowsBeforeAggregation());
     }
 
     void Call::addLogsToResult()
@@ -1737,19 +1735,10 @@ namespace
 class GRPCServer::Runner
 {
 public:
-    explicit Runner(GRPCServer & owner_) : owner(owner_), log(owner.log) {}
+    explicit Runner(GRPCServer & owner_) : owner(owner_) {}
 
     ~Runner()
     {
-        try
-        {
-            stop();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "~Runner");
-        }
-
         if (queue_thread.joinable())
             queue_thread.join();
     }
@@ -1767,27 +1756,13 @@ public:
             }
             catch (...)
             {
-                tryLogCurrentException(log, "run");
+                tryLogCurrentException("GRPCServer");
             }
         };
         queue_thread = ThreadFromGlobalPool{runner_function};
     }
 
-    void stop()
-    {
-        std::lock_guard lock{mutex};
-        should_stop = true;
-
-        if (current_calls.empty())
-        {
-            /// If there are no current calls then we call shutdownQueue() to signal the queue to stop waiting for next events.
-            /// The following line will make CompletionQueue::Next() stop waiting if the queue is empty and return false instead.
-            shutdownQueue();
-
-            /// If there are some current calls then we can't call shutdownQueue() right now because we want to let the current calls finish.
-            /// In this case function shutdownQueue() will be called later in run().
-        }
-    }
+    void stop() { stopReceivingNewCalls(); }
 
     size_t getNumCurrentCalls() const
     {
@@ -1812,6 +1787,12 @@ private:
         responders_for_new_calls[call_type]->start(
             owner.grpc_service, *owner.queue, *owner.queue,
             [this, call_type](bool ok) { onNewCall(call_type, ok); });
+    }
+
+    void stopReceivingNewCalls()
+    {
+        std::lock_guard lock{mutex};
+        should_stop = true;
     }
 
     void onNewCall(CallType call_type, bool responder_started_ok)
@@ -1846,47 +1827,38 @@ private:
     void run()
     {
         setThreadName("GRPCServerQueue");
-
-        bool ok = false;
-        void * tag = nullptr;
-
-        while (owner.queue->Next(&tag, &ok))
+        while (true)
         {
+            {
+                std::lock_guard lock{mutex};
+                finished_calls.clear(); /// Destroy finished calls.
+
+                /// If (should_stop == true) we continue processing until there is no active calls.
+                if (should_stop && current_calls.empty())
+                {
+                    bool all_responders_gone = std::all_of(
+                        responders_for_new_calls.begin(), responders_for_new_calls.end(),
+                        [](std::unique_ptr<BaseResponder> & responder) { return !responder; });
+                    if (all_responders_gone)
+                        break;
+                }
+            }
+
+            bool ok = false;
+            void * tag = nullptr;
+            if (!owner.queue->Next(&tag, &ok))
+            {
+                /// Queue shutted down.
+                break;
+            }
+
             auto & callback = *static_cast<CompletionCallback *>(tag);
             callback(ok);
-
-            std::lock_guard lock{mutex};
-            finished_calls.clear(); /// Destroy finished calls.
-
-            /// If (should_stop == true) we continue processing while there are current calls.
-            if (should_stop && current_calls.empty())
-                shutdownQueue();
         }
-
-        /// CompletionQueue::Next() returns false if the queue is fully drained and shut down.
-    }
-
-    /// Shutdown the queue if that isn't done yet.
-    void shutdownQueue()
-    {
-        chassert(should_stop);
-        if (queue_is_shut_down)
-            return;
-
-        queue_is_shut_down = true;
-
-        /// Server should be shut down before CompletionQueue.
-        if (owner.grpc_server)
-            owner.grpc_server->Shutdown();
-
-        if (owner.queue)
-            owner.queue->Shutdown();
     }
 
     GRPCServer & owner;
-    LoggerRawPtr log;
     ThreadFromGlobalPool queue_thread;
-    bool queue_is_shut_down = false;
     std::vector<std::unique_ptr<BaseResponder>> responders_for_new_calls;
     std::map<Call *, std::unique_ptr<Call>> current_calls;
     std::vector<std::unique_ptr<Call>> finished_calls;
@@ -1904,6 +1876,16 @@ GRPCServer::GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & addr
 
 GRPCServer::~GRPCServer()
 {
+    /// Server should be shutdown before CompletionQueue.
+    if (grpc_server)
+        grpc_server->Shutdown();
+
+    /// Completion Queue should be shutdown before destroying the runner,
+    /// because the runner is now probably executing CompletionQueue::Next() on queue_thread
+    /// which is blocked until an event is available or the queue is shutting down.
+    if (queue)
+        queue->Shutdown();
+
     runner.reset();
 }
 

@@ -16,12 +16,11 @@
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <Core/QueryProcessingStage.h>
-#include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Parsers/ASTFunction.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+
 #include <boost/algorithm/string/join.hpp>
 
 namespace DB
@@ -362,6 +361,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     ASTPtr query_ast_,
     ClusterPtr cluster_,
     const StorageID & storage_id_,
+    ParallelReplicasReadingCoordinatorPtr coordinator_,
     Block header_,
     QueryProcessingStage::Enum stage_,
     ContextMutablePtr context_,
@@ -374,6 +374,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , cluster(cluster_)
     , query_ast(query_ast_)
     , storage_id(storage_id_)
+    , coordinator(std::move(coordinator_))
     , stage(std::move(stage_))
     , context(context_)
     , throttler(throttler_)
@@ -410,8 +411,8 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
     const auto & shard = cluster->getShardsInfo().at(0);
-    size_t max_replicas_to_use = current_settings.max_parallel_replicas;
-    if (max_replicas_to_use > shard.getAllNodeCount())
+    size_t all_replicas_count = current_settings.max_parallel_replicas;
+    if (all_replicas_count > shard.getAllNodeCount())
     {
         LOG_INFO(
             getLogger("ReadFromParallelRemoteReplicasStep"),
@@ -419,14 +420,14 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
             "Will use the latter number to execute the query.",
             current_settings.max_parallel_replicas,
             shard.getAllNodeCount());
-        max_replicas_to_use = shard.getAllNodeCount();
+        all_replicas_count = shard.getAllNodeCount();
     }
 
     std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> shuffled_pool;
-    if (max_replicas_to_use < shard.getAllNodeCount())
+    if (all_replicas_count < shard.getAllNodeCount())
     {
         shuffled_pool = shard.pool->getShuffledPools(current_settings);
-        shuffled_pool.resize(max_replicas_to_use);
+        shuffled_pool.resize(all_replicas_count);
     }
     else
     {
@@ -436,13 +437,11 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         shuffled_pool = shard.pool->getShuffledPools(current_settings, priority_func);
     }
 
-    coordinator
-        = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use, current_settings.parallel_replicas_mark_segment_size);
-
-    for (size_t i=0; i < max_replicas_to_use; ++i)
+    for (size_t i=0; i < all_replicas_count; ++i)
     {
         IConnections::ReplicaInfo replica_info
         {
+            .all_replicas_count = all_replicas_count,
             /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
             .number_of_current_replica = i,
         };

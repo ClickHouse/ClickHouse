@@ -65,6 +65,9 @@ struct MergeTreeDataPartChecksums
 
     static bool isBadChecksumsErrorCode(int code);
 
+    /// Checks that the directory contains all the needed files of the correct size. Does not check the checksum.
+    void checkSizes(const IDataPartStorage & storage) const;
+
     /// Returns false if the checksum is too old.
     bool read(ReadBuffer & in);
     /// Assume that header with version (the first line) is read

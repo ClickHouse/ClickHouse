@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/26674
-SET enable_analyzer = true;
+SET allow_experimental_analyzer = true;
 
 SELECT
     Carrier,

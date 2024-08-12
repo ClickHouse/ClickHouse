@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-debug
 
 SET allow_hyperscan = 1;
 

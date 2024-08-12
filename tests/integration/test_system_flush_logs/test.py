@@ -2,6 +2,7 @@
 # pylint: disable=unused-argument
 # pylint: disable=redefined-outer-name
 
+import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
@@ -13,14 +14,14 @@ node = cluster.add_instance(
 )
 
 system_logs = [
+    # disabled by default
+    ("system.text_log", 0),
     # enabled by default
-    ("system.text_log", 1),
     ("system.query_log", 1),
     ("system.query_thread_log", 1),
     ("system.part_log", 1),
     ("system.trace_log", 1),
     ("system.metric_log", 1),
-    ("system.error_log", 1),
 ]
 
 
