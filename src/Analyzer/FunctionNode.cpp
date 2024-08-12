@@ -88,6 +88,7 @@ void FunctionNode::resolveAsFunction(FunctionBasePtr function_value)
     function_name = function_value->getName();
     function = std::move(function_value);
     kind = FunctionKind::ORDINARY;
+    nulls_action = NullsAction::EMPTY;
 }
 
 void FunctionNode::resolveAsAggregateFunction(AggregateFunctionPtr aggregate_function_value)
@@ -95,6 +96,12 @@ void FunctionNode::resolveAsAggregateFunction(AggregateFunctionPtr aggregate_fun
     function_name = aggregate_function_value->getName();
     function = std::move(aggregate_function_value);
     kind = FunctionKind::AGGREGATE;
+    /**  When the function is resolved, we do not need the nulls action anymore.
+      * The only thing that the nulls action does is map from one function to another.
+      * Thus, the nulls action is encoded in the function name and does not make sense anymore.
+      * Keeping the nulls action may lead to incorrect comparison of functions, e.g., count() and count() IGNORE NULLS are the same function.
+      */
+    nulls_action = NullsAction::EMPTY;
 }
 
 void FunctionNode::resolveAsWindowFunction(AggregateFunctionPtr window_function_value)
