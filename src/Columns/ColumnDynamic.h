@@ -368,10 +368,10 @@ public:
     /// Check if we can add new variant types.
     /// Shared variant doesn't count in the limit but always presents,
     /// so we should subtract 1 from the total types count.
-    bool canAddNewVariants(size_t current_variants_count, size_t new_variants_count) { return current_variants_count + new_variants_count - 1 <= max_dynamic_types; }
-    bool canAddNewVariant(size_t current_variants_count) { return canAddNewVariants(current_variants_count, 1); }
-    bool canAddNewVariants(size_t new_variants_count) { return canAddNewVariants(variant_info.variant_names.size(), new_variants_count); }
-    bool canAddNewVariant() { return canAddNewVariants(variant_info.variant_names.size(), 1); }
+    bool canAddNewVariants(size_t current_variants_count, size_t new_variants_count) const { return current_variants_count + new_variants_count - 1 <= max_dynamic_types; }
+    bool canAddNewVariant(size_t current_variants_count) const { return canAddNewVariants(current_variants_count, 1); }
+    bool canAddNewVariants(size_t new_variants_count) const { return canAddNewVariants(variant_info.variant_names.size(), new_variants_count); }
+    bool canAddNewVariant() const { return canAddNewVariants(variant_info.variant_names.size(), 1); }
 
     void setVariantType(const DataTypePtr & variant_type);
     void setMaxDynamicPaths(size_t max_dynamic_type_);
