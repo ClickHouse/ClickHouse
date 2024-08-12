@@ -48,6 +48,7 @@ public:
     virtual SetPtr get() const = 0;
     /// Returns set->getElementsTypes(), even if set is not created yet.
     virtual DataTypes getTypes() const = 0;
+    virtual DataTypes getLeftArgTypes() const = 0;
     /// If possible, return set with stored elements useful for PK analysis.
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
 };
@@ -63,6 +64,7 @@ public:
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
+    DataTypes getLeftArgTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
 
 private:
@@ -76,12 +78,13 @@ using FutureSetFromStoragePtr = std::shared_ptr<FutureSetFromStorage>;
 class FutureSetFromTuple final : public FutureSet
 {
 public:
-    FutureSetFromTuple(Block block, const Settings & settings);
+    FutureSetFromTuple(Block block, const Settings & settings, const DataTypes & left_arg_types, bool first_argument_has_nullable_nothing = false);
 
     SetPtr get() const override { return set; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
     DataTypes getTypes() const override;
+    DataTypes getLeftArgTypes() const override;
 
 private:
     SetPtr set;
@@ -121,6 +124,7 @@ public:
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
+    DataTypes getLeftArgTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
     std::unique_ptr<QueryPlan> build(const ContextPtr & context);
@@ -156,7 +160,7 @@ public:
     using SetsFromSubqueries = std::unordered_map<Hash, FutureSetFromSubqueryPtr, Hashing>;
 
     FutureSetFromStoragePtr addFromStorage(const Hash & key, SetPtr set_);
-    FutureSetFromTuplePtr addFromTuple(const Hash & key, Block block, const Settings & settings);
+    FutureSetFromTuplePtr addFromTuple(const Hash & key, Block block, const Settings & settings, const DataTypes & left_arg_types, bool first_argument_has_nullable_nothing);
 
     FutureSetFromSubqueryPtr addFromSubquery(
         const Hash & key,

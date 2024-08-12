@@ -1,3 +1,4 @@
+#include <optional>
 #include <Interpreters/convertFieldToType.h>
 
 #include <IO/ReadBufferFromString.h>
@@ -644,6 +645,20 @@ std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const ID
     }
 
     return result_value;
+}
+
+std::optional<Field> convertFieldToTypeStrictWithTransformNullIn(const Field & from_value, const IDataType & from_type, const IDataType & to_type, bool transform_null_in)
+{
+    std::optional<Field> field;
+    if (transform_null_in && to_type.isNullableNothing())
+    {
+        field = from_value;
+    }
+    else
+    {
+        field = convertFieldToTypeStrict(from_value, from_type, to_type);
+    }
+    return field;
 }
 
 }

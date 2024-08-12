@@ -301,6 +301,8 @@ public:
 
     virtual bool isNullable() const { return false; }
 
+    virtual bool isNullableNothing() const { return false; }
+
     /** Is this type can represent only NULL value? (It also implies isNullable)
       */
     virtual bool onlyNull() const { return false; }
