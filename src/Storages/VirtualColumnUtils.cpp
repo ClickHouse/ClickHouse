@@ -1,43 +1,40 @@
 #include <memory>
 #include <stack>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnSet.h>
-#include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/FilterDescription.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsLogical.h>
-#include <Functions/IFunction.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/indexHint.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ActionsVisitor.h>
+
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/misc.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
+
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/makeASTForLogicalFunction.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
+
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/FilterDescription.h>
+
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeDateTime.h>
+
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+
+#include <Storages/VirtualColumnUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Common/re2.h>
 #include <Common/typeid_cast.h>
@@ -45,7 +42,15 @@
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Core/Settings.h>
+#include "Functions/FunctionsLogical.h"
+#include "Functions/IFunction.h"
+#include "Functions/IFunctionAdaptors.h"
+#include "Functions/indexHint.h"
 #include <Interpreters/convertFieldToType.h>
+#include <Parsers/makeASTForLogicalFunction.h>
+#include <Columns/ColumnSet.h>
+#include <Functions/FunctionHelpers.h>
+#include <Interpreters/ActionsVisitor.h>
 
 
 namespace DB
