@@ -230,6 +230,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(ClickHouseRevision::getVersionRevision());
 
     columns[i++]->insertData(log_comment.data(), log_comment.size());
+    columns[i++]->insert(script_line_number);
 
     {
         Array threads_array;
