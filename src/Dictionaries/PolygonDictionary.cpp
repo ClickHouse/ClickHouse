@@ -141,7 +141,7 @@ ColumnPtr IPolygonDictionary::getColumn(
                 {
                     getItemsShortCircuitImpl<ValueType>(
                         requested_key_points,
-                        [&](size_t row) { return (*attribute_values_column)[row].get<Array>(); },
+                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Array>(); },
                         [&](Array & value) { result_column_typed.insert(value); },
                         default_mask.value());
                 }
@@ -149,7 +149,7 @@ ColumnPtr IPolygonDictionary::getColumn(
                 {
                     getItemsImpl<ValueType>(
                         requested_key_points,
-                        [&](size_t row) { return (*attribute_values_column)[row].get<Array>(); },
+                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Array>(); },
                         [&](Array & value) { result_column_typed.insert(value); },
                         default_value_provider.value());
                 }
@@ -432,16 +432,16 @@ void IPolygonDictionary::getItemsImpl(
             }
             else if constexpr (std::is_same_v<AttributeType, Array>)
             {
-                set_value(default_value.get<Array>());
+                set_value(default_value.safeGet<Array>());
             }
             else if constexpr (std::is_same_v<AttributeType, StringRef>)
             {
-                auto default_value_string = default_value.get<String>();
+                auto default_value_string = default_value.safeGet<String>();
                 set_value(default_value_string);
             }
             else
             {
-                set_value(default_value.get<NearestFieldType<AttributeType>>());
+                set_value(default_value.safeGet<NearestFieldType<AttributeType>>());
             }
         }
     }
