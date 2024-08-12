@@ -1584,6 +1584,8 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     }
 
     auto table = tryGetTable(table_name, getContext());
+    if (!table)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't exist", table_name);
     if (table->getName() == "MaterializedView" || table->getName() == "WindowView")
     {
         /// Avoid recursive locking of metadata_mutex
