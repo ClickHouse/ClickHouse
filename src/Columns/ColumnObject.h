@@ -9,7 +9,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <Formats/FormatSettings.h>
-
+#include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/WeakHash.h>
 
 namespace DB
@@ -44,6 +44,9 @@ private:
         size_t max_dynamic_types_,
         const Statistics & statistics_ = {});
 
+    /// Use StringHashForHeterogeneousLookup hash for hash maps to be able to use std::string_view in find() method.
+    using PathToColumnMap = std::unordered_map<String, WrappedPtr, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
+    using PathToDynamicColumnPtrMap = std::unordered_map<String, ColumnDynamic *, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
 public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use mutate in order to make mutable column and mutate shared nested columns.
@@ -158,14 +161,14 @@ public:
     bool hasDynamicStructure() const override { return true; }
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 
-    const std::unordered_map<String, WrappedPtr> & getTypedPaths() const { return typed_paths; }
-    std::unordered_map<String, WrappedPtr> & getTypedPaths() { return typed_paths; }
+    const PathToColumnMap & getTypedPaths() const { return typed_paths; }
+    PathToColumnMap & getTypedPaths() { return typed_paths; }
 
-    const std::unordered_map<String, WrappedPtr> & getDynamicPaths() const { return dynamic_paths; }
-    std::unordered_map<String, WrappedPtr> & getDynamicPaths() { return dynamic_paths; }
+    const PathToColumnMap & getDynamicPaths() const { return dynamic_paths; }
+    PathToColumnMap & getDynamicPaths() { return dynamic_paths; }
 
-    const std::unordered_map<String, ColumnDynamic *> & getDynamicPathsPtrs() const { return dynamic_paths_ptrs; }
-    std::unordered_map<String, ColumnDynamic *> & getDynamicPathsPtrs() { return dynamic_paths_ptrs; }
+    const PathToDynamicColumnPtrMap & getDynamicPathsPtrs() const { return dynamic_paths_ptrs; }
+    PathToDynamicColumnPtrMap & getDynamicPathsPtrs() { return dynamic_paths_ptrs; }
 
     const Statistics & getStatistics() const { return statistics; }
 
@@ -198,12 +201,12 @@ public:
 
     /// Try to add new dynamic path. Returns pointer to the new dynamic
     /// path column or nullptr if limit on dynamic paths is reached.
-    ColumnDynamic * tryToAddNewDynamicPath(const String & path);
+    ColumnDynamic * tryToAddNewDynamicPath(const std::string_view path);
 
     void setDynamicPaths(const std::vector<String> & paths);
     void setStatistics(const Statistics & statistics_) { statistics = statistics_; }
 
-    void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, const String & path, const IColumn & column, size_t n);
+    void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, const std::string_view path, const IColumn & column, size_t n);
     void deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column) const;
 
     /// Paths in shared data are sorted in each row. Use this method to find the lower bound for specific path in the row.
@@ -212,19 +215,19 @@ public:
     static void fillPathColumnFromSharedData(IColumn & path_column, StringRef path, const ColumnPtr & shared_data_column, size_t start, size_t end);
 
 private:
-    void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, std::vector<String> && src_dynamic_paths_for_shared_data, size_t start, size_t length);
+    void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, std::vector<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length);
     void serializePathAndValueIntoArena(Arena & arena, const char *& begin, StringRef path, StringRef value, StringRef & res) const;
 
     /// Map path -> column for paths with explicitly specified types.
     /// This set of paths is constant and cannot be changed.
-    std::unordered_map<String, WrappedPtr> typed_paths;
+    PathToColumnMap typed_paths;
     /// Map path -> column for dynamically added paths. All columns
     /// here are Dynamic columns. This set of paths can be extended
     /// during inerts into the column.
-    std::unordered_map<String, WrappedPtr> dynamic_paths;
+    PathToColumnMap dynamic_paths;
     /// Store and use pointers to ColumnDynamic to avoid virtual calls.
     /// With hundreds of dynamic paths these virtual calls are noticeable.
-    std::unordered_map<String, ColumnDynamic *> dynamic_paths_ptrs;
+    PathToDynamicColumnPtrMap dynamic_paths_ptrs;
     /// Shared storage for all other paths and values. It's filled
     /// when the number of dynamic paths reaches the limit.
     /// It has type Array(Tuple(String, String)) and stores

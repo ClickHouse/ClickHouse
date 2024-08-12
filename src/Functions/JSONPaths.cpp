@@ -139,7 +139,7 @@ private:
         {
             /// Collect all dynamic paths.
             const auto & dynamic_path_columns = column_object.getDynamicPaths();
-            std::vector<String> dynamic_paths;
+            std::vector<std::string_view> dynamic_paths;
             dynamic_paths.reserve(dynamic_path_columns.size());
             for (const auto & [path, _] : dynamic_path_columns)
                 dynamic_paths.push_back(path);
@@ -149,11 +149,11 @@ private:
             size_t size = column_object.size();
             for (size_t i = 0; i != size; ++i)
             {
-                for (const auto & path : dynamic_paths)
+                for (const auto path : dynamic_paths)
                 {
                     /// Don't include path if it contains NULL, because we consider
                     /// it to be equivalent to the absence of this path in this row.
-                    if (!dynamic_path_columns.at(path)->isNullAt(i))
+                    if (!dynamic_path_columns.find(path)->second->isNullAt(i))
                         data.insertData(path.data(), path.size());
                 }
                 offsets.push_back(data.size());
@@ -162,7 +162,7 @@ private:
         }
 
         /// Collect all paths: typed, dynamic and paths from shared data.
-        std::vector<String> sorted_dynamic_and_typed_paths;
+        std::vector<std::string_view> sorted_dynamic_and_typed_paths;
         const auto & typed_path_columns = column_object.getTypedPaths();
         const auto & dynamic_path_columns = column_object.getDynamicPaths();
         sorted_dynamic_and_typed_paths.reserve(typed_path_columns.size() + dynamic_path_columns.size());
@@ -184,22 +184,22 @@ private:
             size_t sorted_paths_index = 0;
             for (size_t j = start; j != end; ++j)
             {
-                auto shared_data_path = shared_data_paths->getDataAt(j);
+                auto shared_data_path = shared_data_paths->getDataAt(j).toView();
                 while (sorted_paths_index != sorted_dynamic_and_typed_paths.size() && sorted_dynamic_and_typed_paths[sorted_paths_index] < shared_data_path)
                 {
-                    const auto & path = sorted_dynamic_and_typed_paths[sorted_paths_index];
+                    const auto path = sorted_dynamic_and_typed_paths[sorted_paths_index];
                     /// If it's dynamic path include it only if it's not NULL.
                     if (auto it = dynamic_path_columns.find(path); it == dynamic_path_columns.end() || !it->second->isNullAt(i))
                         data.insertData(path.data(), path.size());
                     ++sorted_paths_index;
                 }
 
-                data.insertData(shared_data_path.data, shared_data_path.size);
+                data.insertData(shared_data_path.data(), shared_data_path.size());
             }
 
             for (; sorted_paths_index != sorted_dynamic_and_typed_paths.size(); ++sorted_paths_index)
             {
-                const auto & path = sorted_dynamic_and_typed_paths[sorted_paths_index];
+                const auto path = sorted_dynamic_and_typed_paths[sorted_paths_index];
                 if (auto it = dynamic_path_columns.find(path); it == dynamic_path_columns.end() || !it->second->isNullAt(i))
                     data.insertData(path.data(), path.size());
             }
@@ -220,7 +220,7 @@ private:
         if constexpr (Impl::paths_mode == PathsMode::DYNAMIC_PATHS)
         {
             const auto & dynamic_path_columns = column_object.getDynamicPaths();
-            std::vector<String> sorted_dynamic_paths;
+            std::vector<std::string_view> sorted_dynamic_paths;
             sorted_dynamic_paths.reserve(dynamic_path_columns.size());
             for (const auto & [path, _] : dynamic_path_columns)
                 sorted_dynamic_paths.push_back(path);
@@ -230,9 +230,9 @@ private:
             /// Iterate over all rows and extract types from dynamic columns.
             for (size_t i = 0; i != column_object.size(); ++i)
             {
-                for (auto & path : sorted_dynamic_paths)
+                for (const auto path : sorted_dynamic_paths)
                 {
-                    auto column = dynamic_path_columns.at(path);
+                    const auto & column = dynamic_path_columns.find(path)->second;
                     if (!column->isNullAt(i))
                     {
                         auto type = getDynamicValueType(column, i);
@@ -272,7 +272,7 @@ private:
         }
 
         /// Iterate over all rows and extract types from dynamic columns from dynamic paths and from values in shared data.
-        std::vector<std::pair<String, String>> sorted_typed_and_dynamic_paths_with_types;
+        std::vector<std::pair<std::string_view, String>> sorted_typed_and_dynamic_paths_with_types;
         const auto & typed_path_types = type_object.getTypedPaths();
         const auto & dynamic_path_columns = column_object.getDynamicPaths();
         sorted_typed_and_dynamic_paths_with_types.reserve(typed_path_types.size() + dynamic_path_columns.size());
@@ -294,7 +294,7 @@ private:
             size_t sorted_paths_index = 0;
             for (size_t j = start; j != end; ++j)
             {
-                auto shared_data_path = shared_data_paths->getDataAt(j);
+                auto shared_data_path = shared_data_paths->getDataAt(j).toView();
                 auto type_name = getDynamicValueTypeFromSharedData(shared_data_values->getDataAt(j));
                 /// Skip NULL values.
                 if (!type_name)
@@ -319,7 +319,7 @@ private:
                     ++sorted_paths_index;
                 }
 
-                paths_column->insertData(shared_data_path.data, shared_data_path.size);
+                paths_column->insertData(shared_data_path.data(), shared_data_path.size());
                 types_column->insertData(type_name->data(), type_name->size());
             }
 
