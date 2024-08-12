@@ -525,7 +525,7 @@ void DiskLocal::shutdown()
 std::optional<UInt32> DiskLocal::readDiskCheckerMagicNumber() const noexcept
 try
 {
-    ReadSettings read_settings = getReadSettings();
+    ReadSettings read_settings;
     /// Proper disk read checking requires direct io
     read_settings.direct_io_threshold = 1;
     auto buf = readFile(disk_checker_path, read_settings, {}, {});

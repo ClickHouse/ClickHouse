@@ -197,7 +197,7 @@ class BuilderRWBufferFromHTTP
     std::string method = Poco::Net::HTTPRequest::HTTP_GET;
     HTTPConnectionGroupType connection_group = HTTPConnectionGroupType::HTTP;
     ProxyConfiguration proxy_config{};
-    ReadSettings read_settings;
+    ReadSettings read_settings{};
     ConnectionTimeouts timeouts{};
     const RemoteHostFilter * remote_host_filter = nullptr;
     size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
@@ -211,7 +211,6 @@ class BuilderRWBufferFromHTTP
 public:
     explicit BuilderRWBufferFromHTTP(Poco::URI uri_)
         : uri(uri_)
-        , read_settings(getReadSettings())
     {}
 
 /// NOLINTBEGIN(bugprone-macro-parentheses)

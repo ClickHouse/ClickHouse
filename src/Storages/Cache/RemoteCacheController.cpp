@@ -211,8 +211,11 @@ void RemoteCacheController::close()
 
 std::unique_ptr<ReadBufferFromFileBase> RemoteCacheController::allocFile()
 {
+    ReadSettings settings;
     //settings.local_fs_method = LocalFSReadMethod::read;
-    return createReadBufferFromFileBase((local_path / "data.bin").string(), getReadSettings());
+    auto file_buffer = createReadBufferFromFileBase((local_path / "data.bin").string(), settings);
+
+    return file_buffer;
 }
 
 }

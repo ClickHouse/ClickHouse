@@ -22,7 +22,7 @@ enum class CompactPartsReadMethod : uint8_t
 struct MergeTreeReaderSettings
 {
     /// Common read settings.
-    ReadSettings read_settings = getReadSettings();
+    ReadSettings read_settings;
     /// If save_marks_in_cache is false, then, if marks are not in cache,
     ///  we will load them but won't save in the cache, to avoid evicting other data.
     bool save_marks_in_cache = false;

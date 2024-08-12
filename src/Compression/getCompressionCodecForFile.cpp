@@ -15,7 +15,7 @@ using Checksum = CityHash_v1_0_2::uint128;
 
 CompressionCodecPtr getCompressionCodecForFile(const IDataPartStorage & data_part_storage, const String & relative_path)
 {
-    auto read_buffer = data_part_storage.readFile(relative_path, getReadSettings(), std::nullopt, std::nullopt);
+    auto read_buffer = data_part_storage.readFile(relative_path, {}, std::nullopt, std::nullopt);
     read_buffer->ignore(sizeof(Checksum));
 
     UInt8 header_size = ICompressionCodec::getHeaderSize();

@@ -70,7 +70,7 @@ DiskObjectStorage::DiskObjectStorage(
     , send_metadata(config.getBool(config_prefix + ".send_metadata", false))
     , read_resource_name(config.getString(config_prefix + ".read_resource", ""))
     , write_resource_name(config.getString(config_prefix + ".write_resource", ""))
-    , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, getReadSettings(), WriteSettings{}))
+    , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}, WriteSettings{}))
 {
     data_source_description = DataSourceDescription{
         .type = DataSourceType::ObjectStorage,
@@ -155,7 +155,7 @@ void DiskObjectStorage::copyFile( /// NOLINT
             /// It may use s3-server-side copy
             auto & to_disk_object_storage = dynamic_cast<DiskObjectStorage &>(to_disk);
             auto transaction = createObjectStorageTransactionToAnotherDisk(to_disk_object_storage);
-            transaction->copyFile(from_file_path, to_file_path, /*read_settings*/ getReadSettings(), /*write_settings*/ {});
+            transaction->copyFile(from_file_path, to_file_path, /*read_settings*/ {}, /*write_settings*/ {});
             transaction->commit();
     }
     else

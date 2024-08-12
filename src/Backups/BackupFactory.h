@@ -42,7 +42,7 @@ public:
         bool allow_azure_native_copy = true;
         bool use_same_s3_credentials_for_base_backup = false;
         bool azure_attempt_to_create_container = true;
-        ReadSettings read_settings = getReadSettings();
+        ReadSettings read_settings;
         WriteSettings write_settings;
     };
 

@@ -68,7 +68,7 @@ void doReadRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::U
     String version_id;
     UInt64 max_single_read_retries = 1;
 
-    DB::ReadSettings read_settings = DB::getReadSettings();
+    DB::ReadSettings read_settings;
     DB::S3::RequestSettings request_settings;
     request_settings.max_single_read_retries = max_single_read_retries;
     DB::ReadBufferFromS3 read_buffer(

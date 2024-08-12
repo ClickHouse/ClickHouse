@@ -339,7 +339,7 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
     {
         auto buf = disk->writeFile(copy_lock_file);
         buf->finalize();
-        disk->copyFile(server_state_file_name, *disk, old_path, getReadSettings());
+        disk->copyFile(server_state_file_name, *disk, old_path, ReadSettings{});
         disk->removeFile(copy_lock_file);
         disk->removeFile(old_path);
     }
