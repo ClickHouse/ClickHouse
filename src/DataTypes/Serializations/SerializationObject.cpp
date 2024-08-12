@@ -466,7 +466,7 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
 
 void SerializationObject::serializeBinary(const Field & field, WriteBuffer & ostr, const DB::FormatSettings & settings) const
 {
-    const auto & object = field.get<Object>();
+    const auto & object = field.safeGet<Object>();
     /// Serialize number of paths and then pairs (path, value).
     writeVarUInt(object.size(), ostr);
     for (const auto & [path, value] : object)
