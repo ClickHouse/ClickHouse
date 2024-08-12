@@ -1,3 +1,4 @@
+#include <optional>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -31,6 +32,8 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
         {"database_shard_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database shard (for clusters that belong to a `Replicated` database)."},
         {"database_replica_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database replica (for clusters that belong to a `Replicated` database)."},
         {"is_active", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "The status of the Replicated database replica (for clusters that belong to a Replicated database): 1 means 'replica is online', 0 means 'replica is offline', NULL means 'unknown'."},
+        {"replication_lag", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>()), "The replication lag of the `Replicated` database replica (for clusters that belong to a Replicated database)."},
+        {"recovery_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The recovery time of the `Replicated` database replica (for clusters that belong to a Replicated database), in milliseconds."},
     };
 
     description.setAliases({
@@ -66,6 +69,11 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
     const ClusterPtr & cluster = name_and_cluster.second;
     const auto & shards_info = cluster->getShardsInfo();
     const auto & addresses_with_failover = cluster->getShardsAddresses();
+
+    size_t recovery_time_column_idx = columns_mask.size() - 1, replication_lag_column_idx = columns_mask.size() - 2, is_active_column_idx = columns_mask.size() - 3;
+    ReplicasInfo replicas_info;
+    if (replicated && (columns_mask[recovery_time_column_idx] || columns_mask[replication_lag_column_idx] || columns_mask[is_active_column_idx]))
+        replicas_info = replicated->tryGetReplicasInfo(name_and_cluster.second);
 
     size_t replica_idx = 0;
     for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
@@ -114,17 +122,46 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
                 res_columns[res_index++]->insert(address.database_shard_name);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(address.database_replica_name);
+
+            /// make sure these three columns remain the last ones
             if (columns_mask[src_index++])
             {
-                std::vector<UInt8> is_active;
-                if (replicated)
-                    is_active = replicated->tryGetAreReplicasActive(name_and_cluster.second);
-
-                if (is_active.empty())
+                if (replicas_info.empty())
                     res_columns[res_index++]->insertDefault();
                 else
-                    res_columns[res_index++]->insert(is_active[replica_idx++]);
+                {
+                    const auto & replica_info = replicas_info[replica_idx];
+                    res_columns[res_index++]->insert(replica_info.is_active);
+                }
             }
+            if (columns_mask[src_index++])
+            {
+                if (replicas_info.empty())
+                    res_columns[res_index++]->insertDefault();
+                else
+                {
+                    const auto & replica_info = replicas_info[replica_idx];
+                    if (replica_info.replication_lag != std::nullopt)
+                        res_columns[res_index++]->insert(*replica_info.replication_lag);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+            }
+            if (columns_mask[src_index++])
+            {
+                if (replicas_info.empty())
+                    res_columns[res_index++]->insertDefault();
+                else
+                {
+                    const auto & replica_info = replicas_info[replica_idx];
+                    if (replica_info.recovery_time != 0)
+                        res_columns[res_index++]->insert(replica_info.recovery_time);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+            }
+
+            ++replica_idx;
         }
     }
 }

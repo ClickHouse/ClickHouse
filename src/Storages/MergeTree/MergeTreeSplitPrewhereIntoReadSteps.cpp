@@ -152,23 +152,15 @@ const ActionsDAG::Node & addFunction(
 const ActionsDAG::Node & addCast(
         const ActionsDAGPtr & dag,
         const ActionsDAG::Node & node_to_cast,
-        const String & type_name,
+        const DataTypePtr & to_type,
         OriginalToNewNodeMap & node_remap)
 {
-    if (node_to_cast.result_type->getName() == type_name)
+    if (!node_to_cast.result_type->equals(*to_type))
         return node_to_cast;
 
-    Field cast_type_constant_value(type_name);
-
-    ColumnWithTypeAndName column;
-    column.column = DataTypeString().createColumnConst(0, cast_type_constant_value);
-    column.type = std::make_shared<DataTypeString>();
-
-    const auto * cast_type_constant_node = &dag->addColumn(std::move(column));
-    ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
-    FunctionOverloadResolverPtr func_builder_cast = createInternalCastOverloadResolver(CastType::nonAccurate, {});
-
-    return addFunction(dag, func_builder_cast, std::move(children), node_remap);
+    const auto & new_node = dag->addCast(node_to_cast, to_type, {});
+    node_remap[new_node.result_name] = {dag.get(), &new_node};
+    return new_node;
 }
 
 /// Normalizes the filter node by adding AND with a constant true.
@@ -332,7 +324,7 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
             /// Build AND(last_step_result_node, true)
             const auto & and_node = addAndTrue(last_step_dag, *last_step_result_node_info.node, node_remap);
             /// Build CAST(and_node, type of PREWHERE column)
-            const auto & cast_node = addCast(last_step_dag, and_node, output->result_type->getName(), node_remap);
+            const auto & cast_node = addCast(last_step_dag, and_node, output->result_type, node_remap);
             /// Add alias for the result with the name of the PREWHERE column
             const auto & prewhere_result_node = last_step_dag->addAlias(cast_node, output->result_name);
             last_step_dag->addOrReplaceInOutputs(prewhere_result_node);
