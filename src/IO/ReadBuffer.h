@@ -101,11 +101,7 @@ public:
       *
       * Try to read after the end should throw an exception.
       */
-    bool ALWAYS_INLINE eof()
-    {
-        LOG_DEBUG();
-        return !hasPendingData() && !next();
-    }
+    bool ALWAYS_INLINE eof() { return !hasPendingData() && !next(); }
 
     void ignore()
     {
@@ -183,8 +179,6 @@ public:
 
         while (bytes_copied < n && !eof())
         {
-            auto k = *pos;
-            LOG_DEBUG(&Poco::Logger::get("Next symbol in read"), "Symbol: {}", k);
             size_t bytes_to_copy = std::min(static_cast<size_t>(working_buffer.end() - pos), n - bytes_copied);
             ::memcpy(to + bytes_copied, pos, bytes_to_copy);
             pos += bytes_to_copy;

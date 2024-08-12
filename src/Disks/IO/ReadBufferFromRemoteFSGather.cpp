@@ -231,7 +231,6 @@ void ReadBufferFromRemoteFSGather::reset()
 {
     current_object = StoredObject();
     current_buf_idx = {};
-    // buffer_cemetery_.push_back(current_buf);
     current_buf.reset();
 }
 

@@ -78,7 +78,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 
         if (settings.local_fs_method == LocalFSReadMethod::read)
         {
-            LOG_DEBUG(&Poco::Logger::get("Read settings"), "Read settings 1");
             res = std::make_unique<ReadBufferFromFile>(
                 filename,
                 buffer_size,
@@ -90,8 +89,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread || settings.local_fs_method == LocalFSReadMethod::mmap)
         {
-            LOG_DEBUG(&Poco::Logger::get("Read settings"), "Read settings 2");
-
             res = std::make_unique<ReadBufferFromFilePReadWithDescriptorsCache>(
                 filename,
                 buffer_size,
@@ -103,7 +100,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::io_uring)
         {
-            LOG_DEBUG(&Poco::Logger::get("Read settings"), "Read settings 3");
 
 #if USE_LIBURING
             auto & reader = getIOUringReaderOrThrow();
@@ -123,8 +119,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
         {
-            LOG_DEBUG(&Poco::Logger::get("Read settings"), "Read settings 4");
-
             auto & reader = getThreadPoolReader(FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader,
@@ -139,7 +133,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_threadpool)
         {
-            LOG_DEBUG(&Poco::Logger::get("Read settings"), "Read settings 5");
             auto & reader = getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader,
@@ -154,8 +147,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else
         {
-            LOG_DEBUG(&Poco::Logger::get("Read settings"), "Read settings 6");
-
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown read method");
         }
         return res;

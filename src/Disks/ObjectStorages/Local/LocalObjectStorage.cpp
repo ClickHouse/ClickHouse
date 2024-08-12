@@ -43,18 +43,13 @@ bool LocalObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOLINT
     const StoredObjects & objects,
     const ReadSettings & read_settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    std::optional<size_t>,
+    std::optional<size_t>) const
 {
     auto modified_settings = patchSettings(read_settings);
     auto global_context = Context::getGlobalContextInstance();
     auto read_buffer_creator = [=](bool /* restricted_seek */, const StoredObject & object) -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        LOG_DEBUG(&Poco::Logger::get("Get object path"), "Remote Path: {}", object.remote_path);
-        auto kek = createReadBufferFromFileBase(object.remote_path, modified_settings, read_hint, file_size);
-        LOG_DEBUG(&Poco::Logger::get("Buffer created"), "Remote Path: {}", object.remote_path);
-        return kek;
-    };
+    { return std::make_unique<ReadBufferFromFile>(object.remote_path); };
 
     return std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(read_buffer_creator),
