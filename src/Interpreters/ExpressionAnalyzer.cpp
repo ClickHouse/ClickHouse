@@ -38,6 +38,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
+#include <AggregateFunctions/WindowFunction.h>
 
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDictionary.h>
@@ -171,7 +172,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     PreparedSetsPtr prepared_sets_,
     bool is_create_parameterized_view_)
     : WithContext(context_)
-    , query(query_), settings(getContext()->getSettings())
+    , query(query_), settings(getContext()->getSettingsRef())
     , subquery_depth(subquery_depth_)
     , syntax(syntax_analyzer_result_)
     , is_create_parameterized_view(is_create_parameterized_view_)
@@ -590,6 +591,7 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAG & actions, Aggrega
 
 void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
     const WindowDescriptions & existing_descriptions,
+    AggregateFunctionPtr aggregate_function,
     WindowDescription & desc, const IAST * ast)
 {
     const auto & definition = ast->as<const ASTWindowDefinition &>();
@@ -698,7 +700,21 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
             ast->formatForErrorMessage());
     }
 
+    const auto * window_function = aggregate_function ? dynamic_cast<const IWindowFunction *>(aggregate_function.get()) : nullptr;
     desc.frame.is_default = definition.frame_is_default;
+    if (desc.frame.is_default && window_function)
+    {
+        auto default_window_frame_opt = window_function->getDefaultFrame();
+        if (default_window_frame_opt)
+        {
+            desc.frame = *default_window_frame_opt;
+            /// Append the default frame description to window_name, make sure it will be put into
+            /// a proper window description.
+            desc.window_name += " " + desc.frame.toString();
+            return;
+        }
+    }
+
     desc.frame.type = definition.frame_type;
     desc.frame.begin_type = definition.frame_begin_type;
     desc.frame.begin_preceding = definition.frame_begin_preceding;
@@ -734,7 +750,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
             WindowDescription desc;
             desc.window_name = elem.name;
             makeWindowDescriptionFromAST(*current_context, window_descriptions,
-                desc, elem.definition.get());
+                nullptr, desc, elem.definition.get());
 
             auto [it, inserted] = window_descriptions.insert(
                 {elem.name, std::move(desc)});
@@ -821,12 +837,12 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
             WindowDescription desc;
             desc.window_name = default_window_name;
             makeWindowDescriptionFromAST(*current_context, window_descriptions,
-                desc, &definition);
+                window_function.aggregate_function, desc, &definition);
 
             auto full_sort_description = desc.full_sort_description;
 
             auto [it, inserted] = window_descriptions.insert(
-                {default_window_name, std::move(desc)});
+                {desc.window_name, std::move(desc)});
 
             if (!inserted)
             {
@@ -984,7 +1000,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
-        const auto & settings = context->getSettings();
+        const auto & settings = context->getSettingsRef();
 
         if (analyzed_join->allowParallelHashJoin())
             return std::make_shared<ConcurrentHashJoin>(

@@ -1,7 +1,6 @@
 #include "MongoDBDictionarySource.h"
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
-#include "registerDictionaries.h"
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/StorageMongoDBSocketFactory.h>
 
@@ -233,7 +232,7 @@ QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, con
                 }
                 case AttributeUnderlyingType::String:
                 {
-                    String loaded_str((*key_columns[attribute_index])[row_idx].get<String>());
+                    String loaded_str((*key_columns[attribute_index])[row_idx].safeGet<String>());
                     /// Convert string to ObjectID
                     if (key_attribute.is_object_id)
                     {

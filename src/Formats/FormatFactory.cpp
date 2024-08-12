@@ -123,6 +123,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.import_nested_json = settings.input_format_import_nested_json;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
+    format_settings.json.max_depth = settings.input_format_json_max_depth;
     format_settings.json.array_of_rows = settings.output_format_json_array_of_rows;
     format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;
     format_settings.json.write_named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
@@ -150,7 +151,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.try_infer_objects_as_tuples = settings.input_format_json_try_infer_named_tuples_from_objects;
     format_settings.json.throw_on_bad_escape_sequence = settings.input_format_json_throw_on_bad_escape_sequence;
     format_settings.json.ignore_unnecessary_fields = settings.input_format_json_ignore_unnecessary_fields;
-    format_settings.json.case_insensitive_column_matching = settings.input_format_json_case_insensitive_column_matching;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.force_null_for_omitted_fields = settings.input_format_force_null_for_omitted_fields;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
@@ -243,7 +243,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.output_row_index_stride = settings.output_format_orc_row_index_stride;
     format_settings.orc.use_fast_decoder = settings.input_format_orc_use_fast_decoder;
     format_settings.orc.filter_push_down = settings.input_format_orc_filter_push_down;
-    format_settings.orc.read_use_writer_time_zone = settings.input_format_orc_read_use_writer_time_zone;
+    format_settings.orc.reader_time_zone_name = settings.input_format_orc_reader_time_zone_name;
     format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
     format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference;

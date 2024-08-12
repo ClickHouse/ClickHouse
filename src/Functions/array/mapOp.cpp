@@ -237,7 +237,7 @@ private:
                     }
 
                     arg.val_column->get(offset + j, temp_val);
-                    ValType value = temp_val.get<ValType>();
+                    ValType value = temp_val.safeGet<ValType>();
 
                     if constexpr (op_type == OpTypes::ADD)
                     {

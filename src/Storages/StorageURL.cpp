@@ -464,7 +464,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
         setCredentials(credentials, request_uri);
 
-        const auto settings = context_->getSettings();
+        const auto & settings = context_->getSettingsRef();
 
         auto proxy_config = getProxyConfiguration(request_uri.getScheme());
 
@@ -571,31 +571,15 @@ StorageURLSink::StorageURLSink(
 
 void StorageURLSink::consume(Chunk & chunk)
 {
-    std::lock_guard lock(cancel_mutex);
-    if (cancelled)
+    if (isCancelled())
         return;
     writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
 }
 
-void StorageURLSink::onCancel()
-{
-    std::lock_guard lock(cancel_mutex);
-    cancelBuffers();
-    releaseBuffers();
-    cancelled = true;
-}
-
-void StorageURLSink::onException(std::exception_ptr)
-{
-    std::lock_guard lock(cancel_mutex);
-    cancelBuffers();
-    releaseBuffers();
-}
-
 void StorageURLSink::onFinish()
 {
-    std::lock_guard lock(cancel_mutex);
     finalizeBuffers();
+    releaseBuffers();
 }
 
 void StorageURLSink::finalizeBuffers()
@@ -1328,7 +1312,7 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
     const Poco::Net::HTTPBasicCredentials & credentials,
     const ContextPtr & context)
 {
-    auto settings = context->getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     auto uri = Poco::URI(url);
 
@@ -1402,6 +1386,11 @@ StorageURLWithFailover::StorageURLWithFailover(
     }
 }
 
+StorageURLSink::~StorageURLSink()
+{
+    if (isCancelled())
+        cancelBuffers();
+}
 
 FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Arguments & args)
 {
@@ -1592,4 +1581,5 @@ void registerStorageURL(StorageFactory & factory)
             .source_access_type = AccessType::URL,
         });
 }
+
 }

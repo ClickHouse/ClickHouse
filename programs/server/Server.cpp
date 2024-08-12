@@ -814,10 +814,11 @@ try
 
     const size_t physical_server_memory = getMemoryAmount();
 
-    LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
+    LOG_INFO(log, "Available RAM: {}; logical cores: {}; used cores: {}.",
         formatReadableSizeWithBinarySuffix(physical_server_memory),
-        getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
-        std::thread::hardware_concurrency());
+        std::thread::hardware_concurrency(),
+        getNumberOfPhysicalCPUCores()  // on ARM processors it can show only enabled at current moment cores
+        );
 
 #if defined(__x86_64__)
     String cpu_info;
@@ -849,7 +850,7 @@ try
 #endif
 
 #if defined(SANITIZER)
-    LOG_INFO(log, "Query Profiler disabled because they cannot work under sanitizers"
+    LOG_INFO(log, "Query Profiler is disabled because it cannot work under sanitizers"
         " when two different stack unwinding methods will interfere with each other.");
 #endif
 
@@ -918,10 +919,10 @@ try
             metrics.reserve(servers_to_start_before_tables.size() + servers.size());
 
             for (const auto & server : servers_to_start_before_tables)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
 
             for (const auto & server : servers)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
             return metrics;
         }
     );
@@ -1042,6 +1043,11 @@ try
         max_database_replicated_create_table_thread_pool_size,
         0, // We don't need any threads once all the tables will be created
         max_database_replicated_create_table_thread_pool_size);
+
+    getDatabaseCatalogDropTablesThreadPool().initialize(
+        server_settings.database_catalog_drop_table_concurrency,
+        0, // We don't need any threads if there are no DROP queries.
+        server_settings.database_catalog_drop_table_concurrency);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -1590,6 +1596,8 @@ try
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
 
+            global_context->setDashboardsConfig(config);
+
             if (global_context->isServerCompletelyStarted())
             {
                 /// It does not make sense to reload anything before server has started.
@@ -1616,7 +1624,7 @@ try
                 concurrent_threads_soft_limit = new_server_settings.concurrent_threads_soft_limit_num;
             if (new_server_settings.concurrent_threads_soft_limit_ratio_to_cores > 0)
             {
-                auto value = new_server_settings.concurrent_threads_soft_limit_ratio_to_cores * std::thread::hardware_concurrency();
+                auto value = new_server_settings.concurrent_threads_soft_limit_ratio_to_cores * getNumberOfPhysicalCPUCores();
                 if (value > 0 && value < concurrent_threads_soft_limit)
                     concurrent_threads_soft_limit = value;
             }
