@@ -27,6 +27,8 @@ public:
     /// Content-Type to set when sending HTTP response.
     String getContentType() const override
     {
+        if (!settings.json.content_type.empty())
+            return settings.json.content_type;
         return settings.json.array_of_rows ? "application/json; charset=UTF-8" : "application/x-ndjson; charset=UTF-8" ;
     }
 

@@ -237,6 +237,7 @@ struct FormatSettings
         bool throw_on_bad_escape_sequence = true;
         bool ignore_unnecessary_fields = true;
         bool type_json_skip_duplicated_paths = false;
+        String content_type{};
     } json{};
 
     struct

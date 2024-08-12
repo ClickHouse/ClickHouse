@@ -20,6 +20,13 @@ public:
 
     String getName() const override { return "JSONColumnsBlockOutputFormatBase"; }
 
+    String getContentType() const override
+    {
+        if (!format_settings.json.content_type.empty())
+            return format_settings.json.content_type;
+        return "application/json; charset=UTF-8";
+    }
+
 protected:
     void consume(Chunk chunk) override;
     void writeSuffix() override;
