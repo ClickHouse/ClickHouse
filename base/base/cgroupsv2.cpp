@@ -71,3 +71,27 @@ fs::path cgroupV2PathOfProcess()
     return {};
 #endif
 }
+
+std::optional<std::string> getCgroupsV2PathContainingFile(std::string_view file_name)
+{
+    if (!cgroupsV2Enabled())
+        return {};
+
+    if (!cgroupsV2MemoryControllerEnabled())
+        return {};
+
+    fs::path current_cgroup = cgroupV2PathOfProcess();
+    if (current_cgroup.empty())
+        return {};
+
+    /// Return the bottom-most nested current memory file. If there is no such file at the current
+    /// level, try again at the parent level as memory settings are inherited.
+    while (current_cgroup != default_cgroups_mount.parent_path())
+    {
+        const auto path = current_cgroup / file_name;
+        if (fs::exists(path))
+            return {current_cgroup};
+        current_cgroup = current_cgroup.parent_path();
+    }
+    return {};
+}

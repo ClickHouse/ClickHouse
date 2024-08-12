@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <string_view>
 
 #if defined(OS_LINUX)
 /// I think it is possible to mount the cgroups hierarchy somewhere else (e.g. when in containers).
@@ -19,3 +20,7 @@ bool cgroupsV2MemoryControllerEnabled();
 /// Returns an empty path the cgroup cannot be determined.
 /// Assumes that cgroupsV2Enabled() is enabled.
 std::filesystem::path cgroupV2PathOfProcess();
+
+/// Returns the most nested cgroup dir containing the specified file.
+/// If cgroups v2 is not enabled - returns an empty optional.
+std::optional<std::string> getCgroupsV2PathContainingFile(std::string_view file_name);

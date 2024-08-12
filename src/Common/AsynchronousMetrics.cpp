@@ -1,19 +1,24 @@
-#include <chrono>
+#include <Common/AsynchronousMetrics.h>
+
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UncompressedCache.h>
+#include <base/cgroupsv2.h>
 #include <base/errnoToString.h>
 #include <base/find_symbols.h>
 #include <base/getPageSize.h>
-#include <boost/locale/date_time_facet.hpp>
 #include <sys/resource.h>
-#include <Common/AsynchronousMetrics.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+
+#include <boost/locale/date_time_facet.hpp>
+
+#include <chrono>
+#include <string_view>
 
 #include "config.h"
 
@@ -53,6 +58,12 @@ static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::stri
     return {};
 }
 
+static void openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
+{
+    if (auto path = getCgroupsV2PathContainingFile(filename))
+        openFileIfExists((path.value() + filename).c_str(), out);
+};
+
 #endif
 
 
@@ -73,13 +84,10 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/net/dev", net_dev);
 
     /// CGroups v2
-    openFileIfExists("/sys/fs/cgroup/memory.max", cgroupmem_limit_in_bytes);
-    if (cgroupmem_limit_in_bytes)
-    {
-        openFileIfExists("/sys/fs/cgroup/memory.current", cgroupmem_usage_in_bytes);
-    }
-    openFileIfExists("/sys/fs/cgroup/cpu.max", cgroupcpu_max);
-    openFileIfExists("/sys/fs/cgroup/cpu.stat", cgroupcpu_stat);
+    openCgroupv2MetricFile("memory.max", cgroupmem_limit_in_bytes);
+    openCgroupv2MetricFile("memory.current", cgroupmem_usage_in_bytes);
+    openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
+    openCgroupv2MetricFile("cpu.stat", cgroupcpu_stat);
 
     /// CGroups v1
     if (!cgroupmem_limit_in_bytes)
@@ -1014,10 +1022,14 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
             if (!first_run)
             {
-                int64_t hz = sysconf(_SC_CLK_TCK);
-                if (-1 == hz)
-                    throw ErrnoException(ErrorCodes::CANNOT_SYSCONF, "Cannot call 'sysconf' to obtain system HZ");
-                const auto cgroup_version_specific_divisor = cgroupcpu_stat ? 1e6 : hz;
+                auto get_clock_ticks = [&]()
+                {
+                    if (auto hz = sysconf(_SC_CLK_TCK); hz != -1)
+                        return hz;
+                    else
+                        throw ErrnoException(ErrorCodes::CANNOT_SYSCONF, "Cannot call 'sysconf' to obtain system HZ");
+                };
+                const auto cgroup_version_specific_divisor = cgroupcpu_stat ? 1e6 : get_clock_ticks();
                 const double multiplier = 1.0 / cgroup_version_specific_divisor
                     / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count() / 1e9);
 
@@ -1032,7 +1044,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
-            openFileIfExists("/sys/fs/cgroup/cpu.stat", cgroupcpu_stat);
+            openCgroupv2MetricFile("cpu.stat", cgroupcpu_stat);
             if (!cgroupcpu_stat)
                 openFileIfExists("/sys/fs/cgroup/cpuacct/cpuacct.stat", cgroupcpuacct_stat);
         }
