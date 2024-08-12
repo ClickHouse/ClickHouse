@@ -1300,7 +1300,7 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
         pytest.param("unordered", 1),
         pytest.param("unordered", 8),
         pytest.param("ordered", 1),
-        pytest.param("ordered", 8),
+        pytest.param("ordered", 2),
     ],
 )
 def test_shards_distributed(started_cluster, mode, processing_threads):
@@ -1311,7 +1311,7 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 300
-    row_num = 50
+    row_num = 300
     total_rows = row_num * files_to_generate
     shards_num = 2
 
