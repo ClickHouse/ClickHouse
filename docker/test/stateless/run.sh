@@ -195,16 +195,18 @@ ORDER BY tuple()"
 # use async inserts to avoid creating too many parts
 ./mc admin config set clickminio logger_webhook:ch_server_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&query=INSERT%20INTO%20minio_server_logs%20FORMAT%20LineAsString" queue_size=1000000 batch_size=500
 ./mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&query=INSERT%20INTO%20minio_audit_logs%20FORMAT%20LineAsString" queue_size=1000000 batch_size=500
+
 max_retries=100
 retry=1
-
 while [ $retry -le $max_retries ]; do
     echo "clickminio restart attempt $retry:"
 
-    output=$(./mc admin service restart clickminio 2>&1)
-    echo "$output"
+    output=$(./mc admin service restart clickminio --wait --json 2>&1 | jq -r .status)
+    echo "Output of restart status: $output"
 
-    if echo "$output" | grep -q "Restarted \`clickminio\` successfully"; then
+    expected_output="success
+success"
+    if [ "$output" = "$expected_output" ]; then
         echo "Restarted clickminio successfully."
         break
     fi
@@ -218,7 +220,6 @@ if [ $retry -gt $max_retries ]; then
     echo "Failed to restart clickminio after $max_retries attempts."
 fi
 
-./mc admin service restart clickminio
 ./mc admin trace clickminio > /test_output/minio.log &
 MC_ADMIN_PID=$!
 
