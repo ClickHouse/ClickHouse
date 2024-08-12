@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# Tag no-fasttest: this test relies on the timeouts, it always takes no less that 4 seconds to run
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+
+# system.error_log is created lazy, flush logs query makes it sure that the table is created.
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS;"
 
 # Get the previous number of errors for 111, 222 and 333
 errors_111=$($CLICKHOUSE_CLIENT -q "SELECT sum(value) FROM system.error_log WHERE code = 111")

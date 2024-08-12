@@ -4,9 +4,6 @@ set(LIBUNWIND_CXX_SOURCES
     "${LIBUNWIND_SOURCE_DIR}/src/libunwind.cpp"
     "${LIBUNWIND_SOURCE_DIR}/src/Unwind-EHABI.cpp"
     "${LIBUNWIND_SOURCE_DIR}/src/Unwind-seh.cpp")
-if (APPLE)
-    set(LIBUNWIND_CXX_SOURCES ${LIBUNWIND_CXX_SOURCES} "${LIBUNWIND_SOURCE_DIR}/src/Unwind_AppleExtras.cpp")
-endif ()
 
 set(LIBUNWIND_C_SOURCES
     "${LIBUNWIND_SOURCE_DIR}/src/UnwindLevel1.c"
@@ -32,6 +29,7 @@ set_target_properties(unwind PROPERTIES FOLDER "contrib/libunwind-cmake")
 
 target_include_directories(unwind SYSTEM BEFORE PUBLIC $<BUILD_INTERFACE:${LIBUNWIND_SOURCE_DIR}/include>)
 target_compile_definitions(unwind PRIVATE -D_LIBUNWIND_NO_HEAP=1)
+target_compile_definitions(unwind PRIVATE -D_LIBUNWIND_REMEMBER_STACK_ALLOC=1)
 # NOTE: from this macros sizeof(unw_context_t)/sizeof(unw_cursor_t) is depends, so it should be set always
 target_compile_definitions(unwind PUBLIC -D_LIBUNWIND_IS_NATIVE_ONLY)
 

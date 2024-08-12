@@ -809,7 +809,7 @@ def test_read_subcolumn_time(cluster):
 def test_read_from_not_existing_container(cluster):
     node = cluster.instances["node"]
     query = (
-        f"select * from azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',  'cont_not_exists', 'test_table.csv', "
+        f"select * from azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',  'cont-not-exists', 'test_table.csv', "
         f"'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto')"
     )
     expected_err_msg = "container does not exist"

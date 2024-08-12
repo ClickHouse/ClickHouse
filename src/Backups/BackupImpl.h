@@ -41,7 +41,8 @@ public:
         std::shared_ptr<IBackupReader> reader_,
         const ContextPtr & context_,
         bool is_internal_backup_,
-        bool use_same_s3_credentials_for_base_backup_);
+        bool use_same_s3_credentials_for_base_backup_,
+        bool use_same_password_for_base_backup_);
 
     BackupImpl(
         const BackupInfo & backup_info_,
@@ -53,7 +54,8 @@ public:
         const std::shared_ptr<IBackupCoordination> & coordination_,
         const std::optional<UUID> & backup_uuid_,
         bool deduplicate_files_,
-        bool use_same_s3_credentials_for_base_backup_);
+        bool use_same_s3_credentials_for_base_backup_,
+        bool use_same_password_for_base_backup_);
 
     ~BackupImpl() override;
 
@@ -153,6 +155,7 @@ private:
     bool writing_finalized = false;
     bool deduplicate_files = true;
     bool use_same_s3_credentials_for_base_backup = false;
+    bool use_same_password_for_base_backup = false;
     const LoggerPtr log;
 };
 

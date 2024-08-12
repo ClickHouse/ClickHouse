@@ -1,11 +1,14 @@
 #include <vector>
 #include <Interpreters/Squashing.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/CurrentThread.h>
 #include <base/defines.h>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -23,7 +26,7 @@ Chunk Squashing::flush()
     if (!accumulated)
         return {};
 
-    auto result = convertToChunk(accumulated.extract());
+    auto result = convertToChunk(extract());
     chassert(result);
     return result;
 }
@@ -53,11 +56,11 @@ Chunk Squashing::add(Chunk && input_chunk)
         if (!accumulated)
         {
             accumulated.add(std::move(input_chunk));
-            return convertToChunk(accumulated.extract());
+            return convertToChunk(extract());
         }
 
         /// Return accumulated data (maybe it has small size) and place new block to accumulated data.
-        Chunk res_chunk = convertToChunk(accumulated.extract());
+        Chunk res_chunk = convertToChunk(extract());
         accumulated.add(std::move(input_chunk));
         return res_chunk;
     }
@@ -66,7 +69,7 @@ Chunk Squashing::add(Chunk && input_chunk)
     if (isEnoughSize())
     {
         /// Return accumulated data and place new block to accumulated data.
-        Chunk res_chunk = convertToChunk(accumulated.extract());
+        Chunk res_chunk = convertToChunk(extract());
         accumulated.add(std::move(input_chunk));
         return res_chunk;
     }
@@ -76,21 +79,26 @@ Chunk Squashing::add(Chunk && input_chunk)
 
     /// If accumulated data is big enough, we send it
     if (isEnoughSize())
-        return convertToChunk(accumulated.extract());
+        return convertToChunk(extract());
 
     return {};
 }
 
-Chunk Squashing::convertToChunk(std::vector<Chunk> && chunks) const
+Chunk Squashing::convertToChunk(CurrentData && data) const
 {
-    if (chunks.empty())
+    if (data.chunks.empty())
         return {};
 
     auto info = std::make_shared<ChunksToSquash>();
-    info->chunks = std::move(chunks);
+    info->chunks = std::move(data.chunks);
 
     // It is imortant that chunk is not empty, it has to have columns even if they are empty
+    // Sometimes there are could be no columns in header but not empty rows in chunks
+    // That happens when we intend to add defaults for the missing columns after
     auto aggr_chunk = Chunk(header.getColumns(), 0);
+    if (header.columns() == 0)
+        aggr_chunk = Chunk(header.getColumns(), data.getRows());
+
     aggr_chunk.getChunkInfos().add(std::move(info));
     chassert(aggr_chunk);
     return aggr_chunk;
@@ -98,6 +106,17 @@ Chunk Squashing::convertToChunk(std::vector<Chunk> && chunks) const
 
 Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoCollection && infos)
 {
+    if (input_chunks.size() == 1)
+    {
+        /// this is just optimization, no logic changes
+        Chunk result = std::move(input_chunks.front());
+        infos.appendIfUniq(std::move(result.getChunkInfos()));
+        result.setChunkInfos(infos);
+
+        chassert(result);
+        return result;
+    }
+
     std::vector<IColumn::MutablePtr> mutable_columns = {};
     size_t rows = 0;
     for (const Chunk & chunk : input_chunks)
@@ -126,7 +145,7 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
     Chunk result;
     result.setColumns(std::move(mutable_columns), rows);
     result.setChunkInfos(infos);
-    result.getChunkInfos().append(std::move(input_chunks.back().getChunkInfos()));
+    result.getChunkInfos().appendIfUniq(std::move(input_chunks.back().getChunkInfos()));
 
     chassert(result);
     return result;
@@ -149,17 +168,18 @@ bool Squashing::isEnoughSize(const Chunk & chunk) const
     return isEnoughSize(chunk.getNumRows(), chunk.bytes());
 }
 
-void Squashing::CurrentSize::add(Chunk && chunk)
+void Squashing::CurrentData::add(Chunk && chunk)
 {
     rows += chunk.getNumRows();
     bytes += chunk.bytes();
     chunks.push_back(std::move(chunk));
 }
 
-std::vector<Chunk> Squashing::CurrentSize::extract()
+Squashing::CurrentData Squashing::extract()
 {
-    auto result = std::move(chunks);
-    *this = {};
+    auto result = std::move(accumulated);
+    accumulated = {};
     return result;
 }
+
 }

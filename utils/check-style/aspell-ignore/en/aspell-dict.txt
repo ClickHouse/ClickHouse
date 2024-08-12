@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2758
+personal_ws-1.1 en 2942
 AArch
 ACLs
 ALTERs
@@ -247,6 +247,7 @@ DoubleDelta
 Doxygen
 Durre
 ECMA
+ETag
 Ecto
 EdgeAngle
 EdgeLengthKm
@@ -449,7 +450,7 @@ Kahan
 Kaser
 KeeperAliveConnections
 KeeperMap
-KeeperOutstandingRequets
+KeeperOutstandingRequests
 Kerberos
 Khanna
 KittenHouse
@@ -467,7 +468,7 @@ LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
 LOONGARCH
-Lemir
+Lemire
 Levenshtein
 Liao
 LibFuzzer
@@ -561,6 +562,7 @@ MindsDB
 Mongodb
 Monotonicity
 MsgPack
+MultiLineString
 MultiPolygon
 Multiline
 Multiqueries
@@ -745,6 +747,7 @@ PromQL
 Promql
 Promtail
 Protobuf
+ProtobufList
 ProtobufSingle
 ProxySQL
 Punycode
@@ -761,6 +764,7 @@ QueryCacheMisses
 QueryPreempted
 QueryThread
 QuickAssist
+QuickSight
 QuoteMeta
 RBAC
 RClickHouse
@@ -1098,6 +1102,8 @@ aggregatefunction
 aggregatingmergetree
 aggregatio
 aggretate
+aggthrow
+aggThrow
 aiochclient
 allocator
 alphaTokens
@@ -1317,6 +1323,12 @@ cfg
 cgroup
 cgroups
 chadmin
+changeDay
+changeHour
+changeMinute
+changeMonth
+changeSecond
+changeYear
 changelog
 changelogs
 charset
@@ -1577,6 +1589,7 @@ enum's
 enums
 erfc
 errorCodeToName
+etag
 evalMLMethod
 exFAT
 expiryMsec
@@ -1612,6 +1625,7 @@ filesystem
 filesystemAvailable
 filesystemCapacity
 filesystemFree
+filesystemUnreserved
 filesystems
 finalizeAggregation
 fips
@@ -1644,6 +1658,7 @@ formated
 formatschema
 formatter
 formatters
+fqdn
 frac
 freezed
 fromDaysSinceYearZero
@@ -1656,9 +1671,11 @@ fsync
 func
 fuzzBits
 fuzzJSON
+fuzzQuery
 fuzzer
 fuzzers
 gRPC
+gaugehistogram
 gccMurmurHash
 gcem
 generateRandom
@@ -1720,6 +1737,7 @@ groupBitmap
 groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
+groupConcat
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1736,6 +1754,7 @@ groupbitmapor
 groupbitmapxor
 groupbitor
 groupbitxor
+groupconcat
 groupuniqarray
 grpc
 grpcio
@@ -1853,9 +1872,11 @@ jdbc
 jemalloc
 jeprof
 joinGet
+joinGetOrNull
 json
 jsonMergePatch
 jsonasstring
+jsonasobject
 jsoncolumns
 jsoncolumnsmonoblock
 jsoncompact
@@ -1897,11 +1918,13 @@ kurtosis
 kurtpop
 kurtsamp
 laion
+lagInFrame
 lang
 laravel
 largestTriangleThreeBuckets
 latencies
 ldap
+leadInFrame
 leftPad
 leftPadUTF
 leftUTF
@@ -1979,6 +2002,8 @@ mapExtractKeyLike
 mapFilter
 mapFromArrays
 mapKeys
+mapPartialReverseSort
+mapPartialSort
 mapPopulateSeries
 mapReverseSort
 mapSort
@@ -1995,6 +2020,7 @@ maxMap
 maxintersections
 maxintersectionsposition
 maxmap
+minMappedArrays
 maxmind
 mdadm
 meanZTest
@@ -2012,6 +2038,7 @@ metrica
 metroHash
 mfedotov
 minMap
+minMappedArrays
 minSampleSizeContinuous
 minSampleSizeConversion
 mindsdb
@@ -2064,6 +2091,7 @@ multiSearchFirstPositionUTF
 multibyte
 multidirectory
 multiline
+multilinestring
 multiplyDecimal
 multipolygon
 multisearchany
@@ -2119,8 +2147,10 @@ noaa
 nonNegativeDerivative
 noop
 normalizeQuery
+normalizeQueryKeepNames
 normalizeUTF
 normalizedQueryHash
+normalizedQueryHashKeepNames
 notEmpty
 notEquals
 notILike
@@ -2183,6 +2213,8 @@ parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
+partitionId
+partitionID
 pathFull
 pclmulqdq
 pcre
@@ -2255,6 +2287,7 @@ prettyspacemonoblock
 prettyspacenoescapes
 prettyspacenoescapesmonoblock
 prewhere
+printf
 privateKeyFile
 privateKeyPassphraseHandler
 prlimit
@@ -2265,6 +2298,7 @@ prometheus
 proportionsZTest
 proto
 protobuf
+protobuflist
 protobufsingle
 protocol
 proxied
@@ -2335,6 +2369,7 @@ rankCorr
 rapidjson
 rawblob
 readWKTLineString
+readWKTMultiLineString
 readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
@@ -2518,6 +2553,7 @@ sqlite
 sqrt
 src
 srcReplicas
+sshkey
 stackoverflow
 stacktrace
 stacktraces
@@ -2526,6 +2562,7 @@ startsWithUTF
 startswith
 statbox
 stateful
+stateset
 stddev
 stddevPop
 stddevPopStable
@@ -2657,6 +2694,10 @@ themself
 threadpool
 throwIf
 timeDiff
+TimeSeries
+timeSeriesData
+timeSeriesMetrics
+timeSeriesTags
 timeSlot
 timeSlots
 timeZone
@@ -2794,6 +2835,7 @@ tupleModulo
 tupleModuloByNumber
 tupleMultiply
 tupleMultiplyByNumber
+tupleNames
 tupleNegate
 tuplePlus
 tupleToNameValuePairs

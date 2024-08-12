@@ -1,16 +1,11 @@
-#include <Common/Logger.h>
-#include <Common/logger_useful.h>
-#include <Common/Exception.h>
-#include <Common/ProfileEventsScope.h>
-#include <Core/Settings.h>
-#include <DataTypes/ObjectUtils.h>
-#include <Interpreters/StorageID.h>
-#include <Interpreters/PartLog.h>
-#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/StorageMergeTree.h>
+#include <Interpreters/PartLog.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <DataTypes/ObjectUtils.h>
+#include <Common/ProfileEventsScope.h>
+#include <Core/Settings.h>
 
-#include <memory>
 
 namespace ProfileEvents
 {
@@ -39,7 +34,18 @@ struct MergeTreeSink::DelayedChunk
 };
 
 
-MergeTreeSink::~MergeTreeSink() = default;
+MergeTreeSink::~MergeTreeSink()
+{
+    if (!delayed_chunk)
+        return;
+
+    for (auto & partition : delayed_chunk->partitions)
+    {
+        partition.temp_part.cancel();
+    }
+
+    delayed_chunk.reset();
+}
 
 MergeTreeSink::MergeTreeSink(
     StorageMergeTree & storage_,
@@ -64,11 +70,8 @@ void MergeTreeSink::onStart()
 
 void MergeTreeSink::onFinish()
 {
+    chassert(!isCancelled());
     finishDelayedChunk();
-}
-
-void MergeTreeSink::onCancel()
-{
 }
 
 void MergeTreeSink::consume(Chunk & chunk)

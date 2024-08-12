@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
+# Tags: long, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+
+function query()
+{
+    # NOTE: database_atomic_wait_for_drop_and_detach_synchronously needed only for local env, CI has it ON
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&database_atomic_wait_for_drop_and_detach_synchronously=1" -d "$*"
+}
 
 # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
 verify_sql="SELECT
@@ -15,26 +22,35 @@ verify_sql="SELECT
 # In case of test failure, this code will do infinite loop and timeout.
 verify()
 {
-    while true
+    for i in {1..5000}
     do
-        result=$( $CLICKHOUSE_CLIENT -m --query="$verify_sql" )
-        [ "$result" = "1" ] && break
+        result=$( query "$verify_sql" )
+        [ "$result" = "1" ] && echo "$result" && break
         sleep 0.1
+
+        if [[ $i -eq 5000 ]]
+        then
+            query "
+              SELECT sumIf(value, metric = 'PartsActive'), sumIf(value, metric = 'PartsOutdated') FROM system.metrics;
+              SELECT sum(active), sum(NOT active) FROM system.parts;
+              SELECT sum(active), sum(NOT active) FROM system.projection_parts;
+              SELECT count() FROM system.dropped_tables_parts;
+            "
+        fi
     done
-    echo 1
 }
 
-$CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=1 --query="DROP TABLE IF EXISTS test_table"
-$CLICKHOUSE_CLIENT --query="CREATE TABLE test_table(data Date) ENGINE = MergeTree  PARTITION BY toYear(data) ORDER BY data;"
+query "DROP TABLE IF EXISTS test_table"
+query "CREATE TABLE test_table (data Date) ENGINE = MergeTree PARTITION BY toYear(data) ORDER BY data;"
 
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_table VALUES ('1992-01-01')"
+query "INSERT INTO test_table VALUES ('1992-01-01')"
 verify
 
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_table VALUES ('1992-01-02')"
+query "INSERT INTO test_table VALUES ('1992-01-02')"
 verify
 
-$CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE test_table FINAL"
+query "OPTIMIZE TABLE test_table FINAL"
 verify
 
-$CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=1 --query="DROP TABLE test_table"
+query "DROP TABLE test_table"
 verify

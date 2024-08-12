@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Common/GetPriorityForLoadBalancing.h>
 #include <Common/Priority.h>
 
