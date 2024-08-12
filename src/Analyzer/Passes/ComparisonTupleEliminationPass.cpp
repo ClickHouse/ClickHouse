@@ -137,7 +137,7 @@ private:
         if (constant_node_value.getType() != Field::Types::Which::Tuple)
             return {};
 
-        const auto & constant_tuple = constant_node_value.get<const Tuple &>();
+        const auto & constant_tuple = constant_node_value.safeGet<const Tuple &>();
 
         const auto & function_arguments_nodes = function_node_typed.getArguments().getNodes();
         size_t function_arguments_nodes_size = function_arguments_nodes.size();

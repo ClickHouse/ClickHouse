@@ -91,7 +91,7 @@ struct MultiMatchAnyImpl
         std::vector<std::string_view> needles;
         needles.reserve(needles_arr.size());
         for (const auto & needle : needles_arr)
-            needles.emplace_back(needle.get<String>());
+            needles.emplace_back(needle.safeGet<String>());
 
         checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
