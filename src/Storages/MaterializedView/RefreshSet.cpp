@@ -9,11 +9,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 RefreshSet::Handle::Handle(Handle && other) noexcept
 {
     *this = std::move(other);
