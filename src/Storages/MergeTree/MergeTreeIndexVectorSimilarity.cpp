@@ -95,9 +95,14 @@ USearchIndexWithSerialization::USearchIndexWithSerialization(
     unum::usearch::metric_kind_t metric_kind,
     unum::usearch::scalar_kind_t scalar_kind,
     UsearchHnswParams usearch_hnsw_params)
-    : Base(Base::make(unum::usearch::metric_punned_t(dimensions, metric_kind, scalar_kind),
-                      unum::usearch::index_dense_config_t(usearch_hnsw_params.m, usearch_hnsw_params.ef_construction, usearch_hnsw_params.ef_search)))
 {
+    unum::usearch::metric_punned_t metric(dimensions, metric_kind, scalar_kind);
+
+    unum::usearch::index_dense_config_t config(usearch_hnsw_params.m, usearch_hnsw_params.ef_construction, usearch_hnsw_params.ef_search);
+    config.enable_key_lookups = false; /// we don't do row-to-vector lookups
+
+    USearchIndex usearch_index = USearchIndex::make(metric, config);
+    swap(usearch_index);
 }
 
 void USearchIndexWithSerialization::serialize(WriteBuffer & ostr) const
