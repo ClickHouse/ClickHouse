@@ -8,6 +8,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTObjectTypeArgument.h>
@@ -15,6 +16,8 @@
 #include <Formats/JSONExtractTree.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+#include <IO/Operators.h>
+
 #if USE_SIMDJSON
 #include <Common/JSONParsers/SimdJSONParser.h>
 #endif
@@ -23,8 +26,7 @@
 #endif
 #include <Common/JSONParsers/DummyJSONParser.h>
 
-#include <IO/Operators.h>
-#include <Common/logger_useful.h>
+
 
 namespace DB
 {
