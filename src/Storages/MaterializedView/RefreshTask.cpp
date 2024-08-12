@@ -3,7 +3,6 @@
 #include <Storages/StorageMaterializedView.h>
 
 #include <Common/CurrentMetrics.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -51,7 +50,7 @@ RefreshTaskHolder RefreshTask::create(
         for (auto && dependency : strategy.dependencies->children)
             deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
 
-    context->getRefreshSet().emplace(view.getStorageID(), deps, task);
+    task->set_handle = context->getRefreshSet().emplace(view.getStorageID(), deps, task);
 
     return task;
 }
@@ -304,7 +303,7 @@ void RefreshTask::refreshTask()
                 {
                     PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
                     auto text = message.text;
-                    message.text = fmt::format("Refresh view {} failed: {}", view->getStorageID().getFullTableName(), message.text);
+                    message.text = fmt::format("Refresh failed: {}", message.text);
                     LOG_ERROR(log, message);
                     exception = text;
                 }
@@ -357,7 +356,7 @@ void RefreshTask::refreshTask()
         stop_requested = true;
         tryLogCurrentException(log,
             "Unexpected exception in refresh scheduling, please investigate. The view will be stopped.");
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifdef ABORT_ON_LOGICAL_ERROR
         abortOnFailedAssertion("Unexpected exception in refresh scheduling");
 #endif
     }
@@ -378,13 +377,7 @@ void RefreshTask::executeRefreshUnlocked(std::shared_ptr<StorageMaterializedView
         {
             CurrentThread::QueryScope query_scope(refresh_context); // create a thread group for the query
 
-            BlockIO block_io = InterpreterInsertQuery(
-                refresh_query,
-                refresh_context,
-                /* allow_materialized */ false,
-                /* no_squash */ false,
-                /* no_destination */ false,
-                /* async_isnert */ false).execute();
+            BlockIO block_io = InterpreterInsertQuery(refresh_query, refresh_context).execute();
             QueryPipeline & pipeline = block_io.pipeline;
 
             pipeline.setProgressCallback([this](const Progress & prog)
@@ -514,11 +507,6 @@ std::chrono::system_clock::time_point RefreshTask::currentTime() const
         return std::chrono::system_clock::now();
     else
         return std::chrono::system_clock::time_point(std::chrono::seconds(fake));
-}
-
-void RefreshTask::setRefreshSetHandleUnlock(RefreshSet::Handle && set_handle_)
-{
-    set_handle = std::move(set_handle_);
 }
 
 }

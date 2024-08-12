@@ -763,20 +763,12 @@ void ColumnObject::get(size_t n, Field & res) const
     }
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnObject::insertFrom(const IColumn & src, size_t n)
-#else
-void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
-#endif
 {
     insert(src[n]);
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
-#else
-void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
-#endif
 {
     const auto & src_object = assert_cast<const ColumnObject &>(src);
 
@@ -948,7 +940,7 @@ void ColumnObject::addNestedSubcolumn(const PathInData & key, const FieldInfo & 
     if (nested_node)
     {
         /// Find any leaf of Nested subcolumn.
-        const auto * leaf = Subcolumns::findLeaf(nested_node, [&](const auto &) { return true; });
+        const auto * leaf = subcolumns.findLeaf(nested_node, [&](const auto &) { return true; });
         assert(leaf);
 
         /// Recreate subcolumn with default values and the same sizes of arrays.
@@ -991,7 +983,7 @@ const ColumnObject::Subcolumns::Node * ColumnObject::getLeafOfTheSameNested(cons
     while (current_node)
     {
         /// Try to find the first Nested up to the current node.
-        const auto * node_nested = Subcolumns::findParent(current_node,
+        const auto * node_nested = subcolumns.findParent(current_node,
             [](const auto & candidate) { return candidate.isNested(); });
 
         if (!node_nested)
@@ -1001,7 +993,7 @@ const ColumnObject::Subcolumns::Node * ColumnObject::getLeafOfTheSameNested(cons
         /// for the last rows.
         /// If there are no leaves, skip current node and find
         /// the next node up to the current.
-        leaf = Subcolumns::findLeaf(node_nested,
+        leaf = subcolumns.findLeaf(node_nested,
             [&](const auto & candidate)
             {
                 return candidate.data.size() > old_size;
@@ -1101,10 +1093,4 @@ void ColumnObject::finalize()
     checkObjectHasNoAmbiguosPaths(getKeys());
 }
 
-void ColumnObject::updateHashFast(SipHash & hash) const
-{
-    for (const auto & entry : subcolumns)
-        for (auto & part : entry->data.data)
-            part->updateHashFast(hash);
-}
 }

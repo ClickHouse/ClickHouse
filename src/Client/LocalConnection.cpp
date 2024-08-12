@@ -1,25 +1,15 @@
 #include "LocalConnection.h"
-#include <memory>
-#include <Client/ClientBase.h>
 #include <Core/Protocol.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
-#include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/Pipe.h>
-#include <Parsers/ASTInsertQuery.h>
 #include <Storages/IStorage.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
-#include <Parsers/ParserQuery.h>
-#include <Parsers/PRQL/ParserPRQLQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/Kusto/parseKQLQuery.h>
+
 
 namespace DB
 {
@@ -32,13 +22,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
+LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
     : WithContext(context_)
     , session(getContext(), ClientInfo::Interface::LOCAL)
     , send_progress(send_progress_)
     , send_profile_events(send_profile_events_)
     , server_display_name(server_display_name_)
-    , in(in_)
 {
     /// Authenticate and create a context to execute queries.
     session.authenticate("default", "", Poco::Net::SocketAddress{});
@@ -140,71 +129,6 @@ void LocalConnection::sendQuery(
         state->after_send_profile_events.restart();
 
     next_packet_type.reset();
-
-    /// Prepare input() function
-    query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
-    {
-        if (context != query_context)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
-
-        auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
-        Block sample = metadata_snapshot->getSampleBlock();
-
-        next_packet_type = Protocol::Server::Data;
-        state->block = sample;
-
-        String current_format = "Values";
-
-        const auto & settings = context->getSettingsRef();
-        const char * begin = state->query.data();
-        const char * end = begin + state->query.size();
-        const Dialect & dialect = settings.dialect;
-
-        std::unique_ptr<IParserBase> parser;
-        if (dialect == Dialect::kusto)
-            parser = std::make_unique<ParserKQLStatement>(end, settings.allow_settings_after_format_in_insert);
-        else if (dialect == Dialect::prql)
-            parser = std::make_unique<ParserPRQLQuery>(settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
-        else
-            parser = std::make_unique<ParserQuery>(end, settings.allow_settings_after_format_in_insert);
-
-        ASTPtr parsed_query;
-        if (dialect == Dialect::kusto)
-            parsed_query = parseKQLQueryAndMovePosition(*parser, begin, end, "", /*allow_multi_statements*/false, settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
-        else
-            parsed_query = parseQueryAndMovePosition(*parser, begin, end, "", /*allow_multi_statements*/false, settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
-
-        if (const auto * insert = parsed_query->as<ASTInsertQuery>())
-        {
-            if (!insert->format.empty())
-                current_format = insert->format;
-        }
-
-        auto source = context->getInputFormat(current_format, *in, sample, context->getSettingsRef().max_insert_block_size);
-        Pipe pipe(source);
-
-        auto columns_description = metadata_snapshot->getColumns();
-        if (columns_description.hasDefaults())
-        {
-            pipe.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, context);
-            });
-        }
-
-        state->input_pipeline = std::make_unique<QueryPipeline>(std::move(pipe));
-        state->input_pipeline_executor = std::make_unique<PullingAsyncPipelineExecutor>(*state->input_pipeline);
-
-    });
-    query_context->setInputBlocksReaderCallback([this] (ContextPtr context) -> Block
-    {
-        if (context != query_context)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in InputBlocksReader");
-
-        Block block;
-        state->input_pipeline_executor->pull(block);
-        return block;
-    });
 
     try
     {
@@ -358,18 +282,22 @@ bool LocalConnection::poll(size_t)
 
     if (!state->is_finished)
     {
-        if (needSendProgressOrMetrics())
+        if (send_progress && (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
+        {
+            state->after_send_progress.restart();
+            next_packet_type = Protocol::Server::Progress;
             return true;
+        }
+
+        if (send_profile_events && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
+        {
+            sendProfileEvents();
+            return true;
+        }
 
         try
         {
-            while (pollImpl())
-            {
-                LOG_TEST(&Poco::Logger::get("LocalConnection"), "Executor timeout encountered, will retry");
-
-                if (needSendProgressOrMetrics())
-                    return true;
-            }
+            pollImpl();
         }
         catch (const Exception & e)
         {
@@ -464,34 +392,12 @@ bool LocalConnection::poll(size_t)
     return false;
 }
 
-bool LocalConnection::needSendProgressOrMetrics()
-{
-    if (send_progress && (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
-    {
-        state->after_send_progress.restart();
-        next_packet_type = Protocol::Server::Progress;
-        return true;
-    }
-
-    if (send_profile_events && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
-    {
-        sendProfileEvents();
-        return true;
-    }
-
-    return false;
-}
-
 bool LocalConnection::pollImpl()
 {
     Block block;
     auto next_read = pullBlock(block);
 
-    if (!block && next_read)
-    {
-        return true;
-    }
-    else if (block && !state->io.null_format)
+    if (block && !state->io.null_format)
     {
         state->block.emplace(block);
     }
@@ -500,7 +406,7 @@ bool LocalConnection::pollImpl()
         state->is_finished = true;
     }
 
-    return false;
+    return true;
 }
 
 Packet LocalConnection::receivePacket()
@@ -631,12 +537,11 @@ void LocalConnection::sendMergeTreeReadTaskResponse(const ParallelReadResponse &
 ServerConnectionPtr LocalConnection::createConnection(
     const ConnectionParameters &,
     ContextPtr current_context,
-    ReadBuffer * in,
     bool send_progress,
     bool send_profile_events,
     const String & server_display_name)
 {
-    return std::make_unique<LocalConnection>(current_context, in, send_progress, send_profile_events, server_display_name);
+    return std::make_unique<LocalConnection>(current_context, send_progress, send_profile_events, server_display_name);
 }
 
 

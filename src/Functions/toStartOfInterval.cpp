@@ -52,14 +52,12 @@ public:
         };
 
         const DataTypeInterval * interval_type = nullptr;
-
-        enum class ResultType : uint8_t
+        enum class ResultType
         {
             Date,
             DateTime,
             DateTime64
         };
-
         ResultType result_type;
         auto check_second_argument = [&]
         {
@@ -147,43 +145,42 @@ public:
         std::unreachable();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /* input_rows_count */) const override
     {
         const auto & time_column = arguments[0];
         const auto & interval_column = arguments[1];
         const auto & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
-        auto result_column = dispatchForTimeColumn(time_column, interval_column, result_type, time_zone, input_rows_count);
+        auto result_column = dispatchForTimeColumn(time_column, interval_column, result_type, time_zone);
         return result_column;
     }
 
 private:
     ColumnPtr dispatchForTimeColumn(
         const ColumnWithTypeAndName & time_column, const ColumnWithTypeAndName & interval_column,
-        const DataTypePtr & result_type, const DateLUTImpl & time_zone,
-        size_t input_rows_count) const
+        const DataTypePtr & result_type, const DateLUTImpl & time_zone) const
     {
         const auto & time_column_type = *time_column.type.get();
         const auto & time_column_col = *time_column.column.get();
 
         if (isDateTime64(time_column_type))
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime64>(&time_column_col);
+            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime64>(time_column_col);
             auto scale = assert_cast<const DataTypeDateTime64 &>(time_column_type).getScale();
 
             if (time_column_vec)
-                return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime64 &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone, input_rows_count, scale);
+                return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime64 &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone, scale);
         }
         else if (isDateTime(time_column_type))
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(&time_column_col);
+            const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(time_column_col);
             if (time_column_vec)
-                return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone, input_rows_count);
+                return dispatchForIntervalColumn(assert_cast<const DataTypeDateTime &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone);
         }
         else if (isDate(time_column_type))
         {
-            const auto * time_column_vec = checkAndGetColumn<ColumnDate>(&time_column_col);
+            const auto * time_column_vec = checkAndGetColumn<ColumnDate>(time_column_col);
             if (time_column_vec)
-                return dispatchForIntervalColumn(assert_cast<const DataTypeDate &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone, input_rows_count);
+                return dispatchForIntervalColumn(assert_cast<const DataTypeDate &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone);
         }
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for 1st argument of function {}, expected a Date, DateTime or DateTime64", getName());
     }
@@ -191,7 +188,7 @@ private:
     template <typename TimeDataType, typename TimeColumnType>
     ColumnPtr dispatchForIntervalColumn(
         const TimeDataType & time_data_type, const TimeColumnType & time_column, const ColumnWithTypeAndName & interval_column,
-        const DataTypePtr & result_type, const DateLUTImpl & time_zone, size_t input_rows_count, UInt16 scale = 1) const
+        const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale = 1) const
     {
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
         if (!interval_type)
@@ -208,27 +205,27 @@ private:
         switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
         {
             case IntervalKind::Kind::Nanosecond:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Kind::Nanosecond>(time_data_type, time_column, num_units, result_type, time_zone, input_rows_count, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Kind::Nanosecond>(time_data_type, time_column, num_units, result_type, time_zone, scale);
             case IntervalKind::Kind::Microsecond:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Kind::Microsecond>(time_data_type, time_column, num_units, result_type, time_zone, input_rows_count, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Kind::Microsecond>(time_data_type, time_column, num_units, result_type, time_zone, scale);
             case IntervalKind::Kind::Millisecond:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Kind::Millisecond>(time_data_type, time_column, num_units, result_type, time_zone, input_rows_count, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime64, IntervalKind::Kind::Millisecond>(time_data_type, time_column, num_units, result_type, time_zone, scale);
             case IntervalKind::Kind::Second:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Kind::Second>(time_data_type, time_column, num_units, result_type, time_zone, input_rows_count, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Kind::Second>(time_data_type, time_column, num_units, result_type, time_zone, scale);
             case IntervalKind::Kind::Minute:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Kind::Minute>(time_data_type, time_column, num_units, result_type, time_zone, input_rows_count, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Kind::Minute>(time_data_type, time_column, num_units, result_type, time_zone, scale);
             case IntervalKind::Kind::Hour:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Kind::Hour>(time_data_type, time_column, num_units, result_type, time_zone, input_rows_count, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Kind::Hour>(time_data_type, time_column, num_units, result_type, time_zone, scale);
             case IntervalKind::Kind::Day:
-                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Kind::Day>(time_data_type, time_column, num_units, result_type, time_zone, input_rows_count, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDateTime, IntervalKind::Kind::Day>(time_data_type, time_column, num_units, result_type, time_zone, scale);
             case IntervalKind::Kind::Week:
-                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Kind::Week>(time_data_type, time_column, num_units, result_type, time_zone, input_rows_count, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Kind::Week>(time_data_type, time_column, num_units, result_type, time_zone, scale);
             case IntervalKind::Kind::Month:
-                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Kind::Month>(time_data_type, time_column, num_units, result_type, time_zone, input_rows_count, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Kind::Month>(time_data_type, time_column, num_units, result_type, time_zone, scale);
             case IntervalKind::Kind::Quarter:
-                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Kind::Quarter>(time_data_type, time_column, num_units, result_type, time_zone, input_rows_count, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Kind::Quarter>(time_data_type, time_column, num_units, result_type, time_zone, scale);
             case IntervalKind::Kind::Year:
-                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Kind::Year>(time_data_type, time_column, num_units, result_type, time_zone, input_rows_count, scale);
+                return execute<TimeDataType, TimeColumnType, DataTypeDate, IntervalKind::Kind::Year>(time_data_type, time_column, num_units, result_type, time_zone, scale);
         }
 
         std::unreachable();
@@ -237,21 +234,22 @@ private:
     template <typename TimeDataType, typename TimeColumnType, typename ResultDataType, IntervalKind::Kind unit>
     ColumnPtr execute(
         const TimeDataType &, const TimeColumnType & time_column_type, Int64 num_units,
-        const DataTypePtr & result_type, const DateLUTImpl & time_zone, size_t input_rows_count, UInt16 scale) const
+        const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale) const
     {
         using ResultColumnType = typename ResultDataType::ColumnType;
         using ResultFieldType = typename ResultDataType::FieldType;
 
         const auto & time_data = time_column_type.getData();
+        size_t size = time_data.size();
 
         auto result_col = result_type->createColumn();
         auto * col_to = assert_cast<ResultColumnType *>(result_col.get());
         auto & result_data = col_to->getData();
-        result_data.resize(input_rows_count);
+        result_data.resize(size);
 
         Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
 
-        for (size_t i = 0; i != input_rows_count; ++i)
+        for (size_t i = 0; i != size; ++i)
             result_data[i] = static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
 
         return result_col;

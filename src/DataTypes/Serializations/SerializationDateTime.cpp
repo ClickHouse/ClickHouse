@@ -31,13 +31,15 @@ inline void readText(time_t & x, ReadBuffer & istr, const FormatSettings & setti
             break;
     }
 
-    x = std::max<time_t>(0, x);
+    if (x < 0)
+        x = 0;
 }
 
 inline void readAsIntText(time_t & x, ReadBuffer & istr)
 {
     readIntText(x, istr);
-    x = std::max<time_t>(0, x);
+    if (x < 0)
+        x = 0;
 }
 
 inline bool tryReadText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
@@ -56,7 +58,9 @@ inline bool tryReadText(time_t & x, ReadBuffer & istr, const FormatSettings & se
             break;
     }
 
-    x = std::max<time_t>(0, x);
+    if (x < 0)
+        x = 0;
+
     return res;
 }
 
@@ -64,7 +68,8 @@ inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr)
 {
     if (!tryReadIntText(x, istr))
         return false;
-    x = std::max<time_t>(0, x);
+    if (x < 0)
+        x = 0;
     return true;
 }
 

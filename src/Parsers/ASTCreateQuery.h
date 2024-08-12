@@ -5,7 +5,6 @@
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTTableOverrides.h>
-#include <Parsers/ASTViewTargets.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTRefreshStrategy.h>
 #include <Interpreters/StorageID.h>
@@ -16,7 +15,6 @@ namespace DB
 class ASTFunction;
 class ASTSetQuery;
 class ASTSelectWithUnionQuery;
-struct CreateQueryUUIDs;
 
 
 class ASTStorage : public IAST
@@ -97,22 +95,23 @@ public:
     bool is_materialized_view{false};
     bool is_live_view{false};
     bool is_window_view{false};
-    bool is_time_series_table{false}; /// CREATE TABLE ... ENGINE=TimeSeries() ...
     bool is_populate{false};
     bool is_create_empty{false};    /// CREATE TABLE ... EMPTY AS SELECT ...
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
     bool has_uuid{false}; // CREATE TABLE x UUID '...'
 
     ASTColumns * columns_list = nullptr;
-    ASTStorage * storage = nullptr;
 
+    StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
+    UUID to_inner_uuid = UUIDHelpers::Nil;      /// For materialized view with inner table
+    ASTStorage * inner_storage = nullptr;      /// For window view with inner table
+    ASTStorage * storage = nullptr;
     ASTPtr watermark_function;
     ASTPtr lateness_function;
     String as_database;
     String as_table;
     IAST * as_table_function = nullptr;
     ASTSelectWithUnionQuery * select = nullptr;
-    ASTViewTargets * targets = nullptr;
     IAST * comment = nullptr;
     ASTPtr sql_security = nullptr;
 
@@ -137,7 +136,7 @@ public:
     bool create_or_replace{false};
 
     /** Get the text that identifies this element. */
-    String getID(char delim) const override;
+    String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + getDatabase()) + delim + getTable(); }
 
     ASTPtr clone() const override;
 
@@ -154,26 +153,17 @@ public:
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
-    /// Generates a random UUID for this create query if it's not specified already.
-    /// The function also generates random UUIDs for inner target tables if this create query implies that
-    /// (for example, if it's a `CREATE MATERIALIZED VIEW` query with an inner storage).
-    void generateRandomUUIDs();
-
-    /// Removes UUID from this create query.
-    /// The function also removes UUIDs for inner target tables from this create query (see also generateRandomUUID()).
-    void resetUUIDs();
-
-    /// Returns information about a target table.
-    /// If that information isn't specified in this create query (or even not allowed) then the function returns an empty value.
-    StorageID getTargetTableID(ViewTarget::Kind target_kind) const;
-    bool hasTargetTableID(ViewTarget::Kind target_kind) const;
-    UUID getTargetInnerUUID(ViewTarget::Kind target_kind) const;
-    bool hasInnerUUIDs() const;
-    std::shared_ptr<ASTStorage> getTargetInnerEngine(ViewTarget::Kind target_kind) const;
-    void setTargetInnerEngine(ViewTarget::Kind target_kind, ASTPtr storage_def);
-
-    bool is_materialized_view_with_external_target() const { return is_materialized_view && hasTargetTableID(ViewTarget::To); }
-    bool is_materialized_view_with_inner_table() const { return is_materialized_view && !hasTargetTableID(ViewTarget::To); }
+    struct UUIDs
+    {
+        UUID uuid = UUIDHelpers::Nil;
+        UUID to_inner_uuid = UUIDHelpers::Nil;
+        UUIDs() = default;
+        explicit UUIDs(const ASTCreateQuery & query);
+        String toString() const;
+        static UUIDs fromString(const String & str);
+    };
+    UUIDs generateRandomUUID(bool always_generate_new_uuid = false);
+    void setUUID(const UUIDs & uuids);
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
@@ -181,8 +171,8 @@ protected:
     void forEachPointerToChild(std::function<void(void**)> f) override
     {
         f(reinterpret_cast<void **>(&columns_list));
+        f(reinterpret_cast<void **>(&inner_storage));
         f(reinterpret_cast<void **>(&storage));
-        f(reinterpret_cast<void **>(&targets));
         f(reinterpret_cast<void **>(&as_table_function));
         f(reinterpret_cast<void **>(&select));
         f(reinterpret_cast<void **>(&comment));

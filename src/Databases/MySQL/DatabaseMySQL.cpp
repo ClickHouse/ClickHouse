@@ -2,7 +2,6 @@
 
 #if USE_MYSQL
 #    include <string>
-#    include <base/isSharedPtrUnique.h>
 #    include <Databases/DatabaseFactory.h>
 #    include <DataTypes/DataTypeDateTime.h>
 #    include <DataTypes/DataTypeNullable.h>
@@ -30,7 +29,6 @@
 #    include <Common/parseAddress.h>
 #    include <Common/parseRemoteDescription.h>
 #    include <Common/setThreadName.h>
-#    include <Core/Settings.h>
 #    include <filesystem>
 #    include <Common/filesystemHelpers.h>
 #    include <Parsers/ASTIdentifier.h>
@@ -107,7 +105,7 @@ bool DatabaseMySQL::empty() const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
+DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name) const
 {
     Tables tables;
     std::lock_guard lock(mutex);
@@ -343,7 +341,7 @@ void DatabaseMySQL::shutdown()
 
 void DatabaseMySQL::drop(ContextPtr /*context*/)
 {
-    (void)fs::remove_all(getMetadataPath());
+    fs::remove_all(getMetadataPath());
 }
 
 void DatabaseMySQL::cleanOutdatedTables()
@@ -356,7 +354,7 @@ void DatabaseMySQL::cleanOutdatedTables()
     {
         for (auto iterator = outdated_tables.begin(); iterator != outdated_tables.end();)
         {
-            if (!isSharedPtrUnique(*iterator))
+            if (!iterator->unique())
                 ++iterator;
             else
             {
@@ -392,7 +390,7 @@ void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_
     fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
 
     if (fs::exists(remove_flag))
-        (void)fs::remove(remove_flag);
+        fs::remove(remove_flag);
 }
 
 StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & table_name)
@@ -442,7 +440,7 @@ void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
     if (fs::exists(remove_flag))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The remove flag file already exists but the {}.{} does not exist remove tables, it is bug.",
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The remove flag file already exists but the {}.{} does not exists remove tables, it is bug.",
                         backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
     auto table_iter = local_tables_cache.find(table_name);

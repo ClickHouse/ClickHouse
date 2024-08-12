@@ -20,11 +20,7 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
 
     settings.merge_expressions = from.query_plan_enable_optimizations && from.query_plan_merge_expressions;
 
-    settings.merge_filters = from.query_plan_enable_optimizations && from.query_plan_merge_filters;
-
     settings.filter_push_down = from.query_plan_enable_optimizations && from.query_plan_filter_push_down;
-
-    settings.convert_outer_join_to_inner_join = from.query_plan_enable_optimizations && from.query_plan_convert_outer_join_to_inner_join;
 
     settings.optimize_prewhere = from.query_plan_enable_optimizations && from.query_plan_optimize_prewhere;
 
@@ -48,7 +44,7 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
 
     settings.optimize_projection = from.optimize_use_projections;
     settings.force_use_projection = settings.optimize_projection && from.force_optimize_projection;
-    settings.force_projection_name = settings.optimize_projection ? from.force_optimize_projection_name.value : "";
+    settings.force_projection_name = from.force_optimize_projection_name;
     settings.optimize_use_implicit_projections = settings.optimize_projection && from.optimize_use_implicit_projections;
 
     return settings;

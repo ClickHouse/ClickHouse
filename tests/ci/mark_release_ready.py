@@ -5,6 +5,7 @@ import logging
 import os
 
 from commit_status_helper import get_commit, post_commit_status
+from env_helper import GITHUB_JOB_URL
 from get_robot_token import get_best_robot_token
 from git_helper import commit as commit_arg
 from github_helper import GitHub
@@ -32,6 +33,7 @@ def main():
         help="if given, used instead of one from PRInfo",
     )
     args = parser.parse_args()
+    url = ""
     description = "the release can be created from the commit, manually set"
     pr_info = None
     if not args.commit:
@@ -39,6 +41,7 @@ def main():
         if pr_info.event == pr_info.default_event:
             raise ValueError("neither launched from the CI nor commit is given")
         args.commit = pr_info.sha
+        url = GITHUB_JOB_URL()
         description = "the release can be created from the commit"
         args.token = args.token or get_best_robot_token()
 
@@ -49,7 +52,7 @@ def main():
     post_commit_status(
         commit,
         SUCCESS,
-        "",
+        url,
         description,
         RELEASE_READY_STATUS,
         pr_info,

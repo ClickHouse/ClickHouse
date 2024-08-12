@@ -1,6 +1,6 @@
 Bloom filter on sort key
-1000
+10000
 0
 Bloom filter on non-sort key
-1000
+10000
 0

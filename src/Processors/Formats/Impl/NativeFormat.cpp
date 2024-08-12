@@ -21,7 +21,9 @@ public:
               buf,
               header_,
               0,
-              settings,
+              settings.skip_unknown_fields,
+              settings.null_as_default,
+              settings.native.allow_types_conversion,
               settings.defaults_for_omitted_fields ? &block_missing_values : nullptr))
         , header(header_) {}
 
@@ -70,9 +72,9 @@ private:
 class NativeOutputFormat final : public IOutputFormat
 {
 public:
-    NativeOutputFormat(WriteBuffer & buf, const Block & header, const FormatSettings & settings, UInt64 client_protocol_version = 0)
+    NativeOutputFormat(WriteBuffer & buf, const Block & header, UInt64 client_protocol_version = 0)
         : IOutputFormat(header, buf)
-        , writer(buf, client_protocol_version, header, settings)
+        , writer(buf, client_protocol_version, header)
     {
     }
 
@@ -80,7 +82,7 @@ public:
 
     std::string getContentType() const override
     {
-        return NativeWriter::getContentType();
+        return writer.getContentType();
     }
 
 protected:
@@ -101,17 +103,14 @@ private:
 class NativeSchemaReader : public ISchemaReader
 {
 public:
-    explicit NativeSchemaReader(ReadBuffer & in_, const FormatSettings & settings_) : ISchemaReader(in_), settings(settings_) {}
+    explicit NativeSchemaReader(ReadBuffer & in_) : ISchemaReader(in_) {}
 
     NamesAndTypesList readSchema() override
     {
-        auto reader = NativeReader(in, 0, settings);
+        auto reader = NativeReader(in, 0);
         auto block = reader.read();
         return block.getNamesAndTypesList();
     }
-
-private:
-    const FormatSettings settings;
 };
 
 
@@ -135,16 +134,16 @@ void registerOutputFormatNative(FormatFactory & factory)
         const Block & sample,
         const FormatSettings & settings)
     {
-        return std::make_shared<NativeOutputFormat>(buf, sample, settings, settings.client_protocol_version);
+        return std::make_shared<NativeOutputFormat>(buf, sample, settings.client_protocol_version);
     });
 }
 
 
 void registerNativeSchemaReader(FormatFactory & factory)
 {
-    factory.registerSchemaReader("Native", [](ReadBuffer & buf, const FormatSettings & settings)
+    factory.registerSchemaReader("Native", [](ReadBuffer & buf, const FormatSettings &)
     {
-        return std::make_shared<NativeSchemaReader>(buf, settings);
+        return std::make_shared<NativeSchemaReader>(buf);
     });
 }
 

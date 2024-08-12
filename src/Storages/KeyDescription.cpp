@@ -160,7 +160,7 @@ KeyDescription KeyDescription::buildEmptyKey()
 {
     KeyDescription result;
     result.expression_list_ast = std::make_shared<ASTExpressionList>();
-    result.expression = std::make_shared<ExpressionActions>(ActionsDAG(), ExpressionActionsSettings{});
+    result.expression = std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(), ExpressionActionsSettings{});
     return result;
 }
 
@@ -172,7 +172,7 @@ KeyDescription KeyDescription::parse(const String & str, const ColumnsDescriptio
 
     ParserExpression parser;
     ASTPtr ast = parseQuery(parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    FunctionNameNormalizer::visit(ast.get());
+    FunctionNameNormalizer().visit(ast.get());
 
     return getKeyFromAST(ast, columns, context);
 }

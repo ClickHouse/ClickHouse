@@ -26,7 +26,7 @@ ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const Co
     auto & res = typeid_cast<ASTCreateFunctionQuery &>(*ptr);
     res.if_not_exists = false;
     res.or_replace = false;
-    FunctionNameNormalizer::visit(res.function_core.get());
+    FunctionNameNormalizer().visit(res.function_core.get());
     NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef().union_default_mode};
     NormalizeSelectWithUnionQueryVisitor{data}.visit(res.function_core);
     return ptr;

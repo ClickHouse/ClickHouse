@@ -8,8 +8,6 @@
 namespace ProfileEvents
 {
     extern const Event ReadBufferSeekCancelConnection;
-    extern const Event ReadWriteBufferFromHTTPRequestsSent;
-    extern const Event ReadWriteBufferFromHTTPBytes;
 }
 
 
@@ -72,6 +70,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int UNKNOWN_FILE_SIZE;
 }
 
 std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::CallResult::transformToReadBuffer(size_t buf_size) &&
@@ -120,33 +119,15 @@ void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, s
         credentials.authenticate(request);
 }
 
-std::optional<size_t> ReadWriteBufferFromHTTP::tryGetFileSize()
+size_t ReadWriteBufferFromHTTP::getFileSize()
 {
     if (!file_info)
-    {
-        try
-        {
-            file_info = getFileInfo();
-        }
-        catch (const HTTPException &)
-        {
-            return std::nullopt;
-        }
-        catch (const NetException &)
-        {
-            return std::nullopt;
-        }
-        catch (const Poco::Net::NetException &)
-        {
-            return std::nullopt;
-        }
-        catch (const Poco::IOException &)
-        {
-            return std::nullopt;
-        }
-    }
+        file_info = getFileInfo();
 
-    return file_info->file_size;
+    if (file_info->file_size)
+        return *file_info->file_size;
+
+    throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", initial_uri.toString());
 }
 
 bool ReadWriteBufferFromHTTP::supportsReadAt()
@@ -264,8 +245,6 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
 
     auto session = makeHTTPSession(connection_group, current_uri, timeouts, proxy_config);
 
-    ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPRequestsSent);
-
     auto & stream_out = session->sendRequest(request);
     if (out_stream_callback)
         out_stream_callback(stream_out);
@@ -328,12 +307,12 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             error_message = e.displayText();
             exception = std::current_exception();
         }
-        catch (NetException & e)
+        catch (DB::NetException & e)
         {
             error_message = e.displayText();
             exception = std::current_exception();
         }
-        catch (HTTPException & e)
+        catch (DB::HTTPException & e)
         {
             if (!isRetriableError(e.getHTTPStatus()))
                 is_retriable = false;
@@ -341,7 +320,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             error_message = e.displayText();
             exception = std::current_exception();
         }
-        catch (Exception & e)
+        catch (DB::Exception & e)
         {
             is_retriable = false;
 
@@ -362,7 +341,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         if (last_attempt || !is_retriable)
         {
             if (!mute_logging)
-                LOG_DEBUG(log,
+                LOG_ERROR(log,
                           "Failed to make request to '{}'{}. "
                           "Error: '{}'. "
                           "Failed at try {}/{}.",
@@ -378,7 +357,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                 on_retry();
 
             if (!mute_logging)
-                LOG_TRACE(log,
+                LOG_INFO(log,
                          "Failed to make request to '{}'{}. "
                          "Error: {}. "
                          "Failed at try {}/{}. "
@@ -504,8 +483,6 @@ bool ReadWriteBufferFromHTTP::nextImpl()
             BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
 
             offset_from_begin_pos += working_buffer.size();
-
-            ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, working_buffer.size());
         },
         /*on_retry=*/ [&] ()
         {
@@ -554,8 +531,6 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
 
             copyFromIStreamWithProgressCallback(*result.response_stream, to, n, progress_callback, &bytes_copied, &is_canceled);
 
-            ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, bytes_copied);
-
             offset += bytes_copied;
             total_bytes_copied += bytes_copied;
             to += bytes_copied;
@@ -564,8 +539,6 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
         },
         /*on_retry=*/ [&] ()
         {
-            ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, bytes_copied);
-
             offset += bytes_copied;
             total_bytes_copied += bytes_copied;
             to += bytes_copied;
@@ -604,7 +577,7 @@ off_t ReadWriteBufferFromHTTP::seek(off_t offset_, int whence)
     if (impl)
     {
         auto position = getPosition();
-        if (offset_ >= position)
+        if (offset_ > position)
         {
             size_t diff = offset_ - position;
             if (diff < read_settings.remote_read_min_bytes_for_seek)
@@ -700,19 +673,7 @@ std::optional<time_t> ReadWriteBufferFromHTTP::tryGetLastModificationTime()
         {
             file_info = getFileInfo();
         }
-        catch (const HTTPException &)
-        {
-            return std::nullopt;
-        }
-        catch (const NetException &)
-        {
-            return std::nullopt;
-        }
-        catch (const Poco::Net::NetException &)
-        {
-            return std::nullopt;
-        }
-        catch (const Poco::IOException &)
+        catch (...)
         {
             return std::nullopt;
         }
@@ -733,7 +694,7 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
     {
         getHeadResponse(response);
     }
-    catch (const HTTPException & e)
+    catch (HTTPException & e)
     {
         /// Maybe the web server doesn't support HEAD requests.
         /// E.g. webhdfs reports status 400.
@@ -742,12 +703,8 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
         /// fall back to slow whole-file reads when HEAD is actually supported; that sounds
         /// like a nightmare to debug.)
         if (e.getHTTPStatus() >= 400 && e.getHTTPStatus() <= 499 &&
-            e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS &&
-            e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_REQUEST_TIMEOUT &&
-            e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_MISDIRECTED_REQUEST)
-        {
+            e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS)
             return HTTPFileInfo{};
-        }
 
         throw;
     }

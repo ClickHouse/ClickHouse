@@ -40,6 +40,8 @@ public:
             case TableOverride: return "EXPLAIN TABLE OVERRIDE";
             case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
         }
+
+        UNREACHABLE();
     }
 
     static ExplainKind fromString(const String & str)

@@ -18,9 +18,8 @@ from collections import defaultdict
 from itertools import chain
 from typing import Any, Dict
 
-from env_helper import IS_CI
+from env_helper import CI
 from integration_test_images import IMAGES
-from tee_popen import TeePopen
 
 MAX_RETRY = 1
 NUM_WORKERS = 5
@@ -30,8 +29,7 @@ CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-odbc-bridge"
 CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-library-bridge"
 
-FLAKY_TRIES_COUNT = 10  # run whole pytest several times
-FLAKY_REPEAT_COUNT = 5  # runs test case in single module several times
+FLAKY_TRIES_COUNT = 10
 MAX_TIME_SECONDS = 3600
 
 MAX_TIME_IN_SANDBOX = 20 * 60  # 20 minutes
@@ -267,9 +265,7 @@ class ClickhouseIntegrationTestsRunner:
         self.start_time = time.time()
         self.soft_deadline_time = self.start_time + (TASK_TIMEOUT - MAX_TIME_IN_SANDBOX)
 
-        self.use_old_analyzer = (
-            os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
-        )
+        self.use_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
 
         if "run_by_hash_total" in self.params:
             self.run_by_hash_total = self.params["run_by_hash_total"]
@@ -346,8 +342,6 @@ class ClickhouseIntegrationTestsRunner:
             "clickhouse-common-static_",
             "clickhouse-server_",
             "clickhouse-client",
-            "clickhouse-odbc-bridge_",
-            "clickhouse-library-bridge_",
             "clickhouse-common-static-dbg_",
         ):  # order matters
             logging.info("Installing package %s", package)
@@ -357,13 +351,20 @@ class ClickhouseIntegrationTestsRunner:
                     logging.info("Package found in %s", full_path)
                     log_name = "install_" + f + ".log"
                     log_path = os.path.join(str(self.path()), log_name)
-                    cmd = f"dpkg -x {full_path} ."
-                    logging.info("Executing installation cmd %s", cmd)
-                    with TeePopen(cmd, log_file=log_path) as proc:
-                        if proc.wait() == 0:
-                            logging.info("Installation of %s successfull", full_path)
-                        else:
-                            raise RuntimeError(f"Installation of {full_path} failed")
+                    with open(log_path, "w", encoding="utf-8") as log:
+                        cmd = f"dpkg -x {full_path} ."
+                        logging.info("Executing installation cmd %s", cmd)
+                        with subprocess.Popen(
+                            cmd, shell=True, stderr=log, stdout=log
+                        ) as proc:
+                            if proc.wait() == 0:
+                                logging.info(
+                                    "Installation of %s successfull", full_path
+                                )
+                            else:
+                                raise RuntimeError(
+                                    f"Installation of {full_path} failed"
+                                )
                     break
             else:
                 raise FileNotFoundError(f"Package with {package} not found")
@@ -411,8 +412,8 @@ class ClickhouseIntegrationTestsRunner:
             result.append("--tmpfs")
         if self.disable_net_host:
             result.append("--disable-net-host")
-        if self.use_old_analyzer:
-            result.append("--old-analyzer")
+        if self.use_analyzer:
+            result.append("--analyzer")
 
         return " ".join(result)
 
@@ -429,14 +430,7 @@ class ClickhouseIntegrationTestsRunner:
             "Getting all tests to the file %s with cmd: \n%s", out_file_full, cmd
         )
         with open(out_file_full, "wb") as ofd:
-            try:
-                subprocess.check_call(cmd, shell=True, stdout=ofd, stderr=ofd)
-            except subprocess.CalledProcessError as ex:
-                print("ERROR: Setting test plan failed. Output:")
-                with open(out_file_full, "r", encoding="utf-8") as file:
-                    for line in file:
-                        print("    " + line, end="")
-                raise ex
+            subprocess.check_call(cmd, shell=True, stdout=ofd, stderr=ofd)
 
         all_tests = set()
         with open(out_file_full, "r", encoding="utf-8") as all_tests_fd:
@@ -563,7 +557,6 @@ class ClickhouseIntegrationTestsRunner:
         tests_in_group,
         num_tries,
         num_workers,
-        repeat_count,
     ):
         try:
             return self.run_test_group(
@@ -572,7 +565,6 @@ class ClickhouseIntegrationTestsRunner:
                 tests_in_group,
                 num_tries,
                 num_workers,
-                repeat_count,
             )
         except Exception as e:
             logging.info("Failed to run %s:\n%s", test_group, e)
@@ -595,7 +587,6 @@ class ClickhouseIntegrationTestsRunner:
         tests_in_group,
         num_tries,
         num_workers,
-        repeat_count,
     ):
         counters = {
             "ERROR": [],
@@ -637,7 +628,6 @@ class ClickhouseIntegrationTestsRunner:
 
             test_cmd = " ".join([shlex.quote(test) for test in sorted(test_names)])
             parallel_cmd = f" --parallel {num_workers} " if num_workers > 0 else ""
-            repeat_cmd = f" --count {repeat_count} " if repeat_count > 0 else ""
             # -r -- show extra test summary:
             # -f -- (f)ailed
             # -E -- (E)rror
@@ -646,7 +636,7 @@ class ClickhouseIntegrationTestsRunner:
             cmd = (
                 f"cd {repo_path}/tests/integration && "
                 f"timeout --signal=KILL 1h ./runner {self._get_runner_opts()} "
-                f"{image_cmd} -t {test_cmd} {parallel_cmd} {repeat_cmd} -- -rfEps --run-id={i} "
+                f"{image_cmd} -t {test_cmd} {parallel_cmd} -- -rfEps --run-id={i} "
                 f"--color=no --durations=0 {_get_deselect_option(self.should_skip_tests())} "
                 f"| tee {info_path}"
             )
@@ -778,17 +768,12 @@ class ClickhouseIntegrationTestsRunner:
         logging.info("Starting check with retries")
         final_retry = 0
         logs = []
-        tries_num = 1 if should_fail else FLAKY_TRIES_COUNT
-        for i in range(tries_num):
+        tires_num = 1 if should_fail else FLAKY_TRIES_COUNT
+        for i in range(tires_num):
             final_retry += 1
             logging.info("Running tests for the %s time", i)
             counters, tests_times, log_paths = self.try_run_test_group(
-                repo_path,
-                "bugfix" if should_fail else "flaky",
-                tests_to_run,
-                1,
-                1,
-                FLAKY_REPEAT_COUNT,
+                repo_path, "bugfix" if should_fail else "flaky", tests_to_run, 1, 1
             )
             logs += log_paths
             if counters["FAILED"]:
@@ -923,7 +908,7 @@ class ClickhouseIntegrationTestsRunner:
         for group, tests in items_to_run:
             logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(
-                repo_path, group, tests, MAX_RETRY, NUM_WORKERS, 0
+                repo_path, group, tests, MAX_RETRY, NUM_WORKERS
             )
             total_tests = 0
             for counter, value in group_counters.items():
@@ -1015,7 +1000,7 @@ def run():
 
     logging.info("Running tests")
 
-    if IS_CI:
+    if CI:
         # Avoid overlaps with previous runs
         logging.info("Clearing dmesg before run")
         subprocess.check_call("sudo -E dmesg --clear", shell=True)
@@ -1023,7 +1008,7 @@ def run():
     state, description, test_results, _ = runner.run_impl(repo_path, build_path)
     logging.info("Tests finished")
 
-    if IS_CI:
+    if CI:
         # Dump dmesg (to capture possible OOMs)
         logging.info("Dumping dmesg")
         subprocess.check_call("sudo -E dmesg -T", shell=True)
