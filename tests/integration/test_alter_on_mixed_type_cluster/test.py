@@ -88,6 +88,9 @@ def test_alter_on_cluter_non_replicated(started_cluster):
     assert node3.query("SELECT COUNT() FROM test_table") == "2\n"
     assert node4.query("SELECT COUNT() FROM test_table") == "2\n"
 
+    for node in [node1, node2, node3, node4]:
+        node.query("TRUNCATE TABLE test_table")
+
 
 def test_alter_replicated_on_cluster(started_cluster):
     for node in [node1, node3]:
@@ -133,3 +136,6 @@ def test_alter_replicated_on_cluster(started_cluster):
     assert node2.query("SELECT COUNT() FROM test_table_replicated") == "2\n"
     assert node3.query("SELECT COUNT() FROM test_table_replicated") == "2\n"
     assert node4.query("SELECT COUNT() FROM test_table_replicated") == "2\n"
+
+    for node in [node1, node2, node3, node4]:
+        node.query("TRUNCATE TABLE test_table_replicated")
