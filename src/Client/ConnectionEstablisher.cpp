@@ -126,7 +126,6 @@ ConnectionEstablisherAsync::ConnectionEstablisherAsync(
     : AsyncTaskExecutor(std::make_unique<Task>(*this))
     , connection_establisher(std::move(pool_), timeouts_, settings_, log_, table_to_check_)
 {
-    epoll.add(timeout_descriptor.getDescriptor());
 }
 
 void ConnectionEstablisherAsync::Task::run(AsyncCallback async_callback, SuspendCallback)
@@ -143,12 +142,14 @@ void ConnectionEstablisherAsync::processAsyncEvent(int fd, Poco::Timespan socket
     socket_description = description;
     epoll.add(fd, events);
     timeout_descriptor.setRelative(socket_timeout);
+    epoll.add(timeout_descriptor.getDescriptor());
     timeout = socket_timeout;
     timeout_type = type;
 }
 
 void ConnectionEstablisherAsync::clearAsyncEvent()
 {
+    epoll.remove(timeout_descriptor.getDescriptor());
     timeout_descriptor.reset();
     epoll.remove(socket_fd);
 }

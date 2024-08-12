@@ -22,10 +22,14 @@ public:
 
     int getDescriptor() const { return timer_fd; }
 
-    void reset() const;
-    void drain() const;
+    /// Invalidates the timer_fd descriptor
+    void reset();
+
     void setRelative(uint64_t usec) const;
     void setRelative(Poco::Timespan timespan) const;
+
+private:
+    void init();
 };
 
 }

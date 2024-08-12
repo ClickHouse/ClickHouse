@@ -96,7 +96,7 @@ bool RemoteQueryExecutorReadContext::checkTimeout(bool blocking)
     if (is_timer_alarmed && !is_socket_ready)
     {
         /// Socket timeout. Drain it in case of error, or it may be hide by timeout exception.
-        timer.drain();
+        timer.reset();
         const String exception_message = getSocketTimeoutExceededMessageByTimeoutType(timeout_type, timeout, connection_fd_description);
         throw NetException(ErrorCodes::SOCKET_TIMEOUT, exception_message);
     }
