@@ -1,3 +1,5 @@
+-- Tags: long
+
 SELECT roundBankers(result.1, 5), roundBankers(result.2, 5) FROM (
 SELECT
      studentTTest(sample, variant) as result
