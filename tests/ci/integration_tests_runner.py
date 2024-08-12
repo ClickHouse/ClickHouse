@@ -69,7 +69,7 @@ def get_changed_tests_to_run(pr_info, repo_path):
         return []
 
     for fpath in changed_files:
-        if re.search("tests/integration/test_.*/test.*\.py", fpath) is not None:
+        if re.search(r"tests/integration/test_.*/test.*\.py", fpath) is not None:
             logging.info("File %s changed and seems like integration test", fpath)
             result.add("/".join(fpath.split("/")[2:]))
     return filter_existing_tests(result, repo_path)
