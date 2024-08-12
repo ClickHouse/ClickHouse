@@ -258,6 +258,8 @@ public:
         return variant_column_ptr->capacity();
     }
 
+    void prepareForSquashing(const Columns & source_columns) override;
+
     void ensureOwnership() override
     {
         variant_column_ptr->ensureOwnership();
