@@ -42,13 +42,13 @@ ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTy
 
     if (isDateOrDate32(column.type.get()))
     {
-        start_date_or_date_time = date_lut.dateToString(range.first.get<DateLUTImpl::Time>());
-        end_date_or_date_time = date_lut.dateToString(range.second.get<DateLUTImpl::Time>());
+        start_date_or_date_time = date_lut.dateToString(range.first.safeGet<DateLUTImpl::Time>());
+        end_date_or_date_time = date_lut.dateToString(range.second.safeGet<DateLUTImpl::Time>());
     }
     else if (isDateTime(column.type.get()) || isDateTime64(column.type.get()))
     {
-        start_date_or_date_time = date_lut.timeToString(range.first.get<DateLUTImpl::Time>());
-        end_date_or_date_time = date_lut.timeToString(range.second.get<DateLUTImpl::Time>());
+        start_date_or_date_time = date_lut.timeToString(range.first.safeGet<DateLUTImpl::Time>());
+        end_date_or_date_time = date_lut.timeToString(range.second.safeGet<DateLUTImpl::Time>());
     }
     else [[unlikely]] return {};
 
