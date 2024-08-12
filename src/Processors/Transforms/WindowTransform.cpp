@@ -2337,22 +2337,9 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
                 argument_types[2]->getName());
         }
 
-        const auto from_name = argument_types[2]->getName();
-        const auto to_name = argument_types[0]->getName();
-        ColumnsWithTypeAndName arguments
+        auto get_cast_func = [from = argument_types[2], to = argument_types[0]]
         {
-            { argument_types[2], "" },
-            {
-                DataTypeString().createColumnConst(0, to_name),
-                std::make_shared<DataTypeString>(),
-                ""
-            }
-        };
-
-        auto get_cast_func = [&arguments]
-        {
-            FunctionOverloadResolverPtr func_builder_cast = createInternalCastOverloadResolver(CastType::accurate, {});
-            return func_builder_cast->build(arguments);
+            return createInternalCast({from, {}}, to, CastType::accurate, {});
         };
 
         func_cast = get_cast_func();

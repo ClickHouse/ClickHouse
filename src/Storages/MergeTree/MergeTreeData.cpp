@@ -1146,7 +1146,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, {parts[0]});
 
-    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag.getOutputs().at(0), nullptr);
+    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag.getOutputs().at(0), nullptr, /*allow_partial_result=*/ false);
     if (!filter_dag)
         return {};
 
@@ -6272,10 +6272,13 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
     }
     else
     {
-        String partition_id = getPartitionIDFromQuery(partition, local_context);
+        String partition_id;
+        bool all = partition->as<ASTPartition>()->all;
+        if (!all)
+            partition_id = getPartitionIDFromQuery(partition, local_context);
         DetachedPartsInfo detached_parts = getDetachedParts();
         for (const auto & part_info : detached_parts)
-            if (part_info.valid_name && part_info.partition_id == partition_id
+            if (part_info.valid_name && (all || part_info.partition_id == partition_id)
                 && part_info.prefix != "attaching" && part_info.prefix != "deleting")
                 renamed_parts.addPart(part_info.dir_name, "deleting_" + part_info.dir_name, part_info.disk);
     }
@@ -6929,7 +6932,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         const auto * predicate = filter_dag->getOutputs().at(0);
 
         // Generate valid expressions for filtering
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, virtual_columns_block, query_context);
+        VirtualColumnUtils::filterBlockWithPredicate(
+            predicate, virtual_columns_block, query_context, /*allow_filtering_with_partial_predicate =*/true);
 
         rows = virtual_columns_block.rows();
         part_name_column = virtual_columns_block.getByName("_part").column;
