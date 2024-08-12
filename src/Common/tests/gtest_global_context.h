@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 struct ContextHolder
 {
