@@ -29,6 +29,7 @@ public:
 
     /// [begin, end)
     Selector(size_t begin, size_t end) : data(Range{begin, end}) { }
+    Selector(size_t size) : Selector(0, size) { }
     Selector() : Selector(0, 0) { }
 
     Selector(IColumn::Selector && selector_) : data(initializeFromSelector(std::move(selector_))) { }
@@ -127,6 +128,28 @@ public:
         }
     }
 
+    bool isContinuousRange() const { return std::holds_alternative<Range>(data); }
+
+    Range getRange() const
+    {
+        chassert(isContinuousRange());
+        return std::get<Range>(data);
+    }
+
+    std::string toString() const
+    {
+        if (std::holds_alternative<Range>(data))
+        {
+            auto range = std::get<Range>(data);
+            return fmt::format("[{}, {})", range.first, range.second);
+        }
+        else
+        {
+            auto & selector = std::get<IColumn::Selector>(data);
+            return fmt::format("({})", fmt::join(selector, ","));
+        }
+    }
+
 private:
     using Data = std::variant<Range, IColumn::Selector>;
 
@@ -153,7 +176,7 @@ struct ScatteredBlock : private boost::noncopyable
 
     ScatteredBlock() = default;
 
-    explicit ScatteredBlock(Block block_) : block(std::move(block_)), selector(createTrivialSelector(block.rows())) { }
+    explicit ScatteredBlock(Block block_) : block(std::move(block_)), selector(block.rows()) { }
 
     ScatteredBlock(Block block_, IColumn::Selector && selector_) : block(std::move(block_)), selector(std::move(selector_)) { }
 
@@ -223,6 +246,18 @@ struct ScatteredBlock : private boost::noncopyable
         if (!wasScattered())
             return;
 
+        if (selector.isContinuousRange())
+        {
+            const auto range = selector.getRange();
+            for (size_t i = 0; i < block.columns(); ++i)
+            {
+                auto & col = block.getByPosition(i);
+                col.column = col.column->cut(range.first, range.second - range.first);
+            }
+            selector = Selector(block.rows());
+            return;
+        }
+
         auto columns = block.getColumns();
         for (auto & col : columns)
         {
@@ -236,7 +271,7 @@ struct ScatteredBlock : private boost::noncopyable
 
         /// We have to to id that way because references to the block should remain valid
         block.setColumns(columns);
-        selector = createTrivialSelector(block.rows());
+        selector = Selector(block.rows());
     }
 
     /// Cut first num_rows rows from block in place and returns block with remaining rows
@@ -276,12 +311,10 @@ struct ScatteredBlock : private boost::noncopyable
         }
 
         block.setColumns(columns);
-        selector = createTrivialSelector(block.rows());
+        selector = Selector(block.rows());
     }
 
 private:
-    Selector createTrivialSelector(size_t size) { return Selector(0, size); }
-
     Block block;
     Selector selector;
 };
