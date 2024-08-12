@@ -49,6 +49,8 @@ namespace DB
 
 class ASTSelectQuery;
 
+class SystemLogs;
+
 class ContextAccess;
 class ContextAccessWrapper;
 struct User;
@@ -1132,7 +1134,7 @@ public:
     std::shared_ptr<BackupLog> getBackupLog() const;
     std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
 
-    std::vector<ISystemLog *> getSystemLogs() const;
+    SystemLogs getSystemLogs() const;
 
     using Dashboards = std::vector<std::map<String, String>>;
     std::optional<Dashboards> getDashboards() const;
