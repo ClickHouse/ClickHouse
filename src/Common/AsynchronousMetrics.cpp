@@ -75,12 +75,8 @@ AsynchronousMetrics::AsynchronousMetrics(
     , protocol_server_metrics_func(protocol_server_metrics_func_)
 {
 #if defined(OS_LINUX)
-    openFileIfExists("/proc/meminfo", meminfo);
-    openFileIfExists("/proc/loadavg", loadavg);
-    openFileIfExists("/proc/stat", proc_stat);
     openFileIfExists("/proc/cpuinfo", cpuinfo);
     openFileIfExists("/proc/sys/fs/file-nr", file_nr);
-    openFileIfExists("/proc/uptime", uptime);
     openFileIfExists("/proc/net/dev", net_dev);
 
     /// CGroups v2
@@ -102,6 +98,19 @@ AsynchronousMetrics::AsynchronousMetrics(
     }
     if (!cgroupcpu_stat)
         openFileIfExists("/sys/fs/cgroup/cpuacct/cpuacct.stat", cgroupcpuacct_stat);
+
+    if (!cgroupcpu_stat && !cgroupcpuacct_stat)
+    {
+        /// The following metrics are not cgroup-aware and we've found cgroup-specific metric files for the similar metrics,
+        /// so we're better not reporting them at all to avoid confusion
+        openFileIfExists("/proc/loadavg", loadavg);
+        openFileIfExists("/proc/stat", proc_stat);
+        openFileIfExists("/proc/uptime", uptime);
+    }
+
+    /// The same story for memory metrics
+    if (!cgroupmem_limit_in_bytes)
+        openFileIfExists("/proc/meminfo", meminfo);
 
     openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
     openFileIfExists("/proc/self/maps", vm_maps);
@@ -1193,8 +1202,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
-
-    if (meminfo)
+    else if (meminfo)
     {
         try
         {
