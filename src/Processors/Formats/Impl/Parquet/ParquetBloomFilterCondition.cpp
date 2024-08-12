@@ -242,13 +242,27 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
             const auto & ordered_set = set_index->getOrderedSet();
             const auto & indexes_mapping = set_index->getIndexesMapping();
 
+            bool bloom_filter_missing = false;
             std::vector<std::size_t> key_columns;
 
             for (auto i = 0u; i < ordered_set.size(); i++)
             {
                 const auto & set_column = ordered_set[i];
+
+                if (!column_index_to_column_bf.contains(indexes_mapping[i].key_index))
+                {
+                    bloom_filter_missing = true;
+                    break;
+                }
+
                 columns.emplace_back(hash(set_column.get(), column_index_to_column_bf.at(indexes_mapping[i].key_index)));
                 key_columns.push_back(indexes_mapping[i].key_index);
+            }
+
+            if (bloom_filter_missing)
+            {
+                condition_elements.emplace_back(Function::ALWAYS_TRUE, columns);
+                continue;
             }
 
             auto function = RPNElement::FUNCTION_IN_SET == rpn_element.function ? Function::FUNCTION_IN : Function::FUNCTION_NOT_IN;
