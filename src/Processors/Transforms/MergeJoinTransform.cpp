@@ -1282,7 +1282,7 @@ MergeJoinTransform::MergeJoinTransform(
 
 void MergeJoinTransform::onFinish()
 {
-    algorithm.logElapsed(merging_elapsed_ns / 1000000000ULL);
+    algorithm.logElapsed(static_cast<double>(merging_elapsed_ns) / 1000000000ULL);
 }
 
 }

@@ -58,12 +58,12 @@ DROP TABLE IF EXISTS t_merge_profile_events_2;
 
 DROP TABLE IF EXISTS t_merge_profile_events_3;
 
-CREATE TABLE t_merge_profile_events_3 (id UInt64, v1 UInt64, v2 UInt64, PROJECTION p (SELECT sum(v1), sum(v2) GROUP BY id % 10))
+CREATE TABLE t_merge_profile_events_3 (id UInt64, v1 UInt64, v2 UInt64, PROJECTION p (SELECT v2, v2 * v2, v2 * 2, v2 * 10, v1 ORDER BY v1))
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1;
 
-INSERT INTO t_merge_profile_events_3 SELECT number, number, number FROM numbers(10000);
-INSERT INTO t_merge_profile_events_3 SELECT number, number, number FROM numbers(10000);
+INSERT INTO t_merge_profile_events_3 SELECT number, number, number FROM numbers(100000);
+INSERT INTO t_merge_profile_events_3 SELECT number, number, number FROM numbers(100000);
 
 OPTIMIZE TABLE t_merge_profile_events_3 FINAL;
 SYSTEM FLUSH LOGS;
@@ -83,6 +83,8 @@ SELECT
     ProfileEvents['MergeVerticalStageExecuteMilliseconds'] > 0,
     ProfileEvents['MergeProjectionStageTotalMilliseconds'] > 0,
     ProfileEvents['MergeProjectionStageExecuteMilliseconds'] > 0,
+    ProfileEvents['MergeExecuteMilliseconds'] <= duration_ms,
+    ProfileEvents['MergeTotalMilliseconds'] <= duration_ms
 FROM system.part_log WHERE database = currentDatabase() AND table = 't_merge_profile_events_3' AND event_type = 'MergeParts' AND part_name = 'all_1_2_1';
 
 DROP TABLE IF EXISTS t_merge_profile_events_3;

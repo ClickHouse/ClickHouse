@@ -461,8 +461,12 @@ void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const Str
 
 MergeTask::StageRuntimeContextPtr MergeTask::ExecuteAndFinalizeHorizontalPart::getContextForNextStage()
 {
-    ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
-    ProfileEvents::increment(ProfileEvents::MergeHorizontalStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    /// Do not increment for projection stage because time is already accounted in main task.
+    if (global_ctx->parent_part == nullptr)
+    {
+        ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+        ProfileEvents::increment(ProfileEvents::MergeHorizontalStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    }
 
     auto new_ctx = std::make_shared<VerticalMergeRuntimeContext>();
 
@@ -481,8 +485,12 @@ MergeTask::StageRuntimeContextPtr MergeTask::ExecuteAndFinalizeHorizontalPart::g
 
 MergeTask::StageRuntimeContextPtr MergeTask::VerticalMergeStage::getContextForNextStage()
 {
-    ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
-    ProfileEvents::increment(ProfileEvents::MergeVerticalStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    /// Do not increment for projection stage because time is already accounted in main task.
+    if (global_ctx->parent_part == nullptr)
+    {
+        ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+        ProfileEvents::increment(ProfileEvents::MergeVerticalStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    }
 
     auto new_ctx = std::make_shared<MergeProjectionsRuntimeContext>();
     new_ctx->need_sync = std::move(ctx->need_sync);
@@ -1026,8 +1034,12 @@ bool MergeTask::execute()
     UInt64 stage_elapsed_ms = current_elapsed_ms - global_ctx->prev_elapsed_ms;
     global_ctx->prev_elapsed_ms = current_elapsed_ms;
 
-    ProfileEvents::increment(current_stage->getTotalTimeProfileEvent(), stage_elapsed_ms);
-    ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, stage_elapsed_ms);
+    /// Do not increment for projection stage because time is already accounted in main task.
+    if (global_ctx->parent_part == nullptr)
+    {
+        ProfileEvents::increment(current_stage->getTotalTimeProfileEvent(), stage_elapsed_ms);
+        ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, stage_elapsed_ms);
+    }
 
     auto next_stage_context = current_stage->getContextForNextStage();
 
