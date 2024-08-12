@@ -1273,7 +1273,7 @@ QueryTreeNodePtr IdentifierResolver::matchArrayJoinSubcolumns(
             const auto & constant_node_value = constant_node.getValue();
             if (constant_node_value.getType() == Field::Types::String)
             {
-                array_join_subcolumn_prefix = constant_node_value.get<String>() + ".";
+                array_join_subcolumn_prefix = constant_node_value.safeGet<String>() + ".";
                 array_join_parent_column = argument_nodes.at(0).get();
             }
         }
@@ -1287,7 +1287,7 @@ QueryTreeNodePtr IdentifierResolver::matchArrayJoinSubcolumns(
     if (!second_argument || second_argument->getValue().getType() != Field::Types::String)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected constant string as second argument of getSubcolumn function {}", resolved_function->dumpTree());
 
-    const auto & resolved_subcolumn_path = second_argument->getValue().get<String &>();
+    const auto & resolved_subcolumn_path = second_argument->getValue().safeGet<String &>();
     if (!startsWith(resolved_subcolumn_path, array_join_subcolumn_prefix))
         return {};
 
@@ -1331,7 +1331,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpression
             size_t nested_function_arguments_size = nested_function_arguments.size();
 
             const auto & nested_keys_names_constant_node = nested_function_arguments[0]->as<ConstantNode & >();
-            const auto & nested_keys_names = nested_keys_names_constant_node.getValue().get<Array &>();
+            const auto & nested_keys_names = nested_keys_names_constant_node.getValue().safeGet<Array &>();
             size_t nested_keys_names_size = nested_keys_names.size();
 
             if (nested_keys_names_size == nested_function_arguments_size - 1)
@@ -1344,7 +1344,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpression
                     auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
                         array_join_column_expression_typed.getColumnSource());
 
-                    const auto & nested_key_name = nested_keys_names[i - 1].get<String &>();
+                    const auto & nested_key_name = nested_keys_names[i - 1].safeGet<String &>();
                     Identifier nested_identifier = Identifier(nested_key_name);
                     array_join_resolved_expression = wrapExpressionNodeInTupleElement(array_join_column, nested_identifier, scope.context);
                     break;

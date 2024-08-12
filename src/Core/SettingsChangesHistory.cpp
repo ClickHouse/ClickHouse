@@ -85,6 +85,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"allow_experimental_time_series_table", false, false, "Added new setting to allow the TimeSeries table engine"},
             {"enable_analyzer", 1, 1, "Added an alias to a setting `allow_experimental_analyzer`."},
             {"query_cache_tag", "", "", "Add a setting to separate entries in the query cache using an arbitrary string. Queries with different values of this setting are considered different."},
+            {"optimize_functions_to_subcolumns", false, true, "Enabled settings by default"},
         }
     },
     {"24.7",
