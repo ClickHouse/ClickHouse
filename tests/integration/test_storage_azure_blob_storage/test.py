@@ -550,7 +550,6 @@ def test_schema_inference_from_globs(cluster):
 def test_simple_write_account_string_table_function(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]
-    print("Account URL: ", cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"])
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', "
@@ -560,7 +559,6 @@ def test_simple_write_account_string_table_function(cluster):
     )
     print(get_azure_file_content("test_simple_write_tf.csv", port))
     assert get_azure_file_content("test_simple_write_tf.csv", port) == '1,"a"\n'
-    assert 0 == 1
 
 
 def test_simple_write_connection_string_table_function(cluster):

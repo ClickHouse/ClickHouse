@@ -13,7 +13,7 @@ from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.network import PartitionManager
 from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import exec_query_with_retry
-from tests.integration.helpers.s3_tools import prepare_s3_bucket
+from helpers.s3_tools import prepare_s3_bucket
 
 MINIO_INTERNAL_PORT = 9001
 
