@@ -1,6 +1,7 @@
 #include <IO/ReadSettings.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -61,9 +62,9 @@ ReadSettings::ReadSettings(const Context & context)
     }
 
     local_fs_buffer_size
-    = settings.max_read_buffer_size_local_fs ? settings.max_read_buffer_size_local_fs : settings.max_read_buffer_size;
+        = settings.max_read_buffer_size_local_fs ? settings.max_read_buffer_size_local_fs : settings.max_read_buffer_size;
     remote_fs_buffer_size
-    = settings.max_read_buffer_size_remote_fs ? settings.max_read_buffer_size_remote_fs : settings.max_read_buffer_size;
+        = settings.max_read_buffer_size_remote_fs ? settings.max_read_buffer_size_remote_fs : settings.max_read_buffer_size;
     prefetch_buffer_size = settings.prefetch_buffer_size;
     direct_io_threshold = settings.min_bytes_to_use_direct_io;
     mmap_threshold = settings.min_bytes_to_use_mmap_io;

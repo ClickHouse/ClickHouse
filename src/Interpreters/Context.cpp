@@ -21,6 +21,7 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
 #include <Server/ServerType.h>
@@ -50,7 +51,6 @@
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
-#include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -58,6 +58,7 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
+#include <Access/Role.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsProfilesInfo.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
@@ -189,6 +190,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
+    extern const int SET_NON_GRANTED_ROLE;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -376,6 +378,10 @@ struct ContextSharedPart : boost::noncopyable
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     OnceFlag system_logs_initialized;
     std::unique_ptr<SystemLogs> system_logs TSA_GUARDED_BY(mutex);                /// Used to log queries and operations on parts
+
+    mutable std::mutex dashboard_mutex;
+    std::optional<Context::Dashboards> dashboards;
+
     std::optional<S3SettingsByEndpoint> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
     std::vector<String> warnings TSA_GUARDED_BY(mutex);                           /// Store warning messages about server configuration.
 
@@ -821,8 +827,69 @@ void ContextSharedMutex::lockSharedImpl()
     ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
 }
 
-ContextData::ContextData() = default;
-ContextData::ContextData(const ContextData &) = default;
+ContextData::ContextData()
+{
+    settings = std::make_unique<Settings>();
+}
+ContextData::ContextData(const ContextData &o) :
+    shared(o.shared),
+    client_info(o.client_info),
+    external_tables_initializer_callback(o.external_tables_initializer_callback),
+    input_initializer_callback(o.input_initializer_callback),
+    input_blocks_reader(o.input_blocks_reader),
+    user_id(o.user_id),
+    current_roles(o.current_roles),
+    settings_constraints_and_current_profiles(o.settings_constraints_and_current_profiles),
+    access(o.access),
+    need_recalculate_access(o.need_recalculate_access),
+    current_database(o.current_database),
+    settings(std::make_unique<Settings>(*o.settings)),
+    progress_callback(o.progress_callback),
+    file_progress_callback(o.file_progress_callback),
+    process_list_elem(o.process_list_elem),
+    has_process_list_elem(o.has_process_list_elem),
+    insertion_table_info(o.insertion_table_info),
+    is_distributed(o.is_distributed),
+    default_format(o.default_format),
+    insert_format(o.insert_format),
+    external_tables_mapping(o.external_tables_mapping),
+    scalars(o.scalars),
+    special_scalars(o.special_scalars),
+    next_task_callback(o.next_task_callback),
+    merge_tree_read_task_callback(o.merge_tree_read_task_callback),
+    merge_tree_all_ranges_callback(o.merge_tree_all_ranges_callback),
+    parallel_replicas_group_uuid(o.parallel_replicas_group_uuid),
+    client_protocol_version(o.client_protocol_version),
+    query_access_info(std::make_shared<QueryAccessInfo>(*o.query_access_info)),
+    query_factories_info(o.query_factories_info),
+    query_privileges_info(o.query_privileges_info),
+    async_read_counters(o.async_read_counters),
+    view_source(o.view_source),
+    table_function_results(o.table_function_results),
+    query_context(o.query_context),
+    session_context(o.session_context),
+    global_context(o.global_context),
+    buffer_context(o.buffer_context),
+    is_internal_query(o.is_internal_query),
+    temp_data_on_disk(o.temp_data_on_disk),
+    classifier(o.classifier),
+    prepared_sets_cache(o.prepared_sets_cache),
+    offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
+    kitchen_sink(o.kitchen_sink),
+    part_uuids(o.part_uuids),
+    ignored_part_uuids(o.ignored_part_uuids),
+    query_parameters(o.query_parameters),
+    host_context(o.host_context),
+    metadata_transaction(o.metadata_transaction),
+    merge_tree_transaction(o.merge_tree_transaction),
+    merge_tree_transaction_holder(o.merge_tree_transaction_holder),
+    remote_read_query_throttler(o.remote_read_query_throttler),
+    remote_write_query_throttler(o.remote_write_query_throttler),
+    local_read_query_throttler(o.local_read_query_throttler),
+    local_write_query_throttler(o.local_write_query_throttler),
+    backups_query_throttler(o.backups_query_throttler)
+{
+}
 
 Context::Context() = default;
 Context::Context(const Context & rhs) : ContextData(rhs), std::enable_shared_from_this<Context>(rhs) {}
@@ -862,7 +929,6 @@ ContextMutablePtr Context::createCopy(const ContextPtr & other)
 {
     SharedLockGuard lock(other->mutex);
     auto new_context = std::shared_ptr<Context>(new Context(*other));
-    new_context->query_access_info = std::make_shared<QueryAccessInfo>(*other->query_access_info);
     return new_context;
 }
 
@@ -968,7 +1034,7 @@ Strings Context::getWarnings() const
     }
     /// Make setting's name ordered
     std::set<String> obsolete_settings;
-    for (const auto & setting : settings)
+    for (const auto & setting : *settings)
     {
         if (setting.isValueChanged() && setting.isObsolete())
             obsolete_settings.emplace(setting.getName());
@@ -1302,7 +1368,7 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(const UUID & user_id_, const std::optional<const std::vector<UUID>> & current_roles_)
+void Context::setUser(const UUID & user_id_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
     /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
@@ -1311,8 +1377,8 @@ void Context::setUser(const UUID & user_id_, const std::optional<const std::vect
     auto & access_control = getAccessControl();
     auto user = access_control.read<User>(user_id_);
 
-    auto new_current_roles = current_roles_ ? user->granted_roles.findGranted(*current_roles_) : user->granted_roles.findGranted(user->default_roles);
-    auto enabled_roles = access_control.getEnabledRolesInfo(new_current_roles, {});
+    auto default_roles = user->granted_roles.findGranted(user->default_roles);
+    auto enabled_roles = access_control.getEnabledRolesInfo(default_roles, {});
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
 
@@ -1326,7 +1392,7 @@ void Context::setUser(const UUID & user_id_, const std::optional<const std::vect
     /// so we shouldn't check constraints here.
     setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
 
-    setCurrentRolesWithLock(new_current_roles, lock);
+    setCurrentRolesWithLock(default_roles, lock);
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
@@ -1361,25 +1427,66 @@ std::optional<UUID> Context::getUserID() const
     return user_id;
 }
 
-void Context::setCurrentRolesWithLock(const std::vector<UUID> & current_roles_, const std::lock_guard<ContextSharedMutex> &)
+void Context::setCurrentRolesWithLock(const std::vector<UUID> & new_current_roles, const std::lock_guard<ContextSharedMutex> &)
 {
-    if (current_roles_.empty())
+    if (new_current_roles.empty())
         current_roles = nullptr;
     else
-        current_roles = std::make_shared<std::vector<UUID>>(current_roles_);
+        current_roles = std::make_shared<std::vector<UUID>>(new_current_roles);
     need_recalculate_access = true;
 }
 
-void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
+void Context::setCurrentRolesImpl(const std::vector<UUID> & new_current_roles, bool throw_if_not_granted, bool skip_if_not_granted, const std::shared_ptr<const User> & user)
 {
-    std::lock_guard lock(mutex);
-    setCurrentRolesWithLock(current_roles_, lock);
+    if (skip_if_not_granted)
+    {
+        auto filtered_role_ids = user->granted_roles.findGranted(new_current_roles);
+        std::lock_guard lock{mutex};
+        setCurrentRolesWithLock(filtered_role_ids, lock);
+        return;
+    }
+    if (throw_if_not_granted)
+    {
+        for (const auto & role_id : new_current_roles)
+        {
+            if (!user->granted_roles.isGranted(role_id))
+            {
+                auto role_name = getAccessControl().tryReadName(role_id);
+                throw Exception(ErrorCodes::SET_NON_GRANTED_ROLE, "Role {} should be granted to set as a current", role_name.value_or(toString(role_id)));
+            }
+        }
+    }
+    std::lock_guard lock2{mutex};
+    setCurrentRolesWithLock(new_current_roles, lock2);
+}
+
+void Context::setCurrentRoles(const std::vector<UUID> & new_current_roles, bool check_grants)
+{
+    setCurrentRolesImpl(new_current_roles, /* throw_if_not_granted= */ check_grants, /* skip_if_not_granted= */ !check_grants, getUser());
+}
+
+void Context::setCurrentRoles(const RolesOrUsersSet & new_current_roles, bool check_grants)
+{
+    if (new_current_roles.all)
+    {
+        auto user = getUser();
+        setCurrentRolesImpl(user->granted_roles.findGranted(new_current_roles), /* throw_if_not_granted= */ false, /* skip_if_not_granted= */ false, user);
+    }
+    else
+    {
+        setCurrentRoles(new_current_roles.getMatchingIDs(), check_grants);
+    }
+}
+
+void Context::setCurrentRoles(const Strings & new_current_roles, bool check_grants)
+{
+    setCurrentRoles(getAccessControl().getIDs<Role>(new_current_roles), check_grants);
 }
 
 void Context::setCurrentRolesDefault()
 {
     auto user = getUser();
-    setCurrentRoles(user->granted_roles.findGranted(user->default_roles));
+    setCurrentRolesImpl(user->granted_roles.findGranted(user->default_roles), /* throw_if_not_granted= */ false, /* skip_if_not_granted= */ false, user);
 }
 
 std::vector<UUID> Context::getCurrentRoles() const
@@ -1442,7 +1549,7 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
         /// If setUserID() was never called then this must be the global context with the full access.
         bool full_access = !user_id;
 
-        return ContextAccessParams{user_id, full_access, /* use_default_roles= */ false, current_roles, settings, current_database, client_info};
+        return ContextAccessParams{user_id, full_access, /* use_default_roles= */ false, current_roles, *settings, current_database, client_info};
     };
 
     /// Check if the current access rights are still valid, otherwise get parameters for recalculating access rights.
@@ -1524,7 +1631,7 @@ void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_i
         checkSettingsConstraintsWithLock(profiles_info.settings, SettingSource::PROFILE);
     applySettingsChangesWithLock(profiles_info.settings, lock);
     settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
-    contextSanityClampSettingsWithLock(*this, settings, lock);
+    contextSanityClampSettingsWithLock(*this, *settings, lock);
 }
 
 void Context::setCurrentProfile(const String & profile_name, bool check_constraints)
@@ -2162,18 +2269,18 @@ bool Context::displaySecretsInShowAndSelect() const
     return shared->server_settings.display_secrets_in_show_and_select;
 }
 
-Settings Context::getSettings() const
+Settings Context::getSettingsCopy() const
 {
     SharedLockGuard lock(mutex);
-    return settings;
+    return *settings;
 }
 
 void Context::setSettings(const Settings & settings_)
 {
     std::lock_guard lock(mutex);
-    settings = settings_;
+    *settings = settings_;
     need_recalculate_access = true;
-    contextSanityClampSettings(*this, settings);
+    contextSanityClampSettings(*this, *settings);
 }
 
 void Context::setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock)
@@ -2183,10 +2290,10 @@ void Context::setSettingWithLock(std::string_view name, const String & value, co
         setCurrentProfileWithLock(value, true /*check_constraints*/, lock);
         return;
     }
-    settings.set(name, value);
+    settings->set(name, value);
     if (ContextAccessParams::dependsOnSettingName(name))
         need_recalculate_access = true;
-    contextSanityClampSettingsWithLock(*this, settings, lock);
+    contextSanityClampSettingsWithLock(*this, *settings, lock);
 }
 
 void Context::setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<ContextSharedMutex> & lock)
@@ -2196,7 +2303,7 @@ void Context::setSettingWithLock(std::string_view name, const Field & value, con
         setCurrentProfileWithLock(value.safeGet<String>(), true /*check_constraints*/, lock);
         return;
     }
-    settings.set(name, value);
+    settings->set(name, value);
     if (ContextAccessParams::dependsOnSettingName(name))
         need_recalculate_access = true;
 }
@@ -2206,7 +2313,7 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
     try
     {
         setSettingWithLock(change.name, change.value, lock);
-        contextSanityClampSettingsWithLock(*this, settings, lock);
+        contextSanityClampSettingsWithLock(*this, *settings, lock);
     }
     catch (Exception & e)
     {
@@ -2221,7 +2328,7 @@ void Context::applySettingsChangesWithLock(const SettingsChanges & changes, cons
 {
     for (const SettingChange & change : changes)
         applySettingChangeWithLock(change, lock);
-    applySettingsQuirks(settings);
+    applySettingsQuirks(*settings);
 }
 
 void Context::setSetting(std::string_view name, const String & value)
@@ -2234,7 +2341,13 @@ void Context::setSetting(std::string_view name, const Field & value)
 {
     std::lock_guard lock(mutex);
     setSettingWithLock(name, value, lock);
-    contextSanityClampSettingsWithLock(*this, settings, lock);
+    contextSanityClampSettingsWithLock(*this, *settings, lock);
+}
+
+void Context::setServerSetting(std::string_view name, const Field & value)
+{
+    std::lock_guard lock(mutex);
+    shared->server_settings.set(name, value);
 }
 
 void Context::applySettingChange(const SettingChange & change)
@@ -2261,37 +2374,37 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 
 void Context::checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source)
 {
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, profile_elements, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, profile_elements, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
+        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
 void Context::checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source)
 {
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, change, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, change, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
+        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
 void Context::checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source)
 {
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
+        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
 void Context::checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source)
 {
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
+        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
 void Context::clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source)
 {
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clamp(settings, changes, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clamp(*settings, changes, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
+        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
 void Context::checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
@@ -2314,8 +2427,8 @@ void Context::checkSettingsConstraints(const SettingChange & change, SettingSour
 void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingSource source)
 {
     SharedLockGuard lock(mutex);
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
-    doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
+    doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
@@ -2340,7 +2453,7 @@ void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
 {
     std::lock_guard lock(mutex);
     for (const String & name: names)
-        settings.setDefaultValue(name);
+        settings->setDefaultValue(name);
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const
@@ -2560,14 +2673,14 @@ void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_sett
 {
     makeQueryContext();
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
-    settings.workload = merge_tree_settings.merge_workload.value.empty() ? getMergeWorkload() : merge_tree_settings.merge_workload;
+    settings->workload = merge_tree_settings.merge_workload.value.empty() ? getMergeWorkload() : merge_tree_settings.merge_workload;
 }
 
 void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings)
 {
     makeQueryContext();
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
-    settings.workload = merge_tree_settings.mutation_workload.value.empty() ? getMutationWorkload() : merge_tree_settings.mutation_workload;
+    settings->workload = merge_tree_settings.mutation_workload.value.empty() ? getMutationWorkload() : merge_tree_settings.mutation_workload;
 }
 
 void Context::makeSessionContext()
@@ -3380,18 +3493,22 @@ DDLWorker & Context::getDDLWorker() const
     if (shared->ddl_worker_startup_task)
         waitLoad(shared->ddl_worker_startup_task); // Just wait and do not prioritize, because it depends on all load and startup tasks
 
-    SharedLockGuard lock(shared->mutex);
-    if (!shared->ddl_worker)
     {
-        if (!hasZooKeeper())
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no Zookeeper configuration in server config");
-
-        if (!hasDistributedDDL())
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no DistributedDDL configuration in server config");
-
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "DDL background thread is not initialized");
+        /// Only acquire the lock for reading ddl_worker field.
+        /// hasZooKeeper() and hasDistributedDDL() acquire the same lock as well and double acquisition of the lock in shared mode can lead
+        /// to a deadlock if an exclusive lock attempt is made in the meantime by another thread.
+        SharedLockGuard lock(shared->mutex);
+        if (shared->ddl_worker)
+            return *shared->ddl_worker;
     }
-    return *shared->ddl_worker;
+
+    if (!hasZooKeeper())
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no Zookeeper configuration in server config");
+
+    if (!hasDistributedDDL())
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no DistributedDDL configuration in server config");
+
+    throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "DDL background thread is not initialized");
 }
 
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
@@ -3850,7 +3967,7 @@ void Context::reloadClusterConfig() const
         }
 
         const auto & config = cluster_config ? *cluster_config : getConfigRef();
-        auto new_clusters = std::make_shared<Clusters>(config, settings, getMacros());
+        auto new_clusters = std::make_shared<Clusters>(config, *settings, getMacros());
 
         {
             std::lock_guard lock(shared->clusters_mutex);
@@ -3885,7 +4002,7 @@ std::shared_ptr<Clusters> Context::getClustersImpl(std::lock_guard<std::mutex> &
     if (!shared->clusters)
     {
         const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
-        shared->clusters = std::make_shared<Clusters>(config, settings, getMacros());
+        shared->clusters = std::make_shared<Clusters>(config, *settings, getMacros());
     }
 
     return shared->clusters;
@@ -3917,9 +4034,9 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
     shared->clusters_config = config;
 
     if (!shared->clusters)
-        shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, settings, getMacros(), config_name);
+        shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, *settings, getMacros(), config_name);
     else
-        shared->clusters->updateClusters(*shared->clusters_config, settings, config_name, old_clusters_config);
+        shared->clusters->updateClusters(*shared->clusters_config, *settings, config_name, old_clusters_config);
 
     ++shared->clusters_version;
 }
@@ -4001,7 +4118,6 @@ std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
 std::shared_ptr<QueryViewsLog> Context::getQueryViewsLog() const
 {
     SharedLockGuard lock(shared->mutex);
-
     if (!shared->system_logs)
         return {};
 
@@ -4181,7 +4297,7 @@ std::shared_ptr<BackupLog> Context::getBackupLog() const
 
 std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
 {
-    bool enable_blob_storage_log = settings.enable_blob_storage_log;
+    bool enable_blob_storage_log = settings->enable_blob_storage_log;
     if (hasQueryContext())
         enable_blob_storage_log = getQueryContext()->getSettingsRef().enable_blob_storage_log;
 
@@ -4204,6 +4320,51 @@ std::vector<ISystemLog *> Context::getSystemLogs() const
     return shared->system_logs->logs;
 }
 
+std::optional<Context::Dashboards> Context::getDashboards() const
+{
+    std::lock_guard lock(shared->dashboard_mutex);
+
+    if (!shared->dashboards)
+        return {};
+    return shared->dashboards;
+}
+
+namespace
+{
+
+String trim(const String & text)
+{
+    std::string_view view(text);
+    ::trim(view, '\n');
+    return String(view);
+}
+
+}
+
+void Context::setDashboardsConfig(const ConfigurationPtr & config)
+{
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config->keys("dashboards", keys);
+
+    Dashboards dashboards;
+    for (const auto & key : keys)
+    {
+        const auto & prefix = "dashboards." + key + ".";
+        dashboards.push_back({
+            { "dashboard", config->getString(prefix + "dashboard") },
+            { "title",     config->getString(prefix + "title") },
+            { "query",     trim(config->getString(prefix + "query")) },
+        });
+    }
+
+    {
+        std::lock_guard lock(shared->dashboard_mutex);
+        if (!dashboards.empty())
+            shared->dashboards.emplace(std::move(dashboards));
+        else
+            shared->dashboards.reset();
+    }
+}
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
@@ -4622,8 +4783,8 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
     setCurrentProfile(shared->system_profile_name);
 
-    applySettingsQuirks(settings, getLogger("SettingsQuirks"));
-    doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
+    applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
+    doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = Context::createCopy(shared_from_this());
@@ -4890,13 +5051,6 @@ void Context::setConnectionClientVersion(UInt64 client_version_major, UInt64 cli
     client_info.connection_client_version_minor = client_version_minor;
     client_info.connection_client_version_patch = client_version_patch;
     client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
-}
-
-void Context::setReplicaInfo(bool collaborate_with_initiator, size_t all_replicas_count, size_t number_of_current_replica)
-{
-    client_info.collaborate_with_initiator = collaborate_with_initiator;
-    client_info.count_participating_replicas = all_replicas_count;
-    client_info.number_of_current_replica = number_of_current_replica;
 }
 
 void Context::increaseDistributedDepth()
@@ -5192,11 +5346,11 @@ AsynchronousInsertQueue * Context::tryGetAsynchronousInsertQueue() const
 
 void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr)
 {
-    AsynchronousInsertQueue::validateSettings(settings, getLogger("Context"));
+    AsynchronousInsertQueue::validateSettings(*settings, getLogger("Context"));
 
     SharedLockGuard lock(shared->mutex);
 
-    if (std::chrono::milliseconds(settings.async_insert_poll_timeout_ms) == std::chrono::milliseconds::zero())
+    if (std::chrono::milliseconds(settings->async_insert_poll_timeout_ms) == std::chrono::milliseconds::zero())
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting async_insert_poll_timeout_ms can't be zero");
 
     shared->async_insert_queue = ptr;
@@ -5348,13 +5502,13 @@ WriteSettings Context::getWriteSettings() const
 {
     WriteSettings res;
 
-    res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
-    res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
-    res.throw_on_error_from_cache = settings.throw_on_error_from_cache_on_write_operations;
-    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+    res.enable_filesystem_cache_on_write_operations = settings->enable_filesystem_cache_on_write_operations;
+    res.enable_filesystem_cache_log = settings->enable_filesystem_cache_log;
+    res.throw_on_error_from_cache = settings->throw_on_error_from_cache_on_write_operations;
+    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings->filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
 
-    res.s3_allow_parallel_part_upload = settings.s3_allow_parallel_part_upload;
-    res.azure_allow_parallel_part_upload = settings.azure_allow_parallel_part_upload;
+    res.s3_allow_parallel_part_upload = settings->s3_allow_parallel_part_upload;
+    res.azure_allow_parallel_part_upload = settings->azure_allow_parallel_part_upload;
 
     res.remote_throttler = getRemoteWriteThrottler();
     res.local_throttler = getLocalWriteThrottler();
@@ -5400,10 +5554,37 @@ bool Context::canUseParallelReplicasOnFollower() const
     return canUseTaskBasedParallelReplicas() && getClientInfo().collaborate_with_initiator;
 }
 
-bool Context::canUseParallelReplicasCustomKey(const Cluster & cluster) const
+bool Context::canUseParallelReplicasCustomKey() const
 {
-    return settings.max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY
-        && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
+    return settings->max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY;
+}
+
+bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const
+{
+    return canUseParallelReplicasCustomKey() && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
+}
+
+bool Context::canUseOffsetParallelReplicas() const
+{
+    return offset_parallel_replicas_enabled && settings->max_parallel_replicas > 1
+        && getParallelReplicasMode() != Context::ParallelReplicasMode::READ_TASKS;
+}
+
+void Context::disableOffsetParallelReplicas()
+{
+    offset_parallel_replicas_enabled = false;
+}
+
+ClusterPtr Context::getClusterForParallelReplicas() const
+{
+    /// check cluster for parallel replicas
+    if (settings->cluster_for_parallel_replicas.value.empty())
+        throw Exception(
+            ErrorCodes::CLUSTER_DOESNT_EXIST,
+            "Reading in parallel from replicas is enabled but cluster to execute query is not provided. Please set "
+            "'cluster_for_parallel_replicas' setting");
+
+    return getCluster(settings->cluster_for_parallel_replicas);
 }
 
 void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
@@ -5429,6 +5610,41 @@ void Context::setClientProtocolVersion(UInt64 version)
 const ServerSettings & Context::getServerSettings() const
 {
     return shared->server_settings;
+}
+
+uint64_t HTTPContext::getMaxHstsAge() const
+{
+    return context->getSettingsRef().hsts_max_age;
+}
+
+    uint64_t HTTPContext::getMaxUriSize() const
+{
+    return context->getSettingsRef().http_max_uri_size;
+}
+
+uint64_t HTTPContext::getMaxFields() const
+{
+return context->getSettingsRef().http_max_fields;
+}
+
+uint64_t HTTPContext::getMaxFieldNameSize() const
+{
+return context->getSettingsRef().http_max_field_name_size;
+}
+
+uint64_t HTTPContext::getMaxFieldValueSize() const
+{
+return context->getSettingsRef().http_max_field_value_size;
+}
+
+Poco::Timespan HTTPContext::getReceiveTimeout() const
+{
+return context->getSettingsRef().http_receive_timeout;
+}
+
+Poco::Timespan HTTPContext::getSendTimeout() const
+{
+return context->getSettingsRef().http_send_timeout;
 }
 
 }

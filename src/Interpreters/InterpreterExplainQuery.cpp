@@ -29,6 +29,7 @@
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/JSONBuilder.h>
+#include <Core/Settings.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -69,7 +70,7 @@ namespace
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
             /// we need to read statistic when `allow_statistics_optimize` is enabled.
-            bool only_analyze = !data.getContext()->getSettings().allow_statistics_optimize;
+            bool only_analyze = !data.getContext()->getSettingsRef().allow_statistics_optimize;
             InterpreterSelectQuery interpreter(
                 node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze(only_analyze).modify());
 

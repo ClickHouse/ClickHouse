@@ -225,7 +225,7 @@ public:
     String getPathForDroppedMetadata(const StorageID & table_id) const;
     String getPathForMetadata(const StorageID & table_id) const;
     void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false);
-    void dequeueDroppedTableCleanup(StorageID table_id);
+    void undropTable(StorageID table_id);
 
     void waitTableFinallyDropped(const UUID & uuid);
 
@@ -296,6 +296,12 @@ private:
     void dropTableDataTask();
     void dropTableFinally(const TableMarkedAsDropped & table);
 
+    time_t getMinDropTime() TSA_REQUIRES(tables_marked_dropped_mutex);
+    std::tuple<size_t, size_t> getDroppedTablesCountAndInuseCount();
+    std::vector<TablesMarkedAsDropped::iterator> getTablesToDrop();
+    void dropTablesParallel(std::vector<TablesMarkedAsDropped::iterator> tables);
+    void rescheduleDropTableTask();
+
     void cleanupStoreDirectoryTask();
     bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
 
@@ -348,20 +354,8 @@ private:
     mutable std::mutex tables_marked_dropped_mutex;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;
-    static constexpr time_t default_drop_delay_sec = 8 * 60;
-    time_t drop_delay_sec = default_drop_delay_sec;
     std::condition_variable wait_table_finally_dropped;
-
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> cleanup_task;
-    static constexpr time_t default_unused_dir_hide_timeout_sec = 60 * 60;              /// 1 hour
-    time_t unused_dir_hide_timeout_sec = default_unused_dir_hide_timeout_sec;
-    static constexpr time_t default_unused_dir_rm_timeout_sec = 30 * 24 * 60 * 60;      /// 30 days
-    time_t unused_dir_rm_timeout_sec = default_unused_dir_rm_timeout_sec;
-    static constexpr time_t default_unused_dir_cleanup_period_sec = 24 * 60 * 60;       /// 1 day
-    time_t unused_dir_cleanup_period_sec = default_unused_dir_cleanup_period_sec;
-
-    static constexpr time_t default_drop_error_cooldown_sec = 5;
-    time_t drop_error_cooldown_sec = default_drop_error_cooldown_sec;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> reload_disks_task;
     std::mutex reload_disks_mutex;

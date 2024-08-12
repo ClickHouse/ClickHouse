@@ -8,7 +8,6 @@
 #include <Core/ProtocolDefines.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
-
 #include <Processors/Transforms/SquashingTransform.h>
 
 
@@ -367,7 +366,7 @@ public:
         return prepareTwoLevel();
     }
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         shared_data->is_cancelled.store(true, std::memory_order_seq_cst);
     }
@@ -676,7 +675,8 @@ void AggregatingTransform::consume(Chunk chunk)
         LOG_TRACE(log, "Aggregating");
         is_consume_started = true;
     }
-
+    if (rows_before_aggregation)
+        rows_before_aggregation->add(num_rows);
     src_rows += num_rows;
     src_bytes += chunk.bytes();
 
@@ -775,7 +775,7 @@ void AggregatingTransform::initGenerate()
                             {
                                 /// Just a reasonable constant, matches default value for the setting `preferred_block_size_bytes`
                                 static constexpr size_t oneMB = 1024 * 1024;
-                                return std::make_shared<SimpleSquashingTransform>(header, params->params.max_block_size, oneMB);
+                                return std::make_shared<SimpleSquashingChunksTransform>(header, params->params.max_block_size, oneMB);
                             });
                     }
                     /// AggregatingTransform::expandPipeline expects single output port.
