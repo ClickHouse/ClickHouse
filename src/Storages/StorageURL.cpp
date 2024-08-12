@@ -198,7 +198,7 @@ public:
     {
         uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
 
-        std::optional<ActionsDAG> filter_dag;
+        ActionsDAGPtr filter_dag;
         if (!uris.empty())
             filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
@@ -209,9 +209,7 @@ public:
             for (const auto & uri : uris)
                 paths.push_back(Poco::URI(uri).getPath());
 
-            VirtualColumnUtils::buildSetsForDAG(*filter_dag, context);
-            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-            VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns);
+            VirtualColumnUtils::filterByPathOrFile(uris, paths, filter_dag, virtual_columns, context);
         }
     }
 
@@ -464,7 +462,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
         setCredentials(credentials, request_uri);
 
-        const auto & settings = context_->getSettingsRef();
+        const auto settings = context_->getSettings();
 
         auto proxy_config = getProxyConfiguration(request_uri.getScheme());
 
@@ -571,15 +569,31 @@ StorageURLSink::StorageURLSink(
 
 void StorageURLSink::consume(Chunk & chunk)
 {
-    if (isCancelled())
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
         return;
     writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
 }
 
+void StorageURLSink::onCancel()
+{
+    std::lock_guard lock(cancel_mutex);
+    cancelBuffers();
+    releaseBuffers();
+    cancelled = true;
+}
+
+void StorageURLSink::onException(std::exception_ptr)
+{
+    std::lock_guard lock(cancel_mutex);
+    cancelBuffers();
+    releaseBuffers();
+}
+
 void StorageURLSink::onFinish()
 {
+    std::lock_guard lock(cancel_mutex);
     finalizeBuffers();
-    releaseBuffers();
 }
 
 void StorageURLSink::finalizeBuffers()
@@ -723,9 +737,7 @@ namespace
                     {
                         for (const auto & url : options)
                         {
-                            auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url);
-                            /// Use this format only if we have a schema reader for it.
-                            if (format_from_file_name && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file_name))
+                            if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url))
                             {
                                 format = format_from_file_name;
                                 break;
@@ -1312,7 +1324,7 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
     const Poco::Net::HTTPBasicCredentials & credentials,
     const ContextPtr & context)
 {
-    const auto & settings = context->getSettingsRef();
+    auto settings = context->getSettingsRef();
 
     auto uri = Poco::URI(url);
 
@@ -1386,11 +1398,6 @@ StorageURLWithFailover::StorageURLWithFailover(
     }
 }
 
-StorageURLSink::~StorageURLSink()
-{
-    if (isCancelled())
-        cancelBuffers();
-}
 
 FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Arguments & args)
 {
@@ -1581,5 +1588,4 @@ void registerStorageURL(StorageFactory & factory)
             .source_access_type = AccessType::URL,
         });
 }
-
 }

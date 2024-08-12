@@ -379,10 +379,6 @@ struct ContextSharedPart : boost::noncopyable
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     OnceFlag system_logs_initialized;
     std::unique_ptr<SystemLogs> system_logs TSA_GUARDED_BY(mutex);                /// Used to log queries and operations on parts
-
-    mutable std::mutex dashboard_mutex;
-    std::optional<Context::Dashboards> dashboards;
-
     std::optional<S3SettingsByEndpoint> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
     std::vector<String> warnings TSA_GUARDED_BY(mutex);                           /// Store warning messages about server configuration.
 
@@ -2270,7 +2266,7 @@ bool Context::displaySecretsInShowAndSelect() const
     return shared->server_settings.display_secrets_in_show_and_select;
 }
 
-Settings Context::getSettingsCopy() const
+Settings Context::getSettings() const
 {
     SharedLockGuard lock(mutex);
     return *settings;
@@ -4321,51 +4317,6 @@ std::vector<ISystemLog *> Context::getSystemLogs() const
     return shared->system_logs->logs;
 }
 
-std::optional<Context::Dashboards> Context::getDashboards() const
-{
-    std::lock_guard lock(shared->dashboard_mutex);
-
-    if (!shared->dashboards)
-        return {};
-    return shared->dashboards;
-}
-
-namespace
-{
-
-String trim(const String & text)
-{
-    std::string_view view(text);
-    ::trim(view, '\n');
-    return String(view);
-}
-
-}
-
-void Context::setDashboardsConfig(const ConfigurationPtr & config)
-{
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config->keys("dashboards", keys);
-
-    Dashboards dashboards;
-    for (const auto & key : keys)
-    {
-        const auto & prefix = "dashboards." + key + ".";
-        dashboards.push_back({
-            { "dashboard", config->getString(prefix + "dashboard") },
-            { "title",     config->getString(prefix + "title") },
-            { "query",     trim(config->getString(prefix + "query")) },
-        });
-    }
-
-    {
-        std::lock_guard lock(shared->dashboard_mutex);
-        if (!dashboards.empty())
-            shared->dashboards.emplace(std::move(dashboards));
-        else
-            shared->dashboards.reset();
-    }
-}
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {

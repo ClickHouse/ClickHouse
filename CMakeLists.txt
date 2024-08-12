@@ -428,17 +428,12 @@ if (NOT SANITIZE)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
 endif()
 
-if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE)
-    # Using '-no-pie' builds executables with fixed addresses, resulting in slightly more efficient code
-    # and keeping binary addresses constant even with ASLR enabled.
-    # Disabled on Android as it requires PIE: https://source.android.com/docs/security/enhancements#android-5
-    # Disabled on IBM S390X due to build issues with 'no-pie'
-    # Disabled with sanitizers to avoid issues with maximum relocation size: https://github.com/ClickHouse/ClickHouse/pull/49145
+if (OS_LINUX AND NOT (ARCH_AARCH64 OR ARCH_S390X) AND NOT SANITIZE)
+    # Slightly more efficient code can be generated
+    # It's disabled for ARM because otherwise ClickHouse cannot run on Android.
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
     set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
-else ()
-    message (WARNING "ClickHouse is built as PIE, system.trace_log will contain invalid addresses after server restart.")
 endif ()
 
 if (ENABLE_TESTS)

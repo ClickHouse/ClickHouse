@@ -100,6 +100,12 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
     }
 }
 
+void MergeTreeDataPartChecksums::checkSizes(const IDataPartStorage & storage) const
+{
+    for (const auto & [name, checksum] : files)
+        checksum.checkSize(storage, name);
+}
+
 UInt64 MergeTreeDataPartChecksums::getTotalSizeOnDisk() const
 {
     UInt64 res = 0;

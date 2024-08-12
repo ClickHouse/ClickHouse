@@ -373,7 +373,7 @@ def test_merge_tree_setting_override(start_cluster):
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
-        SETTINGS disk = 's3', storage_policy = 's3';
+        SETTINGS disk = 'kek', storage_policy = 's3';
     """
         )
     )

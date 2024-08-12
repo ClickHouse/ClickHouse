@@ -344,7 +344,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
 void ReplicatedMergeTreeRestartingThread::shutdown(bool part_of_full_shutdown)
 {
     /// Stop restarting_thread before stopping other tasks - so that it won't restart them again.
-    need_stop = part_of_full_shutdown;
+    need_stop = true;
     task->deactivate();
 
     /// Explicitly set the event, because the restarting thread will not set it again

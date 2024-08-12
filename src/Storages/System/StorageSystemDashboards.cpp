@@ -1,7 +1,6 @@
 #include <string_view>
 #include <Storages/System/StorageSystemDashboards.h>
 #include <Common/StringUtils.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -23,9 +22,9 @@ String trim(const char * text)
     return String(view);
 }
 
-void StorageSystemDashboards::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemDashboards::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    static const std::vector<std::map<String, String>> default_dashboards
+    static const std::vector<std::map<String, String>> dashboards
     {
         /// Default dashboard for self-managed ClickHouse
         {
@@ -372,22 +371,13 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
         }
     };
 
-    auto add_dashboards = [&](const auto & dashboards)
+    for (const auto & row : dashboards)
     {
-        for (const auto & row : dashboards)
-        {
-            size_t i = 0;
-            res_columns[i++]->insert(row.at("dashboard"));
-            res_columns[i++]->insert(row.at("title"));
-            res_columns[i++]->insert(row.at("query"));
-        }
-    };
-
-    const auto & context_dashboards = context->getDashboards();
-    if (context_dashboards.has_value())
-        add_dashboards(*context_dashboards);
-    else
-        add_dashboards(default_dashboards);
+        size_t i = 0;
+        res_columns[i++]->insert(row.at("dashboard"));
+        res_columns[i++]->insert(row.at("title"));
+        res_columns[i++]->insert(row.at("query"));
+    }
 }
 
 }

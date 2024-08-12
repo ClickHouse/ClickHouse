@@ -31,7 +31,7 @@ extern const int SUPPORT_IS_DISABLED;
 
 struct FunctionDetectLanguageImpl
 {
-    static std::string_view codeISO(std::string_view code_string)
+    static ALWAYS_INLINE inline std::string_view codeISO(std::string_view code_string)
     {
         if (code_string.ends_with("-Latn"))
             code_string.remove_suffix(code_string.size() - 5);
@@ -63,17 +63,16 @@ struct FunctionDetectLanguageImpl
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+        ColumnString::Offsets & res_offsets)
     {
         /// Constant 3 is based on the fact that in general we need 2 characters for ISO code + 1 zero byte
-        res_data.reserve(input_rows_count * 3);
-        res_offsets.resize(input_rows_count);
+        res_data.reserve(offsets.size() * 3);
+        res_offsets.resize(offsets.size());
 
         bool is_reliable;
         size_t res_offset = 0;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < offsets.size(); ++i)
         {
             const UInt8 * str = data.data() + offsets[i - 1];
             const size_t str_len = offsets[i] - offsets[i - 1] - 1;

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Core/Field.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/StatisticsDescription.h>
@@ -13,13 +12,6 @@ namespace DB
 
 constexpr auto STATS_FILE_PREFIX = "statistics_";
 constexpr auto STATS_FILE_SUFFIX = ".stats";
-
-struct StatisticsUtils
-{
-    /// Returns std::nullopt if input Field cannot be converted to a concrete value
-    /// - `data_type` is the type of the column on which the statistics object was build on
-    static std::optional<Float64> tryConvertToFloat64(const Field & value, const DataTypePtr & data_type);
-};
 
 /// Statistics describe properties of the values in the column,
 /// e.g. how many unique values exist,
@@ -42,8 +34,8 @@ public:
 
     /// Per-value estimations.
     /// Throws if the statistics object is not able to do a meaningful estimation.
-    virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
-    virtual Float64 estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
+    virtual Float64 estimateEqual(Float64 val) const; /// cardinality of val in the column
+    virtual Float64 estimateLess(Float64 val) const;  /// summarized cardinality of values < val in the column
 
 protected:
     SingleStatisticsDescription stat;
@@ -66,9 +58,9 @@ public:
 
     void update(const ColumnPtr & column);
 
-    Float64 estimateLess(const Field & val) const;
-    Float64 estimateGreater(const Field & val) const;
-    Float64 estimateEqual(const Field & val) const;
+    Float64 estimateLess(Float64 val) const;
+    Float64 estimateGreater(Float64 val) const;
+    Float64 estimateEqual(Float64 val) const;
 
 private:
     friend class MergeTreeStatisticsFactory;
@@ -86,10 +78,10 @@ class MergeTreeStatisticsFactory : private boost::noncopyable
 public:
     static MergeTreeStatisticsFactory & instance();
 
-    void validate(const ColumnStatisticsDescription & stats, const DataTypePtr & data_type) const;
+    void validate(const ColumnStatisticsDescription & stats, DataTypePtr data_type) const;
 
-    using Validator = std::function<void(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
-    using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, const DataTypePtr & data_type)>;
+    using Validator = std::function<void(const SingleStatisticsDescription & stats, DataTypePtr data_type)>;
+    using Creator = std::function<StatisticsPtr(const SingleStatisticsDescription & stats, DataTypePtr data_type)>;
 
     ColumnStatisticsPtr get(const ColumnStatisticsDescription & stats) const;
     ColumnsStatistics getMany(const ColumnsDescription & columns) const;

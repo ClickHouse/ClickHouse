@@ -307,7 +307,7 @@ protected:
     std::shared_ptr<StorageSystemDetachedParts> storage;
     std::vector<UInt8> columns_mask;
 
-    std::optional<ActionsDAG> filter;
+    ActionsDAGPtr filter;
     const size_t max_block_size;
     const size_t num_streams;
 };
@@ -359,7 +359,7 @@ void StorageSystemDetachedParts::read(
 
 void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto state = std::make_shared<SourceState>(StoragesInfoStream({}, std::move(filter), context));
+    auto state = std::make_shared<SourceState>(StoragesInfoStream(nullptr, filter, context));
 
     Pipe pipe;
 

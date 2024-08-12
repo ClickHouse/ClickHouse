@@ -218,27 +218,20 @@ AsyncLoader::~AsyncLoader()
 {
     // All `LoadTask` objects should be destructed before AsyncLoader destruction because they hold a reference.
     // To make sure we check for all pending jobs to be finished.
-    {
-        std::unique_lock lock{mutex};
-        if (!scheduled_jobs.empty() || !finished_jobs.empty())
-        {
-            std::vector<String> scheduled;
-            std::vector<String> finished;
-            scheduled.reserve(scheduled_jobs.size());
-            finished.reserve(finished_jobs.size());
-            for (const auto & [job, _] : scheduled_jobs)
-                scheduled.push_back(job->name);
-            for (const auto & job : finished_jobs)
-                finished.push_back(job->name);
-            LOG_ERROR(log, "Bug. Destruction with pending ({}) and finished ({}) load jobs.", fmt::join(scheduled, ", "), fmt::join(finished, ", "));
-            abort();
-        }
-    }
+    std::unique_lock lock{mutex};
+    if (scheduled_jobs.empty() && finished_jobs.empty())
+        return;
 
-    // When all jobs are done we could still have finalizing workers.
-    // These workers could call updateCurrentPriorityAndSpawn() that scans all pools.
-    // We need to stop all of them before destructing any of them.
-    stop();
+    std::vector<String> scheduled;
+    std::vector<String> finished;
+    scheduled.reserve(scheduled_jobs.size());
+    finished.reserve(finished_jobs.size());
+    for (const auto & [job, _] : scheduled_jobs)
+        scheduled.push_back(job->name);
+    for (const auto & job : finished_jobs)
+        finished.push_back(job->name);
+    LOG_ERROR(log, "Bug. Destruction with pending ({}) and finished ({}) load jobs.", fmt::join(scheduled, ", "), fmt::join(finished, ", "));
+    abort();
 }
 
 void AsyncLoader::start()

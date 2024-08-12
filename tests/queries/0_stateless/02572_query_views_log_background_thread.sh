@@ -13,16 +13,13 @@ ${CLICKHOUSE_CLIENT} --ignore-error --multiquery --query "drop table if exists b
 
 ${CLICKHOUSE_CLIENT} --query="create table copy_02572 (key Int) engine=Memory();"
 ${CLICKHOUSE_CLIENT} --query="create table data_02572 (key Int) engine=Memory();"
-${CLICKHOUSE_CLIENT} --query="create table buffer_02572 (key Int) engine=Buffer(currentDatabase(), data_02572, 1, 8, 8, 1, 1e9, 1, 1e9);"
+${CLICKHOUSE_CLIENT} --query="create table buffer_02572 (key Int) engine=Buffer(currentDatabase(), data_02572, 1, 3, 3, 1, 1e9, 1, 1e9);"
 ${CLICKHOUSE_CLIENT} --query="create materialized view mv_02572 to copy_02572 as select * from data_02572;"
 
-start=$(date +%s)
 ${CLICKHOUSE_CLIENT} --query="insert into buffer_02572 values (1);"
 
-if [ $(( $(date +%s) - start )) -gt 6 ]; then  # clickhouse test cluster is overloaded, will skip
-    # ensure that the flush was not direct
-    ${CLICKHOUSE_CLIENT} --ignore-error --multiquery --query "select * from data_02572; select * from copy_02572;"
-fi
+# ensure that the flush was not direct
+${CLICKHOUSE_CLIENT} --ignore-error --multiquery --query "select * from data_02572; select * from copy_02572;"
 
 # we cannot use OPTIMIZE, this will attach query context, so let's wait
 for _ in {1..100}; do

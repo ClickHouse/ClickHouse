@@ -68,7 +68,7 @@ public:
 private:
     Chunk read() override;
 
-    void onCancel() noexcept override
+    void onCancel() override
     {
         is_stopped = 1;
     }

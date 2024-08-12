@@ -739,32 +739,9 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     }
     catch (...)
     {
-        /// Don't scare people with broken part error if it's retryable.
+        /// Don't scare people with broken part error
         if (!isRetryableException(std::current_exception()))
-        {
             LOG_ERROR(storage.log, "Part {} is broken and needs manual correction", getDataPartStorage().getFullPath());
-
-            if (Exception * e = exception_cast<Exception *>(std::current_exception()))
-            {
-                /// Probably there is something wrong with files of this part.
-                /// So it can be helpful to add to the error message some information about those files.
-                String files_in_part;
-
-                for (auto it = getDataPartStorage().iterate(); it->isValid(); it->next())
-                {
-                    std::string file_info;
-                    if (!getDataPartStorage().isDirectory(it->name()))
-                        file_info = fmt::format(" ({} bytes)", getDataPartStorage().getFileSize(it->name()));
-
-                    files_in_part += fmt::format("{}{}{}", (files_in_part.empty() ? "" : ", "), it->name(), file_info);
-
-                }
-                if (!files_in_part.empty())
-                    e->addMessage("Part contains files: {}", files_in_part);
-                if (isEmpty())
-                    e->addMessage("Part is empty");
-            }
-        }
 
         // There could be conditions that data part to be loaded is broken, but some of meta infos are already written
         // into metadata before exception, need to clean them all.
@@ -2149,27 +2126,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
             }
         }
 
-        const auto & data_part_storage = getDataPartStorage();
-        for (const auto & [filename, checksum] : checksums.files)
-        {
-            try
-            {
-                checksum.checkSize(data_part_storage, filename);
-            }
-            catch (const Exception & ex)
-            {
-                /// For projection parts check will mark them broken in loadProjections
-                if (!parent_part && filename.ends_with(".proj"))
-                {
-                    std::string projection_name = fs::path(filename).stem();
-                    LOG_INFO(storage.log, "Projection {} doesn't exist on start for part {}, marking it as broken", projection_name, name);
-                    if (hasProjection(projection_name))
-                        markProjectionPartAsBroken(projection_name, ex.message(), ex.code());
-                }
-                else
-                    throw;
-            }
-        }
+        checksums.checkSizes(getDataPartStorage());
     }
     else
     {

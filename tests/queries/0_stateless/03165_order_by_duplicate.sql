@@ -13,4 +13,4 @@ WHERE id IN (
 )
 ORDER BY id ASC
 LIMIT 1 BY id
-SETTINGS enable_analyzer = 1;
+SETTINGS allow_experimental_analyzer = 1;
