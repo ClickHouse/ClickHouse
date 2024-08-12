@@ -80,14 +80,14 @@ static DataTypePtr create(const ASTPtr & arguments)
         const auto * precision_arg = arguments->children[0]->as<ASTLiteral>();
         if (!precision_arg || precision_arg->value.getType() != Field::Types::UInt64)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Decimal argument precision is invalid");
-        precision = precision_arg->value.get<UInt64>();
+        precision = precision_arg->value.safeGet<UInt64>();
 
         if (arguments->children.size() == 2)
         {
             const auto * scale_arg = arguments->children[1]->as<ASTLiteral>();
             if (!scale_arg || !isInt64OrUInt64FieldType(scale_arg->value.getType()))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Decimal argument scale is invalid");
-            scale = scale_arg->value.get<UInt64>();
+            scale = scale_arg->value.safeGet<UInt64>();
         }
     }
 
@@ -107,7 +107,7 @@ static DataTypePtr createExact(const ASTPtr & arguments)
         "Decimal32 | Decimal64 | Decimal128 | Decimal256 data type family must have a one number as its argument");
 
     UInt64 precision = DecimalUtils::max_precision<T>;
-    UInt64 scale = scale_arg->value.get<UInt64>();
+    UInt64 scale = scale_arg->value.safeGet<UInt64>();
 
     return createDecimal<DataTypeDecimal>(precision, scale);
 }

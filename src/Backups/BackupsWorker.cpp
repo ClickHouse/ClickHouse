@@ -490,6 +490,8 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
 
             /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
             auto process_list_element = context_in_use->getProcessListElement();
+            /// Update context to preserve query information in processlist (settings, current_database)
+            process_list_element->updateContext(context_in_use);
 
             thread_pool.scheduleOrThrowOnError(
                 [this,
@@ -853,6 +855,8 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
 
             /// process_list_element_holder is used to make an element in ProcessList live while RESTORE is working asynchronously.
             auto process_list_element = context_in_use->getProcessListElement();
+            /// Update context to preserve query information in processlist (settings, current_database)
+            process_list_element->updateContext(context_in_use);
 
             thread_pool.scheduleOrThrowOnError(
                 [this,

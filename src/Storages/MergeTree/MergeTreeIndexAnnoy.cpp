@@ -343,12 +343,12 @@ MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
     static constexpr auto DEFAULT_DISTANCE_FUNCTION = DISTANCE_FUNCTION_L2;
     String distance_function = DEFAULT_DISTANCE_FUNCTION;
     if (!index.arguments.empty())
-        distance_function = index.arguments[0].get<String>();
+        distance_function = index.arguments[0].safeGet<String>();
 
     static constexpr auto DEFAULT_TREES = 100uz;
     UInt64 trees = DEFAULT_TREES;
     if (index.arguments.size() > 1)
-        trees = index.arguments[1].get<UInt64>();
+        trees = index.arguments[1].safeGet<UInt64>();
 
     return std::make_shared<MergeTreeIndexAnnoy>(index, trees, distance_function);
 }
@@ -375,7 +375,7 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
 
     if (!index.arguments.empty())
     {
-        String distance_name = index.arguments[0].get<String>();
+        String distance_name = index.arguments[0].safeGet<String>();
         if (distance_name != DISTANCE_FUNCTION_L2 && distance_name != DISTANCE_FUNCTION_COSINE)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Annoy index only supports distance functions '{}' and '{}'", DISTANCE_FUNCTION_L2, DISTANCE_FUNCTION_COSINE);
     }

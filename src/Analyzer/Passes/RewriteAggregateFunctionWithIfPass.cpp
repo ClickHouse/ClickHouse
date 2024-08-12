@@ -60,7 +60,7 @@ public:
         {
             const auto & second_const_value = second_const_node->getValue();
             if (second_const_value.isNull()
-                || (lower_name == "sum" && isInt64OrUInt64FieldType(second_const_value.getType()) && second_const_value.get<UInt64>() == 0
+                || (lower_name == "sum" && isInt64OrUInt64FieldType(second_const_value.getType()) && second_const_value.safeGet<UInt64>() == 0
                     && !if_node->getResultType()->isNullable()))
             {
                 /// avg(if(cond, a, null)) -> avgIf(a::ResultTypeIf, cond)
@@ -89,7 +89,7 @@ public:
         {
             const auto & first_const_value = first_const_node->getValue();
             if (first_const_value.isNull()
-                || (lower_name == "sum" && isInt64OrUInt64FieldType(first_const_value.getType()) && first_const_value.get<UInt64>() == 0
+                || (lower_name == "sum" && isInt64OrUInt64FieldType(first_const_value.getType()) && first_const_value.safeGet<UInt64>() == 0
                     && !if_node->getResultType()->isNullable()))
             {
                 /// avg(if(cond, null, a) -> avgIf(a::ResultTypeIf, !cond))
