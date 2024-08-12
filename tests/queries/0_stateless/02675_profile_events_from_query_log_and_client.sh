@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-random-merge-tree-settings
 # Tag no-fasttest: needs s3
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
