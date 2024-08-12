@@ -1956,11 +1956,8 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                         auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
                             ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
                             : common_type;
-                        ColumnsWithTypeAndName arguments{
-                            {nullptr, key_expr_type, ""},
-                            {DataTypeString().createColumnConst(1, common_type_maybe_nullable->getName()), common_type_maybe_nullable, ""}};
-                        FunctionOverloadResolverPtr func_builder_cast = createInternalCastOverloadResolver(CastType::nonAccurate, {});
-                        auto func_cast = func_builder_cast->build(arguments);
+
+                        auto func_cast = createInternalCast({key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {});
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
                         if (!single_point && !func_cast->hasInformationAboutMonotonicity())
