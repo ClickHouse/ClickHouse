@@ -374,6 +374,11 @@ void Server::uninitialize()
 {
     logger().information("shutting down");
     BaseDaemon::uninitialize();
+
+    global_context->shutdown();
+    shared_context_holder.reset();
+    global_context.reset();
+    LOG_DEBUG(&logger(), "Destroyed global context: use_count={}", global_context.use_count());
 }
 
 int Server::run()
@@ -399,6 +404,15 @@ int Server::run()
 void Server::initialize(Poco::Util::Application & self)
 {
     ConfigProcessor::registerEmbeddedConfig("config.xml", std::string_view(reinterpret_cast<const char *>(gresource_embedded_xmlData), gresource_embedded_xmlSize));
+
+    /** Context contains all that query execution is dependent:
+      *  settings, available functions, data types, aggregate functions, databases, ...
+      */
+    shared_context_holder = Context::createShared();
+    global_context = Context::createGlobal(shared_context_holder.get());
+    global_context->makeGlobalContext();
+    global_context->setApplicationType(Context::ApplicationType::SERVER);
+
     BaseDaemon::initialize(self);
     logger().information("starting up");
 
@@ -778,15 +792,6 @@ try
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
-    /** Context contains all that query execution is dependent:
-      *  settings, available functions, data types, aggregate functions, databases, ...
-      */
-    auto shared_context = Context::createShared();
-    global_context = Context::createGlobal(shared_context.get());
-
-    global_context->makeGlobalContext();
-    global_context->setApplicationType(Context::ApplicationType::SERVER);
-
 #if !defined(NDEBUG) || !defined(__OPTIMIZE__)
     global_context->addWarningMessage("Server was built in debug mode. It will work slowly.");
 #endif
@@ -974,13 +979,6 @@ try
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
-
-        /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
-          * At this moment, no one could own shared part of Context.
-          */
-        global_context.reset();
-        shared_context.reset();
-        LOG_DEBUG(log, "Destroyed global context.");
     });
 
 

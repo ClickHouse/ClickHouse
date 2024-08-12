@@ -7,6 +7,7 @@
 #include <Server/TCPProtocolStackFactory.h>
 #include <Server/ServerType.h>
 #include <Poco/Net/HTTPServerParams.h>
+#include <Interpreters/ContextShared_fwd.h>
 
 /** Server provides three interfaces:
   * 1. HTTP - simple interface for any applications.
@@ -70,6 +71,7 @@ protected:
     std::string getDefaultCorePath() const override;
 
 private:
+    SharedContextHolder shared_context_holder;
     ContextMutablePtr global_context;
     /// Updated/recent config, to compare http_handlers
     ConfigurationPtr latest_config;
