@@ -199,6 +199,8 @@ ${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO source SELECT * FROM gen
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM destination1"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM destination2"
 
+(( $(${CLICKHOUSE_CLIENT} --query "ALTER TABLE test_table MODIFY SQL SECURITY INVOKER" 2>&1 | grep -c "is not supported") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+
 echo "===== TestGrants ====="
 ${CLICKHOUSE_CLIENT} --query "GRANT CREATE ON *.* TO $user1"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_table TO $user1, $user2"

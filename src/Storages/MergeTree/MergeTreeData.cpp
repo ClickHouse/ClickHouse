@@ -1071,7 +1071,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto virtual_columns_block = getBlockWithVirtualsForFilter({parts[0]});
 
-    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), nullptr);
+    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), nullptr, /*allow_partial_result=*/ false);
     if (!filter_dag)
         return {};
 
@@ -3107,6 +3107,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         if (command.type == AlterCommand::MODIFY_REFRESH)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                             "ALTER MODIFY REFRESH is not supported by MergeTree engines family");
+
+        if (command.type == AlterCommand::MODIFY_SQL_SECURITY)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "ALTER MODIFY SQL SECURITY is not supported by MergeTree engines family");
 
         if (command.type == AlterCommand::MODIFY_ORDER_BY && !is_custom_partitioned)
         {
@@ -6757,7 +6761,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         const auto * predicate = filter_dag->getOutputs().at(0);
 
         // Generate valid expressions for filtering
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, virtual_columns_block, query_context);
+        VirtualColumnUtils::filterBlockWithPredicate(
+            predicate, virtual_columns_block, query_context, /*allow_filtering_with_partial_predicate =*/true);
 
         rows = virtual_columns_block.rows();
         part_name_column = virtual_columns_block.getByName("_part").column;
