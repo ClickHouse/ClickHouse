@@ -1363,7 +1363,7 @@ bool HashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table
 template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
 void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
 {
-    constexpr JoinFeatures<KIND, STRICTNESS> join_features;
+    constexpr JoinFeatures<KIND, STRICTNESS, Map> join_features;
     if constexpr (join_features.is_all_join && (join_features.left || join_features.inner))
     {
         auto merge_rows_into_one_block = [&](BlocksList & blocks, RowRefList & rows_ref)
@@ -1433,13 +1433,12 @@ void HashJoin::tryRerangeRightTableData()
             data->rows_to_join, data->keys_to_join, sample_block_with_columns_to_add.columns());
         return;
     }
-    std::cout << "sort right table rows" << std::endl;
     joinDispatch(
         kind,
         strictness,
         data->maps.front(),
+        false,
         [&](auto kind_, auto strictness_, auto & map_) { tryRerangeRightTableDataImpl<kind_, decltype(map_), strictness_>(map_); });
-    std::cout << "sort right finished" << std::endl;
     data->sorted = true;
 }
 
