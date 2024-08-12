@@ -1,7 +1,6 @@
 #include <string_view>
 #include <Storages/System/StorageSystemDashboards.h>
 #include <Common/StringUtils.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -23,9 +22,9 @@ String trim(const char * text)
     return String(view);
 }
 
-void StorageSystemDashboards::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemDashboards::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    static const std::vector<std::map<String, String>> default_dashboards
+    static const std::vector<std::map<String, String>> dashboards
     {
         /// Default dashboard for self-managed ClickHouse
         {
@@ -215,20 +214,6 @@ GROUP BY t
 ORDER BY t WITH FILL STEP {rounding:UInt32}
 )EOQ") }
         },
-        {
-            { "dashboard", "Overview" },
-            { "title", "Concurrent network connections" },
-            { "query", trim(R"EOQ(
-SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
-    sum(CurrentMetric_TCPConnection) AS TCP_Connections,
-    sum(CurrentMetric_MySQLConnection) AS MySQL_Connections,
-    sum(CurrentMetric_HTTPConnection) AS HTTP_Connections
-FROM merge('system', '^metric_log')
-WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
-GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32}
-)EOQ") }
-        },
         /// Default dashboard for ClickHouse Cloud
         {
             { "dashboard", "Cloud overview" },
@@ -364,30 +349,16 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
             { "dashboard", "Cloud overview" },
             { "title", "Network send bytes/sec" },
             { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)\nFROM (\n  SELECT event_time, sum(value) AS value\n  FROM clusterAllReplicas(default, merge('system', '^asynchronous_metric_log'))\n  WHERE event_date >= toDate(now() - {seconds:UInt32})\n    AND event_time >= now() - {seconds:UInt32}\n    AND metric LIKE 'NetworkSendBytes%'\n  GROUP BY event_time)\nGROUP BY t\nORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
-        },
-        {
-            { "dashboard", "Cloud overview" },
-            { "title", "Concurrent network connections" },
-            { "query", "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, max(TCP_Connections), max(MySQL_Connections), max(HTTP_Connections) FROM (SELECT event_time, sum(CurrentMetric_TCPConnection) AS TCP_Connections, sum(CurrentMetric_MySQLConnection) AS MySQL_Connections, sum(CurrentMetric_HTTPConnection) AS HTTP_Connections FROM clusterAllReplicas(default, merge('system', '^metric_log')) WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32} GROUP BY event_time) GROUP BY t ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1" }
         }
     };
 
-    auto add_dashboards = [&](const auto & dashboards)
+    for (const auto & row : dashboards)
     {
-        for (const auto & row : dashboards)
-        {
-            size_t i = 0;
-            res_columns[i++]->insert(row.at("dashboard"));
-            res_columns[i++]->insert(row.at("title"));
-            res_columns[i++]->insert(row.at("query"));
-        }
-    };
-
-    const auto & context_dashboards = context->getDashboards();
-    if (context_dashboards.has_value())
-        add_dashboards(*context_dashboards);
-    else
-        add_dashboards(default_dashboards);
+        size_t i = 0;
+        res_columns[i++]->insert(row.at("dashboard"));
+        res_columns[i++]->insert(row.at("title"));
+        res_columns[i++]->insert(row.at("query"));
+    }
 }
 
 }

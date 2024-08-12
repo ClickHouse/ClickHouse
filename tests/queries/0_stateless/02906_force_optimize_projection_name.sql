@@ -17,9 +17,9 @@ INSERT INTO test SELECT number, 'test' FROM numbers(1, 100);
 
 SELECT name FROM test GROUP BY name SETTINGS force_optimize_projection_name='projection_name';
 
-SELECT name FROM test GROUP BY name SETTINGS force_optimize_projection_name='non_existing_projection'; -- { serverError INCORRECT_DATA }
+SELECT name FROM test GROUP BY name SETTINGS force_optimize_projection_name='non_existing_projection'; -- { serverError 117 }
 
-SELECT name FROM test SETTINGS force_optimize_projection_name='projection_name'; -- { serverError INCORRECT_DATA }
+SELECT name FROM test SETTINGS force_optimize_projection_name='projection_name'; -- { serverError 117 }
 
 INSERT INTO test SELECT number, 'test' FROM numbers(1, 100) SETTINGS force_optimize_projection_name='projection_name';
 SELECT 1 SETTINGS force_optimize_projection_name='projection_name';

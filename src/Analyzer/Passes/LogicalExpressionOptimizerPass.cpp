@@ -8,11 +8,9 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/Utils.h>
-#include <Core/Settings.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeTuple.h>
 
 namespace DB
 {
@@ -662,7 +660,6 @@ private:
             bool is_any_nullable = false;
             Tuple args;
             args.reserve(equals_functions.size());
-            DataTypes tuple_element_types;
             /// first we create tuple from RHS of equals functions
             for (const auto & equals : equals_functions)
             {
@@ -675,18 +672,16 @@ private:
                 if (const auto * rhs_literal = equals_arguments[1]->as<ConstantNode>())
                 {
                     args.push_back(rhs_literal->getValue());
-                    tuple_element_types.push_back(rhs_literal->getResultType());
                 }
                 else
                 {
                     const auto * lhs_literal = equals_arguments[0]->as<ConstantNode>();
                     assert(lhs_literal);
                     args.push_back(lhs_literal->getValue());
-                    tuple_element_types.push_back(lhs_literal->getResultType());
                 }
             }
 
-            auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
+            auto rhs_node = std::make_shared<ConstantNode>(std::move(args));
 
             auto in_function = std::make_shared<FunctionNode>("in");
 
@@ -697,25 +692,14 @@ private:
 
             in_function->getArguments().getNodes() = std::move(in_arguments);
             in_function->resolveAsFunction(in_function_resolver);
-
-            DataTypePtr result_type = in_function->getResultType();
-            const auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(result_type.get());
-            if (type_low_cardinality)
-                result_type = type_low_cardinality->getDictionaryType();
             /** For `k :: UInt8`, expression `k = 1 OR k = NULL` with result type Nullable(UInt8)
               * is replaced with `k IN (1, NULL)` with result type UInt8.
               * Convert it back to Nullable(UInt8).
-              * And for `k :: LowCardinality(UInt8)`, the transformation of `k IN (1, NULL)` results in type LowCardinality(UInt8).
-              * Convert it to LowCardinality(Nullable(UInt8)).
               */
-            if (is_any_nullable && !result_type->isNullable())
+            if (is_any_nullable && !in_function->getResultType()->isNullable())
             {
-                DataTypePtr new_result_type = std::make_shared<DataTypeNullable>(result_type);
-                if (type_low_cardinality)
-                {
-                    new_result_type = std::make_shared<DataTypeLowCardinality>(new_result_type);
-                }
-                auto in_function_nullable = createCastFunction(std::move(in_function), std::move(new_result_type), getContext());
+                auto nullable_result_type = std::make_shared<DataTypeNullable>(in_function->getResultType());
+                auto in_function_nullable = createCastFunction(std::move(in_function), std::move(nullable_result_type), getContext());
                 or_operands.push_back(std::move(in_function_nullable));
             }
             else

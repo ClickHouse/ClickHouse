@@ -26,6 +26,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <base/sort.h>
+#include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
@@ -77,6 +78,115 @@ namespace ErrorCodes
 
 namespace
 {
+/** Collects observed HashMap-s sizes to avoid redundant intermediate resizes.
+  */
+class HashTablesStatistics
+{
+public:
+    struct Entry
+    {
+        size_t sum_of_sizes; // used to determine if it's better to convert aggregation to two-level from the beginning
+        size_t median_size; // roughly the size we're going to preallocate on each thread
+    };
+
+    using Cache = DB::CacheBase<UInt64, Entry>;
+    using CachePtr = std::shared_ptr<Cache>;
+    using Params = DB::Aggregator::Params::StatsCollectingParams;
+
+    /// Collection and use of the statistics should be enabled.
+    std::optional<Entry> getSizeHint(const Params & params)
+    {
+        if (!params.isCollectionAndUseEnabled())
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
+
+        std::lock_guard lock(mutex);
+        const auto cache = getHashTableStatsCache(params, lock);
+        if (const auto hint = cache->get(params.key))
+        {
+            LOG_TRACE(
+                getLogger("Aggregator"),
+                "An entry for key={} found in cache: sum_of_sizes={}, median_size={}",
+                params.key,
+                hint->sum_of_sizes,
+                hint->median_size);
+            return *hint;
+        }
+        return std::nullopt;
+    }
+
+    /// Collection and use of the statistics should be enabled.
+    void update(size_t sum_of_sizes, size_t median_size, const Params & params)
+    {
+        if (!params.isCollectionAndUseEnabled())
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
+
+        std::lock_guard lock(mutex);
+        const auto cache = getHashTableStatsCache(params, lock);
+        const auto hint = cache->get(params.key);
+        // We'll maintain the maximum among all the observed values until the next prediction turns out to be too wrong.
+        if (!hint || sum_of_sizes < hint->sum_of_sizes / 2 || hint->sum_of_sizes < sum_of_sizes || median_size < hint->median_size / 2
+            || hint->median_size < median_size)
+        {
+            LOG_TRACE(
+                getLogger("Aggregator"),
+                "Statistics updated for key={}: new sum_of_sizes={}, median_size={}",
+                params.key,
+                sum_of_sizes,
+                median_size);
+            cache->set(params.key, std::make_shared<Entry>(Entry{.sum_of_sizes = sum_of_sizes, .median_size = median_size}));
+        }
+    }
+
+    std::optional<DB::HashTablesCacheStatistics> getCacheStats() const
+    {
+        std::lock_guard lock(mutex);
+        if (hash_table_stats)
+        {
+            size_t hits = 0, misses = 0;
+            hash_table_stats->getStats(hits, misses);
+            return DB::HashTablesCacheStatistics{.entries = hash_table_stats->count(), .hits = hits, .misses = misses};
+        }
+        return std::nullopt;
+    }
+
+    static size_t calculateCacheKey(const DB::ASTPtr & select_query)
+    {
+        if (!select_query)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Query ptr cannot be null");
+
+        const auto & select = select_query->as<DB::ASTSelectQuery &>();
+
+        // It may happen in some corner cases like `select 1 as num group by num`.
+        if (!select.tables())
+            return 0;
+
+        SipHash hash;
+        hash.update(select.tables()->getTreeHash(/*ignore_aliases=*/ true));
+        if (const auto where = select.where())
+            hash.update(where->getTreeHash(/*ignore_aliases=*/ true));
+        if (const auto group_by = select.groupBy())
+            hash.update(group_by->getTreeHash(/*ignore_aliases=*/ true));
+        return hash.get64();
+    }
+
+private:
+    CachePtr getHashTableStatsCache(const Params & params, const std::lock_guard<std::mutex> &)
+    {
+        if (!hash_table_stats || hash_table_stats->maxSizeInBytes() != params.max_entries_for_hash_table_stats)
+            hash_table_stats = std::make_shared<Cache>(params.max_entries_for_hash_table_stats);
+        return hash_table_stats;
+    }
+
+    mutable std::mutex mutex;
+    CachePtr hash_table_stats;
+};
+
+HashTablesStatistics & getHashTablesStatistics()
+{
+    static HashTablesStatistics hash_tables_stats;
+    return hash_tables_stats;
+}
+
 bool worthConvertToTwoLevel(
     size_t group_by_two_level_threshold, size_t result_size, size_t group_by_two_level_threshold_bytes, auto result_size_bytes)
 {
@@ -105,29 +215,49 @@ void initDataVariantsWithSizeHint(
     DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
 {
     const auto & stats_collecting_params = params.stats_collecting_params;
-    const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
-    if (auto hint = getSizeHint(stats_collecting_params, /*tables_cnt=*/max_threads))
+    if (stats_collecting_params.isCollectionAndUseEnabled())
     {
-        if (worthConvertToTwoLevel(
-                params.group_by_two_level_threshold,
-                hint->sum_of_sizes,
-                /*group_by_two_level_threshold_bytes*/ 0,
-                /*result_size_bytes*/ 0))
-            method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
-        result.init(method_chosen, hint->median_size);
+        if (auto hint = getHashTablesStatistics().getSizeHint(stats_collecting_params))
+        {
+            const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
+            const auto lower_limit = hint->sum_of_sizes / max_threads;
+            const auto upper_limit = stats_collecting_params.max_size_to_preallocate_for_aggregation / max_threads;
+            if (hint->median_size > upper_limit)
+            {
+                /// Since we cannot afford to preallocate as much as we want, we will likely need to do resize anyway.
+                /// But we will also work with the big (i.e. not so cache friendly) HT from the beginning which may result in a slight slowdown.
+                /// So let's just do nothing.
+                LOG_TRACE(
+                    getLogger("Aggregator"),
+                    "No space were preallocated in hash tables because 'max_size_to_preallocate_for_aggregation' has too small value: {}, "
+                    "should be at least {}",
+                    stats_collecting_params.max_size_to_preallocate_for_aggregation,
+                    hint->median_size * max_threads);
+            }
+            /// https://github.com/ClickHouse/ClickHouse/issues/44402#issuecomment-1359920703
+            else if ((max_threads > 1 && hint->sum_of_sizes > 100'000) || hint->sum_of_sizes > 500'000)
+            {
+                const auto adjusted = std::max(lower_limit, hint->median_size);
+                if (worthConvertToTwoLevel(
+                        params.group_by_two_level_threshold,
+                        hint->sum_of_sizes,
+                        /*group_by_two_level_threshold_bytes*/ 0,
+                        /*result_size_bytes*/ 0))
+                    method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
+                result.init(method_chosen, adjusted);
+                ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
+                return;
+            }
+        }
     }
-    else
-    {
-        result.init(method_chosen);
-    }
-    ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
+    result.init(method_chosen);
 }
 
 /// Collection and use of the statistics should be enabled.
-void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, const DB::StatsCollectingParams & params)
+void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, const DB::Aggregator::Params::StatsCollectingParams & params)
 {
     if (!params.isCollectionAndUseEnabled())
-        return;
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
 
     std::vector<size_t> sizes(data_variants.size());
     for (size_t i = 0; i < data_variants.size(); ++i)
@@ -135,7 +265,7 @@ void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, cons
     const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
     std::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
-    DB::getHashTablesStatistics().update(sum_of_sizes, *median_size, params);
+    getHashTablesStatistics().update(sum_of_sizes, *median_size, params);
 }
 
 DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)
@@ -169,6 +299,24 @@ size_t getMinBytesForPrefetch()
 
 namespace DB
 {
+
+std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics()
+{
+    return getHashTablesStatistics().getCacheStats();
+}
+
+Aggregator::Params::StatsCollectingParams::StatsCollectingParams() = default;
+
+Aggregator::Params::StatsCollectingParams::StatsCollectingParams(
+    const ASTPtr & select_query_,
+    bool collect_hash_table_stats_during_aggregation_,
+    size_t max_entries_for_hash_table_stats_,
+    size_t max_size_to_preallocate_for_aggregation_)
+    : key(collect_hash_table_stats_during_aggregation_ ? HashTablesStatistics::calculateCacheKey(select_query_) : 0)
+    , max_entries_for_hash_table_stats(max_entries_for_hash_table_stats_)
+    , max_size_to_preallocate_for_aggregation(max_size_to_preallocate_for_aggregation_)
+{
+}
 
 Block Aggregator::getHeader(bool final) const
 {
@@ -2635,7 +2783,8 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
 
     LOG_TRACE(log, "Merging aggregated data");
 
-    updateStatistics(data_variants, params.stats_collecting_params);
+    if (params.stats_collecting_params.isCollectionAndUseEnabled())
+        updateStatistics(data_variants, params.stats_collecting_params);
 
     ManyAggregatedDataVariants non_empty_data;
     non_empty_data.reserve(data_variants.size());
@@ -2997,11 +3146,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         std::unique_ptr<ThreadPool> thread_pool;
         if (max_threads > 1 && total_input_rows > 100000)    /// TODO Make a custom threshold.
-            thread_pool = std::make_unique<ThreadPool>(
-                CurrentMetrics::AggregatorThreads,
-                CurrentMetrics::AggregatorThreadsActive,
-                CurrentMetrics::AggregatorThreadsScheduled,
-                max_threads);
+            thread_pool = std::make_unique<ThreadPool>(CurrentMetrics::AggregatorThreads, CurrentMetrics::AggregatorThreadsActive, CurrentMetrics::AggregatorThreadsScheduled, max_threads);
 
         for (const auto & bucket_blocks : bucket_to_blocks)
         {
@@ -3013,10 +3158,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
             result.aggregates_pools.push_back(std::make_shared<Arena>());
             Arena * aggregates_pool = result.aggregates_pools.back().get();
 
-            /// if we don't use thread pool we don't need to attach and definitely don't want to detach from the thread group
-            /// because this thread is already attached
-            auto task = [group = thread_pool != nullptr ? CurrentThread::getGroup() : nullptr, bucket, &merge_bucket, aggregates_pool]
-            { merge_bucket(bucket, aggregates_pool, group); };
+            auto task = [group = CurrentThread::getGroup(), bucket, &merge_bucket, aggregates_pool]{ merge_bucket(bucket, aggregates_pool, group); };
 
             if (thread_pool)
                 thread_pool->scheduleOrThrowOnError(task);
@@ -3307,17 +3449,6 @@ void NO_INLINE Aggregator::destroyImpl(Table & table) const
 
         data = nullptr;
     });
-
-    if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
-    {
-        if (table.getNullKeyData() != nullptr)
-        {
-            for (size_t i = 0; i < params.aggregates_size; ++i)
-                aggregate_functions[i]->destroy(table.getNullKeyData() + offsets_of_aggregate_states[i]);
-
-            table.getNullKeyData() = nullptr;
-        }
-    }
 }
 
 
@@ -3355,23 +3486,4 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result) cons
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 }
 
-UInt64 calculateCacheKey(const DB::ASTPtr & select_query)
-{
-    if (!select_query)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Query ptr cannot be null");
-
-    const auto & select = select_query->as<DB::ASTSelectQuery &>();
-
-    // It may happen in some corner cases like `select 1 as num group by num`.
-    if (!select.tables())
-        return 0;
-
-    SipHash hash;
-    hash.update(select.tables()->getTreeHash(/*ignore_aliases=*/true));
-    if (const auto where = select.where())
-        hash.update(where->getTreeHash(/*ignore_aliases=*/true));
-    if (const auto group_by = select.groupBy())
-        hash.update(group_by->getTreeHash(/*ignore_aliases=*/true));
-    return hash.get64();
-}
 }
