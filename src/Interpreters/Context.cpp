@@ -4754,7 +4754,7 @@ void Context::stopServers(const ServerType & server_type) const
 }
 
 
-void Context::shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
+void Context::shutdown()
 {
     shared->shutdown();
 }
