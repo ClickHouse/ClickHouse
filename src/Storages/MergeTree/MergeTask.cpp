@@ -944,8 +944,13 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
 
 MergeTask::StageRuntimeContextPtr MergeTask::MergeProjectionsStage::getContextForNextStage()
 {
-    ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
-    ProfileEvents::increment(ProfileEvents::MergeProjectionStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    /// Do not increment for projection stage because time is already accounted in main task.
+    /// The projection stage has its own empty projection stage which may add a drift of severals milliseconds.
+    if (global_ctx->parent_part == nullptr)
+    {
+        ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+        ProfileEvents::increment(ProfileEvents::MergeProjectionStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    }
 
     return nullptr;
 }
@@ -1034,14 +1039,14 @@ bool MergeTask::execute()
     UInt64 stage_elapsed_ms = current_elapsed_ms - global_ctx->prev_elapsed_ms;
     global_ctx->prev_elapsed_ms = current_elapsed_ms;
 
+    auto next_stage_context = current_stage->getContextForNextStage();
+
     /// Do not increment for projection stage because time is already accounted in main task.
     if (global_ctx->parent_part == nullptr)
     {
         ProfileEvents::increment(current_stage->getTotalTimeProfileEvent(), stage_elapsed_ms);
         ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, stage_elapsed_ms);
     }
-
-    auto next_stage_context = current_stage->getContextForNextStage();
 
     /// Move to the next stage in an array of stages
     ++stages_iterator;
