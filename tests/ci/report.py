@@ -738,7 +738,7 @@ def create_test_html_report(
     if test_results:
         rows_part = []
         num_fails = 0
-        has_test_time = False
+        has_test_time = any(tr.time is not None for tr in test_results)
         has_log_urls = False
 
         # Display entires with logs at the top (they correspond to failed tests)
@@ -770,9 +770,11 @@ def create_test_html_report(
             row.append(f'<td {fail_id}style="{style}">{test_result.status}</td>')
             colspan += 1
 
-            if test_result.time is not None:
-                has_test_time = True
-                row.append(f"<td>{test_result.time}</td>")
+            if has_test_time:
+                if test_result.time is not None:
+                    row.append(f"<td>{test_result.time}</td>")
+                else:
+                    row.append("<td></td>")
                 colspan += 1
 
             if test_result.log_urls is not None:
