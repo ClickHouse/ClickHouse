@@ -36,5 +36,5 @@ create table test (json JSON(SKIP `some path`.`path some`)) engine=Memory;
 drop table test;
 create table test (json JSON(SKIP REGEXP '.*a.*')) engine=Memory;
 drop table test;
-create table test (json JSON(max_dynamic_paths=10, max_dynamic_types=10, a.b.c UInt32, b.c.d String, SKIP g.d.a, SKIP o.g.a, SKIP REGEXP '.*a.*', SKIP REGEXP 'abc')) engine=Memory;
+create table test (json JSON(max_dynamic_paths=10, max_dynamic_types=10, a.b.c UInt32, b.c.d String, SKIP g.d.a, SKIP o.g.a, SKIP REGEXP '.*u.*', SKIP REGEXP 'abc')) engine=Memory;
 drop table test;

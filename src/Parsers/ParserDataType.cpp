@@ -273,8 +273,14 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (type_name == "Nested")
         {
-            ParserNestedTable nested_parser;
-            nested_parser.parse(pos, arg, expected);
+            ParserNameTypePair name_and_type_parser;
+            name_and_type_parser.parse(pos, arg, expected);
+        }
+        else if (type_name == "Tuple")
+        {
+            ParserNameTypePair name_and_type_parser;
+            ParserDataType only_type_parser;
+            name_and_type_parser.parse(pos, arg, expected) || only_type_parser.parse(pos, arg, expected);
         }
         else if (type_name == "AggregateFunction" || type_name == "SimpleAggregateFunction")
         {
