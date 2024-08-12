@@ -101,7 +101,10 @@ public:
       *
       * Try to read after the end should throw an exception.
       */
-    bool ALWAYS_INLINE eof() { return !hasPendingData() && !next(); }
+    bool ALWAYS_INLINE eof()
+    {
+        return !hasPendingData() && !next();
+    }
 
     void ignore()
     {

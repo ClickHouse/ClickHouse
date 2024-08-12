@@ -64,7 +64,6 @@ minio==7.2.3
 more-itertools==8.10.0
 nats-py==2.6.0
 oauthlib==3.2.0
-pandas==2.2.1
 packaging==24.0
 paramiko==3.4.0
 pika==1.2.0

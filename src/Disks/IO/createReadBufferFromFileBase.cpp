@@ -1,15 +1,14 @@
-#include <Disks/IO/IOUringReader.h>
-#include <Disks/IO/ThreadPoolReader.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Disks/IO/getIOUringReader.h>
-#include <Disks/IO/getThreadPoolReader.h>
-#include <IO/AsynchronousReadBufferFromFile.h>
-#include <IO/AsynchronousReader.h>
-#include <IO/MMapReadBufferFromFileWithCache.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/MMapReadBufferFromFileWithCache.h>
+#include <IO/AsynchronousReadBufferFromFile.h>
+#include <Disks/IO/IOUringReader.h>
+#include <Disks/IO/getIOUringReader.h>
+#include <Disks/IO/ThreadPoolReader.h>
+#include <Disks/IO/getThreadPoolReader.h>
+#include <IO/AsynchronousReader.h>
 #include <Common/ProfileEvents.h>
-#include "ReadBufferFromRemoteFSGather.h"
 #include "config.h"
 
 namespace ProfileEvents
@@ -100,7 +99,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::io_uring)
         {
-
 #if USE_LIBURING
             auto & reader = getIOUringReaderOrThrow();
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
@@ -146,9 +144,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
                 settings.local_throttler);
         }
         else
-        {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown read method");
-        }
+
         return res;
     };
 

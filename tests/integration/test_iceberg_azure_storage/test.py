@@ -37,7 +37,7 @@ from pyspark.sql.window import Window
 from pyspark.sql.readwriter import DataFrameWriter, DataFrameWriterV2
 from minio.deleteobjects import DeleteObject
 
-from tests.integration.helpers.cloud_tools import (
+from tests.integration.helpers.s3_tools import (
     prepare_s3_bucket,
     upload_directory,
     get_file_contents,

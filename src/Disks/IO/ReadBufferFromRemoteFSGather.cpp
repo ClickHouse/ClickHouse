@@ -169,7 +169,6 @@ void ReadBufferFromRemoteFSGather::initialize()
 
 bool ReadBufferFromRemoteFSGather::nextImpl()
 {
-    // LOG_DEBU
     /// Find first available buffer that fits to given offset.
     if (!current_buf)
         initialize();

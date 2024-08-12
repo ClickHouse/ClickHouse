@@ -48,20 +48,10 @@ public:
 
         ConfigurationPtr configuration = base_configuration->clone();
 
-
         try
         {
-            LOG_DEBUG(&Poco::Logger::get("Metadata creating"), "Start1");
             metadata = DataLakeMetadata::create(object_storage, base_configuration, context);
-            LOG_DEBUG(&Poco::Logger::get("Metadata creating"), "Finish1");
-
-            auto data_files = metadata->getDataFiles();
-            LOG_DEBUG(&Poco::Logger::get("Data Files create storage"), "Data files size: {}", data_files.size());
-            for (auto & data_file : data_files)
-            {
-                LOG_DEBUG(&Poco::Logger::get("Data Files create storage"), "Data file name: {}", data_file);
-            }
-            configuration->setPaths(data_files);
+            configuration->setPaths(metadata->getDataFiles());
             if (use_schema_from_metadata)
                 schema_from_metadata = metadata->getTableSchema();
         }
@@ -90,20 +80,9 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr local_context)
     {
-        LOG_DEBUG(&Poco::Logger::get("Metadata creating"), "Start2");
-
         auto metadata = DataLakeMetadata::create(object_storage_, base_configuration, local_context);
 
-        LOG_DEBUG(&Poco::Logger::get("Metadata creating"), "Finish2");
-
-
         auto schema_from_metadata = metadata->getTableSchema();
-        auto data_files = metadata->getDataFiles();
-        LOG_DEBUG(&Poco::Logger::get("Data Files get structure"), "Data files size: {}", data_files.size());
-        for (auto & data_file : data_files)
-        {
-            LOG_DEBUG(&Poco::Logger::get("Data Files get structure"), "Data file name: {}", data_file);
-        }
         if (!schema_from_metadata.empty())
         {
             return ColumnsDescription(std::move(schema_from_metadata));
@@ -111,7 +90,7 @@ public:
         else
         {
             ConfigurationPtr configuration = base_configuration->clone();
-            configuration->setPaths(data_files);
+            configuration->setPaths(metadata->getDataFiles());
             return Storage::resolveSchemaFromData(
                 object_storage_, configuration, format_settings_, local_context);
         }
@@ -120,33 +99,14 @@ public:
     void updateConfiguration(ContextPtr local_context) override
     {
         Storage::updateConfiguration(local_context);
-        LOG_DEBUG(&Poco::Logger::get("Metadata creating"), "Start3");
 
         auto new_metadata = DataLakeMetadata::create(Storage::object_storage, base_configuration, local_context);
-
-        LOG_DEBUG(&Poco::Logger::get("Metadata creating"), "Finish3");
-
         if (current_metadata && *current_metadata == *new_metadata)
             return;
 
-        LOG_DEBUG(&Poco::Logger::get("Update conf"), "Kek 1");
-
-
         current_metadata = std::move(new_metadata);
-
-        LOG_DEBUG(&Poco::Logger::get("Update conf"), "Kek 2");
-
-        auto data_files = current_metadata->getDataFiles();
-
-        LOG_DEBUG(&Poco::Logger::get("Update conf"), "Kek 3");
-
-        LOG_DEBUG(&Poco::Logger::get("Data Files update conf"), "Data files size: {}", data_files.size());
-        for (auto & data_file : data_files)
-        {
-            LOG_DEBUG(&Poco::Logger::get("Data Files update conf"), "Data file name: {}", data_file);
-        }
         auto updated_configuration = base_configuration->clone();
-        updated_configuration->setPaths(data_files);
+        updated_configuration->setPaths(current_metadata->getDataFiles());
         updated_configuration->setPartitionColumns(current_metadata->getPartitionColumns());
 
         Storage::configuration = updated_configuration;
@@ -188,10 +148,7 @@ private:
         if (!current_metadata)
         {
             Storage::updateConfiguration(local_context);
-            LOG_DEBUG(&Poco::Logger::get("Metadata creating"), "Start4");
-
             current_metadata = DataLakeMetadata::create(Storage::object_storage, base_configuration, local_context);
-            LOG_DEBUG(&Poco::Logger::get("Metadata creating"), "Finish4");
         }
         auto column_mapping = current_metadata->getColumnNameToPhysicalNameMapping();
         if (!column_mapping.empty())
