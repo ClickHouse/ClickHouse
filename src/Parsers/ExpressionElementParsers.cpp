@@ -398,7 +398,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             ASTPtr ast_uuid;
             if (!uuid_p.parse(pos, ast_uuid, expected))
                 return false;
-            uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.get<String>());
+            uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
         }
 
         if (parts.size() == 1) node = std::make_shared<ASTTableIdentifier>(parts[0], std::move(params));
@@ -1710,7 +1710,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             if (!parser_string_literal.parse(pos, ast_prefix_name, expected))
                 return false;
 
-            column_name_prefix = ast_prefix_name->as<ASTLiteral &>().value.get<const String &>();
+            column_name_prefix = ast_prefix_name->as<ASTLiteral &>().value.safeGet<const String &>();
         }
 
         if (with_open_round_bracket)
@@ -1773,7 +1773,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
         auto res = std::make_shared<ASTColumnsExceptTransformer>();
         if (regexp_node)
-            res->setPattern(regexp_node->as<ASTLiteral &>().value.get<String>());
+            res->setPattern(regexp_node->as<ASTLiteral &>().value.safeGet<String>());
         else
             res->children = std::move(identifiers);
         res->is_strict = is_strict;
@@ -1945,7 +1945,7 @@ static bool parseColumnsMatcherBody(IParser::Pos & pos, ASTPtr & node, Expected 
     else
     {
         auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
-        regexp_matcher->setPattern(regexp_node->as<ASTLiteral &>().value.get<String>());
+        regexp_matcher->setPattern(regexp_node->as<ASTLiteral &>().value.safeGet<String>());
 
         if (!transformers->children.empty())
         {
@@ -2394,7 +2394,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parser_string_literal.parse(pos, ast_space_name, expected))
             return false;
 
-        destination_name = ast_space_name->as<ASTLiteral &>().value.get<const String &>();
+        destination_name = ast_space_name->as<ASTLiteral &>().value.safeGet<const String &>();
     }
     else if (mode == TTLMode::GROUP_BY)
     {

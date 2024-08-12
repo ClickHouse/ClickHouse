@@ -275,7 +275,7 @@ void ColumnObject::setDynamicPaths(const std::vector<String> & paths)
 
 void ColumnObject::insert(const Field & x)
 {
-    const auto & object = x.get<Object>();
+    const auto & object = x.safeGet<Object>();
     auto & shared_data_offsets = getSharedDataOffsets();
     auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
     size_t current_size = size();
@@ -329,7 +329,7 @@ bool ColumnObject::tryInsert(const Field & x)
     if (x.getType() != Field::Types::Which::Object)
         return false;
 
-    const auto & object = x.get<Object>();
+    const auto & object = x.safeGet<Object>();
     auto & shared_data_offsets = getSharedDataOffsets();
     auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
     size_t prev_size = size();

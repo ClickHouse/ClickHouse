@@ -462,13 +462,13 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
             /// Is 1000000 a good maximum for max paths?
             size_t min_value = identifier_name == "max_dynamic_types" ? 1 : 0;
             size_t max_value = identifier_name == "max_dynamic_types" ? 255 : 1000000;
-            if (!literal || literal->value.getType() != Field::Types::UInt64 || literal->value.get<UInt64>() < min_value || literal->value.get<UInt64>() > max_value)
+            if (!literal || literal->value.getType() != Field::Types::UInt64 || literal->value.safeGet<UInt64>() < min_value || literal->value.safeGet<UInt64>() > max_value)
                 throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "'{}' parameter for {} type should be a positive integer between {} and {}. Got {}", identifier_name, magic_enum::enum_name(schema_format), min_value, max_value, function->arguments->children[1]->formatForErrorMessage());
 
             if (identifier_name == "max_dynamic_types")
-                max_dynamic_types = literal->value.get<UInt64>();
+                max_dynamic_types = literal->value.safeGet<UInt64>();
             else
-                max_dynamic_paths = literal->value.get<UInt64>();
+                max_dynamic_paths = literal->value.safeGet<UInt64>();
         }
         else if (object_type_argument->path_with_type)
         {
@@ -492,7 +492,7 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
             if (!literal || literal->value.getType() != Field::Types::String)
                 throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST in SKIP section of {} type arguments: {}. Expected identifier with path name", magic_enum::enum_name(schema_format), object_type_argument->skip_path->formatForErrorMessage());
 
-            path_regexps_to_skip.push_back(literal->value.get<String>());
+            path_regexps_to_skip.push_back(literal->value.safeGet<String>());
         }
     }
 

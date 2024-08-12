@@ -72,7 +72,7 @@ void ColumnMap::get(size_t n, Field & res) const
     size_t size = offsets[n] - offsets[n - 1];
 
     res = Map();
-    auto & map = res.get<Map &>();
+    auto & map = res.safeGet<Map &>();
     map.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -96,7 +96,7 @@ void ColumnMap::insertData(const char *, size_t)
 
 void ColumnMap::insert(const Field & x)
 {
-    const auto & map = x.get<const Map &>();
+    const auto & map = x.safeGet<const Map &>();
     nested->insert(Array(map.begin(), map.end()));
 }
 
@@ -105,7 +105,7 @@ bool ColumnMap::tryInsert(const Field & x)
     if (x.getType() != Field::Types::Which::Map)
         return false;
 
-    const auto & map = x.get<const Map &>();
+    const auto & map = x.safeGet<const Map &>();
     return nested->tryInsert(Array(map.begin(), map.end()));
 }
 
@@ -293,8 +293,8 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
 
     /// Convert result Array fields to Map fields because client expect min and max field to have type Map
 
-    Array nested_min_value = nested_min.get<Array>();
-    Array nested_max_value = nested_max.get<Array>();
+    Array nested_min_value = nested_min.safeGet<Array>();
+    Array nested_max_value = nested_max.safeGet<Array>();
 
     Map map_min_value(nested_min_value.begin(), nested_min_value.end());
     Map map_max_value(nested_max_value.begin(), nested_max_value.end());
