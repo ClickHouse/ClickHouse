@@ -1,7 +1,6 @@
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <boost/algorithm/string.hpp>
 
 #if USE_SIMDJSON
 #include <Common/JSONParsers/SimdJSONParser.h>
@@ -51,8 +50,6 @@ struct PathElements
                 last_dot_pos = pos;
             }
         }
-
-        boost::split(elements, path, boost::is_any_of("."));
 
         elements.emplace_back(last_dot_pos + 1, size_t(pos - last_dot_pos - 1));
     }
