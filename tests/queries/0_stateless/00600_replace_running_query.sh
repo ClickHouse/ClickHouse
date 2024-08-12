@@ -13,7 +13,18 @@ ${CLICKHOUSE_CLIENT} -q "grant select on system.numbers to u_00600${TEST_PREFIX}
 
 function wait_for_query_to_start()
 {
-    while [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT count() FROM system.processes WHERE query_id = '$1'") == 0 ]]; do sleep 0.1; done
+    while [[ 0 -eq $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT count() FROM system.processes WHERE query_id = '$1'") ]]
+    do
+        sleep 0.1
+    done
+}
+
+function wait_for_queries_to_finish()
+{
+    while [[ 0 -ne $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT count() FROM system.processes WHERE current_database = '${CLICKHOUSE_DATABASE}' AND query NOT LIKE '%this query%'") ]]
+    do
+        sleep 0.1
+    done
 }
 
 
@@ -25,8 +36,9 @@ $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL&query_id=hello&replace_running_query=1" -d
 
 # Wait for it to be replaced
 wait
+wait_for_queries_to_finish
 
-${CLICKHOUSE_CLIENT_BINARY} --user=u_00600${TEST_PREFIX} --query_id=42 --query='SELECT 2, count() FROM system.numbers' 2>&1 | grep -cF 'was cancelled' &
+${CLICKHOUSE_CLIENT_BINARY} --user=u_00600${TEST_PREFIX} --query_id=42 --query='SELECT 2, count() FROM system.numbers' 2>&1 | grep -cF 'QUERY_WAS_CANCELLED' &
 wait_for_query_to_start '42'
 
 # Trying to run another query with the same query_id
@@ -37,10 +49,13 @@ $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL&query_id=42&replace_running_query=1" -d 'S
 
 $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '42' SYNC" > /dev/null
 wait
+wait_for_queries_to_finish
 
-${CLICKHOUSE_CLIENT} --query_id=42 --max_rows_to_read=0 --query='SELECT 3, count() FROM system.numbers' 2>&1 | grep -cF 'was cancelled' &
+${CLICKHOUSE_CLIENT} --query_id=42 --max_rows_to_read=0 --query='SELECT 3, count() FROM system.numbers' 2>&1 | grep -cF 'QUERY_WAS_CANCELLED' &
 wait_for_query_to_start '42'
 ${CLICKHOUSE_CLIENT} --query_id=42 --replace_running_query=1 --replace_running_query_max_wait_ms=500 --query='SELECT 43' 2>&1 | grep -F "can't be stopped" > /dev/null
 wait
+wait_for_queries_to_finish
+
 ${CLICKHOUSE_CLIENT} --query_id=42 --replace_running_query=1 --query='SELECT 44'
 ${CLICKHOUSE_CLIENT} -q "drop user u_00600${TEST_PREFIX}"
