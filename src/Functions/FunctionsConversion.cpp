@@ -4335,7 +4335,7 @@ private:
                         auto type = decodeDataType(buf);
                         auto type_name = type->getName();
                         auto it = shared_variant_to_index.find(type_name);
-                        /// Check if didn't created column for this variant yet.
+                        /// Check if we didn't create column for this variant yet.
                         if (it == shared_variant_to_index.end())
                         {
                             it = shared_variant_to_index.emplace(type_name, variant_columns_from_shared_variant.size()).first;

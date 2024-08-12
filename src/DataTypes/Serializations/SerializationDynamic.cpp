@@ -288,7 +288,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 statistics.variants_statistics[variant->getName()] = variant_size;
             }
 
-            /// Second, rend statistics for shared variants.
+            /// Second, read statistics for shared variants.
             size_t statistics_size;
             readVarUInt(statistics_size, *structure_stream);
             String variant_name;

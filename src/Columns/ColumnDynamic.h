@@ -27,6 +27,10 @@ namespace DB
 class ColumnDynamic final : public COWHelper<IColumnHelper<ColumnDynamic>, ColumnDynamic>
 {
 public:
+    /// Maximum limit on dynamic types. We use ColumnVariant to store all the types,
+    /// so the limit cannot be greater then ColumnVariant::MAX_NESTED_COLUMNS.
+    /// We also always have reserved variant for shared variant.
+    static constexpr size_t MAX_DYNAMIC_TYPES_LIMIT = ColumnVariant::MAX_NESTED_COLUMNS - 1;
     static constexpr const char * SHARED_VARIANT_TYPE_NAME = "SharedVariant";
 
     struct Statistics
@@ -358,6 +362,14 @@ public:
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
+
+    /// Check if we can add new variant types.
+    /// Shared variant doesn't count in the limit but always presents,
+    /// so we should subtract 1 from the total types count.
+    bool canAddNewVariants(size_t current_variants_count, size_t new_variants_count) { return current_variants_count + new_variants_count - 1 <= max_dynamic_types; }
+    bool canAddNewVariant(size_t current_variants_count) { return canAddNewVariants(current_variants_count, 1); }
+    bool canAddNewVariants(size_t new_variants_count) { return canAddNewVariants(variant_info.variant_names.size(), new_variants_count); }
+    bool canAddNewVariant() { return canAddNewVariants(variant_info.variant_names.size(), 1); }
 
     void setVariantType(const DataTypePtr & variant_type);
     void setMaxDynamicPaths(size_t max_dynamic_type_);

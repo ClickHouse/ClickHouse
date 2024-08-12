@@ -115,8 +115,8 @@ bool ColumnDynamic::addNewVariant(const DataTypePtr & new_variant, const String 
     if (variant_info.variant_name_to_discriminator.contains(new_variant_name))
         return true;
 
-    /// Check if we reached maximum number of variants (don't count shared variant).
-    if (variant_info.variant_names.size() - 1 == max_dynamic_types)
+    /// Check if we reached maximum number of variants.
+    if (!canAddNewVariant())
     {
         /// Dynamic column should always have shared variant.
         if (!variant_info.variant_name_to_discriminator.contains(getSharedVariantTypeName()))
@@ -194,8 +194,8 @@ std::vector<ColumnVariant::Discriminator> * ColumnDynamic::combineVariants(const
     {
         const DataTypes & current_variants = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
 
-        /// We cannot combine Variants if total number of variants exceeds max_dynamic_types (don't count shared variant).
-        if (current_variants.size() + num_new_variants - 1 > max_dynamic_types)
+        /// We cannot combine Variants if total number of variants exceeds max_dynamic_types.
+        if (!canAddNewVariants(num_new_variants))
         {
             /// Remember that we cannot combine our variant with this one, so we will not try to do it again.
             variants_with_failed_combination.insert(other_variant_info.variant_name);
@@ -403,11 +403,11 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
         auto shared_variant_discr = getSharedVariantDiscriminator();
         variant_col.insertRangeFrom(*dynamic_src.variant_column, start, length, *global_discriminators_mapping, shared_variant_discr);
 
-        /// We should process insertion from srs shared variant separately, because it can contain
+        /// We should process insertion from src shared variant separately, because it can contain
         /// values that should be extracted into our variants. insertRangeFrom above didn't insert
         /// values into our shared variant (we specified shared_variant_discr as special skip discriminator).
 
-        /// Check if srs shared variant is empty, nothing to do in this case.
+        /// Check if src shared variant is empty, nothing to do in this case.
         if (dynamic_src.getSharedVariant().empty())
             return;
 
@@ -466,7 +466,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
     other_to_new_discriminators.reserve(dynamic_src.variant_info.variant_names.size());
 
     /// Check if we cannot add any more new variants. In this case we will insert all new variants into shared variant.
-    if (variant_info.variant_names.size() - 1 == max_dynamic_types)
+    if (!canAddNewVariant())
     {
         auto shared_variant_discr = getSharedVariantDiscriminator();
         for (const auto & variant_name : dynamic_src.variant_info.variant_names)
@@ -496,7 +496,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
         /// Add new variants from sorted list until we reach max_dynamic_types.
         for (const auto & [_, discr] : new_variants_with_sizes)
         {
-            if (new_variants.size() - 1 == max_dynamic_types)
+            if (!canAddNewVariant(new_variants.size()))
                 break;
             new_variants.push_back(src_variants[discr]);
         }
@@ -846,13 +846,17 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
     /// Check if both values are in shared variant.
     if (left_discr == left_shared_variant_discr && right_discr == right_shared_variant_discr)
     {
-        /// Extract type names from both values.
+        /// First check if both type and value are equal.
         auto left_value = getSharedVariant().getDataAt(left_variant.offsetAt(n));
+        auto right_value = right_dynamic.getSharedVariant().getDataAt(right_variant.offsetAt(m));
+        if (left_value == right_value)
+            return 0;
+
+        /// Extract type names from both values.
         ReadBufferFromMemory buf_left(left_value.data, left_value.size);
         auto left_data_type = decodeDataType(buf_left);
         auto left_data_type_name = left_data_type->getName();
 
-        auto right_value = right_dynamic.getSharedVariant().getDataAt(right_variant.offsetAt(m));
         ReadBufferFromMemory buf_right(right_value.data, right_value.size);
         auto right_data_type = decodeDataType(buf_right);
         auto right_data_type_name = right_data_type->getName();
@@ -977,8 +981,6 @@ ColumnPtr ColumnDynamic::compress() const
 
 void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
-    LOG_DEBUG(getLogger("ColumnDynamic"), "takeDynamicStructureFromSourceColumns");
-
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFromSourceColumns should be called only on empty Dynamic column");
 
@@ -1050,8 +1052,10 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
 
     DataTypePtr result_variant_type;
     Statistics new_statistics(Statistics::Source::MERGE);
+    /// Reset max_dynamic_types to global_max_dynamic_types.
+    max_dynamic_types = global_max_dynamic_types;
     /// Check if the number of all dynamic types exceeds the limit.
-    if (all_variants.size() - 1 > global_max_dynamic_types)
+    if (!canAddNewVariants(0, all_variants.size()))
     {
         /// Create list of variants with their sizes and sort it.
         std::vector<std::pair<size_t, DataTypePtr>> variants_with_sizes;
@@ -1065,11 +1069,13 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
 
         /// Take first max_dynamic_types variants from sorted list and fill shared_variants_statistics with the rest.
         DataTypes result_variants;
-        result_variants.reserve(global_max_dynamic_types + 1);
+        result_variants.reserve(max_dynamic_types + 1); /// +1 for shared variant.
+        /// Add shared variant.
+        result_variants.push_back(getSharedVariantDataType());
         for (const auto & [size, variant] : variants_with_sizes)
         {
             /// Add variant to the resulting variants list until we reach max_dynamic_types.
-            if (result_variants.size() < global_max_dynamic_types)
+            if (canAddNewVariant(result_variants.size()))
                 result_variants.push_back(variant);
             /// Add all remaining variants into shared_variants_statistics until we reach its max size.
             else if (new_statistics.shared_variants_statistics.size() < Statistics::MAX_SHARED_VARIANT_STATISTICS_SIZE)
@@ -1078,8 +1084,6 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
                 break;
         }
 
-        /// Add shared variant.
-        result_variants.push_back(getSharedVariantDataType());
         result_variant_type = std::make_shared<DataTypeVariant>(result_variants);
     }
     else
@@ -1094,8 +1098,9 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
         new_statistics.variants_statistics[variant_name] = total_sizes[variant_name];
     statistics = std::make_shared<const Statistics>(std::move(new_statistics));
 
-    /// Reduce max_dynamic_types to the number of selected variants (without shared variant), so there will be no possibility
+    /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
     /// to extend selected variants on inerts into this column during merges.
+    /// -1 because we don't count shared variant in the limit.
     max_dynamic_types = variant_info.variant_names.size() - 1;
 
     /// Now we have the resulting Variant that will be used in all merged columns.
@@ -1112,7 +1117,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
         {
             /// Try to find this variant in current source column.
             auto it = source_variant_info.variant_name_to_discriminator.find(variant_info.variant_names[i]);
-            if (it != source_variant_info.variant_name_to_discriminator.end())
+            if (it != source_variant_info.variant_name_to_discriminator.end())        /// Add shared variant.
                 variants_source_columns[i].push_back(source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second));
         }
     }
