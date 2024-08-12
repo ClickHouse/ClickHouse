@@ -15,4 +15,4 @@
             </shard>
         </test_cluster>
     </remote_servers>
-</yandex>
+</clickhouse>
