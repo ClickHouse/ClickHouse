@@ -63,7 +63,7 @@ namespace ErrorCodes
 ///  * We dispatch based on the parquet logical+converted+physical type instead of the ClickHouse type.
 /// The idea is that this is similar to what we'll have to do when reimplementing Parquet parsing in
 /// ClickHouse instead of using Arrow (for speed). So, this is an exercise in parsing Parquet manually.
-static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type::type physical_type, const parquet::ColumnDescriptor & descr)
+static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type::type physical_type, const parquet::ColumnDescriptor & descr, TypeIndex type_hint)
 {
     using namespace parquet;
 
@@ -127,20 +127,19 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
         if (size < 32 && (val >> (size * 8 - 1)) != 0)
             val |= ~((Int256(1) << (size * 8)) - 1);
 
-        auto narrow = [&]<typename D>() -> Field {
-            using T = typename D::NativeType;
-            T x = 0;
-            memcpy(&x, &val, sizeof(T));
-            return Field(DecimalField<D>(D(x), static_cast<UInt32>(scale)));
+        auto narrow = [&](auto x) -> Field
+        {
+            memcpy(&x, &val, sizeof(x));
+            return Field(DecimalField<decltype(x)>(x, static_cast<UInt32>(scale)));
         };
         if (size <= 4)
-            return narrow.template operator()<Decimal32>();
+            return narrow(Decimal32(0));
         else if (size <= 8)
-            return narrow.template operator()<Decimal64>();
+            return narrow(Decimal64(0));
         else if (size <= 16)
-            return narrow.template operator()<Decimal128>();
+            return narrow(Decimal128(0));
         else
-            return narrow.template operator()<Decimal256>();
+            return narrow(Decimal256(0));
     }
     while (false);
 
@@ -197,8 +196,6 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
         return Field(val);
     }
 
-    /// Strings.
-
     if (physical_type == Type::type::BYTE_ARRAY || physical_type == Type::type::FIXED_LEN_BYTE_ARRAY)
     {
         /// Arrow's parquet decoder handles missing min/max values slightly incorrectly.
@@ -227,6 +224,25 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
         if (data.empty())
             return Field();
 
+        /// Long integers.
+        auto reinterpret_fixed_string = [&](auto x)
+        {
+            if (data.size() != sizeof(x))
+                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected {} size: {}", fieldTypeToString(Field::TypeToEnum<decltype(x)>::value), data.size());
+            memcpy(&x, data.data(), data.size());
+            return Field(x);
+        };
+        switch (type_hint)
+        {
+            case TypeIndex::UInt128: return reinterpret_fixed_string(UInt128(0));
+            case TypeIndex::UInt256: return reinterpret_fixed_string(UInt256(0));
+            case TypeIndex::Int128:  return reinterpret_fixed_string(Int128(0));
+            case TypeIndex::Int256:  return reinterpret_fixed_string(Int256(0));
+            case TypeIndex::IPv6:    return reinterpret_fixed_string(IPv6(0));
+            default: break;
+        }
+
+        /// Strings.
         return Field(data);
     }
 
@@ -302,6 +318,7 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
         if (type->isNullable())
             type = assert_cast<const DataTypeNullable &>(*type).getNestedType();
         Field default_value = type->getDefault();
+        TypeIndex type_index = type->getTypeId();
 
         /// Only primitive fields are supported, not arrays, maps, tuples, or Nested.
         /// Arrays, maps, and Nested can't be meaningfully supported because Parquet only has min/max
@@ -315,47 +332,47 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
         {
             try
             {
-                min = decodePlainParquetValueSlow(stats->EncodeMin(), stats->physical_type(), *stats->descr());
-                max = decodePlainParquetValueSlow(stats->EncodeMax(), stats->physical_type(), *stats->descr());
+                min = decodePlainParquetValueSlow(stats->EncodeMin(), stats->physical_type(), *stats->descr(), type_index);
+                max = decodePlainParquetValueSlow(stats->EncodeMax(), stats->physical_type(), *stats->descr(), type_index);
+
+                /// If the data type in parquet file substantially differs from the requested data type,
+                /// it's sometimes correct to just typecast the min/max values.
+                /// Other times it's incorrect, e.g.:
+                ///   INSERT INTO FUNCTION file('t.parquet', Parquet, 'x String') VALUES ('1'), ('100'), ('2');
+                ///   SELECT * FROM file('t.parquet', Parquet, 'x Int64') WHERE x >= 3;
+                /// If we just typecast min/max from string to integer, this query will incorrectly return empty result.
+                /// Allow conversion in some simple cases, otherwise ignore the min/max values.
+                auto min_type = min.getType();
+                auto max_type = max.getType();
+                min = convertFieldToType(min, *type);
+                max = convertFieldToType(max, *type);
+                auto ok_cast = [&](Field::Types::Which from, Field::Types::Which to) -> bool
+                {
+                    if (from == to)
+                        return true;
+                    /// Decimal -> wider decimal.
+                    if (Field::isDecimal(from) || Field::isDecimal(to))
+                        return Field::isDecimal(from) && Field::isDecimal(to) && to >= from;
+                    /// Integer -> IP.
+                    if (to == Field::Types::IPv4)
+                        return from == Field::Types::UInt64;
+                    /// Disable index for everything else, especially string <-> number.
+                    return false;
+                };
+                if (!(ok_cast(min_type, min.getType()) && ok_cast(max_type, max.getType())) &&
+                    !(min == max) &&
+                    !(min_type == Field::Types::Int64 && min.getType() == Field::Types::UInt64 && min.get<Int64>() >= 0) &&
+                    !(max_type == Field::Types::UInt64 && max.getType() == Field::Types::Int64 && max.get<UInt64>() <= UInt64(INT64_MAX)))
+                {
+                    min = Field();
+                    max = Field();
+                }
             }
             catch (Exception & e)
             {
                 e.addMessage(" (When parsing Parquet statistics for column {}, physical type {}, {}. Please report an issue and use input_format_parquet_filter_push_down = false to work around.)", name, static_cast<int>(stats->physical_type()), stats->descr()->ToString());
                 throw;
             }
-        }
-
-        /// If the data type in parquet file substantially differs from the requested data type,
-        /// it's sometimes correct to just typecast the min/max values.
-        /// Other times it's incorrect, e.g.:
-        ///   INSERT INTO FUNCTION file('t.parquet', Parquet, 'x String') VALUES ('1'), ('100'), ('2');
-        ///   SELECT * FROM file('t.parquet', Parquet, 'x Int64') WHERE x >= 3;
-        /// If we just typecast min/max from string to integer, this query will incorrectly return empty result.
-        /// Allow conversion in some simple cases and ignore the min/max values otherwise.
-        auto min_type = min.getType();
-        auto max_type = max.getType();
-        min = convertFieldToType(min, *type);
-        max = convertFieldToType(max, *type);
-        auto ok_cast = [&](Field::Types::Which from, Field::Types::Which to) -> bool
-        {
-            if (from == to)
-                return true;
-            /// Decimal -> wider decimal.
-            if (Field::isDecimal(from) || Field::isDecimal(to))
-                return Field::isDecimal(from) && Field::isDecimal(to) && to >= from;
-            /// Integer -> IP.
-            if (to == Field::Types::IPv4 || to == Field::Types::IPv6)
-                return from == Field::Types::UInt64 || from == Field::Types::Int64;
-            /// Disable index for everything else, especially string <-> number.
-            return false;
-        };
-        if (!(ok_cast(min_type, min.getType()) && ok_cast(max_type, max.getType())) &&
-            !(min == max) &&
-            !(min_type == Field::Types::Int64 && min.getType() == Field::Types::UInt64 && min.get<Int64>() >= 0) &&
-            !(max_type == Field::Types::UInt64 && max.getType() == Field::Types::Int64 && max.get<UInt64>() <= UInt64(INT64_MAX)))
-        {
-            min = Field();
-            max = Field();
         }
 
         /// In Range, NULL is represented as positive or negative infinity (represented by a special
