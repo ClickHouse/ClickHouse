@@ -12,14 +12,6 @@ import glob
 import uuid
 import os
 
-import tempfile
-
-import io
-import avro.schema
-import avro.io
-import avro.datafile
-import pandas as pd
-
 from pyspark.sql.types import (
     StructType,
     StructField,
@@ -38,7 +30,7 @@ from pyspark.sql.readwriter import DataFrameWriter, DataFrameWriterV2
 from minio.deleteobjects import DeleteObject
 from azure.storage.blob import BlobServiceClient
 
-from tests.integration.helpers.s3_tools import (
+from helpers.s3_tools import (
     prepare_s3_bucket,
     get_file_contents,
     list_s3_objects,
