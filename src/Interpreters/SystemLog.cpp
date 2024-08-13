@@ -556,7 +556,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         PushingPipelineExecutor executor(io.pipeline);
 
         executor.start();
-        std::ignore = executor.push(block);
+        executor.push(block);
         executor.finish();
     }
     catch (...)

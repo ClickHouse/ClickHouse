@@ -98,7 +98,7 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr con
     QueryPipeline pipeline(table->write({}, metadata_snapshot, context, /*async_insert=*/false));
 
     PushingPipelineExecutor executor(pipeline);
-    std::ignore = executor.push(block);
+    executor.push(block);
     executor.finish();
 
     return data;

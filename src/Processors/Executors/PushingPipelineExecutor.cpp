@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 class PushingSource : public ISource
@@ -80,56 +81,43 @@ const Block & PushingPipelineExecutor::getHeader() const
     return pushing_source->getPort().getHeader();
 }
 
-static void checkExecutionStatus(PipelineExecutor::ExecutionStatus status)
+[[noreturn]] static void throwOnExecutionStatus(PipelineExecutor::ExecutionStatus status)
 {
     if (status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
         || status == PipelineExecutor::ExecutionStatus::CancelledByUser)
-        return;
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     throw Exception(ErrorCodes::LOGICAL_ERROR,
         "Pipeline for PushingPipelineExecutor was finished before all data was inserted");
 }
 
-bool PushingPipelineExecutor::start()
+void PushingPipelineExecutor::start()
 {
     if (started)
-        return true;
+        return;
 
     started = true;
     executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
     executor->setReadProgressCallback(pipeline.getReadProgressCallback());
 
     if (!executor->executeStep(&input_wait_flag))
-    {
-        checkExecutionStatus(executor->getExecutionStatus());
-        return false;
-    }
-
-    return true;
+        throwOnExecutionStatus(executor->getExecutionStatus());
 }
 
-bool PushingPipelineExecutor::push(Chunk chunk)
+void PushingPipelineExecutor::push(Chunk chunk)
 {
     if (!started)
-    {
-        if (!start())
-            return false;
-    }
+        start();
 
     pushing_source->setData(std::move(chunk));
 
     if (!executor->executeStep(&input_wait_flag))
-    {
-        checkExecutionStatus(executor->getExecutionStatus());
-        return false;
-    }
-
-    return true;
+        throwOnExecutionStatus(executor->getExecutionStatus());
 }
 
-bool PushingPipelineExecutor::push(Block block)
+void PushingPipelineExecutor::push(Block block)
 {
-    return push(Chunk(block.getColumns(), block.rows()));
+    push(Chunk(block.getColumns(), block.rows()));
 }
 
 void PushingPipelineExecutor::finish()

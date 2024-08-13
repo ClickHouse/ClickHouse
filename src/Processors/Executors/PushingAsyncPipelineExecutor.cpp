@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 class PushingAsyncSource : public ISource
@@ -176,17 +177,17 @@ void PushingAsyncPipelineExecutor::start()
     data->thread = ThreadFromGlobalPool(std::move(func));
 }
 
-static void checkExecutionStatus(PipelineExecutor::ExecutionStatus status)
+[[noreturn]] static void throwOnExecutionStatus(PipelineExecutor::ExecutionStatus status)
 {
     if (status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
         || status == PipelineExecutor::ExecutionStatus::CancelledByUser)
-        return;
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     throw Exception(ErrorCodes::LOGICAL_ERROR,
         "Pipeline for PushingPipelineExecutor was finished before all data was inserted");
 }
 
-bool PushingAsyncPipelineExecutor::push(Chunk chunk)
+void PushingAsyncPipelineExecutor::push(Chunk chunk)
 {
     if (!started)
         start();
@@ -195,14 +196,12 @@ bool PushingAsyncPipelineExecutor::push(Chunk chunk)
     data->rethrowExceptionIfHas();
 
     if (!is_pushed)
-        checkExecutionStatus(data->executor->getExecutionStatus());
-
-    return is_pushed;
+        throwOnExecutionStatus(data->executor->getExecutionStatus());
 }
 
-bool PushingAsyncPipelineExecutor::push(Block block)
+void PushingAsyncPipelineExecutor::push(Block block)
 {
-    return push(Chunk(block.getColumns(), block.rows()));
+    push(Chunk(block.getColumns(), block.rows()));
 }
 
 void PushingAsyncPipelineExecutor::finish()

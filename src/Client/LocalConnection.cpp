@@ -287,16 +287,12 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
     if (!block)
         return;
 
-    bool inserted = false;
     if (state->pushing_async_executor)
-        inserted = state->pushing_async_executor->push(block);
+        state->pushing_async_executor->push(block);
     else if (state->pushing_executor)
-        inserted = state->pushing_executor->push(block);
+        state->pushing_executor->push(block);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown executor");
-
-    if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send data");
 
     if (send_profile_events)
         sendProfileEvents();

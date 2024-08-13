@@ -1012,8 +1012,7 @@ namespace
         while (pipeline_executor->pull(block))
         {
             if (block)
-                if (!executor.push(block))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send data");
+                executor.push(block);
         }
 
         if (isQueryCancelled())

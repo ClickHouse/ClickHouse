@@ -89,8 +89,7 @@ static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & 
 {
     Block adopted_block = adoptBlock(executor.getHeader(), block, log);
     for (size_t i = 0; i < repeats; ++i)
-        if (!executor.push(adopted_block))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send data");
+        executor.push(adopted_block);
 }
 
 
@@ -409,8 +408,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
             CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
             Block adopted_shard_block = adoptBlock(job.executor->getHeader(), shard_block, log);
-            if (!job.executor->push(adopted_shard_block))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send data");
+            job.executor->push(adopted_shard_block);
         }
         else // local
         {
