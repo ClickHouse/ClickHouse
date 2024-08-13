@@ -304,7 +304,7 @@ void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
         virtual_columns_filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
 
         if (virtual_columns_filter)
-            VirtualColumnUtils::buildSetsForDAG(virtual_columns_filter, context);
+            VirtualColumnUtils::buildSetsForDAG(*virtual_columns_filter, context);
     }
 }
 
