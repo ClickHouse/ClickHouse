@@ -1,6 +1,6 @@
 #pragma once
 
-#if USE_AWS_S3 && USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
+#if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
 
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>

@@ -75,9 +75,7 @@ void registerDataLakeTableFunctions(TableFunctionFactory & factory)
 {
     UNUSED(factory);
 #if USE_AVRO
-#    if USE_AWS_S3
     registerTableFunctionIceberg(factory);
-#endif
 #endif
 #if USE_AWS_S3
 #    if USE_PARQUET

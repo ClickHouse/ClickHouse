@@ -85,7 +85,7 @@ class AzureUploader(CloudUploader):
 
 
 def upload_directory(minio_client, bucket, local_path, remote_path):
-    S3Uploader(minio_client=minio_client, bucket_name=bucket).upload_directory(
+    return S3Uploader(minio_client=minio_client, bucket_name=bucket).upload_directory(
         local_path, remote_path
     )
 
