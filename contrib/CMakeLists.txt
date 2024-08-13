@@ -179,7 +179,7 @@ else()
     message(STATUS "Not using QPL")
 endif ()
 
-if (OS_LINUX AND ARCH_AMD64)
+if (OS_LINUX AND ARCH_AMD64 AND NOT NO_SSE3_OR_HIGHER)
     option (ENABLE_QATLIB "Enable Intel® QuickAssist Technology Library (QATlib)" ${ENABLE_LIBRARIES})
 elseif(ENABLE_QATLIB)
     message (${RECONFIGURE_MESSAGE_LEVEL} "QATLib is only supported on x86_64")
