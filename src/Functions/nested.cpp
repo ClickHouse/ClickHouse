@@ -145,7 +145,7 @@ private:
         if (nested_names_field.getType() != Field::Types::Array)
             return {};
 
-        const auto & nested_names_array = nested_names_field.get<const Array &>();
+        const auto & nested_names_array = nested_names_field.safeGet<const Array &>();
 
         Names nested_names;
         nested_names.reserve(nested_names_array.size());
@@ -155,7 +155,7 @@ private:
             if (nested_name_field.getType() != Field::Types::String)
                 return {};
 
-            nested_names.push_back(nested_name_field.get<const String &>());
+            nested_names.push_back(nested_name_field.safeGet<const String &>());
         }
 
         return nested_names;
