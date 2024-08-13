@@ -1127,65 +1127,54 @@ bool KeeperStorage<Container>::removeNode(const std::string & path, int32_t vers
     return true;
 }
 
-template<typename Storage>
-struct KeeperStorageRequestProcessor
+template <typename F>
+auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request, F function)
 {
-    Coordination::ZooKeeperRequestPtr zk_request;
-
-    explicit KeeperStorageRequestProcessor(const Coordination::ZooKeeperRequestPtr & zk_request_) : zk_request(zk_request_) { }
-    virtual Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const = 0;
-    virtual std::list<KeeperStorageBase::Delta>
-    preprocess(Storage & /*storage*/, int64_t /*zxid*/, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/, const KeeperContext & /*keeper_context*/) const
+    switch (zk_request.getOpNum())
     {
-        return {};
+        case Coordination::OpNum::Heartbeat:
+            return function(dynamic_cast<const Coordination::ZooKeeperHeartbeatRequest &>(zk_request));
+        case Coordination::OpNum::Sync:
+            return function(dynamic_cast<const Coordination::ZooKeeperSyncRequest &>(zk_request));
+        case Coordination::OpNum::Get:
+            return function(dynamic_cast<const Coordination::ZooKeeperGetRequest &>(zk_request));
+        case Coordination::OpNum::Create:
+        case Coordination::OpNum::CreateIfNotExists:
+            return function(dynamic_cast<const Coordination::ZooKeeperCreateRequest &>(zk_request));
+        case Coordination::OpNum::Remove:
+            return function(dynamic_cast<const Coordination::ZooKeeperRemoveRequest &>(zk_request));
+        case Coordination::OpNum::Exists:
+            return function(dynamic_cast<const Coordination::ZooKeeperExistsRequest &>(zk_request));
+        case Coordination::OpNum::Set:
+            return function(dynamic_cast<const Coordination::ZooKeeperSetRequest &>(zk_request));
+        case Coordination::OpNum::List:
+        case Coordination::OpNum::FilteredList:
+        case Coordination::OpNum::SimpleList:
+            return function(dynamic_cast<const Coordination::ZooKeeperListRequest &>(zk_request));
+        case Coordination::OpNum::Check:
+        case Coordination::OpNum::CheckNotExists:
+            return function(dynamic_cast<const Coordination::ZooKeeperCheckRequest &>(zk_request));
+        case Coordination::OpNum::Multi:
+        case Coordination::OpNum::MultiRead:
+            return function(dynamic_cast<const Coordination::ZooKeeperMultiRequest &>(zk_request));
+        case Coordination::OpNum::Auth:
+            return function(dynamic_cast<const Coordination::ZooKeeperAuthRequest &>(zk_request));
+        case Coordination::OpNum::Close:
+            return function(dynamic_cast<const Coordination::ZooKeeperCloseRequest &>(zk_request));
+        case Coordination::OpNum::SetACL:
+            return function(dynamic_cast<const Coordination::ZooKeeperSetACLRequest &>(zk_request));
+        case Coordination::OpNum::GetACL:
+            return function(dynamic_cast<const Coordination::ZooKeeperGetACLRequest &>(zk_request));
+        default:
+            throw Exception{DB::ErrorCodes::LOGICAL_ERROR, "Unexpected request type: {}", zk_request.getOpNum()};
     }
+}
 
-    // process the request using locally committed data
-    virtual Coordination::ZooKeeperResponsePtr
-    processLocal(Storage & /*storage*/, std::list<KeeperStorageBase::Delta> /* deltas */) const
-    {
-        throw Exception{DB::ErrorCodes::LOGICAL_ERROR, "Cannot process the request locally"};
-    }
-
-    virtual KeeperStorageBase::ResponsesForSessions
-    processWatches(KeeperStorageBase::Watches & /*watches*/, KeeperStorageBase::Watches & /*list_watches*/) const
-    {
-        return {};
-    }
-
-    virtual bool checkAuth(Storage & /*storage*/, int64_t /*session_id*/, bool /*is_local*/) const { return true; }
-
-    virtual ~KeeperStorageRequestProcessor() = default;
-};
-
-template<typename Storage>
-struct KeeperStorageHeartbeatRequestProcessor final : public KeeperStorageRequestProcessor<Storage>
+template <typename F>
+auto callOnConcreteRequestType(const Coordination::Request & request, F function)
 {
-    using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
-
-    Coordination::ZooKeeperResponsePtr
-    process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
-    {
-        Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
-        response_ptr->error = storage.commit(std::move(deltas));
-        return response_ptr;
-    }
-};
-
-template<typename Storage>
-struct KeeperStorageSyncRequestProcessor final : public KeeperStorageRequestProcessor<Storage>
-{
-    using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
-
-    Coordination::ZooKeeperResponsePtr
-    process(Storage & /* storage */, std::list<KeeperStorageBase::Delta> /* deltas */) const override
-    {
-        auto response = this->zk_request->makeResponse();
-        dynamic_cast<Coordination::ZooKeeperSyncResponse &>(*response).path
-            = dynamic_cast<Coordination::ZooKeeperSyncRequest &>(*this->zk_request).path;
-        return response;
-    }
-};
+    return callOnConcreteRequestType(dynamic_cast<const Coordination::ZooKeeperRequest &>(request), function);
+}
 
 namespace
 {
@@ -1261,1105 +1250,1174 @@ void KeeperStorage<Container>::unregisterEphemeralPath(int64_t session_id, const
         ephemerals.erase(ephemerals_it);
 }
 
-template<typename Storage>
-struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestProcessor<Storage>
+/// Default implementations ///
+template <std::derived_from<Coordination::ZooKeeperRequest> T, typename Storage>
+Coordination::ZooKeeperResponsePtr
+processLocal(const T & zk_request, Storage & /*storage*/, std::list<KeeperStorageBase::Delta> /*deltas*/)
 {
-    using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Local processing not supported for request with type {}", zk_request.getOpNum());
+}
 
-    KeeperStorageBase::ResponsesForSessions
-    processWatches(KeeperStorageBase::Watches & watches, KeeperStorageBase::Watches & list_watches) const override
+template <std::derived_from<Coordination::ZooKeeperRequest> T, typename Storage>
+std::list<KeeperStorageBase::Delta> preprocess(
+    const T & /*zk_request*/,
+    Storage & /*storage*/,
+    int64_t /*zxid*/,
+    int64_t /*session_id*/,
+    int64_t /*time*/,
+    uint64_t & /*digest*/,
+    const KeeperContext & /*keeper_context*/)
+{
+    return {};
+}
+
+template <std::derived_from<Coordination::ZooKeeperRequest> T>
+KeeperStorageBase::ResponsesForSessions
+processWatches(const T & /*zk_request*/, KeeperStorageBase::Watches & /*watches*/, KeeperStorageBase::Watches & /*list_watches*/)
+{
+    return {};
+}
+
+template <std::derived_from<Coordination::ZooKeeperRequest> T, typename Storage>
+bool checkAuth(const T & /*zk_request*/, Storage & /*storage*/, int64_t /*session_id*/, bool /*is_local*/)
+{
+    return true;
+}
+/// Default implementations ///
+
+/// HEARTBEAT Request ///
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr process(
+    const Coordination::ZooKeeperHeartbeatRequest & zk_request,
+    Storage & storage,
+    std::list<KeeperStorageBase::Delta> deltas)
+{
+    Coordination::ZooKeeperResponsePtr response_ptr = zk_request.makeResponse();
+    response_ptr->error = storage.commit(std::move(deltas));
+    return response_ptr;
+}
+
+/// HEARTBEAT Request ///
+
+/// SYNC Request ///
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr
+process(const Coordination::ZooKeeperSyncRequest & zk_request, Storage & /* storage */, std::list<KeeperStorageBase::Delta> /* deltas */)
+{
+    auto response = zk_request.makeResponse();
+    dynamic_cast<Coordination::ZooKeeperSyncResponse &>(*response).path = zk_request.path;
+    return response;
+}
+
+/// SYNC Request ///
+
+/// CREATE Request ///
+template <typename Storage>
+bool checkAuth(const Coordination::ZooKeeperCreateRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
+{
+    auto path = zk_request.getPath();
+    return storage.checkACL(parentNodePath(path), Coordination::ACL::Create, session_id, is_local);
+}
+
+KeeperStorageBase::ResponsesForSessions processWatches(
+    const Coordination::ZooKeeperCreateRequest & zk_request,
+    KeeperStorageBase::Watches & watches,
+    KeeperStorageBase::Watches & list_watches)
+{
+    return processWatchesImpl(zk_request.getPath(), watches, list_watches, Coordination::Event::CREATED);
+}
+
+template <typename Storage>
+std::list<KeeperStorageBase::Delta> preprocess(
+    const Coordination::ZooKeeperCreateRequest & zk_request,
+    Storage & storage,
+    int64_t zxid,
+    int64_t session_id,
+    int64_t time,
+    uint64_t & digest,
+    const KeeperContext & keeper_context)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperCreateRequest);
+
+    std::list<KeeperStorageBase::Delta> new_deltas;
+
+    auto parent_path = parentNodePath(zk_request.path);
+    auto parent_node = storage.uncommitted_state.getNode(parent_path);
+    if (parent_node == nullptr)
+        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+
+    else if (parent_node->stats.isEphemeral())
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNOCHILDRENFOREPHEMERALS}};
+
+    std::string path_created = zk_request.path;
+    if (zk_request.is_sequential)
     {
-        return processWatchesImpl(this->zk_request->getPath(), watches, list_watches, Coordination::Event::CREATED);
-    }
-
-    bool checkAuth(Storage & storage, int64_t session_id, bool is_local) const override
-    {
-        auto path = this->zk_request->getPath();
-        return storage.checkACL(parentNodePath(path), Coordination::ACL::Create, session_id, is_local);
-    }
-
-    std::list<KeeperStorageBase::Delta>
-    preprocess(Storage & storage, int64_t zxid, int64_t session_id, int64_t time, uint64_t & digest, const KeeperContext & keeper_context) const override
-    {
-        ProfileEvents::increment(ProfileEvents::KeeperCreateRequest);
-        Coordination::ZooKeeperCreateRequest & request = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*this->zk_request);
-
-        std::list<KeeperStorageBase::Delta> new_deltas;
-
-        auto parent_path = parentNodePath(request.path);
-        auto parent_node = storage.uncommitted_state.getNode(parent_path);
-        if (parent_node == nullptr)
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
-
-        else if (parent_node->stats.isEphemeral())
-            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNOCHILDRENFOREPHEMERALS}};
-
-        std::string path_created = request.path;
-        if (request.is_sequential)
-        {
-            if (request.not_exists)
-                return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
-
-            auto seq_num = parent_node->stats.seqNum();
-
-            std::stringstream seq_num_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            seq_num_str.exceptions(std::ios::failbit);
-            seq_num_str << std::setw(10) << std::setfill('0') << seq_num;
-
-            path_created += seq_num_str.str();
-        }
-
-        if (Coordination::matchPath(path_created, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
-        {
-            auto error_msg = fmt::format("Trying to create a node inside the internal Keeper path ({}) which is not allowed. Path: {}", keeper_system_path, path_created);
-
-            handleSystemNodeModification(keeper_context, error_msg);
+        if (zk_request.not_exists)
             return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
-        }
 
-        if (storage.uncommitted_state.getNode(path_created))
-        {
-            if (this->zk_request->getOpNum() == Coordination::OpNum::CreateIfNotExists)
-                return new_deltas;
+        auto seq_num = parent_node->stats.seqNum();
 
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNODEEXISTS}};
-        }
+        std::stringstream seq_num_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        seq_num_str.exceptions(std::ios::failbit);
+        seq_num_str << std::setw(10) << std::setfill('0') << seq_num;
 
-        if (getBaseNodeName(path_created).size == 0)
-            return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
-
-        Coordination::ACLs node_acls;
-        if (!fixupACL(request.acls, session_id, storage.uncommitted_state, node_acls))
-            return {typename Storage::Delta{zxid, Coordination::Error::ZINVALIDACL}};
-
-        if (request.is_ephemeral)
-        {
-            std::lock_guard lock(storage.ephemerals_mutex);
-            storage.ephemerals[session_id].emplace(path_created);
-        }
-
-        int32_t parent_cversion = request.parent_cversion;
-
-        KeeperStorageBase::UpdateNodeStatDelta update_parent_delta(*parent_node);
-        update_parent_delta.new_stats.increaseSeqNum();
-
-        if (parent_cversion == -1)
-            ++update_parent_delta.new_stats.cversion;
-        else if (parent_cversion > update_parent_delta.old_stats.cversion)
-            update_parent_delta.new_stats.cversion = parent_cversion;
-
-        if (zxid > update_parent_delta.old_stats.pzxid)
-            update_parent_delta.new_stats.pzxid = zxid;
-
-        update_parent_delta.new_stats.increaseNumChildren();
-
-        new_deltas.emplace_back(std::string{parent_path}, zxid, std::move(update_parent_delta));
-
-        Coordination::Stat stat;
-        stat.czxid = zxid;
-        stat.mzxid = zxid;
-        stat.pzxid = zxid;
-        stat.ctime = time;
-        stat.mtime = time;
-        stat.numChildren = 0;
-        stat.version = 0;
-        stat.aversion = 0;
-        stat.cversion = 0;
-        stat.ephemeralOwner = request.is_ephemeral ? session_id : 0;
-
-        new_deltas.emplace_back(
-            std::move(path_created),
-            zxid,
-            typename Storage::CreateNodeDelta{stat, std::move(node_acls), request.data});
-
-
-        digest = storage.calculateNodesDigest(digest, new_deltas);
-        return new_deltas;
+        path_created += seq_num_str.str();
     }
 
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
+    if (Coordination::matchPath(path_created, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
     {
-        Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
-        Coordination::ZooKeeperCreateResponse & response = dynamic_cast<Coordination::ZooKeeperCreateResponse &>(*response_ptr);
+        auto error_msg = fmt::format("Trying to create a node inside the internal Keeper path ({}) which is not allowed. Path: {}", keeper_system_path, path_created);
 
-        if (deltas.empty())
-        {
-            response.path_created = this->zk_request->getPath();
-            response.error = Coordination::Error::ZOK;
-            return response_ptr;
-        }
+        handleSystemNodeModification(keeper_context, error_msg);
+        return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+    }
 
-        std::string created_path;
-        auto create_delta_it = std::find_if(
-            deltas.begin(),
-            deltas.end(),
-            [](const auto & delta)
-            { return std::holds_alternative<KeeperStorageBase::CreateNodeDelta>(delta.operation); });
+    if (storage.uncommitted_state.getNode(path_created))
+    {
+        if (zk_request.getOpNum() == Coordination::OpNum::CreateIfNotExists)
+            return new_deltas;
 
-        if (create_delta_it != deltas.end())
-            created_path = create_delta_it->path;
+        return {typename Storage::Delta{zxid, Coordination::Error::ZNODEEXISTS}};
+    }
 
-        if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
-        {
-            response.error = result;
-            return response_ptr;
-        }
+    if (getBaseNodeName(path_created).size == 0)
+        return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
 
-        response.path_created = std::move(created_path);
+    Coordination::ACLs node_acls;
+    if (!fixupACL(zk_request.acls, session_id, storage.uncommitted_state, node_acls))
+        return {typename Storage::Delta{zxid, Coordination::Error::ZINVALIDACL}};
+
+    if (zk_request.is_ephemeral)
+    {
+        std::lock_guard lock(storage.ephemerals_mutex);
+        storage.ephemerals[session_id].emplace(path_created);
+    }
+
+    int32_t parent_cversion = zk_request.parent_cversion;
+
+    KeeperStorageBase::UpdateNodeStatDelta update_parent_delta(*parent_node);
+    update_parent_delta.new_stats.increaseSeqNum();
+
+    if (parent_cversion == -1)
+        ++update_parent_delta.new_stats.cversion;
+    else if (parent_cversion > update_parent_delta.old_stats.cversion)
+        update_parent_delta.new_stats.cversion = parent_cversion;
+
+    if (zxid > update_parent_delta.old_stats.pzxid)
+        update_parent_delta.new_stats.pzxid = zxid;
+
+    update_parent_delta.new_stats.increaseNumChildren();
+
+    new_deltas.emplace_back(std::string{parent_path}, zxid, std::move(update_parent_delta));
+
+    Coordination::Stat stat;
+    stat.czxid = zxid;
+    stat.mzxid = zxid;
+    stat.pzxid = zxid;
+    stat.ctime = time;
+    stat.mtime = time;
+    stat.numChildren = 0;
+    stat.version = 0;
+    stat.aversion = 0;
+    stat.cversion = 0;
+    stat.ephemeralOwner = zk_request.is_ephemeral ? session_id : 0;
+
+    new_deltas.emplace_back(
+        std::move(path_created),
+        zxid,
+        typename Storage::CreateNodeDelta{stat, std::move(node_acls), zk_request.data});
+
+
+    digest = storage.calculateNodesDigest(digest, new_deltas);
+    return new_deltas;
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    Coordination::ZooKeeperResponsePtr response_ptr = zk_request.makeResponse();
+    Coordination::ZooKeeperCreateResponse & response = dynamic_cast<Coordination::ZooKeeperCreateResponse &>(*response_ptr);
+
+    if (deltas.empty())
+    {
+        response.path_created = zk_request.getPath();
         response.error = Coordination::Error::ZOK;
         return response_ptr;
     }
-};
 
-template<typename Storage>
-struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProcessor<Storage>
-{
-    bool checkAuth(Storage & storage, int64_t session_id, bool is_local) const override
+    std::string created_path;
+    auto create_delta_it = std::find_if(
+        deltas.begin(),
+        deltas.end(),
+        [](const auto & delta)
+        { return std::holds_alternative<KeeperStorageBase::CreateNodeDelta>(delta.operation); });
+
+    if (create_delta_it != deltas.end())
+        created_path = create_delta_it->path;
+
+    if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
     {
-        return storage.checkACL(this->zk_request->getPath(), Coordination::ACL::Read, session_id, is_local);
+        response.error = result;
+        return response_ptr;
     }
 
-    using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
+    response.path_created = std::move(created_path);
+    response.error = Coordination::Error::ZOK;
+    return response_ptr;
+}
+/// CREATE Request ///
 
-    std::list<KeeperStorageBase::Delta>
-    preprocess(Storage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/, const KeeperContext & /*keeper_context*/) const override
-    {
-        ProfileEvents::increment(ProfileEvents::KeeperGetRequest);
-        Coordination::ZooKeeperGetRequest & request = dynamic_cast<Coordination::ZooKeeperGetRequest &>(*this->zk_request);
+/// GET Request ///
+template <typename Storage>
+bool checkAuth(const Coordination::ZooKeeperGetRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
+{
+    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Read, session_id, is_local);
+}
 
-        if (request.path == Coordination::keeper_api_feature_flags_path
-            || request.path == Coordination::keeper_config_path
-            || request.path == Coordination::keeper_availability_zone_path)
-            return {};
+template <typename Storage>
+std::list<KeeperStorageBase::Delta> preprocess(
+    const Coordination::ZooKeeperGetRequest & zk_request,
+    Storage & storage,
+    int64_t zxid,
+    int64_t /*session_id*/,
+    int64_t /*time*/,
+    uint64_t & /*digest*/,
+    const KeeperContext & /*keeper_context*/)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperGetRequest);
 
-        if (!storage.uncommitted_state.getNode(request.path))
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
-
+    if (zk_request.path == Coordination::keeper_api_feature_flags_path
+        || zk_request.path == Coordination::keeper_config_path
+        || zk_request.path == Coordination::keeper_availability_zone_path)
         return {};
-    }
 
-    template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const
+    if (!storage.uncommitted_state.getNode(zk_request.path))
+        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+
+    return {};
+}
+
+template <bool local, typename Storage>
+Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperGetRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas) {
+    Coordination::ZooKeeperResponsePtr response_ptr = zk_request.makeResponse();
+    Coordination::ZooKeeperGetResponse & response = dynamic_cast<Coordination::ZooKeeperGetResponse &>(*response_ptr);
+
+    if constexpr (!local)
     {
-        Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
-        Coordination::ZooKeeperGetResponse & response = dynamic_cast<Coordination::ZooKeeperGetResponse &>(*response_ptr);
-        Coordination::ZooKeeperGetRequest & request = dynamic_cast<Coordination::ZooKeeperGetRequest &>(*this->zk_request);
-
-        if constexpr (!local)
-        {
-            if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
-            {
-                response.error = result;
-                return response_ptr;
-            }
-        }
-
-        if (request.path == Coordination::keeper_config_path)
-        {
-            response.data = serializeClusterConfig(
-                storage.keeper_context->getDispatcher()->getStateMachine().getClusterConfig());
-            response.error = Coordination::Error::ZOK;
-            return response_ptr;
-        }
-
-        auto & container = storage.container;
-        auto node_it = container.find(request.path);
-        if (node_it == container.end())
-        {
-            if constexpr (local)
-                response.error = Coordination::Error::ZNONODE;
-            else
-                onStorageInconsistency();
-        }
-        else
-        {
-            node_it->value.setResponseStat(response.stat);
-            auto data = node_it->value.getData();
-            response.data = std::string(data);
-            response.error = Coordination::Error::ZOK;
-        }
-
-        return response_ptr;
-    }
-
-
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
-    {
-        return processImpl<false>(storage, std::move(deltas));
-    }
-
-    Coordination::ZooKeeperResponsePtr processLocal(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
-    {
-        ProfileEvents::increment(ProfileEvents::KeeperGetRequest);
-        return processImpl<true>(storage, std::move(deltas));
-    }
-};
-
-template<typename Storage>
-struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestProcessor<Storage>
-{
-    bool checkAuth(Storage & storage, int64_t session_id, bool is_local) const override
-    {
-        return storage.checkACL(parentNodePath(this->zk_request->getPath()), Coordination::ACL::Delete, session_id, is_local);
-    }
-
-    using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
-    std::list<KeeperStorageBase::Delta>
-    preprocess(Storage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & digest, const KeeperContext & keeper_context) const override
-    {
-        ProfileEvents::increment(ProfileEvents::KeeperRemoveRequest);
-        Coordination::ZooKeeperRemoveRequest & request = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*this->zk_request);
-
-        std::list<KeeperStorageBase::Delta> new_deltas;
-
-        if (Coordination::matchPath(request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
-        {
-            auto error_msg = fmt::format("Trying to delete an internal Keeper path ({}) which is not allowed", request.path);
-
-            handleSystemNodeModification(keeper_context, error_msg);
-            return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
-        }
-
-        auto parent_path = parentNodePath(request.path);
-        auto parent_node = storage.uncommitted_state.getNode(parent_path);
-
-        KeeperStorageBase::UpdateNodeStatDelta update_parent_delta(*parent_node);
-
-        const auto add_parent_update_delta = [&]
-        {
-            new_deltas.emplace_back(
-                std::string{parent_path},
-                zxid,
-                std::move(update_parent_delta)
-            );
-        };
-
-        const auto update_parent_pzxid = [&]()
-        {
-            if (!parent_node)
-                return;
-
-            if (update_parent_delta.old_stats.pzxid < zxid)
-                update_parent_delta.new_stats.pzxid = zxid;
-        };
-
-        auto node = storage.uncommitted_state.getNode(request.path);
-
-        if (!node)
-        {
-            if (request.restored_from_zookeeper_log)
-            {
-                update_parent_pzxid();
-                add_parent_update_delta();
-            }
-            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
-        }
-        else if (request.version != -1 && request.version != node->stats.version)
-            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADVERSION}};
-        else if (node->stats.numChildren() != 0)
-            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNOTEMPTY}};
-
-        if (request.restored_from_zookeeper_log)
-            update_parent_pzxid();
-
-        ++update_parent_delta.new_stats.cversion;
-        update_parent_delta.new_stats.decreaseNumChildren();
-        add_parent_update_delta();
-
-        new_deltas.emplace_back(
-            request.path,
-            zxid,
-            KeeperStorageBase::RemoveNodeDelta{request.version, node->stats, storage.uncommitted_state.getACLs(request.path), std::string{node->getData()}});
-
-        if (node->stats.isEphemeral())
-            storage.unregisterEphemeralPath(node->stats.ephemeralOwner(), request.path);
-
-        digest = storage.calculateNodesDigest(digest, new_deltas);
-
-        return new_deltas;
-    }
-
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
-    {
-        Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
-        Coordination::ZooKeeperRemoveResponse & response = dynamic_cast<Coordination::ZooKeeperRemoveResponse &>(*response_ptr);
-
-        response.error = storage.commit(std::move(deltas));
-        return response_ptr;
-    }
-
-    KeeperStorageBase::ResponsesForSessions
-    processWatches(KeeperStorageBase::Watches & watches, KeeperStorageBase::Watches & list_watches) const override
-    {
-        return processWatchesImpl(this->zk_request->getPath(), watches, list_watches, Coordination::Event::DELETED);
-    }
-};
-
-template<typename Storage>
-struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestProcessor<Storage>
-{
-    using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
-
-    std::list<KeeperStorageBase::Delta>
-    preprocess(Storage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/, const KeeperContext & /*keeper_context*/) const override
-    {
-        ProfileEvents::increment(ProfileEvents::KeeperExistsRequest);
-        Coordination::ZooKeeperExistsRequest & request = dynamic_cast<Coordination::ZooKeeperExistsRequest &>(*this->zk_request);
-
-        if (!storage.uncommitted_state.getNode(request.path))
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
-
-        return {};
-    }
-
-    template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const
-    {
-        Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
-        Coordination::ZooKeeperExistsResponse & response = dynamic_cast<Coordination::ZooKeeperExistsResponse &>(*response_ptr);
-        Coordination::ZooKeeperExistsRequest & request = dynamic_cast<Coordination::ZooKeeperExistsRequest &>(*this->zk_request);
-
-        if constexpr (!local)
-        {
-            if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
-            {
-                response.error = result;
-                return response_ptr;
-            }
-        }
-
-        auto & container = storage.container;
-        auto node_it = container.find(request.path);
-        if (node_it == container.end())
-        {
-            if constexpr (local)
-                response.error = Coordination::Error::ZNONODE;
-            else
-                onStorageInconsistency();
-        }
-        else
-        {
-            node_it->value.setResponseStat(response.stat);
-            response.error = Coordination::Error::ZOK;
-        }
-
-        return response_ptr;
-    }
-
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
-    {
-        return processImpl<false>(storage, std::move(deltas));
-    }
-
-    Coordination::ZooKeeperResponsePtr processLocal(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
-    {
-        ProfileEvents::increment(ProfileEvents::KeeperExistsRequest);
-        return processImpl<true>(storage, std::move(deltas));
-    }
-};
-
-template<typename Storage>
-struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProcessor<Storage>
-{
-    bool checkAuth(Storage & storage, int64_t session_id, bool is_local) const override
-    {
-        return storage.checkACL(this->zk_request->getPath(), Coordination::ACL::Write, session_id, is_local);
-    }
-
-    using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
-
-    std::list<KeeperStorageBase::Delta>
-    preprocess(Storage & storage, int64_t zxid, int64_t /*session_id*/, int64_t time, uint64_t & digest, const KeeperContext & keeper_context) const override
-    {
-        ProfileEvents::increment(ProfileEvents::KeeperSetRequest);
-        Coordination::ZooKeeperSetRequest & request = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*this->zk_request);
-
-        std::list<KeeperStorageBase::Delta> new_deltas;
-
-        if (Coordination::matchPath(request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
-        {
-            auto error_msg = fmt::format("Trying to update an internal Keeper path ({}) which is not allowed", request.path);
-
-            handleSystemNodeModification(keeper_context, error_msg);
-            return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
-        }
-
-        if (!storage.uncommitted_state.getNode(request.path))
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
-
-        auto node = storage.uncommitted_state.getNode(request.path);
-
-        if (request.version != -1 && request.version != node->stats.version)
-            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADVERSION}};
-
-        KeeperStorageBase::UpdateNodeStatDelta node_delta(*node);
-        node_delta.version = request.version;
-        auto & new_stats = node_delta.new_stats;
-        new_stats.version++;
-        new_stats.mzxid = zxid;
-        new_stats.mtime = time;
-
-        new_deltas.emplace_back(request.path, zxid, std::move(node_delta));
-        new_deltas.emplace_back(
-            request.path,
-            zxid,
-            KeeperStorageBase::UpdateNodeDataDelta{.old_data = std::string{node->getData()}, .new_data = request.data, .version = request.version});
-
-        auto parent_path = parentNodePath(request.path);
-        auto parent_node = storage.uncommitted_state.getNode(parent_path);
-        KeeperStorageBase::UpdateNodeStatDelta parent_delta(*parent_node);
-        ++parent_delta.new_stats.cversion;
-        new_deltas.emplace_back(std::string{parent_path}, zxid, std::move(parent_delta));
-
-        digest = storage.calculateNodesDigest(digest, new_deltas);
-        return new_deltas;
-    }
-
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
-    {
-        auto & container = storage.container;
-
-        Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
-        Coordination::ZooKeeperSetResponse & response = dynamic_cast<Coordination::ZooKeeperSetResponse &>(*response_ptr);
-        Coordination::ZooKeeperSetRequest & request = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*this->zk_request);
-
         if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
         {
             response.error = result;
             return response_ptr;
         }
+    }
 
-        auto node_it = container.find(request.path);
-        if (node_it == container.end())
+    if (zk_request.path == Coordination::keeper_config_path)
+    {
+        response.data = serializeClusterConfig(
+            storage.keeper_context->getDispatcher()->getStateMachine().getClusterConfig());
+        response.error = Coordination::Error::ZOK;
+        return response_ptr;
+    }
+
+    auto & container = storage.container;
+    auto node_it = container.find(zk_request.path);
+    if (node_it == container.end())
+    {
+        if constexpr (local)
+            response.error = Coordination::Error::ZNONODE;
+        else
             onStorageInconsistency();
+    }
+    else
+    {
+        node_it->value.setResponseStat(response.stat);
+        auto data = node_it->value.getData();
+        response.data = std::string(data);
+        response.error = Coordination::Error::ZOK;
+    }
 
+    return response_ptr;
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperGetRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    return processImpl<false>(zk_request, storage, std::move(deltas));
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr
+processLocal(const Coordination::ZooKeeperGetRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperGetRequest);
+    return processImpl<true>(zk_request, storage, std::move(deltas));
+}
+/// GET Request ///
+
+/// REMOVE Request ///
+template <typename Storage>
+bool checkAuth(const Coordination::ZooKeeperRemoveRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
+{
+    return storage.checkACL(parentNodePath(zk_request.getPath()), Coordination::ACL::Delete, session_id, is_local);
+}
+
+KeeperStorageBase::ResponsesForSessions processWatches(
+    const Coordination::ZooKeeperRemoveRequest & zk_request,
+    KeeperStorageBase::Watches & watches,
+    KeeperStorageBase::Watches & list_watches)
+{
+    return processWatchesImpl(zk_request.getPath(), watches, list_watches, Coordination::Event::CREATED);
+}
+
+template <typename Storage>
+std::list<KeeperStorageBase::Delta> preprocess(
+    const Coordination::ZooKeeperRemoveRequest & zk_request,
+    Storage & storage,
+    int64_t zxid,
+    int64_t /* session_id */,
+    int64_t /* time */,
+    uint64_t & digest,
+    const KeeperContext & keeper_context)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperRemoveRequest);
+
+    std::list<KeeperStorageBase::Delta> new_deltas;
+
+    if (Coordination::matchPath(zk_request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
+    {
+        auto error_msg = fmt::format("Trying to delete an internal Keeper path ({}) which is not allowed", zk_request.path);
+
+        handleSystemNodeModification(keeper_context, error_msg);
+        return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+    }
+
+    auto parent_path = parentNodePath(zk_request.path);
+    auto parent_node = storage.uncommitted_state.getNode(parent_path);
+
+    KeeperStorageBase::UpdateNodeStatDelta update_parent_delta(*parent_node);
+
+    const auto add_parent_update_delta = [&]
+    {
+        new_deltas.emplace_back(
+            std::string{parent_path},
+            zxid,
+            std::move(update_parent_delta)
+        );
+    };
+
+    const auto update_parent_pzxid = [&]()
+    {
+        if (!parent_node)
+            return;
+
+        if (update_parent_delta.old_stats.pzxid < zxid)
+            update_parent_delta.new_stats.pzxid = zxid;
+    };
+
+    auto node = storage.uncommitted_state.getNode(zk_request.path);
+
+    if (!node)
+    {
+        if (zk_request.restored_from_zookeeper_log)
+        {
+            update_parent_pzxid();
+            add_parent_update_delta();
+        }
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
+    }
+    else if (zk_request.version != -1 && zk_request.version != node->stats.version)
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADVERSION}};
+    else if (node->stats.numChildren() != 0)
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNOTEMPTY}};
+
+    if (zk_request.restored_from_zookeeper_log)
+        update_parent_pzxid();
+
+    ++update_parent_delta.new_stats.cversion;
+    update_parent_delta.new_stats.decreaseNumChildren();
+    add_parent_update_delta();
+
+    new_deltas.emplace_back(
+        zk_request.path,
+        zxid,
+        KeeperStorageBase::RemoveNodeDelta{
+            zk_request.version, node->stats, storage.uncommitted_state.getACLs(zk_request.path), std::string{node->getData()}});
+
+    if (node->stats.isEphemeral())
+        storage.unregisterEphemeralPath(node->stats.ephemeralOwner(), zk_request.path);
+
+    digest = storage.calculateNodesDigest(digest, new_deltas);
+
+    return new_deltas;
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperRemoveRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    Coordination::ZooKeeperResponsePtr response_ptr = zk_request.makeResponse();
+    Coordination::ZooKeeperRemoveResponse & response = dynamic_cast<Coordination::ZooKeeperRemoveResponse &>(*response_ptr);
+
+    response.error = storage.commit(std::move(deltas));
+    return response_ptr;
+}
+
+/// REMOVE Request ///
+
+/// EXISTS Request ///
+template <typename Storage>
+bool checkAuth(const Coordination::ZooKeeperExistsRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
+{
+    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Read, session_id, is_local);
+}
+
+template <typename Storage>
+std::list<KeeperStorageBase::Delta> preprocess(
+    const Coordination::ZooKeeperExistsRequest & zk_request,
+    Storage & storage,
+    int64_t zxid,
+    int64_t /*session_id*/,
+    int64_t /*time*/,
+    uint64_t & /*digest*/,
+    const KeeperContext & /*keeper_context*/)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperExistsRequest);
+
+    if (!storage.uncommitted_state.getNode(zk_request.path))
+        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+
+    return {};
+}
+
+template <bool local, typename Storage>
+Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperExistsRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas) {
+    Coordination::ZooKeeperResponsePtr response_ptr = zk_request.makeResponse();
+    Coordination::ZooKeeperExistsResponse & response = dynamic_cast<Coordination::ZooKeeperExistsResponse &>(*response_ptr);
+
+    if constexpr (!local)
+    {
+        if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
+        {
+            response.error = result;
+            return response_ptr;
+        }
+    }
+
+    auto & container = storage.container;
+    auto node_it = container.find(zk_request.path);
+    if (node_it == container.end())
+    {
+        if constexpr (local)
+            response.error = Coordination::Error::ZNONODE;
+        else
+            onStorageInconsistency();
+    }
+    else
+    {
         node_it->value.setResponseStat(response.stat);
         response.error = Coordination::Error::ZOK;
+    }
 
+    return response_ptr;
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperExistsRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    return processImpl<false>(zk_request, storage, std::move(deltas));
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr
+processLocal(const Coordination::ZooKeeperExistsRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperExistsRequest);
+    return processImpl<true>(zk_request, storage, std::move(deltas));
+}
+/// EXISTS Request ///
+
+/// SET Request ///
+template <typename Storage>
+bool checkAuth(const Coordination::ZooKeeperSetRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
+{
+    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Write, session_id, is_local);
+}
+
+KeeperStorageBase::ResponsesForSessions processWatches(
+    const Coordination::ZooKeeperSetRequest & zk_request, KeeperStorageBase::Watches & watches, KeeperStorageBase::Watches & list_watches)
+{
+    return processWatchesImpl(zk_request.getPath(), watches, list_watches, Coordination::Event::CHANGED);
+}
+
+template <typename Storage>
+std::list<KeeperStorageBase::Delta> preprocess(
+    const Coordination::ZooKeeperSetRequest & zk_request,
+    Storage & storage,
+    int64_t zxid,
+    int64_t /* session_id */,
+    int64_t time,
+    uint64_t & digest,
+    const KeeperContext & keeper_context)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperSetRequest);
+
+    std::list<KeeperStorageBase::Delta> new_deltas;
+
+    if (Coordination::matchPath(zk_request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
+    {
+        auto error_msg = fmt::format("Trying to update an internal Keeper path ({}) which is not allowed", zk_request.path);
+
+        handleSystemNodeModification(keeper_context, error_msg);
+        return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+    }
+
+    if (!storage.uncommitted_state.getNode(zk_request.path))
+        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+
+    auto node = storage.uncommitted_state.getNode(zk_request.path);
+
+    if (zk_request.version != -1 && zk_request.version != node->stats.version)
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADVERSION}};
+
+    KeeperStorageBase::UpdateNodeStatDelta node_delta(*node);
+    node_delta.version = zk_request.version;
+    auto & new_stats = node_delta.new_stats;
+    new_stats.version++;
+    new_stats.mzxid = zxid;
+    new_stats.mtime = time;
+
+    new_deltas.emplace_back(zk_request.path, zxid, std::move(node_delta));
+    new_deltas.emplace_back(
+        zk_request.path,
+        zxid,
+        KeeperStorageBase::UpdateNodeDataDelta{.old_data = std::string{node->getData()}, .new_data = zk_request.data, .version = zk_request.version});
+
+    auto parent_path = parentNodePath(zk_request.path);
+    auto parent_node = storage.uncommitted_state.getNode(parent_path);
+    KeeperStorageBase::UpdateNodeStatDelta parent_delta(*parent_node);
+    ++parent_delta.new_stats.cversion;
+    new_deltas.emplace_back(std::string{parent_path}, zxid, std::move(parent_delta));
+
+    digest = storage.calculateNodesDigest(digest, new_deltas);
+    return new_deltas;
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperSetRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    auto & container = storage.container;
+
+    Coordination::ZooKeeperResponsePtr response_ptr = zk_request.makeResponse();
+    Coordination::ZooKeeperSetResponse & response = dynamic_cast<Coordination::ZooKeeperSetResponse &>(*response_ptr);
+
+    if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
+    {
+        response.error = result;
         return response_ptr;
     }
 
-    KeeperStorageBase::ResponsesForSessions
-    processWatches(typename Storage::Watches & watches, typename Storage::Watches & list_watches) const override
-    {
-        return processWatchesImpl(this->zk_request->getPath(), watches, list_watches, Coordination::Event::CHANGED);
-    }
-};
+    auto node_it = container.find(zk_request.path);
+    if (node_it == container.end())
+        onStorageInconsistency();
 
-template<typename Storage>
-struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProcessor<Storage>
+    node_it->value.setResponseStat(response.stat);
+    response.error = Coordination::Error::ZOK;
+
+    return response_ptr;
+}
+/// SET Request ///
+
+/// LIST Request ///
+template <typename Storage>
+bool checkAuth(const Coordination::ZooKeeperListRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
-    bool checkAuth(Storage & storage, int64_t session_id, bool is_local) const override
+    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Read, session_id, is_local);
+}
+
+template <typename Storage>
+std::list<KeeperStorageBase::Delta> preprocess(
+    const Coordination::ZooKeeperListRequest & zk_request,
+    Storage & storage,
+    int64_t zxid,
+    int64_t /*session_id*/,
+    int64_t /*time*/,
+    uint64_t & /*digest*/,
+    const KeeperContext & /*keeper_context*/)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperListRequest);
+
+    if (!storage.uncommitted_state.getNode(zk_request.path))
+        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+
+    return {};
+}
+
+template <bool local, typename Storage>
+Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperListRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    Coordination::ZooKeeperResponsePtr response_ptr = zk_request.makeResponse();
+    Coordination::ZooKeeperListResponse & response = dynamic_cast<Coordination::ZooKeeperListResponse &>(*response_ptr);
+
+    if constexpr (!local)
     {
-        return storage.checkACL(this->zk_request->getPath(), Coordination::ACL::Read, session_id, is_local);
+        if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
+        {
+            response.error = result;
+            return response_ptr;
+        }
     }
 
-    using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
+    auto & container = storage.container;
 
-    std::list<KeeperStorageBase::Delta>
-    preprocess(Storage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/, const KeeperContext & /*keeper_context*/) const override
+    auto node_it = container.find(zk_request.path);
+    if (node_it == container.end())
     {
-        ProfileEvents::increment(ProfileEvents::KeeperListRequest);
-        Coordination::ZooKeeperListRequest & request = dynamic_cast<Coordination::ZooKeeperListRequest &>(*this->zk_request);
-
-        if (!storage.uncommitted_state.getNode(request.path))
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
-
-        return {};
-    }
-
-    template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const
-    {
-        Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
-        Coordination::ZooKeeperListResponse & response = dynamic_cast<Coordination::ZooKeeperListResponse &>(*response_ptr);
-        Coordination::ZooKeeperListRequest & request = dynamic_cast<Coordination::ZooKeeperListRequest &>(*this->zk_request);
-
-        if constexpr (!local)
-        {
-            if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
-            {
-                response.error = result;
-                return response_ptr;
-            }
-        }
-
-        auto & container = storage.container;
-
-        auto node_it = container.find(request.path);
-        if (node_it == container.end())
-        {
-            if constexpr (local)
-                response.error = Coordination::Error::ZNONODE;
-            else
-                onStorageInconsistency();
-        }
+        if constexpr (local)
+            response.error = Coordination::Error::ZNONODE;
         else
-        {
-            auto path_prefix = request.path;
-            if (path_prefix.empty())
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Path cannot be empty");
+            onStorageInconsistency();
+    }
+    else
+    {
+        auto path_prefix = zk_request.path;
+        if (path_prefix.empty())
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Path cannot be empty");
 
-            const auto & get_children = [&]()
+        const auto & get_children = [&]()
+        {
+            if constexpr (Storage::use_rocksdb)
+                return container.getChildren(zk_request.path);
+            else
+                return node_it->value.getChildren();
+        };
+        const auto & children = get_children();
+        response.names.reserve(children.size());
+
+        const auto add_child = [&](const auto & child)
+        {
+            using enum Coordination::ListRequestType;
+
+            auto list_request_type = ALL;
+            if (const auto * filtered_list = dynamic_cast<const Coordination::ZooKeeperFilteredListRequest *>(&zk_request))
+            {
+                list_request_type = filtered_list->list_request_type;
+            }
+
+            if (list_request_type == ALL)
+                return true;
+
+            bool is_ephemeral;
+            if constexpr (!Storage::use_rocksdb)
+            {
+                auto child_path = (std::filesystem::path(zk_request.path) / child.toView()).generic_string();
+                auto child_it = container.find(child_path);
+                if (child_it == container.end())
+                    onStorageInconsistency();
+                is_ephemeral = child_it->value.stats.isEphemeral();
+            }
+            else
+            {
+                is_ephemeral = child.second.stats.isEphemeral();
+            }
+
+            return (is_ephemeral && list_request_type == EPHEMERAL_ONLY) || (!is_ephemeral && list_request_type == PERSISTENT_ONLY);
+        };
+
+        for (const auto & child : children)
+        {
+            if (add_child(child))
             {
                 if constexpr (Storage::use_rocksdb)
-                    return container.getChildren(request.path);
+                    response.names.push_back(child.first);
                 else
-                    return node_it->value.getChildren();
-            };
-            const auto & children = get_children();
-            response.names.reserve(children.size());
-
-            const auto add_child = [&](const auto & child)
-            {
-                using enum Coordination::ListRequestType;
-
-                auto list_request_type = ALL;
-                if (auto * filtered_list = dynamic_cast<Coordination::ZooKeeperFilteredListRequest *>(&request))
-                {
-                    list_request_type = filtered_list->list_request_type;
-                }
-
-                if (list_request_type == ALL)
-                    return true;
-
-                bool is_ephemeral;
-                if constexpr (!Storage::use_rocksdb)
-                {
-                    auto child_path = (std::filesystem::path(request.path) / child.toView()).generic_string();
-                    auto child_it = container.find(child_path);
-                    if (child_it == container.end())
-                        onStorageInconsistency();
-                    is_ephemeral = child_it->value.stats.isEphemeral();
-                }
-                else
-                {
-                    is_ephemeral = child.second.stats.isEphemeral();
-                }
-
-                return (is_ephemeral && list_request_type == EPHEMERAL_ONLY) || (!is_ephemeral && list_request_type == PERSISTENT_ONLY);
-            };
-
-            for (const auto & child : children)
-            {
-                if (add_child(child))
-                {
-                    if constexpr (Storage::use_rocksdb)
-                        response.names.push_back(child.first);
-                    else
-                        response.names.push_back(child.toString());
-                }
-            }
-
-            node_it->value.setResponseStat(response.stat);
-            response.error = Coordination::Error::ZOK;
-        }
-
-        return response_ptr;
-    }
-
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
-    {
-        return processImpl<false>(storage, std::move(deltas));
-    }
-
-    Coordination::ZooKeeperResponsePtr processLocal(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
-    {
-        ProfileEvents::increment(ProfileEvents::KeeperListRequest);
-        return processImpl<true>(storage, std::move(deltas));
-    }
-};
-
-template<typename Storage>
-struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestProcessor<Storage>
-{
-    explicit KeeperStorageCheckRequestProcessor(const Coordination::ZooKeeperRequestPtr & zk_request_)
-        : KeeperStorageRequestProcessor<Storage>(zk_request_)
-    {
-        check_not_exists = this->zk_request->getOpNum() == Coordination::OpNum::CheckNotExists;
-    }
-
-    bool checkAuth(Storage & storage, int64_t session_id, bool is_local) const override
-    {
-        auto path = this->zk_request->getPath();
-        return storage.checkACL(check_not_exists ? parentNodePath(path) : path, Coordination::ACL::Read, session_id, is_local);
-    }
-
-    std::list<KeeperStorageBase::Delta>
-    preprocess(Storage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/, const KeeperContext & /*keeper_context*/) const override
-    {
-        ProfileEvents::increment(ProfileEvents::KeeperCheckRequest);
-
-        Coordination::ZooKeeperCheckRequest & request = dynamic_cast<Coordination::ZooKeeperCheckRequest &>(*this->zk_request);
-
-        auto node = storage.uncommitted_state.getNode(request.path);
-        if (check_not_exists)
-        {
-            if (node && (request.version == -1 || request.version == node->stats.version))
-                return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNODEEXISTS}};
-        }
-        else
-        {
-            if (!node)
-                return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
-
-            if (request.version != -1 && request.version != node->stats.version)
-                return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADVERSION}};
-        }
-
-        return {};
-    }
-
-    template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const
-    {
-        Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
-        Coordination::ZooKeeperCheckResponse & response = dynamic_cast<Coordination::ZooKeeperCheckResponse &>(*response_ptr);
-        Coordination::ZooKeeperCheckRequest & request = dynamic_cast<Coordination::ZooKeeperCheckRequest &>(*this->zk_request);
-
-        if constexpr (!local)
-        {
-            if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
-            {
-                response.error = result;
-                return response_ptr;
+                    response.names.push_back(child.toString());
             }
         }
 
-        const auto on_error = [&]([[maybe_unused]] const auto error_code)
-        {
-            if constexpr (local)
-                response.error = error_code;
-            else
-                onStorageInconsistency();
-        };
-
-        auto & container = storage.container;
-        auto node_it = container.find(request.path);
-
-        if (check_not_exists)
-        {
-            if (node_it != container.end() && (request.version == -1 || request.version == node_it->value.stats.version))
-                on_error(Coordination::Error::ZNODEEXISTS);
-            else
-                response.error = Coordination::Error::ZOK;
-        }
-        else
-        {
-            if (node_it == container.end())
-                on_error(Coordination::Error::ZNONODE);
-            else if (request.version != -1 && request.version != node_it->value.stats.version)
-                on_error(Coordination::Error::ZBADVERSION);
-            else
-                response.error = Coordination::Error::ZOK;
-        }
-
-        return response_ptr;
+        node_it->value.setResponseStat(response.stat);
+        response.error = Coordination::Error::ZOK;
     }
 
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
-    {
-        return processImpl<false>(storage, std::move(deltas));
-    }
+    return response_ptr;
+}
 
-    Coordination::ZooKeeperResponsePtr processLocal(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
-    {
-        ProfileEvents::increment(ProfileEvents::KeeperCheckRequest);
-        return processImpl<true>(storage, std::move(deltas));
-    }
-
-private:
-    bool check_not_exists;
-};
-
-
-template<typename Storage>
-struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestProcessor<Storage>
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperListRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
 {
-    bool checkAuth(Storage & storage, int64_t session_id, bool is_local) const override
+    return processImpl<false>(zk_request, storage, std::move(deltas));
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr
+processLocal(const Coordination::ZooKeeperListRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperListRequest);
+    return processImpl<true>(zk_request, storage, std::move(deltas));
+}
+/// LIST Request ///
+
+/// CHECK Request ///
+template <typename Storage>
+bool checkAuth(const Coordination::ZooKeeperCheckRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
+{
+    auto path = zk_request.getPath();
+    return storage.checkACL(
+        zk_request.getOpNum() == Coordination::OpNum::CheckNotExists ? parentNodePath(path) : path,
+        Coordination::ACL::Read,
+        session_id,
+        is_local);
+}
+
+template <typename Storage>
+std::list<KeeperStorageBase::Delta> preprocess(
+    const Coordination::ZooKeeperCheckRequest & zk_request,
+    Storage & storage,
+    int64_t zxid,
+    int64_t /*session_id*/,
+    int64_t /*time*/,
+    uint64_t & /*digest*/,
+    const KeeperContext & /*keeper_context*/)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperCheckRequest);
+
+    auto node = storage.uncommitted_state.getNode(zk_request.path);
+    if (zk_request.getOpNum() == Coordination::OpNum::CheckNotExists)
     {
-        return storage.checkACL(this->zk_request->getPath(), Coordination::ACL::Admin, session_id, is_local);
+        if (node && (zk_request.version == -1 || zk_request.version == node->stats.version))
+            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNODEEXISTS}};
     }
-
-    using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
-
-    std::list<KeeperStorageBase::Delta>
-    preprocess(Storage & storage, int64_t zxid, int64_t session_id, int64_t /*time*/, uint64_t & digest, const KeeperContext & keeper_context) const override
+    else
     {
-        Coordination::ZooKeeperSetACLRequest & request = dynamic_cast<Coordination::ZooKeeperSetACLRequest &>(*this->zk_request);
-
-        if (Coordination::matchPath(request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
-        {
-            auto error_msg = fmt::format("Trying to update an internal Keeper path ({}) which is not allowed", request.path);
-
-            handleSystemNodeModification(keeper_context, error_msg);
-            return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
-        }
-
-        auto & uncommitted_state = storage.uncommitted_state;
-        if (!uncommitted_state.getNode(request.path))
+        if (!node)
             return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
 
-        auto node = uncommitted_state.getNode(request.path);
-
-        if (request.version != -1 && request.version != node->stats.aversion)
+        if (zk_request.version != -1 && zk_request.version != node->stats.version)
             return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADVERSION}};
-
-
-        Coordination::ACLs node_acls;
-        if (!fixupACL(request.acls, session_id, uncommitted_state, node_acls))
-            return {typename Storage::Delta{zxid, Coordination::Error::ZINVALIDACL}};
-
-        KeeperStorageBase::UpdateNodeStatDelta update_stat_delta(*node);
-        ++update_stat_delta.new_stats.aversion;
-        std::list<KeeperStorageBase::Delta> new_deltas{
-            {request.path,
-             zxid,
-             KeeperStorageBase::SetACLDelta{std::move(node_acls), uncommitted_state.getACLs(request.path), request.version}},
-            {request.path, zxid, std::move(update_stat_delta)}};
-
-        digest = storage.calculateNodesDigest(digest, new_deltas);
-
-        return new_deltas;
     }
 
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
-    {
-        Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
-        Coordination::ZooKeeperSetACLResponse & response = dynamic_cast<Coordination::ZooKeeperSetACLResponse &>(*response_ptr);
-        Coordination::ZooKeeperSetACLRequest & request = dynamic_cast<Coordination::ZooKeeperSetACLRequest &>(*this->zk_request);
+    return {};
+}
 
+template <bool local, typename Storage>
+Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperCheckRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    Coordination::ZooKeeperResponsePtr response_ptr = zk_request.makeResponse();
+    Coordination::ZooKeeperCheckResponse & response = dynamic_cast<Coordination::ZooKeeperCheckResponse &>(*response_ptr);
+
+    if constexpr (!local)
+    {
         if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
         {
             response.error = result;
             return response_ptr;
         }
+    }
 
-        auto node_it = storage.container.find(request.path);
-        if (node_it == storage.container.end())
+    const auto on_error = [&]([[maybe_unused]] const auto error_code)
+    {
+        if constexpr (local)
+            response.error = error_code;
+        else
             onStorageInconsistency();
-        node_it->value.setResponseStat(response.stat);
-        response.error = Coordination::Error::ZOK;
+    };
 
-        return response_ptr;
-    }
-};
+    auto & container = storage.container;
+    auto node_it = container.find(zk_request.path);
 
-template<typename Storage>
-struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestProcessor<Storage>
-{
-    bool checkAuth(Storage & storage, int64_t session_id, bool is_local) const override
+    if (zk_request.getOpNum() == Coordination::OpNum::CheckNotExists)
     {
-        return storage.checkACL(this->zk_request->getPath(), Coordination::ACL::Admin | Coordination::ACL::Read, session_id, is_local);
+        if (node_it != container.end() && (zk_request.version == -1 || zk_request.version == node_it->value.stats.version))
+            on_error(Coordination::Error::ZNODEEXISTS);
+        else
+            response.error = Coordination::Error::ZOK;
     }
-
-    using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
-
-    std::list<KeeperStorageBase::Delta>
-    preprocess(Storage & storage, int64_t zxid, int64_t /*session_id*/, int64_t /*time*/, uint64_t & /*digest*/, const KeeperContext & /*keeper_context*/) const override
+    else
     {
-        Coordination::ZooKeeperGetACLRequest & request = dynamic_cast<Coordination::ZooKeeperGetACLRequest &>(*this->zk_request);
-
-        if (!storage.uncommitted_state.getNode(request.path))
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
-
-        return {};
-    }
-
-    template <bool local>
-    Coordination::ZooKeeperResponsePtr processImpl(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const
-    {
-        Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
-        Coordination::ZooKeeperGetACLResponse & response = dynamic_cast<Coordination::ZooKeeperGetACLResponse &>(*response_ptr);
-        Coordination::ZooKeeperGetACLRequest & request = dynamic_cast<Coordination::ZooKeeperGetACLRequest &>(*this->zk_request);
-
-        if constexpr (!local)
-        {
-            if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
-            {
-                response.error = result;
-                return response_ptr;
-            }
-        }
-
-        auto & container = storage.container;
-        auto node_it = container.find(request.path);
         if (node_it == container.end())
-        {
-            if constexpr (local)
-                response.error = Coordination::Error::ZNONODE;
-            else
-                onStorageInconsistency();
-        }
+            on_error(Coordination::Error::ZNONODE);
+        else if (zk_request.version != -1 && zk_request.version != node_it->value.stats.version)
+            on_error(Coordination::Error::ZBADVERSION);
         else
+            response.error = Coordination::Error::ZOK;
+    }
+
+    return response_ptr;
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCheckRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    return processImpl<false>(zk_request, storage, std::move(deltas));
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr
+processLocal(const Coordination::ZooKeeperCheckRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperCheckRequest);
+    return processImpl<true>(zk_request, storage, std::move(deltas));
+}
+/// CHECK Request ///
+
+/// MULTI Request ///
+using OperationType = Coordination::ZooKeeperMultiRequest::OperationType;
+template <typename Storage>
+bool checkAuth(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
+{
+    for (const auto & concrete_request : zk_request.requests)
+    {
+        if (!callOnConcreteRequestType(
+                *concrete_request, [&](const auto & subrequest) { return checkAuth(subrequest, storage, session_id, is_local); }))
+            return false;
+    }
+    return true;
+}
+
+template <typename Storage>
+std::list<KeeperStorageBase::Delta> preprocess(
+    const Coordination::ZooKeeperMultiRequest & zk_request,
+    Storage & storage,
+    int64_t zxid,
+    int64_t session_id,
+    int64_t time,
+    uint64_t & digest,
+    const KeeperContext & keeper_context)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperMultiRequest);
+    std::vector<Coordination::Error> response_errors;
+    const auto & subrequests = zk_request.requests;
+    response_errors.reserve(subrequests.size());
+    uint64_t current_digest = digest;
+    std::list<KeeperStorageBase::Delta> new_deltas;
+    for (size_t i = 0; i < subrequests.size(); ++i)
+    {
+        auto new_subdeltas = callOnConcreteRequestType(
+            *subrequests[i],
+            [&](const auto & subrequest)
+            { return preprocess(subrequest, storage, zxid, session_id, time, current_digest, keeper_context); });
+
+        if (!new_subdeltas.empty())
         {
-            node_it->value.setResponseStat(response.stat);
-            response.acl = storage.acl_map.convertNumber(node_it->value.stats.acl_id);
+            if (auto * error = std::get_if<KeeperStorageBase::ErrorDelta>(&new_subdeltas.back().operation);
+                error && zk_request.getOpNum() == Coordination::OpNum::Multi)
+            {
+                storage.uncommitted_state.rollback(std::move(new_deltas));
+                response_errors.push_back(error->error);
+
+                for (size_t j = i + 1; j < subrequests.size(); ++j)
+                    response_errors.push_back(Coordination::Error::ZRUNTIMEINCONSISTENCY);
+
+                return {typename Storage::Delta{zxid, typename Storage::FailedMultiDelta{std::move(response_errors)}}};
+            }
+        }
+
+        new_subdeltas.emplace_back(zxid, KeeperStorageBase::SubDeltaEnd{});
+        response_errors.push_back(Coordination::Error::ZOK);
+
+        // manually add deltas so that the result of previous request in the transaction is used in the next request
+        storage.uncommitted_state.applyDeltas(new_subdeltas);
+        new_deltas.splice(new_deltas.end(), std::move(new_subdeltas));
+    }
+
+    digest = current_digest;
+    storage.uncommitted_state.addDeltas(std::move(new_deltas));
+    return {};
+}
+
+std::list<KeeperStorageBase::Delta> getSubdeltas(std::list<KeeperStorageBase::Delta> & deltas)
+{
+    std::list<KeeperStorageBase::Delta> subdeltas;
+    auto it = deltas.begin();
+
+    for (; it != deltas.end(); ++it)
+    {
+        if (std::holds_alternative<KeeperStorageBase::SubDeltaEnd>(it->operation))
+        {
+            ++it;
+            break;
+        }
+    }
+
+    if (it == deltas.end())
+        subdeltas = std::move(deltas);
+    else
+        subdeltas.splice(subdeltas.end(), deltas, deltas.begin(), it);
+
+    return subdeltas;
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr
+process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    Coordination::ZooKeeperResponsePtr response_ptr = zk_request.makeResponse();
+    Coordination::ZooKeeperMultiResponse & response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*response_ptr);
+
+    const auto & subrequests = zk_request.requests;
+
+    // the deltas will have at least SubDeltaEnd or FailedMultiDelta
+    chassert(!deltas.empty());
+    if (auto * failed_multi = std::get_if<typename Storage::FailedMultiDelta>(&deltas.front().operation))
+    {
+        for (size_t i = 0; i < subrequests.size(); ++i)
+        {
+            response.responses[i] = std::make_shared<Coordination::ZooKeeperErrorResponse>();
+            response.responses[i]->error = failed_multi->error_codes[i];
         }
 
         return response_ptr;
     }
 
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
+    for (size_t i = 0; i < subrequests.size(); ++i)
     {
-        return processImpl<false>(storage, std::move(deltas));
+        std::list<KeeperStorageBase::Delta> subdeltas = getSubdeltas(deltas);
+        response.responses[i] = callOnConcreteRequestType(
+            *subrequests[i], [&](const auto & subrequest) { return process(subrequest, storage, std::move(subdeltas)); });
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
-    {
-        return processImpl<true>(storage, std::move(deltas));
-    }
-};
+    response.error = Coordination::Error::ZOK;
+    return response_ptr;
+}
 
-template<typename Storage>
-struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestProcessor<Storage>
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr processLocal(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
 {
-    using OperationType = Coordination::ZooKeeperMultiRequest::OperationType;
-    std::optional<OperationType> operation_type;
+    ProfileEvents::increment(ProfileEvents::KeeperMultiReadRequest);
+    Coordination::ZooKeeperResponsePtr response_ptr = zk_request.makeResponse();
+    Coordination::ZooKeeperMultiResponse & response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*response_ptr);
 
-    bool checkAuth(Storage & storage, int64_t session_id, bool is_local) const override
+    const auto & subrequests = zk_request.requests;
+    for (size_t i = 0; i < subrequests.size(); ++i)
     {
-        for (const auto & concrete_request : concrete_requests)
-            if (!concrete_request->checkAuth(storage, session_id, is_local))
-                return false;
-        return true;
+        std::list<KeeperStorageBase::Delta> subdeltas = getSubdeltas(deltas);
+        response.responses[i] = callOnConcreteRequestType(
+            *subrequests[i], [&](const auto & subrequest) { return processLocal(subrequest, storage, std::move(subdeltas)); });
     }
 
-    std::vector<std::shared_ptr<KeeperStorageRequestProcessor<Storage>>> concrete_requests;
-    explicit KeeperStorageMultiRequestProcessor(const Coordination::ZooKeeperRequestPtr & zk_request_)
-        : KeeperStorageRequestProcessor<Storage>(zk_request_)
+    response.error = Coordination::Error::ZOK;
+    return response_ptr;
+}
+
+template <typename Storage>
+KeeperStorageBase::ResponsesForSessions processWatches(
+    const Coordination::ZooKeeperMultiRequest & zk_request, typename Storage::Watches & watches, typename Storage::Watches & list_watches)
+{
+    typename Storage::ResponsesForSessions result;
+
+    const auto & subrequests = zk_request.requests;
+    for (const auto & generic_request : subrequests)
     {
-        Coordination::ZooKeeperMultiRequest & request = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*this->zk_request);
-        concrete_requests.reserve(request.requests.size());
+        auto responses = callOnConcreteRequestType(
+            generic_request, [&](const auto & subrequest) { return processWatches(subrequest, watches, list_watches); });
+        result.insert(result.end(), responses.begin(), responses.end());
+    }
+    return result;
+}
+/// MULTI Request ///
 
-        const auto check_operation_type = [&](OperationType type)
-        {
-            if (operation_type.has_value() && *operation_type != type)
-                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal mixing of read and write operations in multi request");
-            operation_type = type;
-        };
+/// AUTH Request ///
+template <typename Storage>
+std::list<KeeperStorageBase::Delta> preprocess(
+    const Coordination::ZooKeeperAuthRequest & zk_request,
+    Storage & storage,
+    int64_t zxid,
+    int64_t session_id,
+    int64_t /*time*/,
+    uint64_t & /*digest*/,
+    const KeeperContext & /*keeper_context*/)
+{
+    Coordination::ZooKeeperResponsePtr response_ptr = zk_request.makeResponse();
 
-        for (const auto & sub_request : request.requests)
-        {
-            auto sub_zk_request = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_request);
-            switch (sub_zk_request->getOpNum())
-            {
-                case Coordination::OpNum::Create:
-                case Coordination::OpNum::CreateIfNotExists:
-                    check_operation_type(OperationType::Write);
-                    concrete_requests.push_back(std::make_shared<KeeperStorageCreateRequestProcessor<Storage>>(sub_zk_request));
-                    break;
-                case Coordination::OpNum::Remove:
-                    check_operation_type(OperationType::Write);
-                    concrete_requests.push_back(std::make_shared<KeeperStorageRemoveRequestProcessor<Storage>>(sub_zk_request));
-                    break;
-                case Coordination::OpNum::Set:
-                    check_operation_type(OperationType::Write);
-                    concrete_requests.push_back(std::make_shared<KeeperStorageSetRequestProcessor<Storage>>(sub_zk_request));
-                    break;
-                case Coordination::OpNum::Check:
-                case Coordination::OpNum::CheckNotExists:
-                    check_operation_type(OperationType::Write);
-                    concrete_requests.push_back(std::make_shared<KeeperStorageCheckRequestProcessor<Storage>>(sub_zk_request));
-                    break;
-                case Coordination::OpNum::Get:
-                    check_operation_type(OperationType::Read);
-                    concrete_requests.push_back(std::make_shared<KeeperStorageGetRequestProcessor<Storage>>(sub_zk_request));
-                    break;
-                case Coordination::OpNum::Exists:
-                    check_operation_type(OperationType::Read);
-                    concrete_requests.push_back(std::make_shared<KeeperStorageExistsRequestProcessor<Storage>>(sub_zk_request));
-                    break;
-                case Coordination::OpNum::List:
-                case Coordination::OpNum::FilteredList:
-                case Coordination::OpNum::SimpleList:
-                    check_operation_type(OperationType::Read);
-                    concrete_requests.push_back(std::make_shared<KeeperStorageListRequestProcessor<Storage>>(sub_zk_request));
-                    break;
-                default:
-                    throw DB::Exception(
-                                        ErrorCodes::BAD_ARGUMENTS,
-                                        "Illegal command as part of multi ZooKeeper request {}",
-                                        sub_zk_request->getOpNum());
-            }
-        }
+    if (zk_request.scheme != "digest" || std::count(zk_request.data.begin(), zk_request.data.end(), ':') != 1)
+        return {typename Storage::Delta{zxid, Coordination::Error::ZAUTHFAILED}};
 
-        chassert(request.requests.empty() || operation_type.has_value());
+    std::list<KeeperStorageBase::Delta> new_deltas;
+    auto auth_digest = Storage::generateDigest(zk_request.data);
+    if (auth_digest == storage.superdigest)
+    {
+        auto auth = std::make_shared<KeeperStorageBase::AuthID>();
+        auth->scheme = "super";
+        new_deltas.emplace_back(zxid, KeeperStorageBase::AddAuthDelta{session_id, std::move(auth)});
+    }
+    else
+    {
+        auto new_auth = std::make_shared<KeeperStorageBase::AuthID>();
+        new_auth->scheme = zk_request.scheme;
+        new_auth->id = std::move(auth_digest);
+        if (!storage.uncommitted_state.hasACL(session_id, false, [&](const auto & auth_id) { return *new_auth == auth_id; }))
+            new_deltas.emplace_back(zxid, KeeperStorageBase::AddAuthDelta{session_id, std::move(new_auth)});
     }
 
-    std::list<KeeperStorageBase::Delta>
-    preprocess(Storage & storage, int64_t zxid, int64_t session_id, int64_t time, uint64_t & digest, const KeeperContext & keeper_context) const override
+    return new_deltas;
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr
+process(const Coordination::ZooKeeperAuthRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    Coordination::ZooKeeperResponsePtr response_ptr = zk_request.makeResponse();
+    Coordination::ZooKeeperAuthResponse & auth_response = dynamic_cast<Coordination::ZooKeeperAuthResponse &>(*response_ptr);
+
+    if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
+        auth_response.error = result;
+
+    return response_ptr;
+}
+/// AUTH Request ///
+
+/// CLOSE Request ///
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr
+process(const Coordination::ZooKeeperCloseRequest & /* zk_request */, Storage &, std::list<KeeperStorageBase::Delta> /* deltas */)
+{
+    throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Called process on close request");
+}
+/// CLOSE Request ///
+
+/// SETACL Request ///
+template <typename Storage>
+bool checkAuth(const Coordination::ZooKeeperSetACLRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
+{
+    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Admin, session_id, is_local);
+}
+
+template <typename Storage>
+std::list<KeeperStorageBase::Delta> preprocess(
+    const Coordination::ZooKeeperSetACLRequest & zk_request,
+    Storage & storage,
+    int64_t zxid,
+    int64_t session_id,
+    int64_t /*time*/,
+    uint64_t & digest,
+    const KeeperContext & keeper_context)
+{
+    if (Coordination::matchPath(zk_request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
     {
-        ProfileEvents::increment(ProfileEvents::KeeperMultiRequest);
-        std::vector<Coordination::Error> response_errors;
-        response_errors.reserve(concrete_requests.size());
-        uint64_t current_digest = digest;
-        std::list<KeeperStorageBase::Delta> new_deltas;
-        for (size_t i = 0; i < concrete_requests.size(); ++i)
-        {
-            auto new_subdeltas = concrete_requests[i]->preprocess(storage, zxid, session_id, time, current_digest, keeper_context);
+        auto error_msg = fmt::format("Trying to update an internal Keeper path ({}) which is not allowed", zk_request.path);
 
-            if (!new_subdeltas.empty())
-            {
-                if (auto * error = std::get_if<KeeperStorageBase::ErrorDelta>(&new_subdeltas.back().operation);
-                    error && *operation_type == OperationType::Write)
-                {
-                    storage.uncommitted_state.rollback(std::move(new_deltas));
-                    response_errors.push_back(error->error);
-
-                    for (size_t j = i + 1; j < concrete_requests.size(); ++j)
-                        response_errors.push_back(Coordination::Error::ZRUNTIMEINCONSISTENCY);
-
-                    return {typename Storage::Delta{zxid, typename Storage::FailedMultiDelta{std::move(response_errors)}}};
-                }
-            }
-
-            new_subdeltas.emplace_back(zxid, KeeperStorageBase::SubDeltaEnd{});
-            response_errors.push_back(Coordination::Error::ZOK);
-
-            // manually add deltas so that the result of previous request in the transaction is used in the next request
-            storage.uncommitted_state.applyDeltas(new_subdeltas);
-            new_deltas.splice(new_deltas.end(), std::move(new_subdeltas));
-        }
-
-        digest = current_digest;
-        storage.uncommitted_state.addDeltas(std::move(new_deltas));
-        return {};
+        handleSystemNodeModification(keeper_context, error_msg);
+        return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
     }
 
-    std::list<KeeperStorageBase::Delta> getSubdeltas(std::list<KeeperStorageBase::Delta> & deltas) const
+    auto & uncommitted_state = storage.uncommitted_state;
+    if (!uncommitted_state.getNode(zk_request.path))
+        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+
+    auto node = uncommitted_state.getNode(zk_request.path);
+
+    if (zk_request.version != -1 && zk_request.version != node->stats.aversion)
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADVERSION}};
+
+
+    Coordination::ACLs node_acls;
+    if (!fixupACL(zk_request.acls, session_id, uncommitted_state, node_acls))
+        return {typename Storage::Delta{zxid, Coordination::Error::ZINVALIDACL}};
+
+    KeeperStorageBase::UpdateNodeStatDelta update_stat_delta(*node);
+    ++update_stat_delta.new_stats.aversion;
+    std::list<KeeperStorageBase::Delta> new_deltas{
+        {zk_request.path,
+         zxid,
+         KeeperStorageBase::SetACLDelta{std::move(node_acls), uncommitted_state.getACLs(zk_request.path), zk_request.version}},
+        {zk_request.path, zxid, std::move(update_stat_delta)}};
+
+    digest = storage.calculateNodesDigest(digest, new_deltas);
+
+    return new_deltas;
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr
+process(const Coordination::ZooKeeperSetACLRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    Coordination::ZooKeeperResponsePtr response_ptr = zk_request.makeResponse();
+    Coordination::ZooKeeperSetACLResponse & response = dynamic_cast<Coordination::ZooKeeperSetACLResponse &>(*response_ptr);
+
+    if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
     {
-        std::list<KeeperStorageBase::Delta> subdeltas;
-        auto it = deltas.begin();
-
-        for (; it != deltas.end(); ++it)
-        {
-            if (std::holds_alternative<KeeperStorageBase::SubDeltaEnd>(it->operation))
-            {
-                ++it;
-                break;
-            }
-        }
-
-        if (it == deltas.end())
-            subdeltas = std::move(deltas);
-        else
-            subdeltas.splice(subdeltas.end(), deltas, deltas.begin(), it);
-
-        return subdeltas;
+        response.error = result;
+        return response_ptr;
     }
 
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
+    auto node_it = storage.container.find(zk_request.path);
+    if (node_it == storage.container.end())
+        onStorageInconsistency();
+    node_it->value.setResponseStat(response.stat);
+    response.error = Coordination::Error::ZOK;
+
+    return response_ptr;
+}
+/// SETACL Request ///
+
+/// GETACL Request ///
+template <typename Storage>
+bool checkAuth(const Coordination::ZooKeeperGetACLRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
+{
+    return storage.checkACL(zk_request.getPath(), Coordination::ACL::Admin | Coordination::ACL::Read, session_id, is_local);
+}
+
+template <typename Storage>
+std::list<KeeperStorageBase::Delta> preprocess(
+    const Coordination::ZooKeeperGetACLRequest & zk_request,
+    Storage & storage,
+    int64_t zxid,
+    int64_t /*session_id*/,
+    int64_t /*time*/,
+    uint64_t & /*digest*/,
+    const KeeperContext & /*keeper_context*/)
+{
+    if (!storage.uncommitted_state.getNode(zk_request.path))
+        return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+
+    return {};
+}
+
+template <bool local, typename Storage>
+Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperGetACLRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    Coordination::ZooKeeperResponsePtr response_ptr = zk_request.makeResponse();
+    Coordination::ZooKeeperGetACLResponse & response = dynamic_cast<Coordination::ZooKeeperGetACLResponse &>(*response_ptr);
+
+    if constexpr (!local)
     {
-        Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
-        Coordination::ZooKeeperMultiResponse & response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*response_ptr);
-
-        // the deltas will have at least SubDeltaEnd or FailedMultiDelta
-        chassert(!deltas.empty());
-        if (auto * failed_multi = std::get_if<typename Storage::FailedMultiDelta>(&deltas.front().operation))
+        if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
         {
-            for (size_t i = 0; i < concrete_requests.size(); ++i)
-            {
-                response.responses[i] = std::make_shared<Coordination::ZooKeeperErrorResponse>();
-                response.responses[i]->error = failed_multi->error_codes[i];
-            }
-
+            response.error = result;
             return response_ptr;
         }
-
-        for (size_t i = 0; i < concrete_requests.size(); ++i)
-        {
-            std::list<KeeperStorageBase::Delta> subdeltas = getSubdeltas(deltas);
-            response.responses[i] = concrete_requests[i]->process(storage, std::move(subdeltas));
-        }
-
-        response.error = Coordination::Error::ZOK;
-        return response_ptr;
     }
 
-    Coordination::ZooKeeperResponsePtr processLocal(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
+    auto & container = storage.container;
+    auto node_it = container.find(zk_request.path);
+    if (node_it == container.end())
     {
-        ProfileEvents::increment(ProfileEvents::KeeperMultiReadRequest);
-        Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
-        Coordination::ZooKeeperMultiResponse & response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*response_ptr);
-
-        for (size_t i = 0; i < concrete_requests.size(); ++i)
-        {
-            std::list<KeeperStorageBase::Delta> subdeltas = getSubdeltas(deltas);
-            response.responses[i] = concrete_requests[i]->processLocal(storage, std::move(subdeltas));
-        }
-
-        response.error = Coordination::Error::ZOK;
-        return response_ptr;
-    }
-
-    KeeperStorageBase::ResponsesForSessions
-    processWatches(typename Storage::Watches & watches, typename Storage::Watches & list_watches) const override
-    {
-        typename Storage::ResponsesForSessions result;
-        for (const auto & generic_request : concrete_requests)
-        {
-            auto responses = generic_request->processWatches(watches, list_watches);
-            result.insert(result.end(), responses.begin(), responses.end());
-        }
-        return result;
-    }
-};
-
-template<typename Storage>
-struct KeeperStorageCloseRequestProcessor final : public KeeperStorageRequestProcessor<Storage>
-{
-    using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
-    Coordination::ZooKeeperResponsePtr process(Storage &, std::list<KeeperStorageBase::Delta> /* deltas */) const override
-    {
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Called process on close request");
-    }
-};
-
-template<typename Storage>
-struct KeeperStorageAuthRequestProcessor final : public KeeperStorageRequestProcessor<Storage>
-{
-    using KeeperStorageRequestProcessor<Storage>::KeeperStorageRequestProcessor;
-    std::list<KeeperStorageBase::Delta>
-    preprocess(Storage & storage, int64_t zxid, int64_t session_id, int64_t /*time*/, uint64_t & /*digest*/, const KeeperContext & /*keeper_context*/) const override
-    {
-        Coordination::ZooKeeperAuthRequest & auth_request = dynamic_cast<Coordination::ZooKeeperAuthRequest &>(*this->zk_request);
-        Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
-
-        if (auth_request.scheme != "digest" || std::count(auth_request.data.begin(), auth_request.data.end(), ':') != 1)
-            return {typename Storage::Delta{zxid, Coordination::Error::ZAUTHFAILED}};
-
-        std::list<KeeperStorageBase::Delta> new_deltas;
-        auto auth_digest = Storage::generateDigest(auth_request.data);
-        if (auth_digest == storage.superdigest)
-        {
-            auto auth = std::make_shared<KeeperStorageBase::AuthID>();
-            auth->scheme = "super";
-            new_deltas.emplace_back(zxid, KeeperStorageBase::AddAuthDelta{session_id, std::move(auth)});
-        }
+        if constexpr (local)
+            response.error = Coordination::Error::ZNONODE;
         else
-        {
-            auto new_auth = std::make_shared<KeeperStorageBase::AuthID>();
-            new_auth->scheme = auth_request.scheme;
-            new_auth->id = std::move(auth_digest);
-            if (!storage.uncommitted_state.hasACL(session_id, false, [&](const auto & auth_id) { return *new_auth == auth_id; }))
-                new_deltas.emplace_back(zxid, KeeperStorageBase::AddAuthDelta{session_id, std::move(new_auth)});
-        }
-
-        return new_deltas;
+            onStorageInconsistency();
     }
-
-    Coordination::ZooKeeperResponsePtr process(Storage & storage, std::list<KeeperStorageBase::Delta> deltas) const override
+    else
     {
-        Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
-        Coordination::ZooKeeperAuthResponse & auth_response = dynamic_cast<Coordination::ZooKeeperAuthResponse &>(*response_ptr);
-
-        if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
-            auth_response.error = result;
-
-        return response_ptr;
+        node_it->value.setResponseStat(response.stat);
+        response.acl = storage.acl_map.convertNumber(node_it->value.stats.acl_id);
     }
-};
+
+    return response_ptr;
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperGetACLRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    return processImpl<false>(zk_request, storage, std::move(deltas));
+}
+
+template <typename Storage>
+Coordination::ZooKeeperResponsePtr processLocal(const Coordination::ZooKeeperGetACLRequest & zk_request, Storage & storage, std::list<KeeperStorageBase::Delta> deltas)
+{
+    return processImpl<true>(zk_request, storage, std::move(deltas));
+}
+/// GETACL Request ///
 
 template<typename Container>
 void KeeperStorage<Container>::finalize()
@@ -2383,72 +2441,6 @@ bool KeeperStorage<Container>::isFinalized() const
 {
     return finalized;
 }
-
-template<typename Storage>
-class KeeperStorageRequestProcessorsFactory final : private boost::noncopyable
-{
-public:
-    using Creator = std::function<std::shared_ptr<KeeperStorageRequestProcessor<Storage>>(const Coordination::ZooKeeperRequestPtr &)>;
-    using OpNumToRequest = std::unordered_map<Coordination::OpNum, Creator>;
-
-    static KeeperStorageRequestProcessorsFactory<Storage> & instance()
-    {
-        static KeeperStorageRequestProcessorsFactory<Storage> factory;
-        return factory;
-    }
-
-    std::shared_ptr<KeeperStorageRequestProcessor<Storage>> get(const Coordination::ZooKeeperRequestPtr & zk_request) const
-    {
-        auto request_it = op_num_to_request.find(zk_request->getOpNum());
-        if (request_it == op_num_to_request.end())
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unknown operation type {}", zk_request->getOpNum());
-
-        return request_it->second(zk_request);
-    }
-
-    void registerRequest(Coordination::OpNum op_num, Creator creator)
-    {
-        if (!op_num_to_request.try_emplace(op_num, creator).second)
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Request with op num {} already registered", op_num);
-    }
-
-private:
-    OpNumToRequest op_num_to_request;
-    KeeperStorageRequestProcessorsFactory();
-};
-
-template <Coordination::OpNum num, typename RequestT, typename Factory>
-void registerKeeperRequestProcessor(Factory & factory)
-{
-    factory.registerRequest(
-        num, [](const Coordination::ZooKeeperRequestPtr & zk_request) { return std::make_shared<RequestT>(zk_request); });
-}
-
-
-template<typename Storage>
-KeeperStorageRequestProcessorsFactory<Storage>::KeeperStorageRequestProcessorsFactory()
-{
-    registerKeeperRequestProcessor<Coordination::OpNum::Heartbeat, KeeperStorageHeartbeatRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::Sync, KeeperStorageSyncRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::Auth, KeeperStorageAuthRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::Close, KeeperStorageCloseRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::Create, KeeperStorageCreateRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::Remove, KeeperStorageRemoveRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::Exists, KeeperStorageExistsRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::Get, KeeperStorageGetRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::Set, KeeperStorageSetRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::List, KeeperStorageListRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::SimpleList, KeeperStorageListRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::FilteredList, KeeperStorageListRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::Check, KeeperStorageCheckRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::Multi, KeeperStorageMultiRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::MultiRead, KeeperStorageMultiRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::CreateIfNotExists, KeeperStorageCreateRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::SetACL, KeeperStorageSetACLRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::GetACL, KeeperStorageGetACLRequestProcessor<Storage>>(*this);
-    registerKeeperRequestProcessor<Coordination::OpNum::CheckNotExists, KeeperStorageCheckRequestProcessor<Storage>>(*this);
-}
-
 
 template<typename Container>
 UInt64 KeeperStorage<Container>::calculateNodesDigest(UInt64 current_digest, const std::list<Delta> & new_deltas) const
@@ -2604,8 +2596,6 @@ void KeeperStorage<Container>::preprocessRequest(
         uncommitted_state.addDeltas(std::move(new_deltas));
     });
 
-    auto request_processor = KeeperStorageRequestProcessorsFactory<KeeperStorage<Container>>::instance().get(zk_request);
-
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
     {
         {
@@ -2643,13 +2633,18 @@ void KeeperStorage<Container>::preprocessRequest(
         return;
     }
 
-    if (check_acl && !request_processor->checkAuth(*this, session_id, false))
+    const auto preprocess_request = [&]<std::derived_from<Coordination::ZooKeeperRequest> T>(const T & concrete_zk_request)
     {
-        new_deltas.emplace_back(new_last_zxid, Coordination::Error::ZNOAUTH);
-        return;
-    }
+        if (check_acl && !checkAuth(concrete_zk_request, *this, session_id, false))
+        {
+            new_deltas.emplace_back(new_last_zxid, Coordination::Error::ZNOAUTH);
+            return;
+        }
 
-    new_deltas = request_processor->preprocess(*this, transaction->zxid, session_id, time, new_digest, *keeper_context);
+        new_deltas = preprocess(concrete_zk_request, *this, transaction->zxid, session_id, time, new_digest, *keeper_context);
+    };
+
+    callOnConcreteRequestType(*zk_request, preprocess_request);
 
     uncommitted_state.cleanup(getZXID());
 }
@@ -2750,11 +2745,10 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
     }
     else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat) /// Heartbeat request is also special
     {
-        auto storage_request = KeeperStorageRequestProcessorsFactory<KeeperStorage<Container>>::instance().get(zk_request);
         Coordination::ZooKeeperResponsePtr response = nullptr;
         {
             std::lock_guard lock(storage_mutex);
-            response = storage_request->process(*this, std::move(deltas));
+            response = process(dynamic_cast<const Coordination::ZooKeeperHeartbeatRequest &>(*zk_request), *this, std::move(deltas));
         }
         response->xid = zk_request->xid;
         response->zxid = commit_zxid;
@@ -2763,65 +2757,69 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
     }
     else /// normal requests proccession
     {
-        auto request_processor = KeeperStorageRequestProcessorsFactory<KeeperStorage<Container>>::instance().get(zk_request);
-        Coordination::ZooKeeperResponsePtr response;
-
-        if (is_local)
+        const auto process_request = [&]<std::derived_from<Coordination::ZooKeeperRequest> T>(const T & concrete_zk_request)
         {
-            chassert(zk_request->isReadRequest());
-            if (check_acl && !request_processor->checkAuth(*this, session_id, true))
+            Coordination::ZooKeeperResponsePtr response;
+
+            if (is_local)
             {
-                response = zk_request->makeResponse();
-                /// Original ZooKeeper always throws no auth, even when user provided some credentials
-                response->error = Coordination::Error::ZNOAUTH;
+                chassert(zk_request->isReadRequest());
+                if (check_acl && !checkAuth(concrete_zk_request, *this, session_id, true))
+                {
+                    response = zk_request->makeResponse();
+                    /// Original ZooKeeper always throws no auth, even when user provided some credentials
+                    response->error = Coordination::Error::ZNOAUTH;
+                }
+                else
+                {
+                    std::shared_lock lock(storage_mutex);
+                    response = processLocal(concrete_zk_request, *this, std::move(deltas));
+                }
             }
             else
             {
-                std::shared_lock lock(storage_mutex);
-                response = request_processor->processLocal(*this, std::move(deltas));
+                std::lock_guard lock(storage_mutex);
+                response = process(concrete_zk_request, *this, std::move(deltas));
             }
-        }
-        else
-        {
-            std::lock_guard lock(storage_mutex);
-            response = request_processor->process(*this, std::move(deltas));
-        }
 
-        /// Watches for this requests are added to the watches lists
-        if (zk_request->has_watch)
-        {
+            /// Watches for this requests are added to the watches lists
+            if (zk_request->has_watch)
+            {
+                if (response->error == Coordination::Error::ZOK)
+                {
+                    static constexpr std::array list_requests{
+                        Coordination::OpNum::List, Coordination::OpNum::SimpleList, Coordination::OpNum::FilteredList};
+
+                    auto & watches_type = std::find(list_requests.begin(), list_requests.end(), zk_request->getOpNum()) != list_requests.end()
+                        ? list_watches
+                        : watches;
+
+                    auto add_watch_result = watches_type[zk_request->getPath()].emplace(session_id);
+                    if (add_watch_result.second)
+                        sessions_and_watchers[session_id].emplace(zk_request->getPath());
+                }
+                else if (response->error == Coordination::Error::ZNONODE && zk_request->getOpNum() == Coordination::OpNum::Exists)
+                {
+                    auto add_watch_result = watches[zk_request->getPath()].emplace(session_id);
+                    if (add_watch_result.second)
+                        sessions_and_watchers[session_id].emplace(zk_request->getPath());
+                }
+            }
+
+            /// If this requests processed successfully we need to check watches
             if (response->error == Coordination::Error::ZOK)
             {
-                static constexpr std::array list_requests{
-                    Coordination::OpNum::List, Coordination::OpNum::SimpleList, Coordination::OpNum::FilteredList};
-
-                auto & watches_type = std::find(list_requests.begin(), list_requests.end(), zk_request->getOpNum()) != list_requests.end()
-                    ? list_watches
-                    : watches;
-
-                auto add_watch_result = watches_type[zk_request->getPath()].emplace(session_id);
-                if (add_watch_result.second)
-                    sessions_and_watchers[session_id].emplace(zk_request->getPath());
+                auto watch_responses = processWatches(concrete_zk_request, watches, list_watches);
+                results.insert(results.end(), watch_responses.begin(), watch_responses.end());
             }
-            else if (response->error == Coordination::Error::ZNONODE && zk_request->getOpNum() == Coordination::OpNum::Exists)
-            {
-                auto add_watch_result = watches[zk_request->getPath()].emplace(session_id);
-                if (add_watch_result.second)
-                    sessions_and_watchers[session_id].emplace(zk_request->getPath());
-            }
-        }
 
-        /// If this requests processed successfully we need to check watches
-        if (response->error == Coordination::Error::ZOK)
-        {
-            auto watch_responses = request_processor->processWatches(watches, list_watches);
-            results.insert(results.end(), watch_responses.begin(), watch_responses.end());
-        }
+            response->xid = zk_request->xid;
+            response->zxid = commit_zxid;
 
-        response->xid = zk_request->xid;
-        response->zxid = commit_zxid;
+            results.push_back(ResponseForSession{session_id, response});
+        };
 
-        results.push_back(ResponseForSession{session_id, response});
+        callOnConcreteRequestType(*zk_request, process_request);
     }
 
     updateStats();
