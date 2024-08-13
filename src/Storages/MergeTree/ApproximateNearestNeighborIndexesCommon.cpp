@@ -268,7 +268,7 @@ bool ApproximateNearestNeighborCondition::tryCastToConstType(const ASTPtr & node
         if (const_value.getType() == Field::Types::Float64)
         {
             out.function = RPNElement::FUNCTION_FLOAT_LITERAL;
-            out.float_literal.emplace(const_value.get<Float32>());
+            out.float_literal.emplace(const_value.safeGet<Float32>());
             out.func_name = "Float literal";
             return true;
         }
@@ -276,7 +276,7 @@ bool ApproximateNearestNeighborCondition::tryCastToConstType(const ASTPtr & node
         if (const_value.getType() == Field::Types::UInt64)
         {
             out.function = RPNElement::FUNCTION_INT_LITERAL;
-            out.int_literal.emplace(const_value.get<UInt64>());
+            out.int_literal.emplace(const_value.safeGet<UInt64>());
             out.func_name = "Int literal";
             return true;
         }
@@ -284,7 +284,7 @@ bool ApproximateNearestNeighborCondition::tryCastToConstType(const ASTPtr & node
         if (const_value.getType() == Field::Types::Int64)
         {
             out.function = RPNElement::FUNCTION_INT_LITERAL;
-            out.int_literal.emplace(const_value.get<Int64>());
+            out.int_literal.emplace(const_value.safeGet<Int64>());
             out.func_name = "Int literal";
             return true;
         }
@@ -292,7 +292,7 @@ bool ApproximateNearestNeighborCondition::tryCastToConstType(const ASTPtr & node
         if (const_value.getType() == Field::Types::Tuple)
         {
             out.function = RPNElement::FUNCTION_LITERAL_TUPLE;
-            out.tuple_literal = const_value.get<Tuple>();
+            out.tuple_literal = const_value.safeGet<Tuple>();
             out.func_name = "Tuple literal";
             return true;
         }
@@ -300,7 +300,7 @@ bool ApproximateNearestNeighborCondition::tryCastToConstType(const ASTPtr & node
         if (const_value.getType() == Field::Types::Array)
         {
             out.function = RPNElement::FUNCTION_LITERAL_ARRAY;
-            out.array_literal = const_value.get<Array>();
+            out.array_literal = const_value.safeGet<Array>();
             out.func_name = "Array literal";
             return true;
         }
@@ -308,7 +308,7 @@ bool ApproximateNearestNeighborCondition::tryCastToConstType(const ASTPtr & node
         if (const_value.getType() == Field::Types::String)
         {
             out.function = RPNElement::FUNCTION_STRING_LITERAL;
-            out.func_name = const_value.get<String>();
+            out.func_name = const_value.safeGet<String>();
             return true;
         }
     }
