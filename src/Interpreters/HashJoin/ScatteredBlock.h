@@ -75,8 +75,6 @@ public:
     size_t ALWAYS_INLINE operator[](size_t idx) const
     {
         chassert(idx < size());
-        if (idx >= size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} out of range size {}", idx, size());
 
         if (std::holds_alternative<Range>(data))
         {
@@ -104,8 +102,7 @@ public:
 
     std::pair<Selector, Selector> split(size_t num_rows)
     {
-        if (num_rows > size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} out of range size {}", num_rows, size());
+        chassert(num_rows <= size());
 
         if (std::holds_alternative<Range>(data))
         {
