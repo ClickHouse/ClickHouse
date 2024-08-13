@@ -106,7 +106,7 @@ public:
         return create(variant_column_->assumeMutable(), variant_type, max_dynamic_types_, global_max_dynamic_types_, statistics_);
     }
 
-    static MutablePtr create(size_t max_dynamic_types_ = ColumnVariant::MAX_NESTED_COLUMNS)
+    static MutablePtr create(size_t max_dynamic_types_ = MAX_DYNAMIC_TYPES_LIMIT)
     {
         return Base::create(max_dynamic_types_);
     }

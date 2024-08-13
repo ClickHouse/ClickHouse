@@ -16,7 +16,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -56,6 +55,7 @@ ColumnDynamic::ColumnDynamic(size_t max_dynamic_types_) : max_dynamic_types(max_
 ColumnDynamic::ColumnDynamic(
     MutableColumnPtr variant_column_, const DataTypePtr & variant_type_, size_t max_dynamic_types_, size_t global_max_dynamic_types_, const StatisticsPtr & statistics_)
     : variant_column(std::move(variant_column_))
+    , variant_column_ptr(assert_cast<ColumnVariant *>(variant_column.get()))
     , max_dynamic_types(max_dynamic_types_)
     , global_max_dynamic_types(global_max_dynamic_types_)
     , statistics(statistics_)
@@ -320,7 +320,7 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
     }
 
     auto & variant_col = getVariantColumn();
-    const auto & src_variant_col = assert_cast<const ColumnVariant &>(*dynamic_src.variant_column);
+    const auto & src_variant_col = dynamic_src.getVariantColumn();
     auto src_global_discr = src_variant_col.globalDiscriminatorAt(n);
     auto src_offset = src_variant_col.offsetAt(n);
 
@@ -346,7 +346,7 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
     /// If variants are different, we need to extend our variant with new variants.
     if (auto * global_discriminators_mapping = combineVariants(dynamic_src.variant_info))
     {
-        variant_column_ptr->insertFrom(*dynamic_src.variant_column, n, *global_discriminators_mapping);
+        variant_col.insertFrom(*dynamic_src.variant_column, n, *global_discriminators_mapping);
         return;
     }
 
@@ -364,7 +364,7 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
     if (addNewVariant(variant_type))
     {
         auto discr = variant_info.variant_name_to_discriminator[dynamic_src.variant_info.variant_names[src_global_discr]];
-        variant_column_ptr->insertIntoVariantFrom(discr, src_variant_col.getVariantByGlobalDiscriminator(src_global_discr), src_variant_col.offsetAt(n));
+        variant_col.insertIntoVariantFrom(discr, src_variant_col.getVariantByGlobalDiscriminator(src_global_discr), src_variant_col.offsetAt(n));
         return;
     }
 
@@ -388,15 +388,14 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
                                                             "[start({}) + length({}) > src.size()({})]", start, length, src_.size());
 
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
+    auto & variant_col = getVariantColumn();
 
     /// Check if we have the same variants in both columns.
     if (variant_info.variant_names == dynamic_src.variant_info.variant_names)
     {
-        variant_column_ptr->insertRangeFrom(*dynamic_src.variant_column, start, length);
+        variant_col.insertRangeFrom(*dynamic_src.variant_column, start, length);
         return;
     }
-
-    auto & variant_col = getVariantColumn();
 
     /// If variants are different, we need to extend our variant with new variants.
     if (auto * global_discriminators_mapping = combineVariants(dynamic_src.variant_info))
@@ -604,15 +603,15 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
 #endif
 {
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
+    auto & variant_col = getVariantColumn();
 
     /// Check if we have the same variants in both columns.
     if (variant_info.variant_names == dynamic_src.variant_info.variant_names)
     {
-        variant_column_ptr->insertManyFrom(*dynamic_src.variant_column, position, length);
+        variant_col.insertManyFrom(*dynamic_src.variant_column, position, length);
         return;
     }
 
-    auto & variant_col = getVariantColumn();
     const auto & src_variant_col = assert_cast<const ColumnVariant &>(*dynamic_src.variant_column);
     auto src_global_discr = src_variant_col.globalDiscriminatorAt(position);
     auto src_offset = src_variant_col.offsetAt(position);
@@ -647,7 +646,7 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
     /// If variants are different, we need to extend our variant with new variants.
     if (auto * global_discriminators_mapping = combineVariants(dynamic_src.variant_info))
     {
-        variant_column_ptr->insertManyFrom(*dynamic_src.variant_column, position, length, *global_discriminators_mapping);
+        variant_col.insertManyFrom(*dynamic_src.variant_column, position, length, *global_discriminators_mapping);
         return;
     }
 
@@ -663,7 +662,7 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
     if (addNewVariant(variant_type))
     {
         auto discr = variant_info.variant_name_to_discriminator[dynamic_src.variant_info.variant_names[src_global_discr]];
-        variant_column_ptr->insertManyIntoVariantFrom(discr, src_variant_col.getVariantByGlobalDiscriminator(src_global_discr), src_variant_col.offsetAt(position), length);
+        variant_col.insertManyIntoVariantFrom(discr, src_variant_col.getVariantByGlobalDiscriminator(src_global_discr), src_variant_col.offsetAt(position), length);
         return;
     }
 
@@ -810,7 +809,8 @@ const char * ColumnDynamic::skipSerializedInArena(const char * pos) const
 
 void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    auto discr = variant_column_ptr->globalDiscriminatorAt(n);
+    const auto & variant_col = getVariantColumn();
+    auto discr = variant_col.globalDiscriminatorAt(n);
     if (discr == ColumnVariant::NULL_DISCRIMINATOR)
     {
         hash.update(discr);
@@ -818,7 +818,7 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
     }
 
     hash.update(variant_info.variant_names[discr]);
-    variant_column_ptr->getVariantByGlobalDiscriminator(discr).updateHashWithValue(variant_column_ptr->offsetAt(n), hash);
+    variant_col.getVariantByGlobalDiscriminator(discr).updateHashWithValue(variant_col.offsetAt(n), hash);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
