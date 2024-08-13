@@ -339,14 +339,14 @@ SELECT 'Check bug found fuzzing';
 SELECT [(255, 1048575)], sipHash128ReferenceKeyed((toUInt64(2147483646), toUInt64(9223372036854775807)), ([(NULL, 100), (NULL, NULL), (1024, 10)], toUInt64(2), toUInt64(1024)), ''), hex(sipHash128ReferenceKeyed((-9223372036854775807, 1.), '-1', NULL)), ('', toUInt64(65535), [(9223372036854775807, 9223372036854775806)], toUInt64(65536)), arrayJoin((NULL, 65537, 255), [(NULL, NULL)]) GROUP BY tupleElement((NULL, NULL, NULL, -1), toUInt64(2), 2) = NULL;  -- { serverError NOT_IMPLEMENTED }
 SELECT hex(sipHash128ReferenceKeyed((0::UInt64, 0::UInt64), ([1, 1])));
 
-SELECT 'Check bug 2 found fuzzing';
+SELECT 'Test arrays and maps';
 DROP TABLE IF EXISTS sipHashKeyed_keys;
 CREATE TABLE sipHashKeyed_keys (`a` Map(String, String)) ENGINE = Memory;
 INSERT INTO sipHashKeyed_keys FORMAT VALUES ({'a':'b', 'c':'d'}), ({'e':'f', 'g':'h'});
 SELECT hex(sipHash128ReferenceKeyed((0::UInt64, materialize(0::UInt64)), a)) FROM sipHashKeyed_keys ORDER BY a;
 DROP TABLE sipHashKeyed_keys;
 
-SELECT 'Check bug 3 found fuzzing';
+SELECT 'Test emtpy arrays and maps';
 SELECT sipHash64Keyed((1::UInt64, 2::UInt64), []::Array(UInt8));
 SELECT hex(sipHash128Keyed((1::UInt64, 2::UInt64), []::Array(UInt8)));
 SELECT sipHash64Keyed((1::UInt64, 2::UInt64), mapFromArrays([], []));
