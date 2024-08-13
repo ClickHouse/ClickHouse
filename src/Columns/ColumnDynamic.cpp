@@ -660,11 +660,6 @@ void ColumnDynamic::prepareForSquashing(const Columns & source_columns)
     if (source_columns.empty())
         return;
 
-    /// Internal variants of source dynamic columns may differ.
-    /// We want to preallocate memory for all variants we will have after squashing.
-    /// It may happen that the total number of variants in source columns will
-    /// exceed the limit, in this case we will choose the most frequent variants.
-
     /// First, preallocate memory for variant discriminators and offsets.
     size_t new_size = size();
     for (const auto & source_column : source_columns)
@@ -673,7 +668,18 @@ void ColumnDynamic::prepareForSquashing(const Columns & source_columns)
     variant_col.getLocalDiscriminators().reserve_exact(new_size);
     variant_col.getOffsets().reserve_exact(new_size);
 
-    /// Second, collect all variants and their total sizes.
+    /// Second, preallocate memory for variants.
+    prepareVariantsForSquashing(source_columns);
+}
+
+void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns)
+{
+    /// Internal variants of source dynamic columns may differ.
+    /// We want to preallocate memory for all variants we will have after squashing.
+    /// It may happen that the total number of variants in source columns will
+    /// exceed the limit, in this case we will choose the most frequent variants.
+
+    /// Collect all variants and their total sizes.
     std::unordered_map<String, size_t> total_variant_sizes;
     DataTypes all_variants;
 
@@ -747,6 +753,7 @@ void ColumnDynamic::prepareForSquashing(const Columns & source_columns)
 
     /// Now current dynamic column has all resulting variants and we can call
     /// prepareForSquashing on them to preallocate the memory.
+    auto & variant_col = getVariantColumn();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
     {
         Columns source_variant_columns;

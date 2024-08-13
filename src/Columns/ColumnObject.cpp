@@ -257,6 +257,12 @@ ColumnDynamic * ColumnObject::tryToAddNewDynamicPath(const std::string_view path
     return it_ptr->second;
 }
 
+void ColumnObject::addNewDynamicPath(const std::string_view path)
+{
+    if (!tryToAddNewDynamicPath(path))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add new dynamic path as the limit ({}) on dynamic paths is reached", max_dynamic_paths);
+}
+
 void ColumnObject::setDynamicPaths(const std::vector<String> & paths)
 {
     if (paths.size() > max_dynamic_paths)
@@ -1123,6 +1129,115 @@ void ColumnObject::getExtremes(DB::Field & min, DB::Field & max) const
     }
 }
 
+void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_columns)
+{
+    if (source_columns.empty())
+        return;
+
+    /// Dynamic paths of source Object columns may differ.
+    /// We want to preallocate memory for all dynamic paths we will have after squashing.
+    /// It may happen that the total number of dynamic paths in source columns will
+    /// exceed the limit, in this case we will choose the most frequent paths.
+    std::unordered_map<String, size_t> path_to_total_number_of_non_null_values;
+
+    auto add_dynamic_paths = [&](const ColumnObject & source_object)
+    {
+        for (const auto & [path, dynamic_column_ptr] : source_object.dynamic_paths_ptrs)
+        {
+            auto it = path_to_total_number_of_non_null_values.find(path);
+            if (it == path_to_total_number_of_non_null_values.end())
+                it = path_to_total_number_of_non_null_values.emplace(path, 0).first;
+            it->second += (dynamic_column_ptr->size() - dynamic_column_ptr->getNumberOfDefaultRows());
+        }
+    };
+
+    for (const auto & source_column : source_columns)
+        add_dynamic_paths(assert_cast<const ColumnObject &>(*source_column));
+
+    /// Add dynamic paths from this object column.
+    add_dynamic_paths(*this);
+
+    /// Check if the number of all dynamic paths exceeds the limit.
+    if (path_to_total_number_of_non_null_values.size() > max_dynamic_paths)
+    {
+        /// We want to keep the most frequent paths in the resulting object column.
+        /// Sort paths by total number of non null values.
+        /// Don't include paths from current column as we cannot change them.
+        std::vector<std::pair<size_t, std::string_view>> paths_with_sizes;
+        paths_with_sizes.reserve(path_to_total_number_of_non_null_values.size() - dynamic_paths.size());
+        for (const auto & [path, size] : path_to_total_number_of_non_null_values)
+        {
+            if (!dynamic_paths.contains(path))
+                paths_with_sizes.emplace_back(size, path);
+        }
+        std::sort(paths_with_sizes.begin(), paths_with_sizes.end(), std::greater());
+
+        /// Fill dynamic_paths with first paths in sorted list until we reach the limit.
+        size_t paths_to_add = max_dynamic_paths - dynamic_paths.size();
+        for (size_t i = 0; i != paths_to_add; ++i)
+            addNewDynamicPath(paths_with_sizes[i].second);
+    }
+    /// Otherwise keep all paths.
+    else
+    {
+        /// Create columns for new dynamic paths.
+        for (const auto & [path, _] : path_to_total_number_of_non_null_values)
+        {
+            if (!dynamic_paths.contains(path))
+                addNewDynamicPath(path);
+        }
+    }
+
+    /// Now current object column has all resulting dynamic paths and we can call
+    /// prepareForSquashing on them to preallocate the memory.
+    /// Also we can preallocate memory for dynamic paths and shared data.
+    Columns shared_data_source_columns;
+    shared_data_source_columns.reserve(source_columns.size());
+    std::unordered_map<String, Columns> typed_paths_source_columns;
+    typed_paths_source_columns.reserve(typed_paths.size());
+    std::unordered_map<String, Columns> dynamic_paths_source_columns;
+    dynamic_paths_source_columns.reserve(dynamic_paths.size());
+    
+    for (const auto & [path, column] : typed_paths)
+        typed_paths_source_columns[path].reserve(source_columns.size());
+    
+    for (const auto & [path, column] : dynamic_paths)
+        dynamic_paths_source_columns[path].reserve(source_columns.size());
+
+    size_t total_size = 0;
+    for (const auto & source_column : source_columns)
+    {
+        const auto & source_object_column = assert_cast<const ColumnObject &>(*source_column);
+        total_size += source_object_column.size();
+        shared_data_source_columns.push_back(source_object_column.shared_data);
+        
+        for (const auto & [path, column] : source_object_column.typed_paths)
+            typed_paths_source_columns.at(path).push_back(column);
+        
+        for (const auto & [path, column] : source_object_column.dynamic_paths)
+        {
+            if (dynamic_paths.contains(path))
+                dynamic_paths_source_columns.at(path).push_back(column);
+        }
+    }
+
+    shared_data->prepareForSquashing(shared_data_source_columns);
+    
+    for (const auto & [path, source_typed_columns] : typed_paths_source_columns)
+        typed_paths[path]->prepareForSquashing(source_typed_columns);
+
+    for (const auto & [path, source_dynamic_columns] : dynamic_paths_source_columns)
+    {
+        /// ColumnDynamic::prepareForSquashing may not preallocate enough memory for discriminators and offsets
+        /// because source columns may not have this dynamic path (and so dynamic columns filled with nulls).
+        /// For this reason we first call ColumnDynamic::reserve with resulting size to preallocate memory for
+        /// discriminators and offsets and ColumnDynamic::prepareVariantsForSquashing to preallocate memory
+        /// for all variants inside Dynamic.
+        dynamic_paths_ptrs[path]->reserve(total_size);
+        dynamic_paths_ptrs[path]->prepareVariantsForSquashing(source_dynamic_columns);
+    }
+}
+
 void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & source_columns)
 {
     if (!empty())
@@ -1147,14 +1262,14 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
         const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
         /// During deserialization from MergeTree we will have statistics from the whole
         /// data part with number of non null values for each dynamic path.
-        const auto & source_statistics =  source_object.getStatistics();
-        for (const auto & [path, column] : source_object.dynamic_paths)
+        const auto & source_statistics = source_object.getStatistics();
+        for (const auto & [path, column_ptr] : source_object.dynamic_paths_ptrs)
         {
             auto it = path_to_total_number_of_non_null_values.find(path);
             if (it == path_to_total_number_of_non_null_values.end())
                 it = path_to_total_number_of_non_null_values.emplace(path, 0).first;
             auto statistics_it = source_statistics.data.find(path);
-            size_t size = statistics_it == source_statistics.data.end() ? (column->size() - column->getNumberOfDefaultRows()) : statistics_it->second;
+            size_t size = statistics_it == source_statistics.data.end() ? (column_ptr->size() - column_ptr->getNumberOfDefaultRows()) : statistics_it->second;
             it->second += size;
         }
     }
@@ -1165,7 +1280,7 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
     /// Check if the number of all dynamic paths exceeds the limit.
     if (path_to_total_number_of_non_null_values.size() > max_dynamic_paths)
     {
-        /// Sort paths by total_number_of_non_null_values.
+        /// Sort paths by total number of non null values.
         std::vector<std::pair<size_t, std::string_view>> paths_with_sizes;
         paths_with_sizes.reserve(path_to_total_number_of_non_null_values.size());
         for (const auto & [path, size] : path_to_total_number_of_non_null_values)

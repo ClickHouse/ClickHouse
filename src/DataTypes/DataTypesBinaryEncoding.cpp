@@ -98,6 +98,10 @@ enum class BinaryTypeIndex : uint8_t
     JSON = 0x30,
 };
 
+/// In future we can introduce more arguments in the JSON data type definition.
+/// To support such changes, use versioning in the serialization of JSON type.
+static const UInt8 TYPE_JSON_SERIALIZATION_VERSION = 0;
+
 BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
 {
     /// By default custom types don't have their own BinaryTypeIndex.
@@ -494,6 +498,8 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
         case BinaryTypeIndex::JSON:
         {
             const auto & object_type = assert_cast<const DataTypeObject &>(*type);
+            /// Write version of the serialization because we can add new arguments in the JSON type.
+            writeBinary(TYPE_JSON_SERIALIZATION_VERSION, buf);
             writeVarUInt(object_type.getMaxDynamicPaths(), buf);
             writeBinary(UInt8(object_type.getMaxDynamicTypes()), buf);
             const auto & typed_paths = object_type.getTypedPaths();
@@ -726,6 +732,10 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
         }
         case BinaryTypeIndex::JSON:
         {
+            UInt8 serialization_version;
+            readBinary(serialization_version, buf);
+            if (serialization_version > TYPE_JSON_SERIALIZATION_VERSION)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected version of JSON type binary encoding");
             size_t max_dynamic_paths;
             readVarUInt(max_dynamic_paths, buf);
             UInt8 max_dynamic_types;

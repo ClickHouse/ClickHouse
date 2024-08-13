@@ -141,6 +141,7 @@ public:
 
     void reserve(size_t n) override;
     size_t capacity() const override;
+    void prepareForSquashing(const std::vector<ColumnPtr> & source_columns) override;
     void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
@@ -202,6 +203,8 @@ public:
     /// Try to add new dynamic path. Returns pointer to the new dynamic
     /// path column or nullptr if limit on dynamic paths is reached.
     ColumnDynamic * tryToAddNewDynamicPath(const std::string_view path);
+    /// Throws an exception if cannot add.
+    void addNewDynamicPath(const std::string_view path);
 
     void setDynamicPaths(const std::vector<String> & paths);
     void setStatistics(const Statistics & statistics_) { statistics = statistics_; }
