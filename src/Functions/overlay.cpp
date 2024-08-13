@@ -728,8 +728,8 @@ private:
 
 REGISTER_FUNCTION(Overlay)
 {
-    factory.registerFunction<FunctionOverlay<false>>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionOverlay<true>>({}, FunctionFactory::CaseSensitive);
+    factory.registerFunction<FunctionOverlay<false>>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionOverlay<true>>({}, FunctionFactory::Case::Sensitive);
 }
 
 }
