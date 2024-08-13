@@ -103,7 +103,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-### Inserting data from a file into a table:
+### Inserting data from a file into a table
 
 ``` sql
 INSERT INTO FUNCTION
