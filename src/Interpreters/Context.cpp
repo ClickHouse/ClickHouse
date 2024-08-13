@@ -454,6 +454,45 @@ struct ContextSharedPart : boost::noncopyable
 
     ~ContextSharedPart()
     {
+        try
+        {
+            shutdown();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    void setConfig(const ConfigurationPtr & config_value)
+    {
+        if (!config_value)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Set nullptr config is invalid");
+
+        std::lock_guard lock(mutex);
+        config = config_value;
+        access_control->setExternalAuthenticatorsConfig(*config_value);
+    }
+
+    const Poco::Util::AbstractConfiguration & getConfigRefWithLock(const std::lock_guard<ContextSharedMutex> &) const TSA_REQUIRES(this->mutex)
+    {
+        return config ? *config : Poco::Util::Application::instance().config();
+    }
+
+    const Poco::Util::AbstractConfiguration & getConfigRef() const
+    {
+        SharedLockGuard lock(mutex);
+        return config ? *config : Poco::Util::Application::instance().config();
+    }
+
+    /** Perform a complex job of destroying objects in advance.
+      */
+    void shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
+    {
+        bool is_shutdown_called = shutdown_called.exchange(true);
+        if (is_shutdown_called)
+            return;
+
 #if USE_NURAFT
         if (keeper_dispatcher)
         {
@@ -553,45 +592,6 @@ struct ContextSharedPart : boost::noncopyable
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
-
-        try
-        {
-            shutdown();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
-    void setConfig(const ConfigurationPtr & config_value)
-    {
-        if (!config_value)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Set nullptr config is invalid");
-
-        std::lock_guard lock(mutex);
-        config = config_value;
-        access_control->setExternalAuthenticatorsConfig(*config_value);
-    }
-
-    const Poco::Util::AbstractConfiguration & getConfigRefWithLock(const std::lock_guard<ContextSharedMutex> &) const TSA_REQUIRES(this->mutex)
-    {
-        return config ? *config : Poco::Util::Application::instance().config();
-    }
-
-    const Poco::Util::AbstractConfiguration & getConfigRef() const
-    {
-        SharedLockGuard lock(mutex);
-        return config ? *config : Poco::Util::Application::instance().config();
-    }
-
-    /** Perform a complex job of destroying objects in advance.
-      */
-    void shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
-    {
-        bool is_shutdown_called = shutdown_called.exchange(true);
-        if (is_shutdown_called)
-            return;
 
         /// Need to flush the async insert queue before shutting down the database catalog
         std::shared_ptr<AsynchronousInsertQueue> delete_async_insert_queue;
