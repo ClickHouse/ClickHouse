@@ -273,7 +273,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             ObjectArgumentParser parser;
             parser.parse(pos, arg, expected);
         }
-        else if (boost::to_lower_copy(type_name) == "nested")
+        else if (type_name == "Nested")
         {
             ParserNameTypePair name_and_type_parser;
             name_and_type_parser.parse(pos, arg, expected);
