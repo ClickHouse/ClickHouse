@@ -20,13 +20,13 @@ void testLowCardinalityNumberInsert(const DataTypePtr & data_type)
 
     Field value;
     column->get(0, value);
-    ASSERT_EQ(value.get<T>(), 15);
+    ASSERT_EQ(value.safeGet<T>(), 15);
 
     column->get(1, value);
-    ASSERT_EQ(value.get<T>(), 20);
+    ASSERT_EQ(value.safeGet<T>(), 20);
 
     column->get(2, value);
-    ASSERT_EQ(value.get<T>(), 25);
+    ASSERT_EQ(value.safeGet<T>(), 25);
 }
 
 TEST(ColumnLowCardinality, Insert)
