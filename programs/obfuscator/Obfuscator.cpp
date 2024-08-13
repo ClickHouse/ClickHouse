@@ -1462,7 +1462,7 @@ try
         while (in_executor.pull(block))
         {
             Columns columns = obfuscator.generate(block.getColumns());
-            out_executor.push(header.cloneWithColumns(columns));
+            std::ignore = out_executor.push(header.cloneWithColumns(columns));
             processed_rows += block.rows();
             if (!silent)
                 std::cerr << "Processed " << processed_rows << " rows\n";

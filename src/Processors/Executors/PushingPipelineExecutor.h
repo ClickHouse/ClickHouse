@@ -35,10 +35,13 @@ public:
     /// Get structure of returned block or chunk.
     const Block & getHeader() const;
 
-    void start();
+    bool start();
 
-    void push(Chunk chunk);
-    void push(Block block);
+    /// Return 'true' if push was successful.
+    /// Return 'false' if pipline was cancelled without exception.
+    /// This may happen in case of timeout_overflow_mode = 'break' OR internal bug.
+    [[nodiscard]] bool push(Chunk chunk);
+    [[nodiscard]] bool push(Block block);
 
     void finish();
 

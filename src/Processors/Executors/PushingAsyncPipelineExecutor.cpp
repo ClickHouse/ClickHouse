@@ -176,7 +176,17 @@ void PushingAsyncPipelineExecutor::start()
     data->thread = ThreadFromGlobalPool(std::move(func));
 }
 
-void PushingAsyncPipelineExecutor::push(Chunk chunk)
+static void checkExecutionStatus(PipelineExecutor::ExecutionStatus status)
+{
+    if (status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
+        || status == PipelineExecutor::ExecutionStatus::CancelledByUser)
+        return;
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Pipeline for PushingPipelineExecutor was finished before all data was inserted");
+}
+
+bool PushingAsyncPipelineExecutor::push(Chunk chunk)
 {
     if (!started)
         start();
@@ -185,13 +195,14 @@ void PushingAsyncPipelineExecutor::push(Chunk chunk)
     data->rethrowExceptionIfHas();
 
     if (!is_pushed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Pipeline for PushingAsyncPipelineExecutor was finished before all data was inserted");
+        checkExecutionStatus(data->executor->getExecutionStatus());
+
+    return is_pushed;
 }
 
-void PushingAsyncPipelineExecutor::push(Block block)
+bool PushingAsyncPipelineExecutor::push(Block block)
 {
-    push(Chunk(block.getColumns(), block.rows()));
+    return push(Chunk(block.getColumns(), block.rows()));
 }
 
 void PushingAsyncPipelineExecutor::finish()

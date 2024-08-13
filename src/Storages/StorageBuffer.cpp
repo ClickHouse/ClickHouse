@@ -1069,7 +1069,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     auto block_io = interpreter.execute();
     PushingPipelineExecutor executor(block_io.pipeline);
     executor.start();
-    executor.push(std::move(block_to_write));
+    if (!executor.push(std::move(block_to_write)))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageBuffer could not write data to destination table");
     executor.finish();
 }
 

@@ -215,7 +215,8 @@ void CreatingSetsTransform::consume(Chunk chunk)
     if (!done_with_table)
     {
         block = materializeBlock(block);
-        executor->push(block);
+        if (!executor->push(block))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert into a table");
 
         rows_to_transfer += block.rows();
         bytes_to_transfer += block.bytes();

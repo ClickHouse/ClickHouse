@@ -932,12 +932,18 @@ void TCPHandler::processInsertQuery()
         executor.start();
 
         if (processed_data)
-            executor.push(std::move(processed_data));
+        {
+            if (!executor.push(std::move(processed_data)))
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+        }
         else
             startInsertQuery();
 
         while (readDataNext())
-            executor.push(std::move(state.block_for_insert));
+        {
+            if (!executor.push(std::move(state.block_for_insert)))
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+        }
 
         if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
             executor.cancel();
@@ -2034,7 +2040,8 @@ bool TCPHandler::receiveData(bool scalar)
         QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, query_context, /*async_insert=*/false));
         PushingPipelineExecutor executor(temporary_table_out);
         executor.start();
-        executor.push(block);
+        if (!executor.push(block))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert into temporary table");
         executor.finish();
     }
     else if (state.need_receive_data_for_input)

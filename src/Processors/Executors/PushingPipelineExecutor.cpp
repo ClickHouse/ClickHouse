@@ -80,36 +80,56 @@ const Block & PushingPipelineExecutor::getHeader() const
     return pushing_source->getPort().getHeader();
 }
 
+static void checkExecutionStatus(PipelineExecutor::ExecutionStatus status)
+{
+    if (status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
+        || status == PipelineExecutor::ExecutionStatus::CancelledByUser)
+        return;
 
-void PushingPipelineExecutor::start()
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Pipeline for PushingPipelineExecutor was finished before all data was inserted");
+}
+
+bool PushingPipelineExecutor::start()
 {
     if (started)
-        return;
+        return true;
 
     started = true;
     executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
     executor->setReadProgressCallback(pipeline.getReadProgressCallback());
 
     if (!executor->executeStep(&input_wait_flag))
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Pipeline for PushingPipelineExecutor was finished before all data was inserted");
+    {
+        checkExecutionStatus(executor->getExecutionStatus());
+        return false;
+    }
+
+    return true;
 }
 
-void PushingPipelineExecutor::push(Chunk chunk)
+bool PushingPipelineExecutor::push(Chunk chunk)
 {
     if (!started)
-        start();
+    {
+        if (!start())
+            return false;
+    }
 
     pushing_source->setData(std::move(chunk));
 
     if (!executor->executeStep(&input_wait_flag))
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Pipeline for PushingPipelineExecutor was finished before all data was inserted");
+    {
+        checkExecutionStatus(executor->getExecutionStatus());
+        return false;
+    }
+
+    return true;
 }
 
-void PushingPipelineExecutor::push(Block block)
+bool PushingPipelineExecutor::push(Block block)
 {
-    push(Chunk(block.getColumns(), block.rows()));
+    return push(Chunk(block.getColumns(), block.rows()));
 }
 
 void PushingPipelineExecutor::finish()
