@@ -259,12 +259,18 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
     readChar(tmp, buf);
     x = tmp != '0';
 
-    if (!buf.eof() && isAlphaASCII(*buf.position()))
+    if (!buf.eof() && isAlphaASCII(tmp))
     {
-        if (tmp == 't')
-            assertString("rue", buf);
-        else if (tmp == 'T')
-            assertString("RUE", buf);
+        if (tmp == 't' || tmp == 'T')
+        {
+            assertStringCaseInsensitive("rue", buf);
+            x = true;
+        }
+        else if (tmp == 'f' || tmp == 'F')
+        {
+            assertStringCaseInsensitive("alse", buf);
+            x = false;
+        }
     }
 }
 
