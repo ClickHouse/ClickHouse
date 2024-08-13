@@ -82,10 +82,11 @@ private:
     struct DeserializeBinaryBulkStateObjectStructure : public ISerialization::DeserializeBinaryBulkState
     {
         ObjectSerializationVersion structure_version;
+        size_t max_dynamic_paths;
         std::vector<String> sorted_dynamic_paths;
         std::unordered_set<String> dynamic_paths;
         /// Paths statistics. Map (dynamic path) -> (number of non-null values in this path).
-        ColumnObject::Statistics statistics = {.source = ColumnObject::Statistics::Source::READ, .data = {}};
+        ColumnObject::StatisticsPtr statistics;
 
         explicit DeserializeBinaryBulkStateObjectStructure(UInt64 structure_version_) : structure_version(structure_version_) {}
     };

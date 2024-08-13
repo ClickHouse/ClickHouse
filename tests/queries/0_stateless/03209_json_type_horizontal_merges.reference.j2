@@ -1,3 +1,4 @@
+create table test (id UInt64, json JSON(max_dynamic_paths=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=10000000000, vertical_merge_algorithm_min_columns_to_activate=10, index_granularity_bytes=10485760, index_granularity=8192, merge_max_block_size=8192, merge_max_block_size_bytes=10485760;
 Dynamic paths
 100000	a
 90000	b
@@ -47,6 +48,26 @@ Shared data paths
 60000	e
 10000	g
 Dynamic paths
+200000	f
+100000	a
+90000	b
+40000	c
+Shared data paths
+80000	c
+70000	d
+60000	e
+10000	g
+Dynamic paths
+200000	f
+120000	c
+100000	a
+Shared data paths
+90000	b
+70000	d
+60000	e
+10000	g
+create table test (id UInt64, json JSON(max_dynamic_paths=3)) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_columns_to_activate=10, index_granularity_bytes=10485760, index_granularity=8192, merge_max_block_size=8192, merge_max_block_size_bytes=10485760;
+Dynamic paths
 100000	a
 90000	b
 80000	c
@@ -91,6 +112,25 @@ Dynamic paths
 90000	b
 Shared data paths
 80000	c
+70000	d
+60000	e
+10000	g
+Dynamic paths
+200000	f
+100000	a
+90000	b
+40000	c
+Shared data paths
+80000	c
+70000	d
+60000	e
+10000	g
+Dynamic paths
+200000	f
+120000	c
+100000	a
+Shared data paths
+90000	b
 70000	d
 60000	e
 10000	g

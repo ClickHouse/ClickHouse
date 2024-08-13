@@ -26,11 +26,20 @@ public:
             MERGE, /// Statistics were calculated during merge of several MergeTree parts.
         };
 
+        explicit Statistics(Source source_) : source(source_) {}
+
         /// Source of the statistics.
         Source source;
-        /// Statistics data: (path) -> (total number of not-null values).
-        std::unordered_map<String, size_t> data;
+        /// Statistics for dynamic paths: (path) -> (total number of not-null values).
+        std::unordered_map<String, size_t> dynamic_paths_statistics;
+        /// Statistics for paths in shared data: path) -> (total number of not-null values).
+        /// We don't store statistics for all paths in shared data but only for some subset of them
+        /// (is 10000 a good limit? It should not be expensive to store 10000 paths per part)
+        static const size_t MAX_SHARED_DATA_STATISTICS_SIZE = 10000;
+        std::unordered_map<String, size_t, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal> shared_data_paths_statistics;
     };
+
+    using StatisticsPtr = std::shared_ptr<const Statistics>;
 
 private:
     friend class COWHelper<IColumnHelper<ColumnObject>, ColumnObject>;
@@ -41,8 +50,9 @@ private:
         std::unordered_map<String, MutableColumnPtr> dynamic_paths_,
         MutableColumnPtr shared_data_,
         size_t max_dynamic_paths_,
+        size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const Statistics & statistics_ = {});
+        const StatisticsPtr & statistics_ = {});
 
     /// Use StringHashForHeterogeneousLookup hash for hash maps to be able to use std::string_view in find() method.
     using PathToColumnMap = std::unordered_map<String, WrappedPtr, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
@@ -58,16 +68,18 @@ public:
         const std::unordered_map<String, ColumnPtr> & dynamic_paths_,
         const ColumnPtr & shared_data_,
         size_t max_dynamic_paths_,
+        size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const Statistics & statistics_ = {});
+        const StatisticsPtr & statistics_ = {});
 
     static MutablePtr create(
         std::unordered_map<String, MutableColumnPtr> typed_paths_,
         std::unordered_map<String, MutableColumnPtr> dynamic_paths_,
         MutableColumnPtr shared_data_,
         size_t max_dynamic_paths_,
+        size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const Statistics & statistics_ = {});
+        const StatisticsPtr & statistics_ = {});
 
     static MutablePtr create(std::unordered_map<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
 
@@ -171,7 +183,7 @@ public:
     const PathToDynamicColumnPtrMap & getDynamicPathsPtrs() const { return dynamic_paths_ptrs; }
     PathToDynamicColumnPtrMap & getDynamicPathsPtrs() { return dynamic_paths_ptrs; }
 
-    const Statistics & getStatistics() const { return statistics; }
+    const StatisticsPtr & getStatistics() const { return statistics; }
 
     const ColumnPtr & getSharedDataPtr() const { return shared_data; }
     ColumnPtr & getSharedDataPtr() { return shared_data; }
@@ -199,6 +211,7 @@ public:
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
+    size_t getGlobalMaxDynamicPaths() const { return global_max_dynamic_paths; }
 
     /// Try to add new dynamic path. Returns pointer to the new dynamic
     /// path column or nullptr if limit on dynamic paths is reached.
@@ -207,7 +220,8 @@ public:
     void addNewDynamicPath(const std::string_view path);
 
     void setDynamicPaths(const std::vector<String> & paths);
-    void setStatistics(const Statistics & statistics_) { statistics = statistics_; }
+    void setMaxDynamicPaths(size_t max_dynamic_paths_);
+    void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
 
     void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, const std::string_view path, const IColumn & column, size_t n);
     void deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column) const;
@@ -238,12 +252,17 @@ private:
     WrappedPtr shared_data;
 
     /// Maximum number of dynamic paths. If this limit is reached, all new paths will be inserted into shared data.
+    /// This limit can be different for different instances of Object column. For example, we can decrease it
+    /// in takeDynamicStructureFromSourceColumns before merge.
     size_t max_dynamic_paths;
+    /// Global limit on number of dynamic paths for all column instances of this Object type. It's the limit specified
+    /// in the type definition (for example 'JSON(max_dynamic_paths=N)'). max_dynamic_paths is always not greater than this limit.
+    size_t global_max_dynamic_paths;
     /// Maximum number of dynamic types for each dynamic path. Used while creating Dynamic columns for new dynamic paths.
     size_t max_dynamic_types;
-    /// Statistics on the number of non-null values for each dynamic path in the MergeTree data part.
-    /// Calculated during merges or reading from MergeTree. Used to determine the set of dynamic paths for the merged part.
-    Statistics statistics;
+    /// Statistics on the number of non-null values for each dynamic path and for some shared data paths in the MergeTree data part.
+    /// Calculated during serializing of data part in MergeTree. Used to determine the set of dynamic paths for the merged part.
+    StatisticsPtr statistics;
 };
 
 }
