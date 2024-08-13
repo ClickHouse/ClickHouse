@@ -88,7 +88,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"enable_analyzer", 1, 1, "Added an alias to a setting `allow_experimental_analyzer`."},
             {"optimize_functions_to_subcolumns", false, true, "Enabled settings by default"},
             {"allow_experimental_vector_similarity_index", false, false, "Added new setting to allow experimental vector similarity indexes"},
-            {"input_format_json_empty_as_default", true, false, "Added new setting to allow to treat empty fields in JSON input as default values."}
             {"input_format_json_empty_as_default", false, false, "Added new setting to allow to treat empty fields in JSON input as default values."}
         }
     },

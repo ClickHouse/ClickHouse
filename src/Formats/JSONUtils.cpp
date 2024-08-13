@@ -2,11 +2,14 @@
 #include <Formats/JSONUtils.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferValidUTF8.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Common/assert_cast.h>
 
 #include <base/find_symbols.h>
 
@@ -267,9 +270,6 @@ namespace JSONUtils
         const FormatSettings & format_settings,
         bool yield_strings)
     {
-        static constexpr auto EMPTY_STRING = "\"\"";
-        static constexpr auto EMPTY_STRING_LENGTH = std::string_view(EMPTY_STRING).length();
-
         try
         {
             bool as_nullable = format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type);
@@ -288,70 +288,19 @@ namespace JSONUtils
                 return true;
             }
 
-            auto do_deserialize = [](IColumn & column_, ReadBuffer & buf_, auto && check_for_empty_string, auto && deserialize) -> bool
-            {
-                if (check_for_empty_string(buf_))
-                {
-                    column_.insertDefault();
-                    return false;
-                }
-                else
-                    return deserialize(column_, buf_);
-            };
-
-            auto deserialize_impl = [as_nullable, &format_settings, &serialization](IColumn & column_, ReadBuffer & buf_) -> bool
+            auto deserialize = [as_nullable, &format_settings, &serialization](IColumn & column_, ReadBuffer & buf) -> bool
             {
                 if (as_nullable)
-                    return SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column_, buf_, format_settings, serialization);
+                    return SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column_, buf, format_settings, serialization);
 
-                serialization->deserializeTextJSON(column_, buf_, format_settings);
+                serialization->deserializeTextJSON(column_, buf, format_settings);
                 return true;
             };
 
-            if (!format_settings.json.empty_as_default || in.eof() || *in.position() != EMPTY_STRING[0])
-                return deserialize_impl(column, in);
-
-            if (in.available() >= EMPTY_STRING_LENGTH)
-            {
-                /// We have enough data in buffer to check if we have an empty string.
-                auto check_for_empty_string = [](ReadBuffer & buf_)
-                {
-                    auto * pos = buf_.position();
-                    if (checkString(EMPTY_STRING, buf_))
-                        return true;
-                    buf_.position() = pos;
-                    return false;
-                };
-
-                return do_deserialize(column, in, check_for_empty_string, deserialize_impl);
-            }
-
-            /// We don't have enough data in buffer to check if we have an empty string.
-            /// Use PeekableReadBuffer to make a checkpoint before checking for an
-            /// empty string and rollback if check was failed.
-
-            auto check_for_empty_string = [](ReadBuffer & buf_) -> bool
-            {
-                auto & peekable_buf = assert_cast<PeekableReadBuffer &>(buf_);
-                peekable_buf.setCheckpoint();
-                SCOPE_EXIT(peekable_buf.dropCheckpoint());
-                if (checkString(EMPTY_STRING, peekable_buf))
-                    return true;
-                peekable_buf.rollbackToCheckpoint();
-                return false;
-            };
-
-            auto deserialize_impl_with_check = [&deserialize_impl](IColumn & column_, ReadBuffer & buf_) -> bool
-            {
-                auto & peekable_buf = assert_cast<PeekableReadBuffer &>(buf_);
-                bool res = deserialize_impl(column_, peekable_buf);
-                if (unlikely(peekable_buf.hasUnreadData()))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect state while parsing JSON: PeekableReadBuffer has unread data in own memory: {}", String(peekable_buf.position(), peekable_buf.available()));
-                return res;
-            };
-
-            PeekableReadBuffer peekable_buf(in, true);
-            return do_deserialize(column, peekable_buf, check_for_empty_string, deserialize_impl_with_check);
+            if (format_settings.json.empty_as_default)
+                return JSONUtils::deserializeEmpyStringAsDefaultOrNested<bool, false>(column, in, deserialize);
+            else
+                return deserialize(column, in);
         }
         catch (Exception & e)
         {
@@ -915,6 +864,78 @@ namespace JSONUtils
         }
     }
 
+    template <typename ReturnType, bool default_column_return_value>
+    ReturnType deserializeEmpyStringAsDefaultOrNested(IColumn & column, ReadBuffer & istr, const NestedDeserialize<ReturnType> & deserialize_nested)
+    {
+        static constexpr auto throw_exception = std::is_same_v<ReturnType, void>;
+
+        static constexpr auto EMPTY_STRING = "\"\"";
+        static constexpr auto EMPTY_STRING_LENGTH = std::string_view(EMPTY_STRING).length();
+
+        if (istr.eof() || *istr.position() != EMPTY_STRING[0])
+            return deserialize_nested(column, istr);
+
+        auto do_deserialize = [](IColumn & column_, ReadBuffer & buf, auto && check_for_empty_string, auto && deserialize) -> ReturnType
+        {
+            if (check_for_empty_string(buf))
+            {
+                column_.insertDefault();
+                return ReturnType(default_column_return_value);
+            }
+            return deserialize(column_, buf);
+        };
+
+        if (istr.available() >= EMPTY_STRING_LENGTH)
+        {
+            /// We have enough data in buffer to check if we have an empty string.
+            auto check_for_empty_string = [](ReadBuffer & buf) -> bool
+            {
+                auto * pos = buf.position();
+                if (checkString(EMPTY_STRING, buf))
+                    return true;
+                buf.position() = pos;
+                return false;
+            };
+
+            return do_deserialize(column, istr, check_for_empty_string, deserialize_nested);
+        }
+
+        /// We don't have enough data in buffer to check if we have an empty string.
+        /// Use PeekableReadBuffer to make a checkpoint before checking for an
+        /// empty string and rollback if check was failed.
+
+        auto check_for_empty_string = [](ReadBuffer & buf) -> bool
+        {
+            auto & peekable_buf = assert_cast<PeekableReadBuffer &>(buf);
+            peekable_buf.setCheckpoint();
+            SCOPE_EXIT(peekable_buf.dropCheckpoint());
+            if (checkString(EMPTY_STRING, peekable_buf))
+                return true;
+            peekable_buf.rollbackToCheckpoint();
+            return false;
+        };
+
+        auto deserialize_nested_with_check = [&deserialize_nested](IColumn & column_, ReadBuffer & buf) -> ReturnType
+        {
+            auto & peekable_buf = assert_cast<PeekableReadBuffer &>(buf);
+            if constexpr (throw_exception)
+                deserialize_nested(column_, peekable_buf);
+            else if (!deserialize_nested(column_, peekable_buf))
+                return ReturnType(false);
+
+            if (unlikely(peekable_buf.hasUnreadData()))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect state while parsing JSON: PeekableReadBuffer has unread data in own memory: {}", String(peekable_buf.position(), peekable_buf.available()));
+
+            return ReturnType(true);
+        };
+
+        PeekableReadBuffer peekable_buf(istr, true);
+        return do_deserialize(column, peekable_buf, check_for_empty_string, deserialize_nested_with_check);
+    }
+
+    template void deserializeEmpyStringAsDefaultOrNested<void, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<void> & deserialize_nested);
+    template bool deserializeEmpyStringAsDefaultOrNested<bool, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested);
+    template bool deserializeEmpyStringAsDefaultOrNested<bool, false>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested);
 }
 
 }
