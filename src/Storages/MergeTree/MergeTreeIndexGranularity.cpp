@@ -103,8 +103,16 @@ size_t MergeTreeIndexGranularity::countMarksForRows(size_t from_mark, size_t num
 
     /// This is a heuristic to respect min_marks_to_read which is ignored by MergeTreeReadPool in case of remote disk.
     /// See comment in IMergeTreeSelectAlgorithm.
-    if (min_marks_to_read && from_mark + 2 * min_marks_to_read <= to_mark)
-        to_mark = from_mark + min_marks_to_read;
+    if (min_marks_to_read)
+    {
+        // check that ...
+        bool overflow = ((1ULL << 63) & min_marks_to_read); // further multiplication by 2 will not overflow
+        if (!overflow)
+            overflow = (std::numeric_limits<size_t>::max() - from_mark) < 2 * min_marks_to_read; // further addition will not overflow
+
+        if (!overflow && from_mark + 2 * min_marks_to_read <= to_mark)
+            to_mark = from_mark + min_marks_to_read;
+    }
 
     return getRowsCountInRange(from_mark, std::max(1UL, to_mark)) - offset_in_rows;
 }
