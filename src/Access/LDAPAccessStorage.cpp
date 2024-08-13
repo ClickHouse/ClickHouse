@@ -453,7 +453,8 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
     const ExternalAuthenticators & external_authenticators,
     bool throw_if_user_not_exists,
     bool /* allow_no_password */,
-    bool /* allow_plaintext_password */) const
+    bool /* allow_plaintext_password */,
+    bool /* allow_jwt */) const
 {
     std::lock_guard lock(mutex);
     auto id = memory_storage.find<User>(credentials.getUserName());

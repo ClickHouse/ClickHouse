@@ -374,6 +374,7 @@ target_link_libraries(clickhouse_common_io
             ch_contrib::zlib
             pcg_random
             Poco::Foundation
+            ch_contrib::jwt-cpp
 )
 
 if (TARGET ch_contrib::libfiu)

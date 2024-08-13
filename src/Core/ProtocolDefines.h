@@ -90,6 +90,8 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS = 54470;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL = 54471;
 
+static constexpr auto DBMS_MIN_REVISION_WITH_JWT_AUTHENTICATION = 54472;
+
 /// Version of ClickHouse TCP protocol.
 ///
 /// Should be incremented manually on protocol changes.

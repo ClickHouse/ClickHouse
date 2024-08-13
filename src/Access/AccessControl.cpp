@@ -600,7 +600,7 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
     try
     {
         const auto auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, allow_no_password,
-                                                                     allow_plaintext_password);
+                                                                     allow_plaintext_password, isJWTAllowed());
         if (authentication_quota)
             authentication_quota->reset(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS);
 
@@ -689,6 +689,11 @@ void AccessControl::setNoPasswordAllowed(bool allow_no_password_)
 bool AccessControl::isNoPasswordAllowed() const
 {
     return allow_no_password;
+}
+
+bool AccessControl::isJWTAllowed() const
+{
+    return external_authenticators->isJWTAllowed();
 }
 
 void AccessControl::setPlaintextPasswordAllowed(bool allow_plaintext_password_)

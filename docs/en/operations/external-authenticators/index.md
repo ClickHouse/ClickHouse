@@ -17,3 +17,4 @@ The following external authenticators and directories are supported:
 - Kerberos [Authenticator](./kerberos.md#external-authenticators-kerberos)
 - [SSL X.509 authentication](./ssl-x509.md#ssl-external-authentication)
 - HTTP [Authenticator](./http.md)
+- JWT [Authenticator](./jwt.md)

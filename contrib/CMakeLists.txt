@@ -80,7 +80,7 @@ add_contrib (openldap-cmake openldap)
 add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
 add_contrib (libarchive-cmake libarchive)
-
+add_contrib (jwt-cpp-cmake jwt-cpp)
 add_contrib (corrosion-cmake corrosion)
 
 if (ENABLE_FUZZING)

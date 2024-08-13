@@ -14,6 +14,7 @@
 #include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Common/transformEndianness.h>
+#include "Access/Credentials.h"
 #include <Core/Settings.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
@@ -119,7 +120,8 @@ namespace
         const std::unordered_set<UUID> & allowed_profile_ids,
         const std::unordered_set<UUID> & allowed_role_ids,
         bool allow_no_password,
-        bool allow_plaintext_password)
+        bool allow_plaintext_password,
+        bool allow_jwt)
     {
         auto user = std::make_shared<User>();
         user->setName(user_name);
@@ -130,6 +132,7 @@ namespace
         bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
         bool has_ldap = config.has(user_config + ".ldap");
         bool has_kerberos = config.has(user_config + ".kerberos");
+        bool has_jwt = config.has(user_config + ".jwt");
 
         const auto certificates_config = user_config + ".ssl_certificates";
         bool has_certificates = config.has(certificates_config);
@@ -141,18 +144,18 @@ namespace
         bool has_http_auth = config.has(http_auth_config);
 
         size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
-            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth;
+            + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_jwt;
 
         if (num_password_fields > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than one field of 'password', 'password_sha256_hex', "
                             "'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates', 'ssh_keys', "
-                            "'http_authentication' are used to specify authentication info for user {}. "
+                            "'http_authentication', 'jwt' are used to specify authentication info for user {}. "
                             "Must be only one of them.", user_name);
 
         if (num_password_fields < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'password' or 'password_sha256_hex' "
                             "or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos "
-                            "or 'ssl_certificates' or 'ssh_keys' or 'http_authentication' must be specified for user {}.", user_name);
+                            "or 'ssl_certificates' or 'ssh_keys' or 'http_authentication' or 'jwt' must be specified for user {}.", user_name);
 
         if (has_password_plaintext)
         {
@@ -269,6 +272,12 @@ namespace
         else
         {
             user->authentication_methods.emplace_back();
+        }
+        else if (has_jwt)
+        {
+            if (!allow_jwt)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "JWT auth not allowed because JWT not configured");
+            user->auth_data = AuthenticationData{AuthenticationType::JWT};
         }
 
         for (const auto & authentication_method : user->authentication_methods)
@@ -427,7 +436,8 @@ namespace
         const std::unordered_set<UUID> & allowed_profile_ids,
         const std::unordered_set<UUID> & allowed_role_ids,
         bool allow_no_password,
-        bool allow_plaintext_password)
+        bool allow_plaintext_password,
+        bool allow_jwt)
     {
         Poco::Util::AbstractConfiguration::Keys user_names;
         config.keys("users", user_names);
@@ -438,7 +448,7 @@ namespace
         {
             try
             {
-                users.push_back(parseUser(config, user_name, allowed_profile_ids, allowed_role_ids, allow_no_password, allow_plaintext_password));
+                users.push_back(parseUser(config, user_name, allowed_profile_ids, allowed_role_ids, allow_no_password, allow_plaintext_password, allow_jwt));
             }
             catch (Exception & e)
             {
@@ -852,9 +862,10 @@ void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfigu
         auto allowed_role_ids = getAllowedIDs(config, "roles", AccessEntityType::ROLE);
         bool no_password_allowed = access_control.isNoPasswordAllowed();
         bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
+        bool allow_jwt = access_control.isJWTAllowed();
 
         std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
-        for (const auto & entity : parseUsers(config, allowed_profile_ids, allowed_role_ids, no_password_allowed, plaintext_password_allowed))
+        for (const auto & entity : parseUsers(config, allowed_profile_ids, allowed_role_ids, no_password_allowed, plaintext_password_allowed, allow_jwt))
             all_entities.emplace_back(generateID(*entity), entity);
         for (const auto & entity : parseQuotas(config))
             all_entities.emplace_back(generateID(*entity), entity);

@@ -122,4 +122,20 @@ private:
 };
 #endif
 
+class JWTCredentials: public Credentials
+{
+public:
+    explicit JWTCredentials(const String& token_);
+    const String & getToken() const
+    {
+        if (!isReady())
+        {
+            throwNotReady();
+        }
+        return token;
+    }
+private:
+    String token;
+};
+
 }
