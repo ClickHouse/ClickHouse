@@ -1702,6 +1702,8 @@ getOSKernelVersion
 getServerPort
 getSetting
 getSizeOfEnumType
+getSubcolumn
+getTypeSerializationStreams
 getblockinfo
 getevents
 ghcnd
