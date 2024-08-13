@@ -1978,13 +1978,20 @@ class TestSuite:
         def is_shebang(line: str) -> bool:
             return line.startswith("#!")
 
-        def find_tag_line(file):
-            line = file.readline()
-            while line != "":
-                line = line.strip()
-                if line and not is_shebang(line):
+        def find_tag_line(lines, comment_sign):
+            for line in lines:
+                if line.startswith(comment_sign) and line[
+                    len(comment_sign) :
+                ].lstrip().startswith("Tags:"):
                     return line
-                line = file.readline()
+            return ""
+
+        def find_random_settings_limits_line(lines, comment_sign):
+            for line in lines:
+                if line.startswith(comment_sign) and line[
+                    len(comment_sign) :
+                ].lstrip().startswith("Random settings limits:"):
+                    return line
             return ""
 
         def load_tags_and_random_settings_limits_from_file(filepath):
@@ -1992,13 +1999,16 @@ class TestSuite:
             need_query_params = False
             with open(filepath, "r", encoding="utf-8") as file:
                 try:
-                    tag_line = find_tag_line(file)
-                    next_line = file.readline()
+                    lines = file.readlines()
+                    tag_line = find_tag_line(lines, comment_sign)
+                    random_settings_limits_line = find_random_settings_limits_line(
+                        lines, comment_sign
+                    )
                 except UnicodeDecodeError:
                     return [], {}
                 try:
                     if filepath.endswith(".sql"):
-                        for line in file:
+                        for line in lines:
                             if "{CLICKHOUSE_DATABASE" in line:
                                 need_query_params = True
                 except UnicodeDecodeError:
@@ -2006,7 +2016,6 @@ class TestSuite:
             parsed_tags = parse_tags_from_line(tag_line, comment_sign)
             if need_query_params:
                 parsed_tags.add("need-query-parameters")
-            random_settings_limits_line = next_line if parsed_tags else tag_line
             random_settings_limits = parse_random_settings_limits_from_line(
                 random_settings_limits_line, comment_sign
             )
@@ -2068,9 +2077,9 @@ class TestSuite:
             )
         )
         self.all_tags: Dict[str, Set[str]] = all_tags_and_random_settings_limits[0]
-        self.all_random_settings_limits: Dict[str, Dict[str, (int, int)]] = (
-            all_tags_and_random_settings_limits[1]
-        )
+        self.all_random_settings_limits: Dict[
+            str, Dict[str, (int, int)]
+        ] = all_tags_and_random_settings_limits[1]
         self.sequential_tests = []
         self.parallel_tests = []
         for test_name in self.all_tests:
