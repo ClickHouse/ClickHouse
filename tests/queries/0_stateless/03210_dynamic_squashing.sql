@@ -1,3 +1,5 @@
+-- Tags: long
+
 set allow_experimental_dynamic_type = 1;
 set max_block_size = 1000;
 
