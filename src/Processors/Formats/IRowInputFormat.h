@@ -68,8 +68,6 @@ protected:
     virtual bool allowSyncAfterError() const { return false; }
     virtual void syncAfterError();
 
-    virtual bool allReadColumnCaseInsensitive() const { return false; }
-
     /// In case of parse error, try to roll back and parse last one or two rows very carefully
     ///  and collect as much as possible diagnostic information about error.
     /// If not implemented, returns empty string.
