@@ -60,7 +60,7 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_exclude_aarch64|release|debug--> Exclude: All with aarch64, release, debug
 ---
 - [ ] <!---ci_include_fuzzer--> Run only fuzzers related jobs (libFuzzer fuzzers, AST fuzzers, etc.)
-- [ ] <!---ci_exclude_ast--> Exclude AST fuzzers
+- [ ] <!---ci_exclude_ast--> Exclude: AST fuzzers
 ---
 - [ ] <!---do_not_test--> Do not test
 - [ ] <!---woolen_wolfdog--> Woolen Wolfdog
