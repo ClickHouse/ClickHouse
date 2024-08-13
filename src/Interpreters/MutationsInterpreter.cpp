@@ -219,7 +219,7 @@ bool isStorageTouchedByMutations(
     Block tmp_block;
     while (executor.pull(tmp_block));
 
-    auto count = (*block.getByName("count()").column)[0].get<UInt64>();
+    auto count = (*block.getByName("count()").column)[0].safeGet<UInt64>();
     return count != 0;
 }
 

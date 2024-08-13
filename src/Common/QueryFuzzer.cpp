@@ -132,7 +132,7 @@ Field QueryFuzzer::fuzzField(Field field)
 
     if (type == Field::Types::String)
     {
-        auto & str = field.get<std::string>();
+        auto & str = field.safeGet<std::string>();
         UInt64 action = fuzz_rand() % 10;
         switch (action)
         {
@@ -158,7 +158,7 @@ Field QueryFuzzer::fuzzField(Field field)
     }
     else if (type == Field::Types::Array)
     {
-        auto & arr = field.get<Array>();
+        auto & arr = field.safeGet<Array>();
 
         if (fuzz_rand() % 5 == 0 && !arr.empty())
         {
@@ -193,7 +193,7 @@ Field QueryFuzzer::fuzzField(Field field)
     }
     else if (type == Field::Types::Tuple)
     {
-        auto & arr = field.get<Tuple>();
+        auto & arr = field.safeGet<Tuple>();
 
         if (fuzz_rand() % 5 == 0 && !arr.empty())
         {
@@ -922,17 +922,17 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
     auto type = l->value.getType();
     if (type == Field::Types::Which::String && fuzz_rand() % 7 == 0)
     {
-        String value = l->value.get<String>();
+        String value = l->value.safeGet<String>();
         child = makeASTFunction(
             "toFixedString", std::make_shared<ASTLiteral>(value), std::make_shared<ASTLiteral>(static_cast<UInt64>(value.size())));
     }
     else if (type == Field::Types::Which::UInt64 && fuzz_rand() % 7 == 0)
     {
-        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toUInt128" : "toUInt256", std::make_shared<ASTLiteral>(l->value.get<UInt64>()));
+        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toUInt128" : "toUInt256", std::make_shared<ASTLiteral>(l->value.safeGet<UInt64>()));
     }
     else if (type == Field::Types::Which::Int64 && fuzz_rand() % 7 == 0)
     {
-        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toInt128" : "toInt256", std::make_shared<ASTLiteral>(l->value.get<Int64>()));
+        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toInt128" : "toInt256", std::make_shared<ASTLiteral>(l->value.safeGet<Int64>()));
     }
     else if (type == Field::Types::Which::Float64 && fuzz_rand() % 7 == 0)
     {
@@ -940,22 +940,22 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
         if (decimal == 0)
             child = makeASTFunction(
                 "toDecimal32",
-                std::make_shared<ASTLiteral>(l->value.get<Float64>()),
+                std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
                 std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 9)));
         else if (decimal == 1)
             child = makeASTFunction(
                 "toDecimal64",
-                std::make_shared<ASTLiteral>(l->value.get<Float64>()),
+                std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
                 std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 18)));
         else if (decimal == 2)
             child = makeASTFunction(
                 "toDecimal128",
-                std::make_shared<ASTLiteral>(l->value.get<Float64>()),
+                std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
                 std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 38)));
         else
             child = makeASTFunction(
                 "toDecimal256",
-                std::make_shared<ASTLiteral>(l->value.get<Float64>()),
+                std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
                 std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 76)));
     }
 
