@@ -1995,7 +1995,7 @@ class TestSuite:
                     tag_line = find_tag_line(file)
                     next_line = file.readline()
                 except UnicodeDecodeError:
-                    return []
+                    return [], {}
                 try:
                     if filepath.endswith(".sql"):
                         for line in file:
