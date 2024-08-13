@@ -23,6 +23,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
+#include "Interpreters/HashJoin/ScatteredBlock.h"
 
 using namespace DB;
 
@@ -336,13 +337,16 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
 {
     size_t num_shards = hash_joins.size();
     IColumn::Selector selector = selectDispatchBlock(num_shards, key_columns_names, from_block);
-    std::vector<IColumn::Selector> selectors(num_shards);
+    std::vector<ScatteredBlock::IndexesPtr> selectors(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
-        selectors[i].reserve(selector.size() / num_shards + 1);
+    {
+        selectors[i] = ScatteredBlock::Indexes::create();
+        selectors[i]->reserve(selector.size() / num_shards + 1);
+    }
     for (size_t i = 0; i < selector.size(); ++i)
     {
         const size_t shard = selector[i];
-        selectors[shard].push_back(i);
+        selectors[shard]->getData().push_back(i);
     }
     ScatteredBlocks result;
     result.reserve(num_shards);

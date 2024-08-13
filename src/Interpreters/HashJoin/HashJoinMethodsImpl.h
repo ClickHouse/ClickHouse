@@ -43,7 +43,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
         else \
             return insertFromBlockImplTypeCase< \
                 typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-                join, *maps.TYPE, key_columns, key_sizes, stored_block, selector.getSelector(), null_map, join_mask, pool, is_inserted); \
+                join, *maps.TYPE, key_columns, key_sizes, stored_block, selector.getIndexes(), null_map, join_mask, pool, is_inserted); \
         break;
 
             APPLY_FOR_JOIN_VARIANTS(M)
@@ -213,16 +213,16 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeC
     is_inserted = !mapped_one || is_asof_join;
 
     size_t rows = 0;
-    if constexpr (std::is_same_v<std::decay_t<Selector>, IColumn::Selector>)
-        rows = selector.size();
+    if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Indexes>)
+        rows = selector.getData().size();
     else
         rows = selector.second - selector.first;
 
     for (size_t i = 0; i < rows; ++i)
     {
         size_t ind = 0;
-        if constexpr (std::is_same_v<std::decay_t<Selector>, IColumn::Selector>)
-            ind = selector[i];
+        if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Indexes>)
+            ind = selector.getData()[i];
         else
             ind = selector.first + i;
 
@@ -355,10 +355,10 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
     {
         if (mapv.size() > 1)
             return joinRightColumns<KeyGetter, Map, need_filter, true>(
-                std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getSelector());
+                std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getIndexes());
         else
             return joinRightColumns<KeyGetter, Map, need_filter, false>(
-                std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getSelector());
+                std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getIndexes());
     }
 }
 
@@ -394,8 +394,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     for (; i < rows; ++i)
     {
         size_t ind = 0;
-        if constexpr (std::is_same_v<std::decay_t<Selector>, IColumn::Selector>)
-            ind = selector[i];
+        if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Indexes>)
+            ind = selector.getData()[i];
         else
             ind = selector.first + i;
 

@@ -1,9 +1,11 @@
 #pragma once
 
+#include <memory>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
+#include <base/defines.h>
 #include <Common/PODArray.h>
-#include "base/defines.h"
 
 #include <boost/math/distributions/fwd.hpp>
 #include <boost/noncopyable.hpp>
@@ -26,13 +28,15 @@ class Selector
 {
 public:
     using Range = std::pair<size_t, size_t>;
+    using Indexes = ColumnUInt64;
+    using IndexesPtr = ColumnUInt64::MutablePtr;
 
     /// [begin, end)
     Selector(size_t begin, size_t end) : data(Range{begin, end}) { }
     Selector(size_t size) : Selector(0, size) { }
     Selector() : Selector(0, 0) { }
 
-    Selector(IColumn::Selector && selector_) : data(initializeFromSelector(std::move(selector_))) { }
+    Selector(IndexesPtr && selector_) : data(initializeFromSelector(std::move(selector_))) { }
 
     class Iterator
     {
@@ -83,7 +87,7 @@ public:
         }
         else
         {
-            return std::get<IColumn::Selector>(data)[idx];
+            return std::get<IndexesPtr>(data)->getData()[idx];
         }
     }
 
@@ -96,7 +100,7 @@ public:
         }
         else
         {
-            return std::get<IColumn::Selector>(data).size();
+            return std::get<IndexesPtr>(data)->size();
         }
     }
 
@@ -118,10 +122,10 @@ public:
         }
         else
         {
-            auto & selector = std::get<IColumn::Selector>(data);
+            auto & selector = std::get<IndexesPtr>(data)->getData();
             return {
-                Selector(IColumn::Selector(selector.begin(), selector.begin() + num_rows)),
-                Selector(IColumn::Selector(selector.begin() + num_rows, selector.end()))};
+                Selector(Indexes::create(selector.begin(), selector.begin() + num_rows)),
+                Selector(Indexes::create(selector.begin() + num_rows, selector.end()))};
         }
     }
 
@@ -133,10 +137,10 @@ public:
         return std::get<Range>(data);
     }
 
-    const IColumn::Selector & getSelector() const
+    const Indexes & getIndexes() const
     {
         chassert(!isContinuousRange());
-        return std::get<IColumn::Selector>(data);
+        return *std::get<IndexesPtr>(data);
     }
 
     std::string toString() const
@@ -148,16 +152,17 @@ public:
         }
         else
         {
-            auto & selector = std::get<IColumn::Selector>(data);
+            auto & selector = std::get<IndexesPtr>(data)->getData();
             return fmt::format("({})", fmt::join(selector, ","));
         }
     }
 
 private:
-    using Data = std::variant<Range, IColumn::Selector>;
+    using Data = std::variant<Range, IndexesPtr>;
 
-    Data initializeFromSelector(IColumn::Selector && selector)
+    Data initializeFromSelector(IndexesPtr && selector_)
     {
+        const auto & selector = selector_->getData();
         if (selector.empty())
             return Range{0, 0};
 
@@ -165,7 +170,7 @@ private:
         if (selector.back() == selector.front() + selector.size() - 1)
             return Range{selector.front(), selector.front() + selector.size()};
 
-        return std::move(selector);
+        return std::move(selector_);
     }
 
     Data data;
@@ -176,12 +181,14 @@ private:
 struct ScatteredBlock : private boost::noncopyable
 {
     using Selector = detail::Selector;
+    using Indexes = Selector::Indexes;
+    using IndexesPtr = Selector::IndexesPtr;
 
     ScatteredBlock() = default;
 
     explicit ScatteredBlock(Block block_) : block(std::move(block_)), selector(block.rows()) { }
 
-    ScatteredBlock(Block block_, IColumn::Selector && selector_) : block(std::move(block_)), selector(std::move(selector_)) { }
+    ScatteredBlock(Block block_, IndexesPtr && selector_) : block(std::move(block_)), selector(std::move(selector_)) { }
 
     ScatteredBlock(Block block_, Selector selector_) : block(std::move(block_)), selector(std::move(selector_)) { }
 
@@ -233,9 +240,10 @@ struct ScatteredBlock : private boost::noncopyable
     void filter(const IColumn::Filter & filter)
     {
         chassert(block && block.rows() == filter.size());
-        IColumn::Selector new_selector;
-        new_selector.reserve(selector.size());
-        std::copy_if(selector.begin(), selector.end(), std::back_inserter(new_selector), [&](size_t idx) { return filter[idx]; });
+        IndexesPtr new_selector = Indexes::create();
+        new_selector->reserve(selector.size());
+        std::copy_if(
+            selector.begin(), selector.end(), std::back_inserter(new_selector->getData()), [&](size_t idx) { return filter[idx]; });
         selector = std::move(new_selector);
     }
 
@@ -259,18 +267,10 @@ struct ScatteredBlock : private boost::noncopyable
             return;
         }
 
+        /// The general case when selector is non-trivial (likely the result of applying a filter)
         auto columns = block.getColumns();
         for (auto & col : columns)
-        {
-            auto c = col->cloneEmpty();
-            c->reserve(selector.size());
-            /// TODO: create new method in IColumnHelper to devirtualize
-            for (const auto idx : selector)
-                c->insertFrom(*col, idx);
-            col = std::move(c);
-        }
-
-        /// We have to to id that way because references to the block should remain valid
+            col = col->index(selector.getIndexes(), /*limit*/ 0);
         block.setColumns(columns);
         selector = Selector(block.rows());
     }
