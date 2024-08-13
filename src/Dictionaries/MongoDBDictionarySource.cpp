@@ -9,8 +9,6 @@
 #include <Processors/Sources/MongoDBSource.h>
 #include <Storages/NamedCollectionsHelpers.h>
 
-#include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/StorageMongoDBSocketFactory.h>
 #include <bsoncxx/builder/basic/array.hpp>
 
 using bsoncxx::builder::basic::kvp;

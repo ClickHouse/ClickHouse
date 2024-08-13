@@ -258,7 +258,7 @@ QueryPipeline MongoDBPocoLegacyDictionarySource::loadKeys(const Columns & key_co
                 }
                 case AttributeUnderlyingType::String:
                 {
-                    String loaded_str((*key_columns[attribute_index])[row_idx].get<String>());
+                    String loaded_str((*key_columns[attribute_index])[row_idx].safeGet<String>());
                     /// Convert string to ObjectID
                     if (key_attribute.is_object_id)
                     {
