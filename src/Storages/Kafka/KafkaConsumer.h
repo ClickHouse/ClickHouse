@@ -3,14 +3,12 @@
 #include <cppkafka/topic_partition.h>
 #include <fmt/ostream.h>
 #include <boost/circular_buffer.hpp>
-#include <fmt/ostream.h>
 
 #include <Core/Names.h>
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
 
 #include <cppkafka/cppkafka.h>
-#include <cppkafka/topic_partition.h>
 #include <Common/CurrentMetrics.h>
 
 namespace CurrentMetrics
@@ -195,12 +193,8 @@ private:
     void drain();
     void cleanUnprocessed();
     void resetIfStopped();
-    /// Return number of messages with an error.
-    size_t filterMessageErrors();
+    void filterMessageErrors();
     ReadBufferPtr getNextMessage();
 };
 
 }
-
-template <> struct fmt::formatter<cppkafka::TopicPartition> : fmt::ostream_formatter {};
-template <> struct fmt::formatter<cppkafka::Error> : fmt::ostream_formatter {};

@@ -25,7 +25,7 @@ struct NormalProjectionCandidate : public ProjectionCandidate
 {
 };
 
-static ActionsDAGPtr makeMaterializingDAG(const Block & proj_header, const Block main_header)
+static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header, const Block main_header)
 {
     /// Materialize constants in case we don't have it in output header.
     /// This may happen e.g. if we have PREWHERE.
@@ -33,7 +33,7 @@ static ActionsDAGPtr makeMaterializingDAG(const Block & proj_header, const Block
     size_t num_columns = main_header.columns();
     /// This is a error; will have block structure mismatch later.
     if (proj_header.columns() != num_columns)
-        return nullptr;
+        return {};
 
     std::vector<size_t> const_positions;
     for (size_t i = 0; i < num_columns; ++i)
@@ -47,17 +47,17 @@ static ActionsDAGPtr makeMaterializingDAG(const Block & proj_header, const Block
     }
 
     if (const_positions.empty())
-        return nullptr;
+        return {};
 
-    ActionsDAGPtr dag = std::make_unique<ActionsDAG>();
-    auto & outputs = dag->getOutputs();
+    ActionsDAG dag;
+    auto & outputs = dag.getOutputs();
     for (const auto & col : proj_header.getColumnsWithTypeAndName())
-        outputs.push_back(&dag->addInput(col));
+        outputs.push_back(&dag.addInput(col));
 
     for (auto pos : const_positions)
     {
         auto & output = outputs[pos];
-        output = &dag->materializeNode(*output);
+        output = &dag.materializeNode(*output);
     }
 
     return dag;
@@ -174,7 +174,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
             query_info,
             context,
             max_added_blocks,
-            query.filter_node ? query.dag : nullptr);
+            query.filter_node ? &*query.dag : nullptr);
 
         if (!analyzed)
             continue;
@@ -193,9 +193,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
     }
 
     auto storage_snapshot = reading->getStorageSnapshot();
-    auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, storage_snapshot->metadata);
-    proj_snapshot->addProjection(best_candidate->projection);
-
+    auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, best_candidate->projection->metadata);
     auto query_info_copy = query_info;
     query_info_copy.prewhere_info = nullptr;
 
@@ -244,14 +242,14 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         {
             expr_or_filter_node.step = std::make_unique<FilterStep>(
                 projection_reading_node.step->getOutputStream(),
-                query.dag,
+                std::move(*query.dag),
                 query.filter_node->result_name,
                 true);
         }
         else
             expr_or_filter_node.step = std::make_unique<ExpressionStep>(
                 projection_reading_node.step->getOutputStream(),
-                query.dag);
+                std::move(*query.dag));
 
         expr_or_filter_node.children.push_back(&projection_reading_node);
         next_node = &expr_or_filter_node;
@@ -269,7 +267,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
 
         if (auto materializing = makeMaterializingDAG(proj_stream->header, main_stream.header))
         {
-            auto converting = std::make_unique<ExpressionStep>(*proj_stream, materializing);
+            auto converting = std::make_unique<ExpressionStep>(*proj_stream, std::move(*materializing));
             proj_stream = &converting->getOutputStream();
             auto & expr_node = nodes.emplace_back();
             expr_node.step = std::move(converting);

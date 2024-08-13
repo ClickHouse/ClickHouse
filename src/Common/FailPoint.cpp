@@ -7,6 +7,8 @@
 #include <condition_variable>
 #include <mutex>
 
+#include "config.h"
+
 namespace DB
 {
 
@@ -15,7 +17,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 };
 
-#if FIU_ENABLE
+#if USE_LIBFIU
 static struct InitFiu
 {
     InitFiu()
@@ -59,6 +61,8 @@ static struct InitFiu
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(receive_timeout_on_table_status_response) \
     REGULAR(keepermap_fail_drop_data) \
+    REGULAR(lazy_pipe_fds_fail_close) \
+    PAUSEABLE(infinite_sleep) \
 
 
 namespace FailPoints
@@ -133,7 +137,7 @@ void FailPointInjection::pauseFailPoint(const String & fail_point_name)
 
 void FailPointInjection::enableFailPoint(const String & fail_point_name)
 {
-#if FIU_ENABLE
+#if USE_LIBFIU
 #define SUB_M(NAME, flags, pause)                                                                               \
     if (fail_point_name == FailPoints::NAME)                                                                    \
     {                                                                                                           \

@@ -23,6 +23,7 @@ public:
         const StorageID & table_id_,
         ContextPtr context_,
         const ColumnsDescription & columns_,
+        const String & comment,
         std::unique_ptr<NATSSettings> nats_settings_,
         LoadingStrictnessLevel mode);
 

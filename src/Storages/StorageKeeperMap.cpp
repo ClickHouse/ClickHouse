@@ -43,6 +43,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackupCoordination.h>
@@ -78,6 +79,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int LIMIT_EXCEEDED;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int INVALID_STATE;
 }
 
 namespace
@@ -120,7 +122,7 @@ public:
         : SinkToStorage(header), storage(storage_), context(std::move(context_))
     {
         auto primary_key = storage.getPrimaryKey();
-        assert(primary_key.size() == 1);
+        chassert(primary_key.size() == 1);
         primary_key_pos = getHeader().getPositionByName(primary_key[0]);
     }
 
@@ -171,81 +173,94 @@ public:
     template <bool for_update>
     void finalize(bool strict)
     {
-        auto zookeeper = storage.getClient();
+        const auto & settings = context->getSettingsRef();
 
-        auto keys_limit = storage.keysLimit();
+        ZooKeeperRetriesControl zk_retry{
+            getName(),
+            getLogger(getName()),
+            ZooKeeperRetriesInfo{
+                settings.insert_keeper_max_retries,
+                settings.insert_keeper_retry_initial_backoff_ms,
+                settings.insert_keeper_retry_max_backoff_ms},
+            context->getProcessListElement()};
 
-        size_t current_keys_num = 0;
-        size_t new_keys_num = 0;
-
-        // We use keys limit as a soft limit so we ignore some cases when it can be still exceeded
-        // (e.g if parallel insert queries are being run)
-        if (keys_limit != 0)
+        zk_retry.retryLoop([&]()
         {
-            Coordination::Stat data_stat;
-            zookeeper->get(storage.dataPath(), &data_stat);
-            current_keys_num = data_stat.numChildren;
-        }
+            auto zookeeper = storage.getClient();
+            auto keys_limit = storage.keysLimit();
 
-        std::vector<std::string> key_paths;
-        key_paths.reserve(new_values.size());
-        for (const auto & [key, _] : new_values)
-            key_paths.push_back(storage.fullPathForKey(key));
+            size_t current_keys_num = 0;
+            size_t new_keys_num = 0;
 
-        zkutil::ZooKeeper::MultiExistsResponse results;
-
-        if constexpr (!for_update)
-        {
-            if (!strict)
-                results = zookeeper->exists(key_paths);
-        }
-
-        Coordination::Requests requests;
-        requests.reserve(key_paths.size());
-        for (size_t i = 0; i < key_paths.size(); ++i)
-        {
-            auto key = fs::path(key_paths[i]).filename();
-
-            if constexpr (for_update)
+            // We use keys limit as a soft limit so we ignore some cases when it can be still exceeded
+            // (e.g if parallel insert queries are being run)
+            if (keys_limit != 0)
             {
-                int32_t version = -1;
-                if (strict)
-                    version = versions.at(key);
-
-                requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], version));
+                Coordination::Stat data_stat;
+                zookeeper->get(storage.dataPath(), &data_stat);
+                current_keys_num = data_stat.numChildren;
             }
-            else
+
+            std::vector<std::string> key_paths;
+            key_paths.reserve(new_values.size());
+            for (const auto & [key, _] : new_values)
+                key_paths.push_back(storage.fullPathForKey(key));
+
+            zkutil::ZooKeeper::MultiExistsResponse results;
+
+            if constexpr (!for_update)
             {
-                if (!strict && results[i].error == Coordination::Error::ZOK)
+                if (!strict)
+                    results = zookeeper->exists(key_paths);
+            }
+
+            Coordination::Requests requests;
+            requests.reserve(key_paths.size());
+            for (size_t i = 0; i < key_paths.size(); ++i)
+            {
+                auto key = fs::path(key_paths[i]).filename();
+
+                if constexpr (for_update)
                 {
-                    requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], -1));
+                    int32_t version = -1;
+                    if (strict)
+                        version = versions.at(key);
+
+                    requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], version));
                 }
                 else
                 {
-                    requests.push_back(zkutil::makeCreateRequest(key_paths[i], new_values[key], zkutil::CreateMode::Persistent));
-                    ++new_keys_num;
+                    if (!strict && results[i].error == Coordination::Error::ZOK)
+                    {
+                        requests.push_back(zkutil::makeSetRequest(key_paths[i], new_values[key], -1));
+                    }
+                    else
+                    {
+                        requests.push_back(zkutil::makeCreateRequest(key_paths[i], new_values[key], zkutil::CreateMode::Persistent));
+                        ++new_keys_num;
+                    }
                 }
             }
-        }
 
-        if (new_keys_num != 0)
-        {
-            auto will_be = current_keys_num + new_keys_num;
-            if (keys_limit != 0 && will_be > keys_limit)
-                throw Exception(
-                    ErrorCodes::LIMIT_EXCEEDED,
-                    "Limit would be exceeded by inserting {} new key(s). Limit is {}, while the number of keys would be {}",
-                    new_keys_num,
-                    keys_limit,
-                    will_be);
-        }
+            if (new_keys_num != 0)
+            {
+                auto will_be = current_keys_num + new_keys_num;
+                if (keys_limit != 0 && will_be > keys_limit)
+                    throw Exception(
+                        ErrorCodes::LIMIT_EXCEEDED,
+                        "Limit would be exceeded by inserting {} new key(s). Limit is {}, while the number of keys would be {}",
+                        new_keys_num,
+                        keys_limit,
+                        will_be);
+            }
 
-        zookeeper->multi(requests, /* check_session_valid */ true);
+            zookeeper->multi(requests, /* check_session_valid */ true);
+        });
     }
 };
 
 template <typename KeyContainer>
-class StorageKeeperMapSource : public ISource
+class StorageKeeperMapSource : public ISource, WithContext
 {
     const StorageKeeperMap & storage;
     size_t max_block_size;
@@ -276,8 +291,15 @@ public:
         KeyContainerPtr container_,
         KeyContainerIter begin_,
         KeyContainerIter end_,
-        bool with_version_column_)
-        : ISource(getHeader(header, with_version_column_)), storage(storage_), max_block_size(max_block_size_), container(std::move(container_)), it(begin_), end(end_)
+        bool with_version_column_,
+        ContextPtr context_)
+        : ISource(getHeader(header, with_version_column_))
+        , WithContext(std::move(context_))
+        , storage(storage_)
+        , max_block_size(max_block_size_)
+        , container(std::move(container_))
+        , it(begin_)
+        , end(end_)
         , with_version_column(with_version_column_)
     {
     }
@@ -302,12 +324,12 @@ public:
             for (auto & raw_key : raw_keys)
                 raw_key = base64Encode(raw_key, /* url_encoding */ true);
 
-            return storage.getBySerializedKeys(raw_keys, nullptr, with_version_column);
+            return storage.getBySerializedKeys(raw_keys, nullptr, with_version_column, getContext());
         }
         else
         {
             size_t elem_num = std::min(max_block_size, static_cast<size_t>(end - it));
-            auto chunk = storage.getBySerializedKeys(std::span{it, it + elem_num}, nullptr, with_version_column);
+            auto chunk = storage.getBySerializedKeys(std::span{it, it + elem_num}, nullptr, with_version_column, getContext());
             it += elem_num;
             return chunk;
         }
@@ -386,104 +408,192 @@ StorageKeeperMap::StorageKeeperMap(
 
     if (attach)
     {
-        checkTable<false>();
+        checkTable<false>(context_);
         return;
     }
 
-    auto client = getClient();
+    const auto & settings = context_->getSettingsRef();
+    ZooKeeperRetriesControl zk_retry{
+        getName(),
+        getLogger(getName()),
+        ZooKeeperRetriesInfo{settings.keeper_max_retries, settings.keeper_retry_initial_backoff_ms, settings.keeper_retry_max_backoff_ms},
+        context_->getProcessListElement()};
 
-    if (zk_root_path != "/" && !client->exists(zk_root_path))
-    {
-        LOG_TRACE(log, "Creating root path {}", zk_root_path);
-        client->createAncestors(zk_root_path);
-        client->createIfNotExists(zk_root_path, "");
-    }
+    zk_retry.retryLoop(
+        [&]
+        {
+            auto client = getClient();
 
+            if (zk_root_path != "/" && !client->exists(zk_root_path))
+            {
+                LOG_TRACE(log, "Creating root path {}", zk_root_path);
+                client->createAncestors(zk_root_path);
+                client->createIfNotExists(zk_root_path, "");
+            }
+        });
+
+    std::shared_ptr<zkutil::EphemeralNodeHolder> metadata_drop_lock;
+    int32_t drop_lock_version = -1;
     for (size_t i = 0; i < 1000; ++i)
     {
-        std::string stored_metadata_string;
-        auto exists = client->tryGet(zk_metadata_path, stored_metadata_string);
-
-        if (exists)
-        {
-            // this requires same name for columns
-            // maybe we can do a smarter comparison for columns and primary key expression
-            if (stored_metadata_string != metadata_string)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Path {} is already used but the stored table definition doesn't match. Stored metadata: {}",
-                    zk_root_path,
-                    stored_metadata_string);
-
-            auto code = client->tryCreate(zk_table_path, "", zkutil::CreateMode::Persistent);
-
-            /// A table on the same Keeper path already exists, we just appended our table id to subscribe as a new replica
-            /// We still don't know if the table matches the expected metadata so table_is_valid is not changed
-            /// It will be checked lazily on the first operation
-            if (code == Coordination::Error::ZOK)
-                return;
-
-            if (code != Coordination::Error::ZNONODE)
-                throw zkutil::KeeperException(code, "Failed to create table on path {} because a table with same UUID already exists", zk_root_path);
-
-            /// ZNONODE means we dropped zk_tables_path but didn't finish drop completely
-        }
-
-        if (client->exists(zk_dropped_path))
-        {
-            LOG_INFO(log, "Removing leftover nodes");
-            auto code = client->tryCreate(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral);
-
-            if (code == Coordination::Error::ZNONODE)
+        bool success = false;
+        zk_retry.retryLoop(
+            [&]
             {
-                LOG_INFO(log, "Someone else removed leftover nodes");
-            }
-            else if (code == Coordination::Error::ZNODEEXISTS)
-            {
-                LOG_INFO(log, "Someone else is removing leftover nodes");
-                continue;
-            }
-            else if (code != Coordination::Error::ZOK)
-            {
-                throw Coordination::Exception::fromPath(code, zk_dropped_lock_path);
-            }
-            else
-            {
-                auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(zk_dropped_lock_path, *client);
-                if (!dropTable(client, metadata_drop_lock))
-                    continue;
-            }
-        }
+                auto client = getClient();
+                std::string stored_metadata_string;
+                auto exists = client->tryGet(zk_metadata_path, stored_metadata_string);
 
-        Coordination::Requests create_requests
-        {
-            zkutil::makeCreateRequest(zk_metadata_path, metadata_string, zkutil::CreateMode::Persistent),
-            zkutil::makeCreateRequest(zk_data_path, metadata_string, zkutil::CreateMode::Persistent),
-            zkutil::makeCreateRequest(zk_tables_path, "", zkutil::CreateMode::Persistent),
-            zkutil::makeCreateRequest(zk_table_path, "", zkutil::CreateMode::Persistent),
-        };
+                if (exists)
+                {
+                    // this requires same name for columns
+                    // maybe we can do a smarter comparison for columns and primary key expression
+                    if (stored_metadata_string != metadata_string)
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Path {} is already used but the stored table definition doesn't match. Stored metadata: {}",
+                            zk_root_path,
+                            stored_metadata_string);
 
-        Coordination::Responses create_responses;
-        auto code = client->tryMulti(create_requests, create_responses);
-        if (code == Coordination::Error::ZNODEEXISTS)
-        {
-            LOG_INFO(log, "It looks like a table on path {} was created by another server at the same moment, will retry", zk_root_path);
-            continue;
-        }
-        else if (code != Coordination::Error::ZOK)
-        {
-            zkutil::KeeperMultiException::check(code, create_requests, create_responses);
-        }
+                    auto code = client->tryCreate(zk_table_path, "", zkutil::CreateMode::Persistent);
 
+                    /// A table on the same Keeper path already exists, we just appended our table id to subscribe as a new replica
+                    /// We still don't know if the table matches the expected metadata so table_is_valid is not changed
+                    /// It will be checked lazily on the first operation
+                    if (code == Coordination::Error::ZOK)
+                    {
+                        success = true;
+                        return;
+                    }
 
-        table_is_valid = true;
-        /// we are the first table created for the specified Keeper path, i.e. we are the first replica
-        return;
+                    /// We most likely created the path but got a timeout or disconnect
+                    if (code == Coordination::Error::ZNODEEXISTS && zk_retry.isRetry())
+                    {
+                        success = true;
+                        return;
+                    }
+
+                    if (code != Coordination::Error::ZNONODE)
+                        throw zkutil::KeeperException(
+                            code, "Failed to create table on path {} because a table with same UUID already exists", zk_root_path);
+
+                    /// ZNONODE means we dropped zk_tables_path but didn't finish drop completely
+                }
+
+                if (client->exists(zk_dropped_path))
+                {
+                    LOG_INFO(log, "Removing leftover nodes");
+
+                    bool drop_finished = false;
+                    if (zk_retry.isRetry() && metadata_drop_lock != nullptr && drop_lock_version != -1)
+                    {
+                        /// if we have leftover lock from previous try, we need to recreate the ephemeral with our session
+                        Coordination::Requests drop_lock_requests{
+                            zkutil::makeRemoveRequest(zk_dropped_lock_path, drop_lock_version),
+                            zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral),
+                        };
+
+                        Coordination::Responses drop_lock_responses;
+                        auto lock_code = client->tryMulti(drop_lock_requests, drop_lock_responses);
+                        if (lock_code == Coordination::Error::ZBADVERSION)
+                        {
+                            LOG_INFO(log, "Someone else is removing leftover nodes");
+                            metadata_drop_lock->setAlreadyRemoved();
+                            metadata_drop_lock.reset();
+                            return;
+                        }
+
+                        if (drop_lock_responses[0]->error == Coordination::Error::ZNONODE)
+                        {
+                            /// someone else removed metadata nodes or the previous ephemeral node expired
+                            /// we will try creating dropped lock again to make sure
+                            metadata_drop_lock->setAlreadyRemoved();
+                            metadata_drop_lock.reset();
+                        }
+                        else if (lock_code == Coordination::Error::ZOK)
+                        {
+                            metadata_drop_lock->setAlreadyRemoved();
+                            metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(zk_dropped_lock_path, *client);
+                            drop_lock_version = -1;
+                            Coordination::Stat lock_stat;
+                            client->get(zk_dropped_lock_path, &lock_stat);
+                            drop_lock_version = lock_stat.version;
+                            if (!dropTable(client, metadata_drop_lock))
+                            {
+                                metadata_drop_lock.reset();
+                                return;
+                            }
+                            drop_finished = true;
+                        }
+                    }
+
+                    if (!drop_finished)
+                    {
+                        auto code = client->tryCreate(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral);
+
+                        if (code == Coordination::Error::ZNONODE)
+                        {
+                            LOG_INFO(log, "Someone else removed leftover nodes");
+                        }
+                        else if (code == Coordination::Error::ZNODEEXISTS)
+                        {
+                            LOG_INFO(log, "Someone else is removing leftover nodes");
+                            return;
+                        }
+                        else if (code != Coordination::Error::ZOK)
+                        {
+                            throw Coordination::Exception::fromPath(code, zk_dropped_lock_path);
+                        }
+                        else
+                        {
+                            metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(zk_dropped_lock_path, *client);
+                            drop_lock_version = -1;
+                            Coordination::Stat lock_stat;
+                            client->get(zk_dropped_lock_path, &lock_stat);
+                            drop_lock_version = lock_stat.version;
+                            if (!dropTable(client, metadata_drop_lock))
+                            {
+                                metadata_drop_lock.reset();
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                Coordination::Requests create_requests{
+                    zkutil::makeCreateRequest(zk_metadata_path, metadata_string, zkutil::CreateMode::Persistent),
+                    zkutil::makeCreateRequest(zk_data_path, metadata_string, zkutil::CreateMode::Persistent),
+                    zkutil::makeCreateRequest(zk_tables_path, "", zkutil::CreateMode::Persistent),
+                    zkutil::makeCreateRequest(zk_table_path, "", zkutil::CreateMode::Persistent),
+                };
+
+                Coordination::Responses create_responses;
+                auto code = client->tryMulti(create_requests, create_responses);
+                if (code == Coordination::Error::ZNODEEXISTS)
+                {
+                    LOG_INFO(
+                        log, "It looks like a table on path {} was created by another server at the same moment, will retry", zk_root_path);
+                    return;
+                }
+                else if (code != Coordination::Error::ZOK)
+                {
+                    zkutil::KeeperMultiException::check(code, create_requests, create_responses);
+                }
+
+                table_status = TableStatus::VALID;
+                /// we are the first table created for the specified Keeper path, i.e. we are the first replica
+                success = true;
+            });
+
+        if (success)
+            return;
     }
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot create metadata for table, because it is removed concurrently or because "
-                    "of wrong zk_root_path ({})", zk_root_path);
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Cannot create metadata for table, because it is removed concurrently or because "
+        "of wrong zk_root_path ({})",
+        zk_root_path);
 }
 
 
@@ -496,7 +606,7 @@ Pipe StorageKeeperMap::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    checkTable<true>();
+    checkTable<true>(context_);
     storage_snapshot->check(column_names);
 
     FieldVectorPtr filtered_keys;
@@ -529,8 +639,8 @@ Pipe StorageKeeperMap::read(
         size_t num_keys = keys->size();
         size_t num_threads = std::min<size_t>(num_streams, keys->size());
 
-        assert(num_keys <= std::numeric_limits<uint32_t>::max());
-        assert(num_threads <= std::numeric_limits<uint32_t>::max());
+        chassert(num_keys <= std::numeric_limits<uint32_t>::max());
+        chassert(num_threads <= std::numeric_limits<uint32_t>::max());
 
         for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
         {
@@ -539,29 +649,59 @@ Pipe StorageKeeperMap::read(
 
             using KeyContainer = typename KeyContainerPtr::element_type;
             pipes.emplace_back(std::make_shared<StorageKeeperMapSource<KeyContainer>>(
-                *this, sample_block, max_block_size, keys, keys->begin() + begin, keys->begin() + end, with_version_column));
+                *this, sample_block, max_block_size, keys, keys->begin() + begin, keys->begin() + end, with_version_column, context_));
         }
         return Pipe::unitePipes(std::move(pipes));
     };
 
-    auto client = getClient();
     if (all_scan)
-        return process_keys(std::make_shared<std::vector<std::string>>(client->getChildren(zk_data_path)));
+    {
+        const auto & settings = context_->getSettingsRef();
+        ZooKeeperRetriesControl zk_retry{
+            getName(),
+            getLogger(getName()),
+            ZooKeeperRetriesInfo{
+                settings.keeper_max_retries,
+                settings.keeper_retry_initial_backoff_ms,
+                settings.keeper_retry_max_backoff_ms},
+            context_->getProcessListElement()};
+
+        std::vector<std::string> children;
+        zk_retry.retryLoop([&]
+        {
+            auto client = getClient();
+            children = client->getChildren(zk_data_path);
+        });
+        return process_keys(std::make_shared<std::vector<std::string>>(std::move(children)));
+    }
 
     return process_keys(std::move(filtered_keys));
 }
 
 SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
-    checkTable<true>();
+    checkTable<true>(local_context);
     return std::make_shared<StorageKeeperMapSink>(*this, metadata_snapshot->getSampleBlock(), local_context);
 }
 
-void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
+void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
-    checkTable<true>();
-    auto client = getClient();
-    client->tryRemoveChildrenRecursive(zk_data_path, true);
+    checkTable<true>(local_context);
+    const auto & settings = local_context->getSettingsRef();
+    ZooKeeperRetriesControl zk_retry{
+        getName(),
+        getLogger(getName()),
+        ZooKeeperRetriesInfo{
+            settings.keeper_max_retries,
+            settings.keeper_retry_initial_backoff_ms,
+            settings.keeper_retry_max_backoff_ms},
+        local_context->getProcessListElement()};
+
+    zk_retry.retryLoop([&]
+    {
+        auto client = getClient();
+        client->tryRemoveChildrenRecursive(zk_data_path, true);
+    });
 }
 
 bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock)
@@ -605,7 +745,18 @@ bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::E
 
 void StorageKeeperMap::drop()
 {
-    checkTable<true>();
+    auto current_table_status = getTableStatus(getContext());
+    if (current_table_status == TableStatus::UNKNOWN)
+    {
+            static constexpr auto error_msg = "Failed to activate table because of connection issues. It will be activated "
+                                              "once a connection is established and metadata is verified";
+            throw Exception(ErrorCodes::INVALID_STATE, error_msg);
+    }
+
+    /// if only column metadata is wrong we can still drop the table correctly
+    if (current_table_status == TableStatus::INVALID_METADATA)
+        return;
+
     auto client = getClient();
 
     // we allow ZNONODE in case we got hardware error on previous drop
@@ -966,78 +1117,91 @@ UInt64 StorageKeeperMap::keysLimit() const
     return keys_limit;
 }
 
-std::optional<bool> StorageKeeperMap::isTableValid() const
+StorageKeeperMap::TableStatus StorageKeeperMap::getTableStatus(const ContextPtr & local_context) const
 {
     std::lock_guard lock{init_mutex};
-    if (table_is_valid.has_value())
-        return table_is_valid;
+    if (table_status != TableStatus::UNKNOWN)
+        return table_status;
 
     [&]
     {
         try
         {
-            auto client = getClient();
+            const auto & settings = local_context->getSettingsRef();
+            ZooKeeperRetriesControl zk_retry{
+                getName(),
+                getLogger(getName()),
+                ZooKeeperRetriesInfo{
+                    settings.keeper_max_retries,
+                    settings.keeper_retry_initial_backoff_ms,
+                    settings.keeper_retry_max_backoff_ms},
+                local_context->getProcessListElement()};
 
-            Coordination::Stat metadata_stat;
-            auto stored_metadata_string = client->get(zk_metadata_path, &metadata_stat);
-
-            if (metadata_stat.numChildren == 0)
+            zk_retry.retryLoop([&]
             {
-                table_is_valid = false;
-                return;
-            }
+                auto client = getClient();
 
-            if (metadata_string != stored_metadata_string)
-            {
-                LOG_ERROR(
-                    log,
-                    "Table definition does not match to the one stored in the path {}. Stored definition: {}",
-                    zk_root_path,
-                    stored_metadata_string);
-                table_is_valid = false;
-                return;
-            }
+                Coordination::Stat metadata_stat;
+                auto stored_metadata_string = client->get(zk_metadata_path, &metadata_stat);
 
-            // validate all metadata and data nodes are present
-            Coordination::Requests requests;
-            requests.push_back(zkutil::makeCheckRequest(zk_table_path, -1));
-            requests.push_back(zkutil::makeCheckRequest(zk_data_path, -1));
-            requests.push_back(zkutil::makeCheckRequest(zk_dropped_path, -1));
+                if (metadata_stat.numChildren == 0)
+                {
+                    table_status = TableStatus::INVALID_KEEPER_STRUCTURE;
+                    return;
+                }
 
-            Coordination::Responses responses;
-            client->tryMulti(requests, responses);
+                if (metadata_string != stored_metadata_string)
+                {
+                    LOG_ERROR(
+                        log,
+                        "Table definition does not match to the one stored in the path {}. Stored definition: {}",
+                        zk_root_path,
+                        stored_metadata_string);
+                    table_status = TableStatus::INVALID_METADATA;
+                    return;
+                }
 
-            table_is_valid = false;
-            if (responses[0]->error != Coordination::Error::ZOK)
-            {
-                LOG_ERROR(log, "Table node ({}) is missing", zk_table_path);
-                return;
-            }
+                // validate all metadata and data nodes are present
+                Coordination::Requests requests;
+                requests.push_back(zkutil::makeCheckRequest(zk_table_path, -1));
+                requests.push_back(zkutil::makeCheckRequest(zk_data_path, -1));
+                requests.push_back(zkutil::makeCheckRequest(zk_dropped_path, -1));
 
-            if (responses[1]->error != Coordination::Error::ZOK)
-            {
-                LOG_ERROR(log, "Data node ({}) is missing", zk_data_path);
-                return;
-            }
+                Coordination::Responses responses;
+                client->tryMulti(requests, responses);
 
-            if (responses[2]->error == Coordination::Error::ZOK)
-            {
-                LOG_ERROR(log, "Tables with root node {} are being dropped", zk_root_path);
-                return;
-            }
+                table_status = TableStatus::INVALID_KEEPER_STRUCTURE;
+                if (responses[0]->error != Coordination::Error::ZOK)
+                {
+                    LOG_ERROR(log, "Table node ({}) is missing", zk_table_path);
+                    return;
+                }
 
-            table_is_valid = true;
+                if (responses[1]->error != Coordination::Error::ZOK)
+                {
+                    LOG_ERROR(log, "Data node ({}) is missing", zk_data_path);
+                    return;
+                }
+
+                if (responses[2]->error == Coordination::Error::ZOK)
+                {
+                    LOG_ERROR(log, "Tables with root node {} are being dropped", zk_root_path);
+                    return;
+                }
+
+                table_status = TableStatus::VALID;
+            });
         }
         catch (const Coordination::Exception & e)
         {
             tryLogCurrentException(log);
 
             if (!Coordination::isHardwareError(e.code))
-                table_is_valid = false;
+                table_status = TableStatus::INVALID_KEEPER_STRUCTURE;
         }
     }();
 
-    return table_is_valid;
+    return table_status;
 }
 
 Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const
@@ -1050,10 +1214,11 @@ Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPOD
     if (raw_keys.size() != keys[0].column->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", raw_keys.size(), keys[0].column->size());
 
-    return getBySerializedKeys(raw_keys, &null_map, /* version_column */ false);
+    return getBySerializedKeys(raw_keys, &null_map, /* version_column */ false, getContext());
 }
 
-Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version) const
+Chunk StorageKeeperMap::getBySerializedKeys(
+    const std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version, const ContextPtr & local_context) const
 {
     Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
     MutableColumns columns = sample_block.cloneEmptyColumns();
@@ -1070,17 +1235,27 @@ Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> k
         null_map->resize_fill(keys.size(), 1);
     }
 
-    auto client = getClient();
-
     Strings full_key_paths;
     full_key_paths.reserve(keys.size());
 
     for (const auto & key : keys)
-    {
         full_key_paths.emplace_back(fullPathForKey(key));
-    }
 
-    auto values = client->tryGet(full_key_paths);
+    const auto & settings = local_context->getSettingsRef();
+    ZooKeeperRetriesControl zk_retry{
+        getName(),
+        getLogger(getName()),
+        ZooKeeperRetriesInfo{
+            settings.keeper_max_retries,
+            settings.keeper_retry_initial_backoff_ms,
+            settings.keeper_retry_max_backoff_ms},
+        local_context->getProcessListElement()};
+
+    zkutil::ZooKeeper::MultiTryGetResponse values;
+    zk_retry.retryLoop([&]{
+        auto client = getClient();
+        values = client->tryGet(full_key_paths);
+    });
 
     for (size_t i = 0; i < keys.size(); ++i)
     {
@@ -1153,14 +1328,14 @@ void StorageKeeperMap::checkMutationIsPossible(const MutationCommands & commands
 
 void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr local_context)
 {
-    checkTable<true>();
+    checkTable<true>(local_context);
 
     if (commands.empty())
         return;
 
     bool strict = local_context->getSettingsRef().keeper_map_strict_mode;
 
-    assert(commands.size() == 1);
+    chassert(commands.size() == 1);
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
@@ -1168,16 +1343,16 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
     if (commands.front().type == MutationCommand::Type::DELETE)
     {
-        MutationsInterpreter::Settings settings(true);
-        settings.return_all_columns = true;
-        settings.return_mutated_rows = true;
+        MutationsInterpreter::Settings mutation_settings(true);
+        mutation_settings.return_all_columns = true;
+        mutation_settings.return_mutated_rows = true;
 
         auto interpreter = std::make_unique<MutationsInterpreter>(
             storage_ptr,
             metadata_snapshot,
             commands,
             local_context,
-            settings);
+            mutation_settings);
 
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
@@ -1185,8 +1360,6 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
         auto header = interpreter->getUpdatedHeader();
         auto primary_key_pos = header.getPositionByName(primary_key);
         auto version_position = header.getPositionByName(std::string{version_column_name});
-
-        auto client = getClient();
 
         Block block;
         while (executor.pull(block))
@@ -1215,7 +1388,23 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             }
 
             Coordination::Responses responses;
-            auto status = client->tryMulti(delete_requests, responses, /* check_session_valid */ true);
+
+            const auto & settings = local_context->getSettingsRef();
+            ZooKeeperRetriesControl zk_retry{
+                getName(),
+                getLogger(getName()),
+                ZooKeeperRetriesInfo{
+                    settings.keeper_max_retries,
+                    settings.keeper_retry_initial_backoff_ms,
+                    settings.keeper_retry_max_backoff_ms},
+                local_context->getProcessListElement()};
+
+            Coordination::Error status;
+            zk_retry.retryLoop([&]
+            {
+                auto client = getClient();
+                status = client->tryMulti(delete_requests, responses, /* check_session_valid */ true);
+            });
 
             if (status == Coordination::Error::ZOK)
                 return;
@@ -1227,16 +1416,21 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
             for (const auto & delete_request : delete_requests)
             {
-                auto code = client->tryRemove(delete_request->getPath());
-                if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-                    throw zkutil::KeeperException::fromPath(code, delete_request->getPath());
+                zk_retry.retryLoop([&]
+                {
+                    auto client = getClient();
+                    status = client->tryRemove(delete_request->getPath());
+                });
+
+                if (status != Coordination::Error::ZOK && status != Coordination::Error::ZNONODE)
+                    throw zkutil::KeeperException::fromPath(status, delete_request->getPath());
             }
         }
 
         return;
     }
 
-    assert(commands.front().type == MutationCommand::Type::UPDATE);
+    chassert(commands.front().type == MutationCommand::Type::UPDATE);
     if (commands.front().column_to_update_expression.contains(primary_key))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
 
@@ -1289,6 +1483,7 @@ StoragePtr create(const StorageFactory::Arguments & args)
     StorageInMemoryMetadata metadata;
     metadata.setColumns(args.columns);
     metadata.setConstraints(args.constraints);
+    metadata.setComment(args.comment);
 
     if (!args.storage_def->primary_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");

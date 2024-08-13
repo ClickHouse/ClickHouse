@@ -103,14 +103,11 @@ private:
         const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data);
 
         if (!src_data_concrete)
-        {
             return false;
-        }
 
         for (size_t row = 0; row < rows; ++row)
-        {
             out_vec[row * size_per_row + column_idx] = static_cast<char>(src_data_concrete->getInt(row));
-        }
+
         return true;
     }
 };
