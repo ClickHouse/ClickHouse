@@ -1159,6 +1159,12 @@ void WindowTransform::appendChunk(Chunk & chunk)
         {
             if (ws.window_function_impl)
                 block.casted_columns.push_back(ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices));
+            else
+            {
+                /// `castColumn` returns nullptr at default, so it's OK to put nullptr as a placeholder here
+                /// it should not be used in fact.
+                block.casted_columns.push_back(nullptr);
+            }
 
             block.output_columns.push_back(ws.aggregate_function->getResultType()
                 ->createColumn());
