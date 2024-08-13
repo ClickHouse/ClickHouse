@@ -205,8 +205,6 @@ struct ScatteredBlock : private boost::noncopyable
 
     const auto & getSelector() const { return selector; }
 
-    bool contains(size_t idx) const { return std::find(selector.begin(), selector.end(), idx) != selector.end(); }
-
     explicit operator bool() const { return !!block; }
 
     /// Accounts only selected rows

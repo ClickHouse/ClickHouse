@@ -34,7 +34,6 @@ struct JoinOnKeyColumns
 
     bool isRowFiltered(size_t i) const
     {
-        chassert(block.contains(i), fmt::format("Row {} is not in block", i));
         return join_mask_column.isRowFiltered(i);
     }
 };
