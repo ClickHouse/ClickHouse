@@ -411,6 +411,12 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
     const auto & shared_data = column_object.getSharedDataPtr();
     auto * object_state = checkAndGetState<SerializeBinaryBulkStateObject>(state);
 
+    if (column_object.getMaxDynamicPaths() != object_state->max_dynamic_paths)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mismatch of max_dynamic_paths parameter of Object. Expected: {}, Got: {}", object_state->max_dynamic_paths, column_object.getMaxDynamicPaths());
+
+    if (column_object.getDynamicPaths().size() != object_state->sorted_dynamic_paths.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mismatch of number of dynamic paths in Object. Expected: {}, Got: {}", object_state->sorted_dynamic_paths.size(), column_object.getDynamicPaths().size());
+
     settings.path.push_back(Substream::ObjectData);
 
     for (const auto & path : sorted_typed_paths)
@@ -532,6 +538,7 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
     /// If it's a new object column, set dynamic paths and statistics.
     if (column_object.empty())
     {
+        column_object.setMaxDynamicPaths(structure_state->max_dynamic_paths);
         column_object.setDynamicPaths(structure_state->sorted_dynamic_paths);
         column_object.setStatistics(structure_state->statistics);
     }
