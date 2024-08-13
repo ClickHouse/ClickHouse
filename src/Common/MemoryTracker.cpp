@@ -233,7 +233,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             if (metric_loaded != CurrentMetrics::end())
                 CurrentMetrics::add(metric_loaded, size);
 
-            updateMemoryCredits();
+            updateMemoryCredits(size);
         }
 
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
@@ -256,7 +256,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     if (metric_loaded != CurrentMetrics::end() && size)
         CurrentMetrics::add(metric_loaded, size);
 
-    updateMemoryCredits();
+    updateMemoryCredits(size);
 
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
@@ -405,7 +405,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         return loaded_next->allocImpl(size, throw_if_memory_exceeded, tracker, _sample_probability);
     }
 
-    updateMemoryCredits();
+    updateMemoryCredits(size);
     return AllocationTrace(_sample_probability);
 }
 
@@ -450,7 +450,7 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
                 CurrentMetrics::sub(metric_loaded, size);
-            updateMemoryCredits();
+            updateMemoryCredits(size);
         }
 
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
@@ -493,7 +493,7 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
         return loaded_next->free(size, _sample_probability);
 
-    updateMemoryCredits();
+    updateMemoryCredits(size);
 
     return AllocationTrace(_sample_probability);
 }
@@ -618,19 +618,9 @@ bool canEnqueueBackgroundTask()
     return limit == 0 || amount < limit;
 }
 
-void MemoryTracker::updateMemoryCredits()
+void MemoryTracker::updateMemoryCredits(size_t size)
 {
-    static thread_local Stopwatch stopwatch;
-    static std::atomic<size_t> previous_value{0}; // Use atomic for previous_value
-    constexpr Int64 local_threshold = 512 * 1024;
-    size_t current_value = amount.load(std::memory_order_relaxed); // Use relaxed order for reading
-
-    if (current_value > previous_value.load(std::memory_order_relaxed) &&
-        current_value - previous_value.load(std::memory_order_relaxed) > local_threshold)
-    {
-        size_t delta = ((current_value - previous_value.load(std::memory_order_relaxed)) * stopwatch.elapsedMicroseconds()) / (1024 * 1024);
-        ProfileEvents::increment(ProfileEvents::MemoryCredits, delta);
-        previous_value.store(current_value, std::memory_order_relaxed); // Use relaxed order for storing
-        stopwatch.restart();
-    }
+    size_t delta = size * stopwatch.elapsedMicroseconds();
+    ProfileEvents::increment(ProfileEvents::MemoryCredits, delta);
+    stopwatch.restart();
 }

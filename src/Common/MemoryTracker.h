@@ -98,6 +98,8 @@ private:
 
     bool isSizeOkForSampling(UInt64 size) const;
 
+    Stopwatch stopwatch;
+
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
     [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);
@@ -257,7 +259,7 @@ public:
     void logPeakMemoryUsage();
 
     void debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]]);
-    void updateMemoryCredits();
+    void updateMemoryCredits(size_t size);
 };
 
 extern MemoryTracker total_memory_tracker;
