@@ -32,7 +32,6 @@ set (SRCS
     StringRef.cpp
     safeExit.cpp
     throwError.cpp
-    Numa.cpp
 )
 
 add_library (common ${SRCS})
@@ -45,10 +44,6 @@ endif ()
 
 if (TARGET ch_contrib::crc32_s390x)
     target_link_libraries(common PUBLIC ch_contrib::crc32_s390x)
-endif()
-
-if (TARGET ch_contrib::numactl)
-    target_link_libraries(common PUBLIC ch_contrib::numactl)
 endif()
 
 target_include_directories(common PUBLIC .. "${CMAKE_CURRENT_BINARY_DIR}/..")

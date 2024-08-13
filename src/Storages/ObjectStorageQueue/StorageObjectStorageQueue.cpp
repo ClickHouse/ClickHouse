@@ -36,7 +36,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int BAD_QUERY_PARAMETER;
     extern const int QUERY_NOT_ALLOWED;
 }
 
@@ -151,7 +150,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     }
     else if (!configuration->isPathWithGlobs())
     {
-        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
     checkAndAdjustSettings(*queue_settings, engine_args, mode > LoadingStrictnessLevel::CREATE, log);

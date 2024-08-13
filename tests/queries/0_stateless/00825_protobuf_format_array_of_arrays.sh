@@ -11,7 +11,7 @@ SCHEMADIR=$CURDIR/format_schemas
 set -eo pipefail
 
 # Run the client.
-$CLICKHOUSE_CLIENT <<EOF
+$CLICKHOUSE_CLIENT --multiquery <<EOF
 DROP TABLE IF EXISTS array_of_arrays_protobuf_00825;
 
 CREATE TABLE array_of_arrays_protobuf_00825

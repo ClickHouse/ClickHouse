@@ -81,8 +81,6 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         is_consume_started = true;
     }
 
-    if (rows_before_aggregation)
-        rows_before_aggregation->add(rows);
     src_rows += rows;
     src_bytes += chunk.bytes();
 

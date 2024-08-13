@@ -1,4 +1,4 @@
--- Tags: long, no-random-merge-tree-settings, no-distributed-cache
+-- Tags: long, no-random-merge-tree-settings
 -- no-random-merge-tree-settings - times out in private
 
 DROP TABLE IF EXISTS build;

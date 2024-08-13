@@ -308,7 +308,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     if (tables_with_columns.size() < 2)
         return {};
 
-    const auto & settings = context->getSettingsRef();
+    auto settings = context->getSettingsRef();
     MultiEnum<JoinAlgorithm> join_algorithm = settings.join_algorithm;
     bool try_use_direct_join = join_algorithm.isSet(JoinAlgorithm::DIRECT) || join_algorithm.isSet(JoinAlgorithm::DEFAULT);
     auto table_join = std::make_shared<TableJoin>(settings, context->getGlobalTemporaryVolume(), context->getTempDataOnDisk());

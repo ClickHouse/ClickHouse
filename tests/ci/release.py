@@ -689,5 +689,4 @@ def main():
 
 
 if __name__ == "__main__":
-    assert False, "Script Deprecated, ask ci team for help"
     main()

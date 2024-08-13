@@ -365,7 +365,7 @@ bool LocalConnection::poll(size_t)
         {
             while (pollImpl())
             {
-                LOG_TEST(&Poco::Logger::get("LocalConnection"), "Executor timeout encountered, will retry");
+                LOG_DEBUG(&Poco::Logger::get("LocalConnection"), "Executor timeout encountered, will retry");
 
                 if (needSendProgressOrMetrics())
                     return true;

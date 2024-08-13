@@ -54,7 +54,7 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    static ColumnPtr executeTyped(const ColumnConst * left_arg, const IColumn * right_arg, size_t input_rows_count)
+    static ColumnPtr executeTyped(const ColumnConst * left_arg, const IColumn * right_arg)
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -63,11 +63,12 @@ private:
             LeftType left_src_data[Impl::rows_per_iteration];
             std::fill(std::begin(left_src_data), std::end(left_src_data), left_arg->template getValue<LeftType>());
             const auto & right_src_data = right_arg_typed->getData();
+            const auto src_size = right_src_data.size();
             auto & dst_data = dst->getData();
-            dst_data.resize(input_rows_count);
+            dst_data.resize(src_size);
 
-            const auto rows_remaining = input_rows_count % Impl::rows_per_iteration;
-            const auto rows_size = input_rows_count - rows_remaining;
+            const auto rows_remaining = src_size % Impl::rows_per_iteration;
+            const auto rows_size = src_size - rows_remaining;
 
             for (size_t i = 0; i < rows_size; i += Impl::rows_per_iteration)
                 Impl::execute(left_src_data, &right_src_data[i], &dst_data[i]);
@@ -91,7 +92,7 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    static ColumnPtr executeTyped(const ColumnVector<LeftType> * left_arg, const IColumn * right_arg, size_t input_rows_count)
+    static ColumnPtr executeTyped(const ColumnVector<LeftType> * left_arg, const IColumn * right_arg)
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -99,11 +100,12 @@ private:
 
             const auto & left_src_data = left_arg->getData();
             const auto & right_src_data = right_arg_typed->getData();
+            const auto src_size = left_src_data.size();
             auto & dst_data = dst->getData();
-            dst_data.resize(input_rows_count);
+            dst_data.resize(src_size);
 
-            const auto rows_remaining = input_rows_count % Impl::rows_per_iteration;
-            const auto rows_size = input_rows_count - rows_remaining;
+            const auto rows_remaining = src_size % Impl::rows_per_iteration;
+            const auto rows_size = src_size - rows_remaining;
 
             for (size_t i = 0; i < rows_size; i += Impl::rows_per_iteration)
                 Impl::execute(&left_src_data[i], &right_src_data[i], &dst_data[i]);
@@ -134,11 +136,12 @@ private:
             const auto & left_src_data = left_arg->getData();
             RightType right_src_data[Impl::rows_per_iteration];
             std::fill(std::begin(right_src_data), std::end(right_src_data), right_arg_typed->template getValue<RightType>());
+            const auto src_size = left_src_data.size();
             auto & dst_data = dst->getData();
-            dst_data.resize(input_rows_count);
+            dst_data.resize(src_size);
 
-            const auto rows_remaining = input_rows_count % Impl::rows_per_iteration;
-            const auto rows_size = input_rows_count - rows_remaining;
+            const auto rows_remaining = src_size % Impl::rows_per_iteration;
+            const auto rows_size = src_size - rows_remaining;
 
             for (size_t i = 0; i < rows_size; i += Impl::rows_per_iteration)
                 Impl::execute(&left_src_data[i], right_src_data, &dst_data[i]);
@@ -162,7 +165,7 @@ private:
         return nullptr;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & col_left = arguments[0];
         const ColumnWithTypeAndName & col_right = arguments[1];
@@ -199,7 +202,7 @@ private:
 
             if (const auto left_arg_typed = checkAndGetColumn<ColVecLeft>(left_arg))
             {
-                if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg, input_rows_count)))
+                if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg)))
                     return true;
 
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",
@@ -207,7 +210,7 @@ private:
             }
             if (const auto left_arg_typed = checkAndGetColumnConst<ColVecLeft>(left_arg))
             {
-                if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg, input_rows_count)))
+                if ((res = executeTyped<LeftType, RightType>(left_arg_typed, right_arg)))
                     return true;
 
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",

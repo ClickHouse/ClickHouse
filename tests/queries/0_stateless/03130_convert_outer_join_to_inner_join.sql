@@ -1,4 +1,4 @@
-SET enable_analyzer = 1;
+SET allow_experimental_analyzer = 1;
 SET join_algorithm = 'hash';
 
 DROP TABLE IF EXISTS test_table_1;
@@ -6,18 +6,14 @@ CREATE TABLE test_table_1
 (
     id UInt64,
     value String
-) ENGINE=MergeTree ORDER BY id
-SETTINGS index_granularity = 16 # We have number of granules in the `EXPLAIN` output in reference file
-;
+) ENGINE=MergeTree ORDER BY id;
 
 DROP TABLE IF EXISTS test_table_2;
 CREATE TABLE test_table_2
 (
     id UInt64,
     value String
-) ENGINE=MergeTree ORDER BY id
-SETTINGS index_granularity = 16
-;
+) ENGINE=MergeTree ORDER BY id;
 
 INSERT INTO test_table_1 VALUES (1, 'Value_1'), (2, 'Value_2');
 INSERT INTO test_table_2 VALUES (2, 'Value_2'), (3, 'Value_3');

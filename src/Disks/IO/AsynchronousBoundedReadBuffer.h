@@ -34,7 +34,7 @@ public:
 
     String getFileName() const override { return impl->getFileName(); }
 
-    std::optional<size_t> tryGetFileSize() override { return impl->tryGetFileSize(); }
+    size_t getFileSize() override { return impl->getFileSize(); }
 
     String getInfoForLog() override { return impl->getInfoForLog(); }
 

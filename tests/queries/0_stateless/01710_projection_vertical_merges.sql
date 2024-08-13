@@ -1,5 +1,4 @@
--- Tags: long, no-parallel
--- set no-parallel tag is to prevent timeout of this test
+-- Tags: long
 
 drop table if exists t;
 

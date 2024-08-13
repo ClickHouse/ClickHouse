@@ -125,7 +125,7 @@ ColumnPtr getFilteredTables(
         block.insert(ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine"));
 
     if (dag)
-        VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), block);
+        VirtualColumnUtils::filterBlockWithDAG(dag, block, context);
 
     return block.getByPosition(0).column;
 }

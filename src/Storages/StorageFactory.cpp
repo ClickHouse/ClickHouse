@@ -203,7 +203,7 @@ StoragePtr StorageFactory::get(
     }
 
     if (query.comment)
-        comment = query.comment->as<ASTLiteral &>().value.safeGet<String>();
+        comment = query.comment->as<ASTLiteral &>().value.get<String>();
 
     ASTs empty_engine_args;
     Arguments arguments{

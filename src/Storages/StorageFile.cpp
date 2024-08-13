@@ -53,7 +53,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
-#include "base/defines.h"
 
 #include <Core/Settings.h>
 
@@ -429,9 +428,7 @@ namespace
                 {
                     for (const auto & path : paths)
                     {
-                        auto format_from_path = FormatFactory::instance().tryGetFormatFromFileName(path);
-                        /// Use this format only if we have a schema reader for it.
-                        if (format_from_path && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_path))
+                        if (auto format_from_path = FormatFactory::instance().tryGetFormatFromFileName(path))
                         {
                             format = format_from_path;
                             break;
@@ -720,9 +717,7 @@ namespace
                     /// If format is unknown we can try to determine it by the file name.
                     if (!format)
                     {
-                        auto format_from_file = FormatFactory::instance().tryGetFormatFromFileName(*filename);
-                        /// Use this format only if we have a schema reader for it.
-                        if (format_from_file && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file))
+                        if (auto format_from_file = FormatFactory::instance().tryGetFormatFromFileName(*filename))
                             format = format_from_file;
                     }
 
@@ -1136,16 +1131,12 @@ StorageFileSource::FilesIterator::FilesIterator(
     bool distributed_processing_)
     : WithContext(context_), files(files_), archive_info(std::move(archive_info_)), distributed_processing(distributed_processing_)
 {
-    std::optional<ActionsDAG> filter_dag;
+    ActionsDAGPtr filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
         filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
     if (filter_dag)
-    {
-        VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
-        auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-        VirtualColumnUtils::filterByPathOrFile(files, files, actions, virtual_columns);
-    }
+        VirtualColumnUtils::filterByPathOrFile(files, files, filter_dag, virtual_columns, context_);
 }
 
 String StorageFileSource::FilesIterator::next()
@@ -1254,7 +1245,7 @@ StorageFileSource::~StorageFileSource()
     beforeDestroy();
 }
 
-void StorageFileSource::setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_)
+void StorageFileSource::setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_)
 {
     setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
 }
@@ -1768,12 +1759,6 @@ public:
         initialize();
     }
 
-    ~StorageFileSink() override
-    {
-        if (isCancelled())
-            cancelBuffers();
-    }
-
     void initialize()
     {
         std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer;
@@ -1807,14 +1792,37 @@ public:
 
     void consume(Chunk & chunk) override
     {
-        if (isCancelled())
+        std::lock_guard cancel_lock(cancel_mutex);
+        if (cancelled)
             return;
         writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
     }
 
+    void onCancel() override
+    {
+        std::lock_guard cancel_lock(cancel_mutex);
+        cancelBuffers();
+        releaseBuffers();
+        cancelled = true;
+    }
+
+    void onException(std::exception_ptr exception) override
+    {
+        std::lock_guard cancel_lock(cancel_mutex);
+        try
+        {
+            std::rethrow_exception(exception);
+        }
+        catch (...)
+        {
+            /// An exception context is needed to proper delete write buffers without finalization
+            releaseBuffers();
+        }
+    }
+
     void onFinish() override
     {
-        chassert(!isCancelled());
+        std::lock_guard cancel_lock(cancel_mutex);
         finalizeBuffers();
     }
 
@@ -1869,6 +1877,9 @@ private:
 
     int flags;
     std::unique_lock<std::shared_timed_mutex> lock;
+
+    std::mutex cancel_mutex;
+    bool cancelled = false;
 };
 
 class PartitionedStorageFileSink : public PartitionedSink
@@ -2185,12 +2196,12 @@ void registerStorageFile(StorageFactory & factory)
             {
                 auto type = literal->value.getType();
                 if (type == Field::Types::Int64)
-                    source_fd = static_cast<int>(literal->value.safeGet<Int64>());
+                    source_fd = static_cast<int>(literal->value.get<Int64>());
                 else if (type == Field::Types::UInt64)
-                    source_fd = static_cast<int>(literal->value.safeGet<UInt64>());
+                    source_fd = static_cast<int>(literal->value.get<UInt64>());
                 else if (type == Field::Types::String)
                     StorageFile::parseFileSource(
-                        literal->value.safeGet<String>(),
+                        literal->value.get<String>(),
                         source_path,
                         storage_args.path_to_archive,
                         factory_args.getLocalContext()->getSettingsRef().allow_archive_path_syntax);
