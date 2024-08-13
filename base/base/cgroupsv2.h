@@ -19,4 +19,4 @@ std::filesystem::path cgroupV2PathOfProcess();
 
 /// Returns the most nested cgroup dir containing the specified file.
 /// If cgroups v2 is not enabled - returns an empty optional.
-std::optional<std::string> getCgroupsV2PathContainingFile(std::string_view file_name);
+std::optional<std::string> getCgroupsV2PathContainingFile([[maybe_unused]] std::string_view file_name);
