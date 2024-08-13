@@ -45,7 +45,7 @@ public:
 
         Iterator(const Selector & selector_, size_t idx_) : selector(selector_), idx(idx_) { }
 
-        size_t operator*() const
+        size_t ALWAYS_INLINE operator*() const
         {
             chassert(idx < selector.size());
             if (idx >= selector.size())
@@ -53,7 +53,7 @@ public:
             return selector[idx];
         }
 
-        Iterator & operator++()
+        Iterator & ALWAYS_INLINE operator++()
         {
             if (idx >= selector.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} out of range size {}", idx, selector.size());
@@ -61,7 +61,7 @@ public:
             return *this;
         }
 
-        bool operator!=(const Iterator & other) const { return idx != other.idx; }
+        bool ALWAYS_INLINE operator!=(const Iterator & other) const { return idx != other.idx; }
 
     private:
         const Selector & selector;
@@ -72,7 +72,7 @@ public:
 
     Iterator end() const { return Iterator(*this, size()); }
 
-    size_t operator[](size_t idx) const
+    size_t ALWAYS_INLINE operator[](size_t idx) const
     {
         chassert(idx < size());
         if (idx >= size())
