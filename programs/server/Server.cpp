@@ -894,10 +894,6 @@ try
         server_settings.global_profiler_real_time_period_ns,
         server_settings.global_profiler_cpu_time_period_ns);
 
-    std::mutex servers_lock;
-    std::vector<ProtocolServerAdapter> servers;
-    std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
-
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT({
         Stopwatch watch;
@@ -906,32 +902,9 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
-    /// This object will periodically calculate some metrics.
-    ServerAsynchronousMetrics async_metrics(
-        global_context,
-        server_settings.asynchronous_metrics_update_period_s,
-        server_settings.asynchronous_heavy_metrics_update_period_s,
-        [&]() -> std::vector<ProtocolServerMetrics>
-        {
-            std::vector<ProtocolServerMetrics> metrics;
-
-            std::lock_guard lock(servers_lock);
-            metrics.reserve(servers_to_start_before_tables.size() + servers.size());
-
-            for (const auto & server : servers_to_start_before_tables)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
-
-            for (const auto & server : servers)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
-            return metrics;
-        }
-    );
-
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT({
-        async_metrics.stop();
-
         /** Ask to cancel background jobs all table engines,
           *  and also query_log.
           * It is important to do early, not in destructor of Context, because
@@ -942,33 +915,6 @@ try
         global_context->shutdown();
 
         LOG_DEBUG(log, "Shut down storages.");
-
-        if (!servers_to_start_before_tables.empty())
-        {
-            LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
-            size_t current_connections = 0;
-            {
-                std::lock_guard lock(servers_lock);
-                for (auto & server : servers_to_start_before_tables)
-                {
-                    server.stop();
-                    current_connections += server.currentConnections();
-                }
-            }
-
-            if (current_connections)
-                LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
-            else
-                LOG_INFO(log, "Closed all listening sockets.");
-
-            if (current_connections > 0)
-                current_connections = waitServersToFinish(servers_to_start_before_tables, servers_lock, server_settings.shutdown_wait_unfinished);
-
-            if (current_connections)
-                LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
-            else
-                LOG_INFO(log, "Closed connections to servers for tables.");
-        }
 
         global_context->shutdownKeeperDispatcher();
 
