@@ -1709,6 +1709,8 @@ getOSKernelVersion
 getServerPort
 getSetting
 getSizeOfEnumType
+getSubcolumn
+getTypeSerializationStreams
 getblockinfo
 getevents
 ghcnd
@@ -2122,6 +2124,7 @@ namenode
 namepassword
 nameprofile
 namequota
+namespace
 namespaces
 natively
 nats
