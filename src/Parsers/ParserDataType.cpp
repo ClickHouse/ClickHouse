@@ -242,10 +242,12 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// Allow mixed lists of nested and normal types.
     /// Parameters are either:
-    /// - Nested table elements;
+    /// - Nested table element;
+    /// - Tuple element
     /// - Enum element in form of 'a' = 1;
     /// - literal;
-    /// - Dynamic type arguments;
+    /// - Dynamic type argument;
+    /// - JSON type argument;
     /// - another data type (or identifier);
 
     size_t arg_num = 0;
@@ -271,7 +273,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             ObjectArgumentParser parser;
             parser.parse(pos, arg, expected);
         }
-        else if (type_name == "Nested")
+        else if (boost::to_lower_copy(type_name) == "nested")
         {
             ParserNameTypePair name_and_type_parser;
             name_and_type_parser.parse(pos, arg, expected);
@@ -334,9 +336,6 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ++arg_num;
     }
 
-    if (pos->type == TokenType::Comma)
-        // ignore trailing comma inside Nested structures like Tuple(Int, Tuple(Int, String),)
-        ++pos;
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
     ++pos;
