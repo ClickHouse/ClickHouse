@@ -53,6 +53,7 @@ fs::path cgroupV2PathOfProcess()
 
 std::optional<std::string> getCgroupsV2PathContainingFile(std::string_view file_name)
 {
+#if defined(OS_LINUX)
     if (!cgroupsV2Enabled())
         return {};
 
@@ -70,4 +71,7 @@ std::optional<std::string> getCgroupsV2PathContainingFile(std::string_view file_
         current_cgroup = current_cgroup.parent_path();
     }
     return {};
+#else
+    return {};
+#endif
 }
