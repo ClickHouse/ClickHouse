@@ -160,8 +160,11 @@ NamesAndTypesList ORCSchemaReader::readSchema()
 {
     initializeIfNeeded();
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
-        *schema, "ORC", format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference);
-    if (format_settings.schema_inference_make_columns_nullable)
+        *schema,
+        "ORC",
+        format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference,
+        format_settings.schema_inference_make_columns_nullable != 0);
+    if (format_settings.schema_inference_make_columns_nullable == 1)
         return getNamesAndRecursivelyNullableTypes(header);
     return header.getNamesAndTypesList();
 }
