@@ -13,11 +13,11 @@ The list of datatypes generated via the following query:
 The list of keywords generated via the following query:
 
 ```
-    clickhouse client -q "SELECT DISTINCT concat('\"', keyword, '\"') as res FROM system.keywords ORDER BY keyword" > key_words.dict
+    clickhouse client -q "SELECT DISTINCT concat('\"', keyword, '\"') as res FROM system.keywords ORDER BY keyword" > keywords.dict
 ```
 
 Then merge all dictionaries into one (all.dict)
 
 ```
-    cat ./dictionaries/* | sort | uniq > all.dict
+    cat ./dictionaries/* | LC_ALL=C sort | uniq > all.dict
 ```
