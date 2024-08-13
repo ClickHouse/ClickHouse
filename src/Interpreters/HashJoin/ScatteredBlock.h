@@ -31,12 +31,13 @@ public:
     using Indexes = ColumnUInt64;
     using IndexesPtr = ColumnUInt64::MutablePtr;
 
-    /// [begin, end)
-    Selector(size_t begin, size_t end) : data(Range{begin, end}) { }
-    Selector(size_t size) : Selector(0, size) { }
     Selector() : Selector(0, 0) { }
 
-    Selector(IndexesPtr && selector_) : data(initializeFromSelector(std::move(selector_))) { }
+    /// [begin, end)
+    Selector(size_t begin, size_t end) : data(Range{begin, end}) { }
+
+    explicit Selector(size_t size) : Selector(0, size) { }
+    explicit Selector(IndexesPtr && selector_) : data(initializeFromSelector(std::move(selector_))) { }
 
     class Iterator
     {
@@ -82,7 +83,7 @@ public:
 
         if (std::holds_alternative<Range>(data))
         {
-            auto range = std::get<Range>(data);
+            const auto range = std::get<Range>(data);
             return range.first + idx;
         }
         else
@@ -95,7 +96,7 @@ public:
     {
         if (std::holds_alternative<Range>(data))
         {
-            auto range = std::get<Range>(data);
+            const auto range = std::get<Range>(data);
             return range.second - range.first;
         }
         else
@@ -110,7 +111,7 @@ public:
 
         if (std::holds_alternative<Range>(data))
         {
-            auto range = std::get<Range>(data);
+            const auto range = std::get<Range>(data);
 
             if (num_rows == 0)
                 return {Selector(), Selector{range.first, range.second}};
@@ -122,10 +123,10 @@ public:
         }
         else
         {
-            auto & selector = std::get<IndexesPtr>(data)->getData();
-            return {
-                Selector(Indexes::create(selector.begin(), selector.begin() + num_rows)),
-                Selector(Indexes::create(selector.begin() + num_rows, selector.end()))};
+            const auto & selector = std::get<IndexesPtr>(data)->getData();
+            auto && left = Selector(Indexes::create(selector.begin(), selector.begin() + num_rows));
+            auto && right = Selector(Indexes::create(selector.begin() + num_rows, selector.end()));
+            return {std::move(left), std::move(right)};
         }
     }
 
@@ -147,12 +148,12 @@ public:
     {
         if (std::holds_alternative<Range>(data))
         {
-            auto range = std::get<Range>(data);
+            const auto range = std::get<Range>(data);
             return fmt::format("[{}, {})", range.first, range.second);
         }
         else
         {
-            auto & selector = std::get<IndexesPtr>(data)->getData();
+            const auto & selector = std::get<IndexesPtr>(data)->getData();
             return fmt::format("({})", fmt::join(selector, ","));
         }
     }
@@ -244,7 +245,7 @@ struct ScatteredBlock : private boost::noncopyable
         new_selector->reserve(selector.size());
         std::copy_if(
             selector.begin(), selector.end(), std::back_inserter(new_selector->getData()), [&](size_t idx) { return filter[idx]; });
-        selector = std::move(new_selector);
+        selector = Selector(std::move(new_selector));
     }
 
     /// Applies selector to block in place
@@ -299,19 +300,13 @@ struct ScatteredBlock : private boost::noncopyable
         chassert(block);
         chassert(offsets.size() == rows());
 
-        auto columns = block.getColumns();
+        auto && columns = block.getColumns();
         for (size_t i = 0; i < existing_columns; ++i)
-        {
-            auto c = columns[i]->replicate(offsets);
-            columns[i] = std::move(c);
-        }
+            columns[i] = columns[i]->replicate(offsets);
         for (size_t pos : right_keys_to_replicate)
-        {
-            auto c = columns[pos]->replicate(offsets);
-            columns[pos] = std::move(c);
-        }
+            columns[pos] = columns[pos]->replicate(offsets);
 
-        block.setColumns(columns);
+        block.setColumns(std::move(columns));
         selector = Selector(block.rows());
     }
 
