@@ -13,7 +13,7 @@ def fill_node(node):
         """
         CREATE TABLE IF NOT EXISTS test(n UInt32)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/test', '{replica}')
-        ORDER BY n PARTITION BY n % 10 SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1, max_cleanup_delay_period=1;
+        ORDER BY n PARTITION BY n % 10;
     """.format(
             replica=node.name
         )
@@ -56,7 +56,6 @@ def check_data(nodes, detached_parts):
 
         node.query_with_retry("SYSTEM SYNC REPLICA test")
 
-    for node in nodes:
         print("> Checking data integrity for", node.name)
 
         for i in range(10):

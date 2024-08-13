@@ -8,21 +8,19 @@ namespace DB
 template <char not_case_lower_bound, char not_case_upper_bound>
 struct LowerUpperImpl
 {
-    static void vector(
-        const ColumnString::Chars & data,
+    static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        size_t /*input_rows_count*/)
+        ColumnString::Offsets & res_offsets)
     {
-        res_data.resize_exact(data.size());
+        res_data.resize(data.size());
         res_offsets.assign(offsets);
         array(data.data(), data.data() + data.size(), res_data.data());
     }
 
-    static void vectorFixed(const ColumnString::Chars & data, size_t /*n*/, ColumnString::Chars & res_data, size_t /*input_rows_count*/)
+    static void vectorFixed(const ColumnString::Chars & data, size_t /*n*/, ColumnString::Chars & res_data)
     {
-        res_data.resize_exact(data.size());
+        res_data.resize(data.size());
         array(data.data(), data.data() + data.size(), res_data.data());
     }
 

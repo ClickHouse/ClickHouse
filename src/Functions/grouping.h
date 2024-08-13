@@ -47,10 +47,6 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// Change it to never return LowCardinality, making it consistent when using groupingForRollup / groupingForforCube
-    /// with __grouping_set
-    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt64>();
@@ -59,7 +55,7 @@ public:
     template <typename AggregationKeyChecker>
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, AggregationKeyChecker checker) const
     {
-        const auto & grouping_set_column = checkAndGetColumn<ColumnUInt64>(*arguments[0].column);
+        const auto * grouping_set_column = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
 
         auto result = ColumnUInt64::create();
         auto & result_data = result->getData();
@@ -68,7 +64,7 @@ public:
         const auto * result_table = likely(force_compatibility) ? COMPATIBLE_MODE : INCOMPATIBLE_MODE;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            UInt64 set_index = grouping_set_column.getElement(i);
+            UInt64 set_index = grouping_set_column->getElement(i);
 
             UInt64 value = 0;
             for (auto index : arguments_indexes)

@@ -43,10 +43,15 @@ def started_cluster():
 config = """<clickhouse>
     <openSSL>
         <client>
-            <verificationMode>strict</verificationMode>
+            <verificationMode>none</verificationMode>
+
             <certificateFile>{certificateFile}</certificateFile>
             <privateKeyFile>{privateKeyFile}</privateKeyFile>
             <caConfig>{caConfig}</caConfig>
+
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
         </client>
     </openSSL>
 </clickhouse>"""
@@ -117,7 +122,7 @@ def test_native_wrong_cert():
         execute_query_native(
             instance, "SELECT currentUser()", user="john", cert_name="wrong"
         )
-    assert "unknown ca" in str(err.value)
+    assert "UNKNOWN_CA" in str(err.value)
 
 
 def test_native_fallback_to_password():
@@ -201,8 +206,20 @@ def test_https_wrong_cert():
         execute_query_https("SELECT currentUser()", user="john", cert_name="client2")
     assert "403" in str(err.value)
 
-    # TODO: Add non-flaky tests for:
-    # - Wrong certificate: self-signed certificate.
+    count = 0
+    # Wrong certificate: self-signed certificate.
+    while count <= MAX_RETRY:
+        with pytest.raises(Exception) as err:
+            execute_query_https("SELECT currentUser()", user="john", cert_name="wrong")
+        err_str = str(err.value)
+        if count < MAX_RETRY and (
+            ("Broken pipe" in err_str) or ("EOF occurred" in err_str)
+        ):
+            count = count + 1
+            logging.warning(f"Failed attempt with wrong cert, err: {err_str}")
+            continue
+        assert "unknown ca" in err_str
+        break
 
     # No certificate.
     with pytest.raises(Exception) as err:
@@ -292,8 +309,49 @@ def test_https_non_ssl_auth():
         == "jane\n"
     )
 
-    # TODO: Add non-flaky tests for:
-    # - sending wrong cert
+    count = 0
+    # However if we send a certificate it must not be wrong.
+    while count <= MAX_RETRY:
+        with pytest.raises(Exception) as err:
+            execute_query_https(
+                "SELECT currentUser()",
+                user="peter",
+                enable_ssl_auth=False,
+                cert_name="wrong",
+            )
+        err_str = str(err.value)
+        if count < MAX_RETRY and (
+            ("Broken pipe" in err_str) or ("EOF occurred" in err_str)
+        ):
+            count = count + 1
+            logging.warning(
+                f"Failed attempt with wrong cert, user: peter, err: {err_str}"
+            )
+            continue
+        assert "unknown ca" in err_str
+        break
+
+    count = 0
+    while count <= MAX_RETRY:
+        with pytest.raises(Exception) as err:
+            execute_query_https(
+                "SELECT currentUser()",
+                user="jane",
+                enable_ssl_auth=False,
+                password="qwe123",
+                cert_name="wrong",
+            )
+        err_str = str(err.value)
+        if count < MAX_RETRY and (
+            ("Broken pipe" in err_str) or ("EOF occurred" in err_str)
+        ):
+            count = count + 1
+            logging.warning(
+                f"Failed attempt with wrong cert, user: jane, err: {err_str}"
+            )
+            continue
+        assert "unknown ca" in err_str
+        break
 
 
 def test_create_user():
@@ -332,40 +390,4 @@ def test_create_user():
         )
         == 'emma\tssl_certificate\t{"common_names":["client2"]}\n'
         'lucy\tssl_certificate\t{"common_names":["client2","client3"]}\n'
-    )
-
-
-def test_x509_san_support():
-    assert (
-        execute_query_native(
-            instance, "SELECT currentUser()", user="jerome", cert_name="client4"
-        )
-        == "jerome\n"
-    )
-    assert (
-        execute_query_https("SELECT currentUser()", user="jerome", cert_name="client4")
-        == "jerome\n"
-    )
-    assert (
-        instance.query(
-            "SELECT name, auth_type, auth_params FROM system.users WHERE name='jerome'"
-        )
-        == 'jerome\tssl_certificate\t{"subject_alt_names":["URI:spiffe:\\\\/\\\\/foo.com\\\\/bar","URI:spiffe:\\\\/\\\\/foo.com\\\\/baz"]}\n'
-    )
-    # user `jerome` is configured via xml config, but `show create` should work regardless.
-    assert (
-        instance.query("SHOW CREATE USER jerome")
-        == "CREATE USER jerome IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://foo.com/bar\\', \\'URI:spiffe://foo.com/baz\\'\n"
-    )
-
-    instance.query(
-        "CREATE USER jemma IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://foo.com/bar', 'URI:spiffe://foo.com/baz'"
-    )
-    assert (
-        execute_query_https("SELECT currentUser()", user="jemma", cert_name="client4")
-        == "jemma\n"
-    )
-    assert (
-        instance.query("SHOW CREATE USER jemma")
-        == "CREATE USER jemma IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://foo.com/bar\\', \\'URI:spiffe://foo.com/baz\\'\n"
     )

@@ -5,6 +5,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/noexcept_scope.h>
 
+#include <cassert>
 #include <type_traits>
 
 #include <Poco/Util/Application.h>
@@ -24,48 +25,13 @@ namespace CurrentMetrics
 {
     extern const Metric GlobalThread;
     extern const Metric GlobalThreadActive;
-    extern const Metric GlobalThreadScheduled;
 }
-
-class JobWithPriority
-{
-public:
-    using Job = std::function<void()>;
-
-    Job job;
-    Priority priority;
-    CurrentMetrics::Increment metric_increment;
-    DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
-
-    /// Call stacks of all jobs' schedulings leading to this one
-    std::vector<StackTrace::FramePointers> frame_pointers;
-    bool enable_job_stack_trace = false;
-
-    JobWithPriority(
-        Job job_, Priority priority_, CurrentMetrics::Metric metric,
-        const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_,
-        bool capture_frame_pointers)
-        : job(job_), priority(priority_), metric_increment(metric),
-        thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
-    {
-        if (!capture_frame_pointers)
-            return;
-        /// Save all previous jobs call stacks and append with current
-        frame_pointers = DB::Exception::getThreadFramePointers();
-        frame_pointers.push_back(StackTrace().getFramePointers());
-    }
-
-    bool operator<(const JobWithPriority & rhs) const
-    {
-        return priority > rhs.priority; // Reversed for `priority_queue` max-heap to yield minimum value (i.e. highest priority) first
-    }
-};
 
 static constexpr auto DEFAULT_THREAD_NAME = "ThreadPool";
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_, Metric metric_scheduled_jobs_)
-    : ThreadPoolImpl(metric_threads_, metric_active_threads_, metric_scheduled_jobs_, getNumberOfPhysicalCPUCores())
+ThreadPoolImpl<Thread>::ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_)
+    : ThreadPoolImpl(metric_threads_, metric_active_threads_, getNumberOfPhysicalCPUCores())
 {
 }
 
@@ -74,9 +40,8 @@ template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadPoolImpl(
     Metric metric_threads_,
     Metric metric_active_threads_,
-    Metric metric_scheduled_jobs_,
     size_t max_threads_)
-    : ThreadPoolImpl(metric_threads_, metric_active_threads_, metric_scheduled_jobs_, max_threads_, max_threads_, max_threads_)
+    : ThreadPoolImpl(metric_threads_, metric_active_threads_, max_threads_, max_threads_, max_threads_)
 {
 }
 
@@ -84,14 +49,12 @@ template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadPoolImpl(
     Metric metric_threads_,
     Metric metric_active_threads_,
-    Metric metric_scheduled_jobs_,
     size_t max_threads_,
     size_t max_free_threads_,
     size_t queue_size_,
     bool shutdown_on_exception_)
     : metric_threads(metric_threads_)
     , metric_active_threads(metric_active_threads_)
-    , metric_scheduled_jobs(metric_scheduled_jobs_)
     , max_threads(max_threads_)
     , max_free_threads(std::min(max_free_threads_, max_threads))
     , queue_size(queue_size_ ? std::max(queue_size_, max_threads) : 0 /* zero means the queue is unlimited */)
@@ -182,9 +145,6 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     {
         std::unique_lock lock(mutex);
 
-        if (CannotAllocateThreadFaultInjector::injectFault())
-            return on_error("fault injected");
-
         auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || shutdown; };
 
         if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set and the value is zero.
@@ -227,7 +187,6 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
         jobs.emplace(std::move(job),
                      priority,
-                     metric_scheduled_jobs,
                      /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
                      propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
                      /// capture_frame_pointers
@@ -387,8 +346,13 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         /// This is inside the loop to also reset previous thread names set inside the jobs.
         setThreadName(DEFAULT_THREAD_NAME);
 
+        /// A copy of parent trace context
+        DB::OpenTelemetry::TracingContextOnThread parent_thread_trace_context;
+
+        std::vector<StackTrace::FramePointers> thread_frame_pointers;
+
         /// Get a job from the queue.
-        std::optional<JobWithPriority> job_data;
+        Job job;
 
         {
             std::unique_lock lock(mutex);
@@ -429,18 +393,17 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             }
 
             /// boost::priority_queue does not provide interface for getting non-const reference to an element
-            /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority.
-            job_data = std::move(const_cast<JobWithPriority &>(jobs.top()));
+            /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority::job.
+            job = std::move(const_cast<Job &>(jobs.top().job));
+            parent_thread_trace_context = std::move(const_cast<DB::OpenTelemetry::TracingContextOnThread &>(jobs.top().thread_trace_context));
+            DB::Exception::enable_job_stack_trace = jobs.top().enable_job_stack_trace;
+            if (DB::Exception::enable_job_stack_trace)
+                thread_frame_pointers = std::move(const_cast<std::vector<StackTrace::FramePointers> &>(jobs.top().frame_pointers));
             jobs.pop();
 
             /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
             if (shutdown)
             {
-                {
-                    ALLOW_ALLOCATIONS_IN_SCOPE;
-                    /// job can contain packaged_task which can set exception during destruction
-                    job_data.reset();
-                }
                 job_is_done = true;
                 continue;
             }
@@ -449,17 +412,18 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         ALLOW_ALLOCATIONS_IN_SCOPE;
 
         /// Set up tracing context for this thread by its parent context.
-        DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", job_data->thread_trace_context);
+        DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", parent_thread_trace_context);
 
         /// Run the job.
         try
         {
             if (DB::Exception::enable_job_stack_trace)
-                DB::Exception::setThreadFramePointers(std::move(job_data->frame_pointers));
+                DB::Exception::thread_frame_pointers = std::move(thread_frame_pointers);
+
 
             CurrentMetrics::Increment metric_active_pool_threads(metric_active_threads);
 
-            job_data->job();
+            job();
 
             if (thread_trace_context.root_span.isTraceEnabled())
             {
@@ -473,13 +437,13 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 else
                 {
                     /// If the thread name is not set, use the type name of the job instead
-                    thread_trace_context.root_span.operation_name = demangle(job_data->job.target_type().name());
+                    thread_trace_context.root_span.operation_name = demangle(job.target_type().name());
                 }
             }
 
             /// job should be reset before decrementing scheduled_jobs to
             /// ensure that the Job destroyed before wait() returns.
-            job_data.reset();
+            job = {};
         }
         catch (...)
         {
@@ -488,7 +452,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             /// job should be reset before decrementing scheduled_jobs to
             /// ensure that the Job destroyed before wait() returns.
-            job_data.reset();
+            job = {};
         }
 
         job_is_done = true;
@@ -497,11 +461,8 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
 
 template class ThreadPoolImpl<std::thread>;
-template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, true>>;
-template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, false>>;
-template class ThreadFromGlobalPoolImpl<true, true>;
-template class ThreadFromGlobalPoolImpl<true, false>;
-template class ThreadFromGlobalPoolImpl<false, false>;
+template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false>>;
+template class ThreadFromGlobalPoolImpl<true>;
 
 std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
@@ -510,23 +471,18 @@ GlobalThreadPool::GlobalThreadPool(
     size_t max_threads_,
     size_t max_free_threads_,
     size_t queue_size_,
-    const bool shutdown_on_exception_,
-    UInt64 global_profiler_real_time_period_ns_,
-    UInt64 global_profiler_cpu_time_period_ns_)
+    const bool shutdown_on_exception_)
     : FreeThreadPool(
         CurrentMetrics::GlobalThread,
         CurrentMetrics::GlobalThreadActive,
-        CurrentMetrics::GlobalThreadScheduled,
         max_threads_,
         max_free_threads_,
         queue_size_,
         shutdown_on_exception_)
-    , global_profiler_real_time_period_ns(global_profiler_real_time_period_ns_)
-    , global_profiler_cpu_time_period_ns(global_profiler_cpu_time_period_ns_)
 {
 }
 
-void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size, UInt64 global_profiler_real_time_period_ns, UInt64 global_profiler_cpu_time_period_ns)
+void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
 {
     if (the_instance)
     {
@@ -534,7 +490,7 @@ void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, s
             "The global thread pool is initialized twice");
     }
 
-    the_instance.reset(new GlobalThreadPool(max_threads, max_free_threads, queue_size, false /*shutdown_on_exception*/, global_profiler_real_time_period_ns, global_profiler_cpu_time_period_ns));
+    the_instance.reset(new GlobalThreadPool(max_threads, max_free_threads, queue_size, false /*shutdown_on_exception*/));
 }
 
 GlobalThreadPool & GlobalThreadPool::instance()
@@ -547,50 +503,4 @@ GlobalThreadPool & GlobalThreadPool::instance()
     }
 
     return *the_instance;
-}
-void GlobalThreadPool::shutdown()
-{
-    if (the_instance)
-    {
-        the_instance->finalize();
-    }
-}
-
-CannotAllocateThreadFaultInjector & CannotAllocateThreadFaultInjector::instance()
-{
-    static CannotAllocateThreadFaultInjector ins;
-    return ins;
-}
-
-void CannotAllocateThreadFaultInjector::setFaultProbability(double probability)
-{
-    auto & ins = instance();
-    std::lock_guard lock(ins.mutex);
-    ins.enabled = 0 < probability && probability <= 1;
-    if (ins.enabled)
-        ins.random.emplace(probability);
-    else
-        ins.random.reset();
-}
-
-bool CannotAllocateThreadFaultInjector::injectFault()
-{
-    auto & ins = instance();
-    if (!ins.enabled.load(std::memory_order_relaxed))
-        return false;
-
-    if (ins.block_fault_injections)
-        return false;
-
-    std::lock_guard lock(ins.mutex);
-    return ins.random && (*ins.random)(ins.rndgen);
-}
-
-thread_local bool CannotAllocateThreadFaultInjector::block_fault_injections = false;
-
-scope_guard CannotAllocateThreadFaultInjector::blockFaultInjections()
-{
-    auto & ins = instance();
-    ins.block_fault_injections = true;
-    return [&ins](){ ins.block_fault_injections = false; };
 }

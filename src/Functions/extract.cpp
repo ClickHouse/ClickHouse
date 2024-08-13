@@ -16,13 +16,12 @@ struct ExtractImpl
         const ColumnString::Offsets & offsets,
         const std::string & pattern,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+        ColumnString::Offsets & res_offsets)
     {
         res_data.reserve(data.size() / 5);
-        res_offsets.resize(input_rows_count);
+        res_offsets.resize(offsets.size());
 
-        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const Regexps::Regexp regexp = Regexps::createRegexp<false, false, false>(pattern);
 
         unsigned capture = regexp.getNumberOfSubpatterns() > 0 ? 1 : 0;
         OptimizedRegularExpression::MatchVec matches;
@@ -30,7 +29,7 @@ struct ExtractImpl
         size_t prev_offset = 0;
         size_t res_offset = 0;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < offsets.size(); ++i)
         {
             size_t cur_offset = offsets[i];
 

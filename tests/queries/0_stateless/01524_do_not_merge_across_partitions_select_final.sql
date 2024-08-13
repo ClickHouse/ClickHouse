@@ -1,6 +1,3 @@
--- Tags: no-parallel, no-fasttest
--- no-parallel: it checks the number of threads, which can be lowered in presence of other queries
-
 DROP TABLE IF EXISTS select_final;
 
 SET allow_asynchronous_read_from_io_pool_for_merge_tree = 0;

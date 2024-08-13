@@ -44,8 +44,9 @@ class GraceHashJoin final : public IJoin
 {
     class FileBucket;
     class DelayedBlocks;
+    using InMemoryJoin = HashJoin;
 
-    using InMemoryJoinPtr = std::shared_ptr<HashJoin>;
+    using InMemoryJoinPtr = std::shared_ptr<InMemoryJoin>;
 
 public:
     using BucketPtr = std::shared_ptr<FileBucket>;
@@ -90,7 +91,7 @@ public:
 private:
     void initBuckets();
     /// Create empty join for in-memory processing.
-    InMemoryJoinPtr makeInMemoryJoin(const String & bucket_id, size_t reserve_num = 0);
+    InMemoryJoinPtr makeInMemoryJoin(size_t reserve_num = 0);
 
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addBlockToJoinImpl(Block block);
@@ -120,7 +121,7 @@ private:
     /// Structure block to store in the HashJoin according to sample_block.
     Block prepareRightBlock(const Block & block);
 
-    LoggerPtr log;
+    Poco::Logger * log;
     ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
     Block left_sample_block;

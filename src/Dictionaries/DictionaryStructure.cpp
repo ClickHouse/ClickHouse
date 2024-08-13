@@ -7,7 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
@@ -37,7 +37,7 @@ DictionaryTypedSpecialAttribute makeDictionaryTypedSpecialAttribute(
     auto expression = config.getString(config_prefix + ".expression", "");
 
     if (name.empty() && !expression.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty", config_prefix);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty");
 
     const auto type_name = config.getString(config_prefix + ".type", default_type);
     return DictionaryTypedSpecialAttribute{std::move(name), std::move(expression), DataTypeFactory::instance().get(type_name)};
@@ -58,6 +58,15 @@ std::optional<AttributeUnderlyingType> tryGetAttributeUnderlyingType(TypeIndex i
 
 }
 
+
+DictionarySpecialAttribute::DictionarySpecialAttribute(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+    : name{config.getString(config_prefix + ".name", "")}, expression{config.getString(config_prefix + ".expression", "")}
+{
+    if (name.empty() && !expression.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty", config_prefix);
+}
+
+
 DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
     std::string structure_prefix = config_prefix + ".structure";
@@ -70,8 +79,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
 
     if (has_id)
     {
-        static constexpr auto id_default_type = "UInt64";
-        id.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".id", id_default_type));
+        id.emplace(config, structure_prefix + ".id");
     }
     else if (has_key)
     {
@@ -151,12 +159,12 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
         const auto & expected_type = key_attributes_types[i];
         const auto & actual_type = key_types[i];
 
-        if (!expected_type->equals(*actual_type))
+        if (!areTypesEqual(expected_type, actual_type))
             throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "Key type for complex key at position {} does not match, expected {}, found {}",
-                i,
-                expected_type->getName(),
-                actual_type->getName());
+            "Key type for complex key at position {} does not match, expected {}, found {}",
+            i,
+            expected_type->getName(),
+            actual_type->getName());
     }
 }
 
@@ -190,7 +198,7 @@ const DictionaryAttribute & DictionaryStructure::getAttribute(const std::string 
 {
     const auto & attribute = getAttribute(attribute_name);
 
-    if (!attribute.type->equals(*type))
+    if (!areTypesEqual(attribute.type, type))
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "Attribute type does not match, expected {}, found {}",
             attribute.type->getName(),

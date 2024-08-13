@@ -1,7 +1,6 @@
 #include <Storages/IStorage.h>
 
-#include <Common/StringUtils.h>
-#include <Core/Settings.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -13,7 +12,6 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
 
@@ -28,20 +26,10 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
 }
 
-IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
-    : storage_id(std::move(storage_id_))
-    , virtuals(std::make_unique<VirtualColumnsDescription>())
-{
-    if (metadata_)
-        metadata.set(std::move(metadata_));
-    else
-        metadata.set(std::make_unique<StorageInMemoryMetadata>());
-}
-
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
 {
     /// Virtual column maybe overridden by real column
-    return !metadata_snapshot->getColumns().has(column_name) && virtuals.get()->has(column_name);
+    return !metadata_snapshot->getColumns().has(column_name) && getVirtuals().contains(column_name);
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
@@ -52,8 +40,8 @@ RWLockImpl::LockHolder IStorage::tryLockTimed(
     {
         const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-            "{} locking attempt on \"{}\" has timed out! ({}ms) Possible deadlock avoided. Client should retry. Owner query ids: {}",
-            type_str, getStorageID(), acquire_timeout.count(), rwlock->getOwnerQueryIdsDescription());
+            "{} locking attempt on \"{}\" has timed out! ({}ms) Possible deadlock avoided. Client should retry",
+            type_str, getStorageID(), acquire_timeout.count());
     }
     return lock_holder;
 }
@@ -176,11 +164,11 @@ void IStorage::readFromPipe(
     if (pipe.empty())
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name, context, query_info);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name, query_info.storage_limits);
         query_plan.addStep(std::move(read_step));
     }
 }
@@ -223,10 +211,7 @@ void IStorage::checkMutationIsPossible(const MutationCommands & /*commands*/, co
 }
 
 void IStorage::checkAlterPartitionIsPossible(
-    const PartitionCommands & /*commands*/,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
-    const Settings & /*settings*/,
-    ContextPtr /*context*/) const
+    const PartitionCommands & /*commands*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & /*settings*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitioning", getName());
 }
@@ -237,15 +222,15 @@ StorageID IStorage::getStorageID() const
     return storage_id;
 }
 
-ConditionSelectivityEstimator IStorage::getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const
-{
-    return {};
-}
-
 void IStorage::renameInMemory(const StorageID & new_table_id)
 {
     std::lock_guard lock(id_mutex);
     storage_id = new_table_id;
+}
+
+NamesAndTypesList IStorage::getVirtuals() const
+{
+    return {};
 }
 
 Names IStorage::getAllRegisteredNames() const
@@ -288,16 +273,6 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
-IStorage::DataValidationTasksPtr IStorage::getCheckTaskList(const CheckTaskFilter &, ContextPtr)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Check query is not supported for {} storage", getName());
-}
-
-std::optional<CheckResult> IStorage::checkDataNext(DataValidationTasksPtr & /* check_task_list */)
-{
-    return {};
-}
-
 void IStorage::adjustCreateQueryForBackup(ASTPtr &) const
 {
 }
@@ -309,7 +284,7 @@ void IStorage::backupData(BackupEntriesCollector &, const String &, const std::o
 void IStorage::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> &)
 {
     /// If an inherited class doesn't override restoreDataFromBackup() that means it doesn't backup any data.
-    auto filenames = restorer.getBackup()->listFiles(data_path_in_backup, /*recursive*/ false);
+    auto filenames = restorer.getBackup()->listFiles(data_path_in_backup);
     if (!filenames.empty())
         throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: Folder {} in backup must be empty",
                         getStorageID().getFullTableName(), data_path_in_backup);
@@ -325,8 +300,9 @@ std::string PrewhereInfo::dump() const
         ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
     }
 
+    if (prewhere_actions)
     {
-        ss << "prewhere_actions " << prewhere_actions.dumpDAG() << "\n";
+        ss << "prewhere_actions " << prewhere_actions->dumpDAG() << "\n";
     }
 
     ss << "remove_prewhere_column " << remove_prewhere_column
@@ -340,8 +316,10 @@ std::string FilterDAGInfo::dump() const
     WriteBufferFromOwnString ss;
     ss << "FilterDAGInfo for column '" << column_name <<"', do_remove_column "
        << do_remove_column << "\n";
-
-    ss << "actions " << actions.dumpDAG() << "\n";
+    if (actions)
+    {
+        ss << "actions " << actions->dumpDAG() << "\n";
+    }
 
     return ss.str();
 }

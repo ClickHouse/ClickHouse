@@ -11,8 +11,8 @@
 #include <IO/OpenedFileCache.h>
 #include <base/getThreadId.h>
 #include <Interpreters/Cache/IFileCachePriority.h>
-#include <Interpreters/Cache/FileSegmentInfo.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
+#include <queue>
 
 
 namespace Poco { class Logger; }
@@ -28,6 +28,23 @@ namespace DB
 class ReadBufferFromFileBase;
 struct FileCacheReserveStat;
 
+/*
+ * FileSegmentKind is used to specify the eviction policy for file segments.
+ */
+enum class FileSegmentKind
+{
+    /* `Regular` file segment is still in cache after usage, and can be evicted
+     * (unless there're some holders).
+     */
+    Regular,
+
+    /* `Temporary` file segment is removed right after releasing.
+     * Also corresponding files are removed during cache loading (if any).
+     */
+    Temporary,
+};
+
+String toString(FileSegmentKind kind);
 
 struct CreateFileSegmentSettings
 {
@@ -48,13 +65,44 @@ friend class FileCache; /// Because of reserved_size in tryReserve().
 public:
     using Key = FileCacheKey;
     using RemoteFileReaderPtr = std::shared_ptr<ReadBufferFromFileBase>;
-    using LocalCacheWriterPtr = std::shared_ptr<WriteBufferFromFile>;
+    using LocalCacheWriterPtr = std::unique_ptr<WriteBufferFromFile>;
     using Downloader = std::string;
     using DownloaderId = std::string;
     using Priority = IFileCachePriority;
-    using State = FileSegmentState;
-    using Info = FileSegmentInfo;
-    using QueueEntryType = FileCacheQueueEntryType;
+
+    enum class State
+    {
+        DOWNLOADED,
+        /**
+         * When file segment is first created and returned to user, it has state EMPTY.
+         * EMPTY state can become DOWNLOADING when getOrSetDownaloder is called successfully
+         * by any owner of EMPTY state file segment.
+         */
+        EMPTY,
+        /**
+         * A newly created file segment never has DOWNLOADING state until call to getOrSetDownloader
+         * because each cache user might acquire multiple file segments and read them one by one,
+         * so only user which actually needs to read this segment earlier than others - becomes a downloader.
+         */
+        DOWNLOADING,
+        /**
+         * Space reservation for a file segment is incremental, i.e. downloader reads buffer_size bytes
+         * from remote fs -> tries to reserve buffer_size bytes to put them to cache -> writes to cache
+         * on successful reservation and stops cache write otherwise. Those, who waited for the same file
+         * segment, will read downloaded part from cache and remaining part directly from remote fs.
+         */
+        PARTIALLY_DOWNLOADED_NO_CONTINUATION,
+        /**
+         * If downloader did not finish download of current file segment for any reason apart from running
+         * out of cache space, then download can be continued by other owners of this file segment.
+         */
+        PARTIALLY_DOWNLOADED,
+        /**
+         * If file segment cannot possibly be downloaded (first space reservation attempt failed), mark
+         * this file segment as out of cache scope.
+         */
+        DETACHED,
+    };
 
     FileSegment(
         const Key & key_,
@@ -65,7 +113,7 @@ public:
         bool background_download_enabled_ = false,
         FileCache * cache_ = nullptr,
         std::weak_ptr<KeyMetadata> key_metadata_ = std::weak_ptr<KeyMetadata>(),
-        Priority::IteratorPtr queue_iterator_ = nullptr);
+        Priority::Iterator queue_iterator_ = Priority::Iterator{});
 
     ~FileSegment() = default;
 
@@ -86,10 +134,6 @@ public:
         bool operator<(const Range & other) const { return right < other.left; }
 
         size_t size() const { return right - left + 1; }
-
-        bool contains(size_t point) const { return left <= point && point <= right; }
-
-        bool contains(const Range & other) const { return contains(other.left) && contains(other.right); }
 
         String toString() const { return fmt::format("[{}, {}]", std::to_string(left), std::to_string(right)); }
     };
@@ -112,7 +156,7 @@ public:
 
     bool isUnbound() const { return is_unbound; }
 
-    String getPath() const;
+    String getPathInLocalCache() const;
 
     int getFlagsForLocalRead() const { return O_RDONLY | O_CLOEXEC; }
 
@@ -157,7 +201,7 @@ public:
     /// exception.
     void detach(const FileSegmentGuard::Lock &, const LockedKey &);
 
-    static FileSegmentInfo getInfo(const FileSegmentPtr & file_segment);
+    static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment);
 
     bool isDetached() const;
 
@@ -165,19 +209,17 @@ public:
     /// is not going to be changed. Completed states: DOWNALODED, DETACHED.
     bool isCompleted(bool sync = false) const;
 
-    void increasePriority();
+    void use();
 
     /**
      * ========== Methods used by `cache` ========================
      */
 
-    FileSegmentGuard::Lock lock() const;
+    FileSegmentGuard::Lock lock() const { return segment_guard.lock(); }
 
-    Priority::IteratorPtr getQueueIterator() const;
+    Priority::Iterator getQueueIterator() const;
 
-    void setQueueIterator(Priority::IteratorPtr iterator);
-
-    void resetQueueIterator();
+    void setQueueIterator(Priority::Iterator iterator);
 
     KeyMetadataPtr tryGetKeyMetadata() const;
 
@@ -201,10 +243,10 @@ public:
 
     /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
     /// Returns true if reservation was successful, false otherwise.
-    bool reserve(size_t size_to_reserve, size_t lock_wait_timeout_milliseconds, FileCacheReserveStat * reserve_stat = nullptr);
+    bool reserve(size_t size_to_reserve, FileCacheReserveStat * reserve_stat = nullptr);
 
     /// Write data into reserved space.
-    void write(char * from, size_t size, size_t offset_in_file);
+    void write(const char * from, size_t size, size_t offset);
 
     // Invariant: if state() != DOWNLOADING and remote file reader is present, the reader's
     // available() == 0, and getFileOffsetOfBufferEnd() == our getCurrentWriteOffset().
@@ -212,13 +254,14 @@ public:
     // The reader typically requires its internal_buffer to be assigned from the outside before
     // calling next().
     RemoteFileReaderPtr getRemoteFileReader();
-    LocalCacheWriterPtr getLocalCacheWriter();
 
     RemoteFileReaderPtr extractRemoteFileReader();
 
     void resetRemoteFileReader();
 
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
+
+    void setDownloadedSize(size_t delta);
 
     void setDownloadFailed();
 
@@ -242,8 +285,7 @@ private:
     bool assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
-
-    String tryGetPath() const;
+    FileSegmentGuard::Lock lockFileSegment() const;
 
     Key file_key;
     Range segment_range;
@@ -262,15 +304,14 @@ private:
     /// downloaded_size should always be less or equal to reserved_size
     std::atomic<size_t> downloaded_size = 0;
     std::atomic<size_t> reserved_size = 0;
-    mutable std::mutex write_mutex;
 
     mutable FileSegmentGuard segment_guard;
     std::weak_ptr<KeyMetadata> key_metadata;
-    mutable Priority::IteratorPtr queue_iterator; /// Iterator is put here on first reservation attempt, if successful.
+    mutable Priority::Iterator queue_iterator; /// Iterator is put here on first reservation attempt, if successful.
     FileCache * cache;
     std::condition_variable cv;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
@@ -283,7 +324,8 @@ struct FileSegmentsHolder : private boost::noncopyable
 {
     FileSegmentsHolder() = default;
 
-    explicit FileSegmentsHolder(FileSegments && file_segments_);
+    explicit FileSegmentsHolder(FileSegments && file_segments_, bool complete_on_dtor_ = true)
+        : file_segments(std::move(file_segments_)), complete_on_dtor(complete_on_dtor_) {}
 
     ~FileSegmentsHolder();
 
@@ -291,17 +333,19 @@ struct FileSegmentsHolder : private boost::noncopyable
 
     size_t size() const { return file_segments.size(); }
 
-    String toString(bool with_state = false);
+    String toString();
 
     void popFront() { completeAndPopFrontImpl(); }
 
     FileSegment & front() { return *file_segments.front(); }
-    const FileSegment & front() const { return *file_segments.front(); }
 
     FileSegment & back() { return *file_segments.back(); }
-    const FileSegment & back() const { return *file_segments.back(); }
 
-    FileSegment & add(FileSegmentPtr && file_segment);
+    FileSegment & add(FileSegmentPtr && file_segment)
+    {
+        file_segments.push_back(file_segment);
+        return *file_segments.back();
+    }
 
     FileSegments::iterator begin() { return file_segments.begin(); }
     FileSegments::iterator end() { return file_segments.end(); }
@@ -311,12 +355,11 @@ struct FileSegmentsHolder : private boost::noncopyable
 
 private:
     FileSegments file_segments{};
+    const bool complete_on_dtor = true;
 
     FileSegments::iterator completeAndPopFrontImpl();
 };
 
 using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
-
-String toString(const FileSegments & file_segments, bool with_state = false);
 
 }

@@ -6,7 +6,6 @@ set output_format_parquet_data_page_size = 800;
 set output_format_parquet_batch_size = 100;
 set output_format_parquet_row_group_size_bytes = 1000000000;
 set engine_file_truncate_on_insert=1;
-set allow_suspicious_low_cardinality_types=1;
 
 -- Write random data to parquet file, then read from it and check that it matches what we wrote.
 -- Do this for all kinds of data types: primitive, Nullable(primitive), Array(primitive),
@@ -41,7 +40,7 @@ create temporary table basic_types_02735 as select * from generateRandom('
     decimal128 Decimal128(20),
     decimal256 Decimal256(40),
     ipv4 IPv4,
-    ipv6 IPv6') limit 1011;
+    ipv6 IPv6') limit 10101;
 insert into function file(basic_types_02735.parquet) select * from basic_types_02735;
 desc file(basic_types_02735.parquet);
 select (select sum(cityHash64(*)) from basic_types_02735) - (select sum(cityHash64(*)) from file(basic_types_02735.parquet));
@@ -59,7 +58,7 @@ create temporary table nullables_02735 as select * from generateRandom('
     fstr Nullable(FixedString(12)),
     i256 Nullable(Int256),
     decimal256 Nullable(Decimal256(40)),
-    ipv6 Nullable(IPv6)') limit 1000;
+    ipv6 Nullable(IPv6)') limit 10000;
 insert into function file(nullables_02735.parquet) select * from nullables_02735;
 select (select sum(cityHash64(*)) from nullables_02735) - (select sum(cityHash64(*)) from file(nullables_02735.parquet));
 drop table nullables_02735;
@@ -83,7 +82,7 @@ create table arrays_02735 engine = Memory as select * from generateRandom('
     decimal64 Array(Decimal64(10)),
     ipv4 Array(IPv4),
     msi Map(String, Int16),
-    tup Tuple(FixedString(3), Array(String), Map(Int8, Date))') limit 1000;
+    tup Tuple(FixedString(3), Array(String), Map(Int8, Date))') limit 10000;
 insert into function file(arrays_02735.parquet) select * from arrays_02735;
 create temporary table arrays_out_02735 as arrays_02735;
 insert into arrays_out_02735 select * from file(arrays_02735.parquet);
@@ -107,7 +106,7 @@ create temporary table madness_02735 as select * from generateRandom('
     mln Map(LowCardinality(String), Nullable(Int8)),
     t Tuple(Map(FixedString(5), Tuple(Array(UInt16), Nullable(UInt16), Array(Tuple(Int8, Decimal64(10))))), Tuple(kitchen UInt64, sink String)),
     n Nested(hello UInt64, world Tuple(first String, second FixedString(1)))
-    ') limit 1000;
+    ') limit 10000;
 insert into function file(madness_02735.parquet) select * from madness_02735;
 insert into function file(a.csv) select * from madness_02735 order by tuple(*);
 insert into function file(b.csv) select aa, aaa, an, aan, l, ln, arrayMap(x->reinterpret(x, 'UInt128'), al) as al_, aaln, mln, t, n.hello, n.world from file(madness_02735.parquet) order by tuple(aa, aaa, an, aan, l, ln, al_, aaln, mln, t, n.hello, n.world);

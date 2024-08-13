@@ -1,6 +1,5 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnMap.h>
-#include <Core/Settings.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -44,17 +43,17 @@ class ExtractKeyValuePairs : public IFunction
             builder.withQuotingCharacter(parsed_arguments.quoting_character.value());
         }
 
-        bool is_number_of_pairs_unlimited = context->getSettingsRef().extract_key_value_pairs_max_pairs_per_row == 0;
+        bool is_number_of_pairs_unlimited = context->getSettingsRef().extract_kvp_max_pairs_per_row == 0;
 
         if (!is_number_of_pairs_unlimited)
         {
-            builder.withMaxNumberOfPairs(context->getSettingsRef().extract_key_value_pairs_max_pairs_per_row);
+            builder.withMaxNumberOfPairs(context->getSettingsRef().extract_kvp_max_pairs_per_row);
         }
 
         return builder.build();
     }
 
-    ColumnPtr extract(ColumnPtr data_column, std::shared_ptr<KeyValuePairExtractor> extractor, size_t input_rows_count) const
+    ColumnPtr extract(ColumnPtr data_column, std::shared_ptr<KeyValuePairExtractor> extractor) const
     {
         auto offsets = ColumnUInt64::create();
 
@@ -63,7 +62,7 @@ class ExtractKeyValuePairs : public IFunction
 
         uint64_t offset = 0u;
 
-        for (auto i = 0u; i < input_rows_count; i++)
+        for (auto i = 0u; i < data_column->size(); i++)
         {
             auto row = data_column->getDataAt(i).toView();
 
@@ -97,13 +96,13 @@ public:
         return std::make_shared<ExtractKeyValuePairs>(context);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         auto parsed_arguments = ArgumentExtractor::extract(arguments);
 
         auto extractor = getExtractor(parsed_arguments);
 
-        return extract(parsed_arguments.data_column, extractor, input_rows_count);
+        return extract(parsed_arguments.data_column, extractor);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
@@ -241,7 +240,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             └──────────────────┘
             ```)"}
     );
-    factory.registerAlias("str_to_map", NameExtractKeyValuePairs::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("str_to_map", NameExtractKeyValuePairs::name, FunctionFactory::CaseInsensitive);
     factory.registerAlias("mapFromString", NameExtractKeyValuePairs::name);
 }
 

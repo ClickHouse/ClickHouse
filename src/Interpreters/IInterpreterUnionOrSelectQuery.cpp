@@ -1,6 +1,4 @@
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
-
-#include <Core/Settings.h>
 #include <Interpreters/QueryLog.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -16,29 +14,6 @@
 
 namespace DB
 {
-
-IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_,
-    const ContextMutablePtr & context_, const SelectQueryOptions & options_)
-    : query_ptr(query_ptr_)
-    , context(context_)
-    , options(options_)
-    , max_streams(context->getSettingsRef().max_threads)
-{
-    /// FIXME All code here will work with the old analyzer, however for views over Distributed tables
-    /// it's possible that new analyzer will be enabled in ::getQueryProcessingStage method
-    /// of the underlying storage when all other parts of infrastructure are not ready for it
-    /// (built with old analyzer).
-    context->setSetting("allow_experimental_analyzer", false);
-
-    if (options.shard_num)
-        context->addSpecialScalar(
-                "_shard_num",
-                Block{{DataTypeUInt32().createColumnConst(1, *options.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}});
-    if (options.shard_count)
-        context->addSpecialScalar(
-                "_shard_count",
-                Block{{DataTypeUInt32().createColumnConst(1, *options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
-}
 
 QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline()
 {
@@ -79,7 +54,6 @@ static StreamLocalLimits getLimitsForStorage(const Settings & settings, const Se
     limits.speed_limits.max_execution_rps = settings.max_execution_speed;
     limits.speed_limits.max_execution_bps = settings.max_execution_speed_bytes;
     limits.speed_limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
-    limits.speed_limits.max_estimated_execution_time = settings.max_estimated_execution_time;
 
     return limits;
 }
@@ -121,19 +95,19 @@ static ASTPtr parseAdditionalPostFilter(const Context & context)
     ParserExpression parser;
     return parseQuery(
                 parser, filter.data(), filter.data() + filter.size(),
-                "additional filter", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+                "additional filter", settings.max_query_size, settings.max_parser_depth);
 }
 
-static ActionsDAG makeAdditionalPostFilter(ASTPtr & ast, ContextPtr context, const Block & header)
+static ActionsDAGPtr makeAdditionalPostFilter(ASTPtr & ast, ContextPtr context, const Block & header)
 {
     auto syntax_result = TreeRewriter(context).analyze(ast, header.getNamesAndTypesList());
     String result_column_name = ast->getColumnName();
     auto dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(false, false);
-    const ActionsDAG::Node * result_node = &dag.findInOutputs(result_column_name);
-    auto & outputs = dag.getOutputs();
+    const ActionsDAG::Node * result_node = &dag->findInOutputs(result_column_name);
+    auto & outputs = dag->getOutputs();
     outputs.clear();
-    outputs.reserve(dag.getInputs().size() + 1);
-    for (const auto * node : dag.getInputs())
+    outputs.reserve(dag->getInputs().size() + 1);
+    for (const auto * node : dag->getInputs())
         outputs.push_back(node);
 
     outputs.push_back(result_node);
@@ -151,7 +125,7 @@ void IInterpreterUnionOrSelectQuery::addAdditionalPostFilter(QueryPlan & plan) c
         return;
 
     auto dag = makeAdditionalPostFilter(ast, context, plan.getCurrentDataStream().header);
-    std::string filter_name = dag.getOutputs().back()->result_name;
+    std::string filter_name = dag->getOutputs().back()->result_name;
     auto filter_step = std::make_unique<FilterStep>(
         plan.getCurrentDataStream(), std::move(dag), std::move(filter_name), true);
     filter_step->setStepDescription("Additional result filter");

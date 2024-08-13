@@ -3,25 +3,27 @@
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
 
+#include <Common/logger_useful.h>
+
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <memory>
 #include <string>
 
-
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace
-{
 
 template <typename Point>
 class FunctionPolygonPerimeter : public IFunction
@@ -95,7 +97,6 @@ const char * FunctionPolygonPerimeter<CartesianPoint>::name = "polygonPerimeterC
 template <>
 const char * FunctionPolygonPerimeter<SphericalPoint>::name = "polygonPerimeterSpherical";
 
-}
 
 REGISTER_FUNCTION(PolygonPerimeter)
 {

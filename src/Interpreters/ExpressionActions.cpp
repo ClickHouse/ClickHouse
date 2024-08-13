@@ -49,17 +49,17 @@ namespace ErrorCodes
 
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
 
-ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
-    : actions_dag(std::move(actions_dag_))
-    , project_inputs(project_inputs_)
-    , settings(settings_)
+ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_)
+    : settings(settings_)
 {
+    actions_dag = actions_dag_->clone();
+
     /// It's important to determine lazy executed nodes before compiling expressions.
-    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(actions_dag, settings.short_circuit_function_evaluation);
+    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(*actions_dag, settings.short_circuit_function_evaluation);
 
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
-        actions_dag.compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
+        actions_dag->compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
 #endif
 
     linearizeActions(lazy_executed_nodes);
@@ -67,32 +67,12 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
     if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
                         "Too many temporary columns: {}. Maximum: {}",
-                        actions_dag.dumpNames(), settings.max_temporary_columns);
+                        actions_dag->dumpNames(), settings.max_temporary_columns);
 }
 
 ExpressionActionsPtr ExpressionActions::clone() const
 {
-    auto copy = std::make_shared<ExpressionActions>(ExpressionActions());
-
-    std::unordered_map<const Node *, Node *> copy_map;
-    copy->actions_dag = actions_dag.clone(copy_map);
-    copy->actions = actions;
-    for (auto & action : copy->actions)
-        action.node = copy_map[action.node];
-
-    for (const auto * input : copy->actions_dag.getInputs())
-        copy->input_positions.emplace(input->result_name, input_positions.at(input->result_name));
-
-    copy->num_columns = num_columns;
-
-    copy->required_columns = required_columns;
-    copy->result_positions = result_positions;
-    copy->sample_block = sample_block;
-
-    copy->project_inputs = project_inputs;
-    copy->settings = settings;
-
-    return copy;
+    return std::make_shared<ExpressionActions>(*this);
 }
 
 namespace
@@ -200,20 +180,21 @@ static void setLazyExecutionInfo(
                     indexes.insert(i);
             }
 
-            for (auto idx : short_circuit_nodes.at(parent).arguments_with_disabled_lazy_execution)
+            if (!short_circuit_nodes.at(parent).enable_lazy_execution_for_first_argument && node == parent->children[0])
             {
-                if (idx < parent->children.size() && node == parent->children[idx])
-                {
-                    /// We shouldn't add this index in node info in this case.
-                    indexes.erase(idx);
-                    /// Disable lazy execution for current node only if it's disabled for short-circuit node,
-                    /// because we can have nested short-circuit nodes.
-                    if (!lazy_execution_infos[parent].can_be_lazy_executed)
-                        lazy_execution_info.can_be_lazy_executed = false;
-                }
+                /// We shouldn't add 0 index in node info in this case.
+                indexes.erase(0);
+                /// Disable lazy execution for current node only if it's disabled for short-circuit node,
+                /// because we can have nested short-circuit nodes.
+                if (!lazy_execution_infos[parent].can_be_lazy_executed)
+                    lazy_execution_info.can_be_lazy_executed = false;
             }
 
             lazy_execution_info.short_circuit_ancestors_info[parent].insert(indexes.begin(), indexes.end());
+            /// After checking arguments_with_disabled_lazy_execution, if there is no relation with parent,
+            /// disable the current node.
+            if (indexes.empty())
+                lazy_execution_info.can_be_lazy_executed = false;
         }
         else
             /// If lazy execution is disabled for one of parents, we should disable it for current node.
@@ -356,8 +337,8 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
     };
 
     const auto & nodes = getNodes();
-    const auto & outputs = actions_dag.getOutputs();
-    const auto & inputs = actions_dag.getInputs();
+    const auto & outputs = actions_dag->getOutputs();
+    const auto & inputs = actions_dag->getInputs();
 
     auto reverse_info = getActionsDAGReverseInfo(nodes, outputs);
     std::vector<Data> data;
@@ -586,7 +567,7 @@ namespace
     };
 }
 
-static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input)
+static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run)
 {
     auto & inputs = execution_context.inputs;
     auto & columns = execution_context.columns;
@@ -634,17 +615,6 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
                 res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
-                if (res_column.column->getDataType() != res_column.type->getColumnType())
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Unexpected return type from {}. Expected {}. Got {}. Action:\n{},\ninput block structure:{}",
-                        action.node->function->getName(),
-                        res_column.type->getName(),
-                        res_column.column->getName(),
-                        action.toString(),
-                        Block(arguments).dumpStructure());
-                }
             }
             break;
         }
@@ -721,19 +691,14 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                                     action.node->result_name);
             }
             else
-            {
-                if (allow_duplicates_in_input)
-                    columns[action.result_position] = inputs[pos];
-                else
-                    columns[action.result_position] = std::move(inputs[pos]);
-            }
+                columns[action.result_position] = std::move(inputs[pos]);
 
             break;
         }
     }
 }
 
-void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input) const
+void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) const
 {
     ExecutionContext execution_context
     {
@@ -754,8 +719,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
                 if (execution_context.inputs_pos[input_pos] < 0)
                 {
                     execution_context.inputs_pos[input_pos] = pos;
-                    if (!allow_duplicates_in_input)
-                        break;
+                    break;
                 }
             }
         }
@@ -767,8 +731,12 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
     {
         try
         {
-            executeAction(action, execution_context, dry_run, allow_duplicates_in_input);
+            executeAction(action, execution_context, dry_run);
             checkLimits(execution_context.columns);
+
+            //std::cerr << "Action: " << action.toString() << std::endl;
+            //for (const auto & col : execution_context.columns)
+            //    std::cerr << col.dumpStructure() << std::endl;
         }
         catch (Exception & e)
         {
@@ -777,14 +745,8 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
         }
     }
 
-    if (project_inputs)
+    if (actions_dag->isInputProjected())
     {
-        block.clear();
-    }
-    else if (allow_duplicates_in_input)
-    {
-        /// This case is the same as when the input is projected
-        /// since we do not need any input columns.
         block.clear();
     }
     else
@@ -809,11 +771,11 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
     num_rows = execution_context.num_rows;
 }
 
-void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input) const
+void ExpressionActions::execute(Block & block, bool dry_run) const
 {
     size_t num_rows = block.rows();
 
-    execute(block, num_rows, dry_run, allow_duplicates_in_input);
+    execute(block, num_rows, dry_run);
 
     if (!block)
         block.insert({DataTypeUInt8().createColumnConst(num_rows, 0), std::make_shared<DataTypeUInt8>(), "_dummy"});
@@ -882,7 +844,7 @@ std::string ExpressionActions::dumpActions() const
     for (const auto & output_column : output_columns)
         ss << output_column.name << " " << output_column.type->getName() << "\n";
 
-    ss << "\noutput positions:";
+    ss << "\nproject input: " << actions_dag->isInputProjected() << "\noutput positions:";
     for (auto pos : result_positions)
         ss << " " << pos;
     ss << "\n";
@@ -946,6 +908,7 @@ JSONBuilder::ItemPtr ExpressionActions::toTree() const
     map->add("Actions", std::move(actions_array));
     map->add("Outputs", std::move(outputs_array));
     map->add("Positions", std::move(positions_array));
+    map->add("Project Input", actions_dag->isInputProjected());
 
     return map;
 }
@@ -999,7 +962,7 @@ void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
         if (column.column && isColumnConst(*column.column) && non_constant_inputs.contains(column.name))
             column.column = nullptr;
 
-    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsAndProjectInputsFlag>(ActionsDAG(columns), false)));
+    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
 }
 
 void ExpressionActionsChain::finalize()
@@ -1148,14 +1111,14 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
     std::swap(result_columns, new_result_columns);
 }
 
-ActionsAndProjectInputsFlagPtr & ExpressionActionsChain::Step::actions()
+ActionsDAGPtr & ExpressionActionsChain::Step::actions()
 {
-    return typeid_cast<ExpressionActionsStep &>(*this).actions_and_flags;
+    return typeid_cast<ExpressionActionsStep &>(*this).actions_dag;
 }
 
-const ActionsAndProjectInputsFlagPtr & ExpressionActionsChain::Step::actions() const
+const ActionsDAGPtr & ExpressionActionsChain::Step::actions() const
 {
-    return typeid_cast<const ExpressionActionsStep &>(*this).actions_and_flags;
+    return typeid_cast<const ExpressionActionsStep &>(*this).actions_dag;
 }
 
 }

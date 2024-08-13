@@ -1,9 +1,5 @@
 import pytest
-from helpers.cluster import ClickHouseCluster, is_arm
-
-if is_arm():
-    pytestmark = pytest.mark.skip
-
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 instance1 = cluster.add_instance(

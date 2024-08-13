@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory>
 #include <base/types.h>
 
 namespace DB

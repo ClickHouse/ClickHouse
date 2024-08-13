@@ -121,31 +121,30 @@ public:
         AggregateFunctionProperties properties;
         AggregateFunctionPtr bitmap_function;
         WhichDataType which(nested_type);
-        auto action = NullsAction::EMPTY;
         if (which.isUInt8())
             bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<UInt8>::name(), action, argument_types, params_row, properties);
+                AggregateFunctionGroupBitmapData<UInt8>::name(), argument_types, params_row, properties);
         else if (which.isUInt16())
             bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<UInt16>::name(), action, argument_types, params_row, properties);
+                AggregateFunctionGroupBitmapData<UInt16>::name(), argument_types, params_row, properties);
         else if (which.isUInt32())
             bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<UInt32>::name(), action, argument_types, params_row, properties);
+                AggregateFunctionGroupBitmapData<UInt32>::name(), argument_types, params_row, properties);
         else if (which.isUInt64())
             bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<UInt64>::name(), action, argument_types, params_row, properties);
+                AggregateFunctionGroupBitmapData<UInt64>::name(), argument_types, params_row, properties);
         else if (which.isInt8())
             bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<Int8>::name(), action, argument_types, params_row, properties);
+                AggregateFunctionGroupBitmapData<Int8>::name(), argument_types, params_row, properties);
         else if (which.isInt16())
             bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<Int16>::name(), action, argument_types, params_row, properties);
+                AggregateFunctionGroupBitmapData<Int16>::name(), argument_types, params_row, properties);
         else if (which.isInt32())
             bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<Int32>::name(), action, argument_types, params_row, properties);
+                AggregateFunctionGroupBitmapData<Int32>::name(), argument_types, params_row, properties);
         else if (which.isInt64())
             bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<Int64>::name(), action, argument_types, params_row, properties);
+                AggregateFunctionGroupBitmapData<Int64>::name(), argument_types, params_row, properties);
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
                 array_type->getName(), getName());
@@ -155,7 +154,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /* input_rows_count */) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         const auto * array_type = typeid_cast<const DataTypeArray *>(from_type);
@@ -165,21 +164,21 @@ public:
 
         WhichDataType which(nested_type);
         if (which.isUInt8())
-            return executeBitmapData<UInt8>(argument_types, arguments, input_rows_count);
+            return executeBitmapData<UInt8>(argument_types, arguments);
         else if (which.isUInt16())
-            return executeBitmapData<UInt16>(argument_types, arguments, input_rows_count);
+            return executeBitmapData<UInt16>(argument_types, arguments);
         else if (which.isUInt32())
-            return executeBitmapData<UInt32>(argument_types, arguments, input_rows_count);
+            return executeBitmapData<UInt32>(argument_types, arguments);
         else if (which.isUInt64())
-            return executeBitmapData<UInt64>(argument_types, arguments, input_rows_count);
+            return executeBitmapData<UInt64>(argument_types, arguments);
         else if (which.isInt8())
-            return executeBitmapData<Int8>(argument_types, arguments, input_rows_count);
+            return executeBitmapData<Int8>(argument_types, arguments);
         else if (which.isInt16())
-            return executeBitmapData<Int16>(argument_types, arguments, input_rows_count);
+            return executeBitmapData<Int16>(argument_types, arguments);
         else if (which.isInt32())
-            return executeBitmapData<Int32>(argument_types, arguments, input_rows_count);
+            return executeBitmapData<Int32>(argument_types, arguments);
         else if (which.isInt64())
-            return executeBitmapData<Int64>(argument_types, arguments, input_rows_count);
+            return executeBitmapData<Int64>(argument_types, arguments);
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
                 from_type->getName(), getName());
@@ -187,26 +186,25 @@ public:
 
 private:
     template <typename T>
-    ColumnPtr executeBitmapData(DataTypes & argument_types, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    ColumnPtr executeBitmapData(DataTypes & argument_types, const ColumnsWithTypeAndName & arguments) const
     {
         // input data
         const ColumnArray * array = typeid_cast<const ColumnArray *>(arguments[0].column.get());
         const ColumnPtr & mapped = array->getDataPtr();
         const ColumnArray::Offsets & offsets = array->getOffsets();
-        const ColumnVector<T> & column = checkAndGetColumn<ColumnVector<T>>(*mapped);
-        const typename ColumnVector<T>::Container & input_data = column.getData();
+        const ColumnVector<T> * column = checkAndGetColumn<ColumnVector<T>>(&*mapped);
+        const typename ColumnVector<T>::Container & input_data = column->getData();
 
         // output data
         Array params_row;
         AggregateFunctionProperties properties;
-        auto action = NullsAction::EMPTY;
         AggregateFunctionPtr bitmap_function = AggregateFunctionFactory::instance().get(
-            AggregateFunctionGroupBitmapData<T>::name(), action, argument_types, params_row, properties);
+            AggregateFunctionGroupBitmapData<T>::name(), argument_types, params_row, properties);
         auto col_to = ColumnAggregateFunction::create(bitmap_function);
-        col_to->reserve(input_rows_count);
+        col_to->reserve(offsets.size());
 
         size_t pos = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < offsets.size(); ++i)
         {
             col_to->insertDefault();
             AggregateFunctionGroupBitmapData<T> & bitmap_data
@@ -519,12 +517,12 @@ public:
                                        "but one of them has type {}.", getName(), arguments[i + 1]->getName());
 
             if (!array_type)
-                throw exception; /// NOLINT
+                throw exception;
 
             auto nested_type = array_type->getNestedType();
             WhichDataType which(nested_type);
             if (!(which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isUInt64()))
-                throw exception; /// NOLINT
+                throw exception;
         }
         return arguments[0];
     }

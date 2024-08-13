@@ -1,4 +1,4 @@
-#include <Core/ServerSettings.h>
+#include "ServerSettings.h"
 #include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
@@ -25,7 +25,7 @@ void ServerSettings::loadSettingsFromConfig(const Poco::Util::AbstractConfigurat
         "max_remote_write_network_bandwidth_for_server",
     };
 
-    for (const auto & setting : all())
+    for (auto setting : all())
     {
         const auto & name = setting.getName();
         if (config.has(name))

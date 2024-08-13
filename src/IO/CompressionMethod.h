@@ -15,7 +15,7 @@ class WriteBuffer;
   *  (they use non-standard framing, indexes, checksums...)
   */
 
-enum class CompressionMethod : uint8_t
+enum class CompressionMethod
 {
     None,
     /// DEFLATE compression with gzip header and CRC32 checksum.
@@ -61,24 +61,13 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
     char * existing_memory = nullptr,
     size_t alignment = 0);
 
+
 std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     std::unique_ptr<WriteBuffer> nested,
     CompressionMethod method,
     int level,
-    int zstd_window_log = 0,
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     char * existing_memory = nullptr,
-    size_t alignment = 0,
-    bool compress_empty = true);
-
-std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
-    WriteBuffer * nested,
-    CompressionMethod method,
-    int level,
-    int zstd_window_log,
-    size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-    char * existing_memory = nullptr,
-    size_t alignment = 0,
-    bool compress_empty = true);
+    size_t alignment = 0);
 
 }

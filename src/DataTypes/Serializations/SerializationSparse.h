@@ -27,7 +27,7 @@ public:
 
     Kind getKind() const override { return Kind::SPARSE; }
 
-    void enumerateStreams(
+    virtual void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
         const SubstreamData & data) const override;
@@ -43,8 +43,7 @@ public:
 
     void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state,
-        SubstreamsDeserializeStatesCache * cache) const override;
+        DeserializeBinaryBulkStatePtr & state) const override;
 
     /// Allows to write ColumnSparse and other columns in sparse serialization.
     void serializeBinaryBulkWithMultipleStreams(

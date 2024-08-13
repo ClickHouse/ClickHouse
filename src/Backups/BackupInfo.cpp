@@ -25,7 +25,7 @@ String BackupInfo::toString() const
 BackupInfo BackupInfo::fromString(const String & str)
 {
     ParserIdentifierWithOptionalParameters parser;
-    ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     return fromAST(*ast);
 }
 
@@ -78,16 +78,13 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
             }
         }
 
-        size_t args_size = list->children.size();
-        res.args.reserve(args_size - index);
-        for (; index < args_size; ++index)
+        res.args.reserve(list->children.size() - index);
+        for (; index < list->children.size(); ++index)
         {
             const auto & elem = list->children[index];
             const auto * lit = elem->as<const ASTLiteral>();
             if (!lit)
-            {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected literal, got {}", serializeAST(*elem));
-            }
             res.args.push_back(lit->value);
         }
     }

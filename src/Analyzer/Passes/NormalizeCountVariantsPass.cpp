@@ -6,10 +6,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/Utils.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
@@ -35,11 +32,6 @@ public:
         if (function_node->getArguments().getNodes().size() != 1)
             return;
 
-        /// forbid the optimization if return value of sum() and count() differs:
-        /// count() returns only UInt64 type, while sum() could return Nullable().
-        if (!function_node->getResultType()->equals(DataTypeUInt64()))
-            return;
-
         auto & first_argument = function_node->getArguments().getNodes()[0];
         auto * first_argument_constant_node = first_argument->as<ConstantNode>();
         if (!first_argument_constant_node)
@@ -49,22 +41,30 @@ public:
 
         if (function_node->getFunctionName() == "count" && !first_argument_constant_literal.isNull())
         {
+            resolveAsCountAggregateFunction(*function_node);
             function_node->getArguments().getNodes().clear();
-            resolveAggregateFunctionNodeByName(*function_node, "count");
         }
         else if (function_node->getFunctionName() == "sum" &&
             first_argument_constant_literal.getType() == Field::Types::UInt64 &&
-            first_argument_constant_literal.safeGet<UInt64>() == 1)
+            first_argument_constant_literal.get<UInt64>() == 1)
         {
+            resolveAsCountAggregateFunction(*function_node);
             function_node->getArguments().getNodes().clear();
-            resolveAggregateFunctionNodeByName(*function_node, "count");
         }
+    }
+private:
+    static inline void resolveAsCountAggregateFunction(FunctionNode & function_node)
+    {
+        AggregateFunctionProperties properties;
+        auto aggregate_function = AggregateFunctionFactory::instance().get("count", {}, {}, properties);
+
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
 };
 
 }
 
-void NormalizeCountVariantsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void NormalizeCountVariantsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     NormalizeCountVariantsVisitor visitor(context);
     visitor.visit(query_tree_node);

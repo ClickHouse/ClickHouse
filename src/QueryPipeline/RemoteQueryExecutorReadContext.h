@@ -2,8 +2,10 @@
 
 #if defined(OS_LINUX)
 
+#include <mutex>
 #include <atomic>
 #include <Common/Fiber.h>
+#include <Common/FiberStack.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/Epoll.h>
 #include <Common/AsyncTaskExecutor.h>
@@ -39,8 +41,6 @@ public:
 
     Packet getPacket() { return std::move(packet); }
 
-    UInt64 getPacketType() const { return packet.type; }
-
 private:
     bool checkTimeout(bool blocking = false);
 
@@ -54,7 +54,7 @@ private:
 
     struct Task : public AsyncTask
     {
-        explicit Task(RemoteQueryExecutorReadContext & read_context_) : read_context(read_context_) {}
+        Task(RemoteQueryExecutorReadContext & read_context_) : read_context(read_context_) {}
 
         RemoteQueryExecutorReadContext & read_context;
 
@@ -71,7 +71,7 @@ private:
     /// * timer is a timerfd descriptor to manually check socket timeout
     /// * pipe_fd is a pipe we use to cancel query and socket polling by executor.
     /// We put those descriptors into our own epoll which is used by external executor.
-    TimerDescriptor timer;
+    TimerDescriptor timer{CLOCK_MONOTONIC, 0};
     Poco::Timespan timeout;
     AsyncEventTimeoutType timeout_type;
     std::atomic_bool is_timer_alarmed = false;

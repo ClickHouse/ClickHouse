@@ -50,15 +50,9 @@ public:
         clock_type = clock_type_;
     }
 
-    std::optional<size_t> tryGetFileSize() override;
+    size_t getFileSize() override;
 
     void setProgressCallback(ContextPtr context);
-
-    /// Returns true if this file is on local filesystem, and getFileName() is its path.
-    /// I.e. it can be read using open() or mmap(). If this buffer is a "view" into a subrange of the
-    /// file, *out_view_offset is set to the start of that subrange, i.e. the difference between actual
-    /// file offset and what getPosition() returns.
-    virtual bool isRegularLocalFile(size_t * /*out_view_offsee*/) { return false; }
 
 protected:
     std::optional<size_t> file_size;

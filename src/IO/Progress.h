@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <functional>
 #include <base/types.h>
 
@@ -122,8 +123,6 @@ struct Progress
 
     /// Each value separately is changed atomically (but not whole object).
     bool incrementPiecewiseAtomically(const Progress & rhs);
-
-    void incrementElapsedNs(UInt64 elapsed_ns_);
 
     void reset();
 

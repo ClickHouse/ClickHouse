@@ -3,7 +3,7 @@ slug: /en/development/build-osx
 sidebar_position: 65
 sidebar_label: Build on macOS
 title: How to Build ClickHouse on macOS
-description: How to build ClickHouse on macOS for macOS
+description: How to build ClickHouse on macOS
 ---
 
 :::info You don't have to build ClickHouse yourself!
@@ -37,7 +37,7 @@ sudo xcode-select --install
 
 ``` bash
 brew update
-brew install ccache cmake ninja libtool gettext llvm gcc binutils grep findutils nasm
+brew install ccache cmake ninja libtool gettext llvm gcc binutils grep findutils
 ```
 
 ## Checkout ClickHouse Sources {#checkout-clickhouse-sources}
@@ -55,7 +55,9 @@ To build using Homebrew's vanilla Clang compiler (the only **recommended** way):
 cd ClickHouse
 mkdir build
 export PATH=$(brew --prefix llvm)/bin:$PATH
-cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++ -S . -B build
+export CC=$(brew --prefix llvm)/bin/clang
+export CXX=$(brew --prefix llvm)/bin/clang++
+cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -S . -B build
 cmake --build build
 # The resulting binary will be created at: build/programs/clickhouse
 ```

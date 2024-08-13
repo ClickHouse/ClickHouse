@@ -17,7 +17,7 @@ namespace
         {
             if (std::exchange(need_comma, true))
                 settings.ostr << ", ";
-            settings.ostr << backQuote(name);
+            settings.ostr << backQuoteIfNeed(name);
         }
     }
 

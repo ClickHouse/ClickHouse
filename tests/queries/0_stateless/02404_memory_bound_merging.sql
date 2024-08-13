@@ -7,7 +7,6 @@ drop table if exists t_different_dbs;
 drop table if exists dist_t;
 drop table if exists t;
 
-set optimize_trivial_insert_select = 1;
 
 create table t(a UInt64, b UInt64) engine=MergeTree order by a;
 system stop merges t;
@@ -57,8 +56,6 @@ select a, count() from dist_t_different_dbs group by a order by a limit 5 offset
 select a, count() from dist_t_different_dbs group by a, b order by a limit 5 offset 500;
 
 -- { echoOff } --
-
-drop table if exists pr_t;
 
 create table pr_t(a UInt64, b UInt64) engine=MergeTree order by a;
 insert into pr_t select number % 1000, number % 1000 from numbers_mt(1e6);

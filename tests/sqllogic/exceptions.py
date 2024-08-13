@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from enum import Enum
+
 
 class Error(Exception):
     def __init__(
@@ -43,8 +45,16 @@ class Error(Exception):
 
     @property
     def reason(self):
-        details = f"details: {self._details}" if self._details else ""
-        return ", ".join((str(x) for x in [super().__str__(), details] if x))
+        return ", ".join(
+            (
+                str(x)
+                for x in [
+                    super().__str__(),
+                    "details: {}".format(self._details) if self._details else "",
+                ]
+                if x
+            )
+        )
 
     def set_details(self, file=None, name=None, pos=None, request=None, details=None):
         if file is not None:
@@ -78,8 +88,16 @@ class ErrorWithParent(Error):
 
     @property
     def reason(self):
-        exception = f"exception: {self._parent}" if self._parent else ""
-        return ", ".join((str(x) for x in [super().reason, exception] if x))
+        return ", ".join(
+            (
+                str(x)
+                for x in [
+                    super().reason,
+                    "exception: {}".format(str(self._parent)) if self._parent else "",
+                ]
+                if x
+            )
+        )
 
 
 class ProgramError(ErrorWithParent):

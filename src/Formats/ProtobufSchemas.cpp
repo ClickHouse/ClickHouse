@@ -21,20 +21,14 @@ ProtobufSchemas & ProtobufSchemas::instance()
     return instance;
 }
 
-void ProtobufSchemas::clear()
-{
-    std::lock_guard lock(mutex);
-    importers.clear();
-}
-
 class ProtobufSchemas::ImporterWithSourceTree : public google::protobuf::compiler::MultiFileErrorCollector
 {
 public:
-    explicit ImporterWithSourceTree(const String & schema_directory, const String & google_protos_path, WithEnvelope with_envelope_)
-        : importer(&disk_source_tree, this), with_envelope(with_envelope_)
+    explicit ImporterWithSourceTree(const String & schema_directory, WithEnvelope with_envelope_)
+        : importer(&disk_source_tree, this)
+        , with_envelope(with_envelope_)
     {
         disk_source_tree.MapPath("", schema_directory);
-        disk_source_tree.MapPath("", google_protos_path);
     }
 
     ~ImporterWithSourceTree() override = default;
@@ -112,17 +106,12 @@ private:
 };
 
 
-const google::protobuf::Descriptor *
-ProtobufSchemas::getMessageTypeForFormatSchema(const FormatSchemaInfo & info, WithEnvelope with_envelope, const String & google_protos_path)
+const google::protobuf::Descriptor * ProtobufSchemas::getMessageTypeForFormatSchema(const FormatSchemaInfo & info, WithEnvelope with_envelope)
 {
     std::lock_guard lock(mutex);
     auto it = importers.find(info.schemaDirectory());
     if (it == importers.end())
-        it = importers
-                 .emplace(
-                     info.schemaDirectory(),
-                     std::make_unique<ImporterWithSourceTree>(info.schemaDirectory(), google_protos_path, with_envelope))
-                 .first;
+        it = importers.emplace(info.schemaDirectory(), std::make_unique<ImporterWithSourceTree>(info.schemaDirectory(), with_envelope)).first;
     auto * importer = it->second.get();
     return importer->import(info.schemaPath(), info.messageName());
 }

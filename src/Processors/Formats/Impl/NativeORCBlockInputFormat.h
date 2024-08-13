@@ -6,8 +6,6 @@
 #    include <IO/ReadBufferFromString.h>
 #    include <Processors/Formats/IInputFormat.h>
 #    include <Processors/Formats/ISchemaReader.h>
-#    include <Storages/MergeTree/KeyCondition.h>
-#    include <boost/algorithm/string.hpp>
 #    include <orc/OrcFile.hh>
 
 namespace DB
@@ -44,8 +42,6 @@ std::unique_ptr<orc::InputStream> asORCInputStream(ReadBuffer & in, const Format
 // Reads the whole file into a memory buffer, owned by the returned RandomAccessFile.
 std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in, std::atomic<int> & is_cancelled);
 
-std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
-    const KeyCondition & key_condition, const Block & header, const orc::Type & schema, const FormatSettings & format_settings);
 
 class ORCColumnToCHColumn;
 class NativeORCBlockInputFormat : public IInputFormat
@@ -62,9 +58,9 @@ public:
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 protected:
-    Chunk read() override;
+    Chunk generate() override;
 
-    void onCancel() noexcept override { is_stopped = 1; }
+    void onCancel() override { is_stopped = 1; }
 
 private:
     void prepareFileReader();
@@ -73,8 +69,7 @@ private:
     std::unique_ptr<orc::Reader> file_reader;
     std::unique_ptr<orc::RowReader> stripe_reader;
     std::unique_ptr<ORCColumnToCHColumn> orc_column_to_ch_column;
-
-    std::shared_ptr<orc::SearchArgument> sarg;
+    std::unique_ptr<orc::ColumnVectorBatch> batch;
 
     // indices of columns to read from ORC file
     std::list<UInt64> include_indices;

@@ -1,9 +1,11 @@
 #include <DataTypes/Serializations/SerializationDecimalBase.h>
 
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Formats/ProtobufReader.h>
+#include <Formats/ProtobufWriter.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 #include <ranges>
 
@@ -13,7 +15,7 @@ namespace DB
 template <typename T>
 void SerializationDecimalBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    FieldType x = field.safeGet<DecimalField<T>>();
+    FieldType x = field.get<DecimalField<T>>();
     writeBinaryLittleEndian(x, ostr);
 }
 

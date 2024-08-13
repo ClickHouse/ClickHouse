@@ -72,6 +72,4 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subque
 
 void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context);
 
-QueryPipelineBuilderPtr addCreatingSetsTransform(QueryPipelineBuilderPtr pipeline, PreparedSets::Subqueries subqueries, ContextPtr context);
-
 }

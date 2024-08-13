@@ -18,7 +18,7 @@ namespace
         }
         else
         {
-            settings.ostr << backQuote(str);
+            settings.ostr << backQuoteIfNeed(str);
         }
     }
 }

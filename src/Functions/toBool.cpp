@@ -1,5 +1,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsConversion.h>
 #include <Functions/CastOverloadResolver.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -11,14 +12,6 @@ namespace
 {
     class FunctionToBool : public IFunction
     {
-    private:
-        ContextPtr context;
-
-        static String getReturnTypeName(const DataTypePtr & argument)
-        {
-            return argument->isNullable() ? "Nullable(Bool)" : "Bool";
-        }
-
     public:
         static constexpr auto name = "toBool";
 
@@ -39,7 +32,8 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
-            return DataTypeFactory::instance().get(getReturnTypeName(arguments[0]));
+            auto bool_type = DataTypeFactory::instance().get("Bool");
+            return arguments[0]->isNullable() ? makeNullable(bool_type) : bool_type;
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
@@ -48,16 +42,18 @@ namespace
             {
                 arguments[0],
                 {
-                    DataTypeString().createColumnConst(arguments[0].column->size(), getReturnTypeName(arguments[0].type)),
+                    DataTypeString().createColumnConst(arguments[0].column->size(), arguments[0].type->isNullable() ? "Nullable(Bool)" : "Bool"),
                     std::make_shared<DataTypeString>(),
                     ""
                 }
             };
 
-            auto func_cast = createInternalCast(arguments[0], result_type, CastType::nonAccurate, {});
+            FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
+            auto func_cast = func_builder_cast->build(cast_args);
             return func_cast->execute(cast_args, result_type, arguments[0].column->size());
         }
     };
+
 }
 
 REGISTER_FUNCTION(ToBool)

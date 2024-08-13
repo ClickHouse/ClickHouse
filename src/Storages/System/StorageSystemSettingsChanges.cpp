@@ -7,12 +7,10 @@
 
 namespace DB
 {
-ColumnsDescription StorageSystemSettingsChanges::getColumnsDescription()
+NamesAndTypesList StorageSystemSettingsChanges::getNamesAndTypes()
 {
-    /// TODO: Fill in all the comments
-    return ColumnsDescription
-    {
-        {"version", std::make_shared<DataTypeString>(), "The ClickHouse server version."},
+    return {
+        {"version", std::make_shared<DataTypeString>()},
         {"changes",
          std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
              DataTypes{
@@ -20,13 +18,12 @@ ColumnsDescription StorageSystemSettingsChanges::getColumnsDescription()
                  std::make_shared<DataTypeString>(),
                  std::make_shared<DataTypeString>(),
                  std::make_shared<DataTypeString>()},
-             Names{"name", "previous_value", "new_value", "reason"})), "The list of changes in settings which changed the behaviour of ClickHouse."},
+             Names{"name", "previous_value", "new_value", "reason"}))},
     };
 }
 
-void StorageSystemSettingsChanges::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemSettingsChanges::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
-    const auto & settings_changes_history = getSettingsChangesHistory();
     for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)
     {
         res_columns[0]->insert(it->first.toString());

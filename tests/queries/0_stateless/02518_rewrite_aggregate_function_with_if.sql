@@ -1,5 +1,4 @@
-set enable_analyzer = true;
--- { echoOn }
+set allow_experimental_analyzer = true;
 
 set optimize_rewrite_aggregate_function_with_if = false;
 EXPLAIN QUERY TREE run_passes = 1 select sum(if(number % 2, number, 0)) from numbers(100);

@@ -3,7 +3,6 @@
 #include <Functions/FunctionsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/MemorySanitizer.h>
 #include <Common/UTF8Helpers.h>
 
 #include <Core/Defines.h>
@@ -78,7 +77,7 @@ struct NgramDistanceImpl
 #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
         return crc32_ppc(code_points[2], reinterpret_cast<const unsigned char *>(&combined), sizeof(combined)) & 0xFFFFu;
 #elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        return s390x_crc32c(code_points[2], combined) & 0xFFFFu;
+        return s390x_crc32(code_points[2], combined) & 0xFFFFu;
 #else
         return (intHashCRC32(combined) ^ intHashCRC32(code_points[2])) & 0xFFFFu;
 #endif
@@ -90,7 +89,7 @@ struct NgramDistanceImpl
         ((cont[Offset + I] = std::tolower(cont[Offset + I])), ...);
     }
 
-    static size_t readASCIICodePoints(CodePoint * code_points, const char *& pos, const char * end)
+    static ALWAYS_INLINE size_t readASCIICodePoints(CodePoint * code_points, const char *& pos, const char * end)
     {
         /// Offset before which we copy some data.
         constexpr size_t padding_offset = default_padding - N + 1;
@@ -109,8 +108,10 @@ struct NgramDistanceImpl
 
         if constexpr (case_insensitive)
         {
+#if defined(MEMORY_SANITIZER)
             /// Due to PODArray padding accessing more elements should be OK
             __msan_unpoison(code_points + (N - 1), padding_offset * sizeof(CodePoint));
+#endif
             /// We really need template lambdas with C++20 to do it inline
             unrollLowering<N - 1>(code_points, std::make_index_sequence<padding_offset>());
         }
@@ -120,7 +121,7 @@ struct NgramDistanceImpl
         return default_padding;
     }
 
-    static size_t readUTF8CodePoints(CodePoint * code_points, const char *& pos, const char * end)
+    static ALWAYS_INLINE size_t readUTF8CodePoints(CodePoint * code_points, const char *& pos, const char * end)
     {
         /// The same copying as described in the function above.
         memcpy(code_points, code_points + default_padding - N + 1, roundUpToPowerOfTwoOrZero(N - 1) * sizeof(CodePoint));
@@ -139,30 +140,18 @@ struct NgramDistanceImpl
             {
                 case 1:
                     res = 0;
-                    if constexpr (std::endian::native == std::endian::little)
-                        memcpy(&res, pos, 1);
-                    else
-                        reverseMemcpy(reinterpret_cast<char*>(&res) + sizeof(CodePoint) - 1, pos, 1);
+                    memcpy(&res, pos, 1);
                     break;
                 case 2:
                     res = 0;
-                    if constexpr (std::endian::native == std::endian::little)
-                        memcpy(&res, pos, 2);
-                    else
-                        reverseMemcpy(reinterpret_cast<char*>(&res) + sizeof(CodePoint) - 2, pos, 2);
+                    memcpy(&res, pos, 2);
                     break;
                 case 3:
                     res = 0;
-                    if constexpr (std::endian::native == std::endian::little)
-                        memcpy(&res, pos, 3);
-                    else
-                        reverseMemcpy(reinterpret_cast<char*>(&res) + sizeof(CodePoint) - 3, pos, 3);
+                    memcpy(&res, pos, 3);
                     break;
                 default:
-                    if constexpr (std::endian::native == std::endian::little)
-                        memcpy(&res, pos, 4);
-                    else
-                        reverseMemcpy(reinterpret_cast<char*>(&res) + sizeof(CodePoint) - 4, pos, 4);
+                    memcpy(&res, pos, 4);
             }
 
             /// This is not a really true case insensitive utf8. We zero the 5-th bit of every byte.
@@ -195,7 +184,7 @@ struct NgramDistanceImpl
     }
 
     template <bool save_ngrams>
-    static inline size_t calculateNeedleStats(
+    static ALWAYS_INLINE inline size_t calculateNeedleStats(
         const char * data,
         const size_t size,
         NgramCount * ngram_stats,
@@ -228,7 +217,7 @@ struct NgramDistanceImpl
     }
 
     template <bool reuse_stats>
-    static inline UInt64 calculateHaystackStatsAndMetric(
+    static ALWAYS_INLINE inline UInt64 calculateHaystackStatsAndMetric(
         const char * data,
         const size_t size,
         NgramCount * ngram_stats,
@@ -275,7 +264,7 @@ struct NgramDistanceImpl
     }
 
     template <class Callback, class... Args>
-    static auto dispatchSearcher(Callback callback, Args &&... args)
+    static inline auto dispatchSearcher(Callback callback, Args &&... args)
     {
         if constexpr (!UTF8)
             return callback(std::forward<Args>(args)..., readASCIICodePoints, calculateASCIIHash);
@@ -318,9 +307,9 @@ struct NgramDistanceImpl
         const ColumnString::Offsets & haystack_offsets,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
-        PaddedPODArray<Float32> & res,
-        size_t input_rows_count)
+        PaddedPODArray<Float32> & res)
     {
+        const size_t haystack_offsets_size = haystack_offsets.size();
         size_t prev_haystack_offset = 0;
         size_t prev_needle_offset = 0;
 
@@ -331,7 +320,7 @@ struct NgramDistanceImpl
         std::unique_ptr<UInt16[]> needle_ngram_storage(new UInt16[max_string_size]);
         std::unique_ptr<UInt16[]> haystack_ngram_storage(new UInt16[max_string_size]);
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < haystack_offsets_size; ++i)
         {
             const char * haystack = reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]);
             const size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
@@ -391,13 +380,12 @@ struct NgramDistanceImpl
         std::string haystack,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
-        PaddedPODArray<Float32> & res,
-        size_t input_rows_count)
+        PaddedPODArray<Float32> & res)
     {
         /// For symmetric version it is better to use vector_constant
         if constexpr (symmetric)
         {
-            vectorConstant(needle_data, needle_offsets, std::move(haystack), res, input_rows_count);
+            vectorConstant(needle_data, needle_offsets, std::move(haystack), res);
         }
         else
         {
@@ -405,6 +393,7 @@ struct NgramDistanceImpl
             haystack.resize(haystack_size + default_padding);
 
             /// For logic explanation see vector_vector function.
+            const size_t needle_offsets_size = needle_offsets.size();
             size_t prev_offset = 0;
 
             std::unique_ptr<NgramCount[]> common_stats{new NgramCount[map_size]{}};
@@ -412,7 +401,7 @@ struct NgramDistanceImpl
             std::unique_ptr<UInt16[]> needle_ngram_storage(new UInt16[max_string_size]);
             std::unique_ptr<UInt16[]> haystack_ngram_storage(new UInt16[max_string_size]);
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < needle_offsets_size; ++i)
             {
                 const char * needle = reinterpret_cast<const char *>(&needle_data[prev_offset]);
                 const size_t needle_size = needle_offsets[i] - prev_offset - 1;
@@ -456,8 +445,7 @@ struct NgramDistanceImpl
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         std::string needle,
-        PaddedPODArray<Float32> & res,
-        size_t input_rows_count)
+        PaddedPODArray<Float32> & res)
     {
         /// zeroing our map
         std::unique_ptr<NgramCount[]> common_stats{new NgramCount[map_size]{}};
@@ -473,7 +461,7 @@ struct NgramDistanceImpl
 
         size_t distance = needle_stats_size;
         size_t prev_offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < offsets.size(); ++i)
         {
             const UInt8 * haystack = &data[prev_offset];
             const size_t haystack_size = offsets[i] - prev_offset - 1;
