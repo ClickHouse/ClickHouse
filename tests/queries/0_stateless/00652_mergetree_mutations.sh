@@ -89,4 +89,3 @@ done
 ${CLICKHOUSE_CLIENT} --query="SELECT mutation_id, command, is_done FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and table = 'mutations_cleaner' ORDER BY mutation_id"
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE mutations_cleaner"
-
