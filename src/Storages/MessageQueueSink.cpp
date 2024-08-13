@@ -80,16 +80,5 @@ void MessageQueueSink::consume(Chunk & chunk)
     }
 }
 
-void MessageQueueSink::onCancel() noexcept
-{
-    try
-    {
-        onFinish();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(getLogger("MessageQueueSink"), "Error occurs on cancellation.");
-    }
-}
 
 }
