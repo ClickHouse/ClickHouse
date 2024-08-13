@@ -1212,10 +1212,10 @@ void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_col
     typed_paths_source_columns.reserve(typed_paths.size());
     std::unordered_map<String, Columns> dynamic_paths_source_columns;
     dynamic_paths_source_columns.reserve(dynamic_paths.size());
-    
+
     for (const auto & [path, column] : typed_paths)
         typed_paths_source_columns[path].reserve(source_columns.size());
-    
+
     for (const auto & [path, column] : dynamic_paths)
         dynamic_paths_source_columns[path].reserve(source_columns.size());
 
@@ -1225,10 +1225,10 @@ void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_col
         const auto & source_object_column = assert_cast<const ColumnObject &>(*source_column);
         total_size += source_object_column.size();
         shared_data_source_columns.push_back(source_object_column.shared_data);
-        
+
         for (const auto & [path, column] : source_object_column.typed_paths)
             typed_paths_source_columns.at(path).push_back(column);
-        
+
         for (const auto & [path, column] : source_object_column.dynamic_paths)
         {
             if (dynamic_paths.contains(path))
@@ -1237,7 +1237,7 @@ void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_col
     }
 
     shared_data->prepareForSquashing(shared_data_source_columns);
-    
+
     for (const auto & [path, source_typed_columns] : typed_paths_source_columns)
         typed_paths[path]->prepareForSquashing(source_typed_columns);
 
