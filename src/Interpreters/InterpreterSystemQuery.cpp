@@ -12,7 +12,6 @@
 #include <Common/FailPoint.h>
 #include <Common/PageCache.h>
 #include <Common/HostResolvePool.h>
-#include <Core/ServerSettings.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -710,8 +709,14 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
-            auto system_logs = getContext()->getSystemLogs();
-            system_logs.flush(true);
+
+            auto logs = getContext()->getSystemLogs();
+            std::vector<std::function<void()>> commands;
+            commands.reserve(logs.size());
+            for (auto * system_log : logs)
+                commands.emplace_back([system_log] { system_log->flush(true); });
+
+            executeCommandsAndThrowIfError(commands);
             break;
         }
         case Type::STOP_LISTEN:

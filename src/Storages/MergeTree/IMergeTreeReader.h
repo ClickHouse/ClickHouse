@@ -112,9 +112,6 @@ protected:
 
 private:
     /// Columns that are requested to read.
-    NamesAndTypesList original_requested_columns;
-
-    /// The same as above but with converted Arrays to subcolumns of Nested.
     NamesAndTypesList requested_columns;
 
     /// Actual columns description in part.

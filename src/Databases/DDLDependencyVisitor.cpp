@@ -16,7 +16,6 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Common/KnownObjectNames.h>
-#include <Core/Settings.h>
 #include <Poco/String.h>
 
 
@@ -80,20 +79,13 @@ namespace
         /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
         void visitCreateQuery(const ASTCreateQuery & create)
         {
-            if (create.targets)
+            QualifiedTableName to_table{create.to_table_id.database_name, create.to_table_id.table_name};
+            if (!to_table.table.empty())
             {
-                for (const auto & target : create.targets->targets)
-                {
-                    const auto & table_id = target.table_id;
-                    if (!table_id.table_name.empty())
-                    {
-                        /// TO target_table (for materialized views)
-                        QualifiedTableName target_name{table_id.database_name, table_id.table_name};
-                        if (target_name.database.empty())
-                            target_name.database = current_database;
-                        dependencies.emplace(target_name);
-                    }
-                }
+                /// TO target_table (for materialized views)
+                if (to_table.database.empty())
+                    to_table.database = current_database;
+                dependencies.emplace(to_table);
             }
 
             QualifiedTableName as_table{create.as_database, create.as_table};

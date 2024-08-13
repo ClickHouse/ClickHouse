@@ -1,8 +1,9 @@
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
-#include <limits>
 #include <memory>
+#include <thread>
 #include <vector>
 #include <base/types.h>
 
@@ -31,8 +32,7 @@
     M(FilesystemReadPrefetchesLogElement) \
     M(AsynchronousInsertLogElement) \
     M(BackupLogElement) \
-    M(BlobStorageLogElement) \
-    M(ErrorLogElement)
+    M(BlobStorageLogElement)
 
 namespace Poco
 {
@@ -55,19 +55,10 @@ struct StorageID;
 class ISystemLog
 {
 public:
-    using Index = int64_t;
-
     virtual String getName() const = 0;
 
-    /// Return the index of the latest added log element. That index no less than the flashed index.
-    /// The flashed index is the index of the last log element which has been flushed successfully.
-    /// Thereby all the records whose index is less than the flashed index are flushed already.
-    virtual Index getLastLogIndex() = 0;
-    /// Call this method to wake up the flush thread and flush the data in the background. It is non blocking call
-    virtual void notifyFlush(Index expected_flushed_index, bool should_prepare_tables_anyway) = 0;
-    /// Call this method to wait intill the logs are flushed up to expected_flushed_index. It is blocking call.
-    virtual void flush(Index expected_flushed_index, bool should_prepare_tables_anyway) = 0;
-
+    //// force -- force table creation (used for SYSTEM FLUSH LOGS)
+    virtual void flush(bool force = false) = 0; /// NOLINT
     virtual void prepareTable() = 0;
 
     /// Start the background thread.
@@ -107,38 +98,26 @@ struct SystemLogQueueSettings
 template <typename LogElement>
 class SystemLogQueue
 {
-public:
-    using Index = ISystemLog::Index;
+    using Index = uint64_t;
 
+public:
     explicit SystemLogQueue(const SystemLogQueueSettings & settings_);
 
     void shutdown();
 
     // producer methods
     void push(LogElement && element);
-
-    Index getLastLogIndex();
-    void notifyFlush(Index expected_flushed_index, bool should_prepare_tables_anyway);
-    void waitFlush(Index expected_flushed_index, bool should_prepare_tables_anyway);
+    Index notifyFlush(bool should_prepare_tables_anyway);
+    void waitFlush(Index expected_flushed_up_to);
 
     /// Handles crash, flushes log without blocking if notify_flush_on_crash is set
     void handleCrash();
 
-    struct PopResult
-    {
-        Index last_log_index = 0;
-        std::vector<LogElement> logs = {};
-        bool create_table_force = false;
-        bool is_shutdown = false;
-    };
-
      // consumer methods
-    PopResult pop();
-    void confirm(Index last_flashed_index);
+    Index pop(std::vector<LogElement>& output, bool & should_prepare_tables_anyway, bool & exit_this_thread);
+    void confirm(Index to_flush_end);
 
 private:
-    void notifyFlushUnlocked(Index expected_flushed_index, bool should_prepare_tables_anyway);
-
     /// Data shared between callers of add()/flush()/shutdown(), and the saving thread
     std::mutex mutex;
 
@@ -146,32 +125,22 @@ private:
 
     // Queue is bounded. But its size is quite large to not block in all normal cases.
     std::vector<LogElement> queue;
-
     // An always-incrementing index of the first message currently in the queue.
     // We use it to give a global sequential index to every message, so that we
     // can wait until a particular message is flushed. This is used to implement
     // synchronous log flushing for SYSTEM FLUSH LOGS.
     Index queue_front_index = 0;
-
+    // A flag that says we must create the tables even if the queue is empty.
+    bool is_force_prepare_tables = false;
     // Requested to flush logs up to this index, exclusive
-    Index requested_flush_index = std::numeric_limits<Index>::min();
+    Index requested_flush_up_to = 0;
     // Flushed log up to this index, exclusive
-    Index flushed_index = 0;
-
-    // The same logic for the prepare tables: if requested_prepar_tables > prepared_tables we need to do prepare
-    // except that initial prepared_tables is -1
-    // it is due to the difference: when no logs have been written and we call flush logs
-    // it becomes in the state: requested_flush_index = 0 and flushed_index = 0 -- we do not want to do anything
-    // but if we need to prepare tables it becomes requested_prepare_tables = 0 and prepared_tables = -1
-    // we trigger background thread and do prepare
-    Index requested_prepare_tables = std::numeric_limits<Index>::min();
-    Index prepared_tables = -1;
-
-    size_t ignored_logs = 0;
+    Index flushed_up_to = 0;
+    // Logged overflow message at this queue front index
+    Index logged_queue_full_at_index = -1;
 
     bool is_shutdown = false;
 
-    std::condition_variable confirm_event;
     std::condition_variable flush_event;
 
     const SystemLogQueueSettings settings;
@@ -182,7 +151,6 @@ template <typename LogElement>
 class SystemLogBase : public ISystemLog
 {
 public:
-    using Index = ISystemLog::Index;
     using Self = SystemLogBase;
 
     explicit SystemLogBase(
@@ -196,15 +164,14 @@ public:
       */
     void add(LogElement element);
 
-    Index getLastLogIndex() override;
-
-    void notifyFlush(Index expected_flushed_index, bool should_prepare_tables_anyway) override;
-
     /// Flush data in the buffer to disk. Block the thread until the data is stored on disk.
-    void flush(Index expected_flushed_index, bool should_prepare_tables_anyway) override;
+    void flush(bool force) override;
 
     /// Handles crash, flushes log without blocking if notify_flush_on_crash is set
     void handleCrash() override;
+
+    /// Non-blocking flush data in the buffer to disk.
+    void notifyFlush(bool force);
 
     String getName() const override { return LogElement::name(); }
 

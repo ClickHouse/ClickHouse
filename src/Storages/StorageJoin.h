@@ -61,18 +61,6 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
-    bool optimize(
-        const ASTPtr & /*query*/,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
-        const ASTPtr & /*partition*/,
-        bool /*final*/,
-        bool /*deduplicate*/,
-        const Names & /* deduplicate_by_columns */,
-        bool /*cleanup*/,
-        ContextPtr /*context*/) override;
-
-    void optimizeUnlocked();
-
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

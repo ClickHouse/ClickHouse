@@ -4,7 +4,6 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
-#include <Core/Settings.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -113,13 +112,13 @@ std::stack<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTre
     return res;
 }
 
-class ReplaceTableNodeToDummyVisitor : public InDepthQueryTreeVisitorWithContext<ReplaceTableNodeToDummyVisitor>
+class ReplaceTableNodeToDummyVisitor : public InDepthQueryTreeVisitor<ReplaceTableNodeToDummyVisitor, true>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<ReplaceTableNodeToDummyVisitor>;
+    using Base = InDepthQueryTreeVisitor<ReplaceTableNodeToDummyVisitor, true>;
     using Base::Base;
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void visitImpl(const QueryTreeNodePtr & node)
     {
         auto * table_node = node->as<TableNode>();
         auto * table_function_node = node->as<TableFunctionNode>();
@@ -134,19 +133,21 @@ public:
                 ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
                 storage_snapshot);
 
-            auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), getContext());
+            auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
 
             dummy_table_node->setAlias(node->getAlias());
             replacement_map.emplace(node.get(), std::move(dummy_table_node));
         }
     }
 
+    ContextPtr context;
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
 };
 
-QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, const ContextPtr & context)
+QueryTreeNodePtr replaceTablesWithDummyTables(const QueryTreeNodePtr & query, const ContextPtr & context)
 {
-    ReplaceTableNodeToDummyVisitor visitor(context);
+    ReplaceTableNodeToDummyVisitor visitor;
+    visitor.context = context;
     visitor.visit(query);
 
     return query->cloneAndReplace(visitor.replacement_map);

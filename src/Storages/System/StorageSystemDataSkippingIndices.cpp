@@ -214,7 +214,7 @@ private:
     std::shared_ptr<StorageSystemDataSkippingIndices> storage;
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
-    ExpressionActionsPtr virtual_columns_filter;
+    const ActionsDAG::Node * predicate = nullptr;
 };
 
 void ReadFromSystemDataSkippingIndices::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -222,16 +222,7 @@ void ReadFromSystemDataSkippingIndices::applyFilters(ActionDAGNodes added_filter
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
 
     if (filter_actions_dag)
-    {
-        Block block_to_filter
-        {
-            { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
-        };
-
-        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
-        if (dag)
-            virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
-    }
+        predicate = filter_actions_dag->getOutputs().at(0);
 }
 
 void StorageSystemDataSkippingIndices::read(
@@ -277,8 +268,7 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 
     /// Condition on "database" in a query acts like an index.
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
-    if (virtual_columns_filter)
-        VirtualColumnUtils::filterBlockWithExpression(virtual_columns_filter, block);
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
 
     ColumnPtr & filtered_databases = block.getByPosition(0).column;
     pipeline.init(Pipe(std::make_shared<DataSkippingIndicesSource>(

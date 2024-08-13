@@ -2,7 +2,6 @@
 
 #include <Common/ArenaUtils.h>
 #include <Core/Defines.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
@@ -240,7 +239,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getHierarchy(Colu
         std::optional<UInt64> null_value;
 
         if (!dictionary_attribute.null_value.isNull())
-            null_value = dictionary_attribute.null_value.safeGet<UInt64>();
+            null_value = dictionary_attribute.null_value.get<UInt64>();
 
 
         auto is_key_valid_func = [&, this](auto & key)
@@ -313,7 +312,7 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type, sharded>::isInHierar
         std::optional<UInt64> null_value;
 
         if (!dictionary_attribute.null_value.isNull())
-            null_value = dictionary_attribute.null_value.safeGet<UInt64>();
+            null_value = dictionary_attribute.null_value.get<UInt64>();
 
 
         auto is_key_valid_func = [&](auto & key)
@@ -581,13 +580,13 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::blockToAttributes(cons
 
                 if constexpr (std::is_same_v<AttributeValueType, StringRef>)
                 {
-                    String & value_to_insert = column_value_to_insert.safeGet<String>();
+                    String & value_to_insert = column_value_to_insert.get<String>();
                     StringRef string_in_arena_reference = copyStringInArena(*string_arenas[shard], value_to_insert);
                     attribute_container.back() = string_in_arena_reference;
                 }
                 else
                 {
-                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.safeGet<AttributeValueType>());
+                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.get<AttributeValueType>());
                     attribute_container.back() = value_to_insert;
                 }
             };

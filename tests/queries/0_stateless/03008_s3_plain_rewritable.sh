@@ -46,12 +46,7 @@ ${CLICKHOUSE_CLIENT} --query "drop table if exists test_s3_mt_dst"
 
 ${CLICKHOUSE_CLIENT} -m --query "
 create table test_s3_mt_dst (a Int32, b Int64, c Int64) engine = MergeTree() partition by intDiv(a, 1000) order by tuple(a, b)
-settings disk = disk(
-    name = 03008_s3_plain_rewritable,
-    type = s3_plain_rewritable,
-    endpoint = 'http://localhost:11111/test/03008_test_s3_mt/',
-    access_key_id = clickhouse,
-    secret_access_key = clickhouse);
+settings disk = '03008_s3_plain_rewritable'
 "
 
 ${CLICKHOUSE_CLIENT} -m --query "

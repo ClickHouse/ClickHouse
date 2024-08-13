@@ -11,8 +11,6 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/JoinNode.h>
-#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -20,25 +18,19 @@ namespace DB
 namespace
 {
 
-class ComparisonTupleEliminationPassVisitor : public InDepthQueryTreeVisitorWithContext<ComparisonTupleEliminationPassVisitor>
+class ComparisonTupleEliminationPassVisitor : public InDepthQueryTreeVisitor<ComparisonTupleEliminationPassVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<ComparisonTupleEliminationPassVisitor>;
-    using Base::Base;
+    explicit ComparisonTupleEliminationPassVisitor(ContextPtr context_)
+        : context(std::move(context_))
+    {}
 
-    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
     {
-        if (parent->getNodeType() == QueryTreeNodeType::JOIN)
-        {
-            /// In JOIN ON section comparison of tuples works a bit differently.
-            /// For example we can join on tuple(NULL) = tuple(NULL), join algorithms consider only NULLs on the top level.
-            if (parent->as<const JoinNode &>().getJoinExpression().get() == child.get())
-                return false;
-        }
         return child->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION;
     }
 
-    void enterImpl(QueryTreeNodePtr & node) const
+    void visitImpl(QueryTreeNodePtr & node) const
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node)
@@ -137,7 +129,7 @@ private:
         if (constant_node_value.getType() != Field::Types::Which::Tuple)
             return {};
 
-        const auto & constant_tuple = constant_node_value.safeGet<const Tuple &>();
+        const auto & constant_tuple = constant_node_value.get<const Tuple &>();
 
         const auto & function_arguments_nodes = function_node_typed.getArguments().getNodes();
         size_t function_arguments_nodes_size = function_arguments_nodes.size();
@@ -179,13 +171,13 @@ private:
     {
         auto result_function = std::make_shared<FunctionNode>("and");
         result_function->getArguments().getNodes() = std::move(tuple_arguments_equals_functions);
-        resolveOrdinaryFunctionNodeByName(*result_function, result_function->getFunctionName(), getContext());
+        resolveOrdinaryFunctionNode(*result_function, result_function->getFunctionName());
 
         if (comparison_function_name == "notEquals")
         {
             auto not_function = std::make_shared<FunctionNode>("not");
             not_function->getArguments().getNodes().push_back(std::move(result_function));
-            resolveOrdinaryFunctionNodeByName(*not_function, not_function->getFunctionName(), getContext());
+            resolveOrdinaryFunctionNode(*not_function, not_function->getFunctionName());
             result_function = std::move(not_function);
         }
 
@@ -205,10 +197,18 @@ private:
         comparison_function->getArguments().getNodes().push_back(std::move(lhs_argument));
         comparison_function->getArguments().getNodes().push_back(std::move(rhs_argument));
 
-        resolveOrdinaryFunctionNodeByName(*comparison_function, comparison_function->getFunctionName(), getContext());
+        resolveOrdinaryFunctionNode(*comparison_function, comparison_function->getFunctionName());
 
         return comparison_function;
     }
+
+    void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
+    {
+        auto function = FunctionFactory::instance().get(function_name, context);
+        function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
+    }
+
+    ContextPtr context;
 };
 
 }

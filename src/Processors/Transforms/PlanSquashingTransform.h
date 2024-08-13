@@ -10,7 +10,7 @@ class PlanSquashingTransform : public IInflatingTransform
 {
 public:
     PlanSquashingTransform(
-        Block header_, size_t min_block_size_rows, size_t min_block_size_bytes);
+        const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes);
 
     String getName() const override { return "PlanSquashingTransform"; }
 
@@ -23,6 +23,7 @@ protected:
 private:
     Squashing squashing;
     Chunk squashed_chunk;
+    Chunk finish_chunk;
 };
 }
 

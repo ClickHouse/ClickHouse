@@ -2,7 +2,6 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Processors/Formats/Impl/BinaryRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerWithNamesAndTypes.h>
@@ -36,15 +35,9 @@ void BinaryRowOutputFormat::writePrefix()
 
     if (with_types)
     {
-        if (format_settings.binary.encode_types_in_binary_format)
+        for (size_t i = 0; i < columns; ++i)
         {
-            for (size_t i = 0; i < columns; ++i)
-                encodeDataType(header.safeGetByPosition(i).type, out);
-        }
-        else
-        {
-            for (size_t i = 0; i < columns; ++i)
-                writeStringBinary(header.safeGetByPosition(i).type->getName(), out);
+            writeStringBinary(header.safeGetByPosition(i).type->getName(), out);
         }
     }
 }

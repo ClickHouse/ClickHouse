@@ -32,7 +32,7 @@
 
 -- { echoOn }
 
-SET enable_analyzer = 1;
+SET allow_experimental_analyzer = 1;
 
 --
 -- Some examples with a tree

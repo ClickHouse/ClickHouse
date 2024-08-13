@@ -993,19 +993,15 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
 - `TDigest`
 
-    [TDigest](https://github.com/tdunning/t-digest) sketches which allow to compute approximate percentiles (e.g. the 90th percentile) for numeric columns.
+    Stores distribution of values from numeric columns in [TDigest](https://github.com/tdunning/t-digest) sketch.
 
 - `Uniq`
-
-    [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) sketches which provide an estimation how many distinct values a column contains.
-
-- `count_min`
-
-    [Count-min](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
+    
+    Estimate the number of distinct values of a column by HyperLogLog.
 
 ## Column-level Settings {#column-level-settings}
 
-Certain MergeTree settings can be overridden at column level:
+Certain MergeTree settings can be override at column level:
 
 - `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table.
 - `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark.

@@ -19,8 +19,6 @@
 
 #include <Storages/SelectQueryInfo.h>
 
-#include <Interpreters/WindowDescription.h>
-
 namespace DB
 {
 
@@ -49,7 +47,7 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
   * Inputs are not used for actions dag outputs.
   * Only root query tree expression node is used as actions dag output.
   */
-ActionsDAG buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
+ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context);
 
@@ -89,13 +87,5 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
         NameSet table_expression_required_names_without_filter = {});
 
 ASTPtr parseAdditionalResultFilter(const Settings & settings);
-
-using UsefulSets = std::unordered_set<FutureSetPtr>;
-void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
-
-/// If the window frame is not set in sql, try to use the default frame from window function
-/// if it have any one. Otherwise return empty.
-/// If the window frame is set in sql, use it anyway.
-std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node);
 
 }

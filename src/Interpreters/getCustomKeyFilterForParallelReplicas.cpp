@@ -1,7 +1,5 @@
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 
-#include <Core/Settings.h>
-
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ExpressionListParsers.h>

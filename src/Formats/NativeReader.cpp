@@ -6,7 +6,6 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
 
@@ -32,8 +31,8 @@ namespace ErrorCodes
 }
 
 
-NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_, std::optional<FormatSettings> format_settings_)
-    : istr(istr_), server_revision(server_revision_), format_settings(format_settings_)
+NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_)
+    : istr(istr_), server_revision(server_revision_)
 {
 }
 
@@ -41,12 +40,16 @@ NativeReader::NativeReader(
     ReadBuffer & istr_,
     const Block & header_,
     UInt64 server_revision_,
-    std::optional<FormatSettings> format_settings_,
+    bool skip_unknown_columns_,
+    bool null_as_default_,
+    bool allow_types_conversion_,
     BlockMissingValues * block_missing_values_)
     : istr(istr_)
     , header(header_)
     , server_revision(server_revision_)
-    , format_settings(std::move(format_settings_))
+    , skip_unknown_columns(skip_unknown_columns_)
+    , null_as_default(null_as_default_)
+    , allow_types_conversion(allow_types_conversion_)
     , block_missing_values(block_missing_values_)
 {
 }
@@ -80,14 +83,13 @@ void NativeReader::resetParser()
     use_index = false;
 }
 
-static void readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, const std::optional<FormatSettings> & format_settings, size_t rows, double avg_value_size_hint)
+void NativeReader::readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
 {
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
     settings.avg_value_size_hint = avg_value_size_hint;
     settings.position_independent_encoding = false;
     settings.native_format = true;
-    settings.data_types_binary_encoding = format_settings && format_settings->native.decode_types_in_binary_format;
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
 
@@ -165,16 +167,8 @@ Block NativeReader::read()
 
         /// Type
         String type_name;
-        if (format_settings && format_settings->native.decode_types_in_binary_format)
-        {
-            column.type = decodeDataType(istr);
-            type_name = column.type->getName();
-        }
-        else
-        {
-            readBinary(type_name, istr);
-            column.type = data_type_factory.get(type_name);
-        }
+        readBinary(type_name, istr);
+        column.type = data_type_factory.get(type_name);
 
         setVersionToAggregateFunctions(column.type, true, server_revision);
 
@@ -209,7 +203,7 @@ Block NativeReader::read()
 
         double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
         if (rows)    /// If no rows, nothing to read.
-            readData(*serialization, read_column, istr, format_settings, rows, avg_value_size_hint);
+            readData(*serialization, read_column, istr, rows, avg_value_size_hint);
 
         column.column = std::move(read_column);
 
@@ -220,12 +214,12 @@ Block NativeReader::read()
             {
                 auto & header_column = header.getByName(column.name);
 
-                if (format_settings && format_settings->null_as_default)
+                if (null_as_default)
                     insertNullAsDefaultIfNeeded(column, header_column, header.getPositionByName(column.name), block_missing_values);
 
                 if (!header_column.type->equals(*column.type))
                 {
-                    if (format_settings && format_settings->native.allow_types_conversion)
+                    if (allow_types_conversion)
                     {
                         try
                         {
@@ -252,7 +246,7 @@ Block NativeReader::read()
             }
             else
             {
-                if (format_settings && !format_settings->skip_unknown_fields)
+                if (!skip_unknown_columns)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column with name {} found while reading data in Native format", column.name);
                 use_in_result = false;
             }

@@ -1,4 +1,3 @@
-#include <Core/Settings.h>
 #include <Server/ProxyV1Handler.h>
 #include <Poco/Net/NetException.h>
 #include <Common/NetException.h>

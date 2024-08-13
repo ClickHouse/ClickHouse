@@ -1,6 +1,5 @@
 #include <DataTypes/Serializations/SerializationDynamicElement.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
-#include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -78,10 +77,7 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
     if (auto global_discr = assert_cast<const DataTypeVariant &>(*variant_type).tryGetVariantDiscriminator(dynamic_element_name))
     {
         settings.path.push_back(Substream::DynamicData);
-        if (is_null_map_subcolumn)
-            dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElementNullMap>(dynamic_element_name, *global_discr);
-        else
-            dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElement>(nested_serialization, dynamic_element_name, *global_discr);
+        dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElement>(nested_serialization, dynamic_element_name, *global_discr);
         dynamic_element_state->variant_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_element_state->variant_element_state, cache);
         settings.path.pop_back();
     }
@@ -102,16 +98,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
     SubstreamsCache * cache) const
 {
     if (!state)
-    {
-        if (is_null_map_subcolumn)
-        {
-            auto mutable_column = result_column->assumeMutable();
-            auto & data = assert_cast<ColumnUInt8 &>(*mutable_column).getData();
-            data.resize_fill(data.size() + limit, 1);
-        }
-
         return;
-    }
 
     auto * dynamic_element_state = checkAndGetState<DeserializeBinaryBulkStateDynamicElement>(state);
 
@@ -120,12 +107,6 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
         settings.path.push_back(Substream::DynamicData);
         dynamic_element_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, limit, settings, dynamic_element_state->variant_element_state, cache);
         settings.path.pop_back();
-    }
-    else if (is_null_map_subcolumn)
-    {
-        auto mutable_column = result_column->assumeMutable();
-        auto & data = assert_cast<ColumnUInt8 &>(*mutable_column).getData();
-        data.resize_fill(data.size() + limit, 1);
     }
     else
     {

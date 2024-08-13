@@ -4,9 +4,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/FieldToDataType.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
@@ -215,11 +213,7 @@ bool ColumnDynamic::tryInsert(const DB::Field & x)
 }
 
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnDynamic::insertFrom(const DB::IColumn & src_, size_t n)
-#else
-void ColumnDynamic::doInsertFrom(const DB::IColumn & src_, size_t n)
-#endif
 {
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
 
@@ -269,11 +263,7 @@ void ColumnDynamic::doInsertFrom(const DB::IColumn & src_, size_t n)
     variant_col.insertIntoVariantFrom(string_variant_discr, *tmp_string_column, 0);
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnDynamic::insertRangeFrom(const DB::IColumn & src_, size_t start, size_t length)
-#else
-void ColumnDynamic::doInsertRangeFrom(const DB::IColumn & src_, size_t start, size_t length)
-#endif
 {
     if (start + length > src_.size())
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnDynamic::insertRangeFrom method. "
@@ -439,11 +429,7 @@ void ColumnDynamic::doInsertRangeFrom(const DB::IColumn & src_, size_t start, si
     }
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnDynamic::insertManyFrom(const DB::IColumn & src_, size_t position, size_t length)
-#else
-void ColumnDynamic::doInsertManyFrom(const DB::IColumn & src_, size_t position, size_t length)
-#endif
 {
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
 
@@ -495,7 +481,7 @@ StringRef ColumnDynamic::serializeValueIntoArena(size_t n, DB::Arena & arena, co
     /// We cannot use Variant serialization here as it serializes discriminator + value,
     /// but Dynamic doesn't have fixed mapping discriminator <-> variant type
     /// as different Dynamic column can have different Variants.
-    /// Instead, we serialize null bit + variant type in binary format (size + bytes) + value.
+    /// Instead, we serialize null bit + variant type name (size + bytes) + value.
     const auto & variant_col = assert_cast<const ColumnVariant &>(*variant_column);
     auto discr = variant_col.globalDiscriminatorAt(n);
     StringRef res;
@@ -509,15 +495,14 @@ StringRef ColumnDynamic::serializeValueIntoArena(size_t n, DB::Arena & arena, co
         return res;
     }
 
-    const auto & variant_type = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariant(discr);
-    String variant_type_binary_data = encodeDataType(variant_type);
-    size_t variant_type_binary_data_size = variant_type_binary_data.size();
-    char * pos = arena.allocContinue(sizeof(UInt8) + sizeof(size_t) + variant_type_binary_data.size(), begin);
+    const auto & variant_name = variant_info.variant_names[discr];
+    size_t variant_name_size = variant_name.size();
+    char * pos = arena.allocContinue(sizeof(UInt8) + sizeof(size_t) + variant_name.size(), begin);
     memcpy(pos, &null_bit, sizeof(UInt8));
-    memcpy(pos + sizeof(UInt8), &variant_type_binary_data_size, sizeof(size_t));
-    memcpy(pos + sizeof(UInt8) + sizeof(size_t), variant_type_binary_data.data(), variant_type_binary_data.size());
+    memcpy(pos + sizeof(UInt8), &variant_name_size, sizeof(size_t));
+    memcpy(pos + sizeof(UInt8) + sizeof(size_t), variant_name.data(), variant_name.size());
     res.data = pos;
-    res.size = sizeof(UInt8) + sizeof(size_t) + variant_type_binary_data.size();
+    res.size = sizeof(UInt8) + sizeof(size_t) + variant_name.size();
 
     auto value_ref = variant_col.getVariantByGlobalDiscriminator(discr).serializeValueIntoArena(variant_col.offsetAt(n), arena, begin);
     res.data = value_ref.data - res.size;
@@ -536,15 +521,13 @@ const char * ColumnDynamic::deserializeAndInsertFromArena(const char * pos)
         return pos;
     }
 
-    /// Read variant type in binary format.
-    const size_t variant_type_binary_data_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(variant_type_binary_data_size);
-    String variant_type_binary_data;
-    variant_type_binary_data.resize(variant_type_binary_data_size);
-    memcpy(variant_type_binary_data.data(), pos, variant_type_binary_data_size);
-    pos += variant_type_binary_data_size;
-    auto variant_type = decodeDataType(variant_type_binary_data);
-    auto variant_name = variant_type->getName();
+    /// Read variant type name.
+    const size_t variant_name_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(variant_name_size);
+    String variant_name;
+    variant_name.resize(variant_name_size);
+    memcpy(variant_name.data(), pos, variant_name_size);
+    pos += variant_name_size;
     /// If we already have such variant, just deserialize it into corresponding variant column.
     auto it = variant_info.variant_name_to_discriminator.find(variant_name);
     if (it != variant_info.variant_name_to_discriminator.end())
@@ -554,6 +537,7 @@ const char * ColumnDynamic::deserializeAndInsertFromArena(const char * pos)
     }
 
     /// If we don't have such variant, add it.
+    auto variant_type = DataTypeFactory::instance().get(variant_name);
     if (likely(addNewVariant(variant_type)))
     {
         auto discr = variant_info.variant_name_to_discriminator[variant_name];
@@ -579,13 +563,13 @@ const char * ColumnDynamic::skipSerializedInArena(const char * pos) const
     if (null_bit)
         return pos;
 
-    const size_t variant_type_binary_data_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(variant_type_binary_data_size);
-    String variant_type_binary_data;
-    variant_type_binary_data.resize(variant_type_binary_data_size);
-    memcpy(variant_type_binary_data.data(), pos, variant_type_binary_data_size);
-    pos += variant_type_binary_data_size;
-    auto tmp_variant_column = decodeDataType(variant_type_binary_data)->createColumn();
+    const size_t variant_name_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(variant_name_size);
+    String variant_name;
+    variant_name.resize(variant_name_size);
+    memcpy(variant_name.data(), pos, variant_name_size);
+    pos += variant_name_size;
+    auto tmp_variant_column = DataTypeFactory::instance().get(variant_name)->createColumn();
     return tmp_variant_column->skipSerializedInArena(pos);
 }
 
@@ -603,11 +587,7 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
     variant_col.getVariantByGlobalDiscriminator(discr).updateHashWithValue(variant_col.offsetAt(n), hash);
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnDynamic::compareAt(size_t n, size_t m, const DB::IColumn & rhs, int nan_direction_hint) const
-#else
-int ColumnDynamic::doCompareAt(size_t n, size_t m, const DB::IColumn & rhs, int nan_direction_hint) const
-#endif
 {
     const auto & left_variant = assert_cast<const ColumnVariant &>(*variant_column);
     const auto & right_dynamic = assert_cast<const ColumnDynamic &>(rhs);
@@ -641,116 +621,6 @@ ColumnPtr ColumnDynamic::compress() const
         {
             return ColumnDynamic::create(my_variant_compressed->decompress(), my_variant_info, my_max_dynamic_types, my_statistics);
         });
-}
-
-void ColumnDynamic::prepareForSquashing(const Columns & source_columns)
-{
-    if (source_columns.empty())
-        return;
-
-    /// Internal variants of source dynamic columns may differ.
-    /// We want to preallocate memory for all variants we will have after squashing.
-    /// It may happen that the total number of variants in source columns will
-    /// exceed the limit, in this case we will choose the most frequent variants.
-
-    /// First, preallocate memory for variant discriminators and offsets.
-    size_t new_size = size();
-    for (const auto & source_column : source_columns)
-        new_size += source_column->size();
-    auto & variant_col = getVariantColumn();
-    variant_col.getLocalDiscriminators().reserve_exact(new_size);
-    variant_col.getOffsets().reserve_exact(new_size);
-
-    /// Second, collect all variants and their total sizes.
-    std::unordered_map<String, size_t> total_variant_sizes;
-    DataTypes all_variants;
-
-    auto add_variants = [&](const ColumnDynamic & source_dynamic)
-    {
-        const auto & source_variant_column = source_dynamic.getVariantColumn();
-        const auto & source_variant_info = source_dynamic.getVariantInfo();
-        const auto & source_variants = assert_cast<const DataTypeVariant &>(*source_variant_info.variant_type).getVariants();
-
-        for (size_t i = 0; i != source_variants.size(); ++i)
-        {
-            const auto & variant_name = source_variant_info.variant_names[i];
-            auto it = total_variant_sizes.find(variant_name);
-            /// Add this variant to the list of all variants if we didn't see it yet.
-            if (it == total_variant_sizes.end())
-            {
-                all_variants.push_back(source_variants[i]);
-                it = total_variant_sizes.emplace(variant_name, 0).first;
-            }
-
-            it->second += source_variant_column.getVariantByGlobalDiscriminator(i).size();
-        }
-    };
-
-    for (const auto & source_column : source_columns)
-        add_variants(assert_cast<const ColumnDynamic &>(*source_column));
-
-    /// Add variants from this dynamic column.
-    add_variants(*this);
-
-    DataTypePtr result_variant_type;
-    /// Check if the number of all variants exceeds the limit.
-    if (all_variants.size() > max_dynamic_types || (all_variants.size() == max_dynamic_types && !total_variant_sizes.contains("String")))
-    {
-        /// We want to keep the most frequent variants in the resulting dynamic column.
-        DataTypes result_variants;
-        result_variants.reserve(max_dynamic_types);
-        /// Add variants from current variant column as we will not rewrite it.
-        for (const auto & variant : assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants())
-            result_variants.push_back(variant);
-        /// Add String variant in advance (if we didn't add it yet) as we must have it across variants when we reach the limit.
-        if (!variant_info.variant_name_to_discriminator.contains("String"))
-            result_variants.push_back(std::make_shared<DataTypeString>());
-
-        /// Create list of remaining variants with their sizes and sort it.
-        std::vector<std::pair<size_t, DataTypePtr>> variants_with_sizes;
-        variants_with_sizes.reserve(all_variants.size() - variant_info.variant_names.size());
-        for (const auto & variant : all_variants)
-        {
-            /// Add variant to the list only of we didn't add it yet.
-            auto variant_name = variant->getName();
-            if (variant_name != "String" && !variant_info.variant_name_to_discriminator.contains(variant_name))
-                variants_with_sizes.emplace_back(total_variant_sizes[variant->getName()], variant);
-        }
-
-        std::sort(variants_with_sizes.begin(), variants_with_sizes.end(), std::greater());
-        /// Add the most frequent variants until we reach max_dynamic_types.
-        size_t num_new_variants = max_dynamic_types - result_variants.size();
-        for (size_t i = 0; i != num_new_variants; ++i)
-            result_variants.push_back(variants_with_sizes[i].second);
-
-        result_variant_type = std::make_shared<DataTypeVariant>(result_variants);
-    }
-    else
-    {
-        result_variant_type = std::make_shared<DataTypeVariant>(all_variants);
-    }
-
-    if (!result_variant_type->equals(*variant_info.variant_type))
-        updateVariantInfoAndExpandVariantColumn(result_variant_type);
-
-    /// Now current dynamic column has all resulting variants and we can call
-    /// prepareForSquashing on them to preallocate the memory.
-    for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
-    {
-        Columns source_variant_columns;
-        source_variant_columns.reserve(source_columns.size());
-        for (const auto & source_column : source_columns)
-        {
-            const auto & source_dynamic_column = assert_cast<const ColumnDynamic &>(*source_column);
-            const auto & source_variant_info = source_dynamic_column.getVariantInfo();
-            /// Try to find this variant in the current source column.
-            auto it = source_variant_info.variant_name_to_discriminator.find(variant_info.variant_names[i]);
-            if (it != source_variant_info.variant_name_to_discriminator.end())
-                source_variant_columns.push_back(source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second));
-        }
-
-        variant_col.getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns);
-    }
 }
 
 void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source_columns)

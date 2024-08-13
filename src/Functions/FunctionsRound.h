@@ -500,7 +500,7 @@ inline Scale getScaleArg(const ColumnConst* scale_col)
 {
     const auto & scale_field = scale_col->getField();
 
-    Int64 scale64 = scale_field.safeGet<Int64>();
+    Int64 scale64 = scale_field.get<Int64>();
     validateScale(scale64);
 
     return scale64;
@@ -632,7 +632,7 @@ public:
                         Scale raw_scale = scale64;
 
                         DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::applyOne(value_col_typed->getElement(i), value_col_typed->getScale(),
-                            reinterpret_cast<typename ColumnDecimal<T>::NativeT&>(col_res->getElement(i)), raw_scale);
+                            reinterpret_cast<ColumnDecimal<T>::NativeT&>(col_res->getElement(i)), raw_scale);
                     }
                 }
             }
@@ -673,7 +673,7 @@ public:
         FunctionArgumentDescriptors optional_args{
             {"N", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "The number of decimal places to round to"},
         };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         return arguments[0].type;
     }
@@ -854,7 +854,7 @@ private:
         using ValueType = typename Container::value_type;
         std::vector<ValueType> boundary_values(boundaries.size());
         for (size_t i = 0; i < boundaries.size(); ++i)
-            boundary_values[i] = static_cast<ValueType>(boundaries[i].safeGet<ValueType>());
+            boundary_values[i] = static_cast<ValueType>(boundaries[i].get<ValueType>());
 
         ::sort(boundary_values.begin(), boundary_values.end());
         boundary_values.erase(std::unique(boundary_values.begin(), boundary_values.end()), boundary_values.end());

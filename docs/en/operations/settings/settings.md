@@ -1170,10 +1170,6 @@ Data in the VALUES clause of INSERT queries is processed by a separate stream pa
 
 Default value: 262144 (= 256 KiB).
 
-:::note
-`max_query_size` cannot be set within an SQL query (e.g., `SELECT now() SETTINGS max_query_size=10000`) because ClickHouse needs to allocate a buffer to parse the query, and this buffer size is determined by the `max_query_size` setting, which must be configured before the query is executed.
-:::
-
 ## max_parser_depth {#max_parser_depth}
 
 Limits maximum recursion depth in the recursive descent parser. Allows controlling the stack size.
@@ -1358,24 +1354,11 @@ Connection pool size for PostgreSQL table engine and database engine.
 
 Default value: 16
 
-## postgresql_connection_attempt_timeout {#postgresql-connection-attempt-timeout}
-
-Connection timeout in seconds of a single attempt to connect PostgreSQL end-point.
-The value is passed as a `connect_timeout` parameter of the connection URL.
-
-Default value: `2`.
-
 ## postgresql_connection_pool_wait_timeout {#postgresql-connection-pool-wait-timeout}
 
 Connection pool push/pop timeout on empty pool for PostgreSQL table engine and database engine. By default it will block on empty pool.
 
 Default value: 5000
-
-## postgresql_connection_pool_retries {#postgresql-connection-pool-retries}
-
-The maximum number of retries to establish a connection with the PostgreSQL end-point.
-
-Default value: `2`.
 
 ## postgresql_connection_pool_auto_close_connection {#postgresql-connection-pool-auto-close-connection}
 
@@ -2553,7 +2536,7 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 
-Default value: `1`.
+Default value: `0`.
 
 ## optimize_trivial_count_query {#optimize-trivial-count-query}
 
@@ -4051,7 +4034,7 @@ Rewrite aggregate functions with if expression as argument when logically equiva
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
 
 :::note
-Supported only with experimental analyzer (`enable_analyzer = 1`).
+Supported only with experimental analyzer (`allow_experimental_analyzer = 1`).
 :::
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
@@ -4629,8 +4612,8 @@ Default Value: 5.
 
 ## memory_overcommit_ratio_denominator {#memory_overcommit_ratio_denominator}
 
-It represents the soft memory limit when the hard limit is reached on the global level.
-This value is used to compute the overcommit ratio for the query.
+It represents soft memory limit in case when hard limit is reached on user level.
+This value is used to compute overcommit ratio for the query.
 Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 
@@ -4646,8 +4629,8 @@ Default value: `5000000`.
 
 ## memory_overcommit_ratio_denominator_for_user {#memory_overcommit_ratio_denominator_for_user}
 
-It represents the soft memory limit when the hard limit is reached on the user level.
-This value is used to compute the overcommit ratio for the query.
+It represents soft memory limit in case when hard limit is reached on global level.
+This value is used to compute overcommit ratio for the query.
 Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 
@@ -5608,32 +5591,3 @@ Default value: `10000000`.
 Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 
 Default value: `1GiB`.
-
-## restore_replace_external_engines_to_null
-
-For testing purposes. Replaces all external engines to Null to not initiate external connections.
-
-Default value: `False`
-
-## restore_replace_external_table_functions_to_null
-
-For testing purposes. Replaces all external table functions to Null to not initiate external connections.
-
-Default value: `False`
-
-## disable_insertion_and_mutation
-
-Disable all insert and mutations (alter table update / alter table delete / alter table drop partition). Set to true, can make this node focus on reading queries.
-
-Default value: `false`.
-
-## allow_experimental_time_series_table {#allow-experimental-time-series-table}
-
-Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.
-
-Possible values:
-
-- 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
-- 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
-
-Default value: `0`.
