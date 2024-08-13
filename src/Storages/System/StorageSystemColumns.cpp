@@ -349,7 +349,7 @@ void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
 
         /// Must prepare sets here, initializePipeline() would be too late, see comment on FutureSetFromSubquery.
         if (virtual_columns_filter)
-            VirtualColumnUtils::buildSetsForDAG(virtual_columns_filter, context);
+            VirtualColumnUtils::buildSetsForDAG(*virtual_columns_filter, context);
     }
 }
 
