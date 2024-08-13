@@ -100,8 +100,6 @@ private:
 
     bool isSizeOkForSampling(UInt64 size) const;
 
-    Stopwatch stopwatch;
-
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
     [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);

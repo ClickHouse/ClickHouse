@@ -620,6 +620,7 @@ bool canEnqueueBackgroundTask()
 
 void MemoryTracker::updateMemoryCredits(size_t size)
 {
+    static thread_local Stopwatch stopwatch;
     size_t delta = size * stopwatch.elapsedMicroseconds();
     ProfileEvents::increment(ProfileEvents::MemoryCredits, delta);
     stopwatch.restart();
