@@ -361,8 +361,8 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
                 };
                 if (!(ok_cast(min_type, min.getType()) && ok_cast(max_type, max.getType())) &&
                     !(min == max) &&
-                    !(min_type == Field::Types::Int64 && min.getType() == Field::Types::UInt64 && min.get<Int64>() >= 0) &&
-                    !(max_type == Field::Types::UInt64 && max.getType() == Field::Types::Int64 && max.get<UInt64>() <= UInt64(INT64_MAX)))
+                    !(min_type == Field::Types::Int64 && min.getType() == Field::Types::UInt64 && min.safeGet<Int64>() >= 0) &&
+                    !(max_type == Field::Types::UInt64 && max.getType() == Field::Types::Int64 && max.safeGet<UInt64>() <= UInt64(INT64_MAX)))
                 {
                     min = Field();
                     max = Field();
