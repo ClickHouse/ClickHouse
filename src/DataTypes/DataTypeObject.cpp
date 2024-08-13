@@ -69,7 +69,7 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
             "Object data type family must have a const string as its schema name parameter");
 
-    return std::make_shared<DataTypeObject>(literal->value.get<const String &>(), is_nullable);
+    return std::make_shared<DataTypeObject>(literal->value.safeGet<const String &>(), is_nullable);
 }
 
 void registerDataTypeObject(DataTypeFactory & factory)
