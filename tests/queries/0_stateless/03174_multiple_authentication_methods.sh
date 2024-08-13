@@ -138,4 +138,7 @@ ${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED WITH BY '1';" 2>&1 
 echo "Create user with ADD identification, should fail, add is not allowed for create query"
 ${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} ADD IDENTIFIED WITH plaintext_password by '1'" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
 
+echo "Trailing comma should result in syntax error"
+${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password by '1'," 2>&1 | grep -m1 -o "SYNTAX_ERROR"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"

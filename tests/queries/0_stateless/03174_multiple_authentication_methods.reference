@@ -47,3 +47,5 @@ Use WITH without providing authentication type, should fail
 Syntax error
 Create user with ADD identification, should fail, add is not allowed for create query
 BAD_ARGUMENTS
+Trailing comma should result in syntax error
+SYNTAX_ERROR

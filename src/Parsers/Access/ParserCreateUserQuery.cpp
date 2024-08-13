@@ -225,21 +225,35 @@ namespace
             if (!ParserKeyword{Keyword::IDENTIFIED}.ignore(pos, expected))
                 return false;
 
-            bool is_type_specifier_mandatory = ParserKeyword{Keyword::WITH}.ignore(pos, expected);
-
-            std::shared_ptr<ASTAuthenticationData> ast_authentication_data;
-            while (parseAuthenticationData(pos, expected, ast_authentication_data, is_type_specifier_mandatory))
+            // Parse first authentication method which doesn't come with a leading comma
             {
-                authentication_methods.push_back(ast_authentication_data);
+                bool is_type_specifier_mandatory = ParserKeyword{Keyword::WITH}.ignore(pos, expected);
 
-                if (!ParserToken{TokenType::Comma}.ignore(pos, expected))
+                std::shared_ptr<ASTAuthenticationData> ast_authentication_data;
+
+                if (!parseAuthenticationData(pos, expected, ast_authentication_data, is_type_specifier_mandatory))
+                {
+                    return false;
+                }
+
+                authentication_methods.push_back(ast_authentication_data);
+            }
+
+            // Need to save current position, process comma and only update real position in case there is an authentication method after
+            // the comma. Otherwise, position should not be changed as it needs to be processed by other parsers and possibly throw error
+            // on trailing comma.
+            IParserBase::Pos aux_pos = pos;
+            while (ParserToken{TokenType::Comma}.ignore(aux_pos, expected))
+            {
+                std::shared_ptr<ASTAuthenticationData> ast_authentication_data;
+
+                if (!parseAuthenticationData(aux_pos, expected, ast_authentication_data, false))
                 {
                     break;
                 }
 
-                ParserToken{TokenType::Whitespace}.ignore(pos, expected);
-
-                is_type_specifier_mandatory = false;
+                pos = aux_pos;
+                authentication_methods.push_back(ast_authentication_data);
             }
 
             return !authentication_methods.empty();
