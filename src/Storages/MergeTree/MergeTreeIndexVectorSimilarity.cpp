@@ -364,7 +364,7 @@ std::vector<size_t> MergeTreeIndexConditionVectorSimilarity::getUsefulRanges(Mer
     ProfileEvents::increment(ProfileEvents::USearchSearchVisitedMembers, result.visited_members);
     ProfileEvents::increment(ProfileEvents::USearchSearchComputedDistances, result.computed_distances);
 
-    std::vector<USearchIndex::key_t> neighbors(result.size()); /// indexes of dots which were closest to the reference vector
+    std::vector<USearchIndex::vector_key_t> neighbors(result.size()); /// indexes of dots which were closest to the reference vector
     std::vector<USearchIndex::distance_t> distances(result.size());
     result.dump_to(neighbors.data(), distances.data());
 
