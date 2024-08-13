@@ -945,7 +945,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
 MergeTask::StageRuntimeContextPtr MergeTask::MergeProjectionsStage::getContextForNextStage()
 {
     /// Do not increment for projection stage because time is already accounted in main task.
-    /// The projection stage has its own empty projection stage which may add a drift of severals milliseconds.
+    /// The projection stage has its own empty projection stage which may add a drift of several milliseconds.
     if (global_ctx->parent_part == nullptr)
     {
         ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);

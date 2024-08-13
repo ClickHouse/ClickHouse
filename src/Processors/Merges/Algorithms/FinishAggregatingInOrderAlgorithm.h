@@ -50,7 +50,7 @@ public:
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
-    MergedStats getMergedStats() const override { return  {.bytes = accumulated_bytes, .rows = accumulated_rows, .blocks = chunk_num}; }
+    MergedStats getMergedStats() const override { return {.bytes = accumulated_bytes, .rows = accumulated_rows, .blocks = chunk_num}; }
 
 private:
     Chunk prepareToMerge();
