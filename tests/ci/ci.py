@@ -985,6 +985,7 @@ def _run_test(job_name: str, run_command: str) -> int:
     else:
         print("Use run command from the workflow")
     env["CHECK_NAME"] = job_name
+    env["MAX_RUN_TIME"] = str(timeout or 0)
     print(f"Going to start run command [{run_command}]")
     stopwatch = Stopwatch()
     job_log = Path(TEMP_PATH) / "job_log.txt"

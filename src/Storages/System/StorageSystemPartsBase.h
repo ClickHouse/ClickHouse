@@ -52,13 +52,13 @@ public:
         {
             StoragesInfo info;
 
-            info.database = (*database_column)[next_row].get<String>();
-            info.table = (*table_column)[next_row].get<String>();
-            UUID storage_uuid = (*storage_uuid_column)[next_row].get<UUID>();
+            info.database = (*database_column)[next_row].safeGet<String>();
+            info.table = (*table_column)[next_row].safeGet<String>();
+            UUID storage_uuid = (*storage_uuid_column)[next_row].safeGet<UUID>();
 
             auto is_same_table = [&storage_uuid, this] (size_t row) -> bool
             {
-                return (*storage_uuid_column)[row].get<UUID>() == storage_uuid;
+                return (*storage_uuid_column)[row].safeGet<UUID>() == storage_uuid;
             };
 
             /// We may have two rows per table which differ in 'active' value.
@@ -66,7 +66,7 @@ public:
             /// must collect the inactive parts. Remember this fact in StoragesInfo.
             for (; next_row < rows && is_same_table(next_row); ++next_row)
             {
-                const auto active = (*active_column)[next_row].get<UInt64>();
+                const auto active = (*active_column)[next_row].safeGet<UInt64>();
                 if (active == 0)
                     info.need_inactive_parts = true;
             }
