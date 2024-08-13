@@ -68,22 +68,21 @@ Field QueryFuzzer::getRandomField(int type)
     {
     case 0:
     {
-        return bad_int64_values[fuzz_rand() % (sizeof(bad_int64_values)
-                / sizeof(*bad_int64_values))];
+        return bad_int64_values[fuzz_rand() % std::size(bad_int64_values)];
     }
     case 1:
     {
         static constexpr double values[]
                 = {NAN, INFINITY, -INFINITY, 0., -0., 0.0001, 0.5, 0.9999,
                    1., 1.0001, 2., 10.0001, 100.0001, 1000.0001, 1e10, 1e20,
-                  FLT_MIN, FLT_MIN + FLT_EPSILON, FLT_MAX, FLT_MAX + FLT_EPSILON}; return values[fuzz_rand() % (sizeof(values) / sizeof(*values))];
+                  FLT_MIN, FLT_MIN + FLT_EPSILON, FLT_MAX, FLT_MAX + FLT_EPSILON}; return values[fuzz_rand() % std::size(values)];
     }
     case 2:
     {
         static constexpr UInt64 scales[] = {0, 1, 2, 10};
         return DecimalField<Decimal64>(
-            bad_int64_values[fuzz_rand() % (sizeof(bad_int64_values) / sizeof(*bad_int64_values))],
-            static_cast<UInt32>(scales[fuzz_rand() % (sizeof(scales) / sizeof(*scales))])
+            bad_int64_values[fuzz_rand() % std::size(bad_int64_values)],
+            static_cast<UInt32>(scales[fuzz_rand() % std::size(scales)])
         );
     }
     default:
@@ -133,7 +132,7 @@ Field QueryFuzzer::fuzzField(Field field)
 
     if (type == Field::Types::String)
     {
-        auto & str = field.get<std::string>();
+        auto & str = field.safeGet<std::string>();
         UInt64 action = fuzz_rand() % 10;
         switch (action)
         {
@@ -159,13 +158,14 @@ Field QueryFuzzer::fuzzField(Field field)
     }
     else if (type == Field::Types::Array)
     {
-        auto & arr = field.get<Array>();
+        auto & arr = field.safeGet<Array>();
 
         if (fuzz_rand() % 5 == 0 && !arr.empty())
         {
             size_t pos = fuzz_rand() % arr.size();
             arr.erase(arr.begin() + pos);
-            std::cerr << "erased\n";
+            if (debug_stream)
+                *debug_stream << "erased\n";
         }
 
         if (fuzz_rand() % 5 == 0)
@@ -174,12 +174,14 @@ Field QueryFuzzer::fuzzField(Field field)
             {
                 size_t pos = fuzz_rand() % arr.size();
                 arr.insert(arr.begin() + pos, fuzzField(arr[pos]));
-                std::cerr << fmt::format("inserted (pos {})\n", pos);
+                if (debug_stream)
+                    *debug_stream << fmt::format("inserted (pos {})\n", pos);
             }
             else
             {
                 arr.insert(arr.begin(), getRandomField(0));
-                std::cerr << "inserted (0)\n";
+                if (debug_stream)
+                    *debug_stream << "inserted (0)\n";
             }
 
         }
@@ -191,13 +193,15 @@ Field QueryFuzzer::fuzzField(Field field)
     }
     else if (type == Field::Types::Tuple)
     {
-        auto & arr = field.get<Tuple>();
+        auto & arr = field.safeGet<Tuple>();
 
         if (fuzz_rand() % 5 == 0 && !arr.empty())
         {
             size_t pos = fuzz_rand() % arr.size();
             arr.erase(arr.begin() + pos);
-            std::cerr << "erased\n";
+
+            if (debug_stream)
+                *debug_stream << "erased\n";
         }
 
         if (fuzz_rand() % 5 == 0)
@@ -206,12 +210,16 @@ Field QueryFuzzer::fuzzField(Field field)
             {
                 size_t pos = fuzz_rand() % arr.size();
                 arr.insert(arr.begin() + pos, fuzzField(arr[pos]));
-                std::cerr << fmt::format("inserted (pos {})\n", pos);
+
+                if (debug_stream)
+                    *debug_stream << fmt::format("inserted (pos {})\n", pos);
             }
             else
             {
                 arr.insert(arr.begin(), getRandomField(0));
-                std::cerr << "inserted (0)\n";
+
+                if (debug_stream)
+                    *debug_stream << "inserted (0)\n";
             }
 
         }
@@ -344,7 +352,8 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast)
         }
         else
         {
-            std::cerr << "No random column.\n";
+            if (debug_stream)
+                *debug_stream << "No random column.\n";
         }
     }
 
@@ -378,7 +387,8 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
         if (col)
             impl->children.insert(pos, col);
         else
-            std::cerr << "No random column.\n";
+            if (debug_stream)
+                *debug_stream << "No random column.\n";
     }
 
     // We don't have to recurse here to fuzz the children, this is handled by
@@ -912,17 +922,17 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
     auto type = l->value.getType();
     if (type == Field::Types::Which::String && fuzz_rand() % 7 == 0)
     {
-        String value = l->value.get<String>();
+        String value = l->value.safeGet<String>();
         child = makeASTFunction(
             "toFixedString", std::make_shared<ASTLiteral>(value), std::make_shared<ASTLiteral>(static_cast<UInt64>(value.size())));
     }
     else if (type == Field::Types::Which::UInt64 && fuzz_rand() % 7 == 0)
     {
-        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toUInt128" : "toUInt256", std::make_shared<ASTLiteral>(l->value.get<UInt64>()));
+        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toUInt128" : "toUInt256", std::make_shared<ASTLiteral>(l->value.safeGet<UInt64>()));
     }
     else if (type == Field::Types::Which::Int64 && fuzz_rand() % 7 == 0)
     {
-        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toInt128" : "toInt256", std::make_shared<ASTLiteral>(l->value.get<Int64>()));
+        child = makeASTFunction(fuzz_rand() % 2 == 0 ? "toInt128" : "toInt256", std::make_shared<ASTLiteral>(l->value.safeGet<Int64>()));
     }
     else if (type == Field::Types::Which::Float64 && fuzz_rand() % 7 == 0)
     {
@@ -930,22 +940,22 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
         if (decimal == 0)
             child = makeASTFunction(
                 "toDecimal32",
-                std::make_shared<ASTLiteral>(l->value.get<Float64>()),
+                std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
                 std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 9)));
         else if (decimal == 1)
             child = makeASTFunction(
                 "toDecimal64",
-                std::make_shared<ASTLiteral>(l->value.get<Float64>()),
+                std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
                 std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 18)));
         else if (decimal == 2)
             child = makeASTFunction(
                 "toDecimal128",
-                std::make_shared<ASTLiteral>(l->value.get<Float64>()),
+                std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
                 std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 38)));
         else
             child = makeASTFunction(
                 "toDecimal256",
-                std::make_shared<ASTLiteral>(l->value.get<Float64>()),
+                std::make_shared<ASTLiteral>(l->value.safeGet<Float64>()),
                 std::make_shared<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 76)));
     }
 
@@ -1361,11 +1371,15 @@ void QueryFuzzer::fuzzMain(ASTPtr & ast)
     collectFuzzInfoMain(ast);
     fuzz(ast);
 
-    std::cout << std::endl;
-    WriteBufferFromOStream ast_buf(std::cout, 4096);
-    formatAST(*ast, ast_buf, false /*highlight*/);
-    ast_buf.finalize();
-    std::cout << std::endl << std::endl;
+    if (out_stream)
+    {
+        *out_stream << std::endl;
+
+        WriteBufferFromOStream ast_buf(*out_stream, 4096);
+        formatAST(*ast, ast_buf, false /*highlight*/);
+        ast_buf.finalize();
+        *out_stream << std::endl << std::endl;
+    }
 }
 
 }

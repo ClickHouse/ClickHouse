@@ -200,7 +200,7 @@ public:
 
                     if (value.isNull())
                         continue;
-                    if (value.get<UInt64>() == 0)
+                    if (value.safeGet<UInt64>() == 0)
                         continue;
 
                     instruction.condition_always_true = true;

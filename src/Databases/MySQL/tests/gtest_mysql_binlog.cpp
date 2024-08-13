@@ -281,12 +281,12 @@ static void testFile1(IBinlog & binlog, UInt64 timeout, bool filtered = false)
     ASSERT_EQ(write_event->table, "a");
     ASSERT_EQ(write_event->rows.size(), 1);
     ASSERT_EQ(write_event->rows[0].getType(), Field::Types::Tuple);
-    auto row_data = write_event->rows[0].get<const Tuple &>();
+    auto row_data = write_event->rows[0].safeGet<const Tuple &>();
     ASSERT_EQ(row_data.size(), 4u);
-    ASSERT_EQ(row_data[0].get<UInt64>(), 1u);
-    ASSERT_EQ(row_data[1].get<UInt64>(), 1u);
-    ASSERT_EQ(row_data[2].get<UInt64>(), 1u);
-    ASSERT_EQ(row_data[3].get<UInt64>(), 1u);
+    ASSERT_EQ(row_data[0].safeGet<UInt64>(), 1u);
+    ASSERT_EQ(row_data[1].safeGet<UInt64>(), 1u);
+    ASSERT_EQ(row_data[2].safeGet<UInt64>(), 1u);
+    ASSERT_EQ(row_data[3].safeGet<UInt64>(), 1u);
 
     ASSERT_TRUE(binlog.tryReadEvent(event, timeout));
     ++count;
@@ -342,18 +342,18 @@ static void testFile1(IBinlog & binlog, UInt64 timeout, bool filtered = false)
     ASSERT_EQ(update_event->table, "a");
     ASSERT_EQ(update_event->rows.size(), 2);
     ASSERT_EQ(update_event->rows[0].getType(), Field::Types::Tuple);
-    row_data = update_event->rows[0].get<const Tuple &>();
+    row_data = update_event->rows[0].safeGet<const Tuple &>();
     ASSERT_EQ(row_data.size(), 4u);
-    ASSERT_EQ(row_data[0].get<UInt64>(), 1u);
-    ASSERT_EQ(row_data[1].get<UInt64>(), 1u);
-    ASSERT_EQ(row_data[2].get<UInt64>(), 1u);
-    ASSERT_EQ(row_data[3].get<UInt64>(), 1u);
-    row_data = update_event->rows[1].get<const Tuple &>();
+    ASSERT_EQ(row_data[0].safeGet<UInt64>(), 1u);
+    ASSERT_EQ(row_data[1].safeGet<UInt64>(), 1u);
+    ASSERT_EQ(row_data[2].safeGet<UInt64>(), 1u);
+    ASSERT_EQ(row_data[3].safeGet<UInt64>(), 1u);
+    row_data = update_event->rows[1].safeGet<const Tuple &>();
     ASSERT_EQ(row_data.size(), 4u);
-    ASSERT_EQ(row_data[0].get<UInt64>(), 1u);
-    ASSERT_EQ(row_data[1].get<UInt64>(), 2u);
-    ASSERT_EQ(row_data[2].get<UInt64>(), 1u);
-    ASSERT_EQ(row_data[3].get<UInt64>(), 1u);
+    ASSERT_EQ(row_data[0].safeGet<UInt64>(), 1u);
+    ASSERT_EQ(row_data[1].safeGet<UInt64>(), 2u);
+    ASSERT_EQ(row_data[2].safeGet<UInt64>(), 1u);
+    ASSERT_EQ(row_data[3].safeGet<UInt64>(), 1u);
 
     ASSERT_TRUE(binlog.tryReadEvent(event, timeout));
     ++count;
