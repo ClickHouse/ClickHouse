@@ -187,14 +187,6 @@ else ()
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
 endif ()
 
-if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
-    # Can be lld or ld-lld or lld-13 or /path/to/lld.
-    if (LINKER_NAME MATCHES "lld")
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gdb-index")
-        message (STATUS "Adding .gdb-index via --gdb-index linker option.")
-    endif ()
-endif()
-
 if (NOT (SANITIZE_COVERAGE OR WITH_COVERAGE)
     AND (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
         OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
@@ -402,7 +394,7 @@ if ((NOT OS_LINUX AND NOT OS_ANDROID) OR (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") 
     set(ENABLE_GWP_ASAN OFF)
 endif ()
 
-option (ENABLE_FIU "Enable Fiu" ON)
+option (ENABLE_LIBFIU "Enable libfiu" ON)
 
 option(WERROR "Enable -Werror compiler option" ON)
 

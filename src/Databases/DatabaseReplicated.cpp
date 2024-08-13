@@ -833,8 +833,8 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
     if (!arg1 || !arg2 || arg1->value.getType() != Field::Types::String || arg2->value.getType() != Field::Types::String)
         return;
 
-    String maybe_path = arg1->value.get<String>();
-    String maybe_replica = arg2->value.get<String>();
+    String maybe_path = arg1->value.safeGet<String>();
+    String maybe_replica = arg2->value.safeGet<String>();
 
     /// Looks like it's ReplicatedMergeTree with explicit zookeeper_path and replica_name arguments.
     /// Let's ensure that some macros are used.
