@@ -73,7 +73,7 @@ sleep 0.1
 for i in {1..10}
 do
 
-    if [ $(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and table = 'mutations_cleaner'") -eq 2 ]; then
+    if [ "$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and table = 'mutations_cleaner'")" -eq 2 ]; then
         break
     fi
 
