@@ -224,21 +224,18 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
         if (data.empty())
             return Field();
 
-        /// Long integers.
-        auto reinterpret_fixed_string = [&](auto x)
-        {
-            if (data.size() != sizeof(x))
-                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected {} size: {}", fieldTypeToString(Field::TypeToEnum<decltype(x)>::value), data.size());
-            memcpy(&x, data.data(), data.size());
-            return Field(x);
-        };
+        /// Long integers, encoded either as text or as little-endian bytes.
+        /// The parquet file doesn't know that it's numbers, so the min/max are produced by comparing
+        /// strings lexicographically. So these min and max are mostly useless to us.
+        /// There's one case where they're not useless: min == max; currently we don't make use of this.
         switch (type_hint)
         {
-            case TypeIndex::UInt128: return reinterpret_fixed_string(UInt128(0));
-            case TypeIndex::UInt256: return reinterpret_fixed_string(UInt256(0));
-            case TypeIndex::Int128:  return reinterpret_fixed_string(Int128(0));
-            case TypeIndex::Int256:  return reinterpret_fixed_string(Int256(0));
-            case TypeIndex::IPv6:    return reinterpret_fixed_string(IPv6(0));
+            case TypeIndex::UInt128:
+            case TypeIndex::UInt256:
+            case TypeIndex::Int128:
+            case TypeIndex::Int256:
+            case TypeIndex::IPv6:
+                return Field();
             default: break;
         }
 
