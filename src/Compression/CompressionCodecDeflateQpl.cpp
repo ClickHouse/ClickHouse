@@ -1,3 +1,7 @@
+#ifdef ENABLE_QPL_COMPRESSION
+
+#include <cstdio>
+#include <thread>
 #include <Compression/CompressionCodecDeflateQpl.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
@@ -7,10 +11,6 @@
 #include <Common/randomSeed.h>
 #include <base/scope_guard.h>
 #include <base/getPageSize.h>
-#include <cstdio>
-#include <thread>
-
-#if USE_QPL
 
 #include "libaccel_config.h"
 
@@ -466,6 +466,7 @@ void CompressionCodecDeflateQpl::doDecompressData(const char * source, UInt32 so
             sw_codec->doDecompressData(source, source_size, dest, uncompressed_size);
             return;
     }
+    UNREACHABLE();
 }
 
 void CompressionCodecDeflateQpl::flushAsynchronousDecompressRequests()

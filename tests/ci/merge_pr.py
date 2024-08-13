@@ -4,7 +4,6 @@
 
 import argparse
 import logging
-import sys
 from datetime import datetime
 from os import getenv
 from pprint import pformat
@@ -14,19 +13,11 @@ from github.PaginatedList import PaginatedList
 from github.PullRequestReview import PullRequestReview
 from github.WorkflowRun import WorkflowRun
 
-from commit_status_helper import (
-    get_commit_filtered_statuses,
-    get_commit,
-    trigger_mergeable_check,
-    update_upstream_sync_status,
-)
+from commit_status_helper import get_commit_filtered_statuses
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub, NamedUser, PullRequest, Repository
 from pr_info import PRInfo
 from report import SUCCESS
-from env_helper import GITHUB_UPSTREAM_REPOSITORY, GITHUB_REPOSITORY
-from synchronizer_utils import SYNC_BRANCH_PREFIX
-from ci_config import CI
 
 # The team name for accepted approvals
 TEAM_NAME = getenv("GITHUB_TEAM_NAME", "core")
@@ -183,17 +174,6 @@ def parse_args() -> argparse.Namespace:
         help="if set, the script won't merge the PR, just check the conditions",
     )
     parser.add_argument(
-        "--set-ci-status",
-        action="store_true",
-        help="if set, only update/set Mergeable Check status",
-    )
-    parser.add_argument(
-        "--wf-status",
-        type=str,
-        default="",
-        help="overall workflow status [success|failure]. used with --set-ci-status only",
-    )
-    parser.add_argument(
         "--check-approved",
         action="store_true",
         help="if set, checks that the PR is approved and no changes required",
@@ -246,52 +226,6 @@ def main():
     token = args.token or get_best_robot_token()
     gh = GitHub(token)
     repo = gh.get_repo(args.repo)
-
-    if args.set_ci_status:
-        CI.GH.print_workflow_results()
-        # set Mergeable check status and exit
-        commit = get_commit(gh, args.pr_info.sha)
-        statuses = get_commit_filtered_statuses(commit)
-
-        has_failed_statuses = False
-        for status in statuses:
-            print(f"Check status [{status.context}], [{status.state}]")
-            if (
-                CI.is_required(status.context)
-                and status.state != SUCCESS
-                and status.context != CI.StatusNames.SYNC
-            ):
-                print(
-                    f"WARNING: Not success status [{status.context}], [{status.state}]"
-                )
-                has_failed_statuses = True
-
-        workflow_ok = CI.is_workflow_ok()
-        if workflow_ok or has_failed_statuses:
-            # set Mergeable Check if workflow is successful (green)
-            # or if we have GH statuses with failures (red)
-            #    to avoid false-green on a died runner
-            state = trigger_mergeable_check(
-                commit,
-                statuses,
-            )
-            # Process upstream StatusNames.SYNC
-            pr_info = PRInfo()
-            if (
-                pr_info.head_ref.startswith(f"{SYNC_BRANCH_PREFIX}/pr/")
-                and GITHUB_REPOSITORY != GITHUB_UPSTREAM_REPOSITORY
-            ):
-                print("Updating upstream statuses")
-                update_upstream_sync_status(pr_info, state)
-        else:
-            print(
-                "Workflow failed but no failed statuses found (died runner?) - cannot set Mergeable Check status"
-            )
-        if workflow_ok and not has_failed_statuses:
-            sys.exit(0)
-        else:
-            sys.exit(1)
-
     # An ugly and not nice fix to patch the wrong organization URL,
     # see https://github.com/PyGithub/PyGithub/issues/2395#issuecomment-1378629710
     # pylint: disable=protected-access

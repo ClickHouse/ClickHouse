@@ -1,11 +1,11 @@
 #include <Backups/DDLAdjustingForBackupVisitor.h>
-#include <Core/ServerSettings.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/formatAST.h>
+#include <Interpreters/Context.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+
+#include <Parsers/formatAST.h>
 
 
 namespace DB
@@ -27,6 +27,9 @@ namespace
     {
         /// Precondition: engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree")
 
+        if (data.replicated_table_shared_id)
+            *data.replicated_table_shared_id = StorageReplicatedMergeTree::tryGetTableSharedIDFromCreateQuery(*data.create_query, data.global_context);
+
         /// Before storing the metadata in a backup we have to find a zookeeper path in its definition and turn the table's UUID in there
         /// back into "{uuid}", and also we probably can remove the zookeeper path and replica name if they're default.
         /// So we're kind of reverting what we had done to the table's definition in registerStorageMergeTree.cpp before we created this table.
@@ -46,8 +49,8 @@ namespace
         if (zookeeper_path_ast && (zookeeper_path_ast->value.getType() == Field::Types::String) &&
             replica_name_ast && (replica_name_ast->value.getType() == Field::Types::String))
         {
-            String & zookeeper_path_arg = zookeeper_path_ast->value.safeGet<String>();
-            String & replica_name_arg = replica_name_ast->value.safeGet<String>();
+            String & zookeeper_path_arg = zookeeper_path_ast->value.get<String>();
+            String & replica_name_arg = replica_name_ast->value.get<String>();
             if (create.uuid != UUIDHelpers::Nil)
             {
                 String table_uuid_str = toString(create.uuid);
@@ -95,9 +98,12 @@ void DDLAdjustingForBackupVisitor::visit(ASTPtr ast, const Data & data)
         visitCreateQuery(*create, data);
 }
 
-void adjustCreateQueryForBackup(ASTPtr ast, const ContextPtr & global_context)
+void adjustCreateQueryForBackup(ASTPtr ast, const ContextPtr & global_context, std::optional<String> * replicated_table_shared_id)
 {
-    DDLAdjustingForBackupVisitor::Data data{ast, global_context};
+    if (replicated_table_shared_id)
+        *replicated_table_shared_id = {};
+
+    DDLAdjustingForBackupVisitor::Data data{ast, global_context, replicated_table_shared_id};
     DDLAdjustingForBackupVisitor::Visitor{data}.visit(ast);
 }
 

@@ -122,7 +122,8 @@ public:
 
             if (request)
             {
-                incrementDequeued(request->cost);
+                dequeued_requests++;
+                dequeued_cost += request->cost;
                 return {request, !items.empty()};
             }
         }

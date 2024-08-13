@@ -300,12 +300,12 @@ public:
                     /// Compatibility with previous versions.
                     if (value.getType() == Field::Types::Decimal32)
                     {
-                        auto source = value.safeGet<DecimalField<Decimal32>>();
+                        auto source = value.get<DecimalField<Decimal32>>();
                         value = DecimalField<Decimal128>(source.getValue(), source.getScale());
                     }
                     else if (value.getType() == Field::Types::Decimal64)
                     {
-                        auto source = value.safeGet<DecimalField<Decimal64>>();
+                        auto source = value.get<DecimalField<Decimal64>>();
                         value = DecimalField<Decimal128>(source.getValue(), source.getScale());
                     }
 
@@ -355,7 +355,7 @@ public:
                     /// Compatibility with previous versions.
                     if (value.getType() == Field::Types::Decimal128)
                     {
-                        auto source = value.safeGet<DecimalField<Decimal128>>();
+                        auto source = value.get<DecimalField<Decimal128>>();
                         WhichDataType value_type(values_types[col_idx]);
                         if (value_type.isDecimal32())
                         {
@@ -560,7 +560,7 @@ private:
     template <typename FieldType>
     bool compareImpl(FieldType & x) const
     {
-        auto val = rhs.safeGet<FieldType>();
+        auto val = rhs.get<FieldType>();
         if (val > x)
         {
             x = val;
@@ -600,7 +600,7 @@ private:
     template <typename FieldType>
     bool compareImpl(FieldType & x) const
     {
-        auto val = rhs.safeGet<FieldType>();
+        auto val = rhs.get<FieldType>();
         if (val < x)
         {
             x = val;
@@ -711,7 +711,7 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
 
     const auto * array_type = checkAndGetDataType<DataTypeArray>(args[0].get());
     if (!array_type)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #1 for function {} must be an array, not {}",
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array, not {}",
             name, args[0]->getName());
 
     DataTypePtr keys_type = array_type->getNestedType();
@@ -722,8 +722,8 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
     {
         array_type = checkAndGetDataType<DataTypeArray>(args[i].get());
         if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} for function {} must be an array, not {}",
-                i + 1, name, args[i]->getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} for function {} must be an array.",
+                i, name);
         values_types.push_back(array_type->getNestedType());
     }
 

@@ -7,6 +7,7 @@
 
 #include <list>
 #include <memory>
+#include <set>
 #include <vector>
 
 namespace DB

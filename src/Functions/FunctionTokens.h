@@ -14,10 +14,9 @@
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 
 
 namespace DB
@@ -84,7 +83,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         Generator generator;
         generator.init(arguments, max_substrings_includes_remaining_string);
@@ -107,17 +106,18 @@ public:
             const ColumnString::Chars & src_chars = col_str->getChars();
             const ColumnString::Offsets & src_offsets = col_str->getOffsets();
 
-            res_offsets.reserve(input_rows_count);
-            res_strings_offsets.reserve(input_rows_count * 5);    /// Constant 5 - at random.
+            res_offsets.reserve(src_offsets.size());
+            res_strings_offsets.reserve(src_offsets.size() * 5);    /// Constant 5 - at random.
             res_strings_chars.reserve(src_chars.size());
 
             Pos token_begin = nullptr;
             Pos token_end = nullptr;
 
+            size_t size = src_offsets.size();
             ColumnString::Offset current_src_offset = 0;
             ColumnArray::Offset current_dst_offset = 0;
             ColumnString::Offset current_dst_strings_offset = 0;
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 Pos pos = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
                 current_src_offset = src_offsets[i];
@@ -194,7 +194,7 @@ static inline void checkArgumentsWithSeparatorAndOptionalMaxSubstrings(
         {"max_substrings", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), isColumnConst, "const Number"},
     };
 
-    validateFunctionArguments(func, arguments, mandatory_args, optional_args);
+    validateFunctionArgumentTypes(func, arguments, mandatory_args, optional_args);
 }
 
 static inline void checkArgumentsWithOptionalMaxSubstrings(const IFunction & func, const ColumnsWithTypeAndName & arguments)
@@ -207,7 +207,7 @@ static inline void checkArgumentsWithOptionalMaxSubstrings(const IFunction & fun
         {"max_substrings", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), isColumnConst, "const Number"},
     };
 
-    validateFunctionArguments(func, arguments, mandatory_args, optional_args);
+    validateFunctionArgumentTypes(func, arguments, mandatory_args, optional_args);
 }
 
 }

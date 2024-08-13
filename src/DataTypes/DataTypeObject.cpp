@@ -4,9 +4,8 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTDataType.h>
+#include <Parsers/ASTFunction.h>
 #include <IO/Operators.h>
-
 
 namespace DB
 {
@@ -54,13 +53,13 @@ static DataTypePtr create(const ASTPtr & arguments)
     ASTPtr schema_argument = arguments->children[0];
     bool is_nullable = false;
 
-    if (const auto * type = schema_argument->as<ASTDataType>())
+    if (const auto * func = schema_argument->as<ASTFunction>())
     {
-        if (type->name != "Nullable" || type->arguments->children.size() != 1)
+        if (func->name != "Nullable" || func->arguments->children.size() != 1)
             throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-                "Expected 'Nullable(<schema_name>)' as parameter for type Object (function: {})", type->name);
+                "Expected 'Nullable(<schema_name>)' as parameter for type Object (function: {})", func->name);
 
-        schema_argument = type->arguments->children[0];
+        schema_argument = func->arguments->children[0];
         is_nullable = true;
     }
 
@@ -69,7 +68,7 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
             "Object data type family must have a const string as its schema name parameter");
 
-    return std::make_shared<DataTypeObject>(literal->value.safeGet<const String &>(), is_nullable);
+    return std::make_shared<DataTypeObject>(literal->value.get<const String &>(), is_nullable);
 }
 
 void registerDataTypeObject(DataTypeFactory & factory)
@@ -77,7 +76,7 @@ void registerDataTypeObject(DataTypeFactory & factory)
     factory.registerDataType("Object", create);
     factory.registerSimpleDataType("JSON",
         [] { return std::make_shared<DataTypeObject>("JSON", false); },
-        DataTypeFactory::Case::Insensitive);
+        DataTypeFactory::CaseInsensitive);
 }
 
 }

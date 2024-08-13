@@ -370,21 +370,17 @@ TEST(TransformQueryForExternalDatabase, Null)
 
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE field IS NULL",
-          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)",
-          R"(SELECT "field" FROM "test"."table" WHERE 1 = 0)");
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)");
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE field IS NOT NULL",
-          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)",
-          R"(SELECT "field" FROM "test"."table")");
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)");
 
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE isNull(field)",
-          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)",
-          R"(SELECT "field" FROM "test"."table" WHERE 1 = 0)");
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NULL)");
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE isNotNull(field)",
-          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)",
-          R"(SELECT "field" FROM "test"."table")");
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IS NOT NULL)");
 }
 
 TEST(TransformQueryForExternalDatabase, ToDate)

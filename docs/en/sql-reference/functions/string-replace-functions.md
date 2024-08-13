@@ -34,7 +34,7 @@ Alias: `replace`.
 
 Replaces the first occurrence of the substring matching the regular expression `pattern` (in [re2 syntax](https://github.com/google/re2/wiki/Syntax)) in `haystack` by the `replacement` string.
 
-`replacement` can contain substitutions `\0-\9`.
+`replacement` can containing substitutions `\0-\9`.
 Substitutions `\1-\9` correspond to the 1st to 9th capturing group (submatch), substitution `\0` corresponds to the entire match.
 
 To use a verbatim `\` character in the `pattern` or `replacement` strings, escape it using `\`.
@@ -139,7 +139,7 @@ Format the `pattern` string with the values (strings, integers, etc.) listed in 
 **Syntax**
 
 ```sql
-format(pattern, s0, s1, ...)
+format(pattern, s0, s1, …)
 ```
 
 **Example**
@@ -193,58 +193,3 @@ Result:
 ## translateUTF8
 
 Like [translate](#translate) but assumes `s`, `from` and `to` are UTF-8 encoded strings.
-
-**Syntax**
-
-``` sql
-translateUTF8(s, from, to)
-```
-
-**Parameters**
-
-- `s`: A string type [String](../data-types/string.md).
-- `from`: A string type [String](../data-types/string.md).
-- `to`: A string type [String](../data-types/string.md).
-
-**Returned value**
-
-- A [String](../data-types/string.md) data type value.
-
-**Examples**
-
-Query:
-
-``` sql
-SELECT translateUTF8('Münchener Straße', 'üß', 'us') AS res;
-```
-
-``` response
-┌─res──────────────┐
-│ Munchener Strase │
-└──────────────────┘
-```
-
-## printf
-
-The `printf` function formats the given string with the values (strings, integers, floating-points etc.) listed in the arguments, similar to printf function in C++. The format string can contain format specifiers starting with `%` character. Anything not contained in `%` and the following format specifier is considered literal text and copied verbatim into the output. Literal `%` character can be escaped by `%%`.
-
-**Syntax**
-
-``` sql
-printf(format, arg1, arg2, ...)
-```
-
-**Example**
-
-Query:
-
-``` sql
-select printf('%%%s %s %d', 'Hello', 'World', 2024);
-```
-
-
-``` response
-┌─printf('%%%s %s %d', 'Hello', 'World', 2024)─┐
-│ %Hello World 2024                            │
-└──────────────────────────────────────────────┘
-```

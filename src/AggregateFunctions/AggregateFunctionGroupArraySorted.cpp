@@ -47,7 +47,7 @@ namespace ErrorCodes
 namespace
 {
 
-enum class GroupArraySortedStrategy : uint8_t
+enum class GroupArraySortedStrategy
 {
     heap,
     sort
@@ -374,10 +374,10 @@ AggregateFunctionPtr createWithNumericOrTimeType(const IDataType & argument_type
 template <template <typename> class AggregateFunctionTemplate, typename ... TArgs>
 inline AggregateFunctionPtr createAggregateFunctionGroupArraySortedImpl(const DataTypePtr & argument_type, const Array & parameters, TArgs ... args)
 {
-    if (auto res = createWithNumericOrTimeType<AggregateFunctionTemplate>(*argument_type, argument_type, parameters, args...))
+    if (auto res = createWithNumericOrTimeType<AggregateFunctionTemplate>(*argument_type, argument_type, parameters, std::forward<TArgs>(args)...))
         return AggregateFunctionPtr(res);
 
-    return std::make_shared<AggregateFunctionTemplate<Field>>(argument_type, parameters, args...);
+    return std::make_shared<AggregateFunctionTemplate<Field>>(argument_type, parameters, std::forward<TArgs>(args)...);
 }
 
 AggregateFunctionPtr createAggregateFunctionGroupArray(
@@ -397,11 +397,11 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() < 0) ||
-            (type == Field::Types::UInt64 && parameters[0].safeGet<UInt64>() == 0))
+        if ((type == Field::Types::Int64 && parameters[0].get<Int64>() < 0) ||
+            (type == Field::Types::UInt64 && parameters[0].get<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        max_elems = parameters[0].safeGet<UInt64>();
+        max_elems = parameters[0].get<UInt64>();
     }
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,

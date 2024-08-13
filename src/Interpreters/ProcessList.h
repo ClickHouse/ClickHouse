@@ -143,14 +143,14 @@ protected:
     /// Container of PipelineExecutors to be cancelled when a cancelQuery is received
     std::unordered_map<PipelineExecutor *, ExecutorHolderPtr> executors;
 
-    enum class QueryStreamsStatus : uint8_t
+    enum QueryStreamsStatus
     {
         NotInitialized,
         Initialized,
         Released
     };
 
-    QueryStreamsStatus query_streams_status{QueryStreamsStatus::NotInitialized};
+    QueryStreamsStatus query_streams_status{NotInitialized};
 
     ProcessListForUser * user_process_list = nullptr;
 
@@ -243,9 +243,6 @@ public:
     bool checkTimeLimit();
     /// Same as checkTimeLimit but it never throws
     [[nodiscard]] bool checkTimeLimitSoft();
-
-    /// Use it in case of the query left in background to execute asynchronously
-    void updateContext(ContextWeakPtr weak_context) { context = std::move(weak_context); }
 
     /// Get the reference for the start of the query. Used to synchronize with other Stopwatches
     UInt64 getQueryCPUStartTime() { return watch.getStart(); }

@@ -67,7 +67,7 @@ namespace ErrorCodes
     return true;
 }
 
-enum class SystemQueryTargetType : uint8_t
+enum class SystemQueryTargetType
 {
     Model,
     Function,
@@ -323,7 +323,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         /// START/STOP DISTRIBUTED SENDS does not require table
         case Type::STOP_DISTRIBUTED_SENDS:
         case Type::START_DISTRIBUTED_SENDS:
-        case Type::UNLOAD_PRIMARY_KEY:
         {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ false, /* allow_string_literal = */ false))
                 return false;
@@ -445,7 +444,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (!ParserStringLiteral{}.parse(pos, ast, expected))
                 return false;
-            String time_str = ast->as<ASTLiteral &>().value.safeGet<const String &>();
+            String time_str = ast->as<ASTLiteral &>().value.get<const String &>();
             ReadBufferFromString buf(time_str);
             time_t time;
             readDateTimeText(time, buf);
@@ -467,7 +466,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             }
 
-            res->seconds = seconds->as<ASTLiteral>()->value.safeGet<UInt64>();
+            res->seconds = seconds->as<ASTLiteral>()->value.get<UInt64>();
             break;
         }
         case Type::DROP_FILESYSTEM_CACHE:
@@ -538,7 +537,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (ParserKeyword{Keyword::WITH_NAME}.ignore(pos, expected) && ParserStringLiteral{}.parse(pos, ast, expected))
             {
-                res->backup_name = ast->as<ASTLiteral &>().value.safeGet<const String &>();
+                res->backup_name = ast->as<ASTLiteral &>().value.get<const String &>();
             }
             else
             {
@@ -577,7 +576,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     if (!ParserStringLiteral{}.parse(pos, ast, expected))
                         return false;
 
-                    custom_name = ast->as<ASTLiteral &>().value.safeGet<const String &>();
+                    custom_name = ast->as<ASTLiteral &>().value.get<const String &>();
                 }
 
                 return true;

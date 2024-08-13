@@ -17,15 +17,15 @@
 
 #include <Access/AccessControl.h>
 
+#include <Common/config_version.h>
+#include <Common/Exception.h>
+#include <Common/formatReadable.h>
+#include <Common/TerminalSize.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
-#include <Common/CurrentThread.h>
-#include <Common/Exception.h>
-#include <Common/TerminalSize.h>
-#include <Common/config_version.h>
-#include <Common/formatReadable.h>
-#include <Core/Settings.h>
+
 #include <Columns/ColumnString.h>
+#include <Poco/Util/Application.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -48,8 +48,6 @@
 #include <Formats/registerFormats.h>
 #include <Formats/FormatFactory.h>
 
-#include <Poco/Util/Application.h>
-
 namespace fs = std::filesystem;
 using namespace std::literals;
 
@@ -65,7 +63,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int AUTHENTICATION_FAILED;
     extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int USER_EXPIRED;
 }
 
 
@@ -76,12 +73,6 @@ void Client::processError(const String & query) const
         fmt::print(stderr, "Received exception from server (version {}):\n{}\n",
                 server_version,
                 getExceptionMessage(*server_exception, print_stack_trace, true));
-
-        if (server_exception->code() == ErrorCodes::USER_EXPIRED)
-        {
-            server_exception->rethrow();
-        }
-
         if (is_interactive)
         {
             fmt::print(stderr, "\n");
@@ -186,8 +177,6 @@ void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & con
                 history_file = home_path + "/" + history_file.substr(1);
             config.setString("history_file", history_file);
         }
-        if (config.has(prefix + ".accept-invalid-certificate"))
-            config.setBool("accept-invalid-certificate", config.getBool(prefix + ".accept-invalid-certificate"));
     }
 
     if (!connection_name.empty() && !connection_found)
@@ -209,8 +198,8 @@ std::vector<String> Client::loadWarningMessages()
                           {} /* query_parameters */,
                           "" /* query_id */,
                           QueryProcessingStage::Complete,
-                          &client_context->getSettingsRef(),
-                          &client_context->getClientInfo(), false, {});
+                          &global_context->getSettingsRef(),
+                          &global_context->getClientInfo(), false, {});
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -223,7 +212,7 @@ std::vector<String> Client::loadWarningMessages()
 
                     size_t rows = packet.block.rows();
                     for (size_t i = 0; i < rows; ++i)
-                        messages.emplace_back(column[i].safeGet<String>());
+                        messages.emplace_back(column[i].get<String>());
                 }
                 continue;
 
@@ -251,10 +240,6 @@ std::vector<String> Client::loadWarningMessages()
     }
 }
 
-Poco::Util::LayeredConfiguration & Client::getClientConfiguration()
-{
-    return config();
-}
 
 void Client::initialize(Poco::Util::Application & self)
 {
@@ -277,13 +262,7 @@ void Client::initialize(Poco::Util::Application & self)
         config().add(loaded_config.configuration);
     }
     else if (config().has("connection"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "--connection was specified, but config does not exist");
-
-    if (config().has("accept-invalid-certificate"))
-    {
-        config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
-        config().setString("openSSL.client.verificationMode", "none");
-    }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "--connection was specified, but config does not exists");
 
     /** getenv is thread-safe in Linux glibc and in all sane libc implementations.
       * But the standard does not guarantee that subsequent calls will not rewrite the value by returned pointer.
@@ -305,6 +284,9 @@ void Client::initialize(Poco::Util::Application & self)
     const char * env_password = getenv("CLICKHOUSE_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
     if (env_password && !config().has("password"))
         config().setString("password", env_password);
+
+    // global_context->setApplicationType(Context::ApplicationType::CLIENT);
+    global_context->setQueryParameters(query_parameters);
 
     /// settings and limits could be specified in config file, but passed settings has higher priority
     for (const auto & setting : global_context->getSettingsRef().allUnchanged())
@@ -379,7 +361,7 @@ try
         showWarnings();
 
     /// Set user password complexity rules
-    auto & access_control = client_context->getAccessControl();
+    auto & access_control = global_context->getAccessControl();
     access_control.setPasswordComplexityRules(connection->getPasswordComplexityRules());
 
     if (is_interactive && !delayed_interactive)
@@ -456,7 +438,7 @@ void Client::connect()
                           << connection_parameters.host << ":" << connection_parameters.port
                           << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
 
-            connection = Connection::createConnection(connection_parameters, client_context);
+            connection = Connection::createConnection(connection_parameters, global_context);
 
             if (max_client_network_bandwidth)
             {
@@ -499,7 +481,6 @@ void Client::connect()
 
     server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
     load_suggestions = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION) && !config().getBool("disable_suggestion", false);
-    wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
 
     if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
         server_display_name = config().getString("host", "localhost");
@@ -525,7 +506,7 @@ void Client::connect()
         }
     }
 
-    if (!client_context->getSettingsRef().use_client_time_zone)
+    if (!global_context->getSettingsRef().use_client_time_zone)
     {
         const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
         if (!time_zone.empty())
@@ -608,7 +589,7 @@ void Client::printChangedSettings() const
         }
     };
 
-    print_changes(client_context->getSettingsRef().changes(), "settings");
+    print_changes(global_context->getSettingsRef().changes(), "settings");
     print_changes(cmd_merge_tree_settings.changes(), "MergeTree settings");
 }
 
@@ -705,9 +686,7 @@ bool Client::processWithFuzzing(const String & full_query)
     try
     {
         const char * begin = full_query.data();
-        orig_ast = parseQuery(begin, begin + full_query.size(),
-            client_context->getSettingsRef(),
-            /*allow_multi_statements=*/ true);
+        orig_ast = parseQuery(begin, begin + full_query.size(), true);
     }
     catch (const Exception & e)
     {
@@ -730,13 +709,13 @@ bool Client::processWithFuzzing(const String & full_query)
     }
 
     // Kusto is not a subject for fuzzing (yet)
-    if (client_context->getSettingsRef().dialect == DB::Dialect::kusto)
+    if (global_context->getSettingsRef().dialect == DB::Dialect::kusto)
     {
         return true;
     }
     if (auto *q = orig_ast->as<ASTSetQuery>())
     {
-        if (auto *set_dialect = q->changes.tryGet("dialect"); set_dialect && set_dialect->safeGet<String>() == "kusto")
+        if (auto *setDialect = q->changes.tryGet("dialect"); setDialect && setDialect->safeGet<String>() == "kusto")
             return true;
     }
 
@@ -933,13 +912,11 @@ bool Client::processWithFuzzing(const String & full_query)
 }
 
 
-void Client::printHelpMessage(const OptionsDescription & options_description, bool verbose)
+void Client::printHelpMessage(const OptionsDescription & options_description)
 {
     std::cout << options_description.main_description.value() << "\n";
     std::cout << options_description.external_description.value() << "\n";
     std::cout << options_description.hosts_and_ports_description.value() << "\n";
-    if (verbose)
-        std::cout << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     std::cout << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
@@ -956,10 +933,9 @@ void Client::addOptions(OptionsDescription & options_description)
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         ("password", po::value<std::string>(), "password")
         ("ask-password", "ask-password")
-        ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")
-        ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
+        ("ssh-key-file", po::value<std::string>(), "File containing ssh private key needed for authentication. If not set does password authentication.")
+        ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for imported ssh key.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
-        ("jwt", po::value<std::string>(), "Use JWT for authentication")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
         ("compression", po::value<bool>(), "enable or disable compression (enabled by default for remote communication and disabled for localhost communication).")
@@ -973,7 +949,6 @@ void Client::addOptions(OptionsDescription & options_description)
         ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
 
         ("no-warnings", "disable warnings when client connects to server")
-        /// TODO: Left for compatibility as it's used in upgrade check, remove after next release and use server setting ignore_drop_queries_probability
         ("fake-drop", "Ignore all DROP queries, should be used only for testing")
         ("accept-invalid-certificate", "Ignore certificate verification errors, equal to config parameters openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none")
     ;
@@ -1117,14 +1092,7 @@ void Client::processOptions(const OptionsDescription & options_description,
     if (options.count("no-warnings"))
         config().setBool("no-warnings", true);
     if (options.count("fake-drop"))
-        config().setString("ignore_drop_queries_probability", "1");
-    if (options.count("jwt"))
-    {
-        if (!options["user"].defaulted())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and JWT flags can't be specified together");
-        config().setString("jwt", options["jwt"].as<std::string>());
-        config().setString("user", "");
-    }
+        fake_drop = true;
     if (options.count("accept-invalid-certificate"))
     {
         config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
@@ -1135,6 +1103,8 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
     {
+        // Fuzzer implies multiquery.
+        config().setBool("multiquery", true);
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);
         ignore_error = true;
@@ -1142,6 +1112,8 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if ((create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>()))
     {
+        // Fuzzer implies multiquery.
+        config().setBool("multiquery", true);
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);
 
@@ -1159,11 +1131,6 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if (options.count("opentelemetry-tracestate"))
         global_context->getClientTraceContext().tracestate = options["opentelemetry-tracestate"].as<std::string>();
-
-    /// In case of clickhouse-client the `client_context` can be just an alias for the `global_context`.
-    /// (There is no need to copy the context because clickhouse-client has no background tasks so it won't use that context in parallel.)
-    client_context = global_context;
-    initClientContext();
 }
 
 
@@ -1197,9 +1164,17 @@ void Client::processConfig()
     }
     print_stack_trace = config().getBool("stacktrace", false);
 
+    if (config().has("multiquery"))
+        is_multiquery = true;
+
     pager = config().getString("pager", "");
 
-    setDefaultFormatsAndCompressionFromConfiguration();
+    setDefaultFormatsFromConfiguration();
+
+    global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
+    global_context->setQueryKindInitial();
+    global_context->setQuotaClientKey(config().getString("quota_key", ""));
+    global_context->setQueryKind(query_kind);
 }
 
 
@@ -1352,6 +1327,13 @@ void Client::readArguments(
                 allow_repeated_settings = true;
             else if (arg == "--allow_merge_tree_settings")
                 allow_merge_tree_settings = true;
+            else if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
+            {
+                /// Transform the abbreviated syntax '--multiquery <SQL>' into the full syntax '--multiquery -q <SQL>'
+                ++arg_num;
+                arg = argv[arg_num];
+                addMultiquery(arg, common_arguments);
+            }
             else if (arg == "--password" && ((arg_num + 1) >= argc || std::string_view(argv[arg_num + 1]).starts_with('-')))
             {
                 common_arguments.emplace_back(arg);

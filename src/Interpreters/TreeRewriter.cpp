@@ -1158,8 +1158,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             }
         }
 
-        has_virtual_shard_num
-            = is_remote_storage && storage->isVirtualColumn("_shard_num", storage_snapshot->metadata) && virtuals->has("_shard_num");
+        has_virtual_shard_num = is_remote_storage && storage->isVirtualColumn("_shard_num", storage_snapshot->getMetadataForQuery()) && virtuals->has("_shard_num");
     }
 
     /// Collect missed object subcolumns
@@ -1184,33 +1183,6 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                         }
                     }
                 }
-                ++it;
-            }
-        }
-    }
-
-    /// Check for dynamic subcolumns in unknown required columns.
-    if (!unknown_required_source_columns.empty())
-    {
-        for (const NameAndTypePair & pair : source_columns_ordinary)
-        {
-            if (!pair.type->hasDynamicSubcolumns())
-                continue;
-
-            for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
-            {
-                auto [column_name, dynamic_subcolumn_name] = Nested::splitName(*it);
-
-                if (column_name == pair.name)
-                {
-                    if (auto dynamic_subcolumn_type = pair.type->tryGetSubcolumnType(dynamic_subcolumn_name))
-                    {
-                        source_columns.emplace_back(*it, dynamic_subcolumn_type);
-                        it = unknown_required_source_columns.erase(it);
-                        continue;
-                    }
-                }
-
                 ++it;
             }
         }
@@ -1277,7 +1249,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         if (no_throw)
             return false;
-        throw Exception(PreformattedMessage{ss.str(), format_string, std::vector<std::string>{}}, ErrorCodes::UNKNOWN_IDENTIFIER);
+        throw Exception(PreformattedMessage{ss.str(), format_string}, ErrorCodes::UNKNOWN_IDENTIFIER);
     }
 
     required_source_columns.swap(source_columns);
@@ -1615,7 +1587,7 @@ void TreeRewriter::normalize(
     /// already normalized on initiator node, or not normalized and should remain unnormalized for
     /// compatibility.
     if (context_->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && settings.normalize_function_names)
-        FunctionNameNormalizer::visit(query.get());
+        FunctionNameNormalizer().visit(query.get());
 
     if (settings.optimize_move_to_prewhere)
     {

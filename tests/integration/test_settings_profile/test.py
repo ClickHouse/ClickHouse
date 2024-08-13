@@ -459,7 +459,7 @@ def test_show_profiles():
 
     query_possible_response = [
         "CREATE SETTINGS PROFILE `default`\n",
-        "CREATE SETTINGS PROFILE `default` SETTINGS enable_analyzer = true\n",
+        "CREATE SETTINGS PROFILE `default` SETTINGS allow_experimental_analyzer = true\n",
     ]
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE default")
@@ -470,7 +470,7 @@ def test_show_profiles():
         "CREATE SETTINGS PROFILE `default`\n"
         "CREATE SETTINGS PROFILE `readonly` SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE `xyz`\n",
-        "CREATE SETTINGS PROFILE `default` SETTINGS enable_analyzer = true\n"
+        "CREATE SETTINGS PROFILE `default` SETTINGS allow_experimental_analyzer = true\n"
         "CREATE SETTINGS PROFILE `readonly` SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE `xyz`\n",
     ]
@@ -482,7 +482,7 @@ def test_show_profiles():
         "CREATE SETTINGS PROFILE `xyz`\n"
     )
     expected_access_analyzer = (
-        "CREATE SETTINGS PROFILE `default` SETTINGS enable_analyzer = true\n"
+        "CREATE SETTINGS PROFILE `default` SETTINGS allow_experimental_analyzer = true\n"
         "CREATE SETTINGS PROFILE `readonly` SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE `xyz`\n"
     )
@@ -621,7 +621,6 @@ def test_allow_ddl():
     )
 
     instance.query("GRANT CREATE ON tbl TO robin")
-    instance.query("GRANT TABLE ENGINE ON Log TO robin")
     instance.query("CREATE TABLE tbl(a Int32) ENGINE=Log", user="robin")
     instance.query("DROP TABLE tbl")
 

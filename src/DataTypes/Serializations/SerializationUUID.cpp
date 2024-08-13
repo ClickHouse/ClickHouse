@@ -80,6 +80,7 @@ void SerializationUUID::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
 bool SerializationUUID::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID uuid;
+    String field;
     if (!checkChar('\'', istr) || !tryReadText(uuid, istr) || !checkChar('\'', istr))
         return false;
 
@@ -137,7 +138,7 @@ bool SerializationUUID::tryDeserializeTextCSV(IColumn & column, ReadBuffer & ist
 
 void SerializationUUID::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    UUID x = field.safeGet<UUID>();
+    UUID x = field.get<UUID>();
     writeBinaryLittleEndian(x, ostr);
 }
 

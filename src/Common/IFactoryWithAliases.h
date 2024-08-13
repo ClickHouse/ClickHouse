@@ -39,21 +39,21 @@ protected:
 
 public:
     /// For compatibility with SQL, it's possible to specify that certain function name is case insensitive.
-    enum Case
+    enum CaseSensitiveness
     {
-        Sensitive,
-        Insensitive
+        CaseSensitive,
+        CaseInsensitive
     };
 
     /** Register additional name for value
       * real_name have to be already registered.
       */
-    void registerAlias(const String & alias_name, const String & real_name, Case case_sensitiveness = Sensitive)
+    void registerAlias(const String & alias_name, const String & real_name, CaseSensitiveness case_sensitiveness = CaseSensitive)
     {
         const auto & creator_map = getMap();
         const auto & case_insensitive_creator_map = getCaseInsensitiveMap();
 
-        String real_name_lowercase = Poco::toLower(real_name);
+        auto real_name_lowercase = Poco::toLower(real_name);
         if (!creator_map.contains(real_name) && !case_insensitive_creator_map.contains(real_name_lowercase))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -66,12 +66,13 @@ public:
     }
 
     /// We need sure the real_name exactly exists when call the function directly.
-    void registerAliasUnchecked(const String & alias_name, const String & real_name, Case case_sensitiveness = Sensitive)
+    void registerAliasUnchecked(const String & alias_name, const String & real_name, CaseSensitiveness case_sensitiveness = CaseSensitive)
     {
         String alias_name_lowercase = Poco::toLower(alias_name);
+        String real_name_lowercase = Poco::toLower(real_name);
         const String factory_name = getFactoryName();
 
-        if (case_sensitiveness == Insensitive)
+        if (case_sensitiveness == CaseInsensitive)
         {
             if (!case_insensitive_aliases.emplace(alias_name_lowercase, real_name).second)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: case insensitive alias name '{}' is not unique", factory_name, alias_name);

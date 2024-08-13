@@ -74,7 +74,7 @@ public:
     const char * data() const { return ptr_begin; }
     const char * dataEnd() const { return ptr_end; }
 
-    enum ElementType : uint8_t
+    enum ElementType
     {
         TYPE_OBJECT,
         TYPE_ARRAY,

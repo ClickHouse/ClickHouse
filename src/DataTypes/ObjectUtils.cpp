@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNested.h>
@@ -48,7 +47,7 @@ size_t getNumberOfDimensions(const IDataType & type)
 
 size_t getNumberOfDimensions(const IColumn & column)
 {
-    if (const auto * column_array = checkAndGetColumn<ColumnArray>(&column))
+    if (const auto * column_array = checkAndGetColumn<ColumnArray>(column))
         return column_array->getNumberOfDimensions();
     return 0;
 }
@@ -65,36 +64,6 @@ DataTypePtr getBaseTypeOfArray(const DataTypePtr & type)
     }
 
     return last_array ? last_array->getNestedType() : type;
-}
-
-DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements)
-{
-    auto it = tuple_elements.begin();
-    while (true)
-    {
-        if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
-        {
-            type = type_array->getNestedType();
-        }
-        else if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
-        {
-            if (it == tuple_elements.end())
-                break;
-
-            auto pos = type_tuple->tryGetPositionByName(*it);
-            if (!pos)
-                break;
-
-            ++it;
-            type = type_tuple->getElement(*pos);
-        }
-        else
-        {
-            break;
-        }
-    }
-
-    return type;
 }
 
 ColumnPtr getBaseColumnOfArray(const ColumnPtr & column)
@@ -135,7 +104,7 @@ Array createEmptyArrayField(size_t num_dimensions)
     for (size_t i = 1; i < num_dimensions; ++i)
     {
         current_array->push_back(Array());
-        current_array = &current_array->back().safeGet<Array &>();
+        current_array = &current_array->back().get<Array &>();
     }
 
     return array;
@@ -208,7 +177,7 @@ static std::pair<ColumnPtr, DataTypePtr> convertObjectColumnToTuple(
 static std::pair<ColumnPtr, DataTypePtr> recursivlyConvertDynamicColumnToTuple(
     const ColumnPtr & column, const DataTypePtr & type)
 {
-    if (!type->hasDynamicSubcolumnsDeprecated())
+    if (!type->hasDynamicSubcolumns())
         return {column, type};
 
     if (const auto * type_object = typeid_cast<const DataTypeObject *>(type.get()))
@@ -260,10 +229,9 @@ static std::pair<ColumnPtr, DataTypePtr> recursivlyConvertDynamicColumnToTuple(
                 = recursivlyConvertDynamicColumnToTuple(tuple_columns[i], tuple_types[i]);
         }
 
-        auto new_column = tuple_size == 0 ? column : ColumnPtr(ColumnTuple::create(new_tuple_columns));
         return
         {
-            new_column,
+            ColumnTuple::create(new_tuple_columns),
             recreateTupleWithElements(*type_tuple, new_tuple_types)
         };
     }
@@ -275,7 +243,7 @@ void convertDynamicColumnsToTuples(Block & block, const StorageSnapshotPtr & sto
 {
     for (auto & column : block)
     {
-        if (!column.type->hasDynamicSubcolumnsDeprecated())
+        if (!column.type->hasDynamicSubcolumns())
             continue;
 
         std::tie(column.column, column.type)
@@ -449,7 +417,7 @@ static DataTypePtr getLeastCommonTypeForTuple(
 static DataTypePtr getLeastCommonTypeForDynamicColumnsImpl(
     const DataTypePtr & type_in_storage, const DataTypes & concrete_types, bool check_ambiguos_paths)
 {
-    if (!type_in_storage->hasDynamicSubcolumnsDeprecated())
+    if (!type_in_storage->hasDynamicSubcolumns())
         return type_in_storage;
 
     if (isObject(type_in_storage))
@@ -491,7 +459,7 @@ DataTypePtr getLeastCommonTypeForDynamicColumns(
 
 DataTypePtr createConcreteEmptyDynamicColumn(const DataTypePtr & type_in_storage)
 {
-    if (!type_in_storage->hasDynamicSubcolumnsDeprecated())
+    if (!type_in_storage->hasDynamicSubcolumns())
         return type_in_storage;
 
     if (isObject(type_in_storage))
@@ -526,7 +494,7 @@ bool hasDynamicSubcolumns(const ColumnsDescription & columns)
     return std::any_of(columns.begin(), columns.end(),
         [](const auto & column)
         {
-            return column.type->hasDynamicSubcolumnsDeprecated();
+            return column.type->hasDynamicSubcolumns();
         });
 }
 
@@ -1097,7 +1065,7 @@ Field FieldVisitorFoldDimension::operator()(const Null & x) const
 void setAllObjectsToDummyTupleType(NamesAndTypesList & columns)
 {
     for (auto & column : columns)
-        if (column.type->hasDynamicSubcolumnsDeprecated())
+        if (column.type->hasDynamicSubcolumns())
             column.type = createConcreteEmptyDynamicColumn(column.type);
 }
 

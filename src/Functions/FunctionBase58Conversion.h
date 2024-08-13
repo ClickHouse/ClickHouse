@@ -18,7 +18,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 struct Base58Encode
@@ -63,7 +62,7 @@ struct Base58Encode
     }
 };
 
-enum class Base58DecodeErrorHandling : uint8_t
+enum class Base58DecodeErrorHandling
 {
     ThrowException,
     ReturnEmptyString
@@ -136,7 +135,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Wrong number of arguments for function {}: 1 expected.", getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of arguments for function {}: 1 expected.", getName());
 
         if (!isString(arguments[0].type))
             throw Exception(
