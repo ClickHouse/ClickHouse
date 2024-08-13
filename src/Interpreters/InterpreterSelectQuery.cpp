@@ -249,7 +249,7 @@ namespace
 ContextPtr getSubqueryContext(const ContextPtr & context)
 {
     auto subquery_context = Context::createCopy(context);
-    Settings subquery_settings = context->getSettings();
+    Settings subquery_settings = context->getSettingsCopy();
     subquery_settings.max_result_rows = 0;
     subquery_settings.max_result_bytes = 0;
     /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
@@ -1232,7 +1232,7 @@ SortDescription InterpreterSelectQuery::getSortDescription(const ASTSelectQuery 
 
         std::shared_ptr<Collator> collator;
         if (order_by_elem.getCollation())
-            collator = std::make_shared<Collator>(order_by_elem.getCollation()->as<ASTLiteral &>().value.get<String>());
+            collator = std::make_shared<Collator>(order_by_elem.getCollation()->as<ASTLiteral &>().value.safeGet<String>());
 
         if (order_by_elem.with_fill)
         {

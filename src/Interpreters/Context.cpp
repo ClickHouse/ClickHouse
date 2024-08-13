@@ -99,6 +99,7 @@
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -618,7 +619,7 @@ struct ContextSharedPart : boost::noncopyable
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
           */
-        SHUTDOWN(log, "system logs", system_logs, shutdown());
+        SHUTDOWN(log, "system logs", system_logs, flushAndShutdown());
 
         LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown();
@@ -2270,7 +2271,7 @@ bool Context::displaySecretsInShowAndSelect() const
     return shared->server_settings.display_secrets_in_show_and_select;
 }
 
-Settings Context::getSettings() const
+Settings Context::getSettingsCopy() const
 {
     SharedLockGuard lock(mutex);
     return *settings;
@@ -3494,18 +3495,22 @@ DDLWorker & Context::getDDLWorker() const
     if (shared->ddl_worker_startup_task)
         waitLoad(shared->ddl_worker_startup_task); // Just wait and do not prioritize, because it depends on all load and startup tasks
 
-    SharedLockGuard lock(shared->mutex);
-    if (!shared->ddl_worker)
     {
-        if (!hasZooKeeper())
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no Zookeeper configuration in server config");
-
-        if (!hasDistributedDDL())
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no DistributedDDL configuration in server config");
-
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "DDL background thread is not initialized");
+        /// Only acquire the lock for reading ddl_worker field.
+        /// hasZooKeeper() and hasDistributedDDL() acquire the same lock as well and double acquisition of the lock in shared mode can lead
+        /// to a deadlock if an exclusive lock attempt is made in the meantime by another thread.
+        SharedLockGuard lock(shared->mutex);
+        if (shared->ddl_worker)
+            return *shared->ddl_worker;
     }
-    return *shared->ddl_worker;
+
+    if (!hasZooKeeper())
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no Zookeeper configuration in server config");
+
+    if (!hasDistributedDDL())
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no DistributedDDL configuration in server config");
+
+    throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "DDL background thread is not initialized");
 }
 
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
@@ -4251,7 +4256,7 @@ std::shared_ptr<ObjectStorageQueueLog> Context::getS3QueueLog() const
     if (!shared->system_logs)
         return {};
 
-    return shared->system_logs->s3_queue_log;
+    return shared->system_logs->s3queue_log;
 }
 
 std::shared_ptr<ObjectStorageQueueLog> Context::getAzureQueueLog() const
@@ -4308,13 +4313,13 @@ std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
     return shared->system_logs->blob_storage_log;
 }
 
-std::vector<ISystemLog *> Context::getSystemLogs() const
+SystemLogs Context::getSystemLogs() const
 {
     SharedLockGuard lock(shared->mutex);
 
     if (!shared->system_logs)
         return {};
-    return shared->system_logs->logs;
+    return *shared->system_logs;
 }
 
 std::optional<Context::Dashboards> Context::getDashboards() const

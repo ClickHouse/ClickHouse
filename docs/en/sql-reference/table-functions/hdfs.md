@@ -44,6 +44,7 @@ LIMIT 2
 Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix.
 
 - `*` — Represents arbitrarily many characters except `/` but including the empty string.
+- `**` — Represents all files inside a folder recursively.
 - `?` — Represents an arbitrary single character.
 - `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol.
 - `{N..M}` — Represents any number `>= N` and `<= M`.

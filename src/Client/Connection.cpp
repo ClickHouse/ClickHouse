@@ -1399,7 +1399,7 @@ Progress Connection::receiveProgress() const
 ProfileInfo Connection::receiveProfileInfo() const
 {
     ProfileInfo profile_info;
-    profile_info.read(*in);
+    profile_info.read(*in, server_revision);
     return profile_info;
 }
 
