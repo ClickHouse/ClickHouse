@@ -11,11 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 namespace PlacementInfo
 {
 
@@ -51,15 +46,7 @@ PlacementInfo & PlacementInfo::instance()
 }
 
 void PlacementInfo::initialize(const Poco::Util::AbstractConfiguration & config)
-try
 {
-    if (!config.has(DB::PlacementInfo::PLACEMENT_CONFIG_PREFIX))
-    {
-        availability_zone = "";
-        initialized = true;
-        return;
-    }
-
     use_imds = config.getBool(getConfigPath("use_imds"), false);
 
     if (use_imds)
@@ -80,17 +67,14 @@ try
     LOG_DEBUG(log, "Loaded info: availability_zone: {}", availability_zone);
     initialized = true;
 }
-catch (...)
-{
-    tryLogCurrentException("Failed to get availability zone");
-    availability_zone = "";
-    initialized = true;
-}
 
 std::string PlacementInfo::getAvailabilityZone() const
 {
     if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Placement info has not been loaded");
+    {
+        LOG_WARNING(log, "Placement info has not been loaded");
+        return "";
+    }
 
     return availability_zone;
 }

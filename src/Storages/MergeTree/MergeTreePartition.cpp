@@ -241,7 +241,7 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
             if (typeid_cast<const DataTypeDate *>(partition_key_sample.getByPosition(i).type.get()))
                 result += toString(DateLUT::serverTimezoneInstance().toNumYYYYMMDD(DayNum(value[i].safeGet<UInt64>())));
             else if (typeid_cast<const DataTypeIPv4 *>(partition_key_sample.getByPosition(i).type.get()))
-                result += toString(value[i].safeGet<IPv4>().toUnderType());
+                result += toString(value[i].get<IPv4>().toUnderType());
             else
                 result += applyVisitor(to_string_visitor, value[i]);
 
@@ -413,12 +413,12 @@ void MergeTreePartition::load(const MergeTreeData & storage, const PartMetadataM
         partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file, {});
 }
 
-std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(
-    StorageMetadataPtr metadata_snapshot, ContextPtr storage_context,
-    IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums) const
+std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const MergeTreeData & storage, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums) const
 {
-    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage_context).sample_block;
-    return store(partition_key_sample, data_part_storage, checksums, storage_context->getWriteSettings());
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    const auto & context = storage.getContext();
+    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.getContext()).sample_block;
+    return store(partition_key_sample, data_part_storage, checksums, context->getWriteSettings());
 }
 
 std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block & partition_key_sample, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const

@@ -7,7 +7,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
 
@@ -24,6 +23,14 @@ namespace ErrorCodes
 {
 extern const int CANNOT_SCHEDULE_TASK;
 extern const int LOGICAL_ERROR;
+}
+
+size_t getApproxSizeOfPart(const IMergeTreeDataPart & part, const Names & columns_to_read)
+{
+    ColumnSize columns_size{};
+    for (const auto & col_name : columns_to_read)
+        columns_size.add(part.getColumnSize(col_name));
+    return columns_size.data_compressed;
 }
 
 MergeTreeReadPool::MergeTreeReadPool(
@@ -46,9 +53,37 @@ MergeTreeReadPool::MergeTreeReadPool(
         column_names_,
         settings_,
         context_)
+    , min_marks_for_concurrent_read(pool_settings.min_marks_for_concurrent_read)
     , backoff_settings{context_->getSettingsRef()}
     , backoff_state{pool_settings.threads}
 {
+    if (std::ranges::count(is_part_on_remote_disk, true))
+    {
+        const auto & settings = context_->getSettingsRef();
+
+        size_t total_compressed_bytes = 0;
+        size_t total_marks = 0;
+        for (const auto & part : parts_ranges)
+        {
+            const auto & columns = settings.merge_tree_determine_task_size_by_prewhere_columns && prewhere_info
+                ? prewhere_info->prewhere_actions->getRequiredColumnsNames()
+                : column_names_;
+
+            total_compressed_bytes += getApproxSizeOfPart(*part.data_part, columns);
+            total_marks += part.getMarksCount();
+        }
+
+        if (total_marks)
+        {
+            const auto min_bytes_per_task = settings.merge_tree_min_bytes_per_task_for_remote_reading;
+            const auto avg_mark_bytes = std::max<size_t>(total_compressed_bytes / total_marks, 1);
+            /// We're taking min here because number of tasks shouldn't be too low - it will make task stealing impossible.
+            const auto heuristic_min_marks = std::min<size_t>(total_marks / pool_settings.threads, min_bytes_per_task / avg_mark_bytes);
+
+            min_marks_for_concurrent_read = std::max(heuristic_min_marks, min_marks_for_concurrent_read);
+        }
+    }
+
     fillPerThreadInfo(pool_settings.threads, pool_settings.sum_marks);
 }
 
@@ -93,16 +128,15 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTa
 
     const auto part_idx = thread_task.part_idx;
     auto & marks_in_part = thread_tasks.sum_marks_in_parts.back();
-    const auto min_marks_per_task = per_part_infos[part_idx]->min_marks_per_task;
 
     size_t need_marks;
     if (is_part_on_remote_disk[part_idx] && !pool_settings.use_const_size_tasks_for_remote_reading)
         need_marks = marks_in_part;
     else /// Get whole part to read if it is small enough.
-        need_marks = std::min(marks_in_part, min_marks_per_task);
+        need_marks = std::min(marks_in_part, min_marks_for_concurrent_read);
 
     /// Do not leave too little rows in part for next time.
-    if (marks_in_part > need_marks && marks_in_part - need_marks < min_marks_per_task / 2)
+    if (marks_in_part > need_marks && marks_in_part - need_marks < min_marks_for_concurrent_read / 2)
         need_marks = marks_in_part;
 
     MarkRanges ranges_to_get_from_part;
@@ -221,6 +255,8 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
             parts_queue.push(std::move(info.second));
     }
 
+    LOG_DEBUG(log, "min_marks_for_concurrent_read={}", min_marks_for_concurrent_read);
+
     const size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;
 
     for (size_t i = 0; i < threads && !parts_queue.empty(); ++i)
@@ -233,14 +269,15 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
             auto & part_with_ranges = current_parts.back().part;
             size_t & marks_in_part = current_parts.back().sum_marks;
             const auto part_idx = current_parts.back().part_idx;
-            const auto min_marks_per_task = per_part_infos[part_idx]->min_marks_per_task;
 
             /// Do not get too few rows from part.
-            if (marks_in_part >= min_marks_per_task && need_marks < min_marks_per_task)
-                need_marks = min_marks_per_task;
+            if (marks_in_part >= min_marks_for_concurrent_read &&
+                need_marks < min_marks_for_concurrent_read)
+                need_marks = min_marks_for_concurrent_read;
 
             /// Do not leave too few rows in part for next time.
-            if (marks_in_part > need_marks && marks_in_part - need_marks < min_marks_per_task)
+            if (marks_in_part > need_marks &&
+                marks_in_part - need_marks < min_marks_for_concurrent_read)
                 need_marks = marks_in_part;
 
             MarkRanges ranges_to_get_from_part;
@@ -297,13 +334,5 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
         }
     }
 }
-
-MergeTreeReadPool::BackoffSettings::BackoffSettings(const DB::Settings& settings)
-    : min_read_latency_ms(settings.read_backoff_min_latency_ms.totalMilliseconds()),
-    max_throughput(settings.read_backoff_max_throughput),
-    min_interval_between_events_ms(settings.read_backoff_min_interval_between_events_ms.totalMilliseconds()),
-    min_events(settings.read_backoff_min_events),
-    min_concurrency(settings.read_backoff_min_concurrency)
-{}
 
 }

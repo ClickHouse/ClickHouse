@@ -61,6 +61,8 @@ private:
     void createRootNodes();
     void removeAllNodes();
 
+    class ReplicatedDatabasesMetadataSync;
+
     /// get_zookeeper will provide a zookeeper client without any fault injection
     const zkutil::GetZooKeeper get_zookeeper;
     const String root_zookeeper_path;

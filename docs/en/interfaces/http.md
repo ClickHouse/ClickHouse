@@ -379,7 +379,7 @@ You can mitigate this problem by enabling `wait_end_of_query=1` ([Response Buffe
 However, this does not completely solve the problem because the result must still fit within the `http_response_buffer_size`, and other settings like `send_progress_in_http_headers` can interfere with the delay of the header.
 The only way to catch all errors is to analyze the HTTP body before parsing it using the required format.
 
-## Queries with Parameters {#cli-queries-with-parameters}
+### Queries with Parameters {#cli-queries-with-parameters}
 
 You can create a query with parameters and pass values for them from the corresponding HTTP request parameters. For more information, see [Queries with Parameters for CLI](../interfaces/cli.md#cli-queries-with-parameters).
 
@@ -508,7 +508,7 @@ Now `rule` can configure `method`, `headers`, `url`, `handler`:
 
 - `headers` are responsible for matching the header part of the HTTP request. It is compatible with RE2’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the header portion of the HTTP request.
 
-- `handler` contains the main processing part. Now `handler` can configure `type`, `status`, `content_type`, `http_response_headers`, `response_content`, `query`, `query_param_name`.
+- `handler` contains the main processing part. Now `handler` can configure `type`, `status`, `content_type`, `response_content`, `query`, `query_param_name`.
     `type` currently supports three types: [predefined_query_handler](#predefined_query_handler), [dynamic_query_handler](#dynamic_query_handler), [static](#static).
 
     - `query` — use with `predefined_query_handler` type, executes query when the handler is called.
@@ -518,8 +518,6 @@ Now `rule` can configure `method`, `headers`, `url`, `handler`:
     - `status` — use with `static` type, response status code.
 
     - `content_type` — use with any type, response [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
-
-    - `http_response_headers` — use with any type, response headers map. Could be used to set content type as well.
 
     - `response_content` — use with `static` type, response content sent to client, when using the prefix ‘file://’ or ‘config://’, find the content from the file or configuration sends to client.
 
@@ -618,33 +616,6 @@ Return a message.
                 <type>static</type>
                 <status>402</status>
                 <content_type>text/html; charset=UTF-8</content_type>
-                <http_response_headers>
-                    <Content-Language>en</Content-Language>
-                    <X-My-Custom-Header>43</X-My-Custom-Header>
-                </http_response_headers>
-                <response_content>Say Hi!</response_content>
-            </handler>
-        </rule>
-        <defaults/>
-</http_handlers>
-```
-
-`http_response_headers` could be used to set content type instead of `content_type`.
-
-``` xml
-<http_handlers>
-        <rule>
-            <methods>GET</methods>
-            <headers><XXX>xxx</XXX></headers>
-            <url>/hi</url>
-            <handler>
-                <type>static</type>
-                <status>402</status>
-                <http_response_headers>
-                    <Content-Type>text/html; charset=UTF-8</Content-Type>
-                    <Content-Language>en</Content-Language>
-                    <X-My-Custom-Header>43</X-My-Custom-Header>
-                </http_response_headers>
                 <response_content>Say Hi!</response_content>
             </handler>
         </rule>
@@ -725,9 +696,6 @@ Find the content from the file send to client.
             <handler>
                 <type>static</type>
                 <content_type>text/html; charset=UTF-8</content_type>
-                <http_response_headers>
-                    <ETag>737060cd8c284d8af7ad3082f209582d</ETag>
-                </http_response_headers>
                 <response_content>file:///absolute_path_file.html</response_content>
             </handler>
         </rule>
@@ -738,9 +706,6 @@ Find the content from the file send to client.
             <handler>
                 <type>static</type>
                 <content_type>text/html; charset=UTF-8</content_type>
-                <http_response_headers>
-                    <ETag>737060cd8c284d8af7ad3082f209582d</ETag>
-                </http_response_headers>
                 <response_content>file://./relative_path_file.html</response_content>
             </handler>
         </rule>

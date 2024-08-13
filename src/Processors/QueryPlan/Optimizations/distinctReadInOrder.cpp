@@ -10,27 +10,27 @@
 namespace DB::QueryPlanOptimizations
 {
 /// build actions DAG from stack of steps
-static std::optional<ActionsDAG> buildActionsForPlanPath(std::vector<const ActionsDAG *> & dag_stack)
+static ActionsDAGPtr buildActionsForPlanPath(std::vector<ActionsDAGPtr> & dag_stack)
 {
     if (dag_stack.empty())
-        return {};
+        return nullptr;
 
-    ActionsDAG path_actions = dag_stack.back()->clone();
+    ActionsDAGPtr path_actions = dag_stack.back()->clone();
     dag_stack.pop_back();
     while (!dag_stack.empty())
     {
-        ActionsDAG clone = dag_stack.back()->clone();
+        ActionsDAGPtr clone = dag_stack.back()->clone();
         dag_stack.pop_back();
-        path_actions.mergeInplace(std::move(clone));
+        path_actions->mergeInplace(std::move(*clone));
     }
     return path_actions;
 }
 
 static std::set<std::string>
-getOriginalDistinctColumns(const ColumnsWithTypeAndName & distinct_columns, std::vector<const ActionsDAG *> & dag_stack)
+getOriginalDistinctColumns(const ColumnsWithTypeAndName & distinct_columns, std::vector<ActionsDAGPtr> & dag_stack)
 {
     auto actions = buildActionsForPlanPath(dag_stack);
-    FindOriginalNodeForOutputName original_node_finder(*actions);
+    FindOriginalNodeForOutputName original_node_finder(actions);
     std::set<std::string> original_distinct_columns;
     for (const auto & column : distinct_columns)
     {
@@ -65,7 +65,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     /// (3) gather actions DAG to find original names for columns in distinct step later
     std::vector<ITransformingStep *> steps_to_update;
     QueryPlan::Node * node = parent_node;
-    std::vector<const ActionsDAG *> dag_stack;
+    std::vector<ActionsDAGPtr> dag_stack;
     while (!node->children.empty())
     {
         auto * step = dynamic_cast<ITransformingStep *>(node->step.get());
@@ -79,9 +79,9 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
         steps_to_update.push_back(step);
 
         if (const auto * const expr = typeid_cast<const ExpressionStep *>(step); expr)
-            dag_stack.push_back(&expr->getExpression());
+            dag_stack.push_back(expr->getExpression());
         else if (const auto * const filter = typeid_cast<const FilterStep *>(step); filter)
-            dag_stack.push_back(&filter->getExpression());
+            dag_stack.push_back(filter->getExpression());
 
         node = node->children.front();
     }

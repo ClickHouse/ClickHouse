@@ -9,8 +9,8 @@
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include "Parsers/CommonParsers.h"
 
-#include <Parsers/CommonParsers.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTCollation.h>
@@ -314,7 +314,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             ASTPtr ast_uuid;
             if (!uuid_p.parse(pos, ast_uuid, expected))
                 return false;
-            uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
+            uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.get<String>());
         }
 
         if (parts.size() == 1) node = std::make_shared<ASTTableIdentifier>(parts[0], std::move(params));
@@ -696,7 +696,6 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto function_node = std::make_shared<ASTFunction>();
     function_node->name = "CODEC";
-    function_node->kind = ASTFunction::Kind::CODEC;
     function_node->arguments = expr_list_args;
     function_node->children.push_back(function_node->arguments);
 
@@ -704,7 +703,7 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-bool ParserStatisticsType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserStatisticType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserList stat_type_parser(std::make_unique<ParserIdentifierWithOptionalParameters>(),
         std::make_unique<ParserToken>(TokenType::Comma), false);
@@ -723,10 +722,10 @@ bool ParserStatisticsType::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ++pos;
 
     auto function_node = std::make_shared<ASTFunction>();
-    function_node->name = "STATISTICS";
-    function_node->kind = ASTFunction::Kind::STATISTICS;
+    function_node->name = "STATISTIC";
     function_node->arguments = stat_type;
     function_node->children.push_back(function_node->arguments);
+
     node = function_node;
     return true;
 }
@@ -1626,7 +1625,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             if (!parser_string_literal.parse(pos, ast_prefix_name, expected))
                 return false;
 
-            column_name_prefix = ast_prefix_name->as<ASTLiteral &>().value.safeGet<const String &>();
+            column_name_prefix = ast_prefix_name->as<ASTLiteral &>().value.get<const String &>();
         }
 
         if (with_open_round_bracket)
@@ -1689,7 +1688,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
         auto res = std::make_shared<ASTColumnsExceptTransformer>();
         if (regexp_node)
-            res->setPattern(regexp_node->as<ASTLiteral &>().value.safeGet<String>());
+            res->setPattern(regexp_node->as<ASTLiteral &>().value.get<String>());
         else
             res->children = std::move(identifiers);
         res->is_strict = is_strict;
@@ -1861,7 +1860,7 @@ static bool parseColumnsMatcherBody(IParser::Pos & pos, ASTPtr & node, Expected 
     else
     {
         auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
-        regexp_matcher->setPattern(regexp_node->as<ASTLiteral &>().value.safeGet<String>());
+        regexp_matcher->setPattern(regexp_node->as<ASTLiteral &>().value.get<String>());
 
         if (!transformers->children.empty())
         {
@@ -2310,7 +2309,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parser_string_literal.parse(pos, ast_space_name, expected))
             return false;
 
-        destination_name = ast_space_name->as<ASTLiteral &>().value.safeGet<const String &>();
+        destination_name = ast_space_name->as<ASTLiteral &>().value.get<const String &>();
     }
     else if (mode == TTLMode::GROUP_BY)
     {

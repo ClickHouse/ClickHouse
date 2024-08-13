@@ -169,7 +169,7 @@ randUniform(min, max)
 
 ### Returned value
 
-A random number of type [Float64](../data-types/float.md).
+A random number of type [Float64](/docs/en/sql-reference/data-types/float.md).
 
 ### Example
 
@@ -204,7 +204,9 @@ randNormal(mean, variance)
 
 **Returned value**
 
-- Random number. [Float64](../data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -241,7 +243,9 @@ randLogNormal(mean, variance)
 
 **Returned value**
 
-- Random number. [Float64](../data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -278,7 +282,9 @@ randBinomial(experiments, probability)
 
 **Returned value**
 
-- Random number. [UInt64](../data-types/int-uint.md).
+- Random number.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -315,7 +321,9 @@ randNegativeBinomial(experiments, probability)
 
 **Returned value**
 
-- Random number. [UInt64](../data-types/int-uint.md).
+- Random number.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -351,7 +359,9 @@ randPoisson(n)
 
 **Returned value**
 
-- Random number. [UInt64](../data-types/int-uint.md).
+- Random number.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -387,7 +397,9 @@ randBernoulli(probability)
 
 **Returned value**
 
-- Random number. [UInt64](../data-types/int-uint.md).
+- Random number.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Example**
 
@@ -423,7 +435,9 @@ randExponential(lambda)
 
 **Returned value**
 
-- Random number. [Float64](../data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -459,7 +473,9 @@ randChiSquared(degree_of_freedom)
 
 **Returned value**
 
-- Random number. [Float64](../data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -495,7 +511,9 @@ randStudentT(degree_of_freedom)
 
 **Returned value**
 
-- Random number. [Float64](../data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -532,7 +550,9 @@ randFisherF(d1, d2)
 
 **Returned value**
 
-- Random number. [Float64](../data-types/float.md).
+- Random number.
+
+Type: [Float64](/docs/en/sql-reference/data-types/float.md).
 
 **Example**
 
@@ -568,7 +588,9 @@ randomString(length)
 
 **Returned value**
 
-- String filled with random bytes. [String](../data-types/string.md).
+- String filled with random bytes.
+
+Type: [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -604,11 +626,13 @@ randomFixedString(length);
 
 **Arguments**
 
-- `length` — String length in bytes. [UInt64](../data-types/int-uint.md).
+- `length` — String length in bytes. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Returned value(s)**
 
-- String filled with random bytes. [FixedString](../data-types/fixedstring.md).
+- String filled with random bytes.
+
+Type: [FixedString](../../sql-reference/data-types/fixedstring.md).
 
 **Example**
 
@@ -643,7 +667,9 @@ randomPrintableASCII(length)
 
 **Returned value**
 
-- String with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters. [String](../data-types/string.md)
+- String with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
+
+Type: [String](../../sql-reference/data-types/string.md)
 
 **Example**
 
@@ -671,11 +697,13 @@ randomStringUTF8(length);
 
 **Arguments**
 
-- `length` — Length of the string in code points. [UInt64](../data-types/int-uint.md).
+- `length` — Length of the string in code points. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Returned value(s)**
 
-- UTF-8 random string. [String](../data-types/string.md).
+- UTF-8 random string.
+
+Type: [String](../../sql-reference/data-types/string.md).
 
 **Example**
 

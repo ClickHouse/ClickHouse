@@ -27,7 +27,7 @@ private:
     static constexpr auto space = ' ';
 
     /// Safety threshold against DoS.
-    static void checkRepeatTime(size_t repeat_time)
+    static inline void checkRepeatTime(size_t repeat_time)
     {
         static constexpr auto max_repeat_times = 1'000'000uz;
         if (repeat_time > max_repeat_times)
@@ -48,14 +48,14 @@ public:
             {"n", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Integer"}
         };
 
-            validateFunctionArguments(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeString>();
     }
 
 
     template <typename DataType>
-    bool executeConstant(ColumnPtr col_times, ColumnString::Offsets & res_offsets, ColumnString::Chars & res_chars, size_t input_rows_count) const
+    bool executeConstant(ColumnPtr col_times, ColumnString::Offsets & res_offsets, ColumnString::Chars & res_chars) const
     {
         const ColumnConst & col_times_const = checkAndGetColumn<ColumnConst>(*col_times);
 
@@ -71,12 +71,12 @@ public:
 
         checkRepeatTime(times);
 
-        res_offsets.resize(input_rows_count);
-        res_chars.resize(input_rows_count * (times + 1));
+        res_offsets.resize(col_times->size());
+        res_chars.resize(col_times->size() * (times + 1));
 
         size_t pos = 0;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < col_times->size(); ++i)
         {
             memset(res_chars.begin() + pos, space, times);
             pos += times;
@@ -92,20 +92,20 @@ public:
 
 
     template <typename DataType>
-    bool executeVector(ColumnPtr col_times_, ColumnString::Offsets & res_offsets, ColumnString::Chars & res_chars, size_t input_rows_count) const
+    bool executeVector(ColumnPtr col_times_, ColumnString::Offsets & res_offsets, ColumnString::Chars & res_chars) const
     {
         auto * col_times = checkAndGetColumn<typename DataType::ColumnType>(col_times_.get());
         if (!col_times)
             return false;
 
-        res_offsets.resize(input_rows_count);
-        res_chars.resize(input_rows_count * 10); /// heuristic
+        res_offsets.resize(col_times->size());
+        res_chars.resize(col_times->size() * 10); /// heuristic
 
         const PaddedPODArray<typename DataType::FieldType> & times_data = col_times->getData();
 
         size_t pos = 0;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < col_times->size(); ++i)
         {
             typename DataType::FieldType times = times_data[i];
 
@@ -132,7 +132,7 @@ public:
     }
 
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const auto & col_num = arguments[0].column;
 
@@ -143,26 +143,26 @@ public:
 
         if (const ColumnConst * col_num_const = checkAndGetColumn<ColumnConst>(col_num.get()))
         {
-            if ((executeConstant<DataTypeUInt8>(col_num, res_offsets, res_chars, input_rows_count))
-                || (executeConstant<DataTypeUInt16>(col_num, res_offsets, res_chars, input_rows_count))
-                || (executeConstant<DataTypeUInt32>(col_num, res_offsets, res_chars, input_rows_count))
-                || (executeConstant<DataTypeUInt64>(col_num, res_offsets, res_chars, input_rows_count))
-                || (executeConstant<DataTypeInt8>(col_num, res_offsets, res_chars, input_rows_count))
-                || (executeConstant<DataTypeInt16>(col_num, res_offsets, res_chars, input_rows_count))
-                || (executeConstant<DataTypeInt32>(col_num, res_offsets, res_chars, input_rows_count))
-                || (executeConstant<DataTypeInt64>(col_num, res_offsets, res_chars, input_rows_count)))
+            if ((executeConstant<DataTypeUInt8>(col_num, res_offsets, res_chars))
+                || (executeConstant<DataTypeUInt16>(col_num, res_offsets, res_chars))
+                || (executeConstant<DataTypeUInt32>(col_num, res_offsets, res_chars))
+                || (executeConstant<DataTypeUInt64>(col_num, res_offsets, res_chars))
+                || (executeConstant<DataTypeInt8>(col_num, res_offsets, res_chars))
+                || (executeConstant<DataTypeInt16>(col_num, res_offsets, res_chars))
+                || (executeConstant<DataTypeInt32>(col_num, res_offsets, res_chars))
+                || (executeConstant<DataTypeInt64>(col_num, res_offsets, res_chars)))
                 return col_res;
         }
         else
         {
-            if ((executeVector<DataTypeUInt8>(col_num, res_offsets, res_chars, input_rows_count))
-                || (executeVector<DataTypeUInt16>(col_num, res_offsets, res_chars, input_rows_count))
-                || (executeVector<DataTypeUInt32>(col_num, res_offsets, res_chars, input_rows_count))
-                || (executeVector<DataTypeUInt64>(col_num, res_offsets, res_chars, input_rows_count))
-                || (executeVector<DataTypeInt8>(col_num, res_offsets, res_chars, input_rows_count))
-                || (executeVector<DataTypeInt16>(col_num, res_offsets, res_chars, input_rows_count))
-                || (executeVector<DataTypeInt32>(col_num, res_offsets, res_chars, input_rows_count))
-                || (executeVector<DataTypeInt64>(col_num, res_offsets, res_chars, input_rows_count)))
+            if ((executeVector<DataTypeUInt8>(col_num, res_offsets, res_chars))
+                || (executeVector<DataTypeUInt16>(col_num, res_offsets, res_chars))
+                || (executeVector<DataTypeUInt32>(col_num, res_offsets, res_chars))
+                || (executeVector<DataTypeUInt64>(col_num, res_offsets, res_chars))
+                || (executeVector<DataTypeInt8>(col_num, res_offsets, res_chars))
+                || (executeVector<DataTypeInt16>(col_num, res_offsets, res_chars))
+                || (executeVector<DataTypeInt32>(col_num, res_offsets, res_chars))
+                || (executeVector<DataTypeInt64>(col_num, res_offsets, res_chars)))
                 return col_res;
         }
 
@@ -173,7 +173,7 @@ public:
 
 REGISTER_FUNCTION(Space)
 {
-    factory.registerFunction<FunctionSpace>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionSpace>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

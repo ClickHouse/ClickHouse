@@ -18,12 +18,6 @@ public:
         char * existing_memory = nullptr,
         size_t alignment = 0);
 
-    explicit SnappyWriteBuffer(
-        WriteBuffer & out_,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        char * existing_memory = nullptr,
-        size_t alignment = 0);
-
     ~SnappyWriteBuffer() override;
 
     void finalizeImpl() override { finish(); }
@@ -34,9 +28,7 @@ private:
     void finishImpl();
     void finish();
 
-    WriteBuffer * out;
-    std::unique_ptr<WriteBuffer> out_holder;
-
+    std::unique_ptr<WriteBuffer> out;
     bool finished = false;
 
     String uncompress_buffer;

@@ -25,7 +25,7 @@
 #include <IO/S3Common.h>
 #include <IO/S3/Client.h>
 #include <IO/HTTPHeaderEntries.h>
-#include <IO/S3Settings.h>
+#include <Storages/StorageS3Settings.h>
 #include <Poco/Util/ServerApplication.h>
 
 #include "TestPocoHTTPServer.h"
@@ -69,7 +69,7 @@ void doReadRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::U
     UInt64 max_single_read_retries = 1;
 
     DB::ReadSettings read_settings;
-    DB::S3::RequestSettings request_settings;
+    DB::S3Settings::RequestSettings request_settings;
     request_settings.max_single_read_retries = max_single_read_retries;
     DB::ReadBufferFromS3 read_buffer(
         client,
@@ -88,7 +88,7 @@ void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::
 {
     UInt64 max_unexpected_write_error_retries = 1;
 
-    DB::S3::RequestSettings request_settings;
+    DB::S3Settings::RequestSettings request_settings;
     request_settings.max_unexpected_write_error_retries = max_unexpected_write_error_retries;
     DB::WriteBufferFromS3 write_buffer(
         client,

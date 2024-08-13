@@ -258,7 +258,7 @@ namespace
             case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel();
             case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel();
         }
-        chassert(false);
+        UNREACHABLE();
     }
 }
 

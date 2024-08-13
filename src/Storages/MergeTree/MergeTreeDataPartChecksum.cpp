@@ -100,6 +100,12 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
     }
 }
 
+void MergeTreeDataPartChecksums::checkSizes(const IDataPartStorage & storage) const
+{
+    for (const auto & [name, checksum] : files)
+        checksum.checkSize(storage, name);
+}
+
 UInt64 MergeTreeDataPartChecksums::getTotalSizeOnDisk() const
 {
     UInt64 res = 0;
@@ -239,8 +245,6 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
             writeBinaryLittleEndian(sum.uncompressed_hash, out);
         }
     }
-
-    out.finalize();
 }
 
 void MergeTreeDataPartChecksums::addFile(const String & file_name, UInt64 file_size, MergeTreeDataPartChecksum::uint128 file_hash)

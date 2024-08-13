@@ -92,20 +92,24 @@ ColumnPtr FlatDictionary::getColumn(
         if (is_short_circuit)
         {
             IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
+            size_t keys_found = 0;
 
             if constexpr (std::is_same_v<ValueType, Array>)
             {
                 auto * out = column.get();
 
-                getItemsShortCircuitImpl<ValueType, false>(
-                    attribute, ids, [&](size_t, const Array & value, bool) { out->insert(value); }, default_mask);
+                keys_found = getItemsShortCircuitImpl<ValueType, false>(
+                    attribute,
+                    ids,
+                    [&](size_t, const Array & value, bool) { out->insert(value); },
+                    default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, StringRef>)
             {
                 auto * out = column.get();
 
                 if (is_attribute_nullable)
-                    getItemsShortCircuitImpl<ValueType, true>(
+                    keys_found = getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         ids,
                         [&](size_t row, StringRef value, bool is_null)
@@ -115,15 +119,18 @@ ColumnPtr FlatDictionary::getColumn(
                         },
                         default_mask);
                 else
-                    getItemsShortCircuitImpl<ValueType, false>(
-                        attribute, ids, [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); }, default_mask);
+                    keys_found = getItemsShortCircuitImpl<ValueType, false>(
+                        attribute,
+                        ids,
+                        [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
+                        default_mask);
             }
             else
             {
                 auto & out = column->getData();
 
                 if (is_attribute_nullable)
-                    getItemsShortCircuitImpl<ValueType, true>(
+                    keys_found = getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         ids,
                         [&](size_t row, const auto value, bool is_null)
@@ -133,9 +140,17 @@ ColumnPtr FlatDictionary::getColumn(
                         },
                         default_mask);
                 else
-                    getItemsShortCircuitImpl<ValueType, false>(
-                        attribute, ids, [&](size_t row, const auto value, bool) { out[row] = value; }, default_mask);
+                    keys_found = getItemsShortCircuitImpl<ValueType, false>(
+                        attribute,
+                        ids,
+                        [&](size_t row, const auto value, bool) { out[row] = value; },
+                        default_mask);
+
+                out.resize(keys_found);
             }
+
+            if (attribute.is_nullable_set)
+                vec_null_map_to->resize(keys_found);
         }
         else
         {
@@ -245,7 +260,7 @@ ColumnPtr FlatDictionary::getHierarchy(ColumnPtr key_column, const DataTypePtr &
     std::optional<UInt64> null_value;
 
     if (!dictionary_attribute.null_value.isNull())
-        null_value = dictionary_attribute.null_value.safeGet<UInt64>();
+        null_value = dictionary_attribute.null_value.get<UInt64>();
 
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
 
@@ -300,7 +315,7 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
     std::optional<UInt64> null_value;
 
     if (!dictionary_attribute.null_value.isNull())
-        null_value = dictionary_attribute.null_value.safeGet<UInt64>();
+        null_value = dictionary_attribute.null_value.get<UInt64>();
 
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
 
@@ -628,8 +643,11 @@ void FlatDictionary::getItemsImpl(
 }
 
 template <typename AttributeType, bool is_nullable, typename ValueSetter>
-void FlatDictionary::getItemsShortCircuitImpl(
-    const Attribute & attribute, const PaddedPODArray<UInt64> & keys, ValueSetter && set_value, IColumn::Filter & default_mask) const
+size_t FlatDictionary::getItemsShortCircuitImpl(
+    const Attribute & attribute,
+    const PaddedPODArray<UInt64> & keys,
+    ValueSetter && set_value,
+    IColumn::Filter & default_mask) const
 {
     const auto rows = keys.size();
     default_mask.resize(rows);
@@ -642,23 +660,22 @@ void FlatDictionary::getItemsShortCircuitImpl(
 
         if (key < loaded_keys.size() && loaded_keys[key])
         {
-            keys_found++;
             default_mask[row] = 0;
 
             if constexpr (is_nullable)
-                set_value(row, container[key], attribute.is_nullable_set->find(key) != nullptr);
+                set_value(keys_found, container[key], attribute.is_nullable_set->find(key) != nullptr);
             else
-                set_value(row, container[key], false);
+                set_value(keys_found, container[key], false);
+
+            ++keys_found;
         }
         else
-        {
             default_mask[row] = 1;
-            set_value(row, AttributeType{}, true);
-        }
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
+    return keys_found;
 }
 
 template <typename T>
@@ -701,7 +718,7 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
             return;
         }
 
-        auto & attribute_value = value.safeGet<AttributeType>();
+        auto & attribute_value = value.get<AttributeType>();
 
         auto & container = std::get<ContainerType<ValueType>>(attribute.container);
         loaded_keys[key] = true;

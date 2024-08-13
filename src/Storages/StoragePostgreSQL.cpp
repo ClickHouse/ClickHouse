@@ -35,12 +35,9 @@
 #include <Parsers/getInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
 #include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
@@ -109,79 +106,28 @@ ColumnsDescription StoragePostgreSQL::getTableStructureFromData(
     return ColumnsDescription{columns_info->columns};
 }
 
-namespace
-{
-
-class ReadFromPostgreSQL : public SourceStepWithFilter
-{
-public:
-    ReadFromPostgreSQL(
-        const Names & column_names_,
-        const SelectQueryInfo & query_info_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        const ContextPtr & context_,
-        Block sample_block,
-        size_t max_block_size_,
-        String remote_table_schema_,
-        String remote_table_name_,
-        postgres::ConnectionHolderPtr connection_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
-        , logger(getLogger("ReadFromPostgreSQL"))
-        , max_block_size(max_block_size_)
-        , remote_table_schema(remote_table_schema_)
-        , remote_table_name(remote_table_name_)
-        , connection(std::move(connection_))
-    {
-    }
-
-    std::string getName() const override { return "ReadFromPostgreSQL"; }
-
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
-    {
-        std::optional<size_t> transform_query_limit;
-        if (limit && !filter_actions_dag)
-            transform_query_limit = limit;
-
-        /// Connection is already made to the needed database, so it should not be present in the query;
-        /// remote_table_schema is empty if it is not specified, will access only table_name.
-        String query = transformQueryForExternalDatabase(
-            query_info,
-            required_source_columns,
-            storage_snapshot->metadata->getColumns().getOrdinary(),
-            IdentifierQuotingStyle::DoubleQuotes,
-            LiteralEscapingStyle::PostgreSQL,
-            remote_table_schema,
-            remote_table_name,
-            context,
-            transform_query_limit);
-        LOG_TRACE(logger, "Query: {}", query);
-
-        pipeline.init(Pipe(std::make_shared<PostgreSQLSource<>>(std::move(connection), query, getOutputStream().header, max_block_size)));
-    }
-
-    LoggerPtr logger;
-    size_t max_block_size;
-    String remote_table_schema;
-    String remote_table_name;
-    postgres::ConnectionHolderPtr connection;
-};
-
-}
-
-void StoragePostgreSQL::read(
-    QueryPlan & query_plan,
-    const Names & column_names,
+Pipe StoragePostgreSQL::read(
+    const Names & column_names_,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr local_context,
+    SelectQueryInfo & query_info_,
+    ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
-    size_t max_block_size,
+    size_t max_block_size_,
     size_t /*num_streams*/)
 {
-    storage_snapshot->check(column_names);
+    storage_snapshot->check(column_names_);
+
+    /// Connection is already made to the needed database, so it should not be present in the query;
+    /// remote_table_schema is empty if it is not specified, will access only table_name.
+    String query = transformQueryForExternalDatabase(
+        query_info_,
+        column_names_,
+        storage_snapshot->metadata->getColumns().getOrdinary(),
+        IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL, remote_table_schema, remote_table_name, context_);
+    LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
-    for (const String & column_name : column_names)
+    for (const String & column_name : column_names_)
     {
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
         WhichDataType which(column_data.type);
@@ -190,17 +136,7 @@ void StoragePostgreSQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    auto reading = std::make_unique<ReadFromPostgreSQL>(
-        column_names,
-        query_info,
-        storage_snapshot,
-        local_context,
-        sample_block,
-        max_block_size,
-        remote_table_schema,
-        remote_table_name,
-        pool->get());
-    query_plan.addStep(std::move(reading));
+    return Pipe(std::make_shared<PostgreSQLSource<>>(pool->get(), query, sample_block, max_block_size_));
 }
 
 
@@ -227,9 +163,9 @@ public:
 
     String getName() const override { return "PostgreSQLSink"; }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
-        auto block = getHeader().cloneWithColumns(chunk.getColumns());
+        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
         if (!inserter)
         {
             if (on_conflict.empty())
@@ -294,7 +230,7 @@ public:
     {
         const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get());
         const auto & nested = array_type->getNestedType();
-        const auto & array = array_field.safeGet<Array>();
+        const auto & array = array_field.get<Array>();
 
         if (!isArray(nested))
         {
@@ -312,7 +248,7 @@ public:
 
             if (!isArray(nested_array_type->getNestedType()))
             {
-                parseArrayContent(iter->safeGet<Array>(), nested, ostr);
+                parseArrayContent(iter->get<Array>(), nested, ostr);
             }
             else
             {
@@ -613,9 +549,8 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
             settings.postgresql_connection_pool_size,
             settings.postgresql_connection_pool_wait_timeout,
-            settings.postgresql_connection_pool_retries,
-            settings.postgresql_connection_pool_auto_close_connection,
-            settings.postgresql_connection_attempt_timeout);
+            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+            settings.postgresql_connection_pool_auto_close_connection);
 
         return std::make_shared<StoragePostgreSQL>(
             args.table_id,

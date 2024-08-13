@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# reset --log_comment, because the test has to set its own
+# reset --log_comment
 CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
@@ -14,7 +14,7 @@ echo -n 'select 4242' >> "$file2"
 $CLICKHOUSE_CLIENT --queries-file "$file1" "$file2" <<<'select 42'
 $CLICKHOUSE_CLIENT --log_comment foo --queries-file /dev/stdin <<<'select 424242'
 
-$CLICKHOUSE_CLIENT -m -q "
+$CLICKHOUSE_CLIENT -nm -q "
     system flush logs;
     select query, log_comment from system.query_log where current_database = '$CLICKHOUSE_DATABASE' and event_date >= yesterday() and query = 'select 42' and type != 'QueryStart';
     select query, log_comment from system.query_log where current_database = '$CLICKHOUSE_DATABASE' and event_date >= yesterday() and query = 'select 4242' and type != 'QueryStart';

@@ -1859,7 +1859,7 @@ SELECT * FROM test_table
 
 ## count_distinct_implementation {#settings-count_distinct_implementation}
 
-Задаёт, какая из функций `uniq*` используется при выполнении конструкции [COUNT(DISTINCT ...)](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count).
+Задаёт, какая из функций `uniq*` используется при выполнении конструкции [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count).
 
 Возможные значения:
 
@@ -2077,7 +2077,7 @@ SELECT * FROM test_table
 -   0 — оптимизация отключена.
 -   1 — оптимизация включена.
 
-Значение по умолчанию: `1`.
+Значение по умолчанию: `0`.
 
 ## optimize_trivial_count_query {#optimize-trivial-count-query}
 

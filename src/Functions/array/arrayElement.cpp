@@ -904,10 +904,10 @@ ColumnPtr FunctionArrayElement::executeNumberConst(
         return nullptr;
 
     if (index.getType() == Field::Types::UInt64
-        || (index.getType() == Field::Types::Int64 && index.safeGet<Int64>() >= 0))
+        || (index.getType() == Field::Types::Int64 && index.get<Int64>() >= 0))
     {
         ArrayElementNumImpl<DataType>::template vectorConst<false>(
-            col_nested->getData(), col_array->getOffsets(), index.safeGet<UInt64>() - 1, col_res_vec->getData(), builder);
+            col_nested->getData(), col_array->getOffsets(), index.get<UInt64>() - 1, col_res_vec->getData(), builder);
     }
     else if (index.getType() == Field::Types::Int64)
     {
@@ -972,14 +972,14 @@ FunctionArrayElement::executeStringConst(const ColumnsWithTypeAndName & argument
     auto col_res = ColumnString::create();
 
     if (index.getType() == Field::Types::UInt64
-        || (index.getType() == Field::Types::Int64 && index.safeGet<Int64>() >= 0))
+        || (index.getType() == Field::Types::Int64 && index.get<Int64>() >= 0))
     {
         if (builder)
             ArrayElementStringImpl::vectorConst<false, true>(
                 col_nested->getChars(),
                 col_array->getOffsets(),
                 col_nested->getOffsets(),
-                index.safeGet<UInt64>() - 1,
+                index.get<UInt64>() - 1,
                 col_res->getChars(),
                 col_res->getOffsets(),
                 builder);
@@ -988,7 +988,7 @@ FunctionArrayElement::executeStringConst(const ColumnsWithTypeAndName & argument
                 col_nested->getChars(),
                 col_array->getOffsets(),
                 col_nested->getOffsets(),
-                index.safeGet<UInt64>() - 1,
+                index.get<UInt64>() - 1,
                 col_res->getChars(),
                 col_res->getOffsets(),
                 builder);
@@ -1000,7 +1000,7 @@ FunctionArrayElement::executeStringConst(const ColumnsWithTypeAndName & argument
                 col_nested->getChars(),
                 col_array->getOffsets(),
                 col_nested->getOffsets(),
-                -(UInt64(index.safeGet<Int64>()) + 1),
+                -(UInt64(index.get<Int64>()) + 1),
                 col_res->getChars(),
                 col_res->getOffsets(),
                 builder);
@@ -1009,7 +1009,7 @@ FunctionArrayElement::executeStringConst(const ColumnsWithTypeAndName & argument
                 col_nested->getChars(),
                 col_array->getOffsets(),
                 col_nested->getOffsets(),
-                -(UInt64(index.safeGet<Int64>()) + 1),
+                -(UInt64(index.get<Int64>()) + 1),
                 col_res->getChars(),
                 col_res->getOffsets(),
                 builder);
@@ -1046,7 +1046,7 @@ ColumnPtr FunctionArrayElement::executeArrayStringConst(
     auto res_offsets = ColumnArray::ColumnOffsets::create();
     auto res_string_null_map = col_nullable ? ColumnUInt8::create() : nullptr;
     if (index.getType() == Field::Types::UInt64
-        || (index.getType() == Field::Types::Int64 && index.safeGet<Int64>() >= 0))
+        || (index.getType() == Field::Types::Int64 && index.get<Int64>() >= 0))
     {
         if (col_nullable)
             ArrayElementArrayStringImpl::vectorConst<false, true>(
@@ -1055,7 +1055,7 @@ ColumnPtr FunctionArrayElement::executeArrayStringConst(
                 col_nested_array->getOffsets(),
                 col_nested_elem->getOffsets(),
                 &string_null_map->getData(),
-                index.safeGet<UInt64>() - 1,
+                index.get<UInt64>() - 1,
                 res_string->getChars(),
                 res_offsets->getData(),
                 res_string->getOffsets(),
@@ -1068,7 +1068,7 @@ ColumnPtr FunctionArrayElement::executeArrayStringConst(
                 col_nested_array->getOffsets(),
                 col_nested_elem->getOffsets(),
                 nullptr,
-                index.safeGet<UInt64>() - 1,
+                index.get<UInt64>() - 1,
                 res_string->getChars(),
                 res_offsets->getData(),
                 res_string->getOffsets(),
@@ -1084,7 +1084,7 @@ ColumnPtr FunctionArrayElement::executeArrayStringConst(
                 col_nested_array->getOffsets(),
                 col_nested_elem->getOffsets(),
                 &string_null_map->getData(),
-                -(UInt64(index.safeGet<Int64>()) + 1),
+                -(UInt64(index.get<Int64>()) + 1),
                 res_string->getChars(),
                 res_offsets->getData(),
                 res_string->getOffsets(),
@@ -1097,7 +1097,7 @@ ColumnPtr FunctionArrayElement::executeArrayStringConst(
                 col_nested_array->getOffsets(),
                 col_nested_elem->getOffsets(),
                 nullptr,
-                -(UInt64(index.safeGet<Int64>()) + 1),
+                -(UInt64(index.get<Int64>()) + 1),
                 res_string->getChars(),
                 res_offsets->getData(),
                 res_string->getOffsets(),
@@ -1153,7 +1153,7 @@ ColumnPtr FunctionArrayElement::executeArrayNumberConst(
     auto & res_offsets = res_array->getOffsets();
     NullMap * res_null_map = res_nullable ? &res_nullable->getNullMapData() : nullptr;
 
-    if (index.getType() == Field::Types::UInt64 || (index.getType() == Field::Types::Int64 && index.safeGet<Int64>() >= 0))
+    if (index.getType() == Field::Types::UInt64 || (index.getType() == Field::Types::Int64 && index.get<Int64>() >= 0))
     {
         if (col_nullable)
             ArrayElementArrayNumImpl<DataType>::template vectorConst<false, true>(
@@ -1161,7 +1161,7 @@ ColumnPtr FunctionArrayElement::executeArrayNumberConst(
                 col_array->getOffsets(),
                 col_nested_array->getOffsets(),
                 null_map,
-                index.safeGet<UInt64>() - 1,
+                index.get<UInt64>() - 1,
                 res_data->getData(),
                 res_offsets,
                 res_null_map,
@@ -1172,7 +1172,7 @@ ColumnPtr FunctionArrayElement::executeArrayNumberConst(
                 col_array->getOffsets(),
                 col_nested_array->getOffsets(),
                 null_map,
-                index.safeGet<UInt64>() - 1,
+                index.get<UInt64>() - 1,
                 res_data->getData(),
                 res_offsets,
                 res_null_map,
@@ -1392,12 +1392,12 @@ ColumnPtr FunctionArrayElement::executeGenericConst(
     auto col_res = col_nested.cloneEmpty();
 
     if (index.getType() == Field::Types::UInt64
-        || (index.getType() == Field::Types::Int64 && index.safeGet<Int64>() >= 0))
+        || (index.getType() == Field::Types::Int64 && index.get<Int64>() >= 0))
         ArrayElementGenericImpl::vectorConst<false>(
-            col_nested, col_array->getOffsets(), index.safeGet<UInt64>() - 1, *col_res, builder);
+            col_nested, col_array->getOffsets(), index.get<UInt64>() - 1, *col_res, builder);
     else if (index.getType() == Field::Types::Int64)
         ArrayElementGenericImpl::vectorConst<true>(
-            col_nested, col_array->getOffsets(), -(static_cast<UInt64>(index.safeGet<Int64>() + 1)), *col_res, builder);
+            col_nested, col_array->getOffsets(), -(static_cast<UInt64>(index.get<Int64>() + 1)), *col_res, builder);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal type of array index");
 
@@ -1789,7 +1789,7 @@ bool FunctionArrayElement::matchKeyToIndexStringConst(
         using DataColumn = std::decay_t<decltype(data_column)>;
         if (index.getType() != Field::Types::String)
             return false;
-        MatcherStringConst<DataColumn> matcher{data_column, index.safeGet<const String &>()};
+        MatcherStringConst<DataColumn> matcher{data_column, index.get<const String &>()};
         executeMatchKeyToIndex(offsets, matched_idxs, matcher);
         return true;
     });

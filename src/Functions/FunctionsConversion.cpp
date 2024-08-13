@@ -17,7 +17,6 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/AccurateComparison.h>
-#include <Core/Settings.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
@@ -117,7 +116,7 @@ UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column)
 
     Field field;
     named_column.column->get(0, field);
-    return static_cast<UInt32>(field.safeGet<UInt32>());
+    return static_cast<UInt32>(field.get<UInt32>());
 }
 
 
@@ -710,7 +709,7 @@ bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateL
         else
             return tryReadFloatTextFast(x, rb);
     }
-    else /*if constexpr (is_integral_v<typename DataType::FieldType>)*/
+    else /*if constexpr (is_integer_v<typename DataType::FieldType>)*/
         return tryReadIntText(x, rb);
 }
 
@@ -813,16 +812,6 @@ enum class ConvertFromStringParsingMode : uint8_t
     Normal,
     BestEffort,  /// Only applicable for DateTime. Will use sophisticated method, that is slower.
     BestEffortUS
-};
-
-struct AccurateConvertStrategyAdditions
-{
-    UInt32 scale { 0 };
-};
-
-struct AccurateOrNullConvertStrategyAdditions
-{
-    UInt32 scale { 0 };
 };
 
 template <typename FromDataType, typename ToDataType, typename Name,
@@ -1031,13 +1020,7 @@ struct ConvertThroughParsing
                                     break;
                                 }
                             }
-                            if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
-                            {
-                                if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing))
-                                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string to type {}", TypeName<typename ToDataType::FieldType>);
-                            }
-                            else
-                                parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing);
+                            parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing);
                         } while (false);
                     }
                 }
@@ -1136,6 +1119,16 @@ struct ConvertThroughParsing
 
 /// Function toUnixTimestamp has exactly the same implementation as toDateTime of String type.
 struct NameToUnixTimestamp { static constexpr auto name = "toUnixTimestamp"; };
+
+struct AccurateConvertStrategyAdditions
+{
+    UInt32 scale { 0 };
+};
+
+struct AccurateOrNullConvertStrategyAdditions
+{
+    UInt32 scale { 0 };
+};
 
 enum class BehaviourOnErrorFromString : uint8_t
 {
@@ -2021,7 +2014,7 @@ public:
 
     DataTypePtr getReturnTypeImplRemovedNullable(const ColumnsWithTypeAndName & arguments) const
     {
-        FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, "any type"}};
+        FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, nullptr}};
         FunctionArgumentDescriptors optional_args;
 
         if constexpr (to_decimal)
@@ -2050,7 +2043,7 @@ public:
             optional_args.push_back({"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"});
         }
 
-            validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
         {
@@ -2391,7 +2384,7 @@ public:
 
         if (isDateTime64<Name, ToDataType>(arguments))
         {
-            validateFunctionArguments(*this, arguments,
+            validateFunctionArgumentTypes(*this, arguments,
                 FunctionArgumentDescriptors{{"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}},
                 // optional
                 FunctionArgumentDescriptors{
@@ -2604,8 +2597,8 @@ struct ToNumberMonotonicity
             if (left.isNull() || right.isNull())
                 return {};
 
-            Float64 left_float = left.safeGet<Float64>();
-            Float64 right_float = right.safeGet<Float64>();
+            Float64 left_float = left.get<Float64>();
+            Float64 right_float = right.get<Float64>();
 
             if (left_float >= static_cast<Float64>(std::numeric_limits<T>::min())
                 && left_float <= static_cast<Float64>(std::numeric_limits<T>::max())
@@ -2633,11 +2626,11 @@ struct ToNumberMonotonicity
 
         const bool left_in_first_half = left.isNull()
             ? from_is_unsigned
-            : (left.safeGet<Int64>() >= 0);
+            : (left.get<Int64>() >= 0);
 
         const bool right_in_first_half = right.isNull()
             ? !from_is_unsigned
-            : (right.safeGet<Int64>() >= 0);
+            : (right.get<Int64>() >= 0);
 
         /// Size of type is the same.
         if (size_of_from == size_of_to)
@@ -2675,7 +2668,7 @@ struct ToNumberMonotonicity
                 return {};
 
             /// Function cannot be monotonic when left and right are not on the same ranges.
-            if (divideByRangeOfType(left.safeGet<UInt64>()) != divideByRangeOfType(right.safeGet<UInt64>()))
+            if (divideByRangeOfType(left.get<UInt64>()) != divideByRangeOfType(right.get<UInt64>()))
                 return {};
 
             if (to_is_unsigned)
@@ -2683,7 +2676,7 @@ struct ToNumberMonotonicity
             else
             {
                 // If To is signed, it's possible that the signedness is different after conversion. So we check it explicitly.
-                const bool is_monotonic = (T(left.safeGet<UInt64>()) >= 0) == (T(right.safeGet<UInt64>()) >= 0);
+                const bool is_monotonic = (T(left.get<UInt64>()) >= 0) == (T(right.get<UInt64>()) >= 0);
 
                 return { .is_monotonic = is_monotonic };
             }
@@ -2707,13 +2700,13 @@ struct ToDateMonotonicity
         }
         else if (
             ((left.getType() == Field::Types::UInt64 || left.isNull()) && (right.getType() == Field::Types::UInt64 || right.isNull())
-             && ((left.isNull() || left.safeGet<UInt64>() < 0xFFFF) && (right.isNull() || right.safeGet<UInt64>() >= 0xFFFF)))
+             && ((left.isNull() || left.get<UInt64>() < 0xFFFF) && (right.isNull() || right.get<UInt64>() >= 0xFFFF)))
             || ((left.getType() == Field::Types::Int64 || left.isNull()) && (right.getType() == Field::Types::Int64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Int64>() < 0xFFFF) && (right.isNull() || right.safeGet<Int64>() >= 0xFFFF)))
+                && ((left.isNull() || left.get<Int64>() < 0xFFFF) && (right.isNull() || right.get<Int64>() >= 0xFFFF)))
             || ((
                 (left.getType() == Field::Types::Float64 || left.isNull())
                 && (right.getType() == Field::Types::Float64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Float64>() < 0xFFFF) && (right.isNull() || right.safeGet<Float64>() >= 0xFFFF))))
+                && ((left.isNull() || left.get<Float64>() < 0xFFFF) && (right.isNull() || right.get<Float64>() >= 0xFFFF))))
             || !isNativeNumber(type))
         {
             return {};
@@ -2768,16 +2761,16 @@ struct ToStringMonotonicity
         if (left.getType() == Field::Types::UInt64
             && right.getType() == Field::Types::UInt64)
         {
-            return (left.safeGet<Int64>() == 0 && right.safeGet<Int64>() == 0)
-                || (floor(log10(left.safeGet<UInt64>())) == floor(log10(right.safeGet<UInt64>())))
+            return (left.get<Int64>() == 0 && right.get<Int64>() == 0)
+                || (floor(log10(left.get<UInt64>())) == floor(log10(right.get<UInt64>())))
                 ? positive : not_monotonic;
         }
 
         if (left.getType() == Field::Types::Int64
             && right.getType() == Field::Types::Int64)
         {
-            return (left.safeGet<Int64>() == 0 && right.safeGet<Int64>() == 0)
-                || (left.safeGet<Int64>() > 0 && right.safeGet<Int64>() > 0 && floor(log10(left.safeGet<Int64>())) == floor(log10(right.safeGet<Int64>())))
+            return (left.get<Int64>() == 0 && right.get<Int64>() == 0)
+                || (left.get<Int64>() > 0 && right.get<Int64>() > 0 && floor(log10(left.get<Int64>())) == floor(log10(right.get<Int64>())))
                 ? positive : not_monotonic;
         }
 
@@ -3181,11 +3174,8 @@ private:
     {
         TypeIndex from_type_index = from_type->getTypeId();
         WhichDataType which(from_type_index);
-        TypeIndex to_type_index = to_type->getTypeId();
-        WhichDataType to(to_type_index);
         bool can_apply_accurate_cast = (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
             && (which.isInt() || which.isUInt() || which.isFloat());
-        can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
         if (context)
@@ -3269,20 +3259,6 @@ private:
 
                         return true;
                     }
-                }
-                else if constexpr (IsDataTypeStringOrFixedString<LeftDataType>)
-                {
-                    if constexpr (IsDataTypeNumber<RightDataType>)
-                    {
-                        chassert(wrapper_cast_type == CastType::accurate);
-                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                            arguments,
-                            result_type,
-                            input_rows_count,
-                            BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
-                            AccurateConvertStrategyAdditions());
-                    }
-                    return true;
                 }
 
                 return false;
@@ -4673,7 +4649,7 @@ private:
         return [function_name] (
             ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/)
         {
-            using ColumnEnumType = typename EnumType::ColumnType;
+            using ColumnEnumType = EnumType::ColumnType;
 
             const auto & first_col = arguments.front().column.get();
             const auto & first_type = arguments.front().type.get();
@@ -5224,7 +5200,7 @@ REGISTER_FUNCTION(Conversion)
     /// MySQL compatibility alias. Cannot be registered as alias,
     /// because we don't want it to be normalized to toDate in queries,
     /// otherwise CREATE DICTIONARY query breaks.
-    factory.registerFunction("DATE", &FunctionToDate::create, {}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction("DATE", &FunctionToDate::create, {}, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionToDate32>();
     factory.registerFunction<FunctionToDateTime>();

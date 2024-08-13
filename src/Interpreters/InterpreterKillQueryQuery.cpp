@@ -16,7 +16,6 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -334,7 +333,7 @@ BlockIO InterpreterKillQueryQuery::execute()
         for (size_t i = 0; i < moves_block.rows(); ++i)
         {
             table_id = StorageID{database_col.getDataAt(i).toString(), table_col.getDataAt(i).toString()};
-            auto task_uuid = task_uuid_col[i].safeGet<UUID>();
+            auto task_uuid = task_uuid_col[i].get<UUID>();
 
             CancellationCode code = CancellationCode::Unknown;
 

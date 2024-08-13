@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# core.COMM.PID-TID
+sysctl kernel.core_pattern='core.%e.%p-%P'
+
 OK="\tOK\t\\N\t"
 FAIL="\tFAIL\t\\N\t"
 
@@ -86,6 +89,10 @@ function configure()
     # since we run clickhouse from root
     sudo chown root: /var/lib/clickhouse
 
+    # Set more frequent update period of asynchronous metrics to more frequently update information about real memory usage (less chance of OOM).
+    echo "<clickhouse><asynchronous_metrics_update_period_s>1</asynchronous_metrics_update_period_s></clickhouse>" \
+        > /etc/clickhouse-server/config.d/asynchronous_metrics_update_period_s.xml
+
     local total_mem
     total_mem=$(awk '/MemTotal/ { print $(NF-1) }' /proc/meminfo) # KiB
     total_mem=$(( total_mem*1024 )) # bytes
@@ -139,9 +146,9 @@ EOL
                 </table_function_remote_max_addresses>
 
                 <!-- Don't waste cycles testing the old interpreter. Spend time in the new analyzer instead -->
-                <enable_analyzer>
+                <allow_experimental_analyzer>
                     <readonly/>
-                </enable_analyzer>
+                </allow_experimental_analyzer>
 
                 <!-- This feature is broken, deprecated and will be removed. We don't want more reports about it -->
                 <allow_experimental_object_type>
@@ -242,7 +249,7 @@ function check_server_start()
 function check_logs_for_critical_errors()
 {
     # Sanitizer asserts
-    sed -n '/WARNING:.*anitizer/,/^$/p' /var/log/clickhouse-server/stderr*.log >> /test_output/tmp
+    sed -n '/WARNING:.*anitizer/,/^$/p' /var/log/clickhouse-server/stderr.log >> /test_output/tmp
     rg -Fav -e "ASan doesn't fully support makecontext/swapcontext functions" -e "DB::Exception" /test_output/tmp > /dev/null \
         && echo -e "Sanitizer assert (in stderr.log)$FAIL$(head_escaped /test_output/tmp)" >> /test_output/test_results.tsv \
         || echo -e "No sanitizer asserts$OK" >> /test_output/test_results.tsv
@@ -308,9 +315,16 @@ function collect_query_and_trace_logs()
 {
     for table in query_log trace_log metric_log
     do
-        # Don't ignore errors here, it leads to ignore sanitizer reports when running clickhouse-local
-        clickhouse-local --config-file=/etc/clickhouse-server/config.xml --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst
+        clickhouse-local --config-file=/etc/clickhouse-server/config.xml --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
     done
+}
+
+function collect_core_dumps()
+{
+  find . -type f -maxdepth 1 -name 'core.*' | while read -r core; do
+      zstd --threads=0 "$core"
+      mv "$core.zst" /test_output/
+  done
 }
 
 # vi: ft=bash
