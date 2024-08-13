@@ -6,6 +6,7 @@
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -298,6 +299,12 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
 
         applyActionsToSortDescription(properties->sort_description, expr, out_to_skip);
         return std::move(*properties);
+    }
+
+    if (auto * sorting_step = typeid_cast<SortingStep *>(parent->step.get()))
+    {
+        auto scope = sorting_step->hasPartitions() ? SortingProperty::SortScope::Stream : SortingProperty::SortScope::Global;
+        return {sorting_step->getSortDescription(), scope};
     }
 
     if (auto * transforming = dynamic_cast<ITransformingStep *>(parent->step.get()))

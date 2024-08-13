@@ -81,6 +81,8 @@ public:
 
     const SortDescription & getSortDescription() const { return result_description; }
 
+    bool hasPartitions() const { return !partition_by_description.empty(); }
+
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_);
 
     Type getType() const { return type; }
