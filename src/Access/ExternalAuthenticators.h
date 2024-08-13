@@ -4,6 +4,7 @@
 #include <Access/GSSAcceptor.h>
 #include <Access/HTTPAuthClient.h>
 #include <Access/LDAPClient.h>
+#include <Access/JWTVerifier.h>
 #include <base/defines.h>
 #include <base/extended_types.h>
 #include <base/types.h>
@@ -12,6 +13,7 @@
 
 #include <chrono>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
@@ -31,6 +33,7 @@ namespace DB
 {
 
 class SettingsChanges;
+class AccessControl;
 
 class ExternalAuthenticators
 {
@@ -43,8 +46,11 @@ public:
         const LDAPClient::RoleSearchParamsList * role_search_params = nullptr, LDAPClient::SearchResultsList * role_search_results = nullptr) const;
     bool checkKerberosCredentials(const String & realm, const GSSAcceptorContext & credentials) const;
     bool checkHTTPBasicCredentials(const String & server, const BasicCredentials & credentials, SettingsChanges & settings) const;
+    bool checkJWTCredentials(const String &claims, const JWTCredentials & credentials, SettingsChanges & settings) const;
 
     GSSAcceptorContext::Params getKerberosParams() const;
+
+    bool isJWTAllowed() const;
 
 private:
     HTTPAuthClientParams getHTTPAuthenticationParams(const String& server) const;
@@ -65,6 +71,7 @@ private:
     mutable LDAPCaches ldap_caches TSA_GUARDED_BY(mutex) ;
     std::optional<GSSAcceptorContext::Params> kerberos_params TSA_GUARDED_BY(mutex) ;
     std::unordered_map<String, HTTPAuthClientParams> http_auth_servers TSA_GUARDED_BY(mutex) ;
+    std::unordered_map<String, std::unique_ptr<IJWTVerifier>> jwt_verifiers TSA_GUARDED_BY(mutex) ;
 
     void resetImpl() TSA_REQUIRES(mutex);
 };

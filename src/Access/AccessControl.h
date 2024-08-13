@@ -148,6 +148,8 @@ public:
     void setNoPasswordAllowed(bool allow_no_password_);
     bool isNoPasswordAllowed() const;
 
+    bool isJWTAllowed() const;
+
     /// Allows users with plaintext password (by default it's allowed).
     void setPlaintextPasswordAllowed(bool allow_plaintext_password_);
     bool isPlaintextPasswordAllowed() const;

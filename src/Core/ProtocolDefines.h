@@ -83,6 +83,8 @@ static constexpr auto DBMS_MIN_REVISION_WITH_SYSTEM_KEYWORDS_TABLE = 54468;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_ROWS_BEFORE_AGGREGATION = 54469;
 
+static constexpr auto DBMS_MIN_REVISION_WITH_JWT_AUTHENTICATION = 54469;
+
 /// Version of ClickHouse TCP protocol.
 ///
 /// Should be incremented manually on protocol changes.
