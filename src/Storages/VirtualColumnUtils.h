@@ -26,9 +26,13 @@ namespace VirtualColumnUtils
 ///
 /// Otherwise calling filter*() outside applyFilters() will throw "Not-ready Set is passed"
 /// if there are subqueries.
+///
+/// Similar to filterBlockWithExpression(buildFilterExpression(splitFilterDagForAllowedInputs(...)))./// Similar to filterBlockWithQuery, but uses ActionsDAG as a predicate.
+/// Basically it is filterBlockWithDAG(splitFilterDagForAllowedInputs).
+/// If allow_filtering_with_partial_predicate is true, then the filtering will be done even if some part of the predicate
+/// cannot be evaluated using the columns from the block.
+void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context, bool allow_filtering_with_partial_predicate = true);
 
-/// Similar to filterBlockWithExpression(buildFilterExpression(splitFilterDagForAllowedInputs(...))).
-void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context);
 
 /// Just filters block. Block should contain all the required columns.
 ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context);
@@ -41,7 +45,15 @@ void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 
 /// Extract a part of predicate that can be evaluated using only columns from input_names.
-std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs);
+/// When allow_partial_result is false, then the result will be empty if any part of if cannot be evaluated deterministically
+/// on the given inputs.
+/// allow_partial_result must be false when we are going to use the result to filter parts in
+/// MergeTreeData::totalRowsByPartitionPredicateImp. For example, if the query is
+/// `SELECT count() FROM table  WHERE _partition_id = '0' AND rowNumberInBlock() = 1`
+/// The predicate will be `_partition_id = '0' AND rowNumberInBlock() = 1`, and `rowNumberInBlock()` is
+/// non-deterministic. If we still extract the part `_partition_id = '0'` for filtering parts, then trivial
+/// count optimization will be mistakenly applied to the query.
+std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, bool allow_partial_result = true);
 
 /// Extract from the input stream a set of `name` column values
 template <typename T>
