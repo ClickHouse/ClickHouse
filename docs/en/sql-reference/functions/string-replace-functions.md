@@ -263,8 +263,8 @@ overlay(s, replace, position[, length])
 
 - `s`: A string type [String](../data-types/string.md).
 - `replace`: A string type [String](../data-types/string.md).
-- `position`: An integer type [Int](../data-types/int.md).
-- `length`: Optional. An integer type [Int](../data-types/int.md).
+- `position`: An integer type [Int](../data-types/int-uint.md).
+- `length`: Optional. An integer type [Int](../data-types/int-uint.md).
 
 **Returned value**
 
@@ -300,8 +300,8 @@ overlayUTF8(s, replace, position[, length])
 
 - `s`: A string type [String](../data-types/string.md).
 - `replace`: A string type [String](../data-types/string.md).
-- `position`: An integer type [Int](../data-types/int.md).
-- `length`: Optional. An integer type [Int](../data-types/int.md).
+- `position`: An integer type [Int](../data-types/int-uint.md).
+- `length`: Optional. An integer type [Int](../data-types/int-uint.md).
 
 **Returned value**
 
