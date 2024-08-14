@@ -4866,30 +4866,23 @@ Result:
 └───────┴───────────────┴──────┴──────────────┴──────────────┴──────────────────────┘
 ```
 
-## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second)
+## toIntervalYear
 
-Converts a Number type argument to an [Interval](../data-types/special-data-types/interval.md) data type.
+Returns an interval of `n` years of data type [IntervalYear](../data-types/special-data-types/interval.md).
 
 **Syntax**
 
 ``` sql
-toIntervalSecond(number)
-toIntervalMinute(number)
-toIntervalHour(number)
-toIntervalDay(number)
-toIntervalWeek(number)
-toIntervalMonth(number)
-toIntervalQuarter(number)
-toIntervalYear(number)
+toIntervalYear(n)
 ```
 
 **Arguments**
 
-- `number` — Duration of interval. Positive integer number.
+- `n` — Number of years. Positive integer number. [Int*](../data-types/int-uint.md).
 
 **Returned values**
 
-- The value in `Interval` data type.
+- Interval of `n` years. [IntervalYear](../data-types/special-data-types/interval.md).
 
 **Example**
 
@@ -4898,19 +4891,386 @@ Query:
 ``` sql
 WITH
     toDate('2019-01-01') AS date,
-    INTERVAL 1 WEEK AS interval_week,
-    toIntervalWeek(1) AS interval_to_week
-SELECT
-    date + interval_week,
-    date + interval_to_week;
+    toIntervalYear(1) AS interval_to_year
+SELECT date + interval_to_year
 ```
 
 Result:
 
 ```response
-┌─plus(date, interval_week)─┬─plus(date, interval_to_week)─┐
-│                2019-01-08 │                   2019-01-08 │
-└───────────────────────────┴──────────────────────────────┘
+┌─plus(date, interval_to_year)─┐
+│                   2020-01-01 │
+└──────────────────────────────┘
+```
+
+## toIntervalQuarter
+
+Returns an interval of `n` quarters of data type [IntervalQuarter](../data-types/special-data-types/interval.md).
+
+**Syntax**
+
+``` sql
+toIntervalQuarter(n)
+```
+
+**Arguments**
+
+- `n` — Number of quarters. Positive integer number. [Int*](../data-types/int-uint.md).
+
+**Returned values**
+
+- Interval of `n` quarters. [IntervalQuarter](../data-types/special-data-types/interval.md).
+
+**Example**
+
+Query:
+
+``` sql
+WITH
+    toDate('2019-01-01') AS date,
+    toIntervalQuarter(1) AS interval_to_quarter
+SELECT date + interval_to_quarter
+```
+
+Result:
+
+```response
+┌─plus(date, interval_to_quarter)─┐
+│                      2019-04-01 │
+└─────────────────────────────────┘
+```
+
+## toIntervalMonth
+
+Returns an interval of `n` months of data type [IntervalMonth](../data-types/special-data-types/interval.md).
+
+**Syntax**
+
+``` sql
+toIntervalMonth(n)
+```
+
+**Arguments**
+
+- `n` — Number of m. Positive integer number. [Int*](../data-types/int-uint.md).
+
+**Returned values**
+
+- Interval of `n` months. [IntervalMonth](../data-types/special-data-types/interval.md).
+
+**Example**
+
+Query:
+
+``` sql
+WITH
+    toDate('2019-01-01') AS date,
+    toIntervalMonth(1) AS interval_to_month
+SELECT date + interval_to_month
+```
+
+Result:
+
+```response
+┌─plus(date, interval_to_month)─┐
+│                    2019-02-01 │
+└───────────────────────────────┘
+```
+
+## toIntervalWeek
+
+Returns an interval of `n` weeks of data type [IntervalWeek](../data-types/special-data-types/interval.md).
+
+**Syntax**
+
+``` sql
+toIntervalWeek(n)
+```
+
+**Arguments**
+
+- `n` — Number of weeks. Positive integer number. [Int*](../data-types/int-uint.md).
+
+**Returned values**
+
+- Interval of `n` weeks. [IntervalWeek](../data-types/special-data-types/interval.md).
+
+**Example**
+
+Query:
+
+``` sql
+WITH
+    toDate('2019-01-01') AS date,
+    toIntervalWeek(1) AS interval_to_week
+SELECT date + interval_to_week
+```
+
+Result:
+
+```response
+┌─plus(date, interval_to_week)─┐
+│                   2019-01-08 │
+└──────────────────────────────┘
+```
+
+## toIntervalDay
+
+Returns an interval of `n` days of data type [IntervalDay](../data-types/special-data-types/interval.md).
+
+**Syntax**
+
+``` sql
+toIntervalDay(n)
+```
+
+**Arguments**
+
+- `n` — Number of days. Positive integer number. [Int*](../data-types/int-uint.md).
+
+**Returned values**
+
+- Interval of `n` days. [IntervalDay](../data-types/special-data-types/interval.md).
+
+**Example**
+
+Query:
+
+``` sql
+WITH
+    toDate('2019-01-01') AS date,
+    toIntervalDay(5) AS interval_to_days
+SELECT date + interval_to_days
+```
+
+Result:
+
+```response
+┌─plus(date, interval_to_days)─┐
+│                   2019-01-06 │
+└──────────────────────────────┘
+```
+
+## toIntervalHour
+
+Returns an interval of `n` hours of data type [IntervalHour](../data-types/special-data-types/interval.md).
+
+**Syntax**
+
+``` sql
+toIntervalHour(n)
+```
+
+**Arguments**
+
+- `n` — Number of hours. Positive integer number. [Int*](../data-types/int-uint.md).
+
+**Returned values**
+
+- Interval of `n` hours. [IntervalHour](../data-types/special-data-types/interval.md).
+
+**Example**
+
+Query:
+
+``` sql
+WITH
+    toDate('2019-01-01') AS date,
+    toIntervalHour(12) AS interval_to_hours
+SELECT date + interval_to_hours
+```
+
+Result:
+
+```response
+┌─plus(date, interval_to_hours)─┐
+│           2019-01-01 12:00:00 │
+└───────────────────────────────┘
+```
+
+## toIntervalMinute
+
+Returns an interval of `n` minutes of data type [IntervalMinute](../data-types/special-data-types/interval.md).
+
+**Syntax**
+
+``` sql
+toIntervalMinute(n)
+```
+
+**Arguments**
+
+- `n` — Number of minutes. Positive integer number. [Int*](../data-types/int-uint.md).
+
+**Returned values**
+
+- Interval of `n` minutes. [IntervalMinute](../data-types/special-data-types/interval.md).
+
+**Example**
+
+Query:
+
+``` sql
+WITH
+    toDate('2019-01-01') AS date,
+    toIntervalMinute(12) AS interval_to_minutes
+SELECT date + interval_to_minutes
+```
+
+Result:
+
+```response
+┌─plus(date, interval_to_minutes)─┐
+│             2019-01-01 00:12:00 │
+└─────────────────────────────────┘
+```
+
+## toIntervalSecond
+
+Returns an interval of `n` seconds of data type [IntervalSecond](../data-types/special-data-types/interval.md).
+
+**Syntax**
+
+``` sql
+toIntervalSecond(n)
+```
+
+**Arguments**
+
+- `n` — Number of seconds. Positive integer number. [Int*](../data-types/int-uint.md).
+
+**Returned values**
+
+- Interval of `n` seconds. [IntervalSecond](../data-types/special-data-types/interval.md).
+
+**Example**
+
+Query:
+
+``` sql
+WITH
+    toDate('2019-01-01') AS date,
+    toIntervalSecond(30) AS interval_to_seconds
+SELECT date + interval_to_seconds
+```
+
+Result:
+
+```response
+┌─plus(date, interval_to_seconds)─┐
+│             2019-01-01 00:00:30 │
+└─────────────────────────────────┘
+```
+
+## toIntervalMillisecond
+
+Returns an interval of `n` milliseconds of data type [IntervalMillisecond](../data-types/special-data-types/interval.md).
+
+**Syntax**
+
+``` sql
+toIntervalMillisecond(n)
+```
+
+**Arguments**
+
+- `n` — Number of milliseconds. Positive integer number. [Int*](../data-types/int-uint.md).
+
+**Returned values**
+
+- Interval of `n` milliseconds. [IntervalMilliseconds](../data-types/special-data-types/interval.md).
+
+**Example**
+
+Query:
+
+``` sql
+WITH
+    toDateTime('2019-01-01') AS date,
+    toIntervalMillisecond(30) AS interval_to_milliseconds
+SELECT date + interval_to_milliseconds
+```
+
+Result:
+
+```response
+┌─plus(date, interval_to_milliseconds)─┐
+│              2019-01-01 00:00:00.030 │
+└──────────────────────────────────────┘
+```
+
+## toIntervalMicrosecond
+
+Returns an interval of `n` microseconds of data type [IntervalMicrosecond](../data-types/special-data-types/interval.md).
+
+**Syntax**
+
+``` sql
+toIntervalMicrosecond(n)
+```
+
+**Arguments**
+
+- `n` — Number of microseconds. Positive integer number. [Int*](../data-types/int-uint.md).
+
+**Returned values**
+
+- Interval of `n` microseconds. [IntervalMicrosecond](../data-types/special-data-types/interval.md).
+
+**Example**
+
+Query:
+
+``` sql
+WITH
+    toDateTime('2019-01-01') AS date,
+    toIntervalMicrosecond(30) AS interval_to_microseconds
+SELECT date + interval_to_microseconds
+```
+
+Result:
+
+```response
+┌─plus(date, interval_to_microseconds)─┐
+│           2019-01-01 00:00:00.000030 │
+└──────────────────────────────────────┘
+```
+
+## toIntervalNanosecond
+
+Returns an interval of `n` nanoseconds of data type [IntervalNanosecond](../data-types/special-data-types/interval.md).
+
+**Syntax**
+
+``` sql
+toIntervalNanosecond(n)
+```
+
+**Arguments**
+
+- `n` — Number of nanoseconds. Positive integer number. [Int*](../data-types/int-uint.md).
+
+**Returned values**
+
+- Interval of `n` nanoseconds. [IntervalNanosecond](../data-types/special-data-types/interval.md).
+
+**Example**
+
+Query:
+
+``` sql
+WITH
+    toDateTime('2019-01-01') AS date,
+    toIntervalNanosecond(30) AS interval_to_nanoseconds
+SELECT date + interval_to_nanoseconds
+```
+
+Result:
+
+```response
+┌─plus(date, interval_to_nanoseconds)─┐
+│       2019-01-01 00:00:00.000000030 │
+└─────────────────────────────────────┘
 ```
 
 ## parseDateTime
