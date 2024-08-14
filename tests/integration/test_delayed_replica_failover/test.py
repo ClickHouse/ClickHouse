@@ -23,6 +23,7 @@ node_2_2 = cluster.add_instance("node_2_2", with_zookeeper=True)
 # For test to be runnable multiple times
 seqno = 0
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
