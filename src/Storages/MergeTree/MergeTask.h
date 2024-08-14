@@ -227,7 +227,7 @@ private:
         std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
         std::optional<ColumnSizeEstimator> column_sizes{};
 
-        // For projections to rebuild
+        /// For projections to rebuild
         using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
         ProjectionNameToItsBlocks projection_parts;
         std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
@@ -275,6 +275,7 @@ private:
 
         void prepareProjectionsToMergeAndRebuild() const;
         void calculateProjections(const Block & block) const;
+        void finalizeProjections() const;
         void constructTaskForProjectionPartsMerge() const;
         bool executeMergeProjections();
 
