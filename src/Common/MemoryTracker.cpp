@@ -621,7 +621,13 @@ bool canEnqueueBackgroundTask()
 void MemoryTracker::updateMemoryCredits(size_t size)
 {
     static thread_local Stopwatch stopwatch;
-    size_t delta = size * stopwatch.elapsedMicroseconds();
-    ProfileEvents::increment(ProfileEvents::MemoryCredits, delta);
-    stopwatch.restart();
+
+    // Check if a significant amount of time has passed to avoid unnecessary updates
+    auto elapsed_time = stopwatch.elapsedMicroseconds();
+    if (elapsed_time > 0)
+    {
+        size_t delta = size * elapsed_time;
+        ProfileEvents::increment(ProfileEvents::MemoryCredits, delta);
+        stopwatch.restart();
+    }
 }
