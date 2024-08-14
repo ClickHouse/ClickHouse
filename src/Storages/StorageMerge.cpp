@@ -602,7 +602,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 ASTPtr required_columns_expr_list = std::make_shared<ASTExpressionList>();
                 ASTPtr column_expr;
 
-                auto sample_block = merge_storage_snapshot->getMetadataForQuery()->getSampleBlock();
+                auto sample_block = merge_storage_snapshot->metadata->getSampleBlock();
 
                 for (const auto & column : real_column_names)
                 {
