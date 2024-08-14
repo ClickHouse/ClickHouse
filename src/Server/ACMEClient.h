@@ -41,6 +41,7 @@ public:
     void reload(const Poco::Util::AbstractConfiguration & config);
     std::string requestChallenge(const std::string & uri);
 
+    void requestCertificate(const Poco::Util::AbstractConfiguration & config);
 private:
     ACMEClient() = default;
 
@@ -63,6 +64,7 @@ private:
     std::string requestNonce();
     void getDirectory();
     void authenticate(Poco::Crypto::RSAKey &);
+    void order(Poco::Crypto::RSAKey &);
 };
 
 }

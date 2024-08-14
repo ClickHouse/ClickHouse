@@ -8,6 +8,7 @@
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/Utility.h>
+#include <Server/ACMEClient.h>
 
 
 namespace DB
@@ -139,7 +140,7 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     }
     else
     {
-        // CertificateIssuer::instance().UpdateCertificatesIfNeeded(config);
+        ACMEClient::ACMEClient::instance().requestCertificate(config);
 
         try
         {

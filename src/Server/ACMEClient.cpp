@@ -1,5 +1,7 @@
 #include <Server/ACMEClient.h>
 
+#include <Core/BackgroundSchedulePool.h>
+#include <Disks/IO/ReadBufferFromWebServer.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -17,6 +19,7 @@
 #include <Poco/Crypto/RSAKey.h>
 #include <Poco/Crypto/RSAKeyImpl.h>
 #include <Poco/Crypto/X509Certificate.h>
+#include <Poco/DateTimeFormatter.h>
 #include <Poco/DigestEngine.h>
 #include <Poco/File.h>
 #include <Poco/JSON/Parser.h>
@@ -25,13 +28,11 @@
 #include <Poco/SHA1Engine.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
-#include "Common/Exception.h"
 #include <Common/Base64.h>
+#include <Common/Exception.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <Disks/IO/ReadBufferFromWebServer.h>
 
 
 namespace DB
@@ -64,13 +65,29 @@ ACMEClient & ACMEClient::instance()
     return instance;
 }
 
+void ACMEClient::requestCertificate(const Poco::Util::AbstractConfiguration & )
+{
+    /// TODO
+}
+
 void ACMEClient::reload(const Poco::Util::AbstractConfiguration & config)
 try
 {
     auto context = Context::getGlobalContextInstance();
 
-    auto acme_url = config.getString("acme.url");
+    // auto http_port = config.getInt("http_port");
+    // if (http_port != 80)
+    //     throw Exception(ErrorCodes::LOGICAL_ERROR, "For ACME HTTP challenge HTTP port must be 80, but is {}", http_port);
+
+    auto now = Poco::DateTimeFormatter::format(Poco::Timestamp(), Poco::DateTimeFormat::ISO8601_FORMAT);
+    LOG_DEBUG(log, "Current time: {}", now);
+
+    /// FIXME don't re-read config on each reload
+    auto acme_url = config.getString("acme.url", "https://acme-staging-v02.api.letsencrypt.org");
     LOG_DEBUG(log, "ACME URL: {}", acme_url);
+
+    auto acme_email = config.getString("acme.email", "admin@example.com");
+    LOG_DEBUG(log, "ACME Email: {}", acme_email);
 
     auto zk = context->getZooKeeper();
     zk->createIfNotExists(fs::path(ZOOKEEPER_ACME_BASE_PATH), "");
@@ -107,8 +124,10 @@ try
 
     getDirectory();
 
-    auto cert = Poco::Crypto::RSAKey("", "/home/thevar1able/src/clickhouse/cmake-build-debug/acme/acme.key", "");
-    authenticate(cert);
+    auto key = Poco::Crypto::RSAKey("", "/home/thevar1able/src/clickhouse/cmake-build-debug/acme/acme.key", "");
+    authenticate(key);
+
+    order(key);
 
     /// TODO on initialization go through config and try to reissue all
     /// expiring/missing certificates.
@@ -130,6 +149,8 @@ catch (...)
 
 void ACMEClient::getDirectory()
 {
+    LOG_DEBUG(log, "Requesting ACME directory from {}", "https://acme-staging-v02.api.letsencrypt.org/directory");
+
     std::string directory_buffer;
     ReadSettings read_settings;
     auto reader = std::make_unique<ReadBufferFromWebServer>(
@@ -157,7 +178,7 @@ void ACMEClient::getDirectory()
     }
     catch (Poco::Exception & e)
     {
-        LOG_WARNING(log, "Can't parse directory: {}", e.displayText());
+        LOG_WARNING(log, "Can't parse ACME directory: {}", e.displayText());
     }
 }
 
@@ -193,9 +214,14 @@ std::string hmacSha256(std::string to_sign, Poco::Crypto::RSAKey & key)
     return base64Encode(signature_str, /*url_encoding*/ true, /*no_padding*/ true);
 }
 
-std::string formProtectedData(const std::string & jwk, const std::string & nonce, const std::string & url)
+std::string formProtectedData(const std::string & jwk, const std::string & nonce, const std::string & url, const std::string & key_id)
 {
     auto protected_data = fmt::format(R"({{"alg":"RS256","jwk":{},"nonce":"{}","url":"{}"}})", jwk, nonce, url);
+
+    if (!key_id.empty())
+        protected_data = fmt::format(R"({{"alg":"RS256","kid":"{}","nonce":"{}","url":"{}"}})", key_id, nonce, url);
+
+    LOG_DEBUG(&Poco::Logger::get("ACME"), "Protected data: {}", protected_data);
 
     return base64Encode(protected_data, /*url_encoding*/ true, /*no_padding*/ true);
 }
@@ -225,7 +251,7 @@ void ACMEClient::authenticate(Poco::Crypto::RSAKey & key)
     auto uri = Poco::URI("https://acme-staging-v02.api.letsencrypt.org/acme/new-acct");
 
     auto jwk = JSONWebKey::fromRSAKey(key).toString();
-    auto protected_enc = formProtectedData(jwk, nonce, uri.toString());
+    auto protected_enc = formProtectedData(jwk, nonce, uri.toString(), "");
 
     std::string payload = R"({"termsOfServiceAgreed":true,"contact":["mailto:admin@example.org"]})";
     auto payload_enc = base64Encode(payload, /*url_encoding*/ true, /*no_padding*/ true);
@@ -249,7 +275,7 @@ void ACMEClient::authenticate(Poco::Crypto::RSAKey & key)
     ostream << request_data;
 
     auto response = Poco::Net::HTTPResponse();
-    auto &rstream = session->receiveResponse(response);
+    auto & rstream = session->receiveResponse(response);
 
     /// checking for HTTP code would be nice here
 
@@ -281,6 +307,61 @@ void ACMEClient::authenticate(Poco::Crypto::RSAKey & key)
     }
 
     // json->getValue<std::string>(Directory::new_nonce_key),
+}
+
+void ACMEClient::order(Poco::Crypto::RSAKey & key)
+{
+    auto uri = Poco::URI(directory->new_order);
+    auto r = Poco::Net::HTTPRequest("POST", uri.getPathAndQuery());
+    r.set("Content-Type", "application/jose+json");
+
+    auto timeout = ConnectionTimeouts();
+    auto proxy = ProxyConfiguration();
+    auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, uri, timeout, proxy);
+
+    // POST /acme/new-order HTTP/1.1
+    // Host: example.com
+    // Content-Type: application/jose+json
+    //
+    // {
+    //   "protected": base64url({
+    //     "alg": "ES256",
+    //     "kid": "https://example.com/acme/acct/evOfKhNU60wg",
+    //     "nonce": "5XJ1L3lEkMG7tR6pA00clA",
+    //     "url": "https://example.com/acme/new-order"
+    //   }),
+    //   "payload": base64url({
+    //     "identifiers": [
+    //       { "type": "dns", "value": "www.example.org" },
+    //       { "type": "dns", "value": "example.org" }
+    //     ]
+    //   }),
+    //   "signature": "H6ZXtGjTZyUnPeKn...wEA4TklBdh3e454g"
+    // }
+
+    auto nonce = requestNonce();
+    auto protected_data = formProtectedData("", nonce, uri.toString(), key_id);
+
+    std::string payload = R"({"identifiers":[{"type":"dns","value":"example.com"}]})";
+    LOG_DEBUG(log, "Payload: {}", payload);
+    auto payload_enc = base64Encode(payload, /*url_encoding*/ true, /*no_padding*/ true);
+
+    std::string to_sign = protected_data + "." + payload_enc;
+    auto signature = hmacSha256(to_sign, key);
+
+    std::string request_data = R"({"protected":")" + protected_data + R"(","payload":")" + payload_enc + R"(","signature":")" + signature + R"("})";
+    r.set("Content-Length", std::to_string(request_data.size()));
+
+    auto &ostream = session->sendRequest(r);
+    ostream << request_data;
+
+    auto response = Poco::Net::HTTPResponse();
+    auto &rstream = session->receiveResponse(response);
+
+    // Poco::JSON::Parser parser;
+    // auto json = parser.parse(rstream).extract<Poco::JSON::Object::Ptr>();
+
+    std::cout << "Response: " << rstream.rdbuf() << std::endl;
 }
 
 std::string ACMEClient::requestNonce()
