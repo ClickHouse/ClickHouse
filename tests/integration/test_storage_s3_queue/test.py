@@ -1851,7 +1851,9 @@ def test_commit_on_limit(started_cluster):
 
     assert "test_999999.csv" in get_processed_files()
 
-    node.count_in_log(f"Setting file {files_path}/test_9999.csv as failed")
+    assert 1 == int(
+        node.count_in_log(f"Setting file {files_path}/test_9999.csv as failed")
+    )
     assert failed_files_event_before + 1 == int(
         node.query(
             "SELECT value FROM system.events WHERE name = 'ObjectStorageQueueFailedFiles' SETTINGS system_events_show_zero_values=1"
