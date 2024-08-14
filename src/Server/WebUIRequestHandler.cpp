@@ -74,6 +74,7 @@ void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPS
 /// FIXME not a Web UI
 void ACMERequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
+    LOG_DEBUG(&Poco::Logger::get("ACME"), "ACME request: {}", request.getURI());
     auto challenge = ACMEClient::ACMEClient::instance().requestChallenge(request.getURI());
 
     if (challenge.empty())

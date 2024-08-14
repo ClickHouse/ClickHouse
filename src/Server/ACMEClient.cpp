@@ -105,6 +105,9 @@ try
 
     refresh_task->activateAndSchedule();
 
+    /// TODO on initialization, go through config and try to reissue all
+    /// expiring/missing certificates.
+
     initialized = true;
 
     // domains = {"thevar1able.com"};
@@ -147,56 +150,16 @@ void ACMEClient::getDirectory()
     std::cout << "Response: " << response.getStatus() << std::endl;
 }
 
-void ACMEClient::authenticate(Poco::Crypto::RSAKey & key)
+std::string base64EncodeMine(std::string data)
 {
-    const auto nonce = requestNonce();
+    auto result = base64Encode(data, /* url_encoding */ true);
+    trimRight(result, '=');
 
-    // {
-    //   "protected": base64url({
-    //     "alg": "RS256",
-    //     "jwk": {...},
-    //     "nonce": "6S8IqOGY7eL2lsGoTZYifg",
-    //     "url": "https://example.com/acme/new-account"
-    //   }),
-    //   "payload": base64url({
-    //     "termsOfServiceAgreed": true,
-    //     "contact": [
-    //       "mailto:cert-admin@example.org",
-    //       "mailto:admin@example.org"
-    //     ]
-    //   }),
-    //   "signature": "RZPOnYoPs1PhjszF...-nh6X1qtOFPB519I"
-    // }
+    return result;
+}
 
-    auto e = key.encryptionExponent();
-    auto n = key.modulus();
-
-    auto e_str = std::string(e.begin(), e.end());
-    auto n_str = std::string(n.begin(), n.end());
-
-    auto e_enc = base64Encode(e_str, /* url_encoding */ true);
-    auto n_enc = base64Encode(n_str, /* url_encoding */ true);
-
-    trimRight(e_enc, '=');
-    trimRight(n_enc, '=');
-
-    std::string jwk = fmt::format(R"({{"e":"{}","kty":"RSA","n":"{}"}})", e_enc, n_enc);
-    LOG_DEBUG(log, "JWK: {}", jwk);
-
-    auto protected_data = fmt::format(R"({{"alg":"RS256","jwk":{},"nonce":"{}","url":"https://acme-staging-v02.api.letsencrypt.org/acme/new-acct"}})", jwk, nonce);
-    LOG_DEBUG(log, "Protected data: {}", protected_data);
-
-    auto protected_enc = base64Encode(protected_data, /* url_encoding */ true);
-    LOG_DEBUG(log, "Protected data encoded: {}", protected_enc);
-
-    std::string payload = R"({"termsOfServiceAgreed":true,"contact":["mailto:admin@example.org"]})";
-    auto payload_enc = base64Encode(payload, /* url_encoding */ true);
-    LOG_DEBUG(log, "Payload: {}", payload);
-
-    trimRight(protected_enc, '=');
-    trimRight(payload_enc, '=');
-    std::string to_sign = protected_enc + "." + payload_enc;
-
+std::string hmacSha256(std::string to_sign, Poco::Crypto::RSAKey & key)
+{
     EVP_PKEY * pkey = EVP_PKEY_new();
     auto ret = EVP_PKEY_assign_RSA(pkey, key.impl()->getRSA());
     if (ret != 1)
@@ -224,14 +187,66 @@ void ACMEClient::authenticate(Poco::Crypto::RSAKey & key)
     }
 
     std::string signature_str = std::string(signature.begin(), signature.end());
-    signature_str = base64Encode(signature_str, /* url_encoding */ true);
 
-    trimRight(signature_str, '=');
+    return base64EncodeMine(signature_str);
+}
+
+std::string formJWK(Poco::Crypto::RSAKey & key)
+{
+    auto e = key.encryptionExponent();
+    auto n = key.modulus();
+
+    auto e_str = std::string(e.begin(), e.end());
+    auto n_str = std::string(n.begin(), n.end());
+
+    auto e_enc = base64EncodeMine(e_str);
+    auto n_enc = base64EncodeMine(n_str);
+
+    return fmt::format(R"({{"e":"{}","kty":"RSA","n":"{}"}})", e_enc, n_enc);
+}
+
+std::string formProtectedData(const std::string & jwk, const std::string & nonce, const std::string & url)
+{
+    auto protected_data = fmt::format(R"({{"alg":"RS256","jwk":{},"nonce":"{}","url":"{}"}})", jwk, nonce, url);
+
+    return base64EncodeMine(protected_data);
+}
+
+void ACMEClient::authenticate(Poco::Crypto::RSAKey & key)
+{
+    const auto nonce = requestNonce();
+
+    // {
+    //   "protected": base64url({
+    //     "alg": "RS256",
+    //     "jwk": {...},
+    //     "nonce": "6S8IqOGY7eL2lsGoTZYifg",
+    //     "url": "https://example.com/acme/new-account"
+    //   }),
+    //   "payload": base64url({
+    //     "termsOfServiceAgreed": true,
+    //     "contact": [
+    //       "mailto:cert-admin@example.org",
+    //       "mailto:admin@example.org"
+    //     ]
+    //   }),
+    //   "signature": "RZPOnYoPs1PhjszF...-nh6X1qtOFPB519I"
+    // }
+
+    auto uri = Poco::URI("https://acme-staging-v02.api.letsencrypt.org/acme/new-acct");
+
+    auto jwk = formJWK(key);
+    auto protected_enc = formProtectedData(jwk, nonce, uri.toString());
+
+    std::string payload = R"({"termsOfServiceAgreed":true,"contact":["mailto:admin@example.org"]})";
+    auto payload_enc = base64EncodeMine(payload);
+
+    std::string to_sign = protected_enc + "." + payload_enc;
+    hmacSha256(to_sign, key);
 
     std::string request_data = R"({"protected":")" + protected_enc + R"(","payload":")" + payload_enc + R"(","signature":")" + signature_str + R"("})";
     LOG_DEBUG(log, "Request data: {}", request_data);
 
-    auto uri = Poco::URI("https://acme-staging-v02.api.letsencrypt.org/acme/new-acct");
     auto r = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery());
     r.set("Content-Type", "application/jose+json");
     r.set("Content-Length", std::to_string(request_data.size()));
@@ -283,6 +298,9 @@ void ACMEClient::dummyCallback(const std::string & domain_name, const std::strin
 
 std::string ACMEClient::requestChallenge(const std::string & uri)
 {
+    /// TODO go to Keeper and query existing challenge for domain
+    /// if not present, return "".
+
     LOG_DEBUG(log, "Requesting challenge for {}", uri);
 
     client->issueCertificate({domains.begin(), domains.end()}, dumberCallback);
