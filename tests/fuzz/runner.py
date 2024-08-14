@@ -11,7 +11,7 @@ FUZZER_ARGS = os.getenv("FUZZER_ARGS", "")
 
 
 def run_fuzzer(fuzzer: str):
-    logging.info(f"Running fuzzer {fuzzer}...")
+    logging.info("Running fuzzer %s...", fuzzer)
 
     corpus_dir = f"{fuzzer}.in"
     with Path(corpus_dir) as path:
@@ -29,28 +29,27 @@ def run_fuzzer(fuzzer: str):
 
             if parser.has_section("asan"):
                 os.environ["ASAN_OPTIONS"] = (
-                    f"{os.environ['ASAN_OPTIONS']}:{':'.join('%s=%s' % (key, value) for key, value in parser['asan'].items())}"
+                    f"{os.environ['ASAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['asan'].items())}"
                 )
 
             if parser.has_section("msan"):
                 os.environ["MSAN_OPTIONS"] = (
-                    f"{os.environ['MSAN_OPTIONS']}:{':'.join('%s=%s' % (key, value) for key, value in parser['msan'].items())}"
+                    f"{os.environ['MSAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['msan'].items())}"
                 )
 
             if parser.has_section("ubsan"):
                 os.environ["UBSAN_OPTIONS"] = (
-                    f"{os.environ['UBSAN_OPTIONS']}:{':'.join('%s=%s' % (key, value) for key, value in parser['ubsan'].items())}"
+                    f"{os.environ['UBSAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['ubsan'].items())}"
                 )
 
             if parser.has_section("libfuzzer"):
                 custom_libfuzzer_options = " ".join(
-                    "-%s=%s" % (key, value)
-                    for key, value in parser["libfuzzer"].items()
+                    f"-{key}={value}" for key, value in parser["libfuzzer"].items()
                 )
 
             if parser.has_section("fuzzer_arguments"):
                 fuzzer_arguments = " ".join(
-                    ("%s" % key) if value == "" else ("%s=%s" % (key, value))
+                    (f"{key}") if value == "" else (f"{key}={value}")
                     for key, value in parser["fuzzer_arguments"].items()
                 )
 
@@ -65,7 +64,7 @@ def run_fuzzer(fuzzer: str):
 
     cmd_line += " < /dev/null"
 
-    logging.info(f"...will execute: {cmd_line}")
+    logging.info("...will execute: %s", cmd_line)
     subprocess.check_call(cmd_line, shell=True)
 
 
