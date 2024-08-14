@@ -157,7 +157,7 @@ def test_with_replicated_merge_tree():
         array_size_range=[10, 50],
     )
 
-    node.query("DROP TABLE IF EXISTS {}".format(table_name))
+    node.query("DROP TABLE {} SYNC".format(table_name))
 
 
 def test_with_replicated_merge_tree_multithread():
@@ -185,7 +185,7 @@ def test_with_replicated_merge_tree_multithread():
         array_size_range=[10, 15],
     )
 
-    node.query("DROP TABLE IF EXISTS {}".format(table_name))
+    node.query("DROP TABLE {} SYNC".format(table_name))
 
 
 # Ensure that the combined duration of inserts with adaptive timeouts is less than
@@ -369,4 +369,4 @@ def test_change_queries_frequency():
     for line in res.splitlines():
         assert int(line) == min_ms
 
-    node.query("DROP TABLE IF EXISTS {}".format(table_name))
+    node.query("DROP TABLE IF EXISTS {} SYNC".format(table_name))
