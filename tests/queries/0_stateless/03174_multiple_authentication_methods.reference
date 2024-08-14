@@ -49,3 +49,5 @@ Create user with ADD identification, should fail, add is not allowed for create 
 BAD_ARGUMENTS
 Trailing comma should result in syntax error
 SYNTAX_ERROR
+First auth method can't specify type if WITH keyword is not present
+SYNTAX_ERROR

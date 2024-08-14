@@ -48,7 +48,12 @@ namespace
         });
     }
 
-    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTAuthenticationData> & auth_data, bool is_type_specifier_mandatory)
+    bool parseAuthenticationData(
+        IParserBase::Pos & pos,
+        Expected & expected,
+        std::shared_ptr<ASTAuthenticationData> & auth_data,
+        bool is_type_specifier_mandatory,
+        bool is_type_specifier_allowed)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -104,6 +109,10 @@ namespace
                 }
                 else if (is_type_specifier_mandatory)
                     return false;
+            }
+            else if (!is_type_specifier_allowed)
+            {
+                return false;
             }
 
             /// If authentication type is not specified, then the default password type is used
@@ -231,7 +240,7 @@ namespace
 
                 std::shared_ptr<ASTAuthenticationData> ast_authentication_data;
 
-                if (!parseAuthenticationData(pos, expected, ast_authentication_data, is_type_specifier_mandatory))
+                if (!parseAuthenticationData(pos, expected, ast_authentication_data, is_type_specifier_mandatory, is_type_specifier_mandatory))
                 {
                     return false;
                 }
@@ -247,7 +256,7 @@ namespace
             {
                 std::shared_ptr<ASTAuthenticationData> ast_authentication_data;
 
-                if (!parseAuthenticationData(aux_pos, expected, ast_authentication_data, false))
+                if (!parseAuthenticationData(aux_pos, expected, ast_authentication_data, false, true))
                 {
                     break;
                 }

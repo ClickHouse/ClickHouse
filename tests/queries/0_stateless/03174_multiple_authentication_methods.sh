@@ -141,4 +141,7 @@ ${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} ADD IDENTIFIED WITH plaintext_
 echo "Trailing comma should result in syntax error"
 ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password by '1'," 2>&1 | grep -m1 -o "SYNTAX_ERROR"
 
+echo "First auth method can't specify type if WITH keyword is not present"
+${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED plaintext_password by '1'" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"
