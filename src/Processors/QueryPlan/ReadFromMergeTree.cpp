@@ -24,8 +24,8 @@
 #include <Processors/Transforms/SelectByIndicesTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeIndexAnnoy.h>
-#include <Storages/MergeTree/MergeTreeIndexUSearch.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
+#include <Storages/MergeTree/MergeTreeIndexLegacyVectorSimilarity.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
@@ -51,6 +51,8 @@
 #include <iterator>
 #include <memory>
 #include <unordered_map>
+
+#include "config.h"
 
 using namespace DB;
 
@@ -1488,16 +1490,14 @@ static void buildIndexes(
             else
             {
                 MergeTreeIndexConditionPtr condition;
-                if (index_helper->isVectorSearch())
+                if (index_helper->isVectorSimilarityIndex())
                 {
-#ifdef ENABLE_ANNOY
-                    if (const auto * annoy = typeid_cast<const MergeTreeIndexAnnoy *>(index_helper.get()))
-                        condition = annoy->createIndexCondition(query_info, context);
+#if USE_USEARCH
+                    if (const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get()))
+                        condition = vector_similarity_index->createIndexCondition(query_info, context);
 #endif
-#ifdef ENABLE_USEARCH
-                    if (const auto * usearch = typeid_cast<const MergeTreeIndexUSearch *>(index_helper.get()))
-                        condition = usearch->createIndexCondition(query_info, context);
-#endif
+                    if (const auto * legacy_vector_similarity_index = typeid_cast<const MergeTreeIndexLegacyVectorSimilarity *>(index_helper.get()))
+                        condition = legacy_vector_similarity_index->createIndexCondition(query_info, context);
                     if (!condition)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
                 }
