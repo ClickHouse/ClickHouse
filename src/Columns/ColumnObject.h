@@ -215,15 +215,15 @@ public:
 
     /// Try to add new dynamic path. Returns pointer to the new dynamic
     /// path column or nullptr if limit on dynamic paths is reached.
-    ColumnDynamic * tryToAddNewDynamicPath(const std::string_view path);
+    ColumnDynamic * tryToAddNewDynamicPath( std::string_view path);
     /// Throws an exception if cannot add.
-    void addNewDynamicPath(const std::string_view path);
+    void addNewDynamicPath(std::string_view path);
 
     void setDynamicPaths(const std::vector<String> & paths);
     void setMaxDynamicPaths(size_t max_dynamic_paths_);
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
 
-    void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, const std::string_view path, const IColumn & column, size_t n);
+    void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const IColumn & column, size_t n);
     void deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column) const;
 
     /// Paths in shared data are sorted in each row. Use this method to find the lower bound for specific path in the row.

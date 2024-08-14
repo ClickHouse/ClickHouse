@@ -100,7 +100,7 @@ enum class BinaryTypeIndex : uint8_t
 
 /// In future we can introduce more arguments in the JSON data type definition.
 /// To support such changes, use versioning in the serialization of JSON type.
-static const UInt8 TYPE_JSON_SERIALIZATION_VERSION = 0;
+const UInt8 TYPE_JSON_SERIALIZATION_VERSION = 0;
 
 BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
 {

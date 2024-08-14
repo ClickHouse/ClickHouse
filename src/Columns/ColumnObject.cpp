@@ -250,7 +250,7 @@ void ColumnObject::insertData(const char *, size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for {}", getName());
 }
 
-ColumnDynamic * ColumnObject::tryToAddNewDynamicPath(const std::string_view path)
+ColumnDynamic * ColumnObject::tryToAddNewDynamicPath(std::string_view path)
 {
     if (dynamic_paths.size() == max_dynamic_paths)
         return nullptr;
@@ -263,7 +263,7 @@ ColumnDynamic * ColumnObject::tryToAddNewDynamicPath(const std::string_view path
     return it_ptr->second;
 }
 
-void ColumnObject::addNewDynamicPath(const std::string_view path)
+void ColumnObject::addNewDynamicPath(std::string_view path)
 {
     if (!tryToAddNewDynamicPath(path))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add new dynamic path as the limit ({}) on dynamic paths is reached", max_dynamic_paths);
@@ -605,7 +605,7 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
     }
 }
 
-void ColumnObject::serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, const std::string_view path, const IColumn & column, size_t n)
+void ColumnObject::serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const IColumn & column, size_t n)
 {
     /// Don't store Null values in shared data. We consider Null value equivalent to the absence
     /// of this path in the row because we cannot distinguish these 2 cases for dynamic paths.
