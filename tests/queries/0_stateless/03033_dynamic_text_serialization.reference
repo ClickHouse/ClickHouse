@@ -11,11 +11,11 @@ JSON
 {"d":["1","str",["1","2","3"]],"dynamicType(d)":"Tuple(Int64, String, Array(Int64))"}
 {"d":null,"dynamicType(d)":"None"}
 {"d":true,"dynamicType(d)":"Bool"}
-{"d":"42","dynamicType(d)":"Int64"}
-{"d":"42.42","dynamicType(d)":"String"}
-{"d":"str","dynamicType(d)":"String"}
-{"d":null,"dynamicType(d)":"None"}
-{"d":"1","dynamicType(d)":"Int64"}
+{"d":"42","dynamicType(d)":"Int64","isDynamicElementInSharedData(d)":false}
+{"d":42.42,"dynamicType(d)":"Float64","isDynamicElementInSharedData(d)":false}
+{"d":"str","dynamicType(d)":"String","isDynamicElementInSharedData(d)":true}
+{"d":null,"dynamicType(d)":"None","isDynamicElementInSharedData(d)":false}
+{"d":true,"dynamicType(d)":"Bool","isDynamicElementInSharedData(d)":true}
 CSV
 42,"Int64"
 42.42,"Float64"
@@ -44,12 +44,12 @@ Cast using parsing
 [1,2,3]	Array(Int64)
 2020-01-01	Date
 2020-01-01 10:00:00.000000000	DateTime64(9)
-\N	None
+NULL	String
 true	Bool
-42	Int64
-42.42	Float64
-[1, 2, 3]	String
-2020-01-01	String
-2020-01-01 10:00:00	String
-\N	None
-true	String
+42	Int64	false
+42.42	Float64	false
+[1,2,3]	Array(Int64)	false
+2020-01-01	Date	true
+2020-01-01 10:00:00.000000000	DateTime64(9)	true
+NULL	String	true
+true	Bool	true

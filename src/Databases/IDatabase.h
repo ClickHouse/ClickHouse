@@ -416,7 +416,6 @@ public:
         std::lock_guard lock{mutex};
         return database_name;
     }
-
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }
 

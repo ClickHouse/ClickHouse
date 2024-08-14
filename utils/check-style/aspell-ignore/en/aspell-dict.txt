@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2942 
+personal_ws-1.1 en 2942
 AArch
 ACLs
 ALTERs
@@ -562,6 +562,7 @@ MindsDB
 Mongodb
 Monotonicity
 MsgPack
+MultiLineString
 MultiPolygon
 Multiline
 Multiqueries
@@ -1674,6 +1675,7 @@ fuzzQuery
 fuzzer
 fuzzers
 gRPC
+gaugehistogram
 gccMurmurHash
 gcem
 generateRandom
@@ -1700,6 +1702,8 @@ getOSKernelVersion
 getServerPort
 getSetting
 getSizeOfEnumType
+getSubcolumn
+getTypeSerializationStreams
 getblockinfo
 getevents
 ghcnd
@@ -2089,6 +2093,7 @@ multiSearchFirstPositionUTF
 multibyte
 multidirectory
 multiline
+multilinestring
 multiplyDecimal
 multipolygon
 multisearchany
@@ -2112,6 +2117,7 @@ namenode
 namepassword
 nameprofile
 namequota
+namespace
 namespaces
 natively
 nats
@@ -2366,6 +2372,7 @@ rankCorr
 rapidjson
 rawblob
 readWKTLineString
+readWKTMultiLineString
 readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
@@ -2558,6 +2565,7 @@ startsWithUTF
 startswith
 statbox
 stateful
+stateset
 stddev
 stddevPop
 stddevPopStable
@@ -2689,6 +2697,10 @@ themself
 threadpool
 throwIf
 timeDiff
+TimeSeries
+timeSeriesData
+timeSeriesMetrics
+timeSeriesTags
 timeSlot
 timeSlots
 timeZone
