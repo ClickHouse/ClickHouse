@@ -35,7 +35,7 @@ def get_postgres_conn(
     auto_commit=True,
     database_name="postgres_database",
     replication=False,
-    connect_timeout=None
+    connect_timeout=None,
 ):
     if database == True:
         conn_string = f"host={ip} port={port} dbname='{database_name}' user='postgres' password='mysecretpassword'"

@@ -1173,9 +1173,21 @@ class ClickHouseCluster:
 
         return self.base_mysql_cluster_cmd
 
-    def setup_postgres_cmd(self, instance, env_variables, docker_compose_yml_dir, ssl=False):
+    def setup_postgres_cmd(
+        self, instance, env_variables, docker_compose_yml_dir, ssl=False
+    ):
         self.base_cmd.extend(
-            ["--file", p.join(docker_compose_yml_dir, ("docker_compose_postgres.yml" if not ssl else "docker_compose_postgres_ssl.yml"))]
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir,
+                    (
+                        "docker_compose_postgres.yml"
+                        if not ssl
+                        else "docker_compose_postgres_ssl.yml"
+                    ),
+                ),
+            ]
         )
         env_variables["POSTGRES_PORT"] = str(self.postgres_port)
         env_variables["POSTGRES_DIR"] = self.postgres_logs_dir
@@ -1189,7 +1201,14 @@ class ClickHouseCluster:
             "--project-name",
             self.project_name,
             "--file",
-            p.join(docker_compose_yml_dir, ("docker_compose_postgres.yml" if not ssl else "docker_compose_postgres_ssl.yml")),
+            p.join(
+                docker_compose_yml_dir,
+                (
+                    "docker_compose_postgres.yml"
+                    if not ssl
+                    else "docker_compose_postgres_ssl.yml"
+                ),
+            ),
         ]
         return self.base_postgres_cmd
 
@@ -1854,7 +1873,9 @@ class ClickHouseCluster:
 
         if with_postgres_ssl and not self.with_postgres_ssl:
             cmds.append(
-                self.setup_postgres_cmd(instance, env_variables, docker_compose_yml_dir, ssl=True)
+                self.setup_postgres_cmd(
+                    instance, env_variables, docker_compose_yml_dir, ssl=True
+                )
             )
 
         if with_postgres_cluster and not self.with_postgres_cluster:
@@ -2066,11 +2087,7 @@ class ClickHouseCluster:
 
     def restart_container(self, container_name):
         p = subprocess.Popen(
-            ("docker",
-             "restart",
-             "--signal",
-             "9",
-             container_name),
+            ("docker", "restart", "--signal", "9", container_name),
             stdout=subprocess.PIPE,
         )
         p.communicate()
@@ -2866,7 +2883,9 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_mysql_cluster_to_start()
 
-            if (self.with_postgres or self.with_postgres_ssl) and self.base_postgres_cmd:
+            if (
+                self.with_postgres or self.with_postgres_ssl
+            ) and self.base_postgres_cmd:
                 logging.debug("Setup Postgres")
                 if os.path.exists(self.postgres_dir):
                     shutil.rmtree(self.postgres_dir)
