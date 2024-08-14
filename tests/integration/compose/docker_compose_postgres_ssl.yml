@@ -1,0 +1,37 @@
+version: '2.3'
+services:
+    postgres1:
+        image: postgres
+        command: ["postgres",
+                  "-c", "wal_level=logical",
+                  "-c", "max_replication_slots=2",
+                  "-c", "logging_collector=on",
+                  "-c", "log_directory=/postgres/logs",
+                  "-c", "log_filename=postgresql.log",
+                  "-c", "log_statement=all",
+                  "-c", "max_connections=200",
+                  "-c", "ssl=on",
+                  "-c", "ssl_cert_file=/var/lib/postgresql/server.crt",
+                  "-c", "ssl_key_file=/var/lib/postgresql/server.key"]
+        restart: always
+        expose:
+            - ${POSTGRES_PORT:-5432}
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U postgres"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        networks:
+            default:
+                aliases:
+                    - postgre-sql.local
+        environment:
+            POSTGRES_HOST_AUTH_METHOD: "trust"
+            POSTGRES_PASSWORD: mysecretpassword
+            PGDATA: /postgres/data
+        volumes:
+            - type: ${POSTGRES_LOGS_FS:-tmpfs}
+              source: ${POSTGRES_DIR:-}
+              target: /postgres/
+            - /ClickHouse/tests/integration/compose/files/server.crt:/var/lib/postgresql/server.crt:ro
+            - /ClickHouse/tests/integration/compose/files/server.key:/var/lib/postgresql/server.key:ro
