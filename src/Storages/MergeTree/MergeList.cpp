@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, const ContextPtr & context)
     : table_id{table_id_}
     , partition_id{future_part->part_info.partition_id}
@@ -21,8 +26,15 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
     , merge_type{future_part->merge_type}
     , merge_algorithm{MergeAlgorithm::Undecided}
 {
+    auto format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    if (result_part_name != result_part_info.getPartNameV1())
+        format_version = MERGE_TREE_DATA_OLD_FORMAT_VERSION;
+
     for (const auto & source_part : future_part->parts)
     {
+        if (!result_part_info.contains(MergeTreePartInfo::fromPartName(source_part->name, format_version)))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source part {} is not covered by result part {}", source_part->name, result_part_info.getPartNameV1());
+
         source_part_names.emplace_back(source_part->name);
         source_part_paths.emplace_back(source_part->getDataPartStorage().getFullPath());
 
@@ -41,6 +53,9 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         const auto & part = future_part->parts[0];
         part->partition.serializeText(part->storage, out, {});
     }
+
+    if (is_mutation && future_part->parts.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} source parts for mutation {}", future_part->parts.size(), result_part_info.getPartNameV1());
 
     thread_group = ThreadGroup::createForBackgroundProcess(context);
 }
