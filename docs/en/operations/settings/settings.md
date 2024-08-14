@@ -1800,6 +1800,17 @@ Possible values:
 
 Default value: `0`.
 
+## query_cache_tag {#query-cache-tag}
+
+A string which acts as a label for [query cache](../query-cache.md) entries.
+The same queries with different tags are considered different by the query cache.
+
+Possible values:
+
+- Any string
+
+Default value: `''`
+
 ## query_cache_max_size_in_bytes {#query-cache-max-size-in-bytes}
 
 The maximum amount of memory (in bytes) the current user may allocate in the [query cache](../query-cache.md). 0 means unlimited.
@@ -4629,8 +4640,8 @@ Default Value: 5.
 
 ## memory_overcommit_ratio_denominator {#memory_overcommit_ratio_denominator}
 
-It represents soft memory limit in case when hard limit is reached on user level.
-This value is used to compute overcommit ratio for the query.
+It represents the soft memory limit when the hard limit is reached on the global level.
+This value is used to compute the overcommit ratio for the query.
 Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 
@@ -4646,8 +4657,8 @@ Default value: `5000000`.
 
 ## memory_overcommit_ratio_denominator_for_user {#memory_overcommit_ratio_denominator_for_user}
 
-It represents soft memory limit in case when hard limit is reached on global level.
-This value is used to compute overcommit ratio for the query.
+It represents the soft memory limit when the hard limit is reached on the user level.
+This value is used to compute the overcommit ratio for the query.
 Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 
@@ -5626,3 +5637,20 @@ Default value: `False`
 Disable all insert and mutations (alter table update / alter table delete / alter table drop partition). Set to true, can make this node focus on reading queries.
 
 Default value: `false`.
+
+## use_hive_partitioning
+
+When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](../../engines/table-engines/special/file.md#hive-style-partitioning)/[S3](../../engines/table-engines/integrations/s3.md#hive-style-partitioning)/[URL](../../engines/table-engines/special/url.md#hive-style-partitioning)/[HDFS](../../engines/table-engines/integrations/hdfs.md#hive-style-partitioning)/[AzureBlobStorage](../../engines/table-engines/integrations/azureBlobStorage.md#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
+
+Default value: `false`.
+
+## allow_experimental_time_series_table {#allow-experimental-time-series-table}
+
+Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.
+
+Possible values:
+
+- 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
+- 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
+
+Default value: `0`.

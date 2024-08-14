@@ -62,7 +62,7 @@ IMergingAlgorithm::MergedStats PasteJoinAlgorithm::getMergedStats() const
 {
     return
     {
-        .bytes = 0,
+        .bytes = stat.num_bytes[0] + stat.num_bytes[1],
         .rows = stat.num_rows[0] + stat.num_rows[1],
         .blocks = stat.num_blocks[0] + stat.num_blocks[1],
     };

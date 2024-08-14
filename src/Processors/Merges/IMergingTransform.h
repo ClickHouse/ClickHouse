@@ -113,7 +113,7 @@ public:
 
     void work() override
     {
-        Stopwatch watch;
+        Stopwatch watch{CLOCK_MONOTONIC_COARSE};
 
         if (!state.init_chunks.empty())
             algorithm.initialize(std::move(state.init_chunks));
@@ -180,12 +180,12 @@ protected:
 
         if (seconds == 0.0)
         {
-            LOG_DEBUG(log, "{}: {} blocks, {} rows, {} bytes in 0 sec.",
+            LOG_DEBUG(log, "{}, {} blocks, {} rows, {} bytes in 0 sec.",
                 transform_message, stats.blocks, stats.rows, stats.bytes);
         }
         else
         {
-            LOG_DEBUG(log, "{}: {} blocks, {} rows, {} bytes in {} sec., {} rows/sec., {}/sec.",
+            LOG_DEBUG(log, "{}, {} blocks, {} rows, {} bytes in {} sec., {} rows/sec., {}/sec.",
                 transform_message, stats.blocks, stats.rows, stats.bytes,
                 seconds, stats.rows / seconds, ReadableSize(stats.bytes / seconds));
         }

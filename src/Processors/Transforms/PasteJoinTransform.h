@@ -54,6 +54,7 @@ private:
     {
         size_t num_blocks[2] = {0, 0};
         size_t num_rows[2] = {0, 0};
+        size_t num_bytes[2] = {0, 0};
 
         size_t max_blocks_loaded = 0;
     };

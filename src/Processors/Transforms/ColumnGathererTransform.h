@@ -2,7 +2,6 @@
 
 #include <IO/ReadBuffer.h>
 #include <Common/PODArray.h>
-#include "base/types.h"
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
 

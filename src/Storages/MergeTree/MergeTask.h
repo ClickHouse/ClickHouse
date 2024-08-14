@@ -203,7 +203,7 @@ private:
         bool need_prefix;
 
         scope_guard temporary_directory_lock;
-        UInt64 prev_elapesed_ms{0};
+        UInt64 prev_elapsed_ms{0};
     };
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;

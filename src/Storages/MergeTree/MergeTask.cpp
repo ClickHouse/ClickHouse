@@ -5,9 +5,6 @@
 #include <memory>
 #include <fmt/format.h>
 
-#include "Common/ElapsedTimeProfileEventIncrement.h"
-#include "Common/Logger.h"
-#include "Common/Stopwatch.h"
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Core/Settings.h>
@@ -47,6 +44,8 @@
 namespace ProfileEvents
 {
     extern const Event Merge;
+    extern const Event MergedColumns;
+    extern const Event GatheredColumns;
     extern const Event MergeTotalMilliseconds;
     extern const Event MergeExecuteMilliseconds;
     extern const Event MergeHorizontalStageExecuteMilliseconds;
@@ -184,6 +183,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 {
+    ProfileEvents::increment(ProfileEvents::Merge);
+
     String local_tmp_prefix;
     if (global_ctx->need_prefix)
     {
@@ -200,8 +201,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     /// throw exception
     if (isTTLMergeType(global_ctx->future_part->merge_type) && global_ctx->ttl_merges_blocker->isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with TTL");
-
-    ProfileEvents::increment(ProfileEvents::Merge);
 
     LOG_DEBUG(ctx->log, "Merging {} parts: from {} to {} into {} with storage {}",
         global_ctx->future_part->parts.size(),
@@ -463,8 +462,12 @@ void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const Str
 
 MergeTask::StageRuntimeContextPtr MergeTask::ExecuteAndFinalizeHorizontalPart::getContextForNextStage()
 {
-    ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
-    ProfileEvents::increment(ProfileEvents::MergeHorizontalStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    /// Do not increment for projection stage because time is already accounted in main task.
+    if (global_ctx->parent_part == nullptr)
+    {
+        ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+        ProfileEvents::increment(ProfileEvents::MergeHorizontalStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    }
 
     auto new_ctx = std::make_shared<VerticalMergeRuntimeContext>();
 
@@ -483,8 +486,12 @@ MergeTask::StageRuntimeContextPtr MergeTask::ExecuteAndFinalizeHorizontalPart::g
 
 MergeTask::StageRuntimeContextPtr MergeTask::VerticalMergeStage::getContextForNextStage()
 {
-    ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
-    ProfileEvents::increment(ProfileEvents::MergeVerticalStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    /// Do not increment for projection stage because time is already accounted in main task.
+    if (global_ctx->parent_part == nullptr)
+    {
+        ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+        ProfileEvents::increment(ProfileEvents::MergeVerticalStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    }
 
     auto new_ctx = std::make_shared<MergeProjectionsRuntimeContext>();
     new_ctx->need_sync = std::move(ctx->need_sync);
@@ -826,6 +833,9 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
 
     /// Print overall profiling info. NOTE: it may duplicates previous messages
     {
+        ProfileEvents::increment(ProfileEvents::MergedColumns, global_ctx->merging_columns.size());
+        ProfileEvents::increment(ProfileEvents::GatheredColumns, global_ctx->gathering_columns.size());
+
         double elapsed_seconds = global_ctx->merge_list_element_ptr->watch.elapsedSeconds();
         LOG_DEBUG(ctx->log,
             "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",
@@ -950,8 +960,13 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
 
 MergeTask::StageRuntimeContextPtr MergeTask::MergeProjectionsStage::getContextForNextStage()
 {
-    ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
-    ProfileEvents::increment(ProfileEvents::MergeProjectionStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    /// Do not increment for projection stage because time is already accounted in main task.
+    /// The projection stage has its own empty projection stage which may add a drift of several milliseconds.
+    if (global_ctx->parent_part == nullptr)
+    {
+        ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+        ProfileEvents::increment(ProfileEvents::MergeProjectionStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    }
 
     return nullptr;
 }
@@ -1037,13 +1052,17 @@ bool MergeTask::execute()
     /// Stage is finished, need to initialize context for the next stage and update profile events.
 
     UInt64 current_elapsed_ms = global_ctx->merge_list_element_ptr->watch.elapsedMilliseconds();
-    UInt64 stage_elapsed_ms = current_elapsed_ms - global_ctx->prev_elapesed_ms;
-    global_ctx->prev_elapesed_ms = current_elapsed_ms;
-
-    ProfileEvents::increment(current_stage->getTotalTimeProfileEvent(), stage_elapsed_ms);
-    ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, stage_elapsed_ms);
+    UInt64 stage_elapsed_ms = current_elapsed_ms - global_ctx->prev_elapsed_ms;
+    global_ctx->prev_elapsed_ms = current_elapsed_ms;
 
     auto next_stage_context = current_stage->getContextForNextStage();
+
+    /// Do not increment for projection stage because time is already accounted in main task.
+    if (global_ctx->parent_part == nullptr)
+    {
+        ProfileEvents::increment(current_stage->getTotalTimeProfileEvent(), stage_elapsed_ms);
+        ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, stage_elapsed_ms);
+    }
 
     /// Move to the next stage in an array of stages
     ++stages_iterator;
