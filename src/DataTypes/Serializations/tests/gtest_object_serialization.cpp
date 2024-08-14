@@ -17,7 +17,7 @@ TEST(ObjectSerialization, FieldBinarySerialization)
     ReadBufferFromString istr(ostr.str());
     Field object2;
     serialization->deserializeBinary(object2, istr, FormatSettings());
-    ASSERT_EQ(object1, object2.get<Object>());
+    ASSERT_EQ(object1, object2.safeGet<Object>());
 }
 
 

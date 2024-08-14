@@ -20,6 +20,11 @@ struct StringHashForHeterogeneousLookup
     {
         return hash_type()(str);
     }
+
+    auto operator()(const char * data) const
+    {
+        return hash_type()(data);
+    }
 };
 
 }
