@@ -32,7 +32,7 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
 
     for (const auto & source_part : future_part->parts)
     {
-        if (!result_part_info.contains(MergeTreePartInfo::fromPartName(source_part->name, format_version)))
+        if (!source_part->getParentPart() && !result_part_info.contains(MergeTreePartInfo::fromPartName(source_part->name, format_version)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Source part {} is not covered by result part {}", source_part->name, result_part_info.getPartNameV1());
 
         source_part_names.emplace_back(source_part->name);
