@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <Coordination/ACLMap.h>
 #include <Coordination/SessionExpiryQueue.h>
@@ -41,8 +42,6 @@ struct NodeStats
 
     uint32_t data_size{0};
 
-    uint64_t acl_id = 0; /// 0 -- no ACL by default
-                         ///
     void copyStats(const Coordination::Stat & stat);
 
     bool isEphemeral() const
@@ -146,6 +145,8 @@ private:
 struct KeeperRocksNodeInfo
 {
     NodeStats stats;
+    uint64_t acl_id = 0; /// 0 -- no ACL by default
+
     /// dummy interface for test
     void addChild(StringRef) {}
     auto getChildren() const
@@ -181,6 +182,7 @@ struct KeeperRocksNode : public KeeperRocksNodeInfo
     void shallowCopy(const KeeperRocksNode & other)
     {
         stats = other.stats;
+        acl_id = other.acl_id;
         if (stats.data_size != 0)
         {
             data = std::unique_ptr<char[]>(new char[stats.data_size]);
@@ -220,6 +222,8 @@ struct KeeperMemNode
     NodeStats stats;
     std::unique_ptr<char[]> data{nullptr};
     mutable uint64_t cached_digest = 0;
+
+    uint64_t acl_id = 0; /// 0 -- no ACL by default
 
     KeeperMemNode() = default;
 
@@ -505,11 +509,12 @@ public:
         std::unordered_map<int64_t, std::list<std::pair<int64_t, std::shared_ptr<AuthID>>>> session_and_auth;
         std::unordered_set<int64_t> closed_sessions;
 
+        using ZxidToNodes = std::map<int64_t, std::unordered_set<std::string_view>>;
         struct UncommittedNode
         {
             std::shared_ptr<Node> node{nullptr};
             std::optional<Coordination::ACLs> acls{};
-            std::vector<int64_t> applied_zxids{};
+            std::unordered_set<uint64_t> applied_zxids{};
         };
 
         struct Hash
@@ -536,6 +541,7 @@ public:
         };
 
         mutable std::unordered_map<std::string, UncommittedNode, Hash, Equal> nodes;
+        mutable ZxidToNodes zxid_to_nodes;
 
         mutable std::mutex deltas_mutex;
         std::list<Delta> deltas TSA_GUARDED_BY(deltas_mutex);

@@ -23,11 +23,8 @@ struct ZooKeeperResponse : virtual Response
 {
     XID xid = 0;
 
-    UInt64 response_created_time_ns = 0;
-
     ZooKeeperResponse() = default;
     ZooKeeperResponse(const ZooKeeperResponse &) = default;
-    ~ZooKeeperResponse() override;
     virtual void readImpl(ReadBuffer &) = 0;
     virtual void writeImpl(WriteBuffer &) const = 0;
     virtual size_t sizeImpl() const = 0;
@@ -50,13 +47,11 @@ struct ZooKeeperRequest : virtual Request
 
     bool restored_from_zookeeper_log = false;
 
-    UInt64 request_created_time_ns = 0;
     UInt64 thread_id = 0;
     String query_id;
 
     ZooKeeperRequest() = default;
     ZooKeeperRequest(const ZooKeeperRequest &) = default;
-    ~ZooKeeperRequest() override;
 
     virtual OpNum getOpNum() const = 0;
 
@@ -73,7 +68,6 @@ struct ZooKeeperRequest : virtual Request
     static std::shared_ptr<ZooKeeperRequest> read(ReadBuffer & in);
 
     virtual ZooKeeperResponsePtr makeResponse() const = 0;
-    ZooKeeperResponsePtr setTime(ZooKeeperResponsePtr response) const;
     virtual bool isReadRequest() const = 0;
 
     virtual void createLogElements(LogElements & elems) const;
@@ -538,7 +532,7 @@ struct ZooKeeperGetACLResponse final : GetACLResponse, ZooKeeperResponse
     size_t bytesSize() const override { return GetACLResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 };
 
-struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
+struct ZooKeeperMultiRequest final : MultiRequest<ZooKeeperRequestPtr>, ZooKeeperRequest
 {
     OpNum getOpNum() const override;
     ZooKeeperMultiRequest() = default;
@@ -571,12 +565,14 @@ private:
 
 struct ZooKeeperMultiResponse : MultiResponse, ZooKeeperResponse
 {
-    explicit ZooKeeperMultiResponse(const Requests & requests)
+    ZooKeeperMultiResponse() = default;
+
+    explicit ZooKeeperMultiResponse(const std::vector<ZooKeeperRequestPtr> & requests)
     {
         responses.reserve(requests.size());
 
         for (const auto & request : requests)
-            responses.emplace_back(dynamic_cast<const ZooKeeperRequest &>(*request).makeResponse());
+            responses.emplace_back(request->makeResponse());
     }
 
     explicit ZooKeeperMultiResponse(const Responses & responses_)

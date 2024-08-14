@@ -105,7 +105,7 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log
         String data;
         Coordination::read(data, in);
         node.setData(data);
-        Coordination::read(node.stats.acl_id, in);
+        Coordination::read(node.acl_id, in);
 
         /// Deserialize stat
         Coordination::read(node.stats.czxid, in);
@@ -136,7 +136,7 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log
             if (ephemeral_owner != 0)
                 storage.ephemerals[ephemeral_owner].insert(path);
 
-            storage.acl_map.addUsage(node.stats.acl_id);
+            storage.acl_map.addUsage(node.acl_id);
         }
         Coordination::read(path, in);
         count++;

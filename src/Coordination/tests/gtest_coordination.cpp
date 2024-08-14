@@ -1,6 +1,7 @@
 #include <chrono>
 #include <gtest/gtest.h>
 
+#include "base/defines.h"
 #include "config.h"
 
 #if USE_NURAFT
@@ -1540,7 +1541,7 @@ void addNode(Storage & storage, const std::string & path, const std::string & da
     using Node = typename Storage::Node;
     Node node{};
     node.setData(data);
-    node.setEphemeralOwner(ephemeral_owner);
+    node.stats.setEphemeralOwner(ephemeral_owner);
     storage.container.insertOrReplace(path, node);
     auto child_it = storage.container.find(path);
     auto child_path = DB::getBaseNodeName(child_it->key);
@@ -1549,7 +1550,7 @@ void addNode(Storage & storage, const std::string & path, const std::string & da
         [&](auto & parent)
         {
             parent.addChild(child_path);
-            parent.increaseNumChildren();
+            parent.stats.increaseNumChildren();
         });
 }
 
@@ -1570,7 +1571,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
     addNode(storage, "/hello1", "world", 1);
     addNode(storage, "/hello2", "somedata", 3);
     storage.session_id_counter = 5;
-    storage.zxid = 2;
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 2;
     storage.ephemerals[3] = {"/hello2"};
     storage.ephemerals[1] = {"/hello1"};
     storage.getSessionID(130);
@@ -1601,7 +1602,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
     EXPECT_EQ(restored_storage->container.getValue("/hello1").getData(), "world");
     EXPECT_EQ(restored_storage->container.getValue("/hello2").getData(), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
-    EXPECT_EQ(restored_storage->zxid, 2);
+    EXPECT_EQ(restored_storage->getZXID(), 2);
     EXPECT_EQ(restored_storage->ephemerals.size(), 2);
     EXPECT_EQ(restored_storage->ephemerals[3].size(), 1);
     EXPECT_EQ(restored_storage->ephemerals[1].size(), 1);
@@ -2534,7 +2535,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     addNode(storage, "/hello1", "world", 1);
     addNode(storage, "/hello2", "somedata", 3);
     storage.session_id_counter = 5;
-    storage.zxid = 2;
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 2;
     storage.ephemerals[3] = {"/hello2"};
     storage.ephemerals[1] = {"/hello1"};
     storage.getSessionID(130);
@@ -2561,7 +2562,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     EXPECT_EQ(restored_storage->container.getValue("/hello1").getData(), "world");
     EXPECT_EQ(restored_storage->container.getValue("/hello2").getData(), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
-    EXPECT_EQ(restored_storage->zxid, 2);
+    EXPECT_EQ(restored_storage->getZXID(), 2);
     EXPECT_EQ(restored_storage->ephemerals.size(), 2);
     EXPECT_EQ(restored_storage->ephemerals[3].size(), 1);
     EXPECT_EQ(restored_storage->ephemerals[1].size(), 1);
@@ -2755,7 +2756,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotEqual)
         for (size_t j = 0; j < 3333; ++j)
             storage.getSessionID(130 * j);
 
-        DB::KeeperStorageSnapshot<Storage> snapshot(&storage, storage.zxid);
+        DB::KeeperStorageSnapshot<Storage> snapshot(&storage, storage.getZXID());
 
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
 
@@ -3257,7 +3258,7 @@ TYPED_TEST(CoordinationTest, TestCheckNotExistsRequest)
     create_path("/test_node");
     auto node_it = storage.container.find("/test_node");
     ASSERT_NE(node_it, storage.container.end());
-    auto node_version = node_it->value.version;
+    auto node_version = node_it->value.stats.version;
 
     {
         SCOPED_TRACE("CheckNotExists returns ZNODEEXISTS");

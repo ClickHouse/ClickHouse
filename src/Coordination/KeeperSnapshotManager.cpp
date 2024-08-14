@@ -72,7 +72,7 @@ namespace
         writeBinary(node.getData(), out);
 
         /// Serialize ACL
-        writeBinary(node.stats.acl_id, out);
+        writeBinary(node.acl_id, out);
         /// Write is_sequential for backwards compatibility
         if (version < SnapshotVersion::V6)
             writeBinary(false, out);
@@ -109,7 +109,7 @@ namespace
 
         if (version >= SnapshotVersion::V1)
         {
-            readBinary(node.stats.acl_id, in);
+            readBinary(node.acl_id, in);
         }
         else if (version == SnapshotVersion::V0)
         {
@@ -125,14 +125,14 @@ namespace
                 readBinary(acl.id, in);
                 acls.push_back(acl);
             }
-            node.stats.acl_id = acl_map.convertACLs(acls);
+            node.acl_id = acl_map.convertACLs(acls);
         }
 
         /// Some strange ACLID during deserialization from ZooKeeper
-        if (node.stats.acl_id == std::numeric_limits<uint64_t>::max())
-            node.stats.acl_id = 0;
+        if (node.acl_id == std::numeric_limits<uint64_t>::max())
+            node.acl_id = 0;
 
-        acl_map.addUsage(node.stats.acl_id);
+        acl_map.addUsage(node.acl_id);
 
         if (version < SnapshotVersion::V6)
         {
@@ -455,9 +455,12 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     {
         for (const auto & itr : storage.container)
         {
-            auto parent_path = parentNodePath(itr.key);
-            storage.container.updateValue(
-                parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(getBaseNodeName(path)); });
+            if (itr.key != "/")
+            {
+                auto parent_path = parentNodePath(itr.key);
+                storage.container.updateValue(
+                    parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(getBaseNodeName(path)); });
+            }
         }
 
         for (const auto & itr : storage.container)
