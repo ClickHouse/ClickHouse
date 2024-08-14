@@ -1,17 +1,19 @@
 #include <Common/JSONWebKey.h>
 
-#include <Common/Base64.h>
-#include <Common/Exception.h>
-#include <Poco/Crypto/RSAKey.h>
 #include <fmt/format.h>
+#include <Poco/Crypto/RSAKey.h>
+#include <Common/Base64.h>
+#include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
+
+
+namespace DB
+{
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
-
-namespace DB
-{
 
 std::string JSONWebKey::toString() const
 {
@@ -37,4 +39,3 @@ JSONWebKey JSONWebKey::fromRSAKey(const Poco::Crypto::RSAKey & key)
 }
 
 }
-

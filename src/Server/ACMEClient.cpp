@@ -25,6 +25,7 @@
 #include <Poco/SHA1Engine.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
+#include "Common/Exception.h"
 #include <Common/Base64.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -45,14 +46,14 @@ namespace
 
 namespace fs = std::filesystem;
 
-void dumberCallback(const std::string & domain_name, const std::string & url, const std::string & key)
-{
-    /// Callback for domain thevar1able.com with url
-    /// http://thevar1able.com/.well-known/acme-challenge/TU9yW7Ad6RgzrmILfp8Zyn9swtxhYrlMYAXVQe29fPU
-    /// and key TU9yW7Ad6RgzrmILfp8Zyn9swtxhYrlMYAXVQe29fPU.A1qzB0q34e_9tysLnbHKvnXAj49583OrPNUL7cPbC5Q
-
-    ACMEClient::instance().dummyCallback(domain_name, url, key);
-}
+// void dumberCallback(const std::string & domain_name, const std::string & url, const std::string & key)
+// {
+//     /// Callback for domain thevar1able.com with url
+//     /// http://thevar1able.com/.well-known/acme-challenge/TU9yW7Ad6RgzrmILfp8Zyn9swtxhYrlMYAXVQe29fPU
+//     /// and key TU9yW7Ad6RgzrmILfp8Zyn9swtxhYrlMYAXVQe29fPU.A1qzB0q34e_9tysLnbHKvnXAj49583OrPNUL7cPbC5Q
+//
+//     ACMEClient::instance().dummyCallback(domain_name, url, key);
+// }
 
 }
 
@@ -63,12 +64,15 @@ ACMEClient & ACMEClient::instance()
     return instance;
 }
 
-void ACMEClient::reload(const Poco::Util::AbstractConfiguration &)
+void ACMEClient::reload(const Poco::Util::AbstractConfiguration & config)
 try
 {
     auto context = Context::getGlobalContextInstance();
-    auto zk = context->getZooKeeper();
 
+    auto acme_url = config.getString("acme.url");
+    LOG_DEBUG(log, "ACME URL: {}", acme_url);
+
+    auto zk = context->getZooKeeper();
     zk->createIfNotExists(fs::path(ZOOKEEPER_ACME_BASE_PATH), "");
 
     BackgroundSchedulePool & bgpool = context->getSchedulePool();
@@ -103,20 +107,13 @@ try
 
     getDirectory();
 
+    auto cert = Poco::Crypto::RSAKey("", "/home/thevar1able/src/clickhouse/cmake-build-debug/acme/acme.key", "");
+    authenticate(cert);
+
     /// TODO on initialization go through config and try to reissue all
     /// expiring/missing certificates.
 
     initialized = true;
-
-    // domains = {"thevar1able.com"};
-    // requestChallenge("http://localhost:8080/.well-known/acme-challenge/1234");
-
-    auto nonce = requestNonce();
-    LOG_DEBUG(log, "Getting nonce: {}", nonce);
-
-    auto cert = Poco::Crypto::RSAKey("", "/home/thevar1able/src/clickhouse/cmake-build-debug/acme/acme.key", "");
-
-    authenticate(cert);
 }
 catch (...)
 {
@@ -164,7 +161,7 @@ void ACMEClient::getDirectory()
     }
 }
 
-
+/// todo maybe move somewhere else
 std::string hmacSha256(std::string to_sign, Poco::Crypto::RSAKey & key)
 {
     EVP_PKEY * pkey = EVP_PKEY_new();
@@ -252,21 +249,46 @@ void ACMEClient::authenticate(Poco::Crypto::RSAKey & key)
     ostream << request_data;
 
     auto response = Poco::Net::HTTPResponse();
-    session->receiveResponse(response);
-    // std::cout << rstream.rdbuf() << std::endl;
+    auto &rstream = session->receiveResponse(response);
+
+    /// checking for HTTP code would be nice here
+
+    Poco::JSON::Parser parser;
+    auto json = parser.parse(rstream).extract<Poco::JSON::Object::Ptr>();
+
+    //     HTTP/1.1 201 Created
+    // Content-Type: application/json
+    // Replay-Nonce: D8s4D2mLs8Vn-goWuPQeKA
+    // Link: <https://example.com/acme/directory>;rel="index"
+    // Location: https://example.com/acme/acct/evOfKhNU60wg
     //
-    // for (const auto & header : response)
     // {
-    //     std::cout << header.first << ": " << header.second << std::endl;
+    //   "status": "valid",
+    //
+    //   "contact": [
+    //     "mailto:cert-admin@example.org",
+    //     "mailto:admin@example.org"
+    //   ],
+    //
+    //   "orders": "https://example.com/acme/acct/evOfKhNU60wg/orders"
     // }
-    //
-    //
-    // std::cout << "Response: " << response.getStatus() << std::endl;
+
+
+    key_id = response.get("Location");
+    for (const auto & [k, v] : response)
+    {
+        LOG_DEBUG(log, "Response header: {} -> {}", k, v);
+    }
+
+    // json->getValue<std::string>(Directory::new_nonce_key),
 }
 
 std::string ACMEClient::requestNonce()
 {
-    auto uri = Poco::URI("https://acme-staging-v02.api.letsencrypt.org/acme/new-nonce");
+    if (!directory)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory is not initialized");
+
+    auto uri = Poco::URI(directory->new_nonce);
     auto r = Poco::Net::HTTPRequest("HEAD", uri.getPathAndQuery());
     LOG_DEBUG(log, "Requesting nonce from {}", uri.getPathAndQuery());
 
@@ -285,10 +307,10 @@ std::string ACMEClient::requestNonce()
     return nonce;
 }
 
-void ACMEClient::dummyCallback(const std::string & domain_name, const std::string & url, const std::string & key)
-{
-    LOG_DEBUG(log, "Callback for domain {} with url {} and key {}", domain_name, url, key);
-}
+// void ACMEClient::dummyCallback(const std::string & domain_name, const std::string & url, const std::string & key)
+// {
+//     LOG_DEBUG(log, "Callback for domain {} with url {} and key {}", domain_name, url, key);
+// }
 
 std::string ACMEClient::requestChallenge(const std::string & uri)
 {

@@ -139,7 +139,7 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     }
     else
     {
-        CertificateIssuer::instance().UpdateCertificatesIfNeeded(config);
+        // CertificateIssuer::instance().UpdateCertificatesIfNeeded(config);
 
         try
         {

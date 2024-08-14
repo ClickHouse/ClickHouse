@@ -262,7 +262,7 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
 
     /// FIXME redundant if ACME is not enabled
     auto acme_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ACMERequestHandler>>(server);
-    acme_handler->attachNonStrictPath(ACMEClient::ACME_CHALLENGE_PATH);
+    acme_handler->attachNonStrictPath(ACMEClient::ACME_CHALLENGE_HTTP_PATH);
     acme_handler->allowGetAndHeadRequest();
     factory.addHandler(acme_handler);
 
