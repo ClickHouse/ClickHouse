@@ -215,7 +215,7 @@ public:
 
     /// Try to add new dynamic path. Returns pointer to the new dynamic
     /// path column or nullptr if limit on dynamic paths is reached.
-    ColumnDynamic * tryToAddNewDynamicPath( std::string_view path);
+    ColumnDynamic * tryToAddNewDynamicPath(std::string_view path);
     /// Throws an exception if cannot add.
     void addNewDynamicPath(std::string_view path);
 
