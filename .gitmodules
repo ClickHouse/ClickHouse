@@ -369,6 +369,3 @@
 [submodule "contrib/numactl"]
 	path = contrib/numactl
 	url = https://github.com/ClickHouse/numactl.git
-[submodule "contrib/acme-lw"]
-	path = contrib/acme-lw
-	url = https://github.com/jmccl/acme-lw

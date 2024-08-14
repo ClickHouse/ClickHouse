@@ -25,12 +25,12 @@
 #include <Poco/SHA1Engine.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
-#include "Common/Base64.h"
-#include "Common/HTTPConnectionPool.h"
-#include "Common/ZooKeeper/ZooKeeper.h"
+#include <Common/Base64.h>
+#include <Common/HTTPConnectionPool.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
-#include "Core/BackgroundSchedulePool.h"
-#include "Disks/IO/ReadBufferFromWebServer.h"
+#include <Core/BackgroundSchedulePool.h>
+#include <Disks/IO/ReadBufferFromWebServer.h>
 
 
 namespace DB
@@ -66,18 +66,6 @@ ACMEClient & ACMEClient::instance()
 void ACMEClient::reload(const Poco::Util::AbstractConfiguration &)
 try
 {
-    if (!client)
-    {
-        acme_lw::AcmeClient::init(acme_lw::AcmeClient::Environment::STAGING);
-
-        auto cert_buf = ReadBufferFromFile("/home/thevar1able/src/clickhouse/cmake-build-debug/acme/acme.key");
-        std::string cert_pem;
-        readStringUntilEOF(cert_pem, cert_buf);
-        LOG_DEBUG(log, "Read certificate from file: {}", cert_pem);
-
-        client = std::make_unique<acme_lw::AcmeClient>(cert_pem);
-    }
-
     auto context = Context::getGlobalContextInstance();
     auto zk = context->getZooKeeper();
 
@@ -115,7 +103,7 @@ try
 
     getDirectory();
 
-    /// TODO on initialization, go through config and try to reissue all
+    /// TODO on initialization go through config and try to reissue all
     /// expiring/missing certificates.
 
     initialized = true;
@@ -145,23 +133,6 @@ catch (...)
 
 void ACMEClient::getDirectory()
 {
-    // auto uri = Poco::URI("https://acme-staging-v02.api.letsencrypt.org/directory");
-    // auto r = Poco::Net::HTTPRequest("GET", uri.getPathAndQuery());
-    //
-    // auto timeout = ConnectionTimeouts();
-    // auto proxy = ProxyConfiguration();
-    // auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, uri, timeout, proxy);
-    //
-    // session->sendRequest(r);
-    //
-    // auto response = Poco::Net::HTTPResponse();
-    // session->receiveResponse(response);
-    // std::string response_str;
-    // auto &rstream = session->receiveResponse(response);
-    //
-    //
-    // std::cout << "Response: " << response.getStatus() << std::endl;
-
     std::string directory_buffer;
     ReadSettings read_settings;
     auto reader = std::make_unique<ReadBufferFromWebServer>(
@@ -326,7 +297,7 @@ std::string ACMEClient::requestChallenge(const std::string & uri)
 
     LOG_DEBUG(log, "Requesting challenge for {}", uri);
 
-    client->issueCertificate({domains.begin(), domains.end()}, dumberCallback);
+    // client->issueCertificate({domains.begin(), domains.end()}, dumberCallback);
 
     return "";
 }

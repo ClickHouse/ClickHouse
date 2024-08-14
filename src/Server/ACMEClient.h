@@ -11,15 +11,14 @@
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <acme-lw.h>
-
 namespace DB
 {
 
 namespace ACMEClient
 {
 
-struct Directory {
+struct Directory
+{
     static constexpr auto new_account_key = "newAccount";
     static constexpr auto new_order_key = "newOrder";
     static constexpr auto new_nonce_key = "newNonce";
@@ -49,7 +48,6 @@ private:
     LoggerPtr log = getLogger("ACMEClient");
 
     bool initialized;
-    std::unique_ptr<acme_lw::AcmeClient> client;
 
     std::shared_ptr<Directory> directory;
 
