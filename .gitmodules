@@ -230,9 +230,6 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
-[submodule "contrib/annoy"]
-	path = contrib/annoy
-	url = https://github.com/ClickHouse/annoy
 [submodule "contrib/qpl"]
 	path = contrib/qpl
 	url = https://github.com/intel/qpl
@@ -341,7 +338,7 @@
 	url = https://github.com/graphitemaster/incbin.git
 [submodule "contrib/usearch"]
 	path = contrib/usearch
-	url = https://github.com/unum-cloud/usearch.git
+	url = https://github.com/ClickHouse/usearch.git
 [submodule "contrib/SimSIMD"]
 	path = contrib/SimSIMD
 	url = https://github.com/ashvardanian/SimSIMD.git

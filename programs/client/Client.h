@@ -11,7 +11,10 @@ class Client : public ClientApplicationBase
 public:
     using Arguments = ClientApplicationBase::Arguments;
 
-    Client() = default;
+    Client()
+    {
+        fuzzer = QueryFuzzer(randomSeed(), &std::cout, &std::cerr);
+    }
 
     void initialize(Poco::Util::Application & self) override;
 

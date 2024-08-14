@@ -8,7 +8,6 @@
 #include <Core/ProtocolDefines.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
-
 #include <Processors/Transforms/SquashingTransform.h>
 
 
@@ -367,7 +366,7 @@ public:
         return prepareTwoLevel();
     }
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         shared_data->is_cancelled.store(true, std::memory_order_seq_cst);
     }
@@ -676,7 +675,8 @@ void AggregatingTransform::consume(Chunk chunk)
         LOG_TRACE(log, "Aggregating");
         is_consume_started = true;
     }
-
+    if (rows_before_aggregation)
+        rows_before_aggregation->add(num_rows);
     src_rows += num_rows;
     src_bytes += chunk.bytes();
 
