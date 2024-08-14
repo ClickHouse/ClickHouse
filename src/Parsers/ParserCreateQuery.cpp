@@ -214,10 +214,8 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     else
     {
         auto index_type = index->getType();
-        if (index_type->name == "annoy")
-            index->granularity = ASTIndexDeclaration::DEFAULT_ANNOY_INDEX_GRANULARITY;
-        else if (index_type->name == "usearch")
-            index->granularity = ASTIndexDeclaration::DEFAULT_USEARCH_INDEX_GRANULARITY;
+        if (index_type->name == "vector_similarity")
+            index->granularity = ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
         else
             index->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
     }
@@ -931,7 +929,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->is_create_empty = is_create_empty;
 
     if (from_path)
-        query->attach_from_path = from_path->as<ASTLiteral &>().value.get<String>();
+        query->attach_from_path = from_path->as<ASTLiteral &>().value.safeGet<String>();
 
     return true;
 }
@@ -1440,7 +1438,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         ASTPtr ast_uuid;
         if (!uuid_p.parse(pos, ast_uuid, expected))
             return false;
-        uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.get<String>());
+        uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
     }
 
     if (s_on.ignore(pos, expected))
