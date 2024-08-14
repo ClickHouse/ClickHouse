@@ -36,9 +36,14 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
 
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
-        return insertFromBlockImplTypeCase< \
-            typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-            join, *maps.TYPE, key_columns, key_sizes, stored_block, selector, null_map, join_mask, pool, is_inserted); \
+        if (selector.isContinuousRange()) \
+            return insertFromBlockImplTypeCase< \
+                typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
+                join, *maps.TYPE, key_columns, key_sizes, stored_block, selector.getRange(), null_map, join_mask, pool, is_inserted); \
+        else \
+            return insertFromBlockImplTypeCase< \
+                typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
+                join, *maps.TYPE, key_columns, key_sizes, stored_block, selector.getSelector(), null_map, join_mask, pool, is_inserted); \
         break;
 
             APPLY_FOR_JOIN_VARIANTS(M)
@@ -179,14 +184,14 @@ KeyGetter HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::createKeyGetter(const
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <typename KeyGetter, typename HashMap>
+template <typename KeyGetter, typename HashMap, typename Selector>
 size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCase(
     HashJoin & join,
     HashMap & map,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
     Block * stored_block,
-    const ScatteredBlock::Selector & selector,
+    const Selector & selector,
     ConstNullMapPtr null_map,
     UInt8ColumnDataPtr join_mask,
     Arena & pool,
@@ -204,8 +209,20 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeC
     /// For ALL and ASOF join always insert values
     is_inserted = !mapped_one || is_asof_join;
 
-    for (size_t ind : selector)
+    size_t rows = 0;
+    if constexpr (std::is_same_v<std::decay_t<Selector>, IColumn::Selector>)
+        rows = selector.size();
+    else
+        rows = selector.second - selector.first;
+
+    for (size_t i = 0; i < rows; ++i)
     {
+        size_t ind = 0;
+        if constexpr (std::is_same_v<std::decay_t<Selector>, IColumn::Selector>)
+            ind = selector[i];
+        else
+            ind = selector.first + i;
+
         chassert(!null_map || ind < null_map->size());
         if (null_map && (*null_map)[ind])
         {
@@ -321,32 +338,30 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
     if (added_columns.additional_filter_expression)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Additional filter expression is not supported for this JOIN");
 
-    return mapv.size() > 1 ? joinRightColumns<KeyGetter, Map, need_filter, true>(
-               std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags)
-                           : joinRightColumns<KeyGetter, Map, need_filter, false>(
-                               std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
+    auto & block = added_columns.src_block;
+    if (block.getSelector().isContinuousRange())
+    {
+        if (mapv.size() > 1)
+            return joinRightColumns<KeyGetter, Map, need_filter, true>(
+                std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getRange());
+        else
+            return joinRightColumns<KeyGetter, Map, need_filter, false>(
+                std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getRange());
+    }
+    else
+    {
+        if (mapv.size() > 1)
+            return joinRightColumns<KeyGetter, Map, need_filter, true>(
+                std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getSelector());
+        else
+            return joinRightColumns<KeyGetter, Map, need_filter, false>(
+                std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getSelector());
+    }
 }
 
 
 /// Joins right table columns which indexes are present in right_indexes using specified map.
 /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <typename KeyGetter, typename Map, bool need_filter, bool flag_per_row, typename AddedColumns>
-size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
-    std::vector<KeyGetter> && key_getter_vector,
-    const std::vector<const Map *> & mapv,
-    AddedColumns & added_columns,
-    JoinStuff::JoinUsedFlags & used_flags)
-{
-    auto & block = added_columns.src_block;
-    if (block.getSelector().isContinuousRange())
-        return joinRightColumns<KeyGetter, Map, need_filter, flag_per_row, AddedColumns>(
-            std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getRange());
-    else
-        return joinRightColumns<KeyGetter, Map, need_filter, flag_per_row, AddedColumns>(
-            std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getSelector());
-}
-
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 template <typename KeyGetter, typename Map, bool need_filter, bool flag_per_row, typename AddedColumns, typename Selector>
 size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
