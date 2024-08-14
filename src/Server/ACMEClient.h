@@ -1,14 +1,15 @@
 #pragma once
 
-#include <string>
 #include <boost/core/noncopyable.hpp>
+
+#include <Common/JSONWebKey.h>
+#include <Common/Logger.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Poco/Crypto/RSAKey.h>
 #include <Poco/Crypto/X509Certificate.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include "Common/ZooKeeper/ZooKeeper.h"
-#include <Common/Logger.h>
-#include "Core/BackgroundSchedulePool.h"
 
 #include <acme-lw.h>
 
@@ -17,6 +18,17 @@ namespace DB
 
 namespace ACMEClient
 {
+
+struct Directory {
+    static constexpr auto new_account_key = "newAccount";
+    static constexpr auto new_order_key = "newOrder";
+    static constexpr auto new_nonce_key = "newNonce";
+
+    std::string new_account;
+    std::string new_order;
+    std::string new_nonce;
+};
+
 
 static constexpr auto ACME_CHALLENGE_PATH = "/.well-known/acme-challenge";
 static constexpr auto ZOOKEEPER_ACME_BASE_PATH = "/clickhouse/acme";
@@ -39,6 +51,8 @@ private:
     bool initialized;
     std::unique_ptr<acme_lw::AcmeClient> client;
 
+    std::shared_ptr<Directory> directory;
+
     BackgroundSchedulePoolTaskHolder election_task;
     BackgroundSchedulePoolTaskHolder refresh_task;
 
@@ -47,7 +61,7 @@ private:
     std::vector<std::string> domains;
     std::string requestNonce();
     void getDirectory();
-    void authenticate(Poco::Crypto::RSAKey & cert);
+    void authenticate(Poco::Crypto::RSAKey &);
 };
 
 }
