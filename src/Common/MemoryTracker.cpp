@@ -622,7 +622,6 @@ void MemoryTracker::updateMemoryCredits(size_t size)
 {
     static thread_local Stopwatch stopwatch;
 
-    // Check if a significant amount of time has passed to avoid unnecessary updates
     auto elapsed_time = stopwatch.elapsedMicroseconds();
     if (elapsed_time > 0)
     {
