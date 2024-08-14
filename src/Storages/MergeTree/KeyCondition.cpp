@@ -894,8 +894,10 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     if (field.isExplicit())
         return applyFunctionForField(func, current_type, field);
 
-    std::stringstream buf;
-    buf << "_" << func.get() << "_" << toString(field.column_idx);
+    WriteBufferFromOwnString buf;
+    writeText("_", buf);
+    writePointerHex(func.get(), buf);
+    writeText("_" + toString(field.column_idx), buf);
     String result_name = buf.str();
     const auto & columns = field.columns;
     size_t result_idx = columns->size();
@@ -912,6 +914,7 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
         field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
         (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
     }
+
     return {field.columns, field.row_idx, result_idx};
 }
 
