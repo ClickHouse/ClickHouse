@@ -209,7 +209,7 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
 
     instance.query(
         """
-        CREATE TABLE test.kafka_no_kdc (field String)
+        CREATE TABLE test.kafka_no_kdc_table (field String)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kerberized_kafka1:19092',
                      kafka_topic_list = 'kafka_json_as_string_no_kdc',
@@ -220,13 +220,13 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
         """
     )
 
-    result = instance.query("SELECT * FROM test.kafka_no_kdc;")
+    result = instance.query("SELECT * FROM test.kafka_no_kdc_table;")
     expected = ""
 
     kafka_cluster.unpause_container("kafka_kerberos")
 
     assert TSV(result) == TSV(expected)
-    assert instance.contains_in_log("StorageKafka (kafka_no_kdc): Nothing to commit")
+    assert instance.contains_in_log("StorageKafka (kafka_no_kdc_table): Nothing to commit")
     assert instance.contains_in_log("Ticket expired")
     assert instance.contains_in_log("KerberosInit failure:")
 
