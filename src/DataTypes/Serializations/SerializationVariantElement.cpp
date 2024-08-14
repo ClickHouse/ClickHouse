@@ -305,8 +305,10 @@ SerializationVariantElement::VariantSubcolumnCreator::VariantSubcolumnCreator(
     const String & variant_element_name_,
     ColumnVariant::Discriminator global_variant_discriminator_,
     ColumnVariant::Discriminator local_variant_discriminator_,
-    bool make_nullable_)
+    bool make_nullable_,
+    const ColumnPtr & null_map_)
     : local_discriminators(local_discriminators_)
+    , null_map(null_map_)
     , variant_element_name(variant_element_name_)
     , global_variant_discriminator(global_variant_discriminator_)
     , local_variant_discriminator(local_variant_discriminator_)
@@ -314,12 +316,13 @@ SerializationVariantElement::VariantSubcolumnCreator::VariantSubcolumnCreator(
 {
 }
 
-DataTypePtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB::DataTypePtr & prev) const
+
+DataTypePtr SerializationVariantElement::VariantSubcolumnCreator::create(const DataTypePtr & prev) const
 {
     return make_nullable ? makeNullableOrLowCardinalityNullableSafe(prev) : prev;
 }
 
-SerializationPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB::SerializationPtr & prev) const
+SerializationPtr SerializationVariantElement::VariantSubcolumnCreator::create(const SerializationPtr & prev) const
 {
     return std::make_shared<SerializationVariantElement>(prev, variant_element_name, global_variant_discriminator);
 }
@@ -339,12 +342,16 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
         return res;
     }
 
-    /// In general case we should iterate through discriminators and create null-map for our variant.
-    NullMap null_map;
-    null_map.reserve(local_discriminators->size());
-    const auto & local_discriminators_data = assert_cast<const ColumnVariant::ColumnDiscriminators &>(*local_discriminators).getData();
-    for (auto local_discr : local_discriminators_data)
-        null_map.push_back(local_discr != local_variant_discriminator);
+    /// In general case we should iterate through discriminators and create null-map for our variant if we don't already have it.
+    std::optional<NullMap> null_map_from_discriminators;
+    if (!null_map)
+    {
+        null_map_from_discriminators = NullMap();
+        null_map_from_discriminators->reserve(local_discriminators->size());
+        const auto & local_discriminators_data = assert_cast<const ColumnVariant::ColumnDiscriminators &>(*local_discriminators).getData();
+        for (auto local_discr : local_discriminators_data)
+            null_map_from_discriminators->push_back(local_discr != local_variant_discriminator);
+    }
 
     /// Now we can create new column from null-map and variant column using IColumn::expand.
     auto res_column = IColumn::mutate(prev);
@@ -356,13 +363,21 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
     if (make_nullable && prev->lowCardinality())
         res_column = assert_cast<ColumnLowCardinality &>(*res_column).cloneNullable();
 
-    res_column->expand(null_map, /*inverted = */ true);
+    if (null_map_from_discriminators)
+        res_column->expand(*null_map_from_discriminators, /*inverted = */ true);
+    else
+        res_column->expand(assert_cast<const ColumnUInt8 &>(*null_map).getData(), /*inverted = */ true);
 
     if (make_nullable && prev->canBeInsideNullable())
     {
-        auto null_map_col = ColumnUInt8::create();
-        null_map_col->getData() = std::move(null_map);
-        return ColumnNullable::create(std::move(res_column), std::move(null_map_col));
+        if (null_map_from_discriminators)
+        {
+            auto null_map_col = ColumnUInt8::create();
+            null_map_col->getData() = std::move(*null_map_from_discriminators);
+            return ColumnNullable::create(std::move(res_column), std::move(null_map_col));
+        }
+
+        return ColumnNullable::create(std::move(res_column), null_map->assumeMutable());
     }
 
     return res_column;
