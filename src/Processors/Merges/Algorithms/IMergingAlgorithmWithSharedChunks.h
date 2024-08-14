@@ -16,6 +16,7 @@ public:
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
 
+    size_t prev_unequal_column = 0;
 private:
     Block header;
     SortDescription description;
@@ -54,7 +55,14 @@ protected:
         /// initialized in either `initialize` or `consume`
         if (lhs.source_stream_index == rhs.source_stream_index && sources_origin_merge_tree_part_level[lhs.source_stream_index] > 0)
             return true;
-        return !lhs.hasEqualSortColumnsWith(rhs);
+
+        auto first_non_equal = lhs.firstNonEqualSortColumnsWith(prev_unequal_column, rhs);
+
+        if (first_non_equal > lhs.sort_columns->size())
+           return false;
+
+        prev_unequal_column = first_non_equal;
+        return true;
     }
 };
 
