@@ -833,8 +833,8 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
     if (!arg1 || !arg2 || arg1->value.getType() != Field::Types::String || arg2->value.getType() != Field::Types::String)
         return;
 
-    String maybe_path = arg1->value.get<String>();
-    String maybe_replica = arg2->value.get<String>();
+    String maybe_path = arg1->value.safeGet<String>();
+    String maybe_replica = arg2->value.safeGet<String>();
 
     /// Looks like it's ReplicatedMergeTree with explicit zookeeper_path and replica_name arguments.
     /// Let's ensure that some macros are used.
@@ -1153,8 +1153,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_experimental_object_type", 1);
         query_context->setSetting("allow_experimental_variant_type", 1);
         query_context->setSetting("allow_experimental_dynamic_type", 1);
-        query_context->setSetting("allow_experimental_annoy_index", 1);
-        query_context->setSetting("allow_experimental_usearch_index", 1);
+        query_context->setSetting("allow_experimental_vector_similarity_index", 1);
         query_context->setSetting("allow_experimental_bigint_types", 1);
         query_context->setSetting("allow_experimental_window_functions", 1);
         query_context->setSetting("allow_experimental_geo_types", 1);
@@ -1584,6 +1583,8 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     }
 
     auto table = tryGetTable(table_name, getContext());
+    if (!table)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't exist", table_name);
     if (table->getName() == "MaterializedView" || table->getName() == "WindowView")
     {
         /// Avoid recursive locking of metadata_mutex
