@@ -9,5 +9,6 @@ namespace DB
 class RefreshTask;
 
 using RefreshTaskHolder = std::shared_ptr<RefreshTask>;
+using RefreshTaskList = std::list<RefreshTaskHolder>;
 
 }

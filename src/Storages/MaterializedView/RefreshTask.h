@@ -26,8 +26,7 @@ public:
     RefreshTask(StorageMaterializedView * view_, const ASTRefreshStrategy & strategy);
 
     /// The only proper way to construct task
-    static OwnedRefreshTask create(
-        StorageMaterializedView * view,
+    static RefreshTaskHolder create(
         ContextMutablePtr context,
         const DB::ASTRefreshStrategy & strategy);
 
@@ -92,11 +91,13 @@ private:
 
     RefreshSchedule refresh_schedule;
     RefreshSettings refresh_settings;
+    std::vector<StorageID> initial_dependencies;
     bool refresh_append;
 
     RefreshSet::Handle set_handle;
 
     /// StorageIDs of our dependencies that we're waiting for.
+    using DatabaseAndTableNameSet = std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     DatabaseAndTableNameSet remaining_dependencies;
     bool time_arrived = false;
 
