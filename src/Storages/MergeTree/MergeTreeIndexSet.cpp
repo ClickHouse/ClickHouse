@@ -97,7 +97,7 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     Field field_rows;
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     size_type->getDefaultSerialization()->deserializeBinary(field_rows, istr, {});
-    size_t rows_to_read = field_rows.get<size_t>();
+    size_t rows_to_read = field_rows.safeGet<size_t>();
 
     if (rows_to_read == 0)
         return;
@@ -591,7 +591,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
 
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)
 {
-    size_t max_rows = index.arguments[0].get<size_t>();
+    size_t max_rows = index.arguments[0].safeGet<size_t>();
     return std::make_shared<MergeTreeIndexSet>(index, max_rows);
 }
 

@@ -248,6 +248,8 @@ public:
 
     void attachRequest(HTTPServerRequest * request_) { request = request_; }
 
+    const Poco::Net::HTTPServerSession & getSession() const { return session; }
+
 private:
     Poco::Net::HTTPServerSession & session;
     HTTPServerRequest * request = nullptr;

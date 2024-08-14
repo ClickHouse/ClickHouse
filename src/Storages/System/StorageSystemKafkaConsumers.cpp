@@ -42,7 +42,7 @@ ColumnsDescription StorageSystemKafkaConsumers::getColumnsDescription()
         {"num_rebalance_revocations", std::make_shared<DataTypeUInt64>(), "Number of times the consumer was revoked its partitions."},
         {"num_rebalance_assignments", std::make_shared<DataTypeUInt64>(), "Number of times the consumer was assigned to Kafka cluster."},
         {"is_currently_used", std::make_shared<DataTypeUInt8>(), "The flag which shows whether the consumer is in use."},
-        {"last_used", std::make_shared<DataTypeDateTime64>(6), "The last time this consumer was in use."},
+        {"last_used", std::make_shared<DataTypeUInt64>(), "The last time this consumer was in use, unix time in microseconds."},
         {"rdkafka_stat", std::make_shared<DataTypeString>(), "Library internal statistic. Set statistics_interval_ms to 0 disable, default is 3000 (once in three seconds)."},
     };
 }
@@ -79,7 +79,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     auto & num_rebalance_revocations = assert_cast<ColumnUInt64 &>(*res_columns[index++]);
     auto & num_rebalance_assigments = assert_cast<ColumnUInt64 &>(*res_columns[index++]);
     auto & is_currently_used = assert_cast<ColumnUInt8 &>(*res_columns[index++]);
-    auto & last_used = assert_cast<ColumnDateTime64 &>(*res_columns[index++]);
+    auto & last_used = assert_cast<ColumnUInt64 &>(*res_columns[index++]);
     auto & rdkafka_stat = assert_cast<ColumnString &>(*res_columns[index++]);
 
     const auto access = context->getAccess();
