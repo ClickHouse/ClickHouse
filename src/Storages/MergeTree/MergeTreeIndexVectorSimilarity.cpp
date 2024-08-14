@@ -98,9 +98,6 @@ USearchIndexWithSerialization::USearchIndexWithSerialization(
     unum::usearch::index_dense_config_t config(usearch_hnsw_params.m, usearch_hnsw_params.ef_construction, usearch_hnsw_params.ef_search);
     config.enable_key_lookups = false; /// we don't do row-to-vector lookups
 
-    if (auto error = config.validate(); error) /// already called in vectorSimilarityIndexValidator, call again because usearch may change the config in-place
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parameters passed to vector similarity index. Error: {}", String(error.release()));
-
     if (auto result = USearchIndex::make(metric, config); !result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not create vector similarity index. Error: {}", String(result.error.release()));
     else
