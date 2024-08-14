@@ -477,6 +477,8 @@ void ClientBase::onProfileInfo(const ProfileInfo & profile_info)
 {
     if (profile_info.hasAppliedLimit() && output_format)
         output_format->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
+    if (profile_info.hasAppliedAggregation() && output_format)
+        output_format->setRowsBeforeAggregation(profile_info.getRowsBeforeAggregation());
 }
 
 
@@ -2749,7 +2751,7 @@ void ClientBase::runLibFuzzer()
     for (auto & arg : fuzzer_args_holder)
         fuzzer_args.emplace_back(arg.data());
 
-    int fuzzer_argc = fuzzer_args.size();
+    int fuzzer_argc = static_cast<int>(fuzzer_args.size());
     char ** fuzzer_argv = fuzzer_args.data();
 
     LLVMFuzzerRunDriver(&fuzzer_argc, &fuzzer_argv, [](const uint8_t * data, size_t size)
