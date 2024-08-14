@@ -1041,3 +1041,14 @@ Compression rates of LZ4 or ZSTD improve on average by 20-40%.
 
 This setting works best for tables with no primary key or a low-cardinality primary key, i.e. a table with only few distinct primary key values.
 High-cardinality primary keys, e.g. involving timestamp columns of type `DateTime64`, are not expected to benefit from this setting.
+
+### deduplicate_merge_projection_mode
+
+Whether to allow create projection for the table with non-classic MergeTree, that is not (Replicated, Shared) MergeTree. If allowed, what is the action when merge projections, either drop or rebuild. So classic MergeTree would ignore this setting.
+It also controls `OPTIMIZE DEDUPLICATE` as well, but has effect on all MergeTree family members.
+
+Possible values:
+
+- throw, drop, rebuild
+
+Default value: throw
