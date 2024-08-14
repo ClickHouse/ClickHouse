@@ -391,8 +391,8 @@ done
 # wait for minio to flush its batch if it has any
 sleep 1
 clickhouse-client -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
-clickhouse-client --max_block_size 8192 --max_memory_usage 10G --max_threads 1 -q "SELECT log FROM minio_audit_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow"
-clickhouse-client --max_block_size 8192 --max_memory_usage 10G --max_threads 1 -q "SELECT log FROM minio_server_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow"
+clickhouse-client --max_block_size 8192 --max_memory_usage 10G --max_threads 1 --max_result_bytes 0 --max_result_rows 0 --max_rows_to_read 0 --max_bytes_to_read 0 -q "SELECT log FROM minio_audit_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow"
+clickhouse-client --max_block_size 8192 --max_memory_usage 10G --max_threads 1 --max_result_bytes 0 --max_result_rows 0 --max_rows_to_read 0 --max_bytes_to_read 0 -q "SELECT log FROM minio_server_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow"
 
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?
