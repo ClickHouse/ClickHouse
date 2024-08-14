@@ -144,4 +144,7 @@ ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_p
 echo "First auth method can't specify type if WITH keyword is not present"
 ${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED plaintext_password by '1'" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
 
+echo "RESET AUTHENTICATION METHODS TO NEW can only be used on alter statement"
+${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} RESET AUTHENTICATION METHODS TO NEW" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"

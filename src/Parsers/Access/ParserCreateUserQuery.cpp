@@ -561,6 +561,11 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!reset_authentication_methods_to_new.has_value())
         {
             reset_authentication_methods_to_new = parseResetAuthenticationMethods(pos, expected);
+
+            if (reset_authentication_methods_to_new.value() && !alter)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "RESET AUTHENTICATION METHODS TO NEW can only be used on ALTER statement");
+            }
         }
 
         if (!valid_until)
