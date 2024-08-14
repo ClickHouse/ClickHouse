@@ -176,6 +176,7 @@ public:
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
     bool readsInOrder() const;
+    const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     SortDescription getSortDescription() const;
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;

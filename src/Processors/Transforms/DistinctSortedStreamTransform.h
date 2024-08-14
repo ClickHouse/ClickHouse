@@ -35,7 +35,7 @@ public:
         const SortDescription & sorted_columns_descr_,
         const Names & source_columns_);
 
-    String getName() const override { return "DistinctStreamTransform"; }
+    String getName() const override { return "DistinctSortedStreamTransform"; }
 
 protected:
     void transform(Chunk & chunk) override;

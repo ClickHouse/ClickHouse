@@ -249,7 +249,10 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
 
     if (auto * distinct_step = typeid_cast<DistinctStep *>(parent->step.get()))
     {
-        if (optimization_settings.distinct_in_order &&
+        /// Do not apply distinct-in-order second time.
+        /// Also, prefer sorting from propertires against Distinct sorting description,
+        /// cause the last one migth be shorter, or may haver additional monotonic functions.
+        if (optimization_settings.distinct_in_order && distinct_step->getSortDescription().empty() &&
             (properties->sort_scope == SortingProperty::SortScope::Global
             || (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)))
         {

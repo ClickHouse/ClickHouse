@@ -59,11 +59,13 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     if (!pre_distinct)
         return 0;
 
+    std::cerr << "======= tryDistinctReadInOrder found distinct" << std::endl;
+
     /// walk through the plan
     /// (1) check if nodes below preliminary distinct preserve sorting
     /// (2) gather transforming steps to update their sorting properties later
     /// (3) gather actions DAG to find original names for columns in distinct step later
-    std::vector<ITransformingStep *> steps_to_update;
+    //std::vector<ITransformingStep *> steps_to_update;
     QueryPlan::Node * node = parent_node;
     std::vector<const ActionsDAG *> dag_stack;
     while (!node->children.empty())
@@ -73,15 +75,15 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
             return 0;
 
         const ITransformingStep::DataStreamTraits & traits = step->getDataStreamTraits();
-        if (!traits.preserves_sorting)
-            return 0;
-
-        steps_to_update.push_back(step);
 
         if (const auto * const expr = typeid_cast<const ExpressionStep *>(step); expr)
             dag_stack.push_back(&expr->getExpression());
         else if (const auto * const filter = typeid_cast<const FilterStep *>(step); filter)
             dag_stack.push_back(&filter->getExpression());
+        else if (!traits.preserves_sorting)
+            return 0;
+
+        //steps_to_update.push_back(step);
 
         node = node->children.front();
     }
@@ -91,11 +93,13 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     if (!read_from_merge_tree)
         return 0;
 
+    std::cerr << "======= tryDistinctReadInOrder found read from mt" << std::endl;
+
     /// if reading from merge tree doesn't provide any output order, we can do nothing
     /// it means that no ordering can provided or supported for a particular sorting key
     /// for example, tuple() or sipHash(string)
-    if (!read_from_merge_tree->readsInOrder())
-        return 0;
+    // if (!read_from_merge_tree->readsInOrder())
+    //     return 0;
 
     /// get original names for DISTINCT columns
     const ColumnsWithTypeAndName & distinct_columns = pre_distinct->getOutputStream().header.getColumnsWithTypeAndName();
@@ -112,9 +116,11 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
         ++number_of_sorted_distinct_columns;
     }
 
+    std::cerr << "======= tryDistinctReadInOrder cols " << number_of_sorted_distinct_columns << ' ' << original_distinct_columns.size() << std::endl;
+
     /// apply optimization only when distinct columns match or form prefix of sorting key
     /// todo: check if reading in order optimization would be beneficial when sorting key is prefix of columns in DISTINCT
-    if (number_of_sorted_distinct_columns != original_distinct_columns.size())
+    if (number_of_sorted_distinct_columns == 0)
         return 0;
 
     /// check if another read in order optimization is already applied
@@ -123,24 +129,34 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     /// if read in order for ORDER BY is already applied, then output sort description will contain only column `a`
     /// but we need columns `a, b`, applying read in order for distinct will still benefit `order by`
     // const DataStream & output_data_stream = read_from_merge_tree->getOutputStream();
-    SortDescription output_sort_desc = read_from_merge_tree->getSortDescription();
-    if (/*output_data_stream.sort_scope != DataStream::SortScope::Chunk && */ number_of_sorted_distinct_columns <= output_sort_desc.size())
-        return 0;
+    auto output_sort_desc = read_from_merge_tree->getSortDescription();
+    if (output_sort_desc.empty() || number_of_sorted_distinct_columns <= output_sort_desc.size())
+    {
+        //SortDescription output_sort_desc = read_from_merge_tree->getSortDescription();
+        //if (/*output_data_stream.sort_scope != DataStream::SortScope::Chunk && */ number_of_sorted_distinct_columns <= output_sort_desc.size())
+            //return 0;
+        read_from_merge_tree->requestReadingInOrder(number_of_sorted_distinct_columns, 0, pre_distinct->getLimitHint());
+        output_sort_desc = read_from_merge_tree->getSortDescription();
+    }
 
     /// update input order info in read_from_merge_tree step
-    const int direction = 0; /// for DISTINCT direction doesn't matter, ReadFromMergeTree will choose proper one
-    bool can_read = read_from_merge_tree->requestReadingInOrder(number_of_sorted_distinct_columns, direction, pre_distinct->getLimitHint());
-    if (!can_read)
-        return 0;
+    // const int direction = 0; /// for DISTINCT direction doesn't matter, ReadFromMergeTree will choose proper one
+    // bool can_read = read_from_merge_tree->requestReadingInOrder(number_of_sorted_distinct_columns, direction, pre_distinct->getLimitHint());
+    // if (!can_read)
+    //     return 0;
+
+    //SortDescription output_sort_desc = read_from_merge_tree->getSortDescription();
+    if (!output_sort_desc.empty())
+        pre_distinct->applyOrder(std::move(output_sort_desc));
 
     /// update data stream's sorting properties for found transforms
-    const DataStream * input_stream = &read_from_merge_tree->getOutputStream();
-    while (!steps_to_update.empty())
-    {
-        steps_to_update.back()->updateInputStream(*input_stream);
-        input_stream = &steps_to_update.back()->getOutputStream();
-        steps_to_update.pop_back();
-    }
+    // const DataStream * input_stream = &read_from_merge_tree->getOutputStream();
+    // while (!steps_to_update.empty())
+    // {
+    //     steps_to_update.back()->updateInputStream(*input_stream);
+    //     input_stream = &steps_to_update.back()->getOutputStream();
+    //     steps_to_update.pop_back();
+    // }
 
     return 0;
 }

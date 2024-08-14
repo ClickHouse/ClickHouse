@@ -35,10 +35,10 @@ UnionStep::UnionStep(DataStreams input_streams_, size_t max_threads_)
 
 void UnionStep::updateOutputStream()
 {
-    // if (input_streams.size() == 1)
-    //     output_stream = input_streams.front();
-    // else
-    //     output_stream = DataStream{.header = header};
+    if (input_streams.size() == 1)
+        output_stream = input_streams.front();
+    else
+        output_stream = DataStream{.header = header};
 
     // SortDescription common_sort_description = input_streams.front().sort_description;
     // DataStream::SortScope sort_scope = input_streams.front().sort_scope;
