@@ -888,31 +888,6 @@ static Field applyFunctionForField(
     return (*col)[0];
 }
 
-static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
-{
-    /// Fallback for fields without block reference.
-    if (field.isExplicit())
-        return applyFunctionForField(func, current_type, field);
-
-    String result_name = "_" + func->getName() + "_" + toString(field.column_idx);
-    const auto & columns = field.columns;
-    size_t result_idx = columns->size();
-
-    for (size_t i = 0; i < result_idx; ++i)
-    {
-        if ((*columns)[i].name == result_name)
-            result_idx = i;
-    }
-
-    if (result_idx == columns->size())
-    {
-        ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
-        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
-        (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
-    }
-
-    return {field.columns, field.row_idx, result_idx};
-}
 
 /// Sequentially applies functions to the column, returns `true`
 /// if all function arguments are compatible with functions
@@ -2563,13 +2538,13 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
         /// Thus we can safely use isNull() as an -Inf/+Inf indicator here.
         if (!key_range.left.isNull())
         {
-            key_range.left = applyFunction(func, current_type, key_range.left);
+            key_range.left = applyFunctionForField(func, current_type, key_range.left);
             key_range.left_included = true;
         }
 
         if (!key_range.right.isNull())
         {
-            key_range.right = applyFunction(func, current_type, key_range.right);
+            key_range.right = applyFunctionForField(func, current_type, key_range.right);
             key_range.right_included = true;
         }
 
