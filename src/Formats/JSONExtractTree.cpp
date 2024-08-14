@@ -1362,13 +1362,14 @@ public:
         }
 
         auto & variant_column = column_dynamic.getVariantColumn();
-        auto variant_info = column_dynamic.getVariantInfo();
+        const auto & variant_info = column_dynamic.getVariantInfo();
         /// Second, infer ClickHouse type for this element and add it as a new variant.
         auto element_type = elementToDataType(element, format_settings);
-        if (column_dynamic.addNewVariant(element_type))
+        auto element_type_name = element_type->getName();
+        if (column_dynamic.addNewVariant(element_type, element_type_name))
         {
             auto node = buildJSONExtractTree<JSONParser>(element_type, "Dynamic inference");
-            auto global_discriminator = variant_info.variant_name_to_discriminator[element_type->getName()];
+            auto global_discriminator = variant_info.variant_name_to_discriminator.at(element_type_name);
             auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discriminator);
             if (!node->insertResultToColumn(variant, element, insert_settings, format_settings, error))
                 return false;
@@ -1377,27 +1378,13 @@ public:
             return true;
         }
 
-        /// We couldn't add new variant. Try to insert element into current variants.
-        auto variant_node = buildJSONExtractTree<JSONParser>(variant_info.variant_type, "Dynamic inference");
-        if (variant_node->insertResultToColumn(variant_column, element, insert_settings, format_settings, error))
-            return true;
-
-        /// We couldn't insert element into any existing variant, add String variant and read value as String.
-        column_dynamic.addStringVariant();
-        auto string_global_discriminator = variant_info.variant_name_to_discriminator["String"];
-        auto & string_column = variant_column.getVariantByGlobalDiscriminator(string_global_discriminator);
-        if (!getStringNode()->insertResultToColumn(string_column, element, insert_settings, format_settings, error))
+        /// We couldn't add this variant, insert it into shared variant.
+        auto tmp_variant_column = element_type->createColumn();
+        auto node = buildJSONExtractTree<JSONParser>(element_type, "Dynamic inference");
+        if (!node->insertResultToColumn(*tmp_variant_column, element, insert_settings, format_settings, error))
             return false;
-        variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(string_global_discriminator));
-        variant_column.getOffsets().push_back(string_column.size() - 1);
+        column_dynamic.insertValueIntoSharedVariant(*tmp_variant_column, element_type, element_type_name, 0);
         return true;
-    }
-
-    static const std::unique_ptr<JSONExtractTreeNode<JSONParser>> & getStringNode()
-    {
-        static const std::unique_ptr<JSONExtractTreeNode<JSONParser>> string_node
-            = buildJSONExtractTree<JSONParser>(std::make_shared<DataTypeString>(), "Dynamic inference");
-        return string_node;
     }
 
     static DataTypePtr elementToDataType(const typename JSONParser::Element & element, const FormatSettings & format_settings)
