@@ -349,7 +349,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>(), /*requires_perfect_prefix*/ false);
+            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<const String &>(), /*requires_perfect_prefix*/ false);
             if (prefix.empty())
                 return false;
 
@@ -370,7 +370,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>(), /*requires_perfect_prefix*/ true);
+            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<const String &>(), /*requires_perfect_prefix*/ true);
             if (prefix.empty())
                 return false;
 
@@ -391,7 +391,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = value.get<const String &>();
+            String prefix = value.safeGet<const String &>();
             if (prefix.empty())
                 return false;
 
@@ -412,7 +412,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            const String & expression = value.get<const String &>();
+            const String & expression = value.safeGet<const String &>();
 
             /// This optimization can't process alternation - this would require
             /// a comprehensive parsing of regular expression.
@@ -1956,11 +1956,8 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                         auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
                             ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
                             : common_type;
-                        ColumnsWithTypeAndName arguments{
-                            {nullptr, key_expr_type, ""},
-                            {DataTypeString().createColumnConst(1, common_type_maybe_nullable->getName()), common_type_maybe_nullable, ""}};
-                        FunctionOverloadResolverPtr func_builder_cast = createInternalCastOverloadResolver(CastType::nonAccurate, {});
-                        auto func_cast = func_builder_cast->build(arguments);
+
+                        auto func_cast = createInternalCast({key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {});
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
                         if (!single_point && !func_cast->hasInformationAboutMonotonicity())
@@ -2931,8 +2928,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 /// Let's support only the case of 2d, because I'm not confident in other cases.
                 if (num_dimensions == 2)
                 {
-                    UInt64 left = key_range.left.get<UInt64>();
-                    UInt64 right = key_range.right.get<UInt64>();
+                    UInt64 left = key_range.left.safeGet<UInt64>();
+                    UInt64 right = key_range.right.safeGet<UInt64>();
 
                     BoolMask mask(false, true);
                     auto hyperrectangle_intersection_callback = [&](std::array<std::pair<UInt64, UInt64>, 2> curve_hyperrectangle)

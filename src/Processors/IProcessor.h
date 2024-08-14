@@ -21,8 +21,8 @@ class IQueryPlanStep;
 struct StorageLimits;
 using StorageLimitsList = std::list<StorageLimits>;
 
-class RowsBeforeLimitCounter;
-using RowsBeforeLimitCounterPtr = std::shared_ptr<RowsBeforeLimitCounter>;
+class RowsBeforeStepCounter;
+using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
@@ -377,7 +377,11 @@ public:
 
     /// Set rows_before_limit counter for current processor.
     /// This counter is used to calculate the number of rows right before any filtration of LimitTransform.
-    virtual void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr /* counter */) {}
+    virtual void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr /* counter */) { }
+
+    /// Set rows_before_aggregation counter for current processor.
+    /// This counter is used to calculate the number of rows right before AggregatingTransform.
+    virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
 
 protected:
     virtual void onCancel() noexcept {}
