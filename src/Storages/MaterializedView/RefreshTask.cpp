@@ -37,7 +37,7 @@ RefreshTask::RefreshTask(
         refresh_settings.applyChanges(strategy.settings->changes);
 }
 
-RefreshTaskHolder RefreshTask::create(
+OwnedRefreshTask RefreshTask::create(
     StorageMaterializedView * view,
     ContextMutablePtr context,
     const DB::ASTRefreshStrategy & strategy)

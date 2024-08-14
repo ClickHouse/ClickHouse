@@ -667,7 +667,8 @@ BlockIO InterpreterSystemQuery::execute()
                 task->run();
             break;
         case Type::WAIT_VIEW:
-            getRefreshTask()->wait();
+            for (const auto & task : getRefreshTasks())
+                task->wait();
             break;
         case Type::CANCEL_VIEW:
             for (const auto & task : getRefreshTasks())

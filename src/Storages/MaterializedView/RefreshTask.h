@@ -26,7 +26,8 @@ public:
     RefreshTask(StorageMaterializedView * view_, const ASTRefreshStrategy & strategy);
 
     /// The only proper way to construct task
-    static RefreshTaskHolder create(
+    static OwnedRefreshTask create(
+        StorageMaterializedView * view,
         ContextMutablePtr context,
         const DB::ASTRefreshStrategy & strategy);
 
