@@ -108,6 +108,20 @@ private:
         Arena & pool,
         bool & is_inserted);
 
+    template <typename KeyGetter, typename HashMap, typename Selector>
+    static size_t insertFromBlockImplTypeCase(
+        HashJoin & join,
+        HashMap & map,
+        const ColumnRawPtrs & key_columns,
+        const Sizes & key_sizes,
+        Block * stored_block,
+        const Selector & selector,
+        size_t rows,
+        ConstNullMapPtr null_map,
+        UInt8ColumnDataPtr join_mask,
+        Arena & pool,
+        bool & is_inserted);
+
     template <typename AddedColumns>
     static size_t switchJoinRightColumns(
         const std::vector<const MapsTemplate *> & mapv,
@@ -137,6 +151,14 @@ private:
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags);
+
+    template <typename KeyGetter, typename Map, bool need_filter, bool flag_per_row, typename AddedColumns, typename Selector>
+    static size_t joinRightColumns(
+        std::vector<KeyGetter> && key_getter_vector,
+        const std::vector<const Map *> & mapv,
+        AddedColumns & added_columns,
+        JoinStuff::JoinUsedFlags & used_flags,
+        const Selector & selector);
 
     template <bool need_filter>
     static void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unused]]);

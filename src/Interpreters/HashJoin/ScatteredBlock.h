@@ -133,6 +133,12 @@ public:
         return std::get<Range>(data);
     }
 
+    const IColumn::Selector & getSelector() const
+    {
+        chassert(!isContinuousRange());
+        return std::get<IColumn::Selector>(data);
+    }
+
     std::string toString() const
     {
         if (std::holds_alternative<Range>(data))

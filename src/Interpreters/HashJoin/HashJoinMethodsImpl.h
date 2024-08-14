@@ -1,5 +1,8 @@
 #pragma once
+#include <type_traits>
 #include <Interpreters/HashJoin/HashJoinMethods.h>
+#include "Columns/IColumn.h"
+#include "Interpreters/HashJoin/ScatteredBlock.h"
 
 namespace DB
 {
@@ -335,6 +338,24 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     AddedColumns & added_columns,
     JoinStuff::JoinUsedFlags & used_flags)
 {
+    auto & block = added_columns.src_block;
+    if (block.getSelector().isContinuousRange())
+        return joinRightColumns<KeyGetter, Map, need_filter, flag_per_row, AddedColumns>(
+            std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getRange());
+    else
+        return joinRightColumns<KeyGetter, Map, need_filter, flag_per_row, AddedColumns>(
+            std::move(key_getter_vector), mapv, added_columns, used_flags, block.getSelector().getSelector());
+}
+
+template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
+template <typename KeyGetter, typename Map, bool need_filter, bool flag_per_row, typename AddedColumns, typename Selector>
+size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
+    std::vector<KeyGetter> && key_getter_vector,
+    const std::vector<const Map *> & mapv,
+    AddedColumns & added_columns,
+    JoinStuff::JoinUsedFlags & used_flags,
+    const Selector & selector)
+{
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
 
     auto & block = added_columns.src_block;
@@ -352,7 +373,12 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     size_t i = 0;
     for (; i < rows; ++i)
     {
-        const auto ind = block.getSelector()[i];
+        size_t ind = 0;
+        if constexpr (std::is_same_v<std::decay_t<Selector>, IColumn::Selector>)
+            ind = selector[i];
+        else
+            ind = selector.first + i;
+
         if constexpr (join_features.need_replication)
         {
             if (unlikely(current_offset >= max_joined_block_rows))
