@@ -1582,12 +1582,12 @@ public:
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
         size_t max_dynamic_paths_,
-        size_t max_dynamic_types)
+        size_t max_dynamic_types_)
         : typed_path_nodes(std::move(typed_path_nodes_))
         , paths_to_skip(paths_to_skip_)
         , dynamic_node(std::make_unique<DynamicNode<JSONParser>>(
               max_dynamic_paths_ / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR,
-              std::max(max_dynamic_types / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR, 1lu)))
+              max_dynamic_types_ / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR))
         , dynamic_serialization(std::make_shared<SerializationDynamic>())
     {
         sorted_paths_to_skip.assign(paths_to_skip.begin(), paths_to_skip.end());

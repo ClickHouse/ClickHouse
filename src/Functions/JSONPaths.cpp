@@ -351,6 +351,14 @@ private:
         auto global_discr = variant_column.globalDiscriminatorAt(i);
         /// We don't output path with NULL values. It should be checked before calling getDynamicValueType.
         chassert(global_discr != ColumnVariant::NULL_DISCRIMINATOR);
+        if (global_discr == dynamic_column->getSharedVariantDiscriminator())
+        {
+            auto value = dynamic_column->getSharedVariant().getDataAt(variant_column.offsetAt(i));
+            ReadBufferFromMemory buf(value.data, value.size);
+            auto type = decodeDataType(buf);
+            return type->getName();
+        }
+
         return variant_info.variant_names[global_discr];
     }
 

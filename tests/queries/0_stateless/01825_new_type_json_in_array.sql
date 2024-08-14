@@ -7,6 +7,7 @@ DROP TABLE IF EXISTS t_json_array;
 CREATE TABLE t_json_array (id UInt32, arr Array(JSON)) ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO t_json_array FORMAT JSONEachRow {"id": 1, "arr": [{"k1": 1, "k2": {"k3": 2, "k4": 3}}, {"k1": 2, "k2": {"k5": "foo"}}]}
+
 INSERT INTO t_json_array FORMAT JSONEachRow {"id": 2, "arr": [{"k1": 3, "k2": {"k3": 4, "k4": 5}}]}
 
 
@@ -18,6 +19,7 @@ SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(arrayJoin(arr))) as path FROM t_
 TRUNCATE TABLE t_json_array;
 
 INSERT INTO t_json_array FORMAT JSONEachRow {"id": 1, "arr": [{"k1": [{"k2": "aaa", "k3": "bbb"}, {"k2": "ccc"}]}]}
+
 INSERT INTO t_json_array FORMAT JSONEachRow {"id": 2, "arr": [{"k1": [{"k3": "ddd", "k4": 10}, {"k4": 20}], "k5": {"k6": "foo"}}]}
 
 SELECT * FROM t_json_array ORDER BY id FORMAT JSONEachRow;

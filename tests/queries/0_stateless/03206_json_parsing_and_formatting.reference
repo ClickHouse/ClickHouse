@@ -48,16 +48,16 @@ JSON(a.b.c UInt32, max_dynamic_paths=0)
 {'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','c':'Int64'}	{}	{'a.b.d':'Array(Nullable(Int64))','c':'Int64'}
 {'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(String))','d.e.f':'Array(Nullable(String))','d.e.g':'Int64','d.e.h':'DateTime64(9)'}	{}	{'a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(String))','d.e.f':'Array(Nullable(String))','d.e.g':'Int64','d.e.h':'DateTime64(9)'}
 JSON(a.b.c UInt32, max_dynamic_types=1)
-{"a":{"b":{"c":1,"d":"[0,1]"}},"b":"2020-01-01","c":"42","d":{"e":{"f":"[\\"s1\\",\\"s2\\"]"}}}
-{"a":{"b":{"c":2,"d":"[2,3]"}},"b":"[1,2,3]","d":{"e":{"g":"43"}}}
-{"a":{"b":{"c":3,"d":"[4,5]"}},"e":"Hello, World!"}
-{"a":{"b":{"c":4,"d":"[6,7]"}},"c":"43"}
-{"a":{"b":{"c":5,"d":"[8,9]"}},"b":"[\\"b1\\",\\"b2\\"]","d":{"e":{"f":"[\\"s3\\",\\"s4\\"]","g":"44","h":"2020-02-02 10:00:00"}}}
-{'a.b.c':'UInt32','a.b.d':'String','b':'String','c':'String','d.e.f':'String'}	{'a.b.d':'String','b':'String','c':'String','d.e.f':'String'}	{}
-{'a.b.c':'UInt32','a.b.d':'String','b':'String','d.e.g':'String'}	{'a.b.d':'String','b':'String','d.e.g':'String'}	{}
-{'a.b.c':'UInt32','a.b.d':'String','e':'String'}	{'a.b.d':'String','e':'String'}	{}
-{'a.b.c':'UInt32','a.b.d':'String','c':'String'}	{'a.b.d':'String','c':'String'}	{}
-{'a.b.c':'UInt32','a.b.d':'String','b':'String','d.e.f':'String','d.e.g':'String','d.e.h':'String'}	{'a.b.d':'String','b':'String','d.e.f':'String','d.e.g':'String','d.e.h':'String'}	{}
+{"a":{"b":{"c":1,"d":["0","1"]}},"b":"2020-01-01","c":"42","d":{"e":{"f":["s1","s2"]}}}
+{"a":{"b":{"c":2,"d":["2","3"]}},"b":["1","2","3"],"d":{"e":{"g":"43"}}}
+{"a":{"b":{"c":3,"d":["4","5"]}},"e":"Hello, World!"}
+{"a":{"b":{"c":4,"d":["6","7"]}},"c":"43"}
+{"a":{"b":{"c":5,"d":["8","9"]}},"b":["b1","b2"],"d":{"e":{"f":["s3","s4"],"g":"44","h":"2020-02-02 10:00:00.000000000"}}}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','b':'Date','c':'Int64','d.e.f':'Array(Nullable(String))'}	{'a.b.d':'Array(Nullable(Int64))','b':'Date','c':'Int64','d.e.f':'Array(Nullable(String))'}	{}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(Int64))','d.e.g':'Int64'}	{'a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(Int64))','d.e.g':'Int64'}	{}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','e':'String'}	{'a.b.d':'Array(Nullable(Int64))','e':'String'}	{}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','c':'Int64'}	{'a.b.d':'Array(Nullable(Int64))','c':'Int64'}	{}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(String))','d.e.f':'Array(Nullable(String))','d.e.g':'Int64','d.e.h':'DateTime64(9)'}	{'a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(String))','d.e.f':'Array(Nullable(String))','d.e.g':'Int64','d.e.h':'DateTime64(9)'}	{}
 Test small max_read_buffer_size
 {"a":{"b":{"c":"1","d":["0","1"]}},"b":"2020-01-01","c":"42","d":{"e":{"f":["s1","s2"]}}}
 {"a":{"b":{"c":"2","d":["2","3"]}},"b":["1","2","3"],"d":{"e":{"g":"43"}}}

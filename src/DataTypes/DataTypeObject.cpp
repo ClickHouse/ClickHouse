@@ -224,7 +224,7 @@ void replaceJSONTypeNameIfNeeded(String & type_name, size_t max_dynamic_paths, s
                 fmt::format(
                     "JSON(max_dynamic_paths={}, max_dynamic_types={})",
                     max_dynamic_paths / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR,
-                    std::max(max_dynamic_types / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR, 1lu)));
+                    max_dynamic_types / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR));
         pos = type_name.find("JSON", pos + 4);
     }
 }
@@ -458,10 +458,9 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
 
             auto * literal = function->arguments->children[1]->as<ASTLiteral>();
             /// Is 1000000 a good maximum for max paths?
-            size_t min_value = identifier_name == "max_dynamic_types" ? 1 : 0;
-            size_t max_value = identifier_name == "max_dynamic_types" ? 255 : 1000000;
-            if (!literal || literal->value.getType() != Field::Types::UInt64 || literal->value.safeGet<UInt64>() < min_value || literal->value.safeGet<UInt64>() > max_value)
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "'{}' parameter for {} type should be a positive integer between {} and {}. Got {}", identifier_name, magic_enum::enum_name(schema_format), min_value, max_value, function->arguments->children[1]->formatForErrorMessage());
+            size_t max_value = identifier_name == "max_dynamic_types" ? ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT : 1000000;
+            if (!literal || literal->value.getType() != Field::Types::UInt64 || literal->value.safeGet<UInt64>() > max_value)
+                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "'{}' parameter for {} type should be a positive integer between 0 and {}. Got {}", identifier_name, magic_enum::enum_name(schema_format), max_value, function->arguments->children[1]->formatForErrorMessage());
 
             if (identifier_name == "max_dynamic_types")
                 max_dynamic_types = literal->value.safeGet<UInt64>();

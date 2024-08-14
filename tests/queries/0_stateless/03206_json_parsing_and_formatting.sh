@@ -31,8 +31,8 @@ $CLICKHOUSE_LOCAL --allow_experimental_json_type=1 -q "select json from file($DA
 $CLICKHOUSE_LOCAL --allow_experimental_json_type=1 -q "select JSONAllPathsWithTypes(json), JSONDynamicPathsWithTypes(json), JSONSharedDataPathsWithTypes(json) from file($DATA_FILE, JSONAsObject, 'json JSON(a.b.c UInt32, max_dynamic_paths=0)')"
 
 echo "JSON(a.b.c UInt32, max_dynamic_types=1)"
-$CLICKHOUSE_LOCAL --allow_experimental_json_type=1 -q "select json from file($DATA_FILE, JSONAsObject, 'json JSON(a.b.c UInt32, max_dynamic_types=1)')"
-$CLICKHOUSE_LOCAL --allow_experimental_json_type=1 -q "select JSONAllPathsWithTypes(json), JSONDynamicPathsWithTypes(json), JSONSharedDataPathsWithTypes(json) from file($DATA_FILE, JSONAsObject, 'json JSON(a.b.c UInt32, max_dynamic_types=1)')"
+$CLICKHOUSE_LOCAL --allow_experimental_json_type=1 -q "select json from file($DATA_FILE, JSONAsObject, 'json JSON(a.b.c UInt32, max_dynamic_types=0)')"
+$CLICKHOUSE_LOCAL --allow_experimental_json_type=1 -q "select JSONAllPathsWithTypes(json), JSONDynamicPathsWithTypes(json), JSONSharedDataPathsWithTypes(json) from file($DATA_FILE, JSONAsObject, 'json JSON(a.b.c UInt32, max_dynamic_types=0)')"
 
 echo "Test small max_read_buffer_size"
 $CLICKHOUSE_LOCAL --allow_experimental_json_type=1 --max_read_buffer_size=1 -q "select json from file($DATA_FILE, JSONAsObject)"
