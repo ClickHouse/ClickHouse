@@ -13,7 +13,6 @@ from uuid import uuid4
 AVAILABLE_MODES = ["unordered", "ordered"]
 DEFAULT_AUTH = ["'minio'", "'minio123'"]
 NO_AUTH = ["NOSIGN"]
-AZURE_CONTAINER_NAME = "cont"
 
 
 def prepare_public_s3_bucket(started_cluster):
@@ -75,6 +74,17 @@ def s3_queue_setup_teardown(started_cluster):
     objects = list(minio.list_objects(started_cluster.minio_bucket, recursive=True))
     for obj in objects:
         minio.remove_object(started_cluster.minio_bucket, obj.object_name)
+
+    container_client = started_cluster.blob_service_client.get_container_client(
+        started_cluster.azurite_container
+    )
+
+    if container_client.exists():
+        blob_names = [b.name for b in container_client.list_blobs()]
+        logging.debug(f"Deleting blobs: {blob_names}")
+        for b in blob_names:
+            container_client.delete_blob(b)
+
     yield  # run test
 
 
@@ -128,11 +138,6 @@ def started_cluster():
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
-
-        container_client = cluster.blob_service_client.get_container_client(
-            AZURE_CONTAINER_NAME
-        )
-        container_client.create_container()
 
         yield cluster
     finally:
@@ -190,7 +195,7 @@ def put_s3_file_content(started_cluster, filename, data, bucket=None):
 
 def put_azure_file_content(started_cluster, filename, data, bucket=None):
     client = started_cluster.blob_service_client.get_blob_client(
-        AZURE_CONTAINER_NAME, filename
+        started_cluster.azurite_container, filename
     )
     buf = io.BytesIO(data)
     client.upload_blob(buf, "BlockBlob", len(data))
@@ -313,7 +318,7 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
         assert len(objects) == 0
     else:
         client = started_cluster.blob_service_client.get_container_client(
-            AZURE_CONTAINER_NAME
+            started_cluster.azurite_container
         )
         objects_iterator = client.list_blobs(files_path)
         for objects in objects_iterator:
