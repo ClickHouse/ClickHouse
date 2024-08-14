@@ -84,7 +84,7 @@ struct Settings;
     M(Bool, exclude_deleted_rows_for_part_size_in_merge, false, "Use an estimated source part size (excluding lightweight deleted rows) when selecting parts to merge", 0) \
     M(String, merge_workload, "", "Name of workload to be used to access resources for merges", 0) \
     M(String, mutation_workload, "", "Name of workload to be used to access resources for mutations", 0) \
-    M(Milliseconds, merge_preferred_step_execution_time_ms, 100, "Target time to execetion of one step of merge. Can be exceeded if one step takes longer time", 0) \
+    M(Milliseconds, merge_preferred_step_execution_time_ms, 50, "Target time to execution of one step of merge. Can be exceeded if one step takes longer time", 0) \
     \
     /** Inserts settings. */ \
     M(UInt64, parts_to_delay_insert, 1000, "If table contains at least that many active parts in single partition, artificially slow down insert into table. Disabled if set to 0", 0) \
