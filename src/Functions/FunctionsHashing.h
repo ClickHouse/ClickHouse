@@ -92,7 +92,6 @@ namespace impl
             if (is_const)
                 i = 0;
             assert(key0->size() == key1->size());
-            assert(key0->size() > i);
             if (offsets != nullptr)
             {
                 const auto *const begin = offsets->begin();
@@ -102,6 +101,7 @@ namespace impl
             }
             const auto & key0data = assert_cast<const ColumnUInt64 &>(*key0).getData();
             const auto & key1data = assert_cast<const ColumnUInt64 &>(*key1).getData();
+            assert(key0->size() > i);
             return {key0data[i], key1data[i]};
         }
     };
