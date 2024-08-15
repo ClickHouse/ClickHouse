@@ -12,8 +12,6 @@ The [rank](./rank.md) function provides the same behaviour, but with gaps in ran
 
 **Syntax**
 
-Alias: `denseRank` (case-sensitive)
-
 ```sql
 dense_rank (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 

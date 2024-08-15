@@ -3940,7 +3940,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         merge_selecting_task->schedule();
     else
     {
-        LOG_TRACE(log, "Scheduling next merge selecting task after {}ms, current attempt status: {}", merge_selecting_sleep_ms, result);
+        LOG_TRACE(log, "Scheduling next merge selecting task after {}ms", merge_selecting_sleep_ms);
         merge_selecting_task->scheduleAfter(merge_selecting_sleep_ms);
     }
 }
@@ -5604,7 +5604,7 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRows(const Settings & set
     return res;
 }
 
-std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
+std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr local_context) const
 {
     DataPartsVector parts;
     foreachActiveParts([&](auto & part) { parts.push_back(part); }, local_context->getSettingsRef().select_sequential_consistency);
@@ -5704,8 +5704,7 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
         {
             auto connection = std::make_shared<Connection>(
                 node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, node.proto_send_chunked, node.proto_recv_chunked,
-                SSHKey(), /*jwt*/"", node.quota_key, node.cluster, node.cluster_secret,
+                node.user, node.password, SSHKey(), /*jwt*/"", node.quota_key, node.cluster, node.cluster_secret,
                 "ParallelInsertSelectInititiator",
                 node.compression,
                 node.secure
@@ -5795,12 +5794,10 @@ bool StorageReplicatedMergeTree::optimize(
     if (!is_leader)
         throw Exception(ErrorCodes::NOT_A_LEADER, "OPTIMIZE cannot be done on this replica because it is not a leader");
 
-    if (deduplicate && getInMemoryMetadataPtr()->hasProjections()
-        && getSettings()->deduplicate_merge_projection_mode == DeduplicateMergeProjectionMode::THROW)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+    if (deduplicate && getInMemoryMetadataPtr()->hasProjections())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
-                    "User should drop all the projections manually before running the query, "
-                    "or consider drop or rebuild option of deduplicate_merge_projection_mode",
+                    "User should drop all the projections manually before running the query",
                     getStorageID().getTableName());
 
     if (cleanup)

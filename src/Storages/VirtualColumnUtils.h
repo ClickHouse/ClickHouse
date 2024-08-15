@@ -5,7 +5,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnsDescription.h>
-#include <Formats/FormatSettings.h>
 
 #include <unordered_set>
 
@@ -34,10 +33,8 @@ namespace VirtualColumnUtils
 /// cannot be evaluated using the columns from the block.
 void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block, ContextPtr context, bool allow_filtering_with_partial_predicate = true);
 
-
 /// Just filters block. Block should contain all the required columns.
-ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context);
-void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block);
+void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context);
 
 /// Builds sets used by ActionsDAG inplace.
 void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
@@ -54,7 +51,7 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 /// The predicate will be `_partition_id = '0' AND rowNumberInBlock() = 1`, and `rowNumberInBlock()` is
 /// non-deterministic. If we still extract the part `_partition_id = '0'` for filtering parts, then trivial
 /// count optimization will be mistakenly applied to the query.
-std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, bool allow_partial_result = true);
+ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, bool allow_partial_result = true);
 
 /// Extract from the input stream a set of `name` column values
 template <typename T>
@@ -64,25 +61,21 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
     const ColumnWithTypeAndName & data = block.getByName(name);
     size_t rows = block.rows();
     for (size_t i = 0; i < rows; ++i)
-        res.insert((*data.column)[i].safeGet<T>());
+        res.insert((*data.column)[i].get<T>());
     return res;
 }
 
 NameSet getVirtualNamesForFileLikeStorage();
-VirtualColumnsDescription getVirtualsForFileLikeStorage(
-    const ColumnsDescription & storage_columns,
-    const ContextPtr & context,
-    const std::string & sample_path = "",
-    std::optional<FormatSettings> format_settings_ = std::nullopt);
+VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns);
 
-std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
+ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
 
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns);
+ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ActionsDAGPtr & dag, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
 
 template <typename T>
-void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns)
+void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & paths, const ActionsDAGPtr & dag, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
 {
-    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns);
+    auto indexes_column = getFilterByPathAndFileIndexes(paths, dag, virtual_columns, context);
     const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
     if (indexes.size() == sources.size())
         return;
@@ -100,12 +93,12 @@ struct VirtualsForFileLikeStorage
     std::optional<size_t> size { std::nullopt };
     const String * filename { nullptr };
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
-    const String * etag { nullptr };
+
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values, ContextPtr context, const ColumnsDescription & columns);
+    VirtualsForFileLikeStorage virtual_values);
 }
 
 }

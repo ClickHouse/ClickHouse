@@ -18,9 +18,6 @@ namespace DB
 
 void OwnSplitChannel::log(const Poco::Message & msg)
 {
-    if (!isLoggingEnabled())
-        return;
-
 #ifndef WITHOUT_TEXT_LOG
     auto logs_queue = CurrentThread::getInternalTextLogsQueue();
 

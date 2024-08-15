@@ -6,8 +6,6 @@
 #include <Core/Range.h>
 #include <Core/PlainRanges.h>
 
-#include <DataTypes/Serializations/ISerialization.h>
-
 #include <Parsers/ASTExpressionList.h>
 
 #include <Interpreters/Set.h>
@@ -16,6 +14,7 @@
 
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include "DataTypes/Serializations/ISerialization.h"
 
 
 namespace DB
@@ -43,7 +42,7 @@ class KeyCondition
 public:
     /// Construct key condition from ActionsDAG nodes
     KeyCondition(
-        const ActionsDAG * filter_dag,
+        ActionsDAGPtr filter_dag,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
@@ -135,7 +134,7 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
-    static ActionsDAG cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
+    static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
 
     bool matchesExactContinuousRange() const;
 

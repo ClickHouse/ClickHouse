@@ -57,15 +57,8 @@ LocalFileHolder::~LocalFileHolder()
 {
     if (original_readbuffer)
     {
-        try
-        {
-            assert_cast<SeekableReadBuffer *>(original_readbuffer.get())->seek(0, SEEK_SET);
-            file_cache_controller->value().startBackgroundDownload(std::move(original_readbuffer), *thread_pool);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(getLogger("LocalFileHolder"), "Exception during destructor of LocalFileHolder.");
-        }
+        assert_cast<SeekableReadBuffer *>(original_readbuffer.get())->seek(0, SEEK_SET);
+        file_cache_controller->value().startBackgroundDownload(std::move(original_readbuffer), *thread_pool);
     }
 }
 

@@ -1,4 +1,4 @@
--- Tags: long, no-random-merge-tree-settings, no-random-settings, no-tsan, no-debug, no-object-storage, no-distributed-cache
+-- Tags: no-random-merge-tree-settings, no-random-settings, no-tsan, no-debug, no-object-storage, long
 -- no-tsan: too slow
 -- no-object-storage: for remote tables we use thread pool even when reading with one stream, so memory consumption is higher
 

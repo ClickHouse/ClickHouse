@@ -133,31 +133,16 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
         const size_t chunk_length = chunk.length();
 
-        const size_t null_count = chunk.null_count();
-        if (null_count == 0)
+        for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
         {
-            for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
+            if (!chunk.IsNull(offset_i) && buffer)
             {
                 const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
                 column_chars_t.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
-                column_chars_t.emplace_back('\0');
-
-                column_offsets.emplace_back(column_chars_t.size());
             }
-        }
-        else
-        {
-            for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
-            {
-                if (!chunk.IsNull(offset_i) && buffer)
-                {
-                    const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
-                    column_chars_t.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
-                }
-                column_chars_t.emplace_back('\0');
+            column_chars_t.emplace_back('\0');
 
-                column_offsets.emplace_back(column_chars_t.size());
-            }
+            column_offsets.emplace_back(column_chars_t.size());
         }
     }
     return {std::move(internal_column), std::move(internal_type), column_name};

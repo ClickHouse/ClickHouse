@@ -103,7 +103,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-### Inserting data from a file into a table
+### Inserting data from a file into a table:
 
 ``` sql
 INSERT INTO FUNCTION
@@ -205,19 +205,6 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 - `_file` — Name of the file. Type: `LowCardinalty(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
-
-## Hive-style partitioning {#hive-style-partitioning}
-
-When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
-
-**Example**
-
-Use virtual column, created with Hive-style partitioning
-
-``` sql
-SET use_hive_partitioning = 1;
-SELECT * from file('data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
-```
 
 ## Settings {#settings}
 

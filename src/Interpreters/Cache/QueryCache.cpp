@@ -128,7 +128,7 @@ namespace
 
 bool isQueryCacheRelatedSetting(const String & setting_name)
 {
-    return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
+    return setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache");
 }
 
 class RemoveQueryCacheSettingsMatcher
@@ -242,18 +242,11 @@ QueryCache::Key::Key(
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
     , query_string(queryStringFromAST(ast_))
-    , tag(settings.query_cache_tag)
 {
 }
 
-QueryCache::Key::Key(
-    ASTPtr ast_,
-    const String & current_database,
-    const Settings & settings,
-    std::optional<UUID> user_id_,
-    const std::vector<UUID> & current_user_roles_)
-    : QueryCache::Key(ast_, current_database, settings, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false)
-    /// ^^ dummy values for everything != AST, current database, user name/roles
+QueryCache::Key::Key(ASTPtr ast_, const String & current_database, const Settings & settings, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_)
+    : QueryCache::Key(ast_, current_database, settings, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST, current database, user name/roles
 {
 }
 

@@ -3,11 +3,6 @@
 #include <Processors/Merges/IMergingTransform.h>
 #include <Processors/Merges/Algorithms/SummingSortedAlgorithm.h>
 
-namespace ProfileEvents
-{
-    extern const Event SummingSortedMilliseconds;
-}
-
 namespace DB
 {
 
@@ -38,11 +33,6 @@ public:
     }
 
     String getName() const override { return "SummingSortedTransform"; }
-
-    void onFinish() override
-    {
-        logMergedStats(ProfileEvents::SummingSortedMilliseconds, "Summed sorted", getLogger("SummingSortedTransform"));
-    }
 };
 
 }

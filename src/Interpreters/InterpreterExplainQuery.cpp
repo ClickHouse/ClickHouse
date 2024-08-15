@@ -332,7 +332,7 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
 
         if (settings.hasBooleanSetting(change.name))
         {
-            auto value = change.value.safeGet<UInt64>();
+            auto value = change.value.get<UInt64>();
             if (value > 1)
                 throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for setting \"{}\". "
                                 "Expected boolean type", value, change.name);
@@ -341,7 +341,7 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
         }
         else
         {
-            auto value = change.value.safeGet<UInt64>();
+            auto value = change.value.get<UInt64>();
             settings.setIntegerSetting(change.name, value);
         }
     }

@@ -9,6 +9,7 @@
 
 #include <deque>
 #include <queue>
+#include <mutex>
 #include <memory>
 
 
@@ -48,20 +49,8 @@ public:
 
     const Processors & getProcessors() const;
 
-    enum class ExecutionStatus
-    {
-        NotStarted,
-        Executing,
-        Finished,
-        Exception,
-        CancelledByUser,
-        CancelledByTimeout,
-    };
-
     /// Cancel execution. May be called from another thread.
-    void cancel() { cancel(ExecutionStatus::CancelledByUser); }
-
-    ExecutionStatus getExecutionStatus() const { return execution_status.load(); }
+    void cancel();
 
     /// Cancel processors which only read data from source. May be called from another thread.
     void cancelReading();
@@ -93,7 +82,7 @@ private:
     /// system.opentelemetry_span_log
     bool trace_processors = false;
 
-    std::atomic<ExecutionStatus> execution_status = ExecutionStatus::NotStarted;
+    std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_reading = false;
 
     LoggerPtr log = getLogger("PipelineExecutor");
@@ -117,10 +106,6 @@ private:
     void executeStepImpl(size_t thread_num, std::atomic_bool * yield_flag = nullptr);
     void executeSingleThread(size_t thread_num);
     void finish();
-    void cancel(ExecutionStatus reason);
-
-    /// If execution_status == from, change it to desired.
-    bool tryUpdateExecutionStatus(ExecutionStatus expected, ExecutionStatus desired);
 
     String dumpPipeline() const;
 };

@@ -16,9 +16,6 @@
 #include <Common/Arena.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <Functions/CastOverloadResolver.h>
-#include <Functions/IFunction.h>
-#include <DataTypes/DataTypeString.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -59,10 +56,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
@@ -85,7 +79,7 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
     using ValueType = typename ColumnType::ValueType;
     // Note that the storage type of offset returned by get<> is different, so
     // we need to specify the type explicitly.
-    const ValueType offset = static_cast<ValueType>(_offset.safeGet<ValueType>());
+    const ValueType offset = static_cast<ValueType>(_offset.get<ValueType>());
     assert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
@@ -140,7 +134,7 @@ static int compareValuesWithOffsetFloat(const IColumn * _compared_column,
         _compared_column);
     const auto * reference_column = assert_cast<const ColumnType *>(
         _reference_column);
-    const auto offset = _offset.safeGet<typename ColumnType::ValueType>();
+    const auto offset = _offset.get<typename ColumnType::ValueType>();
     chassert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
@@ -609,7 +603,7 @@ void WindowTransform::advanceFrameStartRowsOffset()
 {
     // Just recalculate it each time by walking blocks.
     const auto [moved_row, offset_left] = moveRowNumber(current_row,
-        window_description.frame.begin_offset.safeGet<UInt64>()
+        window_description.frame.begin_offset.get<UInt64>()
             * (window_description.frame.begin_preceding ? -1 : 1));
 
     frame_start = moved_row;
@@ -848,7 +842,7 @@ void WindowTransform::advanceFrameEndRowsOffset()
     // Walk the specified offset from the current row. The "+1" is needed
     // because the frame_end is a past-the-end pointer.
     const auto [moved_row, offset_left] = moveRowNumber(current_row,
-        window_description.frame.end_offset.safeGet<UInt64>()
+        window_description.frame.end_offset.get<UInt64>()
             * (window_description.frame.end_preceding ? -1 : 1)
             + 1);
 
@@ -1157,8 +1151,6 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // Initialize output columns.
         for (auto & ws : workspaces)
         {
-            block.casted_columns.push_back(ws.window_function_impl ? ws.window_function_impl->castColumn(block.input_columns, ws.argument_column_indices) : nullptr);
-
             block.output_columns.push_back(ws.aggregate_function->getResultType()
                 ->createColumn());
             block.output_columns.back()->reserve(block.rows);
@@ -1633,7 +1625,7 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
     {
         if (parameters_.size() != 1)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} takes exactly one parameter", name_);
         }
         return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
@@ -1646,7 +1638,7 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
     {
         if (argument_types.size() != 2)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} takes exactly two arguments", name_);
         }
 
@@ -1730,7 +1722,7 @@ struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
     {
         if (parameters_.size() != 1)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} takes exactly one parameter", name_);
         }
         return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
@@ -1743,7 +1735,7 @@ struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
     {
         if (argument_types.size() != 2)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} takes exactly two arguments", name_);
         }
 
@@ -1805,7 +1797,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
     {
         if (parameters_.size() != 1)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} takes exactly one parameter", name_);
         }
         return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
@@ -1818,7 +1810,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
     {
         if (argument_types.size() != 1)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} takes exactly one argument", name_);
         }
 
@@ -1891,7 +1883,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
     {
         if (parameters_.size() != 1)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} takes exactly one parameter", name_);
         }
         return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
@@ -1904,7 +1896,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
     {
         if (argument_types.size() != 2)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} takes exactly two arguments", name_);
         }
 
@@ -2039,7 +2031,7 @@ struct WindowFunctionNtile final : public StatefulWindowFunction<NtileState>
         : StatefulWindowFunction<NtileState>(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
     {
         if (argument_types.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes exactly one argument", name_);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} takes exactly one argument", name_);
 
         auto type_id = argument_types[0]->getTypeId();
         if (type_id != TypeIndex::UInt8 && type_id != TypeIndex::UInt16 && type_id != TypeIndex::UInt32 && type_id != TypeIndex::UInt64)
@@ -2104,17 +2096,17 @@ namespace
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be a constant");
             auto type_id = argument_types[0]->getTypeId();
             if (type_id == TypeIndex::UInt8)
-                buckets = arg_col[transform->current_row.row].safeGet<UInt8>();
+                buckets = arg_col[transform->current_row.row].get<UInt8>();
             else if (type_id == TypeIndex::UInt16)
-                buckets = arg_col[transform->current_row.row].safeGet<UInt16>();
+                buckets = arg_col[transform->current_row.row].get<UInt16>();
             else if (type_id == TypeIndex::UInt32)
-                buckets = arg_col[transform->current_row.row].safeGet<UInt32>();
+                buckets = arg_col[transform->current_row.row].get<UInt32>();
             else if (type_id == TypeIndex::UInt64)
-                buckets = arg_col[transform->current_row.row].safeGet<UInt64>();
+                buckets = arg_col[transform->current_row.row].get<UInt64>();
 
             if (!buckets)
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' function must be greater than zero");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of 'ntile' funtcion must be greater than zero");
             }
         }
         // new partition
@@ -2280,8 +2272,6 @@ public:
 template <bool is_lead>
 struct WindowFunctionLagLeadInFrame final : public WindowFunction
 {
-    FunctionBasePtr func_cast = nullptr;
-
     WindowFunctionLagLeadInFrame(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
         : WindowFunction(name_, argument_types_, parameters_, createResultType(argument_types_, name_))
@@ -2309,17 +2299,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             return;
         }
 
-        if (argument_types.size() > 3)
-        {
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-                "Function '{}' accepts at most 3 arguments, {} given",
-                name, argument_types.size());
-        }
-
-        if (argument_types[0]->equals(*argument_types[2]))
-            return;
-
-        const auto supertype = tryGetLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
+        const auto supertype = getLeastSupertype(DataTypes{argument_types[0], argument_types[2]});
         if (!supertype)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -2336,38 +2316,19 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
                 argument_types[2]->getName());
         }
 
-        auto get_cast_func = [from = argument_types[2], to = argument_types[0]]
+        if (argument_types.size() > 3)
         {
-            return createInternalCast({from, {}}, to, CastType::accurate, {});
-        };
-
-        func_cast = get_cast_func();
-
-    }
-
-    ColumnPtr castColumn(const Columns & columns, const std::vector<size_t> & idx) override
-    {
-        if (!func_cast)
-            return nullptr;
-
-        ColumnsWithTypeAndName arguments
-        {
-            { columns[idx[2]], argument_types[2], "" },
-            {
-                DataTypeString().createColumnConst(columns[idx[2]]->size(), argument_types[0]->getName()),
-                std::make_shared<DataTypeString>(),
-                ""
-            }
-        };
-
-        return func_cast->execute(arguments, argument_types[0], columns[idx[2]]->size());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function '{}' accepts at most 3 arguments, {} given",
+                name, argument_types.size());
+        }
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_, const std::string & name_)
     {
         if (argument_types_.empty())
         {
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} takes at least one argument", name_);
         }
 
@@ -2388,7 +2349,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
         {
             offset = (*current_block.input_columns[
                     workspace.argument_column_indices[1]])[
-                        transform->current_row.row].safeGet<Int64>();
+                        transform->current_row.row].get<Int64>();
 
             /// Either overflow or really negative value, both is not acceptable.
             if (offset < 0)
@@ -2410,11 +2371,12 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             if (argument_types.size() > 2)
             {
                 // Column with default values is specified.
-                const IColumn & default_column =
-                    current_block.casted_columns[function_index] ?
-                        *current_block.casted_columns[function_index].get() :
-                        *current_block.input_columns[workspace.argument_column_indices[2]].get();
-
+                // The conversion through Field is inefficient, but we accept
+                // subtypes of the argument type as a default value (for convenience),
+                // and it's a pain to write conversion that respects ColumnNothing
+                // and ColumnConst and so on.
+                const IColumn & default_column = *current_block.input_columns[
+                    workspace.argument_column_indices[2]].get();
                 to.insert(default_column[transform->current_row.row]);
             }
             else
@@ -2456,7 +2418,7 @@ struct WindowFunctionNthValue final : public WindowFunction
     {
         if (argument_types_.size() != 2)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} takes exactly two arguments", name_);
         }
 
@@ -2474,7 +2436,7 @@ struct WindowFunctionNthValue final : public WindowFunction
 
         Int64 offset = (*current_block.input_columns[
                 workspace.argument_column_indices[1]])[
-            transform->current_row.row].safeGet<Int64>();
+            transform->current_row.row].get<Int64>();
 
         /// Either overflow or really negative value, both is not acceptable.
         if (offset <= 0)
@@ -2530,7 +2492,7 @@ struct NonNegativeDerivativeParams
 
         if (argument_types.size() != 2 && argument_types.size() != 3)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Function {} takes 2 or 3 arguments", name_);
         }
 
@@ -2670,23 +2632,19 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
                 parameters);
         }, properties}, AggregateFunctionFactory::Case::Insensitive);
 
-    factory.registerFunction("denseRank", {[](const std::string & name,
+    factory.registerFunction("dense_rank", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
                 parameters);
-        }, properties});
+        }, properties}, AggregateFunctionFactory::Case::Insensitive);
 
-    factory.registerAlias("dense_rank", "denseRank", AggregateFunctionFactory::Case::Insensitive);
-
-    factory.registerFunction("percentRank", {[](const std::string & name,
+    factory.registerFunction("percent_rank", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionPercentRank>(name, argument_types,
                 parameters);
-        }, properties});
-
-    factory.registerAlias("percent_rank", "percentRank", AggregateFunctionFactory::Case::Insensitive);
+        }, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("row_number", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)

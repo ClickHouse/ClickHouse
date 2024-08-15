@@ -184,7 +184,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                 const auto & value = group_exprs[i]->as<ASTLiteral>()->value;
                 if (value.getType() == Field::Types::UInt64)
                 {
-                    auto pos = value.safeGet<UInt64>();
+                    auto pos = value.get<UInt64>();
                     if (pos > 0 && pos <= select_query->select()->children.size())
                         keep_position = true;
                 }

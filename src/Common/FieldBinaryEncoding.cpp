@@ -208,7 +208,7 @@ void FieldVisitorEncodeBinary::operator() (const Map & x, WriteBuffer & buf) con
     writeVarUInt(size, buf);
     for (size_t i = 0; i < size; ++i)
     {
-        const Tuple & key_and_value = x[i].safeGet<Tuple>();
+        const Tuple & key_and_value = x[i].get<Tuple>();
         Field::dispatch([&buf] (const auto & value) { FieldVisitorEncodeBinary()(value, buf); }, key_and_value[0]);
         Field::dispatch([&buf] (const auto & value) { FieldVisitorEncodeBinary()(value, buf); }, key_and_value[1]);
     }

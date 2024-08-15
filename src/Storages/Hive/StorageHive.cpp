@@ -445,7 +445,7 @@ StorageHive::StorageHive(
     storage_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, storage_metadata.columns, getContext());
 
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), getContext()));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 void StorageHive::lazyInitialize()
@@ -516,7 +516,7 @@ void StorageHive::initMinMaxIndexExpression()
         partition_names = partition_name_types.getNames();
         partition_types = partition_name_types.getTypes();
         partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
-            ActionsDAG(partition_name_types), ExpressionActionsSettings::fromContext(getContext()));
+            std::make_shared<ActionsDAG>(partition_name_types), ExpressionActionsSettings::fromContext(getContext()));
     }
 
     NamesAndTypesList all_name_types = metadata_snapshot->getColumns().getAllPhysical();
@@ -526,7 +526,7 @@ void StorageHive::initMinMaxIndexExpression()
             hivefile_name_types.push_back(column);
     }
     hivefile_minmax_idx_expr = std::make_shared<ExpressionActions>(
-        ActionsDAG(hivefile_name_types), ExpressionActionsSettings::fromContext(getContext()));
+        std::make_shared<ActionsDAG>(hivefile_name_types), ExpressionActionsSettings::fromContext(getContext()));
 }
 
 ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
@@ -583,7 +583,7 @@ static HiveFilePtr createHiveFile(
 
 HiveFiles StorageHive::collectHiveFilesFromPartition(
     const Apache::Hadoop::Hive::Partition & partition,
-    const ActionsDAG * filter_actions_dag,
+    const ActionsDAGPtr & filter_actions_dag,
     const HiveTableMetadataPtr & hive_table_metadata,
     const HDFSFSPtr & fs,
     const ContextPtr & context_,
@@ -681,7 +681,7 @@ StorageHive::listDirectory(const String & path, const HiveTableMetadataPtr & hiv
 HiveFilePtr StorageHive::getHiveFileIfNeeded(
     const FileInfo & file_info,
     const FieldVector & fields,
-    const ActionsDAG * filter_actions_dag,
+    const ActionsDAGPtr & filter_actions_dag,
     const HiveTableMetadataPtr & hive_table_metadata,
     const ContextPtr & context_,
     PruneLevel prune_level) const
@@ -828,7 +828,7 @@ void ReadFromHive::createFiles()
     if (hive_files)
         return;
 
-    hive_files = storage->collectHiveFiles(num_streams, filter_actions_dag ? &*filter_actions_dag : nullptr, hive_table_metadata, fs, context);
+    hive_files = storage->collectHiveFiles(num_streams, filter_actions_dag, hive_table_metadata, fs, context);
     LOG_INFO(log, "Collect {} hive files to read", hive_files->size());
 }
 
@@ -950,7 +950,7 @@ void ReadFromHive::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
 
 HiveFiles StorageHive::collectHiveFiles(
     size_t max_threads,
-    const ActionsDAG * filter_actions_dag,
+    const ActionsDAGPtr & filter_actions_dag,
     const HiveTableMetadataPtr & hive_table_metadata,
     const HDFSFSPtr & fs,
     const ContextPtr & context_,
@@ -1023,12 +1023,12 @@ SinkToStoragePtr StorageHive::write(const ASTPtr & /*query*/, const StorageMetad
 std::optional<UInt64> StorageHive::totalRows(const Settings & settings) const
 {
     /// query_info is not used when prune_level == PruneLevel::None
-    return totalRowsImpl(settings, {}, getContext(), PruneLevel::None);
+    return totalRowsImpl(settings, nullptr, getContext(), PruneLevel::None);
 }
 
-std::optional<UInt64> StorageHive::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr context_) const
+std::optional<UInt64> StorageHive::totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) const
 {
-    return totalRowsImpl(context_->getSettingsRef(), &filter_actions_dag, context_, PruneLevel::Partition);
+    return totalRowsImpl(context_->getSettingsRef(), filter_actions_dag, context_, PruneLevel::Partition);
 }
 
 void StorageHive::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*local_context*/) const
@@ -1043,7 +1043,7 @@ void StorageHive::checkAlterIsPossible(const AlterCommands & commands, ContextPt
 }
 
 std::optional<UInt64>
-StorageHive::totalRowsImpl(const Settings & settings, const ActionsDAG * filter_actions_dag, ContextPtr context_, PruneLevel prune_level) const
+StorageHive::totalRowsImpl(const Settings & settings, const ActionsDAGPtr & filter_actions_dag, ContextPtr context_, PruneLevel prune_level) const
 {
     /// Row-based format like Text doesn't support totalRowsByPartitionPredicate
     if (!supportsSubsetOfColumns())

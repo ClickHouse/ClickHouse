@@ -50,8 +50,6 @@ public:
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
-    MergedStats getMergedStats() const override { return {.bytes = accumulated_bytes, .rows = accumulated_rows, .blocks = chunk_num}; }
-
 private:
     Chunk prepareToMerge();
     void addToAggregation();
@@ -94,9 +92,6 @@ private:
     UInt64 chunk_num = 0;
     size_t accumulated_rows = 0;
     size_t accumulated_bytes = 0;
-
-    size_t total_merged_rows = 0;
-    size_t total_merged_bytes = 0;
 };
 
 }

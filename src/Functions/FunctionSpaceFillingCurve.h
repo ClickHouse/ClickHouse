@@ -132,7 +132,9 @@ public:
         }
         DataTypes types(tuple_size);
         for (size_t i = 0; i < tuple_size; i++)
+        {
             types[i] = std::make_shared<DataTypeUInt64>();
+        }
         return std::make_shared<DataTypeTuple>(types);
     }
 };

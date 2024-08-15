@@ -46,8 +46,8 @@ namespace
         if (zookeeper_path_ast && (zookeeper_path_ast->value.getType() == Field::Types::String) &&
             replica_name_ast && (replica_name_ast->value.getType() == Field::Types::String))
         {
-            String & zookeeper_path_arg = zookeeper_path_ast->value.safeGet<String>();
-            String & replica_name_arg = replica_name_ast->value.safeGet<String>();
+            String & zookeeper_path_arg = zookeeper_path_ast->value.get<String>();
+            String & replica_name_arg = replica_name_ast->value.get<String>();
             if (create.uuid != UUIDHelpers::Nil)
             {
                 String table_uuid_str = toString(create.uuid);

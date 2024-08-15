@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-asan, no-msan, no-tsan, no-debug, no-fasttest
-# no-fasttest: The test runs for 40 seconds
+# Tags: no-random-settings, no-asan, no-msan, no-tsan, no-debug
 # shellcheck disable=SC2009
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -196,7 +196,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             }
             else
             {
-                std::tuple<std::string, std::string, std::string, uint16_t, std::string, std::string, std::string, std::string> row;
+                std::tuple<std::string, std::string, std::string, uint16_t, std::string, std::string, std::string> row;
                 while (stream >> row)
                 {
                     const auto column_name = std::get<0>(row);
@@ -206,14 +206,13 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
                         std::get<3>(row));
 
                     columns.push_back(NameAndTypePair(column_name, data_type));
-                    auto attgenerated = std::get<7>(row);
+                    auto attgenerated = std::get<6>(row);
 
                     attributes.emplace(
                         column_name,
                         PostgreSQLTableStructure::PGAttribute{
                             .atttypid = parse<int>(std::get<4>(row)),
                             .atttypmod = parse<int>(std::get<5>(row)),
-                            .attnum = parse<int>(std::get<6>(row)),
                             .atthasdef = false,
                             .attgenerated = attgenerated.empty() ? char{} : char(attgenerated[0]),
                             .attr_def = {}
@@ -309,7 +308,6 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
            "attndims AS dims, " /// array dimensions
            "atttypid as type_id, "
            "atttypmod as type_modifier, "
-           "attnum as att_num, "
            "attgenerated as generated " /// if column has GENERATED
            "FROM pg_attribute "
            "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) "
@@ -340,29 +338,17 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "WHERE adrelid = (SELECT oid FROM pg_class WHERE {});", where);
 
         pqxx::result result{tx.exec(attrdef_query)};
-        if (static_cast<uint64_t>(result.size()) > table.physical_columns->names.size())
+        for (const auto row : result)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Received {} attrdef, but currently fetched columns list has {} columns",
-                            result.size(), table.physical_columns->attributes.size());
-        }
-
-        for (const auto & column_attrs : table.physical_columns->attributes)
-        {
-            if (column_attrs.second.attgenerated != 's') /// e.g. not a generated column
+            size_t adnum = row[0].as<int>();
+            if (!adnum || adnum > table.physical_columns->names.size())
             {
-                continue;
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Received adnum {}, but currently fetched columns list has {} columns",
+                                adnum, table.physical_columns->attributes.size());
             }
-
-            for (const auto row : result)
-            {
-                int adnum = row[0].as<int>();
-                if (column_attrs.second.attnum == adnum)
-                {
-                    table.physical_columns->attributes.at(column_attrs.first).attr_def = row[1].as<std::string>();
-                    break;
-                }
-            }
+            const auto column_name = table.physical_columns->names[adnum - 1];
+            table.physical_columns->attributes.at(column_name).attr_def = row[1].as<std::string>();
         }
     }
 

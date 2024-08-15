@@ -168,7 +168,7 @@ private:
         records.emplace(it, type_idx, item);
     }
 
-    typename Records::const_iterator getImpl(std::type_index type_idx) const
+    Records::const_iterator getImpl(std::type_index type_idx) const
     {
         auto it = std::lower_bound(records.cbegin(), records.cend(), type_idx);
 

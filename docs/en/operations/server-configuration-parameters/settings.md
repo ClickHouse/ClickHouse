@@ -103,6 +103,8 @@ Default: 2
 
 The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`.
 
+## background_merges_mutations_scheduling_policy
+
 Algorithm used to select next merge or mutation to be executed by background thread pool. Policy may be changed at runtime without server restart.
 Could be applied from the `default` profile for backward compatibility.
 
@@ -1400,16 +1402,6 @@ The number of seconds that ClickHouse waits for incoming requests before closing
 <keep_alive_timeout>10</keep_alive_timeout>
 ```
 
-## max_keep_alive_requests {#max-keep-alive-requests}
-
-Maximal number of requests through a single keep-alive connection until it will be closed by ClickHouse server. Default to 10000.
-
-**Example**
-
-``` xml
-<max_keep_alive_requests>10</max_keep_alive_requests>
-```
-
 ## listen_host {#listen_host}
 
 Restriction on hosts that requests can come from. If you want the server to answer all of them, specify `::`.
@@ -2120,6 +2112,48 @@ The trailing slash is mandatory.
 
 ``` xml
 <path>/var/lib/clickhouse/</path>
+```
+
+## Prometheus {#prometheus}
+
+:::note
+ClickHouse Cloud does not currently support connecting to Prometheus. To be notified when this feature is supported, please contact support@clickhouse.com.
+:::
+
+Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
+
+Settings:
+
+- `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from ‘/’.
+- `port` – Port for `endpoint`.
+- `metrics` – Expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
+- `events` – Expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
+- `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
+- `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](../../operations/system-tables/asynchronous_metrics.md#system_tables-errors) as well.
+
+**Example**
+
+``` xml
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <!-- highlight-start -->
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+        <errors>true</errors>
+    </prometheus>
+    <!-- highlight-end -->
+</clickhouse>
+```
+
+Check (replace `127.0.0.1` with the IP addr or hostname of your ClickHouse server):
+```bash
+curl 127.0.0.1:9363/metrics
 ```
 
 ## query_log {#query-log}

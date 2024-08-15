@@ -1,8 +1,6 @@
 #include "Storages/ObjectStorage/StorageObjectStorageCluster.h"
 
 #include <Common/Exception.h>
-#include <Core/Settings.h>
-#include <Formats/FormatFactory.h>
 #include <Parsers/queryToString.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -21,28 +19,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metadata, ContextPtr context)
-{
-    auto query_settings = configuration->getQuerySettings(context);
-    /// We don't want to throw an exception if there are no files with specified path.
-    query_settings.throw_on_zero_files_match = false;
-    auto file_iterator = StorageObjectStorageSource::createFileIterator(
-        configuration,
-        query_settings,
-        object_storage,
-        false, // distributed_processing
-        context,
-        {}, // predicate
-        metadata.getColumns().getAll(), // virtual_columns
-        nullptr, // read_keys
-        {} // file_progress_callback
-    );
-
-    if (auto file = file_iterator->next(0))
-        return file->getPath();
-    return "";
-}
-
 StorageObjectStorageCluster::StorageObjectStorageCluster(
     const String & cluster_name_,
     ConfigurationPtr configuration_,
@@ -57,18 +33,14 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     , object_storage(object_storage_)
 {
     ColumnsDescription columns{columns_};
-    std::string sample_path;
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
+    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, context_);
     configuration->check(context_);
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
 
-    if (sample_path.empty() && context_->getSettingsRef().use_hive_partitioning)
-        sample_path = getPathSample(metadata, context_);
-
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns(), context_, sample_path));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.getColumns()));
     setInMemoryMetadata(metadata);
 }
 
@@ -111,8 +83,8 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     const ActionsDAG::Node * predicate, const ContextPtr & local_context) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
-        configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
-        local_context, predicate, virtual_columns, nullptr, local_context->getFileProgressCallback());
+        configuration, object_storage, /* distributed_processing */false, local_context,
+        predicate, virtual_columns, nullptr, local_context->getFileProgressCallback());
 
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
     {

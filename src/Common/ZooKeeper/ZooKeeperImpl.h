@@ -114,12 +114,13 @@ public:
 
     ~ZooKeeper() override;
 
+
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
 
-    std::optional<int8_t> getConnectedNodeIdx() const override;
-    String getConnectedHostPort() const override;
-    int32_t getConnectionXid() const override;
+    Int8 getConnectedNodeIdx() const override { return original_index; }
+    String getConnectedHostPort() const override { return (original_index == -1) ? "" : args.hosts[original_index]; }
+    int32_t getConnectionXid() const override { return next_xid.load(); }
 
     String tryGetAvailabilityZone() override;
 
@@ -218,7 +219,7 @@ private:
     ACLs default_acls;
 
     zkutil::ZooKeeperArgs args;
-    std::atomic<int8_t> original_index{-1};
+    Int8 original_index = -1;
 
     /// Fault injection
     void maybeInjectSendFault();

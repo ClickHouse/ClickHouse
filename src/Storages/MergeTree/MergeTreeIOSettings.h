@@ -77,6 +77,8 @@ struct MergeTreeWriterSettings
     bool blocks_are_granules_size;
     WriteSettings query_write_settings;
 
+    size_t max_threads_for_annoy_index_creation;
+
     size_t low_cardinality_max_dictionary_size;
     bool low_cardinality_use_single_dictionary_for_part;
     bool use_compact_variant_discriminators_serialization;

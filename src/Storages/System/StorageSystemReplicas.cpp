@@ -285,7 +285,7 @@ private:
     const bool with_zk_fields;
     const size_t max_block_size;
     std::shared_ptr<StorageSystemReplicasImpl> impl;
-    ExpressionActionsPtr virtual_columns_filter;
+    ActionsDAGPtr virtual_columns_filter;
 };
 
 void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -301,9 +301,10 @@ void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
             { ColumnString::create(), std::make_shared<DataTypeString>(), "engine" },
         };
 
-        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
-        if (dag)
-            virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
+        virtual_columns_filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+
+        if (virtual_columns_filter)
+            VirtualColumnUtils::buildSetsForDAG(*virtual_columns_filter, context);
     }
 }
 
@@ -442,7 +443,7 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
         };
 
         if (virtual_columns_filter)
-            VirtualColumnUtils::filterBlockWithExpression(virtual_columns_filter, filtered_block);
+            VirtualColumnUtils::filterBlockWithDAG(virtual_columns_filter, filtered_block, context);
 
         if (!filtered_block.rows())
         {

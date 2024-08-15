@@ -16,8 +16,6 @@ public:
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
 
-    MergedStats getMergedStats() const override { return merged_data->getMergedStats(); }
-
 private:
     Block header;
     SortDescription description;

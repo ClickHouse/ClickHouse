@@ -215,12 +215,12 @@ private:
             logStep("checking for stateful function", node);
             if (const auto * expr = typeid_cast<const ExpressionStep *>(step); expr)
             {
-                if (expr->getExpression().hasStatefulFunctions())
+                if (expr->getExpression()->hasStatefulFunctions())
                     return false;
             }
             else if (const auto * filter = typeid_cast<const FilterStep *>(step); filter)
             {
-                if (filter->getExpression().hasStatefulFunctions())
+                if (filter->getExpression()->hasStatefulFunctions())
                     return false;
             }
             else

@@ -58,10 +58,6 @@ namespace Net
 
         void setKeepAliveTimeout(Poco::Timespan keepAliveTimeout);
 
-        size_t getKeepAliveTimeout() const { return _keepAliveTimeout.totalSeconds(); }
-
-        size_t getMaxKeepAliveRequests() const { return _maxKeepAliveRequests; }
-
     private:
         bool _firstRequest;
         Poco::Timespan _keepAliveTimeout;

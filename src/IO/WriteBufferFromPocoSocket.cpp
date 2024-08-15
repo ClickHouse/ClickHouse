@@ -183,7 +183,6 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
     , socket(socket_)
     , peer_address(socket.peerAddress())
     , our_address(socket.address())
-    , write_event(ProfileEvents::end())
     , socket_description("socket (" + peer_address.toString() + ")")
 {
 }

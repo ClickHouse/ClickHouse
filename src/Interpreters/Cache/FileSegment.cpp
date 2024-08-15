@@ -1008,12 +1008,7 @@ FileSegment & FileSegmentsHolder::add(FileSegmentPtr && file_segment)
     return *file_segments.back();
 }
 
-String FileSegmentsHolder::toString(bool with_state)
-{
-    return DB::toString(file_segments, with_state);
-}
-
-String toString(const FileSegments & file_segments, bool with_state)
+String FileSegmentsHolder::toString()
 {
     String ranges;
     for (const auto & file_segment : file_segments)
@@ -1023,8 +1018,6 @@ String toString(const FileSegments & file_segments, bool with_state)
         ranges += file_segment->range().toString();
         if (file_segment->isUnbound())
             ranges += "(unbound)";
-        if (with_state)
-            ranges += "(" + FileSegment::stateToString(file_segment->state()) + ")";
     }
     return ranges;
 }

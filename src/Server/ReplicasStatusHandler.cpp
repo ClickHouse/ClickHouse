@@ -89,7 +89,8 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
         }
 
-        setResponseDefaultHeaders(response);
+        const auto & server_settings = getContext()->getServerSettings();
+        setResponseDefaultHeaders(response, server_settings.keep_alive_timeout.totalSeconds());
 
         if (!ok)
         {
