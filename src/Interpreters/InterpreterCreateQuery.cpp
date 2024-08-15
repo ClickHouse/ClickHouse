@@ -37,6 +37,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/WindowView/StorageWindowView.h>
 
 #include <Interpreters/Context.h>
@@ -361,18 +362,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode};
             auto load_tasks = loader.loadTablesAsync();
             auto startup_tasks = loader.startupTablesAsync();
-            if (getContext()->getGlobalContext()->getServerSettings().async_load_databases)
-            {
-                scheduleLoad(load_tasks);
-                scheduleLoad(startup_tasks);
-            }
-            else
-            {
-                /// First prioritize, schedule and wait all the load table tasks
-                waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), load_tasks);
-                /// Only then prioritize, schedule and wait all the startup tasks
-                waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
-            }
+            /// First prioritize, schedule and wait all the load table tasks
+            waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), load_tasks);
+            /// Only then prioritize, schedule and wait all the startup tasks
+            waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
         }
     }
     catch (...)
@@ -697,7 +690,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Neither default value expression nor type is provided for a column");
 
         if (col_decl.comment)
-            column.comment = col_decl.comment->as<ASTLiteral &>().value.get<String>();
+            column.comment = col_decl.comment->as<ASTLiteral &>().value.safeGet<String>();
 
         if (col_decl.codec)
         {
@@ -759,6 +752,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (create.storage && create.storage->engine)
         getContext()->checkAccess(AccessType::TABLE_ENGINE, create.storage->engine->name);
 
+    /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
+    if (create.is_time_series_table && (mode < LoadingStrictnessLevel::ATTACH))
+        StorageTimeSeries::normalizeTableDefinition(create, getContext());
+
     TableProperties properties;
     TableLockHolder as_storage_lock;
 
@@ -790,10 +787,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 if (index_desc.type == INVERTED_INDEX_NAME && !settings.allow_experimental_inverted_index)
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Please use index type 'full_text' instead of 'inverted'");
                 /// ----
-                if (index_desc.type == "annoy" && !settings.allow_experimental_annoy_index)
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index is disabled. Turn on allow_experimental_annoy_index");
-                if (index_desc.type == "usearch" && !settings.allow_experimental_usearch_index)
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "USearch index is disabled. Turn on allow_experimental_usearch_index");
+                if (index_desc.type == "vector_similarity" && !settings.allow_experimental_vector_similarity_index)
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index is disabled. Turn on allow_experimental_vector_similarity_index");
 
                 properties.indices.push_back(index_desc);
             }
@@ -959,12 +954,40 @@ namespace
         engine_ast->no_empty_args = true;
         storage.set(storage.engine, engine_ast);
     }
+
+    void setNullTableEngine(ASTStorage & storage)
+    {
+        auto engine_ast = std::make_shared<ASTFunction>();
+        engine_ast->name = "Null";
+        engine_ast->no_empty_args = true;
+        storage.set(storage.engine, engine_ast);
+    }
+
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.as_table_function)
+    {
+        if (getContext()->getSettingsRef().restore_replace_external_table_functions_to_null)
+        {
+            const auto & factory = TableFunctionFactory::instance();
+
+            auto properties = factory.tryGetProperties(create.as_table_function->as<ASTFunction>()->name);
+            if (properties && properties->allow_readonly)
+                return;
+            if (!create.storage)
+            {
+                auto storage_ast = std::make_shared<ASTStorage>();
+                create.set(create.storage, storage_ast);
+            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage should not be created yet, it's a bug.");
+            create.as_table_function = nullptr;
+            setNullTableEngine(*create.storage);
+        }
         return;
+    }
 
     if (create.is_dictionary || create.is_ordinary_view || create.is_live_view || create.is_window_view)
         return;
@@ -1014,6 +1037,13 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         {
             /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
             setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
+        }
+        /// For external tables with restore_replace_external_engine_to_null setting we replace external engines to
+        /// Null table engine.
+        else if (getContext()->getSettingsRef().restore_replace_external_engines_to_null)
+        {
+            if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type != AccessType::NONE)
+                setNullTableEngine(*create.storage);
         }
         return;
     }
@@ -1066,6 +1096,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         else if (as_create.storage)
         {
             storage_def = typeid_cast<std::shared_ptr<ASTStorage>>(as_create.storage->ptr());
+            create.is_time_series_table = as_create.is_time_series_table;
         }
         else
         {
@@ -1373,8 +1404,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
-    bool allow_heavy_create = getContext()->getSettingsRef().database_replicated_allow_heavy_create;
-    if (!allow_heavy_create && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
+    bool allow_heavy_populate = getContext()->getSettingsRef().database_replicated_allow_heavy_create && create.is_populate;
+    if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
     {
         bool is_storage_replicated = false;
 
@@ -1392,10 +1423,18 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         const bool allow_create_select_for_replicated = (create.isView() && !create.is_populate) || create.is_create_empty || !is_storage_replicated;
         if (!allow_create_select_for_replicated)
+        {
+            /// POPULATE can be enabled with setting, provide hint in error message
+            if (create.is_populate)
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "CREATE with POPULATE is not supported with Replicated databases. Consider using separate CREATE and INSERT queries. "
+                    "Alternatively, you can enable 'database_replicated_allow_heavy_create' setting to allow this operation, use with caution");
+
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "CREATE AS SELECT and POPULATE is not supported with Replicated databases. Consider using separate CREATE and INSERT queries. "
-                "Alternatively, you can enable 'database_replicated_allow_heavy_create' setting to allow this operation, use with caution");
+                "CREATE AS SELECT is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
+        }
     }
 
     if (database && database->shouldReplicateQuery(getContext(), query_ptr))
@@ -1875,7 +1914,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
         if (has_explicit_zk_path_arg)
         {
-            String zk_path = create.storage->engine->arguments->children[0]->as<ASTLiteral>()->value.get<String>();
+            String zk_path = create.storage->engine->arguments->children[0]->as<ASTLiteral>()->value.safeGet<String>();
             Macros::MacroExpansionInfo info;
             info.table_id.uuid = create.uuid;
             info.ignore_unknown = true;

@@ -89,7 +89,7 @@ void signalHandler(int sig, siginfo_t * info, void * context)
     writePODBinary(*info, out);
     writePODBinary(signal_context, out);
     writePODBinary(stack_trace, out);
-    writeVectorBinary(Exception::enable_job_stack_trace ? Exception::thread_frame_pointers : std::vector<StackTrace::FramePointers>{}, out);
+    writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : std::vector<StackTrace::FramePointers>{}, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
 
@@ -605,7 +605,14 @@ void HandledSignals::reset()
 
 HandledSignals::~HandledSignals()
 {
-    reset();
+    try
+    {
+        reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 };
 
 HandledSignals & HandledSignals::instance()
@@ -622,6 +629,7 @@ void HandledSignals::setupTerminateHandler()
 void HandledSignals::setupCommonDeadlySignalHandlers()
 {
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
+    /// NOTE: that it is also used by clickhouse-test wrapper
     addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP, SIGTRAP}, signalHandler, true);
 
 #if defined(SANITIZER)

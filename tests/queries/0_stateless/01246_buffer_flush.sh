@@ -5,72 +5,90 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-function elapsed_sec()
+set -e
+
+function query()
+{
+    local query_id
+    if [[ $1 == --query_id ]]; then
+        query_id="&query_id=$2"
+        shift 2
+    fi
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}$query_id" -d "$*"
+}
+
+function wait_until()
 {
     local expr=$1 && shift
-    local start end
-    start=$(date +%s.%N)
     while ! eval "$expr"; do
         sleep 0.5
     done
-    end=$(date +%s.%N)
-    $CLICKHOUSE_LOCAL -q "select floor($end-$start)"
+}
+function get_buffer_delay()
+{
+    local buffer_insert_id=$1 && shift
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+    query "
+        WITH
+            (SELECT event_time_microseconds FROM system.query_log WHERE current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryStart' AND query_id = '$buffer_insert_id') AS begin_,
+            (SELECT max(event_time) FROM data_01256) AS end_
+        SELECT dateDiff('seconds', begin_, end_)::UInt64
+    "
 }
 
-$CLICKHOUSE_CLIENT -nm -q "
-    drop table if exists data_01256;
-    drop table if exists buffer_01256;
-
-    create table data_01256 as system.numbers Engine=Memory();
-"
+query "drop table if exists data_01256"
+query "drop table if exists buffer_01256"
+query "create table data_01256 (key UInt64, event_time DateTime(6) MATERIALIZED now64(6)) Engine=Memory()"
 
 echo "min"
-$CLICKHOUSE_CLIENT -nm -q "
-    create table buffer_01256 as system.numbers Engine=Buffer(currentDatabase(), data_01256, 1,
+query "
+    create table buffer_01256 (key UInt64) Engine=Buffer($CLICKHOUSE_DATABASE, data_01256, 1,
         2, 100, /* time */
         4, 100, /* rows */
         1, 1e6  /* bytes */
-    );
-    insert into buffer_01256 select * from system.numbers limit 5;
-    select count() from data_01256;
+    )
 "
-sec=$(elapsed_sec '[[ $($CLICKHOUSE_CLIENT -q "select count() from data_01256") -eq 5 ]]')
+min_query_id=$(random_str 10)
+query --query_id "$min_query_id" "insert into buffer_01256 select * from system.numbers limit 5"
+query "select count() from data_01256"
+wait_until '[[ $(query "select count() from data_01256") -eq 5 ]]'
+sec=$(get_buffer_delay "$min_query_id")
 [[ $sec -ge 2 ]] || echo "Buffer flushed too early, min_time=2, flushed after $sec sec"
 [[ $sec -lt 100 ]] || echo "Buffer flushed too late, max_time=100, flushed after $sec sec"
-$CLICKHOUSE_CLIENT -q "select count() from data_01256"
-$CLICKHOUSE_CLIENT -q "drop table buffer_01256"
+query "select count() from data_01256"
+query "drop table buffer_01256"
 
 echo "max"
-$CLICKHOUSE_CLIENT -nm -q "
-    create table buffer_01256 as system.numbers Engine=Buffer(currentDatabase(), data_01256, 1,
+query "
+    create table buffer_01256 (key UInt64) Engine=Buffer($CLICKHOUSE_DATABASE, data_01256, 1,
         100, 2,   /* time */
         0,   100, /* rows */
         0,   1e6  /* bytes */
-    );
-    insert into buffer_01256 select * from system.numbers limit 5;
-    select count() from data_01256;
+    )
 "
-sec=$(elapsed_sec '[[ $($CLICKHOUSE_CLIENT -q "select count() from data_01256") -eq 10 ]]')
+max_query_id=$(random_str 10)
+query --query_id "$max_query_id" "insert into buffer_01256 select * from system.numbers limit 5"
+query "select count() from data_01256"
+wait_until '[[ $(query "select count() from data_01256") -eq 10 ]]'
+sec=$(get_buffer_delay "$max_query_id")
 [[ $sec -ge 2 ]] || echo "Buffer flushed too early, max_time=2, flushed after $sec sec"
-$CLICKHOUSE_CLIENT -q "select count() from data_01256"
-$CLICKHOUSE_CLIENT -q "drop table buffer_01256"
+query "select count() from data_01256"
+query "drop table buffer_01256"
 
 echo "direct"
-$CLICKHOUSE_CLIENT -nm -q "
-    create table buffer_01256 as system.numbers Engine=Buffer(currentDatabase(), data_01256, 1,
+query "
+    create table buffer_01256 (key UInt64) Engine=Buffer($CLICKHOUSE_DATABASE, data_01256, 1,
         100, 100, /* time */
         0,   9,   /* rows */
         0,   1e6  /* bytes */
-    );
-    insert into buffer_01256 select * from system.numbers limit 10;
-    select count() from data_01256;
+    )
 "
+query "insert into buffer_01256 select * from system.numbers limit 10"
+query "select count() from data_01256"
 
 echo "drop"
-$CLICKHOUSE_CLIENT -nm -q "
-    insert into buffer_01256 select * from system.numbers limit 10;
-    drop table if exists buffer_01256;
-    select count() from data_01256;
-"
+query "insert into buffer_01256 select * from system.numbers limit 10"
+query "drop table if exists buffer_01256"
+query "select count() from data_01256"
 
-$CLICKHOUSE_CLIENT -q "drop table data_01256"
+query "drop table data_01256"

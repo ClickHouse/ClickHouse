@@ -203,7 +203,6 @@ StorageMaterializedView::StorageMaterializedView(
     {
         fixed_uuid = false;
         refresher = RefreshTask::create(
-            *this,
             getContext(),
             *query.refresh_strategy);
         refresh_on_start = mode < LoadingStrictnessLevel::ATTACH && !query.is_create_empty;
@@ -281,8 +280,8 @@ void StorageMaterializedView::read(
              * They may be added in case of distributed query with JOIN.
              * In that case underlying table returns joined columns as well.
              */
-            converting_actions->removeUnusedActions();
-            auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), converting_actions);
+            converting_actions.removeUnusedActions();
+            auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(converting_actions));
             converting_step->setStepDescription("Convert target table structure to MaterializedView structure");
             query_plan.addStep(std::move(converting_step));
         }

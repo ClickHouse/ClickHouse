@@ -2,8 +2,6 @@
 # Tags: long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# reset --log_comment
-CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
@@ -15,7 +13,7 @@ function run()
     $CH_CLIENT -q "insert into test select number, number from numbers(3)"
 
     echo "alter add column"
-    $CH_CLIENT -q "alter table test add column d Dynamic(max_types=3) settings mutations_sync=1"
+    $CH_CLIENT -q "alter table test add column d Dynamic(max_types=2) settings mutations_sync=1"
     $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
     $CH_CLIENT -q "select x, y, d, d.String, d.UInt64, d.\`Tuple(a UInt64)\`.a from test order by x"
 
@@ -42,4 +40,3 @@ echo "MergeTree wide"
 $CH_CLIENT -q "create table test (x UInt64, y UInt64 ) engine=MergeTree order by x settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1;"
 run
 $CH_CLIENT -q "drop table test;"
-

@@ -57,7 +57,7 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         using ResultType = typename Impl::ResultType;
 
@@ -90,7 +90,7 @@ public:
         auto col_res = ColumnVector<ResultType>::create();
 
         typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
-        vec_res.resize(column_haystack->size());
+        vec_res.resize(input_rows_count);
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
         const ColumnString * col_needle_vector = checkAndGetColumn<ColumnString>(&*column_needle);
@@ -110,7 +110,7 @@ public:
                         Impl::max_string_size);
                 }
             }
-            Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needle, vec_res);
+            Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needle, vec_res, input_rows_count);
         }
         else if (col_haystack_vector && col_needle_vector)
         {
@@ -119,7 +119,8 @@ public:
                 col_haystack_vector->getOffsets(),
                 col_needle_vector->getChars(),
                 col_needle_vector->getOffsets(),
-                vec_res);
+                vec_res,
+                input_rows_count);
         }
         else if (col_haystack_const && col_needle_vector)
         {
@@ -136,7 +137,7 @@ public:
                         Impl::max_string_size);
                 }
             }
-            Impl::constantVector(haystack, col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
+            Impl::constantVector(haystack, col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res, input_rows_count);
         }
         else
         {

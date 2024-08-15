@@ -7,7 +7,7 @@ from typing import Dict, Optional, Any, Union, Sequence, List, Set
 
 from ci_config import CI
 
-from ci_utils import is_hex, GHActions
+from ci_utils import Utils, GH
 from commit_status_helper import CommitStatusData
 from env_helper import (
     TEMP_PATH,
@@ -240,7 +240,7 @@ class CiCache:
             int(job_properties[-1]),
         )
 
-        if not is_hex(job_digest):
+        if not Utils.is_hex(job_digest):
             print("ERROR: wrong record job digest")
             return None
 
@@ -258,15 +258,15 @@ class CiCache:
     def print_status(self):
         print(f"Cache enabled: [{self.enabled}]")
         for record_type in self.RecordType:
-            GHActions.print_in_group(
+            GH.print_in_group(
                 f"Cache records: [{record_type}]", list(self.records[record_type])
             )
-        GHActions.print_in_group(
+        GH.print_in_group(
             "Jobs to do:",
             list(self.jobs_to_do.items()),
         )
-        GHActions.print_in_group("Jobs to skip:", self.jobs_to_skip)
-        GHActions.print_in_group(
+        GH.print_in_group("Jobs to skip:", self.jobs_to_skip)
+        GH.print_in_group(
             "Jobs to wait:",
             list(self.jobs_to_wait.items()),
         )
@@ -731,7 +731,8 @@ class CiCache:
                     job_config=reference_config,
                 ):
                     remove_from_workflow.append(job_name)
-                    has_test_jobs_to_skip = True
+                    if job_name != CI.JobNames.DOCS_CHECK:
+                        has_test_jobs_to_skip = True
                 else:
                     required_builds += (
                         job_config.required_builds if job_config.required_builds else []
@@ -788,7 +789,7 @@ class CiCache:
 
         while round_cnt < MAX_ROUNDS_TO_WAIT:
             round_cnt += 1
-            GHActions.print_in_group(
+            GH.print_in_group(
                 f"Wait pending jobs, round [{round_cnt}/{MAX_ROUNDS_TO_WAIT}]:",
                 list(self.jobs_to_wait),
             )
@@ -853,7 +854,7 @@ class CiCache:
                     # make up for 2 iterations in dry_run
                     expired_sec += int(TIMEOUT / 2) + 1
 
-        GHActions.print_in_group(
+        GH.print_in_group(
             "Remaining jobs:",
             [list(self.jobs_to_wait)],
         )

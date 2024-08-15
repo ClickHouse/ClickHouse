@@ -4,7 +4,7 @@ CREATE TABLE t_tuple_element(t1 Tuple(a UInt32, s String), t2 Tuple(UInt32, Stri
 INSERT INTO t_tuple_element VALUES ((1, 'a'), (2, 'b'));
 
 SET optimize_functions_to_subcolumns = 1;
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 SELECT t1.1 FROM t_tuple_element;
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT t1.1 FROM t_tuple_element;
