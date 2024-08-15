@@ -386,10 +386,11 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_wit
     /// We have a special logic for local replica. It has to read less data, because in some cases it should
     /// merge states of aggregate functions or do some other important stuff other than reading from Disk.
     auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
-    if (pool_settings.min_marks_for_concurrent_read > std::numeric_limits<Int64>::max())
+    const auto min_marks_for_concurrent_read_limit = std::numeric_limits<Int64>::max() >> 1;
+    if (pool_settings.min_marks_for_concurrent_read > min_marks_for_concurrent_read_limit)
     {
         /// limit min marks to read in case it's big, happened in test since due to settings randomzation
-        pool_settings.min_marks_for_concurrent_read = std::numeric_limits<Int64>::max();
+        pool_settings.min_marks_for_concurrent_read = min_marks_for_concurrent_read_limit;
         multiplier = 1.0f;
     }
 
@@ -562,10 +563,11 @@ Pipe ReadFromMergeTree::readInOrder(
         };
 
         auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
-        if (pool_settings.min_marks_for_concurrent_read > std::numeric_limits<Int64>::max())
+        const auto min_marks_for_concurrent_read_limit = std::numeric_limits<Int64>::max() >> 1;
+        if (pool_settings.min_marks_for_concurrent_read > min_marks_for_concurrent_read_limit)
         {
             /// limit min marks to read in case it's big, happened in test since due to settings randomzation
-            pool_settings.min_marks_for_concurrent_read = std::numeric_limits<Int64>::max();
+            pool_settings.min_marks_for_concurrent_read = min_marks_for_concurrent_read_limit;
             multiplier = 1.0f;
         }
 

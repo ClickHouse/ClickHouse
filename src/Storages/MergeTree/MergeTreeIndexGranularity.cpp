@@ -105,13 +105,16 @@ size_t MergeTreeIndexGranularity::countMarksForRows(size_t from_mark, size_t num
     /// See comment in IMergeTreeSelectAlgorithm.
     if (min_marks_to_read)
     {
-        // check that ...
-        bool overflow = ((1ULL << 63) & min_marks_to_read); // further multiplication by 2 will not overflow
-        if (!overflow)
-            overflow = (std::numeric_limits<size_t>::max() - from_mark) < 2 * min_marks_to_read; // further addition will not overflow
+        // check overflow
+        size_t min_marks_to_read_2 = 0;
+        bool overflow = common::mulOverflow(min_marks_to_read, 2, min_marks_to_read_2);
 
-        if (!overflow && from_mark + 2 * min_marks_to_read <= to_mark)
-            to_mark = from_mark + min_marks_to_read;
+        size_t to_mark_overwrite = 0;
+        if (!overflow)
+            overflow = common::addOverflow(from_mark, min_marks_to_read_2, to_mark_overwrite);
+
+        if (!overflow && to_mark_overwrite < to_mark)
+            to_mark = to_mark_overwrite;
     }
 
     return getRowsCountInRange(from_mark, std::max(1UL, to_mark)) - offset_in_rows;
