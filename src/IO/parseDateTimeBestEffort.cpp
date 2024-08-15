@@ -82,7 +82,7 @@ struct DateTimeSubsecondPart
     UInt8 digits;
 };
 
-template <typename ReturnType, bool is_us_style, bool strict = false>
+template <typename ReturnType, bool is_us_style, bool strict = false, bool is_64 = false>
 ReturnType parseDateTimeBestEffortImpl(
     time_t & res,
     ReadBuffer & in,
@@ -686,6 +686,20 @@ ReturnType parseDateTimeBestEffortImpl(
         }
     };
 
+    if constexpr (strict)
+    {
+        if constexpr (is_64)
+        {
+            if (year < 1900)
+                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime64: year {} is less than minimum supported year 1900", year);
+        }
+        else
+        {
+            if (year < 1970)
+                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year {} is less than minimum supported year 1970", year);
+        }
+    }
+
     if (has_time_zone_offset)
     {
         res = utc_time_zone.makeDateTime(year, month, day_of_month, hour, minute, second);
@@ -707,12 +721,12 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
 
     if constexpr (std::is_same_v<ReturnType, bool>)
     {
-        if (!parseDateTimeBestEffortImpl<bool, is_us_style, strict>(whole, in, local_time_zone, utc_time_zone, &subsecond, allowed_date_delimiters))
+        if (!parseDateTimeBestEffortImpl<bool, is_us_style, strict, true>(whole, in, local_time_zone, utc_time_zone, &subsecond, allowed_date_delimiters))
             return false;
     }
     else
     {
-        parseDateTimeBestEffortImpl<ReturnType, is_us_style, strict>(whole, in, local_time_zone, utc_time_zone, &subsecond, allowed_date_delimiters);
+        parseDateTimeBestEffortImpl<ReturnType, is_us_style, strict, true>(whole, in, local_time_zone, utc_time_zone, &subsecond, allowed_date_delimiters);
     }
 
 

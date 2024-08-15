@@ -2,6 +2,7 @@ set input_format_try_infer_datetimes = 1;
 set input_format_try_infer_dates = 1;
 set schema_inference_make_columns_nullable = 0;
 set input_format_json_try_infer_numbers_from_strings = 0;
+set session_timezone = 'UTC';
 
 select 'Date';
 select x, toTypeName(x) from format(JSONEachRow, '{"x" : "2020:01:01"}');
