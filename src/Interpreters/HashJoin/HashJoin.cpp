@@ -553,7 +553,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
     }
 
     size_t rows = source_block.rows();
-
+    data->rows_to_join += rows;
     const auto & right_key_names = table_join->getAllNames(JoinTableSide::Right);
     ColumnPtrMap all_key_columns(right_key_names.size());
     for (const auto & column_name : right_key_names)
@@ -714,7 +714,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
             total_bytes = getTotalByteCount();
         }
     }
-
+    data->keys_to_join = total_rows;
     shrinkStoredBlocksToFit(total_bytes);
 
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);

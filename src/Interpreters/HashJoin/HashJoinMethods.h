@@ -145,7 +145,7 @@ private:
     template <typename AddedColumns>
     static ColumnPtr buildAdditionalFilter(
         size_t left_start_row,
-        const std::vector<RowRef> & selected_rows,
+        const std::vector<const RowRef *> & selected_rows,
         const std::vector<size_t> & row_replicate_offset,
         AddedColumns & added_columns);
 
