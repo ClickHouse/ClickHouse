@@ -484,7 +484,7 @@ class ReleaseInfo:
             )
         else:
             if not dry_run:
-                assert not self.changelog_pr
+                assert not self.version_bump_pr
 
         self.prs_merged = res
 
