@@ -784,40 +784,65 @@ class ClickhouseIntegrationTestsRunner:
         logging.info("Starting check with retries")
         final_retry = 0
         logs = []
-        tires_num = 1 if should_fail else FLAKY_TRIES_COUNT
-        for i in range(tires_num):
-            final_retry += 1
-            logging.info("Running tests for the %s time", i)
-            counters, tests_times, log_paths = self.try_run_test_group(
-                repo_path,
-                "bugfix" if should_fail else "flaky",
-                tests_to_run,
-                1,
-                1,
-                FLAKY_REPEAT_COUNT,
-            )
-            logs += log_paths
-            if counters["FAILED"]:
-                logging.info("Found failed tests: %s", " ".join(counters["FAILED"]))
-                description_prefix = "Failed tests found: "
-                result_state = "failure"
-                if not should_fail:
+        counters = {
+            "ERROR": [],
+            "PASSED": [],
+            "FAILED": [],
+            "SKIPPED": [],
+            "BROKEN": [],
+            "NOT_FAILED": [],
+        }  # type: Dict
+        tests_times = defaultdict(float)  # type: Dict
+        tests_log_paths = defaultdict(list)
+
+        for test_to_run in tests_to_run:
+            tries_num = 1 if should_fail else FLAKY_TRIES_COUNT
+            for i in range(tries_num):
+                final_retry += 1
+                logging.info("Running tests for the %s time", i)
+                group_counters, group_test_times, log_paths = self.try_run_test_group(
+                    repo_path,
+                    "bugfix" if should_fail else "flaky",
+                    [test_to_run],
+                    1,
+                    1,
+                    FLAKY_REPEAT_COUNT,
+                )
+                for counter, value in group_counters.items():
+                    logging.info(
+                        "Tests from group %s stats, %s count %s",
+                        test_to_run,
+                        counter,
+                        len(value),
+                    )
+                    counters[counter] += value
+
+                for test_name, test_time in group_test_times.items():
+                    tests_times[test_name] = test_time
+                    tests_log_paths[test_name] = log_paths
+                if not should_fail and (
+                    group_counters["FAILED"] or group_counters["ERROR"]
+                ):
+                    logging.info(
+                        "Unexpected failure in group %s. Fail fast for current group",
+                        test_to_run,
+                    )
                     break
-            if counters["ERROR"]:
-                description_prefix = "Failed tests found: "
-                logging.info("Found error tests: %s", " ".join(counters["ERROR"]))
-                # NOTE "error" result state will restart the whole test task,
-                # so we use "failure" here
-                result_state = "failure"
-                if not should_fail:
-                    break
-            logging.info("Try is OK, all tests passed, going to clear env")
-            clear_ip_tables_and_restart_daemons()
-            logging.info("And going to sleep for some time")
-            if time.time() - start > MAX_TIME_SECONDS:
-                logging.info("Timeout reached, going to finish flaky check")
-                break
-            time.sleep(5)
+
+        if group_counters["FAILED"]:
+            logging.info("Found failed tests: %s", " ".join(counters["FAILED"]))
+            description_prefix = "Failed tests found: "
+            result_state = "failure"
+        if group_counters["ERROR"]:
+            description_prefix = "Failed tests found: "
+            logging.info("Found error tests: %s", " ".join(counters["ERROR"]))
+            # NOTE "error" result state will restart the whole test task,
+            # so we use "failure" here
+            result_state = "failure"
+        logging.info("Try is OK, all tests passed, going to clear env")
+        clear_ip_tables_and_restart_daemons()
+        logging.info("And going to sleep for some time")
+        time.sleep(5)
 
         test_result = []
         for state in ("ERROR", "FAILED", "PASSED", "SKIPPED"):
@@ -828,13 +853,10 @@ class ClickhouseIntegrationTestsRunner:
             else:
                 text_state = state
             test_result += [
-                (
-                    c + " (✕" + str(final_retry) + ")",
-                    text_state,
-                    f"{tests_times[c]:.2f}",
-                )
+                (c, text_state, f"{tests_times[c]:.2f}", tests_log_paths[c])
                 for c in counters[state]
             ]
+
         status_text = description_prefix + ", ".join(
             [
                 str(n).lower().replace("failed", "fail") + ": " + str(len(c))
