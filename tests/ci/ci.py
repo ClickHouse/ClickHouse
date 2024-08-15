@@ -1003,6 +1003,7 @@ def _run_test(job_name: str, run_command: str) -> int:
                 )
                 jr.test_results = [TestResult.create_check_timeout_expired()]
                 jr.duration = stopwatch.duration_seconds
+                jr.additional_files += [job_log]
 
     print(f"Run action done for: [{job_name}]")
     return retcode
@@ -1329,10 +1330,20 @@ def main() -> int:
             if CI.is_test_job(args.job_name):
                 gh = GitHub(get_best_robot_token(), per_page=100)
                 commit = get_commit(gh, pr_info.sha)
+                check_url = ""
+                if job_report.test_results or job_report.additional_files:
+                    check_url = upload_result_helper.upload_results(
+                        s3,
+                        pr_info.number,
+                        pr_info.sha,
+                        job_report.test_results,
+                        job_report.additional_files,
+                        job_report.check_name or _get_ext_check_name(args.job_name),
+                    )
                 post_commit_status(
                     commit,
                     ERROR,
-                    "",
+                    check_url,
                     "Error: " + error_description,
                     _get_ext_check_name(args.job_name),
                     pr_info,

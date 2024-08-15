@@ -29,7 +29,7 @@ from stopwatch import Stopwatch
 
 import integration_tests_runner as runner
 from ci_config import CI
-from ci_utils import Utils
+from ci_utils import Utils, Shell
 
 
 def get_json_params_dict(
