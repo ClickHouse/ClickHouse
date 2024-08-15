@@ -6,6 +6,7 @@
 #include <Access/ReplicatedAccessStorage.h>
 #include <Access/User.h>
 #include <Common/logger_useful.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -43,7 +44,8 @@ namespace
         bool replace_authentication_methods,
         bool allow_implicit_no_password,
         bool allow_no_password,
-        bool allow_plaintext_password)
+        bool allow_plaintext_password,
+        std::size_t max_number_of_authentication_methods)
     {
         if (override_name)
             user.setName(override_name->toString());
@@ -78,6 +80,14 @@ namespace
         if (replace_authentication_methods || (has_no_password_authentication_method && !authentication_methods.empty()))
         {
             user.authentication_methods.clear();
+        }
+
+        auto number_of_authentication_methods = user.authentication_methods.size() + authentication_methods.size();
+        if (number_of_authentication_methods > max_number_of_authentication_methods)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "User can not be created/updated because it exceeds the allowed quantity of authentication methods per user."
+                "Check the `max_authentication_methods_per_user` setting");
         }
 
         for (const auto & authentication_method : authentication_methods)
@@ -251,7 +261,8 @@ BlockIO InterpreterCreateUserQuery::execute()
             updateUserFromQueryImpl(
                 *updated_user, query, authentication_methods, {}, default_roles_from_query, settings_from_query, grantees_from_query,
                 valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
-                implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
+                implicit_no_password_allowed, no_password_allowed,
+                plaintext_password_allowed, getContext()->getServerSettings().max_authentication_methods_per_user);
             return updated_user;
         };
 
@@ -272,7 +283,8 @@ BlockIO InterpreterCreateUserQuery::execute()
             updateUserFromQueryImpl(
                 *new_user, query, authentication_methods, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
                 valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
-                implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
+                implicit_no_password_allowed, no_password_allowed,
+                plaintext_password_allowed, getContext()->getServerSettings().max_authentication_methods_per_user);
             new_users.emplace_back(std::move(new_user));
         }
 
@@ -309,7 +321,12 @@ BlockIO InterpreterCreateUserQuery::execute()
 }
 
 
-void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreateUserQuery & query, bool allow_no_password, bool allow_plaintext_password)
+void InterpreterCreateUserQuery::updateUserFromQuery(
+    User & user,
+    const ASTCreateUserQuery & query,
+    bool allow_no_password,
+    bool allow_plaintext_password,
+    std::size_t max_number_of_authentication_methods)
 {
     std::vector<AuthenticationData> authentication_methods;
     if (!query.authentication_methods.empty())
@@ -337,7 +354,8 @@ void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreat
         query.replace_authentication_methods,
         allow_no_password,
         allow_plaintext_password,
-        true);
+        true,
+        max_number_of_authentication_methods);
 }
 
 void registerInterpreterCreateUserQuery(InterpreterFactory & factory)
