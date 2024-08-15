@@ -54,6 +54,18 @@ namespace ErrorCodes
         }                                                              \
     } while (false)
 
+static Field createDecimalField(const Int256 & value, UInt64 precision_value, UInt64 scale)
+{
+    if (precision_value <= DecimalUtils::max_precision<Decimal32>)
+        return Field(DecimalField<Decimal32>(Decimal32(static_cast<Int32>(value)), static_cast<UInt32>(scale)));
+    else if (precision_value <= DecimalUtils::max_precision<Decimal64>)
+        return  Field(DecimalField<Decimal64>(Decimal64(static_cast<Int64>(value)), static_cast<UInt32>(scale)));
+    else if (precision_value <= DecimalUtils::max_precision<Decimal128>)
+        return  Field(DecimalField<Decimal128>(Decimal128(static_cast<Int128>(value)), static_cast<UInt32>(scale)));
+
+    return Field(DecimalField<Decimal256>(Decimal256(value), static_cast<UInt32>(scale)));
+}
+
 /// Decode min/max value from column chunk statistics.
 ///
 /// There are two questionable decisions in this implementation:
@@ -92,10 +104,18 @@ static std::optional<Field> decodePlainParquetValueSlow(const std::string & data
     do // while (false)
     {
         Int32 scale;
+        Int32 precision;
         if (descr.logical_type() && descr.logical_type()->is_decimal())
-            scale = assert_cast<const DecimalLogicalType &>(*descr.logical_type()).scale();
+        {
+            const auto & decimal_type = assert_cast<const DecimalLogicalType &>(*descr.logical_type());
+            scale = decimal_type.scale();
+            precision = decimal_type.precision();
+        }
         else if (descr.converted_type() == ConvertedType::type::DECIMAL)
+        {
             scale = descr.type_scale();
+            precision = descr.type_precision();
+        }
         else
             break;
 
@@ -128,7 +148,7 @@ static std::optional<Field> decodePlainParquetValueSlow(const std::string & data
         if (size < 32 && (val >> (size * 8 - 1)) != 0)
             val |= ~((Int256(1) << (size * 8)) - 1);
 
-        return Field(DecimalField<Decimal256>(Decimal256(val), static_cast<UInt32>(scale)));
+        return createDecimalField(val, precision, scale);
     }
     while (false);
 
