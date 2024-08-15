@@ -131,6 +131,15 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
+        if (!isStringOrFixedString(arguments[0])
+            && !isArray(arguments[0])
+            && !isMap(arguments[0])
+            && !isUUID(arguments[0])
+            && !isIPv6(arguments[0])
+            && !isIPv4(arguments[0])
+            && !isObject(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+
         return std::make_shared<DataTypeUInt8>();
     }
 };
