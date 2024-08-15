@@ -332,7 +332,7 @@ struct DeltaLakeMetadataImpl
         WhichDataType which(check_type->getTypeId());
         if (which.isStringOrFixedString())
             return value;
-        else if (isBool(data_type))
+        else if (isBool(check_type))
             return parse<bool>(value);
         else if (which.isInt8())
             return parse<Int8>(value);
