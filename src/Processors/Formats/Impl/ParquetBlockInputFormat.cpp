@@ -54,16 +54,16 @@ namespace ErrorCodes
         }                                                              \
     } while (false)
 
-static Field createDecimalField(const Int256 & value, UInt64 precision_value, UInt64 scale)
+static Field createDecimalField(const Int256 & value, UInt32 precision, UInt32 scale)
 {
-    if (precision_value <= DecimalUtils::max_precision<Decimal32>)
-        return Field(DecimalField<Decimal32>(Decimal32(static_cast<Int32>(value)), static_cast<UInt32>(scale)));
-    else if (precision_value <= DecimalUtils::max_precision<Decimal64>)
-        return  Field(DecimalField<Decimal64>(Decimal64(static_cast<Int64>(value)), static_cast<UInt32>(scale)));
-    else if (precision_value <= DecimalUtils::max_precision<Decimal128>)
-        return  Field(DecimalField<Decimal128>(Decimal128(static_cast<Int128>(value)), static_cast<UInt32>(scale)));
+    if (precision <= DecimalUtils::max_precision<Decimal32>)
+        return DecimalField(Decimal32(static_cast<Int32>(value)), scale);
+    else if (precision <= DecimalUtils::max_precision<Decimal64>)
+        return DecimalField(Decimal64(static_cast<Int64>(value)), scale);
+    else if (precision <= DecimalUtils::max_precision<Decimal128>)
+        return  DecimalField(Decimal128(static_cast<Int128>(value)), scale);
 
-    return Field(DecimalField<Decimal256>(Decimal256(value), static_cast<UInt32>(scale)));
+    return DecimalField(Decimal256(value), scale);
 }
 
 /// Decode min/max value from column chunk statistics.
