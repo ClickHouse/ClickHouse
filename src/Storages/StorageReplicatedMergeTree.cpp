@@ -8083,7 +8083,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         lock2.reset();
         lock1.reset();
     }
-    catch(...)
+    catch (...)
     {
         lock2.reset();
         lock1.reset();
