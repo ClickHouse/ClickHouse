@@ -54,7 +54,7 @@ void registerStorageIceberg(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             auto configuration = std::make_shared<StorageAzureConfiguration>();
-            StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getLocalContext(), false);
+            StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getLocalContext(), true);
 
             return StorageIceberg::create(
                 configuration, args.getContext(), args.table_id, args.columns, args.constraints, args.comment, std::nullopt, args.mode);

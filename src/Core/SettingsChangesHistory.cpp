@@ -349,6 +349,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"enable_analyzer", 1, 1, "Added an alias to a setting `allow_experimental_analyzer`."},
             {"optimize_functions_to_subcolumns", false, true, "Enabled settings by default"},
             {"allow_experimental_vector_similarity_index", false, false, "Added new setting to allow experimental vector similarity indexes"},
+            {"local_create_new_file_on_insert", false, false, "Enabled creating a new file on each insert in local object storage engine tables"}
         }
     },
     {"24.7",
