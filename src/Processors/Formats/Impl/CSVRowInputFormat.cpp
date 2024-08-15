@@ -61,7 +61,7 @@ CSVRowInputFormat::CSVRowInputFormat(
     bool with_names_,
     bool with_types_,
     const FormatSettings & format_settings_,
-    std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_)
+    std::unique_ptr<CSVFormatReader> format_reader_)
     : RowInputFormatWithNamesAndTypes(
         header_,
         *in_,

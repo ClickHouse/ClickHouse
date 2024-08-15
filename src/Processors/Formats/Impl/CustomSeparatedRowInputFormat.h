@@ -9,7 +9,8 @@
 namespace DB
 {
 
-class CustomSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTypes
+class CustomSeparatedFormatReader;
+class CustomSeparatedRowInputFormat final : public RowInputFormatWithNamesAndTypes<CustomSeparatedFormatReader>
 {
 public:
     CustomSeparatedRowInputFormat(

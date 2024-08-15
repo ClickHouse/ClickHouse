@@ -5,8 +5,8 @@
 
 namespace DB
 {
-
-class JSONCompactRowInputFormat final : public RowInputFormatWithNamesAndTypes
+class JSONCompactFormatReader;
+class JSONCompactRowInputFormat final : public RowInputFormatWithNamesAndTypes<JSONCompactFormatReader>
 {
 public:
     JSONCompactRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
