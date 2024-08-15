@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -129,7 +130,7 @@ public:
         return std::make_shared<FunctionToFunctionBaseAdaptor>(std::make_shared<FunctionEmpty>(), argument_types, return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0])
             && !isArray(arguments[0])
