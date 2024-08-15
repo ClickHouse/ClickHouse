@@ -570,7 +570,7 @@ class ClickHouseCluster:
         self.spark_session = None
 
         self.with_azurite = False
-        self.azurite_container = "cont"
+        self.azurite_container = "azurite-container"
         self.blob_service_client = None
         self._azurite_port = 0
 
