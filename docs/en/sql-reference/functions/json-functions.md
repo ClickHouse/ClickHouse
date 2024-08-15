@@ -1359,35 +1359,3 @@ SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
 │ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                       │
 └──────────────────────────────────────┴────────────────────────────────────┘
 ```
-
-### JSONEmpty
-
-Checks whether the input [JSON](../data-types/newjson.md) object is empty.
-
-``` sql
-JSONEmpty(json)
-```
-
-**Arguments**
-
-- `json` — [JSON](../data-types/newjson.md).
-
-**Returned value**
-
-- Returns `1` for an empty JSON object or `0` for a non-empty JSON object. [UInt8](../data-types/int-uint.md).
-
-**Example**
-
-``` sql
-CREATE TABLE test (json JSON) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json" : {}}, {"json" : {"a" : [1, 2, 3], "b" : "2020-01-01"}},  {"json" : {}}, 
-SELECT json, JSONEmpty(json) FROM test;
-```
-
-```text
-┌─json─────────────────────────────────┬─JSONEmpty(json)─┐
-│ {}                                   │               1 │
-│ {"a":["1","2","3"],"b":"2020-01-01"} │               0 │
-│ {}                                   │               1 │
-└──────────────────────────────────────┴─────────────────┘
-```

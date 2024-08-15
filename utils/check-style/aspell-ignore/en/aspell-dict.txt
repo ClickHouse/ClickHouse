@@ -411,7 +411,6 @@ JSONDynamicPaths
 JSONDynamicPathsWithTypes
 JSONEachRow
 JSONEachRowWithProgress
-JSONEmpty
 JSONExtract
 JSONExtractArrayRaw
 JSONExtractBool

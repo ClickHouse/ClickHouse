@@ -106,12 +106,12 @@ select json, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.b.b.`_1`.:
 select json, json.d.a, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.b.b.`_1`.:Int64, json.b.b, json.b.b.`_1`.:Date from test format Null;
 select json, json.d.a, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.b.b.`_1`.:Int64, json.b.b, json.b.b.`_1`.:Date from test order by id format Null;
 
-select count() from test where JSONEmpty(json.^a) and json.a.b.c == 0;
+select count() from test where empty(json.^a) and json.a.b.c == 0;
 select json.^a, json.a.b.c from test order by id format Null;
 select json, json.^a, json.a.b.c from test format Null;
 select json, json.^a, json.a.b.c from test order by id format Null;
 
-select count() from test where JSONEmpty(json.^a) and json.a.b.d is Null;
+select count() from test where empty(json.^a) and json.a.b.d is Null;
 select json.^a, json.a.b.d from test order by id format Null;
 select json.^a, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format Null;
 select json.^a, json.a.b.d, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format Null;
