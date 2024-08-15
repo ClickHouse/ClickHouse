@@ -266,6 +266,8 @@ const char * analyzeImpl(
                                 break;
                         }
                         pos += offset;
+                        if (pos == end)
+                            return pos;
                         /// if this group only contains flags, we have nothing to do.
                         if (*pos == ')')
                         {
