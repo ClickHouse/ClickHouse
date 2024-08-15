@@ -1910,6 +1910,8 @@ void registerStorageDistributed(StorageFactory & factory)
             distributed_settings.background_insert_sleep_time_ms = context->getSettingsRef().distributed_background_insert_sleep_time_ms;
         if (!distributed_settings.background_insert_max_sleep_time_ms.changed)
             distributed_settings.background_insert_max_sleep_time_ms = context->getSettingsRef().distributed_background_insert_max_sleep_time_ms;
+        if (!distributed_settings.background_insert_max_retries.changed)
+            distributed_settings.background_insert_max_retries = context->getSettingsRef().distributed_background_insert_max_retries;
 
         return std::make_shared<StorageDistributed>(
             args.table_id,

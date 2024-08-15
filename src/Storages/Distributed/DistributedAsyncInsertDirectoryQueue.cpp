@@ -121,6 +121,7 @@ DistributedAsyncInsertDirectoryQueue::DistributedAsyncInsertDirectoryQueue(
     , default_sleep_time(storage.getDistributedSettingsRef().background_insert_sleep_time_ms.totalMilliseconds())
     , sleep_time(default_sleep_time)
     , max_sleep_time(storage.getDistributedSettingsRef().background_insert_max_sleep_time_ms.totalMilliseconds())
+    , max_retries(storage.getDistributedSettingsRef().background_insert_max_retries)
     , log(getLogger(getLoggerName()))
     , monitor_blocker(monitor_blocker_)
     , metric_pending_bytes(CurrentMetrics::DistributedBytesToInsert, 0)
@@ -362,6 +363,18 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
         status.broken_bytes_count = broken_bytes_count;
     }
 }
+
+void DistributedAsyncInsertDirectoryQueue::getFilesRetry(const std::string & file_path)
+{
+    if (max_retries != 0)
+    {
+        if (files_retry.contains(file_path))
+            files_retry[file_path] += 1;
+        else
+            files_retry[file_path] = 0;
+    }
+}
+
 void DistributedAsyncInsertDirectoryQueue::processFiles(const SettingsChanges & settings_changes)
 try
 {
@@ -438,10 +451,16 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
         if (thread_trace_context)
             thread_trace_context->root_span.addAttribute(std::current_exception());
 
+        getFilesRetry(file_path);
+        if ((max_retries != 0 && files_retry[file_path] != max_retries))
+            LOG_INFO(log, "distributed file {} send failed, may be broken, retry {}, max_retries {},", file_path, files_retry[file_path], max_retries);
+
         e.addMessage(fmt::format("While sending {}", file_path));
-        if (isDistributedSendBroken(e.code(), e.isRemoteException()))
+        if (isDistributedSendBroken(e.code(), e.isRemoteException()) || (max_retries != 0 && files_retry[file_path] == max_retries))
         {
             markAsBroken(file_path);
+            if (max_retries != 0)
+                files_retry.erase(file_path);
             file_path.clear();
         }
         throw;

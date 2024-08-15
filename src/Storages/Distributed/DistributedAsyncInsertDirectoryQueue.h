@@ -99,6 +99,7 @@ private:
 
     void addFile(const std::string & file_path);
     void initializeFilesFromDisk();
+    void getFilesRetry(const std::string & file_path);
     void processFiles(const SettingsChanges & settings_changes = {});
     void processFile(std::string & file_path, const SettingsChanges & settings_changes);
     void processFilesWithBatching(const SettingsChanges & settings_changes);
@@ -142,6 +143,8 @@ private:
     const std::chrono::milliseconds default_sleep_time;
     std::chrono::milliseconds sleep_time;
     const std::chrono::milliseconds max_sleep_time;
+    const int max_retries;
+    std::map<std::string, int> files_retry {{"0", 0}};
     std::chrono::time_point<std::chrono::system_clock> last_decrease_time {std::chrono::system_clock::now()};
     std::mutex mutex;
     LoggerPtr log;
