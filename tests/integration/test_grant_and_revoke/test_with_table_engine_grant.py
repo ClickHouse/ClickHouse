@@ -359,6 +359,8 @@ def test_implicit_create_view_grant():
     instance.query("GRANT CREATE VIEW ON test.* TO B", user="A")
     instance.query("CREATE VIEW test.view_2 AS SELECT 1", user="B")
     assert instance.query("SELECT * FROM test.view_2") == "1\n"
+    instance.query("DROP USER A")
+    instance.query("DROP VIEW test.view_2")
 
 
 def test_implicit_create_temporary_table_grant():
