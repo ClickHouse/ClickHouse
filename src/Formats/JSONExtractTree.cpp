@@ -1726,7 +1726,7 @@ private:
                 }
             }
             else if (!dynamic_node->insertResultToColumn(*dynamic_it->second, element, insert_settings, format_settings, error))
-            { 
+            {
                 error += fmt::format(" (while reading path {})", current_path);
                 return false;
             }
