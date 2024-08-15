@@ -73,9 +73,11 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <string_view>
 #include <unordered_map>
 
 #include <Common/config_version.h>
+#include <base/find_symbols.h>
 #include "config.h"
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
@@ -914,6 +916,8 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     }
     catch (Exception & e)
     {
+        if (server_exception)
+            server_exception->rethrow();
         if (!is_interactive)
             e.addMessage("(in query: {})", full_query);
         throw;
@@ -1032,19 +1036,28 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             query_interrupt_handler.start(signals_before_stop);
             SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
-            connection->sendQuery(
-                connection_parameters.timeouts,
-                query,
-                query_parameters,
-                client_context->getCurrentQueryId(),
-                query_processing_stage,
-                &client_context->getSettingsRef(),
-                &client_context->getClientInfo(),
-                true,
-                [&](const Progress & progress) { onProgress(progress); });
+            try {
+                connection->sendQuery(
+                    connection_parameters.timeouts,
+                    query,
+                    query_parameters,
+                    client_context->getCurrentQueryId(),
+                    query_processing_stage,
+                    &client_context->getSettingsRef(),
+                    &client_context->getClientInfo(),
+                    true,
+                    [&](const Progress & progress) { onProgress(progress); });
 
-            if (send_external_tables)
-                sendExternalTables(parsed_query);
+                if (send_external_tables)
+                    sendExternalTables(parsed_query);
+            }
+            catch (const NetException &)
+            {
+                // We still want to attempt to process whatever we already received or can receive (socket receive buffer can be not empty)
+                receiveResult(parsed_query, signals_before_stop, settings.partial_result_on_first_cancel);
+                throw;
+            }
+
             receiveResult(parsed_query, signals_before_stop, settings.partial_result_on_first_cancel);
 
             break;
