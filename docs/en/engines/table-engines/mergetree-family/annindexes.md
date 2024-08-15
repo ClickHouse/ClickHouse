@@ -59,6 +59,8 @@ Parameters:
 - `ef_construction`: (optional, default: 128)
 - `ef_search`: (optional, default: 64)
 
+Value 0 for parameters `m`, `ef_construction`, and `ef_search` refers to the default value.
+
 Example:
 
 ```sql

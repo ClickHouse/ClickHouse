@@ -444,7 +444,7 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
         case BinaryTypeIndex::Dynamic:
         {
             const auto & dynamic_type = assert_cast<const DataTypeDynamic &>(*type);
-            /// Maximum number of dynamic types is 255, we can write it as 1 byte.
+            /// Maximum number of dynamic types is 254, we can write it as 1 byte.
             writeBinary(UInt8(dynamic_type.getMaxDynamicTypes()), buf);
             break;
         }
