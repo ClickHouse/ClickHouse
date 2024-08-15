@@ -59,7 +59,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     if (!pre_distinct)
         return 0;
 
-    std::cerr << "======= tryDistinctReadInOrder found distinct" << std::endl;
+    // std::cerr << "======= tryDistinctReadInOrder found distinct" << std::endl;
 
     /// walk through the plan
     /// (1) check if nodes below preliminary distinct preserve sorting
@@ -93,7 +93,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     if (!read_from_merge_tree)
         return 0;
 
-    std::cerr << "======= tryDistinctReadInOrder found read from mt" << std::endl;
+    // std::cerr << "======= tryDistinctReadInOrder found read from mt" << std::endl;
 
     /// if reading from merge tree doesn't provide any output order, we can do nothing
     /// it means that no ordering can provided or supported for a particular sorting key
@@ -116,7 +116,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
         ++number_of_sorted_distinct_columns;
     }
 
-    std::cerr << "======= tryDistinctReadInOrder cols " << number_of_sorted_distinct_columns << ' ' << original_distinct_columns.size() << std::endl;
+    // std::cerr << "======= tryDistinctReadInOrder cols " << number_of_sorted_distinct_columns << ' ' << original_distinct_columns.size() << std::endl;
 
     /// apply optimization only when distinct columns match or form prefix of sorting key
     /// todo: check if reading in order optimization would be beneficial when sorting key is prefix of columns in DISTINCT

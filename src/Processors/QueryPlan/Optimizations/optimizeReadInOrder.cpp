@@ -917,7 +917,7 @@ bool canImproveOrderForDistinct(AggregationInputOrder & required_order, const In
         return true;
 
     /// We only allow improving existing order.
-    /// In order to resue previous order, applySorting.cpp is used.
+    /// In order to reuse previous order, applySorting.cpp is used.
     if (required_order.input_order->used_prefix_of_sorting_key_size <= existing_order->used_prefix_of_sorting_key_size)
         return false;
 

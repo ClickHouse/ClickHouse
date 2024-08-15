@@ -9,7 +9,15 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
-namespace DB::QueryPlanOptimizations
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace QueryPlanOptimizations
 {
 
 struct SortingProperty
@@ -90,7 +98,7 @@ static PossiblyMonotonicChain buildPossiblyMonitinicChain(const ActionsDAG::Node
     return {node, std::move(chain)};
 }
 
-/// Check wheter all the function in chain are monotonic
+/// Check whether all the function in chain are monotonic
 bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain)
 {
     auto it = chain.non_const_arg_pos.begin();
@@ -255,7 +263,7 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
     {
         /// Do not apply distinct-in-order second time.
         /// Also, prefer sorting from propertires against Distinct sorting description,
-        /// cause the last one migth be shorter, or may haver additional monotonic functions.
+        /// cause the last one might be shorter, or may haver additional monotonic functions.
         if (optimization_settings.distinct_in_order && distinct_step->getSortDescription().empty() &&
             (properties->sort_scope == SortingProperty::SortScope::Global
             || (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)))
@@ -367,6 +375,8 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
         properties.erase(it, properties.end());
         properties.push_back(std::move(property));
     }
+}
+
 }
 
 }
