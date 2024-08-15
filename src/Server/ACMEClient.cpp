@@ -12,6 +12,7 @@
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/pem.h>
+#include <openssl/x509.h>
 #include <Poco/Base64Encoder.h>
 #include <Poco/Crypto/CryptoStream.h>
 #include <Poco/Crypto/ECKey.h>
@@ -23,16 +24,20 @@
 #include <Poco/DigestEngine.h>
 #include <Poco/File.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Stringifier.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/SHA1Engine.h>
+#include <Poco/StreamCopier.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
+#include "Common/OpenSSLHelpers.h"
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
+#include "base/sleep.h"
 
 
 namespace DB
@@ -55,6 +60,65 @@ namespace fs = std::filesystem;
 //
 //     ACMEClient::instance().dummyCallback(domain_name, url, key);
 // }
+std::string generateCSR()
+{
+    std::string name = "letsencrypt-stg.var1able.network";
+
+    auto bits = 4096;
+    EVP_PKEY * key(EVP_RSA_gen(bits));
+
+    X509_REQ * req(X509_REQ_new());
+    X509_NAME * cn = X509_REQ_get_subject_name(req);
+    if (!X509_NAME_add_entry_by_txt(cn, "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char *>(name.c_str()), -1, -1, 0))
+    {
+        throw std::runtime_error("Error adding CN to X509_NAME");
+    }
+
+    BIO * key_bio(BIO_new(BIO_s_mem()));
+    if (PEM_write_bio_PrivateKey(key_bio, key, nullptr, nullptr, 0, nullptr, nullptr) != 1)
+    {
+        throw std::runtime_error("Error writing private key to BIO");
+    }
+    std::string private_key;
+
+
+    if (!X509_REQ_set_pubkey(req, key))
+    {
+        throw std::runtime_error("Failure in X509_REQ_set_pubkey");
+    }
+
+    if (!X509_REQ_sign(req, key, EVP_sha256()))
+    {
+        throw std::runtime_error("Failure in X509_REQ_sign");
+    }
+
+    BIO * req_bio(BIO_new(BIO_s_mem()));
+    if (i2d_X509_REQ_bio(req_bio, req) < 0)
+    {
+        throw std::runtime_error("Failure in i2d_X509_REQ_bio");
+    }
+
+    std::string csr;
+    char buffer[1024];
+    int bytes_read;
+    while ((bytes_read = BIO_read(req_bio, buffer, sizeof(buffer))) > 0)
+    {
+        LOG_DEBUG(&Poco::Logger::get("ACME"), "Read {} bytes", bytes_read);
+        csr.append(buffer, bytes_read);
+    }
+    csr = base64Encode(csr, /*url_encoding*/ true, /*no_padding*/ true);
+
+    while ((bytes_read = BIO_read(key_bio, buffer, sizeof(buffer))) > 0)
+    {
+        private_key.append(buffer, bytes_read);
+    }
+
+    LOG_DEBUG(&Poco::Logger::get("ACME"), "CSR: {}", csr);
+    LOG_DEBUG(&Poco::Logger::get("ACME"), "Private key: {}", private_key);
+
+    return csr;
+}
+
 
 }
 
@@ -65,7 +129,7 @@ ACMEClient & ACMEClient::instance()
     return instance;
 }
 
-void ACMEClient::requestCertificate(const Poco::Util::AbstractConfiguration & )
+void ACMEClient::requestCertificate(const Poco::Util::AbstractConfiguration &)
 {
     /// TODO
 }
@@ -125,9 +189,26 @@ try
     getDirectory();
 
     auto key = Poco::Crypto::RSAKey("", "/home/thevar1able/src/clickhouse/cmake-build-debug/acme/acme.key", "");
-    authenticate(key);
+    private_acme_key = std::make_shared<Poco::Crypto::RSAKey>(key);
 
-    order(key);
+    if (!authenticated || key_id.empty())
+    {
+        authenticate();
+        authenticated = true;
+    }
+
+    if (!initialized)
+    {
+        auto order_url = order();
+        // do some kind of event loop here
+        // describe order -> finalize -> wait
+        // describe order -> pull cert
+        // finalizeOrder(fin);
+        // sleepForSeconds(5);
+
+        // auto response = doJWSRequest(fin, "", nullptr);
+        // LOG_DEBUG(log, "Finalize response: {}", response);
+    }
 
     /// TODO on initialization go through config and try to reissue all
     /// expiring/missing certificates.
@@ -140,12 +221,6 @@ catch (...)
 }
 
 
-/*
-* get directory -- GET https://acme-staging-v02.api.letsencrypt.org/directory
-* get nonce -- HEAD https://acme-staging-v02.api.letsencrypt.org/acme/new-nonce -- take replay-nonce header
-*
-*
-*/
 
 void ACMEClient::getDirectory()
 {
@@ -226,42 +301,23 @@ std::string formProtectedData(const std::string & jwk, const std::string & nonce
     return base64Encode(protected_data, /*url_encoding*/ true, /*no_padding*/ true);
 }
 
-void ACMEClient::authenticate(Poco::Crypto::RSAKey & key)
+std::string ACMEClient::doJWSRequest(const std::string & url, const std::string & payload, std::shared_ptr<Poco::Net::HTTPResponse> response)
 {
     const auto nonce = requestNonce();
 
-    /// FROM RFC 8555
-    /// {
-    ///   "protected": base64url({
-    ///     "alg": "RS256",
-    ///     "jwk": {...},
-    ///     "nonce": "6S8IqOGY7eL2lsGoTZYifg",
-    ///     "url": "https://example.com/acme/new-account"
-    ///   }),
-    ///   "payload": base64url({
-    ///     "termsOfServiceAgreed": true,
-    ///     "contact": [
-    ///       "mailto:cert-admin@example.org",
-    ///       "mailto:admin@example.org"
-    ///     ]
-    ///   }),
-    ///   "signature": "RZPOnYoPs1PhjszF...-nh6X1qtOFPB519I"
-    /// }
+    auto uri = Poco::URI(url);
 
-    auto uri = Poco::URI("https://acme-staging-v02.api.letsencrypt.org/acme/new-acct");
+    auto jwk = JSONWebKey::fromRSAKey(*private_acme_key).toString();
+    auto protected_enc = formProtectedData(jwk, nonce, uri.toString(), key_id);
 
-    auto jwk = JSONWebKey::fromRSAKey(key).toString();
-    auto protected_enc = formProtectedData(jwk, nonce, uri.toString(), "");
-
-    std::string payload = R"({"termsOfServiceAgreed":true,"contact":["mailto:admin@example.org"]})";
     auto payload_enc = base64Encode(payload, /*url_encoding*/ true, /*no_padding*/ true);
 
     std::string to_sign = protected_enc + "." + payload_enc;
-    auto signature = hmacSha256(to_sign, key);
+    auto signature = hmacSha256(to_sign, *private_acme_key);
 
     std::string request_data
         = R"({"protected":")" + protected_enc + R"(","payload":")" + payload_enc + R"(","signature":")" + signature + R"("})";
-    LOG_DEBUG(log, "Request data: {}", request_data);
+
 
     auto r = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery());
     r.set("Content-Type", "application/jose+json");
@@ -274,94 +330,138 @@ void ACMEClient::authenticate(Poco::Crypto::RSAKey & key)
     auto & ostream = session->sendRequest(r);
     ostream << request_data;
 
-    auto response = Poco::Net::HTTPResponse();
-    auto & rstream = session->receiveResponse(response);
+    if (!response)
+        response = std::make_shared<Poco::Net::HTTPResponse>();
 
-    /// checking for HTTP code would be nice here
+    auto * rstream = receiveResponse(*session, r, *response, /* allow_redirects */ false);
+
+    std::string response_str;
+    Poco::StreamCopier::copyToString(*rstream, response_str);
+
+    // Poco::JSON::Parser parser;
+    // auto json = parser.parse(response_str).extract<Poco::JSON::Object::Ptr>();
+
+    return response_str;
+}
+
+void ACMEClient::authenticate()
+{
+    if (!key_id.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Already authenticated");
+
+    std::string payload = R"({"termsOfServiceAgreed":true,"contact":["mailto:admin@example.org"]})";
+
+    auto http_response = std::make_shared<Poco::Net::HTTPResponse>();
+    auto response = doJWSRequest(directory->new_account, payload, http_response);
 
     Poco::JSON::Parser parser;
-    auto json = parser.parse(rstream).extract<Poco::JSON::Object::Ptr>();
+    auto json = parser.parse(response).extract<Poco::JSON::Object::Ptr>();
 
-    //     HTTP/1.1 201 Created
-    // Content-Type: application/json
-    // Replay-Nonce: D8s4D2mLs8Vn-goWuPQeKA
-    // Link: <https://example.com/acme/directory>;rel="index"
-    // Location: https://example.com/acme/acct/evOfKhNU60wg
-    //
-    // {
-    //   "status": "valid",
-    //
-    //   "contact": [
-    //     "mailto:cert-admin@example.org",
-    //     "mailto:admin@example.org"
-    //   ],
-    //
-    //   "orders": "https://example.com/acme/acct/evOfKhNU60wg/orders"
-    // }
+    LOG_DEBUG(log, "Account response: {}", response);
 
-
-    key_id = response.get("Location");
-    for (const auto & [k, v] : response)
+    key_id = (*http_response).get("Location");
+    for (const auto & [k, v] : *http_response)
     {
         LOG_DEBUG(log, "Response header: {} -> {}", k, v);
     }
-
-    // json->getValue<std::string>(Directory::new_nonce_key),
 }
 
-void ACMEClient::order(Poco::Crypto::RSAKey & key)
+std::string ACMEClient::order()
 {
-    auto uri = Poco::URI(directory->new_order);
-    auto r = Poco::Net::HTTPRequest("POST", uri.getPathAndQuery());
-    r.set("Content-Type", "application/jose+json");
+    std::string payload = R"({"identifiers":[{"type":"dns","value":"letsencrypt-stg.var1able.network"}]})";
 
-    auto timeout = ConnectionTimeouts();
-    auto proxy = ProxyConfiguration();
-    auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, uri, timeout, proxy);
+    auto http_response = std::make_shared<Poco::Net::HTTPResponse>();
+    auto response = doJWSRequest(directory->new_order, payload, http_response);
 
-    // POST /acme/new-order HTTP/1.1
-    // Host: example.com
-    // Content-Type: application/jose+json
-    //
+    Poco::JSON::Parser parser;
+    auto json = parser.parse(response).extract<Poco::JSON::Object::Ptr>();
+
+    LOG_DEBUG(log, "Order response: {}", response);
+
+    auto status = json->getValue<std::string>("status");
+    auto expires = json->getValue<std::string>("expires");
+
+    auto identifiers = json->getArray("identifiers");
+    auto authorizations = json->getArray("authorizations");
+
+    auto finalize = json->getValue<std::string>("finalize");
+
+    LOG_DEBUG(log, "Status: {}, Expires: {}, Finalize: {}", status, expires, finalize);
+
+    auto order_url = http_response->get("Location");
+    return order_url;
+
+    // if (status == "ready")
     // {
-    //   "protected": base64url({
-    //     "alg": "ES256",
-    //     "kid": "https://example.com/acme/acct/evOfKhNU60wg",
-    //     "nonce": "5XJ1L3lEkMG7tR6pA00clA",
-    //     "url": "https://example.com/acme/new-order"
-    //   }),
-    //   "payload": base64url({
-    //     "identifiers": [
-    //       { "type": "dns", "value": "www.example.org" },
-    //       { "type": "dns", "value": "example.org" }
-    //     ]
-    //   }),
-    //   "signature": "H6ZXtGjTZyUnPeKn...wEA4TklBdh3e454g"
+    //     return order_url;
     // }
+    //
+    // for (const auto & auth : *authorizations)
+    // {
+    //     LOG_DEBUG(log, "Authorization: {}", auth.toString());
+    //
+    //     processAuthorization(auth.toString());
+    // }
+    //
+    // return finalize;
+}
 
-    auto nonce = requestNonce();
-    auto protected_data = formProtectedData("", nonce, uri.toString(), key_id);
+void ACMEClient::processAuthorization(const std::string & auth_url)
+{
+    std::string read_buffer;
+    ReadSettings read_settings;
+    auto reader = std::make_unique<ReadBufferFromWebServer>(
+        auth_url,
+        Context::getGlobalContextInstance(),
+        DBMS_DEFAULT_BUFFER_SIZE,
+        read_settings,
+        /* use_external_buffer */ true,
+        /* read_until_position */ 0);
+    readStringUntilEOF(read_buffer, *reader);
 
-    std::string payload = R"({"identifiers":[{"type":"dns","value":"example.com"}]})";
-    LOG_DEBUG(log, "Payload: {}", payload);
-    auto payload_enc = base64Encode(payload, /*url_encoding*/ true, /*no_padding*/ true);
+    Poco::JSON::Parser parser;
+    auto json = parser.parse(read_buffer).extract<Poco::JSON::Object::Ptr>();
 
-    std::string to_sign = protected_data + "." + payload_enc;
-    auto signature = hmacSha256(to_sign, key);
+    LOG_DEBUG(log, "Authorization response: {}", read_buffer);
 
-    std::string request_data = R"({"protected":")" + protected_data + R"(","payload":")" + payload_enc + R"(","signature":")" + signature + R"("})";
-    r.set("Content-Length", std::to_string(request_data.size()));
+    auto challenges = json->getArray("challenges");
 
-    auto &ostream = session->sendRequest(r);
-    ostream << request_data;
+    for (const auto & challenge : *challenges)
+    {
+        auto ch = challenge.extract<Poco::JSON::Object::Ptr>();
 
-    auto response = Poco::Net::HTTPResponse();
-    auto &rstream = session->receiveResponse(response);
+        auto type = ch->getValue<std::string>("type");
+        auto url = ch->getValue<std::string>("url");
+        auto status = ch->getValue<std::string>("status");
+        auto token = ch->getValue<std::string>("token");
 
-    // Poco::JSON::Parser parser;
-    // auto json = parser.parse(rstream).extract<Poco::JSON::Object::Ptr>();
+        LOG_DEBUG(log, "Challenge: type: {}, url: {}, status: {}, token: {}", type, url, status, token);
+        if (type == HTTP_01_CHALLENGE_TYPE)
+        {
+            if (status == "valid")
+                continue;
 
-    std::cout << "Response: " << rstream.rdbuf() << std::endl;
+            auto response = doJWSRequest(url, "{}", nullptr);
+
+            LOG_DEBUG(log, "Response: {}", response);
+        }
+    }
+}
+
+void ACMEClient::finalizeOrder(const std::string & finalize_url)
+{
+    std::string csr = generateCSR();
+    auto payload = R"({"csr":")" + csr + R"("})";
+
+    auto http_response = std::make_shared<Poco::Net::HTTPResponse>();
+    auto response = doJWSRequest(finalize_url, payload, http_response);
+
+    LOG_DEBUG(log, "finalizeOrder Response: {}", response);
+
+    for (const auto & [k, v] : *http_response)
+    {
+        LOG_DEBUG(log, "Response header: {} -> {}", k, v);
+    }
 }
 
 std::string ACMEClient::requestNonce()
@@ -380,18 +480,12 @@ std::string ACMEClient::requestNonce()
     session->sendRequest(r);
 
     auto response = Poco::Net::HTTPResponse();
-    session->receiveResponse(response);
-
-    // std::cout << "Response: " << response.getStatus() << std::endl;
+    receiveResponse(*session, r, response, /* allow_redirects */ false);
 
     auto nonce = response.get("replay-nonce");
+
     return nonce;
 }
-
-// void ACMEClient::dummyCallback(const std::string & domain_name, const std::string & url, const std::string & key)
-// {
-//     LOG_DEBUG(log, "Callback for domain {} with url {} and key {}", domain_name, url, key);
-// }
 
 std::string ACMEClient::requestChallenge(const std::string & uri)
 {
@@ -400,9 +494,28 @@ std::string ACMEClient::requestChallenge(const std::string & uri)
 
     LOG_DEBUG(log, "Requesting challenge for {}", uri);
 
-    // client->issueCertificate({domains.begin(), domains.end()}, dumberCallback);
+    // {
+    //  "protected": base64url({
+    //    "alg": "ES256",
+    //    "kid": "https://example.com/acme/acct/evOfKhNU60wg",
+    //    "nonce": "UQI1PoRi5OuXzxuX7V7wL0",
+    //    "url": "https://example.com/acme/chall/prV_B7yEyA4"
+    //  }),
+    //  "payload": base64url({}),
+    //  "signature": "Q1bURgJoEslbD1c5...3pYdSMLio57mQNN4"
+    // }
 
-    return "";
+    /// TODO remember which tokens we've requested
+
+    if (!uri.starts_with(ACME_CHALLENGE_HTTP_PATH))
+        return "";
+
+    std::string token_from_uri = uri.substr(std::string(ACME_CHALLENGE_HTTP_PATH).size());
+    auto jwk = JSONWebKey::fromRSAKey(*private_acme_key).toString();
+    auto jwk_thumbprint = encodeSHA256(jwk);
+    jwk_thumbprint = base64Encode(jwk_thumbprint, /*url_encoding*/ true, /*no_padding*/ true);
+
+    return token_from_uri + "." + jwk_thumbprint;
 }
 
 }

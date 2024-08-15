@@ -5,6 +5,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Poco/Crypto/RSAKey.h>
 #include <Poco/Crypto/X509Certificate.h>
+#include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/JSONWebKey.h>
@@ -29,9 +30,10 @@ struct Directory
 };
 
 
-static constexpr auto ACME_CHALLENGE_HTTP_PATH = "/.well-known/acme-challenge";
+static constexpr auto ACME_CHALLENGE_HTTP_PATH = "/.well-known/acme-challenge/";
 static constexpr auto ZOOKEEPER_ACME_BASE_PATH = "/clickhouse/acme";
 
+static constexpr auto HTTP_01_CHALLENGE_TYPE = "http-01";
 
 class ACMEClient : private boost::noncopyable
 {
@@ -48,9 +50,11 @@ private:
     LoggerPtr log = getLogger("ACMEClient");
 
     std::atomic<bool> initialized;
+    std::atomic<bool> authenticated;
 
     /// Private key identifier, local to ACME provider
     std::string key_id;
+    std::shared_ptr<Poco::Crypto::RSAKey> private_acme_key;
 
     std::shared_ptr<Directory> directory;
 
@@ -63,8 +67,12 @@ private:
 
     std::string requestNonce();
     void getDirectory();
-    void authenticate(Poco::Crypto::RSAKey &);
-    void order(Poco::Crypto::RSAKey &);
+    void authenticate();
+    std::string order();
+    void finalizeOrder(const std::string &);
+    void processAuthorization(const std::string & auth_url);
+    void tryGet(const std::string & finalize_url, Poco::Crypto::RSAKey & key);
+    std::string doJWSRequest(const std::string &, const std::string &, std::shared_ptr<Poco::Net::HTTPResponse>);
 };
 
 }
