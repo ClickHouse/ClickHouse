@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
+    extern const int BAD_ARGUMENTS;
 }
 
 #if USE_LIBPQXX

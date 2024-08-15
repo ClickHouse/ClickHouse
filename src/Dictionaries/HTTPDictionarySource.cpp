@@ -230,7 +230,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
                 *named_collection,
                 /* required_keys */{},
                 /* optional_keys */ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>{
-                "url", "endpoint", "user", "credentials.user",  "password", "credentials.password", "format", "compression_method", "structure", "name"});
+                "url", "endpoint", "user", "credentials.user", "password", "credentials.password", "format", "compression_method", "structure", "name"});
 
             url = named_collection->getOrDefault<String>("url", "");
             endpoint = named_collection->getOrDefault<String>("endpoint", "");
