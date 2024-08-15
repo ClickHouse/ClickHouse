@@ -17,7 +17,7 @@ create table shard_0.dt64_03222(id UInt64, dt DateTime64(3)) engine = MergeTree 
 create table shard_1.dt64_03222(id UInt64, dt DateTime64(3)) engine = MergeTree order by id;
 create table distr_03222_dt64 (id UInt64, dt DateTime64(3)) engine = Distributed(test_cluster_two_shards_different_databases, '', dt64_03222);
 
-insert into shard_0.dt64_03222 values(1, toDateTime64('1970-01-01 00:00:00.000',3))
+insert into shard_0.dt64_03222 values(1, toDateTime64('1970-01-01 00:00:00.000',3));
 insert into shard_0.dt64_03222 values(2, toDateTime64('1970-01-01 00:00:02.456',3));
 insert into shard_1.dt64_03222 values(3, toDateTime64('1970-01-01 00:00:04.811',3));
 insert into shard_1.dt64_03222 values(4, toDateTime64('1970-01-01 00:10:05',3));
