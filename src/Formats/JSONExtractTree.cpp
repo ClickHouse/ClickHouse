@@ -1726,7 +1726,7 @@ private:
                 }
             }
             else if (!dynamic_node->insertResultToColumn(*dynamic_it->second, element, insert_settings, format_settings, error))
-            {
+            { 
                 error += fmt::format(" (while reading path {})", current_path);
                 return false;
             }
@@ -1745,7 +1745,7 @@ private:
                 return false;
             }
         }
-        /// We consider null equivalent to the absence of this path.
+        /// Otherwise this path should go to the shared data.
         else
         {
             auto tmp_dynamic_column = ColumnDynamic::create();
