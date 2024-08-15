@@ -93,17 +93,14 @@ struct InitialAllRangesAnnouncement
     /// No default constructor, you must initialize all fields at once.
 
     InitialAllRangesAnnouncement(
-        CoordinationMode mode_,
-        RangesInDataPartsDescription description_,
-        size_t replica_num_)
-        : mode(mode_)
-        , description(description_)
-        , replica_num(replica_num_)
+        CoordinationMode mode_, RangesInDataPartsDescription description_, size_t replica_num_, size_t mark_segment_size_)
+        : mode(mode_), description(description_), replica_num(replica_num_), mark_segment_size(mark_segment_size_)
     {}
 
     CoordinationMode mode;
     RangesInDataPartsDescription description;
     size_t replica_num;
+    size_t mark_segment_size;
 
     void serialize(WriteBuffer & out) const;
     String describe();

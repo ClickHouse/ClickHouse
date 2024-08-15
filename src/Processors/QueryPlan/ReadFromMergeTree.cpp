@@ -52,6 +52,7 @@
 #include <memory>
 #include <unordered_map>
 
+#include "Interpreters/Cluster.h"
 #include "config.h"
 
 using namespace DB;
@@ -343,11 +344,11 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
 {
     const auto & client_info = context->getClientInfo();
 
-    auto extension = ParallelReadingExtension
-    {
+    auto extension = ParallelReadingExtension{
         .all_callback = all_ranges_callback.value(),
         .callback = read_task_callback.value(),
         .number_of_current_replica = client_info.number_of_current_replica,
+        .total_nodes_count = context->getClusterForParallelReplicas()->getShardsInfo().begin()->getAllNodeCount(),
     };
 
     /// We have a special logic for local replica. It has to read less data, because in some cases it should
@@ -514,11 +515,11 @@ Pipe ReadFromMergeTree::readInOrder(
     if (is_parallel_reading_from_replicas)
     {
         const auto & client_info = context->getClientInfo();
-        ParallelReadingExtension extension
-        {
+        ParallelReadingExtension extension{
             .all_callback = all_ranges_callback.value(),
             .callback = read_task_callback.value(),
             .number_of_current_replica = client_info.number_of_current_replica,
+            .total_nodes_count = context->getClusterForParallelReplicas()->getShardsInfo().begin()->getAllNodeCount(),
         };
 
         const auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;

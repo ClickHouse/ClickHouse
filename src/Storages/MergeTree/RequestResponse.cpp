@@ -126,6 +126,7 @@ void InitialAllRangesAnnouncement::serialize(WriteBuffer & out) const
     writeIntBinary(mode, out);
     description.serialize(out);
     writeIntBinary(replica_num, out);
+    writeIntBinary(mark_segment_size, out);
 }
 
 
@@ -156,10 +157,15 @@ InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffe
     description.deserialize(in);
     readIntBinary(replica_num, in);
 
-    return InitialAllRangesAnnouncement {
+    size_t mark_segment_size = 128;
+    if (version >= 4)
+        readIntBinary(mark_segment_size, in);
+
+    return InitialAllRangesAnnouncement{
         mode,
         description,
-        replica_num
+        replica_num,
+        mark_segment_size,
     };
 }
 
