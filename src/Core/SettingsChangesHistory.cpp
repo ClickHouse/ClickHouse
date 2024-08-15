@@ -90,6 +90,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"optimize_functions_to_subcolumns", false, true, "Enabled settings by default"},
             {"join_output_by_rowlist_perkey_rows_threshold", 0, 5, "The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join."},
             {"allow_experimental_vector_similarity_index", false, false, "Added new setting to allow experimental vector similarity indexes"},
+            {"input_format_try_infer_datetimes_only_datetime64", true, false, "Allow to infer DateTime instead of DateTime64 in data formats"}
         }
     },
     {"24.7",
