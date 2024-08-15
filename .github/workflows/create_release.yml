@@ -101,6 +101,7 @@ jobs:
             --volume=".:/wd" --workdir="/wd" \
             clickhouse/style-test \
             ./tests/ci/changelog.py -v --debug-helpers \
+            --gh-user-or-token ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }} \
             --jobs=5 \
             --output="./docs/changelogs/${{ env.RELEASE_TAG }}.md" ${{ env.RELEASE_TAG }}
           git add ./docs/changelogs/${{ env.RELEASE_TAG }}.md
