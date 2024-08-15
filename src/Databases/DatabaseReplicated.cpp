@@ -341,9 +341,9 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
 
 ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_) const
 {
-    Strings paths_get, paths_exists;
+    Strings paths;
 
-    paths_get.emplace_back(fs::path(zookeeper_path) / "max_log_ptr");
+    paths.emplace_back(fs::path(zookeeper_path) / "max_log_ptr");
 
     const auto & addresses_with_failover = cluster_->getShardsAddresses();
     const auto & shards_info = cluster_->getShardsInfo();
@@ -352,45 +352,44 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
         for (const auto & replica : addresses_with_failover[shard_index])
         {
             String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name);
-            paths_exists.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "active");
-            paths_get.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "log_ptr");
+            paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "active");
+            paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "log_ptr");
         }
     }
 
     try
     {
         auto current_zookeeper = getZooKeeper();
-        auto get_res = current_zookeeper->get(paths_get);
-        auto exist_res = current_zookeeper->exists(paths_exists);
-        chassert(get_res.size() == exist_res.size() + 1);
+        auto zk_res = current_zookeeper->tryGet(paths);
 
-        auto max_log_ptr_zk = get_res[0];
+        auto max_log_ptr_zk = zk_res[0];
         if (max_log_ptr_zk.error != Coordination::Error::ZOK)
             throw Coordination::Exception(max_log_ptr_zk.error);
 
         UInt32 max_log_ptr = parse<UInt32>(max_log_ptr_zk.data);
 
         ReplicasInfo replicas_info;
-        replicas_info.resize(exist_res.size());
+        replicas_info.resize((zk_res.size() - 1) / 2);
 
         size_t global_replica_index = 0;
         for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
         {
             for (const auto & replica : addresses_with_failover[shard_index])
             {
-                auto replica_active = exist_res[global_replica_index];
-                auto replica_log_ptr = get_res[global_replica_index + 1];
+                auto replica_active = zk_res[2 * global_replica_index + 1];
+                auto replica_log_ptr = zk_res[2 * global_replica_index + 2];
 
-                if (replica_active.error != Coordination::Error::ZOK && replica_active.error != Coordination::Error::ZNONODE)
-                    throw Coordination::Exception(replica_active.error);
-
-                if (replica_log_ptr.error != Coordination::Error::ZOK)
-                    throw Coordination::Exception(replica_log_ptr.error);
+                UInt64 recovery_time = 0;
+                {
+                    std::lock_guard lock(ddl_worker_mutex);
+                    if (replica.is_local && ddl_worker)
+                        recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+                }
 
                 replicas_info[global_replica_index] = ReplicaInfo{
                     .is_active = replica_active.error == Coordination::Error::ZOK,
-                    .replication_lag = max_log_ptr - parse<UInt32>(replica_log_ptr.data),
-                    .recovery_time = replica.is_local ? ddl_worker->getCurrentInitializationDurationMs() : 0,
+                    .replication_lag = replica_log_ptr.error != Coordination::Error::ZNONODE ? std::optional(max_log_ptr - parse<UInt32>(replica_log_ptr.data)) : std::nullopt,
+                    .recovery_time = recovery_time,
                 };
 
                 ++global_replica_index;
@@ -398,7 +397,8 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
         }
 
         return replicas_info;
-    } catch (...)
+    }
+    catch (...)
     {
         tryLogCurrentException(log);
         return {};
@@ -833,8 +833,8 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
     if (!arg1 || !arg2 || arg1->value.getType() != Field::Types::String || arg2->value.getType() != Field::Types::String)
         return;
 
-    String maybe_path = arg1->value.get<String>();
-    String maybe_replica = arg2->value.get<String>();
+    String maybe_path = arg1->value.safeGet<String>();
+    String maybe_replica = arg2->value.safeGet<String>();
 
     /// Looks like it's ReplicatedMergeTree with explicit zookeeper_path and replica_name arguments.
     /// Let's ensure that some macros are used.
@@ -1153,8 +1153,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_experimental_object_type", 1);
         query_context->setSetting("allow_experimental_variant_type", 1);
         query_context->setSetting("allow_experimental_dynamic_type", 1);
-        query_context->setSetting("allow_experimental_annoy_index", 1);
-        query_context->setSetting("allow_experimental_usearch_index", 1);
+        query_context->setSetting("allow_experimental_vector_similarity_index", 1);
         query_context->setSetting("allow_experimental_bigint_types", 1);
         query_context->setSetting("allow_experimental_window_functions", 1);
         query_context->setSetting("allow_experimental_geo_types", 1);
@@ -1584,6 +1583,8 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     }
 
     auto table = tryGetTable(table_name, getContext());
+    if (!table)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't exist", table_name);
     if (table->getName() == "MaterializedView" || table->getName() == "WindowView")
     {
         /// Avoid recursive locking of metadata_mutex

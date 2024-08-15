@@ -119,11 +119,6 @@ Minimum size of blocks of uncompressed data required for compression when writin
 You can also specify this setting in the global settings (see [min_compress_block_size](/docs/en/operations/settings/settings.md/#min-compress-block-size) setting).
 The value specified when table is created overrides the global value for this setting.
 
-## max_partitions_to_read
-
-Limits the maximum number of partitions that can be accessed in one query.
-You can also specify setting [max_partitions_to_read](/docs/en/operations/settings/merge-tree-settings.md/#max-partitions-to-read) in the global setting.
-
 ## max_suspicious_broken_parts
 
 If the number of broken parts in a single partition exceeds the `max_suspicious_broken_parts` value, automatic deletion is denied.
@@ -691,6 +686,8 @@ Possible values:
 
 Default value: -1 (unlimited).
 
+You can also specify a query complexity setting [max_partitions_to_read](query-complexity#max-partitions-to-read) at a query / session / profile level.
+
 ## min_age_to_force_merge_seconds {#min_age_to_force_merge_seconds}
 
 Merge parts if every part in the range is older than the value of `min_age_to_force_merge_seconds`.
@@ -1044,3 +1041,14 @@ Compression rates of LZ4 or ZSTD improve on average by 20-40%.
 
 This setting works best for tables with no primary key or a low-cardinality primary key, i.e. a table with only few distinct primary key values.
 High-cardinality primary keys, e.g. involving timestamp columns of type `DateTime64`, are not expected to benefit from this setting.
+
+### deduplicate_merge_projection_mode
+
+Whether to allow create projection for the table with non-classic MergeTree, that is not (Replicated, Shared) MergeTree. If allowed, what is the action when merge projections, either drop or rebuild. So classic MergeTree would ignore this setting.
+It also controls `OPTIMIZE DEDUPLICATE` as well, but has effect on all MergeTree family members.
+
+Possible values:
+
+- throw, drop, rebuild
+
+Default value: throw
