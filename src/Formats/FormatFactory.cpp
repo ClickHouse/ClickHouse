@@ -266,6 +266,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.try_infer_integers = settings.input_format_try_infer_integers;
     format_settings.try_infer_dates = settings.input_format_try_infer_dates;
     format_settings.try_infer_datetimes = settings.input_format_try_infer_datetimes;
+    format_settings.try_infer_datetimes_only_datetime64 = settings.input_format_try_infer_datetimes_only_datetime64;
     format_settings.try_infer_exponent_floats = settings.input_format_try_infer_exponent_floats;
     format_settings.markdown.escape_special_characters = settings.output_format_markdown_escape_special_characters;
     format_settings.bson.output_string_as_string = settings.output_format_bson_string_as_string;
