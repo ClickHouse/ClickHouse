@@ -101,6 +101,7 @@ jobs:
             --volume=".:/wd" --workdir="/wd" \
             clickhouse/style-test \
             ./tests/ci/changelog.py -v --debug-helpers \
+            --gh-user-or-token ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }} \
             --jobs=5 \
             --output="./docs/changelogs/${{ env.RELEASE_TAG }}.md" ${{ env.RELEASE_TAG }}
           git add ./docs/changelogs/${{ env.RELEASE_TAG }}.md
@@ -129,9 +130,9 @@ jobs:
         if: ${{ inputs.type == 'patch' && ! inputs.only-repo }}
         shell: bash
         run: |
-          python3 ./tests/ci/create_release.py --set-progress-completed
           git reset --hard HEAD
           git checkout "$GITHUB_REF_NAME"
+          python3 ./tests/ci/create_release.py --set-progress-completed
       - name: Create GH Release
         if: ${{ inputs.type == 'patch' && ! inputs.only-repo }}
         shell: bash
