@@ -37,6 +37,7 @@
 #include <base/defines.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <QueryPipeline/Pipe.h>
+#include <Common/ProfileEventsScope.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Parsers/SyncReplicaMode.h>
 
@@ -1013,6 +1014,18 @@ private:
         DataPartsVector::const_iterator it;
     };
 
+    const String TMP_PREFIX_REPLACE_PARTITION_FROM = "tmp_replace_from_";
+    std::unique_ptr<ReplicatedMergeTreeLogEntryData> replacePartitionFromImpl(
+        const Stopwatch & watch,
+        ProfileEventsScope & profile_events_scope,
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeData & src_data,
+        const String & partition_id,
+        const zkutil::ZooKeeperPtr & zookeeper,
+        bool replace,
+        const bool & zero_copy_enabled,
+        const bool & always_use_copy_instead_of_hardlinks,
+        const ContextPtr & query_context);
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);
