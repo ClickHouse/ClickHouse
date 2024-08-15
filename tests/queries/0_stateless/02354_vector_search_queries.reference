@@ -107,3 +107,7 @@ Expression (Projection)
             Description: vector_similarity GRANULARITY 2
             Parts: 1/1
             Granules: 2/4
+-- Index on Array(Float64) column
+6	[0,2]	0
+7	[0,2.1]	0.10000000000000009
+8	[0,2.2]	0.20000000000000018

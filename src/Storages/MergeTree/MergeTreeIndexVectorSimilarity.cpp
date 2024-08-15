@@ -248,6 +248,40 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAnd
     return granule;
 }
 
+namespace
+{
+
+template <typename Column>
+void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & column_array_offsets, USearchIndexWithSerializationPtr & index, size_t dimensions, size_t rows)
+{
+    const auto & column_array_data = column_array->getData();
+    const auto & column_array_data_float = typeid_cast<const Column &>(column_array_data);
+    const auto & column_array_data_float_data = column_array_data_float.getData();
+
+    /// Check all sizes are the same
+    for (size_t row = 0; row < rows - 1; ++row)
+        if (column_array_offsets[row + 1] - column_array_offsets[row] != dimensions)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column with vector similarity index must have equal length");
+
+    /// Reserving space is mandatory
+    if (!index->try_reserve(roundUpToPowerOfTwoOrZero(index->size() + rows)))
+        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for vector similarity index");
+
+    for (size_t row = 0; row < rows; ++row)
+    {
+        if (auto result = index->add(static_cast<USearchIndex::vector_key_t>(index->size()), &column_array_data_float_data[column_array_offsets[row - 1]]); !result)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add data to vector similarity index. Error: {}", String(result.error.release()));
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::USearchAddCount);
+            ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, result.visited_members);
+            ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, result.computed_distances);
+        }
+    }
+}
+
+}
+
 void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
@@ -273,7 +307,7 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
 
     const auto * column_array = typeid_cast<const ColumnArray *>(column_cut.get());
     if (!column_array)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array(Float32) column");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array(Float*) column");
 
     if (column_array->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Array is unexpectedly empty");
@@ -302,30 +336,19 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
     if (index->size() + rows > std::numeric_limits<UInt32>::max())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Size of vector similarity index would exceed 4 billion entries");
 
-    const auto & column_array_data = column_array->getData();
-    const auto & column_array_data_float = typeid_cast<const ColumnFloat32 &>(column_array_data);
-    const auto & column_array_data_float_data = column_array_data_float.getData();
+    DataTypePtr data_type = block.getDataTypes()[0];
+    const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
+    if (!data_type_array)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
+    const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
 
-    /// Check all sizes are the same
-    for (size_t row = 0; row < rows - 1; ++row)
-        if (column_array_offsets[row + 1] - column_array_offsets[row] != dimensions)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column with vector similarity index must have equal length");
+    if (WhichDataType(nested_type_index).isFloat32())
+        updateImpl<ColumnFloat32>(column_array, column_array_offsets, index, dimensions, rows);
+    else if (WhichDataType(nested_type_index).isFloat64())
+        updateImpl<ColumnFloat64>(column_array, column_array_offsets, index, dimensions, rows);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
 
-    /// Reserving space is mandatory
-    if (!index->try_reserve(roundUpToPowerOfTwoOrZero(index->size() + rows)))
-        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for vector similarity index");
-
-    for (size_t row = 0; row < rows; ++row)
-    {
-        if (auto result = index->add(static_cast<USearchIndex::vector_key_t>(index->size()), &column_array_data_float_data[column_array_offsets[row - 1]]); !result)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add data to vector similarity index. Error: {}", String(result.error.release()));
-        else
-        {
-            ProfileEvents::increment(ProfileEvents::USearchAddCount);
-            ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, result.visited_members);
-            ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, result.computed_distances);
-        }
-    }
 
     *pos += rows_read;
 }
@@ -373,7 +396,7 @@ std::vector<size_t> MergeTreeIndexConditionVectorSimilarity::getUsefulRanges(Mer
             "does not match the dimension in the index ({})",
             vector_similarity_condition.getDimensions(), index->dimensions());
 
-    const std::vector<float> reference_vector = vector_similarity_condition.getReferenceVector();
+    const std::vector<Float64> reference_vector = vector_similarity_condition.getReferenceVector();
 
     auto search_result = index->search(reference_vector.data(), limit);
     if (!search_result)
@@ -499,14 +522,14 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Vector similarity indexes must be created on a single column");
 
-    /// Check that the data type is Array(Float32)
+    /// Check that the data type is Array(Float*)
     DataTypePtr data_type = index.sample_block.getDataTypes()[0];
     const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
     if (!data_type_array)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float32)");
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float*)");
     TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
-    if (!WhichDataType(nested_type_index).isFloat32())
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float32)");
+    if (!WhichDataType(nested_type_index).isFloat())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float*)");
 }
 
 }

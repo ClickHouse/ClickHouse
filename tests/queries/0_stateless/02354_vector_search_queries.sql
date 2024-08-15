@@ -124,3 +124,15 @@ LIMIT 3;
 DROP TABLE tab_f32;
 DROP TABLE tab_f16;
 DROP TABLE tab_i8;
+
+SELECT '-- Index on Array(Float64) column';
+CREATE TABLE tab(id Int32, vec Array(Float64), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance') GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3;
+INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
+
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, vec, L2Distance(vec, reference_vec)
+FROM tab
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 3;
+
+DROP TABLE tab;
