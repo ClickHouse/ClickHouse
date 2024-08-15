@@ -55,7 +55,7 @@ const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToSca
     {"f32", unum::usearch::scalar_kind_t::f32_k},
     {"f16", unum::usearch::scalar_kind_t::f16_k},
     {"i8", unum::usearch::scalar_kind_t::i8_k}};
-/// Usearch provides more quantizations but ^^ above ones seem the only ones comprehensively supported accross all distance functions.
+/// Usearch provides more quantizations but ^^ above ones seem the only ones comprehensively supported across all distance functions.
 
 template<typename T>
 concept is_set = std::same_as<T, std::set<typename T::key_type, typename T::key_compare, typename T::allocator_type>>;
