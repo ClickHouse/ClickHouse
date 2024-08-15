@@ -2,7 +2,7 @@
 
 
 #include <Client/Suggest.h>
-#include <Client/QueryFuzzer.h>
+#include <Common/QueryFuzzer.h>
 #include <Common/DNSResolver.h>
 #include <Common/InterruptListener.h>
 #include <Common/ProgressIndication.h>
