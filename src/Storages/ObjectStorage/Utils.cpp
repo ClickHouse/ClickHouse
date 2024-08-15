@@ -42,7 +42,7 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
         "want to create a new file on each insert, enable setting {}_create_new_file_on_insert",
         configuration.getNamespace(),
         key,
-        configuration.getTypeName() == "local" ? "engine_file" : configuration.getTypeName(),
+        configuration.getTypeName(),
         configuration.getTypeName());
 }
 
