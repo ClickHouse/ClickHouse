@@ -115,7 +115,6 @@ def get_descriptions(prs: PullRequests) -> Dict[str, List[Description]]:
         # pylint: enable=protected-access
         if repo_name not in repos:
             repos[repo_name] = pr.base.repo
-        in_changelog = False
         merge_commit = pr.merge_commit_sha
         if merge_commit is None:
             logging.warning("PR %s does not have merge-commit, skipping", pr.number)
@@ -291,7 +290,7 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
     # Normalize bug fixes
     if (
         re.match(
-            r"(?i)bug\Wfix",
+            r".*(?i)bug\Wfix",
             category,
         )
         # Map "Critical Bug Fix" to "Bug fix" category for changelog
