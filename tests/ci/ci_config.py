@@ -3,7 +3,7 @@ import re
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from typing import Dict, Optional, List
 
-from ci_utils import normalize_string
+from ci_utils import Utils
 from ci_definitions import *
 
 
@@ -13,7 +13,6 @@ class CI:
     each config item in the below dicts should be an instance of JobConfig class or inherited from it
     """
 
-    MAX_TOTAL_FAILURES_BEFORE_BLOCKING_CI = 5
     MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI = 2
 
     # reimport types to CI class so that they visible as CI.* and mypy is happy
@@ -21,12 +20,10 @@ class CI:
     from ci_definitions import BuildConfig as BuildConfig
     from ci_definitions import DigestConfig as DigestConfig
     from ci_definitions import JobConfig as JobConfig
-    from ci_definitions import CheckDescription as CheckDescription
     from ci_definitions import Tags as Tags
     from ci_definitions import JobNames as JobNames
     from ci_definitions import BuildNames as BuildNames
     from ci_definitions import StatusNames as StatusNames
-    from ci_definitions import CHECK_DESCRIPTIONS as CHECK_DESCRIPTIONS
     from ci_definitions import REQUIRED_CHECKS as REQUIRED_CHECKS
     from ci_definitions import SyncState as SyncState
     from ci_definitions import MQ_JOBS as MQ_JOBS
@@ -37,9 +34,7 @@ class CI:
     from ci_utils import GH as GH
     from ci_utils import Shell as Shell
     from ci_definitions import Labels as Labels
-    from ci_definitions import TRUSTED_CONTRIBUTORS as TRUSTED_CONTRIBUTORS
     from ci_definitions import WorkFlowNames as WorkFlowNames
-    from ci_utils import CATEGORY_TO_LABEL as CATEGORY_TO_LABEL
 
     # Jobs that run for doc related updates
     _DOCS_CHECK_JOBS = [JobNames.DOCS_CHECK, JobNames.STYLE_CHECK]
@@ -558,7 +553,7 @@ class CI:
     @classmethod
     def get_tag_config(cls, label_name: str) -> Optional[LabelConfig]:
         for label, config in cls.TAG_CONFIGS.items():
-            if normalize_string(label_name) == normalize_string(label):
+            if Utils.normalize_string(label_name) == Utils.normalize_string(label):
                 return config
         return None
 
@@ -686,6 +681,34 @@ class CI:
         res = cls.JOB_CONFIGS[build_name].build_config
         assert res, f"not a build [{build_name}] or invalid JobConfig"
         return res
+
+    @classmethod
+    def is_workflow_ok(cls) -> bool:
+        # TODO: temporary method to make Mergeable check working
+        res = cls.GH.get_workflow_results()
+        if not res:
+            print("ERROR: no workflow results found")
+            return False
+        for workflow_job, workflow_data in res.items():
+            status = workflow_data["result"]
+            if status in (
+                cls.GH.ActionStatuses.SUCCESS,
+                cls.GH.ActionStatuses.SKIPPED,
+            ):
+                print(f"Workflow status for [{workflow_job}] is [{status}] - continue")
+            elif status in (cls.GH.ActionStatuses.FAILURE,):
+                if workflow_job in (
+                    WorkflowStages.TESTS_2,
+                    WorkflowStages.TESTS_2_WW,
+                ):
+                    print(
+                        f"Failed Workflow status for [{workflow_job}], it's not required - continue"
+                    )
+                    continue
+
+                print(f"Failed Workflow status for [{workflow_job}]")
+                return False
+        return True
 
 
 if __name__ == "__main__":

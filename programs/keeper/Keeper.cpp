@@ -38,7 +38,7 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/KeeperReadinessHandler.h>
-#include <Server/PrometheusMetricsWriter.h>
+#include <Server/PrometheusRequestHandlerFactory.h>
 #include <Server/TCPServer.h>
 
 #include "Core/Defines.h"
@@ -421,7 +421,7 @@ try
             std::lock_guard lock(servers_lock);
             metrics.reserve(servers->size());
             for (const auto & server : *servers)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
             return metrics;
         }
     );
@@ -509,14 +509,13 @@ try
                 auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
                 socket.setSendTimeout(my_http_context->getSendTimeout());
-                auto metrics_writer = std::make_shared<KeeperPrometheusMetricsWriter>(config, "prometheus", async_metrics);
                 servers->emplace_back(
                     listen_host,
                     port_name,
                     "Prometheus: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
                         std::move(my_http_context),
-                        createPrometheusMainHandlerFactory(*this, config_getter(), metrics_writer, "PrometheusHandler-factory"),
+                        createKeeperPrometheusHandlerFactory(*this, config_getter(), async_metrics, "PrometheusHandler-factory"),
                         server_pool,
                         socket,
                         http_params));
