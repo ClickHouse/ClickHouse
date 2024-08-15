@@ -27,22 +27,34 @@ expected_error = "User can not be created/updated because it exceeds the allowed
 
 def test_create(started_cluster):
 
-    assert expected_error in limited_node.query_and_get_error("CREATE USER u_max_authentication_methods IDENTIFIED BY '1', BY '2', BY '3'")
+    assert expected_error in limited_node.query_and_get_error(
+        "CREATE USER u_max_authentication_methods IDENTIFIED BY '1', BY '2', BY '3'"
+    )
 
-    assert expected_error not in limited_node.query_and_get_answer_with_error("CREATE USER u_max_authentication_methods IDENTIFIED BY '1', BY '2'")
+    assert expected_error not in limited_node.query_and_get_answer_with_error(
+        "CREATE USER u_max_authentication_methods IDENTIFIED BY '1', BY '2'"
+    )
 
     limited_node.query("DROP USER u_max_authentication_methods")
 
 def test_alter(started_cluster):
     limited_node.query("CREATE USER u_max_authentication_methods IDENTIFIED BY '1'")
 
-    assert expected_error in limited_node.query_and_get_error("ALTER USER u_max_authentication_methods ADD IDENTIFIED BY '2', BY '3'")
+    assert expected_error in limited_node.query_and_get_error(
+        "ALTER USER u_max_authentication_methods ADD IDENTIFIED BY '2', BY '3'"
+    )
 
-    assert expected_error in limited_node.query_and_get_error("ALTER USER u_max_authentication_methods IDENTIFIED BY '3', BY '4', BY '5'")
+    assert expected_error in limited_node.query_and_get_error(
+        "ALTER USER u_max_authentication_methods IDENTIFIED BY '3', BY '4', BY '5'"
+    )
 
-    assert expected_error not in limited_node.query_and_get_answer_with_error("ALTER USER u_max_authentication_methods ADD IDENTIFIED BY '2'")
+    assert expected_error not in limited_node.query_and_get_answer_with_error(
+        "ALTER USER u_max_authentication_methods ADD IDENTIFIED BY '2'"
+    )
 
-    assert expected_error not in limited_node.query_and_get_answer_with_error("ALTER USER u_max_authentication_methods IDENTIFIED BY '2', BY '3'")
+    assert expected_error not in limited_node.query_and_get_answer_with_error(
+        "ALTER USER u_max_authentication_methods IDENTIFIED BY '2', BY '3'"
+    )
 
     limited_node.query("DROP USER u_max_authentication_methods")
 
