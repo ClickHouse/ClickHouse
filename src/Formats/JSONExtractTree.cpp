@@ -1731,6 +1731,11 @@ private:
                 return false;
             }
         }
+        /// Don't create new dynamic paths for null and don't insert null values into shared data.
+        /// We consider null equivalent to the absence of this path.
+        else if (element.isNull())
+        {
+        }
         /// Try to add a new dynamic path.
         else if (auto * dynamic_column = column_object.tryToAddNewDynamicPath(current_path))
         {
@@ -1740,10 +1745,8 @@ private:
                 return false;
             }
         }
-        /// Otherwise this path should go to the shared data.
-        /// Don't insert null values into shared data.
         /// We consider null equivalent to the absence of this path.
-        else if (!element.isNull())
+        else
         {
             auto tmp_dynamic_column = ColumnDynamic::create();
             tmp_dynamic_column->reserve(1);
