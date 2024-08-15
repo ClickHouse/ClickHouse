@@ -203,7 +203,6 @@ StorageMaterializedView::StorageMaterializedView(
     {
         fixed_uuid = false;
         refresher = RefreshTask::create(
-            *this,
             getContext(),
             *query.refresh_strategy);
         refresh_on_start = mode < LoadingStrictnessLevel::ATTACH && !query.is_create_empty;

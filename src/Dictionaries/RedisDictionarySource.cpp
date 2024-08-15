@@ -1,7 +1,6 @@
 #include "RedisDictionarySource.h"
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
-#include "registerDictionaries.h"
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
@@ -160,7 +159,7 @@ namespace DB
                 if (isInteger(type))
                     key << DB::toString(key_columns[i]->get64(row));
                 else if (isString(type))
-                    key << (*key_columns[i])[row].get<const String &>();
+                    key << (*key_columns[i])[row].safeGet<const String &>();
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of key in Redis dictionary");
             }

@@ -132,7 +132,7 @@ void ReadBufferIterator::setFormatName(const String & format_name)
     format = format_name;
 }
 
-String ReadBufferIterator::getLastFileName() const
+String ReadBufferIterator::getLastFilePath() const
 {
     if (current_object_info)
         return current_object_info->getPath();
