@@ -1353,7 +1353,7 @@ std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & 
 }
 
 template <typename ReturnType>
-ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
+ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char * allowed_delimiters)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1400,6 +1400,9 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
     }
     else
     {
+        if (!isSymbolIn(*buf.position(), allowed_delimiters))
+            return error();
+
         ++buf.position();
 
         if (!append_digit(month))
@@ -1407,7 +1410,11 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
         append_digit(month);
 
         if (!buf.eof() && !isNumericASCII(*buf.position()))
+        {
+            if (!isSymbolIn(*buf.position(), allowed_delimiters))
+                return error();
             ++buf.position();
+        }
         else
             return error();
 
@@ -1420,12 +1427,12 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
     return ReturnType(true);
 }
 
-template void readDateTextFallback<void>(LocalDate &, ReadBuffer &);
-template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &);
+template void readDateTextFallback<void>(LocalDate &, ReadBuffer &, const char * allowed_delimiters);
+template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &, const char * allowed_delimiters);
 
 
 template <typename ReturnType, bool dt64_mode>
-ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
+ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters, const char * allowed_time_delimiters)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1495,6 +1502,9 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
             if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
                 || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
                 return false;
+
+            if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
+                return false;
         }
 
         UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
@@ -1524,6 +1534,9 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
             {
                 if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[3]) || !isNumericASCII(s[4])
                     || !isNumericASCII(s[6]) || !isNumericASCII(s[7]))
+                    return false;
+
+                if (!isSymbolIn(s[2], allowed_time_delimiters) || !isSymbolIn(s[5], allowed_time_delimiters))
                     return false;
             }
 
@@ -1570,10 +1583,10 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     return ReturnType(true);
 }
 
-template void readDateTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &);
-template void readDateTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &);
-template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &);
-template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &);
+template void readDateTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template void readDateTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
 
 
 template <typename ReturnType>
