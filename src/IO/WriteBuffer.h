@@ -64,7 +64,8 @@ public:
         }
 
         bytes += bytes_in_buffer;
-        pos = working_buffer.begin();
+        pos = working_buffer.begin() + nextimpl_working_buffer_offset;
+        nextimpl_working_buffer_offset = 0;
     }
 
     /// Calling finalize() in the destructor of derived classes is a bad practice.
@@ -163,6 +164,11 @@ protected:
 
     bool finalized = false;
     bool canceled = false;
+
+    /// The number of bytes to preserve from the initial position of `working_buffer`
+    /// buffer. Apparently this is an additional out-parameter for nextImpl(),
+    /// not a real field.
+    size_t nextimpl_working_buffer_offset = 0;
 
 private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).
