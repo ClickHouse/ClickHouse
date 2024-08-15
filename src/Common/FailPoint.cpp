@@ -7,6 +7,8 @@
 #include <condition_variable>
 #include <mutex>
 
+#include "config.h"
+
 namespace DB
 {
 
@@ -15,7 +17,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 };
 
-#if FIU_ENABLE
+#if USE_LIBFIU
 static struct InitFiu
 {
     InitFiu()
@@ -135,7 +137,7 @@ void FailPointInjection::pauseFailPoint(const String & fail_point_name)
 
 void FailPointInjection::enableFailPoint(const String & fail_point_name)
 {
-#if FIU_ENABLE
+#if USE_LIBFIU
 #define SUB_M(NAME, flags, pause)                                                                               \
     if (fail_point_name == FailPoints::NAME)                                                                    \
     {                                                                                                           \
