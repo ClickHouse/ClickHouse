@@ -429,16 +429,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                 {
                     const IColumn & left_asof_key = added_columns.leftAsofKey();
 
-<<<<<<< HEAD
                     auto row_ref = mapped->findAsof(left_asof_key, ind);
-                    if (row_ref.block)
-||||||| 014c1650f8d
-                    auto row_ref = mapped->findAsof(left_asof_key, i);
-                    if (row_ref.block)
-=======
-                    auto row_ref = mapped->findAsof(left_asof_key, i);
                     if (row_ref && row_ref->block)
->>>>>>> master
                     {
                         setUsed<need_filter>(added_columns.filter, i);
                         if constexpr (flag_per_row)
