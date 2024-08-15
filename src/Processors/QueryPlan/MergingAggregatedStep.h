@@ -35,7 +35,7 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     void applyOrder(SortDescription input_sort_description); //, DataStream::SortScope sort_scope);
-    SortDescription getSortDescription() const;
+    const SortDescription & getSortDescription() const override;
 
     bool memoryBoundMergingWillBeUsed() const;
 

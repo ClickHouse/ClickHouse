@@ -908,9 +908,9 @@ AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPl
     return {};
 }
 
-bool canImproveOrderForDistinct(InputOrderInfoPtr & required_order, const InputOrderInfoPtr & existing_order)
+bool canImproveOrderForDistinct(AggregationInputOrder & required_order, const InputOrderInfoPtr & existing_order)
 {
-    if (!required_order)
+    if (!required_order.input_order)
         return false;
 
     if (!existing_order)
@@ -918,15 +918,21 @@ bool canImproveOrderForDistinct(InputOrderInfoPtr & required_order, const InputO
 
     /// We only allow improving existing order.
     /// In order to resue previous order, applySorting.cpp is used.
-    if (required_order->used_prefix_of_sorting_key_size <= existing_order->used_prefix_of_sorting_key_size)
+    if (required_order.input_order->used_prefix_of_sorting_key_size <= existing_order->used_prefix_of_sorting_key_size)
         return false;
 
-    if (existing_order && required_order->direction != existing_order->direction)
-        required_order = std::make_shared<InputOrderInfo>(
-            required_order->sort_description_for_merging,
-            required_order->used_prefix_of_sorting_key_size,
+    if (existing_order && required_order.input_order->direction != existing_order->direction)
+    {
+        /// Take read direction from existing order.
+        for (auto & column : required_order.sort_description_for_merging)
+            column.direction *= -1;
+
+        required_order.input_order = std::make_shared<InputOrderInfo>(
+            required_order.input_order->sort_description_for_merging,
+            required_order.input_order->used_prefix_of_sorting_key_size,
             existing_order->direction,
             existing_order->limit);
+    }
 
     return true;
 }
@@ -958,15 +964,14 @@ AggregationInputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::No
             fixed_columns,
             dag, keys);
 
-        if (canImproveOrderForDistinct(order_info.input_order, reading->getInputOrder()))
-        {
-            bool can_read = reading->requestReadingInOrder(
-                order_info.input_order->used_prefix_of_sorting_key_size,
-                order_info.input_order->direction,
-                order_info.input_order->limit);
-            if (!can_read)
-                return {};
-        }
+        if (!canImproveOrderForDistinct(order_info, reading->getInputOrder()))
+            return {};
+
+        if (!reading->requestReadingInOrder(
+            order_info.input_order->used_prefix_of_sorting_key_size,
+            order_info.input_order->direction,
+            order_info.input_order->limit))
+            return {};
 
         return order_info;
     }
@@ -977,12 +982,11 @@ AggregationInputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::No
             fixed_columns,
             dag, keys);
 
-        if (canImproveOrderForDistinct(order_info.input_order, merge->getInputOrder()))
-        {
-            bool can_read = merge->requestReadingInOrder(order_info.input_order);
-            if (!can_read)
-                return {};
-        }
+        if (!canImproveOrderForDistinct(order_info, merge->getInputOrder()))
+            return {};
+
+        if (!merge->requestReadingInOrder(order_info.input_order))
+            return {};
 
         return order_info;
     }

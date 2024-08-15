@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -16,15 +17,15 @@ struct SortingProperty
     /// Sorting scope. Please keep the mutual order (more strong mode should have greater value).
     enum class SortScope : uint8_t
     {
-        None   = 0,
-        Chunk  = 1, /// Separate chunks are sorted
-        Stream = 2, /// Each data steam is sorted
-        Global = 3, /// Data is globally sorted
+        // None   = 0,
+        // Chunk  = 1, /// Separate chunks are sorted
+        Stream = 0, /// Each data steam is sorted
+        Global = 1, /// Data is globally sorted
     };
 
     /// It is not guaranteed that header has columns from sort_description.
     SortDescription sort_description = {};
-    SortScope sort_scope = SortScope::None;
+    SortScope sort_scope = SortScope::Stream;
 };
 
 struct PossiblyMonotonicChain
@@ -227,6 +228,9 @@ static void applyActionsToSortDescription(
 
 SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
 {
+    if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree*>(parent->step.get()))
+        return {read_from_merge_tree->getSortDescription(), SortingProperty::SortScope::Stream};
+
     if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(parent->step.get()))
     {
         // if (optimization_settings.aggregation_in_order && !properties->sort_description.empty()
@@ -327,7 +331,7 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
             sort_scope = std::min(sort_scope, properties[i].sort_scope);
         }
 
-        if (!common_sort_description.empty() && sort_scope >= SortingProperty::SortScope::Chunk)
+        if (!common_sort_description.empty())
             return {std::move(common_sort_description), sort_scope};
     }
 

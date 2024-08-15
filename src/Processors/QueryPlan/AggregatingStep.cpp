@@ -139,12 +139,12 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     explicit_sorting_required_for_aggregation_in_order = false;
 }
 
-SortDescription AggregatingStep::getSortDescription() const
+const SortDescription & AggregatingStep::getSortDescription() const
 {
     if (memoryBoundMergingWillBeUsed())
         return group_by_sort_description;
 
-    return {};
+    return IQueryPlanStep::getSortDescription();
 }
 
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)

@@ -166,12 +166,12 @@ bool MergingAggregatedStep::memoryBoundMergingWillBeUsed() const
     //     memory_bound_merging_of_aggregation_results_enabled, group_by_sort_description);
 }
 
-SortDescription MergingAggregatedStep::getSortDescription() const
+const SortDescription & MergingAggregatedStep::getSortDescription() const
 {
     if (memoryBoundMergingWillBeUsed())
         return group_by_sort_description;
 
-    return {};
+    return IQueryPlanStep::getSortDescription();
 }
 
 }

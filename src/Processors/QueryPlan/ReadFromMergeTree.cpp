@@ -1678,6 +1678,25 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     return std::make_shared<AnalysisResult>(std::move(result));
 }
 
+int ReadFromMergeTree::getSortDirection() const
+{
+    if (query_info.input_order_info)
+        return query_info.input_order_info->direction;
+
+    return 1;
+}
+
+void ReadFromMergeTree::updateSortDescription()
+{
+    result_sort_description = getSortDescriptionForOutputStream(
+        *output_stream,
+        storage_snapshot->metadata->getSortingKeyColumns(),
+        getSortDirection(),
+        query_info.input_order_info,
+        prewhere_info,
+        enable_vertical_final);
+}
+
 bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit)
 {
     /// if dirction is not set, use current one
@@ -1698,17 +1717,17 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         requested_num_streams = output_streams_limit;
 
     /// update sort info for output stream
-    SortDescription sort_description;
-    const Names & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
-    const Block & header = output_stream->header;
-    const int sort_direction = getSortDirection();
-    for (const auto & column_name : sorting_key_columns)
-    {
-        if (std::find_if(header.begin(), header.end(), [&](ColumnWithTypeAndName const & col) { return col.name == column_name; })
-            == header.end())
-            break;
-        sort_description.emplace_back(column_name, sort_direction);
-    }
+    // SortDescription sort_description;
+    // const Names & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
+    // const Block & header = output_stream->header;
+    // const int sort_direction = getSortDirection();
+    // for (const auto & column_name : sorting_key_columns)
+    // {
+    //     if (std::find_if(header.begin(), header.end(), [&](ColumnWithTypeAndName const & col) { return col.name == column_name; })
+    //         == header.end())
+    //         break;
+    //     sort_description.emplace_back(column_name, sort_direction);
+    // }
     // if (!sort_description.empty())
     // {
     //     const size_t used_prefix_of_sorting_key_size = query_info.input_order_info->used_prefix_of_sorting_key_size;
@@ -1721,6 +1740,8 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// All *InOrder optimization rely on an assumption that output stream is sorted, but vertical FINAL breaks this rule
     /// Let prefer in-order optimization over vertical FINAL for now
     enable_vertical_final = false;
+
+    updateSortDescription();
 
     return true;
 }
@@ -1738,18 +1759,8 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
     output_stream = DataStream{.header = MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
         prewhere_info_value)};
-}
 
-
-SortDescription ReadFromMergeTree::getSortDescription() const
-{
-    return getSortDescriptionForOutputStream(
-        *output_stream,
-        storage_snapshot->metadata->getSortingKeyColumns(),
-        getSortDirection(),
-        query_info.input_order_info,
-        prewhere_info,
-        enable_vertical_final);
+    updateSortDescription();
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()

@@ -32,7 +32,7 @@ public:
     const SizeLimits & getSetSizeLimits() const { return set_size_limits; }
 
     void applyOrder(SortDescription sort_desc) { distinct_sort_desc = std::move(sort_desc); }
-    const SortDescription & getSortDescription() const { return distinct_sort_desc; }
+    const SortDescription & getSortDescription() const override { return distinct_sort_desc; }
 
 private:
     void updateOutputStream() override;

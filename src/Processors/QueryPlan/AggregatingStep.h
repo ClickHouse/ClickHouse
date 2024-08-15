@@ -68,7 +68,7 @@ public:
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
 
-    SortDescription getSortDescription() const;
+    const SortDescription & getSortDescription() const override;
 
     bool canUseProjection() const;
     /// When we apply aggregate projection (which is full), this step will only merge data.

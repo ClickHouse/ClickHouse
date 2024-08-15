@@ -88,6 +88,8 @@ public:
     const std::string & getStepDescription() const { return step_description; }
     void setStepDescription(std::string description) { step_description = std::move(description); }
 
+    virtual const SortDescription & getSortDescription() const;
+
     struct FormatSettings
     {
         WriteBuffer & out;
