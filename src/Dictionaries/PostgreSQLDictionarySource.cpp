@@ -4,6 +4,7 @@
 #include <Core/QualifiedTableName.h>
 #include <Core/Settings.h>
 #include "DictionarySourceFactory.h"
+#include <Storages/NamedCollectionsHelpers.h>
 #include "registerDictionaries.h"
 
 #if USE_LIBPQXX
@@ -13,7 +14,6 @@
 #include "readInvalidateQuery.h"
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <Storages/NamedCollectionsHelpers.h>
 #include <Common/logger_useful.h>
 #endif
 
@@ -27,13 +27,13 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-#if USE_LIBPQXX
-
-static const UInt64 max_block_size = 8192;
-
 static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
     "host", "port", "user", "password", "db", "database", "table", "schema",
     "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority"};
+
+#if USE_LIBPQXX
+
+static const UInt64 max_block_size = 8192;
 
 namespace
 {
@@ -178,8 +178,6 @@ std::string PostgreSQLDictionarySource::toString() const
     return "PostgreSQL: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
-#endif
-
 static void validateConfigKeys(
     const Poco::Util::AbstractConfiguration & dict_config, const String & config_prefix)
 {
@@ -192,6 +190,8 @@ static void validateConfigKeys(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected key `{}` in dictionary source configuration", config_key);
     }
 }
+
+#endif
 
 void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 {
