@@ -371,7 +371,7 @@ void DistributedAsyncInsertDirectoryQueue::getFilesRetry(const std::string & fil
         if (files_retry.contains(file_path))
             files_retry[file_path] += 1;
         else
-            files_retry[file_path] = 0;
+            files_retry[file_path] = 1;
     }
 }
 
@@ -452,14 +452,14 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
             thread_trace_context->root_span.addAttribute(std::current_exception());
 
         getFilesRetry(file_path);
-        if ((max_retries != 0 && files_retry[file_path] != max_retries))
+        if (max_retries != 0)
             LOG_INFO(log, "distributed file {} send failed, may be broken, retry {}, max_retries {},", file_path, files_retry[file_path], max_retries);
 
         e.addMessage(fmt::format("While sending {}", file_path));
         if (isDistributedSendBroken(e.code(), e.isRemoteException()) || (max_retries != 0 && files_retry[file_path] == max_retries))
         {
             markAsBroken(file_path);
-            if (max_retries != 0)
+            if (files_retry.contains(file_path))
                 files_retry.erase(file_path);
             file_path.clear();
         }

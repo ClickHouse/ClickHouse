@@ -14,3 +14,5 @@ system flush distributed dist; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 system flush distributed dist; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 -- subsequent sent will not have anything to send
 system flush distributed dist;
+drop table data;
+drop table dist;

@@ -106,6 +106,10 @@ Specifying the `sharding_key` is necessary for the following:
 
 `background_insert_max_sleep_time_ms` - same as [distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms)
 
+#### background_insert_max_retries
+
+`background_insert_max_retries` - same as [distributed_background_insert_max_retries](../../../operations/settings/settings.md#distributed_background_insert_max_retries)
+
 #### flush_on_detach
 
 `flush_on_detach` - Flush data to remote nodes on DETACH/DROP/server shutdown. Default true.
