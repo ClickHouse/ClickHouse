@@ -10,15 +10,16 @@ class Context;
 
 /** System table "time_zones" with list of timezones pulled from /contrib/cctz/testdata/zoneinfo
   */
-class StorageSystemTimeZones final : public IStorageSystemOneBlock
+class StorageSystemTimeZones final : public IStorageSystemOneBlock<StorageSystemTimeZones>
 {
 public:
-    void fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
+public:
     std::string getName() const override { return "SystemTimeZones"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 };
 }

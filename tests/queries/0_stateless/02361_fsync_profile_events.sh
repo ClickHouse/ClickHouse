@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-object-storage, no-random-merge-tree-settings
-# Tag no-object-storage: s3 does not have fsync
+# Tags: no-s3-storage, no-random-merge-tree-settings
+# Tag no-s3-storage: s3 does not have fsync
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

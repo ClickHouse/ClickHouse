@@ -3,11 +3,6 @@
 #include <Processors/Merges/IMergingTransform.h>
 #include <Processors/Merges/Algorithms/CollapsingSortedAlgorithm.h>
 
-namespace ProfileEvents
-{
-    extern const Event CollapsingSortedMilliseconds;
-}
-
 namespace DB
 {
 
@@ -34,18 +29,13 @@ public:
             only_positive_sign,
             max_block_size_rows,
             max_block_size_bytes,
-            getLogger("CollapsingSortedTransform"),
+            &Poco::Logger::get("CollapsingSortedTransform"),
             out_row_sources_buf_,
             use_average_block_sizes)
     {
     }
 
     String getName() const override { return "CollapsingSortedTransform"; }
-
-    void onFinish() override
-    {
-        logMergedStats(ProfileEvents::CollapsingSortedMilliseconds, "Collapsed sorted", getLogger("CollapsingSortedTransform"));
-    }
 };
 
 }

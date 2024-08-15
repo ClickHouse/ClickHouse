@@ -69,7 +69,7 @@ def started_cluster():
         node1.query(
             "INSERT INTO replica_1.replicated FORMAT TSV",
             stdin=to_insert,
-            settings={"distributed_foreground_insert": 1},
+            settings={"insert_distributed_sync": 1},
         )
         yield cluster
 

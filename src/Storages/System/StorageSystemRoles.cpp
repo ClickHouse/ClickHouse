@@ -14,18 +14,18 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemRoles::getColumnsDescription()
+NamesAndTypesList StorageSystemRoles::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"name", std::make_shared<DataTypeString>(), "Role name."},
-        {"id", std::make_shared<DataTypeUUID>(), "Role ID."},
-        {"storage", std::make_shared<DataTypeString>(), "Path to the storage of roles. Configured in the `access_control_path` parameter."},
+    NamesAndTypesList names_and_types{
+        {"name", std::make_shared<DataTypeString>()},
+        {"id", std::make_shared<DataTypeUUID>()},
+        {"storage", std::make_shared<DataTypeString>()},
     };
+    return names_and_types;
 }
 
 
-void StorageSystemRoles::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemRoles::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();

@@ -8,7 +8,6 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -60,10 +59,9 @@ public:
 
         if (typeid_cast<LimitStep *>(current_step)
             || typeid_cast<LimitByStep *>(current_step) /// (1) if there are LIMITs on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<OffsetStep *>(current_step) /// (2) OFFSET on top of ORDER BY, the ORDER BY is non-removable
-            || typeid_cast<FillingStep *>(current_step) /// (3) if ORDER BY is with FILL WITH, it is non-removable
-            || typeid_cast<SortingStep *>(current_step) /// (4) ORDER BY will change order of previous sorting
-            || typeid_cast<AggregatingStep *>(current_step)) /// (5) aggregation change order
+            || typeid_cast<FillingStep *>(current_step) /// (2) if ORDER BY is with FILL WITH, it is non-removable
+            || typeid_cast<SortingStep *>(current_step) /// (3) ORDER BY will change order of previous sorting
+            || typeid_cast<AggregatingStep *>(current_step)) /// (4) aggregation change order
         {
             logStep("nodes_affect_order/push", current_node);
             nodes_affect_order.push_back(current_node);
@@ -160,9 +158,7 @@ private:
             auto const & aggregates = parent_aggr->getParams().aggregates;
             for (const auto & aggregate : aggregates)
             {
-                auto action = NullsAction::EMPTY;
-                auto aggregate_function_properties
-                    = AggregateFunctionFactory::instance().tryGetProperties(aggregate.function->getName(), action);
+                auto aggregate_function_properties = AggregateFunctionFactory::instance().tryGetProperties(aggregate.function->getName());
                 if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
                     return false;
 
@@ -215,12 +211,12 @@ private:
             logStep("checking for stateful function", node);
             if (const auto * expr = typeid_cast<const ExpressionStep *>(step); expr)
             {
-                if (expr->getExpression().hasStatefulFunctions())
+                if (expr->getExpression()->hasStatefulFunctions())
                     return false;
             }
             else if (const auto * filter = typeid_cast<const FilterStep *>(step); filter)
             {
-                if (filter->getExpression().hasStatefulFunctions())
+                if (filter->getExpression()->hasStatefulFunctions())
                     return false;
             }
             else

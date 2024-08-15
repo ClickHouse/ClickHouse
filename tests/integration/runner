@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import argparse
-import glob
-import logging
+import subprocess
 import os
-import random
-import shlex
+import getpass
+import glob
+import argparse
+import logging
 import signal
-import string
 import subprocess
 import sys
-
-from integration_test_images import get_docker_env
+import string
+import random
+import shlex
 
 
 def random_str(length=6):
@@ -27,7 +27,7 @@ CONTAINER_NAME = f"{VOLUME_NAME}_{random_str()}"
 
 CONFIG_DIR_IN_REPO = "programs/server"
 INTEGRATION_DIR_IN_REPO = "tests/integration"
-UTILS_DIR_IN_REPO = "utils"
+SRC_DIR_IN_REPO = "src"
 
 DIND_INTEGRATION_TESTS_IMAGE_NAME = "clickhouse/integration-tests-runner"
 
@@ -39,7 +39,9 @@ def check_args_and_update_paths(args):
         else:
             CLICKHOUSE_ROOT = args.clickhouse_root
     else:
-        logging.info("ClickHouse root is not set. Will use %s", DEFAULT_CLICKHOUSE_ROOT)
+        logging.info(
+            "ClickHouse root is not set. Will use %s" % (DEFAULT_CLICKHOUSE_ROOT)
+        )
         CLICKHOUSE_ROOT = DEFAULT_CLICKHOUSE_ROOT
 
     if not os.path.isabs(args.binary):
@@ -72,7 +74,9 @@ def check_args_and_update_paths(args):
         args.base_configs_dir = os.path.abspath(
             os.path.join(CLICKHOUSE_ROOT, CONFIG_DIR_IN_REPO)
         )
-        logging.info("Base configs dir is not set. Will use %s", args.base_configs_dir)
+        logging.info(
+            "Base configs dir is not set. Will use %s" % (args.base_configs_dir)
+        )
 
     if args.cases_dir:
         if not os.path.isabs(args.cases_dir):
@@ -83,24 +87,19 @@ def check_args_and_update_paths(args):
         args.cases_dir = os.path.abspath(
             os.path.join(CLICKHOUSE_ROOT, INTEGRATION_DIR_IN_REPO)
         )
-        logging.info("Cases dir is not set. Will use %s", args.cases_dir)
+        logging.info("Cases dir is not set. Will use %s" % (args.cases_dir))
 
-    if args.utils_dir:
-        if not os.path.isabs(args.utils_dir):
-            args.utils_dir = os.path.abspath(
-                os.path.join(CURRENT_WORK_DIR, args.utils_dir)
-            )
+    if args.src_dir:
+        if not os.path.isabs(args.src_dir):
+            args.src_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.src_dir))
     else:
-        args.utils_dir = os.path.abspath(
-            os.path.join(CLICKHOUSE_ROOT, UTILS_DIR_IN_REPO)
-        )
-        logging.info("utils dir is not set. Will use %s", args.utils_dir)
+        args.src_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, SRC_DIR_IN_REPO))
+        logging.info("src dir is not set. Will use %s" % (args.src_dir))
 
     logging.info(
-        "base_configs_dir: %s, binary: %s, cases_dir: %s ",
-        args.base_configs_dir,
-        args.binary,
-        args.cases_dir,
+        "base_configs_dir: {}, binary: {}, cases_dir: {} ".format(
+            args.base_configs_dir, args.binary, args.cases_dir
+        )
     )
 
     for path in [
@@ -112,33 +111,32 @@ def check_args_and_update_paths(args):
         CLICKHOUSE_ROOT,
     ]:
         if not os.path.exists(path):
-            raise FileNotFoundError(f"Path {path} doesn't exist")
+            raise Exception("Path {} doesn't exist".format(path))
 
     if args.dockerd_volume:
         if not os.path.isabs(args.dockerd_volume):
-            args.dockerd_volume = os.path.abspath(
+            args.src_dir = os.path.abspath(
                 os.path.join(CURRENT_WORK_DIR, args.dockerd_volume)
             )
 
     if (not os.path.exists(os.path.join(args.base_configs_dir, "config.xml"))) and (
         not os.path.exists(os.path.join(args.base_configs_dir, "config.yaml"))
     ):
-        raise FileNotFoundError(
-            f"No config.xml or config.yaml in {args.base_configs_dir}"
+        raise Exception(
+            "No config.xml or config.yaml in {}".format(args.base_configs_dir)
         )
 
     if (not os.path.exists(os.path.join(args.base_configs_dir, "users.xml"))) and (
         not os.path.exists(os.path.join(args.base_configs_dir, "users.yaml"))
     ):
-        raise FileNotFoundError(
-            f"No users.xml or users.yaml in {args.base_configs_dir}"
+        raise Exception(
+            "No users.xml or users.yaml in {}".format(args.base_configs_dir)
         )
 
 
 def docker_kill_handler_handler(signum, frame):
-    _, _ = signum, frame
     subprocess.check_call(
-        f"docker ps --all --quiet --filter name={CONTAINER_NAME}",
+        "docker ps --all --quiet --filter name={name}".format(name=CONTAINER_NAME),
         shell=True,
     )
     raise KeyboardInterrupt("Killed by Ctrl+C")
@@ -199,9 +197,9 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--utils-dir",
-        default=os.environ.get("CLICKHOUSE_UTILS_DIR"),
-        help="Path to the 'utils' directory in repository. Used to provide Python modules for grpc protocol schemas which are located in the 'utils' directory",
+        "--src-dir",
+        default=os.environ.get("CLICKHOUSE_SRC_DIR"),
+        help="Path to the 'src' directory in repository. Used to provide schemas (e.g. *.proto) for some tests when those schemas are located in the 'src' directory",
     )
 
     parser.add_argument(
@@ -241,10 +239,6 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "-n", "--parallel", action="store", dest="parallel", help="Parallelism"
-    )
-
-    parser.add_argument(
-        "--count", action="store", type=int, dest="count", help="Repeat count"
     )
 
     parser.add_argument(
@@ -289,11 +283,11 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--old-analyzer",
+        "--analyzer",
         action="store_true",
         default=False,
-        dest="old_analyzer",
-        help="Use old analyzer infrastructure",
+        dest="analyzer",
+        help="Use new analyzer infrastructure",
     )
 
     parser.add_argument(
@@ -320,11 +314,7 @@ if __name__ == "__main__":
     parallel_args = ""
     if args.parallel:
         parallel_args += "--dist=loadfile"
-        parallel_args += f" -n {args.parallel}".format()
-
-    repeat_args = (
-        f" --count {args.count}" if args.count is not None and args.count > 0 else ""
-    )
+        parallel_args += " -n {}".format(args.parallel)
 
     rand_args = ""
     # if not args.no_random:
@@ -332,7 +322,7 @@ if __name__ == "__main__":
 
     net = ""
     if args.network:
-        net = f"--net={args.network}"
+        net = "--net={}".format(args.network)
     elif not args.disable_net_host:
         net = "--net=host"
 
@@ -341,11 +331,30 @@ if __name__ == "__main__":
     if args.docker_compose_images_tags is not None:
         for img_tag in args.docker_compose_images_tags:
             [image, tag] = img_tag.split(":")
-            env_tag = get_docker_env(image, tag)
-            if env_tag:
-                env_tags += env_tag
+            if image == "clickhouse/dotnet-client":
+                env_tags += "-e {}={} ".format("DOCKER_DOTNET_CLIENT_TAG", tag)
+            elif image == "clickhouse/integration-helper":
+                env_tags += "-e {}={} ".format("DOCKER_HELPER_TAG", tag)
+            elif image == "clickhouse/integration-test":
+                env_tags += "-e {}={} ".format("DOCKER_BASE_TAG", tag)
+            elif image == "clickhouse/kerberized-hadoop":
+                env_tags += "-e {}={} ".format("DOCKER_KERBERIZED_HADOOP_TAG", tag)
+            elif image == "clickhouse/kerberos-kdc":
+                env_tags += "-e {}={} ".format("DOCKER_KERBEROS_KDC_TAG", tag)
+            elif image == "clickhouse/mysql-golang-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_GOLANG_CLIENT_TAG", tag)
+            elif image == "clickhouse/mysql-java-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_JAVA_CLIENT_TAG", tag)
+            elif image == "clickhouse/mysql-js-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_JS_CLIENT_TAG", tag)
+            elif image == "clickhouse/mysql-php-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_PHP_CLIENT_TAG", tag)
+            elif image == "clickhouse/nginx-dav":
+                env_tags += "-e {}={} ".format("DOCKER_NGINX_DAV_TAG", tag)
+            elif image == "clickhouse/postgresql-java-client":
+                env_tags += "-e {}={} ".format("DOCKER_POSTGRESQL_JAVA_CLIENT_TAG", tag)
             else:
-                logging.info("Unknown image %s", image)
+                logging.info("Unknown image %s" % (image))
 
     # create named volume which will be used inside to store images and other docker related files,
     # to avoid redownloading it every time
@@ -356,7 +365,9 @@ if __name__ == "__main__":
         dockerd_internal_volume = "--tmpfs /var/lib/docker -e DOCKER_RAMDISK=true"
     elif args.dockerd_volume:
         dockerd_internal_volume = (
-            f"--mount type=bind,source={args.dockerd_volume},target=/var/lib/docker"
+            "--mount type=bind,source={},target=/var/lib/docker".format(
+                args.dockerd_volume
+            )
         )
     else:
         try:
@@ -393,9 +404,9 @@ if __name__ == "__main__":
     if args.keyword_expression:
         args.pytest_args += ["-k", args.keyword_expression]
 
-    use_old_analyzer = ""
-    if args.old_analyzer:
-        use_old_analyzer = "-e CLICKHOUSE_USE_OLD_ANALYZER=1"
+    use_analyzer = ""
+    if args.analyzer:
+        use_analyzer = "-e CLICKHOUSE_USE_NEW_ANALYZER=1"
 
     # NOTE: since pytest options is in the argument value already we need to additionally escape '"'
     pytest_opts = " ".join(
@@ -413,17 +424,16 @@ if __name__ == "__main__":
         f"--volume={args.library_bridge_binary}:/clickhouse-library-bridge "
         f"--volume={args.base_configs_dir}:/clickhouse-config "
         f"--volume={args.cases_dir}:/ClickHouse/tests/integration "
-        f"--volume={args.utils_dir}/backupview:/ClickHouse/utils/backupview "
-        f"--volume={args.utils_dir}/grpc-client/pb2:/ClickHouse/utils/grpc-client/pb2 "
+        f"--volume={args.src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos "
         f"--volume=/run:/run/host:ro {dockerd_internal_volume} {env_tags} {env_cleanup} "
-        f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_old_analyzer} -e PYTHONUNBUFFERED=1 "
-        f'-e PYTEST_ADDOPTS="{parallel_args} {repeat_args} {pytest_opts} {tests_list} {rand_args} -vvv"'
+        f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_analyzer} -e PYTHONUNBUFFERED=1 "
+        f'-e PYTEST_ADDOPTS="{parallel_args} {pytest_opts} {tests_list} {rand_args} -vvv"'
         f" {DIND_INTEGRATION_TESTS_IMAGE_NAME}:{args.docker_image_version}"
     )
 
     cmd = cmd_base + " " + args.command
     cmd_pre_pull = (
-        f"{cmd_base} find /ClickHouse/tests/integration/compose -name docker_compose_*.yml "
+        f"{cmd_base} find /compose -name docker_compose_*.yml "
         r"-exec docker-compose -f '{}' pull \;"
     )
 

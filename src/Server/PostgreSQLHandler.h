@@ -33,14 +33,12 @@ public:
         TCPServer & tcp_server_,
         bool ssl_enabled_,
         Int32 connection_id_,
-        std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
-        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
-        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
+        std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_);
 
     void run() final;
 
 private:
-    LoggerPtr log = getLogger("PostgreSQLHandler");
+    Poco::Logger * log = &Poco::Logger::get("PostgreSQLHandler");
 
     IServer & server;
     TCPServer & tcp_server;
@@ -52,9 +50,6 @@ private:
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
     std::shared_ptr<PostgreSQLProtocol::Messaging::MessageTransport> message_transport;
-
-    ProfileEvents::Event read_event;
-    ProfileEvents::Event write_event;
 
 #if USE_SSL
     std::shared_ptr<Poco::Net::SecureStreamSocket> ss;

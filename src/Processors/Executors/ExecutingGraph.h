@@ -3,7 +3,6 @@
 #include <Processors/Port.h>
 #include <Processors/IProcessor.h>
 #include <Common/SharedMutex.h>
-#include <Common/AllocatorWithMemoryTracking.h>
 #include <mutex>
 #include <queue>
 #include <stack>
@@ -64,7 +63,7 @@ public:
 
     /// Status for processor.
     /// Can be owning or not. Owning means that executor who set this status can change node's data and nobody else can.
-    enum class ExecStatus : uint8_t
+    enum class ExecStatus
     {
         Idle,  /// prepare returned NeedData or PortFull. Non-owning.
         Preparing,  /// some executor is preparing processor, or processor is in task_queue. Owning.
@@ -118,11 +117,7 @@ public:
         }
     };
 
-    /// This queue can grow a lot and lead to OOM. That is why we use non-default
-    /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = std::deque<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
-    using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
-
+    using Queue = std::queue<Node *>;
     using NodePtr = std::unique_ptr<Node>;
     using Nodes = std::vector<NodePtr>;
     Nodes nodes;
@@ -138,17 +133,10 @@ public:
     /// Traverse graph the first time to update all the childless nodes.
     void initializeExecution(Queue & queue);
 
-    enum class UpdateNodeStatus
-    {
-        Done,
-        Exception,
-        Cancelled,
-    };
-
     /// Update processor with pid number (call IProcessor::prepare).
     /// Check parents and children of current processor and push them to stacks if they also need to be updated.
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
-    UpdateNodeStatus updateNode(uint64_t pid, Queue & queue, Queue & async_queue);
+    bool updateNode(uint64_t pid, Queue & queue, Queue & async_queue);
 
     void cancel(bool cancel_all_processors = true);
 
@@ -162,7 +150,7 @@ private:
 
     /// Update graph after processor (pid) returned ExpandPipeline status.
     /// All new nodes and nodes with updated ports are pushed into stack.
-    UpdateNodeStatus expandPipeline(std::stack<uint64_t> & stack, uint64_t pid);
+    bool expandPipeline(std::stack<uint64_t> & stack, uint64_t pid);
 
     std::shared_ptr<Processors> processors;
     std::vector<bool> source_processors;

@@ -1,56 +1,26 @@
-#include <Core/Settings.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/StorageValues.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/TableFunctionExplain.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/Context.h>
-
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int UNEXPECTED_AST_STRUCTURE;
 }
-
-namespace
-{
-
-class TableFunctionExplain : public ITableFunction
-{
-public:
-    static constexpr auto name = "viewExplain";
-
-    std::string getName() const override { return name; }
-
-private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-
-    const char * getStorageTypeName() const override { return "Explain"; }
-
-    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
-
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
-
-    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
-
-    InterpreterExplainQuery getInterpreter(ContextPtr context) const;
-
-    ASTPtr query = nullptr;
-};
 
 std::vector<size_t> TableFunctionExplain::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr /*context*/) const
 {
@@ -64,7 +34,7 @@ std::vector<size_t> TableFunctionExplain::skipAnalysisForArguments(const QueryTr
     return {};
 }
 
-void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
 {
     const auto * function = ast_function->as<ASTFunction>();
     if (!function || !function->arguments)
@@ -83,7 +53,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
             "Table function '{}' requires a String argument for EXPLAIN kind, got '{}'",
             getName(), queryToString(kind_arg));
 
-    ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.safeGet<String>());
+    ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.get<String>());
     auto explain_query = std::make_shared<ASTExplainQuery>(kind);
 
     const auto * settings_arg = function->arguments->children[1]->as<ASTLiteral>();
@@ -92,39 +62,25 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
             "Table function '{}' requires a serialized string settings argument, got '{}'",
             getName(), queryToString(function->arguments->children[1]));
 
-    const auto & settings_str = settings_arg->value.safeGet<String>();
+    const auto & settings_str = settings_arg->value.get<String>();
     if (!settings_str.empty())
     {
-        const Settings & settings = context->getSettingsRef();
+        constexpr UInt64 max_size = 4096;
+        constexpr UInt64 max_depth = 16;
 
         /// parse_only_internals_ = true - we don't want to parse `SET` keyword
         ParserSetQuery settings_parser(/* parse_only_internals_ = */ true);
-        ASTPtr settings_ast = parseQuery(settings_parser, settings_str,
-            settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+        ASTPtr settings_ast = parseQuery(settings_parser, settings_str, max_size, max_depth);
         explain_query->setSettings(std::move(settings_ast));
     }
 
     if (function->arguments->children.size() > 2)
     {
-        const auto & subquery_arg = function->arguments->children[2];
-        const auto * subquery = subquery_arg->as<ASTSubquery>();
-
-        if (!subquery)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Table function '{}' requires a subquery argument, got '{}'",
-                getName(), queryToString(subquery_arg));
-
-        if (subquery->children.empty())
-            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-                "A subquery AST element must have a child");
-
-        const auto & query_arg = subquery->children[0];
-
+        const auto & query_arg = function->arguments->children[2];
         if (!query_arg->as<ASTSelectWithUnionQuery>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Table function '{}' requires a EXPLAIN's SELECT query argument, got '{}'",
+                "Table function '{}' requires a EXPLAIN SELECT query argument, got EXPLAIN '{}'",
                 getName(), queryToString(query_arg));
-
         explain_query->setExplainedQuery(query_arg);
     }
     else if (kind != ASTExplainQuery::ExplainKind::CurrentTransaction)
@@ -137,14 +93,14 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
 
 ColumnsDescription TableFunctionExplain::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    Block sample_block = getInterpreter(context).getSampleBlock(query->as<ASTExplainQuery>()->getKind()); /// NOLINT(readability-static-accessed-through-instance)
+    Block sample_block = getInterpreter(context).getSampleBlock(query->as<ASTExplainQuery>()->getKind());
     ColumnsDescription columns_description;
     for (const auto & column : sample_block.getColumnsWithTypeAndName())
         columns_description.add(ColumnDescription(column.name, column.type));
     return columns_description;
 }
 
-Block executeMonoBlock(QueryPipeline & pipeline)
+static Block executeMonoBlock(QueryPipeline & pipeline)
 {
     if (!pipeline.pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected pulling pipeline");
@@ -187,8 +143,6 @@ InterpreterExplainQuery TableFunctionExplain::getInterpreter(ContextPtr context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' requires a explain query argument", getName());
 
     return InterpreterExplainQuery(query, context);
-}
-
 }
 
 void registerTableFunctionExplain(TableFunctionFactory & factory)

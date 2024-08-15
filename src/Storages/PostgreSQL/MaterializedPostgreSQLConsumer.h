@@ -32,42 +32,32 @@ class MaterializedPostgreSQLConsumer
 private:
     struct StorageData
     {
-        explicit StorageData(const StorageInfo & storage_info, LoggerPtr log_);
-
-        size_t getColumnsNum() const { return table_description.sample_block.columns(); }
-
-        const Block & getSampleBlock() const { return table_description.sample_block; }
-
-        using ArrayInfo = std::unordered_map<size_t, PostgreSQLArrayInfo>;
-
-        const StoragePtr storage;
-        const ExternalResultDescription table_description;
-        const PostgreSQLTableStructure::Attributes columns_attributes;
-        const Names column_names;
-        const ArrayInfo array_info;
-
-        struct Buffer : private boost::noncopyable
+        struct Buffer
         {
-            Block sample_block;
+            ExternalResultDescription description;
             MutableColumns columns;
-            ASTExpressionList columns_ast;
 
-            explicit Buffer(ColumnsWithTypeAndName && columns_, const ExternalResultDescription & table_description_);
+            /// Needed to pass to insert query columns list in syncTables().
+            std::shared_ptr<ASTExpressionList> columns_ast;
+            /// Needed for insertPostgreSQLValue() method to parse array
+            std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
+            /// To validate ddl.
+            PostgreSQLTableStructure::Attributes attributes;
 
-            void assertInsertIsPossible(size_t col_idx) const;
+            Buffer(StorageMetadataPtr storage_metadata, const PostgreSQLTableStructure::Attributes & attributes_);
+
+            size_t getColumnsNum() const
+            {
+                const auto & sample_block = description.sample_block;
+                return sample_block.columns();
+            }
         };
-        using BufferPtr = std::unique_ptr<Buffer>;
 
-        Buffer & getLastBuffer();
+        StoragePtr storage;
+        Buffer buffer;
 
-        BufferPtr popBuffer();
-
-        void addBuffer(BufferPtr buffer);
-
-        void returnBuffer(BufferPtr buffer);
-
-    private:
-        std::deque<BufferPtr> buffers;
+        explicit StorageData(const StorageInfo & storage_info);
+        StorageData(const StorageData & other) = delete;
     };
 
     using Storages = std::unordered_map<String, StorageData>;
@@ -107,17 +97,17 @@ private:
 
     bool isSyncAllowed(Int32 relation_id, const String & relation_name);
 
-    static void insertDefaultValue(StorageData & storage_data, size_t column_idx);
-    void insertValue(StorageData & storage_data, const std::string & value, size_t column_idx);
+    static void insertDefaultValue(StorageData::Buffer & buffer, size_t column_idx);
+    void insertValue(StorageData::Buffer & buffer, const std::string & value, size_t column_idx);
 
-    enum class PostgreSQLQuery : uint8_t
+    enum class PostgreSQLQuery
     {
         INSERT,
         UPDATE,
         DELETE
     };
 
-    void readTupleData(StorageData & storage_data, const char * message, size_t & pos, size_t size, PostgreSQLQuery type, bool old_value = false);
+    void readTupleData(StorageData::Buffer & buffer, const char * message, size_t & pos, size_t size, PostgreSQLQuery type, bool old_value = false);
 
     template<typename T>
     static T unhexN(const char * message, size_t pos, size_t n);
@@ -129,6 +119,8 @@ private:
 
     void markTableAsSkipped(Int32 relation_id, const String & relation_name);
 
+    static void assertCorrectInsertion(StorageData::Buffer & buffer, size_t column_idx);
+
     /// lsn - log sequence number, like wal offset (64 bit).
     static Int64 getLSNValue(const std::string & lsn)
     {
@@ -137,7 +129,7 @@ private:
         return (static_cast<Int64>(upper_half) << 32) + lower_half;
     }
 
-    LoggerPtr log;
+    Poco::Logger * log;
     ContextPtr context;
     const std::string replication_slot_name, publication_name;
 

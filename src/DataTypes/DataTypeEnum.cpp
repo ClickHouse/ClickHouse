@@ -37,6 +37,30 @@ const char * DataTypeEnum<Type>::getFamilyName() const
 }
 
 template <typename Type>
+std::string DataTypeEnum<Type>::generateMySQLName(const Values & values)
+{
+    WriteBufferFromOwnString out;
+
+    writeString("ENUM", out);
+    writeChar('(', out);
+
+    auto first = true;
+    for (const auto & name_and_value : values)
+    {
+        if (!first)
+            writeString(", ", out);
+
+        first = false;
+
+        writeQuotedString(name_and_value.first, out);
+    }
+
+    writeChar(')', out);
+
+    return out.str();
+}
+
+template <typename Type>
 std::string DataTypeEnum<Type>::generateName(const Values & values)
 {
     WriteBufferFromOwnString out;
@@ -122,12 +146,12 @@ Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
 {
     if (value_or_name.getType() == Field::Types::String)
     {
-        this->getValue(value_or_name.safeGet<String>()); /// Check correctness
-        return value_or_name.safeGet<String>();
+        this->getValue(value_or_name.get<String>()); /// Check correctness
+        return value_or_name.get<String>();
     }
     else if (value_or_name.getType() == Field::Types::Int64)
     {
-        Int64 value = value_or_name.safeGet<Int64>();
+        Int64 value = value_or_name.get<Int64>();
         checkOverflow<Type>(value);
         return this->getNameForValue(static_cast<Type>(value)).toString();
     }
@@ -141,12 +165,12 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
 {
     if (value_or_name.getType() == Field::Types::String)
     {
-        return this->getValue(value_or_name.safeGet<String>());
+        return this->getValue(value_or_name.get<String>());
     }
     else if (value_or_name.getType() == Field::Types::Int64
           || value_or_name.getType() == Field::Types::UInt64)
     {
-        Int64 value = value_or_name.safeGet<Int64>();
+        Int64 value = value_or_name.get<Int64>();
         checkOverflow<Type>(value);
         this->getNameForValue(static_cast<Type>(value)); /// Check correctness
         return value;
@@ -170,7 +194,7 @@ bool DataTypeEnum<Type>::contains(const IDataType & rhs) const
 template <typename Type>
 SerializationPtr DataTypeEnum<Type>::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationEnum<Type>>(std::static_pointer_cast<const DataTypeEnum<Type>>(shared_from_this()));
+    return std::make_shared<SerializationEnum<Type>>(this->getValues());
 }
 
 
@@ -220,7 +244,7 @@ static void autoAssignNumberForEnum(const ASTPtr & arguments)
                                     "Elements of Enum data type must be of form: "
                                     "'name' = number or 'name', where name is string literal and number is an integer");
 
-                literal_child_assign_num = value_literal->value.safeGet<Int64>();
+                literal_child_assign_num = value_literal->value.get<Int64>();
             }
             assign_number_child.emplace_back(child);
         }
@@ -269,8 +293,8 @@ static DataTypePtr createExact(const ASTPtr & arguments)
                                     "Elements of Enum data type must be of form: "
                                     "'name' = number or 'name', where name is string literal and number is an integer");
 
-        const String & field_name = name_literal->value.safeGet<String>();
-        const auto value = value_literal->value.safeGet<FieldType>();
+        const String & field_name = name_literal->value.get<String>();
+        const auto value = value_literal->value.get<FieldType>();
 
         if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value {} for element '{}' exceeds range of {}",
@@ -302,7 +326,7 @@ static DataTypePtr create(const ASTPtr & arguments)
                                     "Elements of Enum data type must be of form: "
                                     "'name' = number or 'name', where name is string literal and number is an integer");
 
-        Int64 value = value_literal->value.safeGet<Int64>();
+        Int64 value = value_literal->value.get<Int64>();
 
         if (value > std::numeric_limits<Int8>::max() || value < std::numeric_limits<Int8>::min())
             return createExact<DataTypeEnum16>(arguments);
@@ -318,7 +342,7 @@ void registerDataTypeEnum(DataTypeFactory & factory)
     factory.registerDataType("Enum", create);
 
     /// MySQL
-    factory.registerAlias("ENUM", "Enum", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("ENUM", "Enum", DataTypeFactory::CaseInsensitive);
 }
 
 }

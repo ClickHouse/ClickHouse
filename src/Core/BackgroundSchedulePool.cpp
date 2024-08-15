@@ -31,15 +31,13 @@ bool BackgroundSchedulePoolTaskInfo::schedule()
     return true;
 }
 
-bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t milliseconds, bool overwrite, bool only_if_scheduled)
+bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t milliseconds, bool overwrite)
 {
     std::lock_guard lock(schedule_mutex);
 
     if (deactivated || scheduled)
         return false;
     if (delayed && !overwrite)
-        return false;
-    if (!delayed && only_if_scheduled)
         return false;
 
     pool.scheduleDelayedTask(shared_from_this(), milliseconds, lock);
@@ -116,7 +114,7 @@ void BackgroundSchedulePoolTaskInfo::execute()
     static constexpr UInt64 slow_execution_threshold_ms = 200;
 
     if (milliseconds >= slow_execution_threshold_ms)
-        LOG_TRACE(getLogger(log_name), "Execution took {} ms.", milliseconds);
+        LOG_TRACE(&Poco::Logger::get(log_name), "Execution took {} ms.", milliseconds);
 
     {
         std::lock_guard lock_schedule(schedule_mutex);
@@ -160,7 +158,7 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Met
     , size_metric(size_metric_, size_)
     , thread_name(thread_name_)
 {
-    LOG_INFO(getLogger("BackgroundSchedulePool/" + thread_name), "Create BackgroundSchedulePool with {} threads", size_);
+    LOG_INFO(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name), "Create BackgroundSchedulePool with {} threads", size_);
 
     threads.resize(size_);
 
@@ -174,7 +172,7 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Met
     catch (...)
     {
         LOG_FATAL(
-            getLogger("BackgroundSchedulePool/" + thread_name),
+            &Poco::Logger::get("BackgroundSchedulePool/" + thread_name),
             "Couldn't get {} threads from global thread pool: {}",
             size_,
             getCurrentExceptionCode() == DB::ErrorCodes::CANNOT_SCHEDULE_TASK
@@ -192,7 +190,7 @@ void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
 
     if (new_threads_count < old_threads_count)
     {
-        LOG_WARNING(getLogger("BackgroundSchedulePool/" + thread_name),
+        LOG_WARNING(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name),
             "Tried to increase the number of threads but the new threads count ({}) is not greater than old one ({})", new_threads_count, old_threads_count);
         return;
     }
@@ -219,7 +217,7 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
         tasks_cond_var.notify_all();
         delayed_tasks_cond_var.notify_all();
 
-        LOG_TRACE(getLogger("BackgroundSchedulePool/" + thread_name), "Waiting for threads to finish.");
+        LOG_TRACE(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name), "Waiting for threads to finish.");
         delayed_thread->join();
 
         for (auto & thread : threads)

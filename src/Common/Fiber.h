@@ -17,7 +17,7 @@ private:
     template <typename T> friend class FiberLocal;
 
 public:
-    template <typename StackAlloc, typename Fn>
+    template< typename StackAlloc, typename Fn>
     Fiber(StackAlloc && salloc, Fn && fn) : impl(std::allocator_arg_t(), std::forward<StackAlloc>(salloc), RoutineImpl(std::forward<Fn>(fn)))
     {
     }
@@ -44,12 +44,6 @@ public:
         impl = std::move(impl).resume();
         /// Restore parent fiber.
         current_fiber = parent_fiber;
-    }
-
-    static FiberPtr & getCurrentFiber()
-    {
-        thread_local static FiberPtr current_fiber;
-        return current_fiber;
     }
 
 private:
@@ -79,6 +73,12 @@ private:
 
         Fn fn;
     };
+
+    static FiberPtr & getCurrentFiber()
+    {
+        thread_local static FiberPtr current_fiber;
+        return current_fiber;
+    }
 
     /// Special wrapper to store data in uniquer_ptr.
     struct DataWrapper
@@ -146,3 +146,4 @@ private:
 
     T main_instance;
 };
+

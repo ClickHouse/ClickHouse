@@ -1,14 +1,13 @@
-#include <Interpreters/Context.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Poco/Timestamp.h>
+#include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
 
 #include <random>
 #include <unordered_set>
 
 #include <base/sort.h>
-#include <Poco/Timestamp.h>
 
 
 namespace DB
@@ -25,7 +24,7 @@ namespace ErrorCodes
 ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeCleanupThread)")
-    , log(getLogger(log_name))
+    , log(&Poco::Logger::get(log_name))
     , sleep_ms(storage.getSettings()->cleanup_delay_period * 1000)
 {
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });
@@ -33,12 +32,6 @@ ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplic
 
 void ReplicatedMergeTreeCleanupThread::run()
 {
-    if (cleanup_blocker.isCancelled())
-    {
-        LOG_TRACE(LogFrequencyLimiter(log, 30), "Cleanup is cancelled, exiting");
-        return;
-    }
-
     SCOPE_EXIT({ is_running.store(false, std::memory_order_relaxed); });
     is_running.store(true, std::memory_order_relaxed);
 
@@ -80,7 +73,10 @@ void ReplicatedMergeTreeCleanupThread::run()
         else
             sleep_ms = static_cast<UInt64>(sleep_ms / ratio);
 
-        sleep_ms = std::clamp(sleep_ms, storage_settings->cleanup_delay_period * 1000, storage_settings->max_cleanup_delay_period * 1000);
+        if (sleep_ms < storage_settings->cleanup_delay_period * 1000)
+            sleep_ms = storage_settings->cleanup_delay_period * 1000;
+        if (storage_settings->max_cleanup_delay_period * 1000 < sleep_ms)
+            sleep_ms = storage_settings->max_cleanup_delay_period * 1000;
 
         UInt64 interval_ms = now_ms - prev_timestamp;
         LOG_TRACE(log, "Scheduling next cleanup after {}ms (points: {}, interval: {}ms, ratio: {}, points per minute: {})",
@@ -151,7 +147,9 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
         auto lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
         /// Both use relative_data_path which changes during rename, so we
         /// do it under share lock
+        cleaned_other += storage.clearOldWriteAheadLogs();
         cleaned_part_like += storage.clearOldTemporaryDirectories(storage.getSettings()->temporary_directories_lifetime.totalSeconds());
+        cleaned_part_like += storage.clearOldBrokenPartsFromDetachedDirectory();
     }
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
@@ -175,8 +173,6 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
         cleaned_other += clearOldMutations();
         cleaned_part_like += storage.clearEmptyParts();
     }
-
-    cleaned_part_like += storage.unloadPrimaryKeysOfOutdatedParts();
 
     /// We need to measure the number of removed objects somehow (for better scheduling),
     /// but just summing the number of removed async blocks, logs, and empty parts does not make any sense.

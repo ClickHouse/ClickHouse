@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <IO/AsynchronousReader.h>
+#include "config.h"
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
-#include "config.h"
+#include <IO/AsynchronousReader.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 namespace Poco { class Logger; }
 
@@ -21,12 +21,11 @@ class ReadBufferFromRemoteFSGather final : public ReadBufferFromFileBase
 friend class ReadIndirectBufferFromRemoteFS;
 
 public:
-    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(bool restricted_seek, const StoredObject & object)>;
+    using ReadBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>(const std::string & path, size_t read_until_position)>;
 
     ReadBufferFromRemoteFSGather(
         ReadBufferCreator && read_buffer_creator_,
         const StoredObjects & blobs_to_read_,
-        const std::string & cache_path_prefix_,
         const ReadSettings & settings_,
         std::shared_ptr<FilesystemCacheLog> cache_log_,
         bool use_external_buffer_);
@@ -39,22 +38,22 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
-    void setReadUntilEnd() override { setReadUntilPosition(getFileSize()); }
+    void setReadUntilEnd() override { return setReadUntilPosition(getFileSize()); }
 
-    std::optional<size_t> tryGetFileSize() override { return getTotalSize(blobs_to_read); }
+    IAsynchronousReader::Result readInto(char * data, size_t size, size_t offset, size_t ignore) override;
+
+    size_t getFileSize() override { return getTotalSize(blobs_to_read); }
 
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 
     off_t seek(off_t offset, int whence) override;
 
-    off_t getPosition() override { return file_offset_of_buffer_end - available(); }
+    off_t getPosition() override { return file_offset_of_buffer_end - available() + bytes_to_ignore; }
 
-    bool isSeekCheap() override;
-
-    bool isContentCached(size_t offset, size_t size) override;
+    bool seekIsCheap() override { return !current_buf; }
 
 private:
-    SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object, size_t start_offset);
+    SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object);
 
     bool nextImpl() override;
 
@@ -71,21 +70,20 @@ private:
     const ReadSettings settings;
     const StoredObjects blobs_to_read;
     const ReadBufferCreator read_buffer_creator;
-    const std::string cache_path_prefix;
     const std::shared_ptr<FilesystemCacheLog> cache_log;
     const String query_id;
     const bool use_external_buffer;
-    const bool with_file_cache;
-    const bool with_page_cache;
+    const bool with_cache;
 
     size_t read_until_position = 0;
     size_t file_offset_of_buffer_end = 0;
+    size_t bytes_to_ignore = 0;
 
     StoredObject current_object;
     size_t current_buf_idx = 0;
     SeekableReadBufferPtr current_buf;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 size_t chooseBufferSizeForRemoteReading(const DB::ReadSettings & settings, size_t file_size);

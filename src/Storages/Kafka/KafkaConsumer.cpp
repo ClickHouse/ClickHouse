@@ -1,4 +1,7 @@
-#include <fmt/ranges.h>
+// Needs to go first because its partial specialization of fmt::formatter
+// should be defined before any instantiation
+#include <fmt/ostream.h>
+
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <IO/ReadBufferFromMemory.h>
 
@@ -9,9 +12,7 @@
 #include <algorithm>
 
 #include <Common/CurrentMetrics.h>
-#include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Common/ProfileEvents.h>
-#include <base/defines.h>
 
 namespace CurrentMetrics
 {
@@ -21,12 +22,13 @@ namespace CurrentMetrics
 
 namespace ProfileEvents
 {
-extern const Event KafkaRebalanceRevocations;
-extern const Event KafkaRebalanceAssignments;
-extern const Event KafkaRebalanceErrors;
-extern const Event KafkaMessagesPolled;
-extern const Event KafkaCommitFailures;
-extern const Event KafkaCommits;
+    extern const Event KafkaRebalanceRevocations;
+    extern const Event KafkaRebalanceAssignments;
+    extern const Event KafkaRebalanceErrors;
+    extern const Event KafkaMessagesPolled;
+    extern const Event KafkaCommitFailures;
+    extern const Event KafkaCommits;
+    extern const Event KafkaConsumerErrors;
 }
 
 namespace DB
@@ -44,13 +46,15 @@ const auto DRAIN_TIMEOUT_MS = 5000ms;
 
 
 KafkaConsumer::KafkaConsumer(
-    LoggerPtr log_,
+    ConsumerPtr consumer_,
+    Poco::Logger * log_,
     size_t max_batch_size,
     size_t poll_timeout_,
     bool intermediate_commit_,
     const std::atomic<bool> & stopped_,
     const Names & _topics)
-    : log(log_)
+    : consumer(consumer_)
+    , log(log_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
     , intermediate_commit(intermediate_commit_)
@@ -59,25 +63,6 @@ KafkaConsumer::KafkaConsumer(
     , topics(_topics)
     , exceptions_buffer(EXCEPTIONS_DEPTH)
 {
-}
-
-void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
-{
-    chassert(!consumer.get());
-
-    /// Using this should be safe, since cppkafka::Consumer can poll messages
-    /// (including statistics, which will trigger the callback below) only via
-    /// KafkaConsumer.
-    if (consumer_config.get("statistics.interval.ms") != "0")
-    {
-        consumer_config.set_stats_callback([this](cppkafka::KafkaHandleBase &, const std::string & stat_json)
-        {
-            setRDKafkaStat(stat_json);
-        });
-    }
-    consumer = std::make_shared<cppkafka::Consumer>(consumer_config);
-    consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
-
     // called (synchronously, during poll) when we enter the consumer group
     consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
@@ -148,30 +133,8 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
     });
 }
 
-ConsumerPtr && KafkaConsumer::moveConsumer()
-{
-    cleanUnprocessed();
-    if (!consumer->get_subscription().empty())
-    {
-        try
-        {
-            consumer->unsubscribe();
-        }
-        catch (const cppkafka::HandleException & e)
-        {
-            LOG_ERROR(log, "Error during unsubscribe: {}", e.what());
-        }
-        drain();
-    }
-    return std::move(consumer);
-}
-
 KafkaConsumer::~KafkaConsumer()
 {
-    if (!consumer)
-        return;
-
-    cleanUnprocessed();
     try
     {
         if (!consumer->get_subscription().empty())
@@ -191,6 +154,7 @@ KafkaConsumer::~KafkaConsumer()
     {
         LOG_ERROR(log, "Error while destructing consumer: {}", e.what());
     }
+
 }
 
 // Needed to drain rest of the messages / queued callback calls from the consumer
@@ -199,8 +163,43 @@ KafkaConsumer::~KafkaConsumer()
 //     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
 void KafkaConsumer::drain()
 {
-    StorageKafkaUtils::drainConsumer(*consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
+    auto start_time = std::chrono::steady_clock::now();
+    cppkafka::Error last_error(RD_KAFKA_RESP_ERR_NO_ERROR);
+
+    while (true)
+    {
+        auto msg = consumer->poll(100ms);
+        if (!msg)
+            break;
+
+        auto error = msg.get_error();
+
+        if (error)
+        {
+            if (msg.is_eof() || error == last_error)
+            {
+                break;
+            }
+            else
+            {
+                LOG_ERROR(log, "Error during draining: {}", error);
+                setExceptionInfo(error);
+            }
+        }
+
+        // i don't stop draining on first error,
+        // only if it repeats once again sequentially
+        last_error = error;
+
+        auto ts = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time) > DRAIN_TIMEOUT_MS)
+        {
+            LOG_ERROR(log, "Timeout during draining.");
+            break;
+        }
+    }
 }
+
 
 void KafkaConsumer::commit()
 {
@@ -374,7 +373,7 @@ void KafkaConsumer::resetToLastCommitted(const char * msg)
 {
     if (!assignment.has_value() || assignment->empty())
     {
-        LOG_TRACE(log, "Not assigned. Can't reset to last committed position.");
+        LOG_TRACE(log, "Not assignned. Can't reset to last committed position.");
         return;
     }
     auto committed_offset = consumer->get_offsets_committed(consumer->get_assignment());
@@ -438,7 +437,7 @@ ReadBufferPtr KafkaConsumer::consume()
             // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
             if (!assignment.has_value())
             {
-                waited_for_assignment += poll_timeout; // slightly inaccurate, but rough calculation is ok.
+                waited_for_assignment += poll_timeout; // slightly innaccurate, but rough calculation is ok.
                 if (waited_for_assignment < MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS)
                 {
                     continue;
@@ -500,12 +499,26 @@ ReadBufferPtr KafkaConsumer::getNextMessage()
     return getNextMessage();
 }
 
-void KafkaConsumer::filterMessageErrors()
+size_t KafkaConsumer::filterMessageErrors()
 {
     assert(current == messages.begin());
 
-    StorageKafkaUtils::eraseMessageErrors(messages, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
-    current = messages.begin();
+    size_t skipped = std::erase_if(messages, [this](auto & message)
+    {
+        if (auto error = message.get_error())
+        {
+            ProfileEvents::increment(ProfileEvents::KafkaConsumerErrors);
+            LOG_ERROR(log, "Consumer error: {}", error);
+            setExceptionInfo(error);
+            return true;
+        }
+        return false;
+    });
+
+    if (skipped)
+        LOG_ERROR(log, "There were {} messages with an error", skipped);
+
+    return skipped;
 }
 
 void KafkaConsumer::resetIfStopped()
@@ -547,25 +560,26 @@ void KafkaConsumer::setExceptionInfo(const std::string & text, bool with_stacktr
     exceptions_buffer.push_back({enriched_text, static_cast<UInt64>(Poco::Timestamp().epochTime())});
 }
 
+/*
+ * Needed until
+ * https://github.com/mfontanini/cppkafka/pull/309
+ * is merged,
+ * because consumer->get_member_id() contains a leak
+ */
 std::string KafkaConsumer::getMemberId() const
 {
-    if (!consumer)
-        return "";
-
-    return consumer->get_member_id();
+    char * memberid_ptr = rd_kafka_memberid(consumer->get_handle());
+    std::string memberid_string = memberid_ptr;
+    rd_kafka_mem_free(nullptr, memberid_ptr);
+    return memberid_string;
 }
+
 
 KafkaConsumer::Stat KafkaConsumer::getStat() const
 {
     KafkaConsumer::Stat::Assignments assignments;
-    cppkafka::TopicPartitionList cpp_assignments;
-    cppkafka::TopicPartitionList cpp_offsets;
-
-    if (consumer)
-    {
-        cpp_assignments = consumer->get_assignment();
-        cpp_offsets = consumer->get_offsets_position(cpp_assignments);
-    }
+    auto cpp_assignments = consumer->get_assignment();
+    auto cpp_offsets = consumer->get_offsets_position(cpp_assignments);
 
     for (size_t num = 0; num < cpp_assignments.size(); ++num)
     {
@@ -577,7 +591,7 @@ KafkaConsumer::Stat KafkaConsumer::getStat() const
     }
 
     return {
-        .consumer_id = getMemberId(),
+        .consumer_id = getMemberId() /* consumer->get_member_id() */ ,
         .assignments = std::move(assignments),
         .last_poll_time = last_poll_timestamp_usec.load(),
         .num_messages_read = num_messages_read.load(),
@@ -587,18 +601,11 @@ KafkaConsumer::Stat KafkaConsumer::getStat() const
         .num_commits = num_commits.load(),
         .num_rebalance_assignments = num_rebalance_assignments.load(),
         .num_rebalance_revocations = num_rebalance_revocations.load(),
-        .exceptions_buffer = [&]()
-        {
-            std::lock_guard<std::mutex> lock(exception_mutex);
-            return exceptions_buffer;
-        }(),
+        .exceptions_buffer = [&](){std::lock_guard<std::mutex> lock(exception_mutex);
+            return exceptions_buffer;}(),
         .in_use = in_use.load(),
-        .last_used_usec = last_used_usec.load(),
-        .rdkafka_stat = [&]()
-        {
-            std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
-            return rdkafka_stat;
-        }(),
+        .rdkafka_stat = [&](){std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
+            return rdkafka_stat;}(),
     };
 }
 

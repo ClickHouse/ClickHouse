@@ -8,7 +8,6 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperFeatureFlags.h>
 
@@ -16,8 +15,6 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
 
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketAddress.h>
@@ -103,33 +100,41 @@ using namespace DB;
 class ZooKeeper final : public IKeeper
 {
 public:
+    struct Node
+    {
+        Poco::Net::SocketAddress address;
+        bool secure;
+    };
+
+    using Nodes = std::vector<Node>;
+    using ConnectedCallback = std::function<void(size_t, const Node&)>;
+
     /** Connection to nodes is performed in order. If you want, shuffle them manually.
       * Operation timeout couldn't be greater than session timeout.
       * Operation timeout applies independently for network read, network write, waiting for events and synchronization.
       */
     ZooKeeper(
-        const zkutil::ShuffleHosts & nodes,
+        const Nodes & nodes,
         const zkutil::ZooKeeperArgs & args_,
-        std::shared_ptr<ZooKeeperLog> zk_log_);
+        std::shared_ptr<ZooKeeperLog> zk_log_,
+        std::optional<ConnectedCallback> && connected_callback_ = {});
 
     ~ZooKeeper() override;
+
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
 
-    std::optional<int8_t> getConnectedNodeIdx() const override;
-    String getConnectedHostPort() const override;
-    int32_t getConnectionXid() const override;
-
-    String tryGetAvailabilityZone() override;
+    /// A ZooKeeper session can have an optional deadline set on it.
+    /// After it has been reached, the session needs to be finalized.
+    bool hasReachedDeadline() const override;
 
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
 
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
-        ResponseCallback callback,
-        WatchCallbackPtr watch = nullptr);
+        ResponseCallback callback);
 
     /// See the documentation about semantics of these methods in IKeeper class.
 
@@ -185,10 +190,6 @@ public:
         ReconfigCallback callback) final;
 
     void multi(
-        std::span<const RequestPtr> requests,
-        MultiCallback callback) override;
-
-    void multi(
         const Requests & requests,
         MultiCallback callback) override;
 
@@ -218,7 +219,7 @@ private:
     ACLs default_acls;
 
     zkutil::ZooKeeperArgs args;
-    std::atomic<int8_t> original_index{-1};
+    std::optional<ConnectedCallback> connected_callback = {};
 
     /// Fault injection
     void maybeInjectSendFault();
@@ -235,13 +236,8 @@ private:
     Poco::Net::StreamSocket socket;
     /// To avoid excessive getpeername(2) calls.
     Poco::Net::SocketAddress socket_address;
-
     std::optional<ReadBufferFromPocoSocket> in;
     std::optional<WriteBufferFromPocoSocket> out;
-    std::optional<CompressedReadBuffer> compressed_in;
-    std::optional<CompressedWriteBuffer> compressed_out;
-
-    bool use_compression = false;
 
     int64_t session_id = 0;
 
@@ -260,6 +256,7 @@ private:
         clock::time_point time;
     };
 
+    std::optional<clock::time_point> client_session_deadline {};
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
     RequestsQueue requests_queue{1024};
@@ -280,7 +277,7 @@ private:
     class ThreadReference
     {
     public:
-        ThreadReference & operator = (ThreadFromGlobalPool && thread_)
+        const ThreadReference & operator = (ThreadFromGlobalPool && thread_)
         {
             std::lock_guard<std::mutex> l(lock);
             thread = std::move(thread_);
@@ -301,10 +298,10 @@ private:
     ThreadReference send_thread;
     ThreadReference receive_thread;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     void connect(
-        const zkutil::ShuffleHosts & node,
+        const Nodes & node,
         Poco::Timespan connection_timeout);
 
     void sendHandshake();
@@ -328,16 +325,11 @@ private:
     template <typename T>
     void read(T &);
 
-    WriteBuffer & getWriteBuffer();
-    void flushWriteBuffer();
-    ReadBuffer & getReadBuffer();
-
-    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
-
-    std::optional<String> tryGetSystemZnode(const std::string & path, const std::string & description);
+    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
 
     void initFeatureFlags();
 
+    void checkSessionDeadline() const;
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;

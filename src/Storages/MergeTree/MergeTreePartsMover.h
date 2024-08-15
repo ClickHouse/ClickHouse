@@ -12,13 +12,12 @@
 namespace DB
 {
 
-enum class MovePartsOutcome : uint8_t
+enum class MovePartsOutcome
 {
     PartsMoved,
     NothingToMove,
     MovesAreCancelled,
     MoveWasPostponedBecauseOfZeroCopy,
-    CannotScheduleMove,
 };
 
 /// Active part from storage and destination reservation where it has to be moved
@@ -48,7 +47,7 @@ public:
 
     explicit MergeTreePartsMover(MergeTreeData * data_)
         : data(data_)
-        , log(getLogger("MergeTreePartsMover"))
+        , log(&Poco::Logger::get("MergeTreePartsMover"))
     {
     }
 
@@ -66,7 +65,7 @@ public:
         const std::lock_guard<std::mutex> & moving_parts_lock);
 
     /// Copies part to selected reservation in detached folder. Throws exception if part already exists.
-    TemporaryClonedPart clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const;
+    TemporaryClonedPart clonePart(const MergeTreeMoveEntry & moving_part) const;
 
     /// Replaces cloned part from detached directory into active data parts set.
     /// Replacing part changes state to DeleteOnDestroy and will be removed from disk after destructor of
@@ -81,7 +80,7 @@ public:
 private:
 
     MergeTreeData * data;
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 

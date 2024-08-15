@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Functions/StringHelpers.h>
 
 

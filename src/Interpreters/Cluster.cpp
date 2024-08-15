@@ -2,9 +2,8 @@
 #include <Common/DNSResolver.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/parseAddress.h>
-#include <Common/randomSeed.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Core/Settings.h>
@@ -17,7 +16,6 @@
 #include <boost/range/algorithm_ext/erase.hpp>
 
 #include <span>
-#include <pcg_random.hpp>
 
 namespace DB
 {
@@ -112,9 +110,6 @@ Cluster::Address::Address(
     default_database = config.getString(config_prefix + ".default_database", "");
     secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     priority = Priority{config.getInt(config_prefix + ".priority", 1)};
-
-    proto_send_chunked = config.getString(config_prefix + ".proto_caps.send", "notchunked");
-    proto_recv_chunked = config.getString(config_prefix + ".proto_caps.recv", "notchunked");
 
     const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
     auto default_port = config.getInt(port_type, 0);
@@ -395,10 +390,10 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     config_prefix += ".";
 
     secret = config.getString(config_prefix + "secret", "");
-    std::erase(config_keys, "secret");
+    boost::range::remove_erase(config_keys, "secret");
 
     allow_distributed_ddl_queries = config.getBool(config_prefix + "allow_distributed_ddl_queries", true);
-    std::erase(config_keys, "allow_distributed_ddl_queries");
+    boost::range::remove_erase(config_keys, "allow_distributed_ddl_queries");
 
     if (config_keys.empty())
         throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "No cluster elements (shard, node) specified in config at path {}", config_prefix);
@@ -425,12 +420,12 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             if (address.is_local)
                 info.local_addresses.push_back(address);
 
+            info.all_addresses.push_back(address);
+
             auto pool = ConnectionPoolFactory::instance().get(
                 static_cast<unsigned>(settings.distributed_connections_pool_size),
                 address.host_name, address.port,
-                address.default_database, address.user, address.password,
-                address.proto_send_chunked, address.proto_recv_chunked,
-                address.quota_key,
+                address.default_database, address.user, address.password, address.quota_key,
                 address.cluster, address.cluster_secret,
                 "server", address.compression,
                 address.secure, address.priority);
@@ -493,14 +488,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                     throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", replica_key);
             }
 
-            addShard(
-                settings,
-                replica_addresses,
-                /* treat_local_as_remote = */ false,
-                current_shard_num,
-                weight,
-                std::move(insert_paths),
-                internal_replication);
+            addShard(settings, std::move(replica_addresses), /* treat_local_as_remote = */ false, current_shard_num,
+                     std::move(insert_paths), weight, internal_replication);
         }
         else
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
@@ -536,7 +525,7 @@ Cluster::Cluster(
 
         addresses_with_failover.emplace_back(current);
 
-        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* weight= */ 1);
+        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* insert_paths= */ {}, /* weight= */ 1);
         ++current_shard_num;
     }
 
@@ -564,23 +553,18 @@ Cluster::Cluster(
 
         addresses_with_failover.emplace_back(current);
 
-        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* weight= */ 1);
+        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* insert_paths= */ {}, /* weight= */ 1);
         ++current_shard_num;
     }
 
     initMisc();
 }
 
-void Cluster::addShard(
-    const Settings & settings,
-    Addresses addresses,
-    bool treat_local_as_remote,
-    UInt32 current_shard_num,
-    UInt32 weight,
-    ShardInfoInsertPathForInternalReplication insert_paths,
-    bool internal_replication)
+void Cluster::addShard(const Settings & settings, Addresses && addresses, bool treat_local_as_remote, UInt32 current_shard_num,
+                       ShardInfoInsertPathForInternalReplication && insert_paths, UInt32 weight, bool internal_replication)
 {
     Addresses shard_local_addresses;
+    Addresses shard_all_addresses;
 
     ConnectionPoolPtrs all_replicas_pools;
     all_replicas_pools.reserve(addresses.size());
@@ -589,30 +573,20 @@ void Cluster::addShard(
     {
         auto replica_pool = ConnectionPoolFactory::instance().get(
             static_cast<unsigned>(settings.distributed_connections_pool_size),
-            replica.host_name,
-            replica.port,
-            replica.default_database,
-            replica.user,
-            replica.password,
-            replica.proto_send_chunked,
-            replica.proto_recv_chunked,
-            replica.quota_key,
-            replica.cluster,
-            replica.cluster_secret,
-            "server",
-            replica.compression,
-            replica.secure,
-            replica.priority);
+            replica.host_name, replica.port,
+            replica.default_database, replica.user, replica.password, replica.quota_key,
+            replica.cluster, replica.cluster_secret,
+            "server", replica.compression,
+            replica.secure, replica.priority);
 
         all_replicas_pools.emplace_back(replica_pool);
         if (replica.is_local && !treat_local_as_remote)
             shard_local_addresses.push_back(replica);
+        shard_all_addresses.push_back(replica);
     }
     ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
-        all_replicas_pools,
-        settings.load_balancing,
-        settings.distributed_replica_error_half_life.totalSeconds(),
-        settings.distributed_replica_error_cap);
+        all_replicas_pools, settings.load_balancing,
+        settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
 
     if (weight)
         slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
@@ -622,6 +596,7 @@ void Cluster::addShard(
         current_shard_num,
         weight,
         std::move(shard_local_addresses),
+        std::move(shard_all_addresses),
         std::move(shard_pool),
         std::move(all_replicas_pools),
         internal_replication
@@ -690,7 +665,8 @@ namespace
 
 void shuffleReplicas(std::vector<Cluster::Address> & replicas, const Settings & settings, size_t replicas_needed)
 {
-    pcg64_fast gen{randomSeed()};
+    std::random_device rd;
+    std::mt19937 gen{rd()};
 
     if (settings.prefer_localhost_replica)
     {
@@ -744,6 +720,8 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                 if (address.is_local)
                     info.local_addresses.push_back(address);
 
+                info.all_addresses.push_back(address);
+
                 auto pool = ConnectionPoolFactory::instance().get(
                     static_cast<unsigned>(settings.distributed_connections_pool_size),
                     address.host_name,
@@ -751,8 +729,6 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                     address.default_database,
                     address.user,
                     address.password,
-                    address.proto_send_chunked,
-                    address.proto_recv_chunked,
                     address.quota_key,
                     address.cluster,
                     address.cluster_secret,

@@ -18,6 +18,9 @@ runs:
           echo "Setup the common ENV variables"
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/${{inputs.job_type}}
+          REPO_COPY=${{runner.temp}}/${{inputs.job_type}}/git-repo-copy
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPORTS_PATH=${{runner.temp}}/reports_dir
           EOF
           if [ -z "${{env.GITHUB_JOB_OVERRIDDEN}}" ] && [ "true" == "${{inputs.nested_job}}" ]; then
             echo "The GITHUB_JOB_OVERRIDDEN ENV is unset, and must be set for the nested jobs"
@@ -27,11 +30,6 @@ runs:
       shell: bash
       run: |
           # to remove every leftovers
-          sudo rm -fr "$TEMP_PATH" && mkdir -p "$TEMP_PATH"
-    - name: Tune vm.mmap_rnd_bits for sanitizers
-      shell: bash
-      run: |
-          sudo sysctl vm.mmap_rnd_bits
-          # https://github.com/google/sanitizers/issues/856
-          echo "Tune vm.mmap_rnd_bits for sanitizers"
-          sudo sysctl vm.mmap_rnd_bits=28
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$REPO_COPY"
+          cp -a "$GITHUB_WORKSPACE"/. "$REPO_COPY"/

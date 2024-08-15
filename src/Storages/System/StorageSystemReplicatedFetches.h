@@ -10,17 +10,17 @@ namespace DB
 class Context;
 
 /// system.replicated_fetches table. Takes data from context.getReplicatedFetchList()
-class StorageSystemReplicatedFetches final : public IStorageSystemOneBlock
+class StorageSystemReplicatedFetches final : public IStorageSystemOneBlock<StorageSystemReplicatedFetches>
 {
 public:
     std::string getName() const override { return "SystemReplicatedFetches"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 };
 
 }

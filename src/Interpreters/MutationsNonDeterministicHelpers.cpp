@@ -5,7 +5,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/MutationCommands.h>
-#include <Core/Settings.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
@@ -173,30 +172,6 @@ ASTPtr replaceNonDeterministicToScalars(const ASTAlterCommand & alter_command, C
     auto query = alter_command.clone();
     auto & new_alter_command = *query->as<ASTAlterCommand>();
 
-    auto remove_child = [](auto & children, IAST *& erase_ptr)
-    {
-        auto it = std::find_if(children.begin(), children.end(), [&](const auto & ptr) { return ptr.get() == erase_ptr; });
-        erase_ptr = nullptr;
-        children.erase(it);
-    };
-    auto visit = [&](auto & visitor)
-    {
-        if (new_alter_command.update_assignments)
-        {
-            ASTPtr update_assignments = new_alter_command.update_assignments->clone();
-            remove_child(new_alter_command.children, new_alter_command.update_assignments);
-            visitor.visit(update_assignments);
-            new_alter_command.update_assignments = new_alter_command.children.emplace_back(std::move(update_assignments)).get();
-        }
-        if (new_alter_command.predicate)
-        {
-            ASTPtr predicate = new_alter_command.predicate->clone();
-            remove_child(new_alter_command.children, new_alter_command.predicate);
-            visitor.visit(predicate);
-            new_alter_command.predicate = new_alter_command.children.emplace_back(std::move(predicate)).get();
-        }
-    };
-
     if (settings.mutations_execute_subqueries_on_initiator)
     {
         Scalars scalars;
@@ -213,7 +188,10 @@ ASTPtr replaceNonDeterministicToScalars(const ASTAlterCommand & alter_command, C
             settings.mutations_max_literal_size_to_replace};
 
         ExecuteScalarSubqueriesVisitor visitor(data);
-        visit(visitor);
+        if (new_alter_command.update_assignments)
+            visitor.visit(new_alter_command.update_assignments);
+        if (new_alter_command.predicate)
+            visitor.visit(new_alter_command.predicate);
     }
 
     if (settings.mutations_execute_nondeterministic_on_initiator)
@@ -222,7 +200,10 @@ ASTPtr replaceNonDeterministicToScalars(const ASTAlterCommand & alter_command, C
             context, settings.mutations_max_literal_size_to_replace};
 
         ExecuteNonDeterministicConstFunctionsVisitor visitor(data);
-        visit(visitor);
+        if (new_alter_command.update_assignments)
+            visitor.visit(new_alter_command.update_assignments);
+        if (new_alter_command.predicate)
+            visitor.visit(new_alter_command.predicate);
     }
 
     return query;

@@ -90,7 +90,7 @@ hexdump -C $BINARY_FILE_PATH
 
 echo
 echo "Decoded with protoc:"
-(cd $SCHEMADIR && $PROTOC_BINARY --proto_path=. --proto_path=/usr/share/clickhouse/protos --decode Message "$PROTOBUF_FILE_NAME".proto) < $BINARY_FILE_PATH
+(cd $SCHEMADIR && $PROTOC_BINARY --decode Message "$PROTOBUF_FILE_NAME".proto) < $BINARY_FILE_PATH
 
 echo
 echo "Proto message with wrapper for (NULL, 1), ('', 2), ('str', 3):"

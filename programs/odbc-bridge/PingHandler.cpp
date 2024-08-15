@@ -6,11 +6,11 @@
 
 namespace DB
 {
-void PingHandler::handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void PingHandler::handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response)
 {
     try
     {
-        setResponseDefaultHeaders(response);
+        setResponseDefaultHeaders(response, keep_alive_timeout);
         const char * data = "Ok.\n";
         response.sendBuffer(data, strlen(data));
     }

@@ -21,7 +21,7 @@ public:
     OpenedFile(const std::string & file_name_, int flags_);
     ~OpenedFile();
 
-    /// Close prematurely.
+    /// Close prematurally.
     void close();
 
     int getFD() const;
@@ -40,3 +40,4 @@ private:
 };
 
 }
+

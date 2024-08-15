@@ -17,13 +17,14 @@ namespace DB
 class ODBCBridgeHandlerFactory : public HTTPRequestHandlerFactory, WithContext
 {
 public:
-    ODBCBridgeHandlerFactory(const std::string & name_, ContextPtr context_);
+    ODBCBridgeHandlerFactory(const std::string & name_, size_t keep_alive_timeout_, ContextPtr context_);
 
     std::unique_ptr<HTTPRequestHandler> createRequestHandler(const HTTPServerRequest & request) override;
 
 private:
-    LoggerPtr log;
+    Poco::Logger * log;
     std::string name;
+    size_t keep_alive_timeout;
 };
 
 }

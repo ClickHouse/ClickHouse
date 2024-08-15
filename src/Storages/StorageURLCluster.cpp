@@ -3,7 +3,6 @@
 #include <Storages/StorageURLCluster.h>
 
 #include <Core/QueryProcessingStage.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -36,62 +35,55 @@ namespace ErrorCodes
 }
 
 StorageURLCluster::StorageURLCluster(
-    const ContextPtr & context,
+    ContextPtr context_,
     const String & cluster_name_,
     const String & uri_,
     const String & format_,
-    const String & compression_method,
+    const String & compression_method_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const StorageURL::Configuration & configuration_)
-    : IStorageCluster(cluster_name_, table_id_, getLogger("StorageURLCluster (" + table_id_.table_name + ")"))
-    , uri(uri_), format_name(format_)
+    const StorageURL::Configuration & configuration_,
+    bool structure_argument_was_provided_)
+    : IStorageCluster(cluster_name_, table_id_, &Poco::Logger::get("StorageURLCluster (" + table_id_.table_name + ")"), structure_argument_was_provided_)
+    , uri(uri_)
 {
-    context->getRemoteHostFilter().checkURL(Poco::URI(uri));
-    context->getHTTPHeaderFilter().checkHeaders(configuration_.headers);
+    context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
+    context_->getHTTPHeaderFilter().checkHeaders(configuration_.headers);
 
     StorageInMemoryMetadata storage_metadata;
 
     if (columns_.empty())
     {
-        ColumnsDescription columns;
-        if (format_name == "auto")
-            std::tie(columns, format_name) = StorageURL::getTableStructureAndFormatFromData(
-                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), configuration_.headers, std::nullopt, context);
-        else
-            columns = StorageURL::getTableStructureFromData(
-                format_, uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), configuration_.headers, std::nullopt, context);
-
+        auto columns = StorageURL::getTableStructureFromData(format_,
+            uri,
+            chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method_),
+            configuration_.headers,
+            std::nullopt,
+            context_);
         storage_metadata.setColumns(columns);
     }
     else
-    {
-        if (format_name == "auto")
-            format_name = StorageURL::getTableStructureAndFormatFromData(
-                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), configuration_.headers, std::nullopt, context).second;
-
         storage_metadata.setColumns(columns_);
-    }
 
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), context, getSampleURI(uri, context)));
+
+    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
-void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
+void StorageURLCluster::addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context)
 {
     ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
     if (!expression_list)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", queryToString(query));
 
-    TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
-        expression_list->children, storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(), format_name, context);
+    TableFunctionURLCluster::addColumnsStructureToArguments(expression_list->children, structure, context);
 }
 
-RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const
+RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const
 {
-    auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(uri, context->getSettingsRef().glob_expansion_max_elements, predicate, getVirtualsList(), context);
+    auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(uri, context->getSettingsRef().glob_expansion_max_elements, query, virtual_columns, context);
     auto callback = std::make_shared<TaskIterator>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }

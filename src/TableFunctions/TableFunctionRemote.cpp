@@ -17,7 +17,6 @@
 #include <Common/Macros.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
-#include <Core/Settings.h>
 #include <base/range.h>
 #include "registerTableFunctions.h"
 
@@ -306,7 +305,21 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
         cached_columns = getActualTableStructure(context, is_insert_query);
 
     assert(cluster);
-    StoragePtr res = std::make_shared<StorageDistributed>(
+    StoragePtr res = remote_table_function_ptr
+        ? std::make_shared<StorageDistributed>(
+            StorageID(getDatabaseName(), table_name),
+            cached_columns,
+            ConstraintsDescription{},
+            remote_table_function_ptr,
+            String{},
+            context,
+            sharding_key,
+            String{},
+            String{},
+            DistributedSettings{},
+            false,
+            cluster)
+        : std::make_shared<StorageDistributed>(
             StorageID(getDatabaseName(), table_name),
             cached_columns,
             ConstraintsDescription{},
@@ -319,10 +332,8 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             String{},
             String{},
             DistributedSettings{},
-            LoadingStrictnessLevel::CREATE,
-            cluster,
-            remote_table_function_ptr,
-            !is_cluster_function);
+            false,
+            cluster);
 
     res->startup();
     return res;

@@ -1,6 +1,6 @@
 < Connection: Keep-Alive
-< Keep-Alive: timeout=10, max=?
+< Keep-Alive: timeout=3
 < Connection: Keep-Alive
-< Keep-Alive: timeout=10, max=?
+< Keep-Alive: timeout=3
 < Connection: Keep-Alive
-< Keep-Alive: timeout=10, max=?
+< Keep-Alive: timeout=3

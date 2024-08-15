@@ -2,10 +2,8 @@
 
 #if USE_ODBC
 
-#include <Core/Settings.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
-#include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
@@ -31,7 +29,7 @@ namespace
 }
 
 
-void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     HTMLForm params(getContext()->getSettingsRef(), request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
@@ -40,7 +38,7 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
-            *response.send() << message << '\n';
+            *response.send() << message << std::endl;
         LOG_WARNING(log, fmt::runtime(message));
     };
 
@@ -88,7 +86,7 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
 
         bool result = isSchemaAllowed(std::move(connection));
 
-        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
+        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
         try
         {
             writeBoolText(result, out);

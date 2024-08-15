@@ -23,8 +23,6 @@ public:
         const std::string host;
         const std::string user;
         const std::string password;
-        const std::string proto_send_chunked;
-        const std::string proto_recv_chunked;
         const std::string quota_key;
         const std::string db;
         const std::string table;
@@ -61,8 +59,6 @@ public:
 
     bool hasUpdateField() const override;
 
-    bool isLocal() const { return configuration.is_local; }
-
     DictionarySourcePtr clone() const override { return std::make_shared<ClickHouseDictionarySource>(*this); }
 
     std::string toString() const override;
@@ -87,7 +83,7 @@ private:
     ContextMutablePtr context;
     ConnectionPoolWithFailoverPtr pool;
     std::string load_all_query;
-    LoggerPtr log = getLogger("ClickHouseDictionarySource");
+    Poco::Logger * log = &Poco::Logger::get("ClickHouseDictionarySource");
 
     /// RegExpTreeDictionary is the only dictionary whose structure of attributions differ from the input block.
     /// For now we need to modify sample_block in the ctor of RegExpTreeDictionary.

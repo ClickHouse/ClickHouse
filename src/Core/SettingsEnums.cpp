@@ -1,8 +1,5 @@
 #include <Core/SettingsEnums.h>
 #include <magic_enum.hpp>
-#include <Access/Common/SQLSecurityDefs.h>
-
-#include <boost/range/adaptor/map.hpp>
 
 
 namespace DB
@@ -20,20 +17,9 @@ namespace ErrorCodes
     extern const int UNKNOWN_UNION;
 }
 
-template <typename Type>
-constexpr auto getEnumValues()
-{
-    std::array<std::pair<std::string_view, Type>, magic_enum::enum_count<Type>()> enum_values{};
-    size_t index = 0;
-    for (auto value : magic_enum::enum_values<Type>())
-        enum_values[index++] = std::pair{magic_enum::enum_name(value), value};
-    return enum_values;
-}
-
 IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
     {{"random",           LoadBalancing::RANDOM},
      {"nearest_hostname", LoadBalancing::NEAREST_HOSTNAME},
-     {"hostname_levenshtein_distance", LoadBalancing::HOSTNAME_LEVENSHTEIN_DISTANCE},
      {"in_order",         LoadBalancing::IN_ORDER},
      {"first_or_random",  LoadBalancing::FIRST_OR_RANDOM},
      {"round_robin",      LoadBalancing::ROUND_ROBIN}})
@@ -82,16 +68,6 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
      {"allow",  DistributedProductMode::ALLOW}})
 
 
-IMPLEMENT_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw",  QueryCacheNondeterministicFunctionHandling::Throw},
-     {"save",   QueryCacheNondeterministicFunctionHandling::Save},
-     {"ignore", QueryCacheNondeterministicFunctionHandling::Ignore}})
-
-IMPLEMENT_SETTING_ENUM(QueryCacheSystemTableHandling, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw",  QueryCacheSystemTableHandling::Throw},
-     {"save",   QueryCacheSystemTableHandling::Save},
-     {"ignore", QueryCacheSystemTableHandling::Ignore}})
-
 IMPLEMENT_SETTING_ENUM(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},
      {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort},
@@ -132,14 +108,11 @@ IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
     {{"none",         DistributedDDLOutputMode::NONE},
      {"throw",    DistributedDDLOutputMode::THROW},
      {"null_status_on_timeout", DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT},
-     {"throw_only_active", DistributedDDLOutputMode::THROW_ONLY_ACTIVE},
-     {"null_status_on_timeout_only_active", DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT_ONLY_ACTIVE},
-     {"none_only_active", DistributedDDLOutputMode::NONE_ONLY_ACTIVE},
      {"never_throw", DistributedDDLOutputMode::NEVER_THROW}})
 
-IMPLEMENT_SETTING_ENUM(StreamingHandleErrorMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"default",      StreamingHandleErrorMode::DEFAULT},
-     {"stream",       StreamingHandleErrorMode::STREAM}})
+IMPLEMENT_SETTING_ENUM(HandleKafkaErrorMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"default",      HandleKafkaErrorMode::DEFAULT},
+     {"stream",       HandleKafkaErrorMode::STREAM}})
 
 IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS,
     {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
@@ -167,21 +140,11 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
      {"kusto", Dialect::kusto},
      {"prql", Dialect::prql}})
-
+    // FIXME: do not add 'kusto_auto' to the list. Maybe remove it from code completely?
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
      {"range", ParallelReplicasCustomKeyFilterType::RANGE}})
-
-IMPLEMENT_SETTING_ENUM(LightweightMutationProjectionMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw", LightweightMutationProjectionMode::THROW},
-     {"drop", LightweightMutationProjectionMode::DROP},
-     {"rebuild", LightweightMutationProjectionMode::REBUILD}})
-
-IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw", DeduplicateMergeProjectionMode::THROW},
-     {"drop", DeduplicateMergeProjectionMode::DROP},
-     {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
 
 IMPLEMENT_SETTING_AUTO_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS)
 
@@ -211,13 +174,13 @@ IMPLEMENT_SETTING_ENUM(ORCCompression, ErrorCodes::BAD_ARGUMENTS,
      {"zlib", FormatSettings::ORCCompression::ZLIB},
      {"lz4", FormatSettings::ORCCompression::LZ4}})
 
-IMPLEMENT_SETTING_ENUM(ObjectStorageQueueMode, ErrorCodes::BAD_ARGUMENTS,
-                       {{"ordered", ObjectStorageQueueMode::ORDERED},
-                        {"unordered", ObjectStorageQueueMode::UNORDERED}})
+IMPLEMENT_SETTING_ENUM(S3QueueMode, ErrorCodes::BAD_ARGUMENTS,
+                       {{"ordered", S3QueueMode::ORDERED},
+                        {"unordered", S3QueueMode::UNORDERED}})
 
-IMPLEMENT_SETTING_ENUM(ObjectStorageQueueAction, ErrorCodes::BAD_ARGUMENTS,
-                       {{"keep", ObjectStorageQueueAction::KEEP},
-                        {"delete", ObjectStorageQueueAction::DELETE}})
+IMPLEMENT_SETTING_ENUM(S3QueueAction, ErrorCodes::BAD_ARGUMENTS,
+                       {{"keep", S3QueueAction::KEEP},
+                        {"delete", S3QueueAction::DELETE}})
 
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
@@ -226,22 +189,4 @@ IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
      {"log_last", ExternalCommandStderrReaction::LOG_LAST},
      {"throw", ExternalCommandStderrReaction::THROW}})
 
-IMPLEMENT_SETTING_ENUM(SchemaInferenceMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"default", SchemaInferenceMode::DEFAULT},
-     {"union", SchemaInferenceMode::UNION}})
-
-IMPLEMENT_SETTING_ENUM(DateTimeOverflowBehavior, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw", FormatSettings::DateTimeOverflowBehavior::Throw},
-     {"ignore", FormatSettings::DateTimeOverflowBehavior::Ignore},
-     {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
-
-IMPLEMENT_SETTING_ENUM(SQLSecurityType, ErrorCodes::BAD_ARGUMENTS,
-    {{"DEFINER", SQLSecurityType::DEFINER},
-     {"INVOKER", SQLSecurityType::INVOKER},
-     {"NONE", SQLSecurityType::NONE}})
-
-IMPLEMENT_SETTING_ENUM(
-    GroupArrayActionWhenLimitReached,
-    ErrorCodes::BAD_ARGUMENTS,
-    {{"throw", GroupArrayActionWhenLimitReached::THROW}, {"discard", GroupArrayActionWhenLimitReached::DISCARD}})
 }

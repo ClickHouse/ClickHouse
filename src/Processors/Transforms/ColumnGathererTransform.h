@@ -5,6 +5,7 @@
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
 
+
 namespace Poco { class Logger; }
 
 
@@ -56,14 +57,8 @@ using MergedRowSources = PODArray<RowSourcePart>;
 class ColumnGathererStream final : public IMergingAlgorithm
 {
 public:
-    ColumnGathererStream(
-        size_t num_inputs,
-        ReadBuffer & row_sources_buf_,
-        size_t block_preferred_size_rows_,
-        size_t block_preferred_size_bytes_,
-        bool is_result_sparse_);
+    ColumnGathererStream(size_t num_inputs, ReadBuffer & row_sources_buf_, size_t block_preferred_size_ = DEFAULT_BLOCK_SIZE);
 
-    const char * getName() const override { return "ColumnGathererStream"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
@@ -72,11 +67,10 @@ public:
     template <typename Column>
     void gather(Column & column_res);
 
-    MergedStats getMergedStats() const override { return {.bytes = merged_bytes, .rows = merged_rows, .blocks = merged_blocks}; }
+    UInt64 getMergedRows() const { return merged_rows; }
+    UInt64 getMergedBytes() const { return merged_bytes; }
 
 private:
-    void updateStats(const IColumn & column);
-
     /// Cache required fields
     struct Source
     {
@@ -97,16 +91,15 @@ private:
     std::vector<Source> sources;
     ReadBuffer & row_sources_buf;
 
-    const size_t block_preferred_size_rows;
-    const size_t block_preferred_size_bytes;
-    const bool is_result_sparse;
+    const size_t block_preferred_size;
 
     Source * source_to_fully_copy = nullptr;
 
     ssize_t next_required_source = -1;
+    size_t cur_block_preferred_size = 0;
+
     UInt64 merged_rows = 0;
     UInt64 merged_bytes = 0;
-    UInt64 merged_blocks = 0;
 };
 
 class ColumnGathererTransform final : public IMergingTransform<ColumnGathererStream>
@@ -116,15 +109,17 @@ public:
         const Block & header,
         size_t num_inputs,
         ReadBuffer & row_sources_buf_,
-        size_t block_preferred_size_rows_,
-        size_t block_preferred_size_bytes_,
-        bool is_result_sparse_);
+        size_t block_preferred_size_ = DEFAULT_BLOCK_SIZE);
 
     String getName() const override { return "ColumnGathererTransform"; }
 
+    void work() override;
+
 protected:
     void onFinish() override;
-    LoggerPtr log;
+    UInt64 elapsed_ns = 0;
+
+    Poco::Logger * log;
 };
 
 
@@ -138,21 +133,15 @@ void ColumnGathererStream::gather(Column & column_res)
     if (next_required_source == -1)
     {
         /// Start new column.
-        /// Actually reserve works only for fixed size columns.
-        /// So it's safe to ignore preferred size in bytes and call reserve for number of rows.
-        size_t size_to_reserve = std::min(static_cast<size_t>(row_sources_end - row_source_pos), block_preferred_size_rows);
-        column_res.reserve(size_to_reserve);
+        cur_block_preferred_size = std::min(static_cast<size_t>(row_sources_end - row_source_pos), block_preferred_size);
+        column_res.reserve(cur_block_preferred_size);
     }
 
+    size_t cur_size = column_res.size();
     next_required_source = -1;
 
-    /// We use do ... while here to ensure there will be at least one iteration of this loop.
-    /// Because the column_res.byteSize() could be bigger than block_preferred_size_bytes already at this point.
-    do
+    while (row_source_pos < row_sources_end && cur_size < cur_block_preferred_size)
     {
-        if (row_source_pos >= row_sources_end)
-            break;
-
         RowSourcePart row_source = *row_source_pos;
         size_t source_num = row_source.getSourceNum();
         Source & source = sources[source_num];
@@ -169,7 +158,6 @@ void ColumnGathererStream::gather(Column & column_res)
         /// Consecutive optimization. TODO: precompute lengths
         size_t len = 1;
         size_t max_len = std::min(static_cast<size_t>(row_sources_end - row_source_pos), source.size - source.pos); // interval should be in the same block
-
         while (len < max_len && row_source_pos->data == row_source.data)
         {
             ++len;
@@ -192,10 +180,12 @@ void ColumnGathererStream::gather(Column & column_res)
                 column_res.insertFrom(*source.column, source.pos);
             else
                 column_res.insertRangeFrom(*source.column, source.pos, len);
+
+            cur_size += len;
         }
 
         source.pos += len;
-    } while (column_res.size() < block_preferred_size_rows && column_res.byteSize() < block_preferred_size_bytes);
+    }
 }
 
 }

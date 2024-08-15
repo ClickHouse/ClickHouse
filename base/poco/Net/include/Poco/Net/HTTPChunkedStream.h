@@ -45,8 +45,6 @@ namespace Net
         ~HTTPChunkedStreamBuf();
         void close();
 
-        bool isComplete() const { return _chunk == std::char_traits<char>::eof(); }
-
     protected:
         int readFromDevice(char * buffer, std::streamsize length);
         int writeToDevice(const char * buffer, std::streamsize length);
@@ -69,8 +67,6 @@ namespace Net
         HTTPChunkedIOS(HTTPSession & session, HTTPChunkedStreamBuf::openmode mode);
         ~HTTPChunkedIOS();
         HTTPChunkedStreamBuf * rdbuf();
-
-        bool isComplete() const { return _buf.isComplete(); }
 
     protected:
         HTTPChunkedStreamBuf _buf;

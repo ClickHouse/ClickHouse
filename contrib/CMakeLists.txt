@@ -1,7 +1,16 @@
 #"${folder}/CMakeLists.txt" Third-party libraries may have substandard code.
 
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w -ffunction-sections -fdata-sections")
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -ffunction-sections -fdata-sections")
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
+
+if (WITH_COVERAGE)
+  set (WITHOUT_COVERAGE_LIST ${WITHOUT_COVERAGE})
+  separate_arguments(WITHOUT_COVERAGE_LIST)
+  # disable coverage for contib files and build with optimisations
+  if (COMPILER_CLANG)
+      add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE_LIST})
+  endif()
+endif()
 
 if (SANITIZE STREQUAL "undefined")
     # 3rd-party libraries usually not intended to work with UBSan.
@@ -37,10 +46,13 @@ function(add_contrib cmake_folder)
     message(STATUS "Adding contrib module ${base_folders} (configuring with ${cmake_folder})")
     add_subdirectory (${cmake_folder})
 endfunction()
-add_contrib (openssl-cmake openssl)
+if (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC)
+    add_contrib (openssl-cmake openssl)
+else ()
+    add_contrib (boringssl-cmake boringssl)
+endif ()
 add_contrib (miniselect-cmake miniselect)
 add_contrib (pdqsort-cmake pdqsort)
-add_contrib (pocketfft-cmake pocketfft)
 add_contrib (crc32-vpmsum-cmake crc32-vpmsum)
 add_contrib (sparsehash-c11-cmake sparsehash-c11)
 add_contrib (abseil-cpp-cmake abseil-cpp)
@@ -71,6 +83,7 @@ add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (bzip2-cmake bzip2)
 add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
+add_contrib (rocksdb-cmake rocksdb)
 add_contrib (thrift-cmake thrift)
 # parquet/arrow/orc
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
@@ -122,7 +135,7 @@ add_contrib (aws-cmake
     aws-cmake
 )
 
-add_contrib (aklomp-base64-cmake aklomp-base64)
+add_contrib (base64-cmake base64)
 add_contrib (simdjson-cmake simdjson)
 add_contrib (rapidjson-cmake rapidjson)
 add_contrib (fastops-cmake fastops)
@@ -130,9 +143,9 @@ add_contrib (libuv-cmake libuv)
 add_contrib (liburing-cmake liburing)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
-add_contrib (curl-cmake curl)
-add_contrib (azure-cmake azure) # requires: curl
 if (NOT OS_DARWIN)
+    add_contrib (curl-cmake curl)
+    add_contrib (azure-cmake azure) # requires: curl
     add_contrib (sentry-native-cmake sentry-native) # requires: curl
 endif()
 add_contrib (fmtlib-cmake fmtlib)
@@ -147,13 +160,10 @@ add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift, avro, arro
 add_contrib (cppkafka-cmake cppkafka)
 add_contrib (libpqxx-cmake libpqxx)
 add_contrib (libpq-cmake libpq)
-add_contrib (rocksdb-cmake rocksdb) # requires: jemalloc, snappy, zlib, lz4, zstd, liburing
 add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
-add_contrib (idna-cmake idna)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (incbin-cmake incbin)
-add_contrib (sqids-cpp-cmake sqids-cpp)
 
 option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
 if (ENABLE_NLP)
@@ -168,9 +178,9 @@ add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
 
 if (OS_LINUX AND ARCH_AMD64 AND ENABLE_SSE42)
-    option (ENABLE_QPL "Enable Intel® Query Processing Library (QPL)" ${ENABLE_LIBRARIES})
+    option (ENABLE_QPL "Enable Intel® Query Processing Library" ${ENABLE_LIBRARIES})
 elseif(ENABLE_QPL)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "QPL library is only supported on x86_64 with SSE 4.2 or higher")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "QPL library is only supported on x86_64 arch with SSE 4.2 or higher")
 endif()
 if (ENABLE_QPL)
     add_contrib (idxd-config-cmake idxd-config)
@@ -179,56 +189,28 @@ else()
     message(STATUS "Not using QPL")
 endif ()
 
-if (OS_LINUX AND ARCH_AMD64 AND NOT NO_SSE3_OR_HIGHER)
-    option (ENABLE_QATLIB "Enable Intel® QuickAssist Technology Library (QATlib)" ${ENABLE_LIBRARIES})
-elseif(ENABLE_QATLIB)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "QATLib is only supported on x86_64")
-endif()
-if (ENABLE_QATLIB)
-    option (ENABLE_QAT_USDM_DRIVER "A User Space DMA-able Memory (USDM) component which allocates/frees DMA-able memory" OFF)
-    option (ENABLE_QAT_OUT_OF_TREE_BUILD "Using out-of-tree driver, user needs to customize ICP_ROOT variable" OFF)
-    set(ICP_ROOT "" CACHE STRING "ICP_ROOT variable to define the path of out-of-tree driver package")
-    if (ENABLE_QAT_OUT_OF_TREE_BUILD)
-        if (ICP_ROOT STREQUAL "")
-            message(FATAL_ERROR "Please define the path of out-of-tree driver package with -DICP_ROOT=xxx or disable out-of-tree build with -DENABLE_QAT_OUT_OF_TREE_BUILD=OFF; \
-                                 If you want out-of-tree build but have no package available, please download and build ICP package from: https://www.intel.com/content/www/us/en/download/765501.html")
-        endif ()
-    else()
-        add_contrib (qatlib-cmake qatlib) # requires: isa-l
-    endif ()
-    add_contrib (QAT-ZSTD-Plugin-cmake QAT-ZSTD-Plugin)
-else()
-    message(STATUS "Not using QATLib")
-endif ()
-
 add_contrib (morton-nd-cmake morton-nd)
 if (ARCH_S390X)
     add_contrib(crc32-s390x-cmake crc32-s390x)
 endif()
+add_contrib (annoy-cmake annoy)
 
-option(ENABLE_USEARCH "Enable USearch" ${ENABLE_LIBRARIES})
+option(ENABLE_USEARCH "Enable USearch (Approximate Neighborhood Search, HNSW) support" ${ENABLE_LIBRARIES})
 if (ENABLE_USEARCH)
     add_contrib (FP16-cmake FP16)
+    add_contrib (robin-map-cmake robin-map)
     add_contrib (SimSIMD-cmake SimSIMD)
-    add_contrib (usearch-cmake usearch) # requires: FP16, SimdSIMD
+    add_contrib (usearch-cmake usearch) # requires: FP16, robin-map, SimdSIMD
 else ()
     message(STATUS "Not using USearch")
 endif ()
 
 add_contrib (xxHash-cmake xxHash)
 
-add_contrib (expected-cmake expected)
-
 add_contrib (libbcrypt-cmake libbcrypt)
 
 add_contrib (google-benchmark-cmake google-benchmark)
 add_contrib (ulid-c-cmake ulid-c)
-
-add_contrib (libssh-cmake libssh)
-
-add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
-
-add_contrib(numactl-cmake numactl)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

@@ -116,7 +116,7 @@ def test_create_and_replace():
     node1.query("CREATE FUNCTION f1 AS (x, y) -> x + y")
     assert node1.query("SELECT f1(12, 3)") == "15\n"
 
-    expected_error = "User-defined object 'f1' already exists"
+    expected_error = "User-defined function 'f1' already exists"
     assert expected_error in node1.query_and_get_error(
         "CREATE FUNCTION f1 AS (x, y) -> x + 2 * y"
     )
@@ -135,15 +135,12 @@ def test_drop_if_exists():
     node1.query("DROP FUNCTION IF EXISTS f1")
     node1.query("DROP FUNCTION IF EXISTS f1")
 
-    expected_error = "User-defined object 'f1' doesn't exist"
+    expected_error = "User-defined function 'f1' doesn't exist"
     assert expected_error in node1.query_and_get_error("DROP FUNCTION f1")
 
 
 def test_replication():
     node1.query("CREATE FUNCTION f2 AS (x, y) -> x - y")
-    node1.query(
-        "CREATE FUNCTION f3 AS () -> (SELECT sum(s) FROM (SELECT 1 as s UNION ALL SELECT 1 as s))"
-    )
 
     assert (
         node1.query("SELECT create_query FROM system.functions WHERE name='f2'")
@@ -157,11 +154,7 @@ def test_replication():
     assert node1.query("SELECT f2(12,3)") == "9\n"
     assert node2.query("SELECT f2(12,3)") == "9\n"
 
-    assert node1.query("SELECT f3()") == "2\n"
-    assert node2.query("SELECT f3()") == "2\n"
-
     node1.query("DROP FUNCTION f2")
-    node1.query("DROP FUNCTION f3")
     assert (
         node1.query("SELECT create_query FROM system.functions WHERE name='f2'") == ""
     )
@@ -221,9 +214,7 @@ def test_reload_zookeeper():
     )
 
     # config reloads, but can still work
-    node1.query(
-        "CREATE FUNCTION f2 AS () -> (SELECT sum(s) FROM (SELECT 1 as s UNION ALL SELECT 1 as s))"
-    )
+    node1.query("CREATE FUNCTION f2 AS (x, y) -> x - y")
     assert_eq_with_retry(
         node2,
         "SELECT name FROM system.functions WHERE name IN ['f1', 'f2'] ORDER BY name",
@@ -278,7 +269,7 @@ def test_reload_zookeeper():
         TSV(["f1", "f2", "f3"]),
     )
 
-    assert node2.query("SELECT f1(12, 3), f2(), f3(12, 3)") == TSV([[15, 2, 4]])
+    assert node2.query("SELECT f1(12, 3), f2(12, 3), f3(12, 3)") == TSV([[15, 9, 4]])
 
     active_zk_connections = get_active_zk_connections()
     assert (
@@ -315,14 +306,4 @@ def test_start_without_zookeeper():
         "SELECT create_query FROM system.functions WHERE name='f1'",
         "CREATE FUNCTION f1 AS (x, y) -> (x + y)\n",
     )
-    node1.query("DROP FUNCTION f1")
-
-
-def test_server_restart():
-    node1.query(
-        "CREATE FUNCTION f1 AS () -> (SELECT sum(s) FROM (SELECT 1 as s UNION ALL SELECT 1 as s))"
-    )
-    assert node1.query("SELECT f1()") == "2\n"
-    node1.restart_clickhouse()
-    assert node1.query("SELECT f1()") == "2\n"
     node1.query("DROP FUNCTION f1")

@@ -8,15 +8,13 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
-#include <Interpreters/Context.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/Pipe.h>
-
+#include <Processors/ISimpleTransform.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Interpreters/Context.h>
 #include <boost/circular_buffer.hpp>
 
-#include <ranges>
 
 namespace DB
 {
@@ -46,7 +44,7 @@ static void makeFdNonBlocking(int fd)
 {
     bool result = tryMakeFdNonBlocking(fd);
     if (!result)
-        throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot set non-blocking mode of pipe");
+        throwFromErrno("Cannot set non-blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
 }
 
 static bool tryMakeFdBlocking(int fd)
@@ -65,35 +63,26 @@ static void makeFdBlocking(int fd)
 {
     bool result = tryMakeFdBlocking(fd);
     if (!result)
-        throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot set blocking mode of pipe");
+        throwFromErrno("Cannot set blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
 }
 
 static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_milliseconds)
 {
-    auto logger = getLogger("TimeoutReadBufferFromFileDescriptor");
-    auto describe_fd = [](const auto & pollfd) { return fmt::format("(fd={}, flags={})", pollfd.fd, fcntl(pollfd.fd, F_GETFL)); };
-
     int res;
 
     while (true)
     {
         Stopwatch watch;
-
-        LOG_TEST(logger, "Polling descriptors: {}", fmt::join(std::span(pfds, pfds + num) | std::views::transform(describe_fd), ", "));
-
         res = poll(pfds, static_cast<nfds_t>(num), static_cast<int>(timeout_milliseconds));
 
         if (res < 0)
         {
             if (errno != EINTR)
-                throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot poll");
+                throwFromErrno("Cannot poll", ErrorCodes::CANNOT_POLL);
 
             const auto elapsed = watch.elapsedMilliseconds();
             if (timeout_milliseconds <= elapsed)
-            {
-                LOG_TEST(logger, "Timeout exceeded: elapsed={}, timeout={}", elapsed, timeout_milliseconds);
                 break;
-            }
             timeout_milliseconds -= elapsed;
         }
         else
@@ -101,12 +90,6 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
             break;
         }
     }
-
-    LOG_TEST(
-        logger,
-        "Poll for descriptors: {} returned {}",
-        fmt::join(std::span(pfds, pfds + num) | std::views::transform(describe_fd), ", "),
-        res);
 
     return res;
 }
@@ -175,7 +158,7 @@ public:
                         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Executable generates stderr: {}", str);
                     else if (stderr_reaction == ExternalCommandStderrReaction::LOG)
                         LOG_WARNING(
-                            getLogger("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
+                            &::Poco::Logger::get("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
                     else if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST)
                     {
                         res = std::min(ssize_t(stderr_result_buf.reserve()), res);
@@ -194,7 +177,7 @@ public:
                 ssize_t res = ::read(stdout_fd, internal_buffer.begin(), internal_buffer.size());
 
                 if (-1 == res && errno != EINTR)
-                    throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from pipe");
+                    throwFromErrno("Cannot read from pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
 
                 if (res == 0)
                     break;
@@ -217,6 +200,12 @@ public:
         return true;
     }
 
+    void reset() const
+    {
+        makeFdBlocking(stdout_fd);
+        makeFdBlocking(stderr_fd);
+    }
+
     ~TimeoutReadBufferFromFileDescriptor() override
     {
         tryMakeFdBlocking(stdout_fd);
@@ -228,7 +217,7 @@ public:
             stderr_result.reserve(stderr_result_buf.size());
             stderr_result.append(stderr_result_buf.begin(), stderr_result_buf.end());
             LOG_WARNING(
-                getLogger("ShellCommandSource"),
+                &::Poco::Logger::get("ShellCommandSource"),
                 "Executable generates stderr at the {}: {}",
                 stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST ? "beginning" : "end",
                 stderr_result);
@@ -272,7 +261,7 @@ public:
             ssize_t res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
 
             if ((-1 == res || 0 == res) && errno != EINTR)
-                throw ErrnoException(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Cannot write into pipe");
+                throwFromErrno("Cannot write into pipe", ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
 
             if (res > 0)
                 bytes_written += res;

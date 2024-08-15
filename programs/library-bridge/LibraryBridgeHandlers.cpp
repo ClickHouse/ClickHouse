@@ -1,18 +1,19 @@
 #include "LibraryBridgeHandlers.h"
 
+#include "CatBoostLibraryHandler.h"
 #include "CatBoostLibraryHandlerFactory.h"
-#include "Common/ProfileEvents.h"
 #include "ExternalDictionaryLibraryHandler.h"
 #include "ExternalDictionaryLibraryHandlerFactory.h"
 
 #include <Formats/FormatFactory.h>
-#include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <IO/WriteHelpers.h>
+#include <Poco/Net/HTMLForm.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/ThreadPool.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -43,9 +44,9 @@ namespace
         response.setStatusAndReason(HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 
         if (!response.sent())
-            *response.send() << message << '\n';
+            *response.send() << message << std::endl;
 
-        LOG_WARNING(getLogger("LibraryBridge"), fmt::runtime(message));
+        LOG_WARNING(&Poco::Logger::get("LibraryBridge"), fmt::runtime(message));
     }
 
     std::shared_ptr<Block> parseColumns(String && column_string)
@@ -87,13 +88,15 @@ static void writeData(Block data, OutputFormatPtr format)
 }
 
 
-ExternalDictionaryLibraryBridgeRequestHandler::ExternalDictionaryLibraryBridgeRequestHandler(ContextPtr context_)
-    : WithContext(context_), log(getLogger("ExternalDictionaryLibraryBridgeRequestHandler"))
+ExternalDictionaryLibraryBridgeRequestHandler::ExternalDictionaryLibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_)
+    : WithContext(context_)
+    , keep_alive_timeout(keep_alive_timeout_)
+    , log(&Poco::Logger::get("ExternalDictionaryLibraryBridgeRequestHandler"))
 {
 }
 
 
-void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     LOG_TRACE(log, "Request URI: {}", request.getURI());
     HTMLForm params(getContext()->getSettingsRef(), request);
@@ -135,7 +138,7 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
     const String & dictionary_id = params.get("dictionary_id");
 
     LOG_TRACE(log, "Library method: '{}', dictionary id: {}", method, dictionary_id);
-    WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
+    WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
 
     try
     {
@@ -283,6 +286,7 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
         else if (method == "extDict_loadIds")
         {
             LOG_DEBUG(log, "Getting diciontary ids for dictionary with id: {}", dictionary_id);
+            String ids_string;
             std::vector<uint64_t> ids = parseIdsFromBinary(request.getStream());
 
             auto library_handler = ExternalDictionaryLibraryHandlerFactory::instance().get(dictionary_id);
@@ -372,13 +376,15 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
 }
 
 
-ExternalDictionaryLibraryBridgeExistsHandler::ExternalDictionaryLibraryBridgeExistsHandler(ContextPtr context_)
-    : WithContext(context_), log(getLogger("ExternalDictionaryLibraryBridgeExistsHandler"))
+ExternalDictionaryLibraryBridgeExistsHandler::ExternalDictionaryLibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_)
+    : WithContext(context_)
+    , keep_alive_timeout(keep_alive_timeout_)
+    , log(&Poco::Logger::get("ExternalDictionaryLibraryBridgeExistsHandler"))
 {
 }
 
 
-void ExternalDictionaryLibraryBridgeExistsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void ExternalDictionaryLibraryBridgeExistsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
@@ -397,7 +403,7 @@ void ExternalDictionaryLibraryBridgeExistsHandler::handleRequest(HTTPServerReque
 
         String res = library_handler ? "1" : "0";
 
-        setResponseDefaultHeaders(response);
+        setResponseDefaultHeaders(response, keep_alive_timeout);
         LOG_TRACE(log, "Sending ping response: {} (dictionary id: {})", res, dictionary_id);
         response.sendBuffer(res.data(), res.size());
     }
@@ -408,13 +414,16 @@ void ExternalDictionaryLibraryBridgeExistsHandler::handleRequest(HTTPServerReque
 }
 
 
-CatBoostLibraryBridgeRequestHandler::CatBoostLibraryBridgeRequestHandler(ContextPtr context_)
-    : WithContext(context_), log(getLogger("CatBoostLibraryBridgeRequestHandler"))
+CatBoostLibraryBridgeRequestHandler::CatBoostLibraryBridgeRequestHandler(
+    size_t keep_alive_timeout_, ContextPtr context_)
+    : WithContext(context_)
+    , keep_alive_timeout(keep_alive_timeout_)
+    , log(&Poco::Logger::get("CatBoostLibraryBridgeRequestHandler"))
 {
 }
 
 
-void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     LOG_TRACE(log, "Request URI: {}", request.getURI());
     HTMLForm params(getContext()->getSettingsRef(), request);
@@ -448,15 +457,12 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
     const String & method = params.get("method");
 
     LOG_TRACE(log, "Library method: '{}'", method);
-    WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
+    WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
 
     try
     {
         if (method == "catboost_list")
         {
-            auto & read_buf = request.getStream();
-            params.read(read_buf);
-
             ExternalModelInfos model_infos = CatBoostLibraryHandlerFactory::instance().getModelInfos();
 
             writeIntBinary(static_cast<UInt64>(model_infos.size()), out);
@@ -494,9 +500,6 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
         }
         else if (method == "catboost_removeAllModels")
         {
-            auto & read_buf = request.getStream();
-            params.read(read_buf);
-
             CatBoostLibraryHandlerFactory::instance().removeAllModels();
 
             String res = "1";
@@ -610,13 +613,15 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
 }
 
 
-CatBoostLibraryBridgeExistsHandler::CatBoostLibraryBridgeExistsHandler(ContextPtr context_)
-    : WithContext(context_), log(getLogger("CatBoostLibraryBridgeExistsHandler"))
+CatBoostLibraryBridgeExistsHandler::CatBoostLibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_)
+    : WithContext(context_)
+    , keep_alive_timeout(keep_alive_timeout_)
+    , log(&Poco::Logger::get("CatBoostLibraryBridgeExistsHandler"))
 {
 }
 
 
-void CatBoostLibraryBridgeExistsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void CatBoostLibraryBridgeExistsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
@@ -625,7 +630,7 @@ void CatBoostLibraryBridgeExistsHandler::handleRequest(HTTPServerRequest & reque
 
         String res = "1";
 
-        setResponseDefaultHeaders(response);
+        setResponseDefaultHeaders(response, keep_alive_timeout);
         LOG_TRACE(log, "Sending ping response: {}", res);
         response.sendBuffer(res.data(), res.size());
     }

@@ -1,6 +1,6 @@
 ---
 slug: /en/development/tests
-sidebar_position: 72
+sidebar_position: 71
 sidebar_label: Testing
 title: ClickHouse Testing
 description: Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
@@ -14,7 +14,7 @@ Each functional test sends one or multiple queries to the running ClickHouse ser
 
 Tests are located in `queries` directory. There are two subdirectories: `stateless` and `stateful`. Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself. Stateful tests require preloaded test data from ClickHouse and it is available to general public.
 
-Each test can be one of two types: `.sql` and `.sh`. `.sql` test is the simple SQL script that is piped to `clickhouse-client`. `.sh` test is a script that is run by itself. SQL tests are generally preferable to `.sh` tests. You should use `.sh` tests only when you have to test some feature that cannot be exercised from pure SQL, such as piping some input data into `clickhouse-client` or testing `clickhouse-local`.
+Each test can be one of two types: `.sql` and `.sh`. `.sql` test is the simple SQL script that is piped to `clickhouse-client --multiquery`. `.sh` test is a script that is run by itself. SQL tests are generally preferable to `.sh` tests. You should use `.sh` tests only when you have to test some feature that cannot be exercised from pure SQL, such as piping some input data into `clickhouse-client` or testing `clickhouse-local`.
 
 :::note
 A common mistake when testing data types `DateTime` and `DateTime64` is assuming that the server uses a specific time zone (e.g. "UTC"). This is not the case, time zones in CI test runs
@@ -28,7 +28,7 @@ run, for example, the test `01428_hash_set_nan_key`, change to the repository
 folder and run the following command:
 
 ```
-PATH=<path to clickhouse-client>:$PATH tests/clickhouse-test 01428_hash_set_nan_key
+PATH=$PATH:<path to clickhouse-client> tests/clickhouse-test 01428_hash_set_nan_key
 ```
 
 Test results (`stderr` and `stdout`) are written to files `01428_hash_set_nan_key.[stderr|stdout]` which
@@ -38,7 +38,7 @@ For more options, see `tests/clickhouse-test --help`. You can simply run all tes
 
 ### Adding a New Test
 
-To add new test, create a `.sql` or `.sh` file in `queries/0_stateless` directory, check it manually and then generate `.reference` file in the following way: `clickhouse-client < 00000_test.sql > 00000_test.reference` or `./00000_test.sh > ./00000_test.reference`.
+To add new test, create a `.sql` or `.sh` file in `queries/0_stateless` directory, check it manually and then generate `.reference` file in the following way: `clickhouse-client --multiquery < 00000_test.sql > 00000_test.reference` or `./00000_test.sh > ./00000_test.reference`.
 
 Tests should use (create, drop, etc) only tables in `test` database that is assumed to be created beforehand; also tests can use temporary tables.
 
@@ -109,9 +109,6 @@ Do not check for a particular wording of error message, it may change in the fut
 
 If you want to use distributed queries in functional tests, you can leverage `remote` table function with `127.0.0.{1..2}` addresses for the server to query itself; or you can use predefined test clusters in server configuration file like `test_shard_localhost`. Remember to add the words `shard` or `distributed` to the test name, so that it is run in CI in correct configurations, where the server is configured to support distributed queries.
 
-### Working with Temporary Files
-
-Sometimes in a shell test you may need to create a file on the fly to work with. Keep in mind that some CI checks run tests in parallel, so if you are creating or removing a temporary file in your script without a unique name this can cause some of the CI checks, such as Flaky, to fail. To get around this you should use environment variable `$CLICKHOUSE_TEST_UNIQUE_NAME` to give temporary files a name unique to the test that is running. That way you can be sure that the file you are creating during setup or removing during cleanup is the file only in use by that test and not some other test which is running in parallel. 
 
 ## Known Bugs {#known-bugs}
 
@@ -228,10 +225,6 @@ Clang has even more useful warnings - you can look for them with `-Weverything` 
 For production builds, clang is used, but we also test make gcc builds. For development, clang is usually more convenient to use. You can build on your own machine with debug mode (to save battery of your laptop), but please note that compiler is able to generate more warnings with `-O3` due to better control flow and inter-procedure analysis. When building with clang in debug mode, debug version of `libc++` is used that allows to catch more errors at runtime.
 
 ## Sanitizers {#sanitizers}
-
-:::note
-If the process (ClickHouse server or client) crashes at startup when running it locally, you might need to disable address space layout randomization: `sudo sysctl kernel.randomize_va_space=0`
-:::
 
 ### Address sanitizer
 We run functional, integration, stress and unit tests under ASan on per-commit basis.

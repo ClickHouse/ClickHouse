@@ -2,7 +2,6 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <cmath>
 
@@ -21,22 +20,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     const auto storage_settings_ptr = storage.getSettings();
     LOG_TRACE(log, "Executing log entry to mutate part {} to {}", source_part_name, entry.new_part_name);
 
-    new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);
-
-    future_mutated_part = std::make_shared<FutureMergedMutatedPart>();
-    future_mutated_part->name = entry.new_part_name;
-    future_mutated_part->uuid = entry.new_part_uuid;
-    future_mutated_part->part_info = new_part_info;
-
-    stopwatch_ptr = std::make_unique<Stopwatch>();
-    auto part_log_writer = [this](const ExecutionStatus & execution_status)
-    {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
-        storage.writePartLog(
-            PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
-            entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot));
-    };
-
     MergeTreeData::DataPartPtr source_part = storage.getActiveContainingPart(source_part_name);
     if (!source_part)
     {
@@ -46,12 +29,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         return PrepareResult{
             .prepared_successfully = false,
             .need_to_check_missing_part_in_fetch = true,
-            .part_log_writer = part_log_writer,
+            .part_log_writer = {}
         };
     }
-
-    future_mutated_part->parts.push_back(source_part);
-    future_mutated_part->part_format = source_part->getFormat();
 
     if (source_part->name != source_part_name)
     {
@@ -64,12 +44,12 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         return PrepareResult{
             .prepared_successfully = false,
             .need_to_check_missing_part_in_fetch = true,
-            .part_log_writer = part_log_writer,
+            .part_log_writer = {}
         };
     }
 
     /// TODO - some better heuristic?
-    size_t estimated_space_for_result = MergeTreeDataMergerMutator::estimateNeededDiskSpace({source_part}, false);
+    size_t estimated_space_for_result = MergeTreeDataMergerMutator::estimateNeededDiskSpace({source_part});
 
     if (entry.create_time + storage_settings_ptr->prefer_fetch_merged_part_time_threshold.totalSeconds() <= time(nullptr)
         && estimated_space_for_result >= storage_settings_ptr->prefer_fetch_merged_part_size_threshold)
@@ -83,7 +63,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             return PrepareResult{
                 .prepared_successfully = false,
                 .need_to_check_missing_part_in_fetch = true,
-                .part_log_writer = part_log_writer,
+                .part_log_writer = {}
             };
         }
     }
@@ -104,12 +84,13 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             return PrepareResult{
                 .prepared_successfully = false,
                 .need_to_check_missing_part_in_fetch = true,
-                .part_log_writer = part_log_writer,
+                .part_log_writer = {}
             };
 
         }
     }
 
+    new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);
     Strings mutation_ids;
     commands = std::make_shared<MutationCommands>(storage.queue.getMutationCommands(source_part, new_part_info.mutation, mutation_ids));
     LOG_TRACE(log, "Mutating part {} with mutation commands from {} mutations ({}): {}",
@@ -117,8 +98,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
-    reserved_space = StorageReplicatedMergeTree::reserveSpace(estimated_space_for_result, source_part->getDataPartStorage());
-    future_mutated_part->updatePath(storage, reserved_space.get());
+    reserved_space = storage.reserveSpace(estimated_space_for_result, source_part->getDataPartStorage());
 
     table_lock_holder = storage.lockForShare(
             RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
@@ -126,17 +106,26 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
 
+    future_mutated_part = std::make_shared<FutureMergedMutatedPart>();
+    future_mutated_part->name = entry.new_part_name;
+    future_mutated_part->uuid = entry.new_part_uuid;
+    future_mutated_part->parts.push_back(source_part);
+    future_mutated_part->part_info = new_part_info;
+    future_mutated_part->updatePath(storage, reserved_space.get());
+    future_mutated_part->part_format = source_part->getFormat();
+
     if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)
     {
         if (auto disk = reserved_space->getDisk(); disk->supportZeroCopyReplication())
         {
-            if (storage.findReplicaHavingCoveringPart(entry.new_part_name, true))
+            String dummy;
+            if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty())
             {
                 LOG_DEBUG(log, "Mutation of part {} finished by some other replica, will download mutated part", entry.new_part_name);
                 return PrepareResult{
                     .prepared_successfully = false,
                     .need_to_check_missing_part_in_fetch = true,
-                    .part_log_writer = part_log_writer,
+                    .part_log_writer = {}
                 };
             }
 
@@ -175,10 +164,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
                 return PrepareResult{
                     .prepared_successfully = false,
                     .need_to_check_missing_part_in_fetch = false,
-                    .part_log_writer = part_log_writer,
+                    .part_log_writer = {}
                 };
             }
-            else if (storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false))
+            else if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false, dummy).empty())
             {
                 /// Why this if still needed? We can check for part in zookeeper, don't find it and sleep for any amount of time. During this sleep part will be actually committed from other replica
                 /// and exclusive zero copy lock will be released. We will take the lock and execute mutation one more time, while it was possible just to download the part from other replica.
@@ -194,7 +183,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
                 return PrepareResult{
                     .prepared_successfully = false,
                     .need_to_check_missing_part_in_fetch = true,
-                    .part_log_writer = part_log_writer,
+                    .part_log_writer = {}
                 };
             }
             else
@@ -205,14 +194,15 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     }
 
     task_context = Context::createCopy(storage.getContext());
-    task_context->makeQueryContextForMutate(*storage.getSettings());
+    task_context->makeQueryContext();
     task_context->setCurrentQueryId(getQueryId());
-    task_context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MUTATION);
 
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_mutated_part,
         task_context);
+
+    stopwatch_ptr = std::make_unique<Stopwatch>();
 
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),
@@ -222,11 +212,13 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     for (auto & item : future_mutated_part->parts)
         priority.value += item->getBytesOnDisk();
 
-    return PrepareResult{
-        .prepared_successfully = true,
-        .need_to_check_missing_part_in_fetch = true,
-        .part_log_writer = part_log_writer,
-    };
+    return {true, true, [this] (const ExecutionStatus & execution_status)
+    {
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        storage.writePartLog(
+            PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
+            entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot));
+    }};
 }
 
 
@@ -254,7 +246,6 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
             LOG_ERROR(log, "{}. Data after mutation is not byte-identical to data on another replicas. "
                            "We will download merged part from replica to force byte-identical result.", getCurrentExceptionMessage(false));
 
-            mutate_task->updateProfileEvents();
             write_part_log(ExecutionStatus::fromCurrentException("", true));
 
             if (storage.getSettings()->detach_not_byte_identical_parts)
@@ -282,7 +273,6 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
          */
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMutations);
-    mutate_task->updateProfileEvents();
     write_part_log({});
 
     return true;

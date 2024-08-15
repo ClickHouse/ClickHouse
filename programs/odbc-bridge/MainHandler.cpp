@@ -1,15 +1,14 @@
 #include "MainHandler.h"
 
 #include "validateODBCConnectionString.h"
-#include "ODBCSource.h"
-#include "ODBCSink.h"
+#include "ODBCBlockInputStream.h"
+#include "ODBCBlockOutputStream.h"
 #include "getIdentifierQuote.h"
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Core/Settings.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -47,12 +46,12 @@ void ODBCHandler::processError(HTTPServerResponse & response, const std::string 
 {
     response.setStatusAndReason(HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
     if (!response.sent())
-        *response.send() << message << '\n';
+        *response.send() << message << std::endl;
     LOG_WARNING(log, fmt::runtime(message));
 }
 
 
-void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     HTMLForm params(getContext()->getSettingsRef(), request);
     LOG_TRACE(log, "Request URI: {}", request.getURI());
@@ -132,7 +131,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         return;
     }
 
-    WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
+    WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
 
     try
     {

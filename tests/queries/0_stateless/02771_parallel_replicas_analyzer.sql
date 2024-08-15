@@ -21,10 +21,11 @@ INSERT INTO join_inner_table__fuzz_146_replicated
 SELECT number
 FROM join_inner_table__fuzz_146_replicated
     SETTINGS
-    enable_analyzer = 1,
+    allow_experimental_analyzer = 1,
     max_parallel_replicas = 2,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-    allow_experimental_parallel_reading_from_replicas = 1;
+    allow_experimental_parallel_reading_from_replicas = 1,
+    use_hedged_requests = 0;
 
 SYSTEM FLUSH LOGS;
 -- There should be 2 different queries

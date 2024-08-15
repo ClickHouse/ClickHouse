@@ -14,7 +14,6 @@ namespace CurrentMetrics
 {
     extern const Metric MergeTreeBackgroundExecutorThreads;
     extern const Metric MergeTreeBackgroundExecutorThreadsActive;
-    extern const Metric MergeTreeBackgroundExecutorThreadsScheduled;
 }
 
 namespace DB
@@ -41,7 +40,7 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
     , metric(metric_)
     , max_tasks_metric(max_tasks_metric_, 2 * max_tasks_count) // active + pending
     , pool(std::make_unique<ThreadPool>(
-          CurrentMetrics::MergeTreeBackgroundExecutorThreads, CurrentMetrics::MergeTreeBackgroundExecutorThreadsActive, CurrentMetrics::MergeTreeBackgroundExecutorThreadsScheduled))
+          CurrentMetrics::MergeTreeBackgroundExecutorThreads, CurrentMetrics::MergeTreeBackgroundExecutorThreadsActive))
 {
     if (max_tasks_count == 0)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Task count for MergeTreeBackgroundExecutor must not be zero");
@@ -114,13 +113,6 @@ void MergeTreeBackgroundExecutor<Queue>::increaseThreadsAndMaxTasksCount(size_t 
 }
 
 template <class Queue>
-size_t MergeTreeBackgroundExecutor<Queue>::getMaxThreads() const
-{
-    std::lock_guard lock(mutex);
-    return threads_count;
-}
-
-template <class Queue>
 size_t MergeTreeBackgroundExecutor<Queue>::getMaxTasksCount() const
 {
     return max_tasks_count.load(std::memory_order_relaxed);
@@ -144,7 +136,7 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
     return true;
 }
 
-void printExceptionWithRespectToAbort(LoggerPtr log, const String & query_id)
+void printExceptionWithRespectToAbort(Poco::Logger * log, const String & query_id)
 {
     std::exception_ptr ex = std::current_exception();
 
@@ -154,10 +146,6 @@ void printExceptionWithRespectToAbort(LoggerPtr log, const String & query_id)
     try
     {
         std::rethrow_exception(ex);
-    }
-    catch (const TestException &) // NOLINT
-    {
-        /// Exception from a unit test, ignore it.
     }
     catch (const Exception & e)
     {
@@ -190,8 +178,7 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         try
         {
             /// An exception context is needed to proper delete write buffers without finalization
-            /// See WriteBuffer::~WriteBuffer for more context
-            throw std::runtime_error("Storage is about to be deleted. Done pending task as if it was aborted.");
+            throw Exception(ErrorCodes::ABORTED, "Storage is about to be deleted. Done pending task as if it was aborted.");
         }
         catch (...)
         {
@@ -287,8 +274,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
     }
     catch (...)
     {
-        if (item->task->printExecutionException())
-            printExceptionWithRespectToAbort(log, query_id);
+        printExceptionWithRespectToAbort(log, query_id);
         /// Release the task with exception context.
         /// An exception context is needed to proper delete write buffers without finalization
         release_task(std::move(item));

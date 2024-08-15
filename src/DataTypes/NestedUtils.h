@@ -7,8 +7,6 @@
 namespace DB
 {
 
-class ColumnsDescription;
-
 namespace Nested
 {
     std::string concatenateName(const std::string & nested_table_name, const std::string & nested_field_name);
@@ -42,9 +40,6 @@ namespace Nested
 
     /// Extract all column names that are nested for specifying table.
     Names getAllNestedColumnsForTable(const Block & block, const std::string & table_name);
-
-    /// Returns true if @column_name is a subcolumn (of Array type) of any Nested column in @columns.
-    bool isSubcolumnOfNested(const String & column_name, const ColumnsDescription & columns);
 }
 
 /// Use this class to extract element columns from columns of nested type in a block, e.g. named Tuple.

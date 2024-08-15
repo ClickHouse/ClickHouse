@@ -12,7 +12,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Core/Settings.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -23,7 +22,6 @@ namespace CurrentMetrics
 {
     extern const Metric QueryPipelineExecutorThreads;
     extern const Metric QueryPipelineExecutorThreadsActive;
-    extern const Metric QueryPipelineExecutorThreadsScheduled;
 }
 
 namespace DB
@@ -77,9 +75,9 @@ const Processors & PipelineExecutor::getProcessors() const
     return graph->getProcessors();
 }
 
-void PipelineExecutor::cancel(ExecutionStatus reason)
+void PipelineExecutor::cancel()
 {
-    tryUpdateExecutionStatus(ExecutionStatus::Executing, reason);
+    cancelled = true;
     finish();
     graph->cancel();
 }
@@ -98,15 +96,11 @@ void PipelineExecutor::finish()
     tasks.finish();
 }
 
-bool PipelineExecutor::tryUpdateExecutionStatus(ExecutionStatus expected, ExecutionStatus desired)
-{
-    return execution_status.compare_exchange_strong(expected, desired);
-}
-
 void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
 {
     checkTimeLimit();
-    num_threads = std::max<size_t>(num_threads, 1);
+    if (num_threads < 1)
+        num_threads = 1;
 
     OpenTelemetry::SpanHolder span("PipelineExecutor::execute()");
     span.addAttribute("clickhouse.thread_num", num_threads);
@@ -125,7 +119,7 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
     }
     catch (...)
     {
-        span.addAttribute(DB::ExecutionStatus::fromCurrentException());
+        span.addAttribute(ExecutionStatus::fromCurrentException());
 
 #ifndef NDEBUG
         LOG_TRACE(log, "Exception while executing query. Current state:\n{}", dumpPipeline());
@@ -143,8 +137,8 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
         initializeExecution(1, true);
 
         // Acquire slot until we are done
-        single_thread_cpu_slot = cpu_slots->tryAcquire();
-        chassert(single_thread_cpu_slot && "Unable to allocate cpu slot for the first thread, but we just allocated at least one slot");
+        single_thread_slot = slots->tryAcquire();
+        chassert(single_thread_slot && "Unable to allocate slot for the first thread, but we just allocated at least one slot");
 
         if (yield_flag && *yield_flag)
             return true;
@@ -160,7 +154,7 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
         if (node->exception)
             std::rethrow_exception(node->exception);
 
-    single_thread_cpu_slot.reset();
+    single_thread_slot.reset();
     finalizeExecution();
 
     return false;
@@ -174,7 +168,7 @@ bool PipelineExecutor::checkTimeLimitSoft()
         // We call cancel here so that all processors are notified and tasks waken up
         // so that the "break" is faster and doesn't wait for long events
         if (!continuing)
-            cancel(ExecutionStatus::CancelledByTimeout);
+            cancel();
 
         return continuing;
     }
@@ -200,8 +194,7 @@ void PipelineExecutor::finalizeExecution()
 {
     checkTimeLimit();
 
-    auto status = execution_status.load();
-    if (status == ExecutionStatus::CancelledByTimeout || status == ExecutionStatus::CancelledByUser)
+    if (cancelled)
         return;
 
     bool all_processors_finished = true;
@@ -212,27 +205,6 @@ void PipelineExecutor::finalizeExecution()
             /// Single thread, do not hold mutex
             all_processors_finished = false;
             break;
-        }
-        else if (node->processor && read_progress_callback)
-        {
-            /// Some executors might have reported progress as part of their finish() call
-            /// For example, when reading from parallel replicas the coordinator will cancel the queries as soon as it
-            /// enough data (on LIMIT), but as the progress report is asynchronous it might not be reported until the
-            /// connection is cancelled and all packets drained
-            /// To cover these cases we check if there is any pending progress in the processors to report
-            if (auto read_progress = node->processor->getReadProgress())
-            {
-                if (read_progress->counters.total_rows_approx)
-                    read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
-
-                if (read_progress->counters.total_bytes)
-                    read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
-
-                /// We are finalizing the execution, so no need to call onProgress if there is nothing to report
-                if (read_progress->counters.read_rows || read_progress->counters.read_bytes)
-                    read_progress_callback->onProgress(
-                        read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits);
-            }
         }
     }
 
@@ -277,7 +249,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
                 break;
 
             if (!context.executeTask())
-                cancel(ExecutionStatus::Exception);
+                cancel();
 
             if (tasks.isFinished())
                 break;
@@ -295,13 +267,11 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
                 Queue async_queue;
 
                 /// Prepare processor after execution.
-                auto status = graph->updateNode(context.getProcessorID(), queue, async_queue);
-                if (status == ExecutingGraph::UpdateNodeStatus::Exception)
-                    cancel(ExecutionStatus::Exception);
+                if (!graph->updateNode(context.getProcessorID(), queue, async_queue))
+                    cancel();
 
                 /// Push other tasks to global queue.
-                if (status == ExecutingGraph::UpdateNodeStatus::Done)
-                    tasks.pushTasks(queue, async_queue, context);
+                tasks.pushTasks(queue, async_queue, context);
             }
 
 #ifndef NDEBUG
@@ -317,7 +287,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
             {
                 /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
                 /// We should cancel execution properly before rethrow.
-                cancel(ExecutionStatus::Exception);
+                cancel();
                 throw;
             }
 
@@ -336,14 +306,13 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_control)
 {
     is_execution_initialized = true;
-    tryUpdateExecutionStatus(ExecutionStatus::NotStarted, ExecutionStatus::Executing);
 
     size_t use_threads = num_threads;
 
     /// Allocate CPU slots from concurrency control
     size_t min_threads = concurrency_control ? 1uz : num_threads;
-    cpu_slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
-    use_threads = cpu_slots->grantedCount();
+    slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
+    use_threads = slots->grantedCount();
 
     Queue queue;
     graph->initializeExecution(queue);
@@ -352,12 +321,12 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     tasks.fill(queue);
 
     if (num_threads > 1)
-        pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, CurrentMetrics::QueryPipelineExecutorThreadsScheduled, num_threads);
+        pool = std::make_unique<ThreadPool>(CurrentMetrics::QueryPipelineExecutorThreads, CurrentMetrics::QueryPipelineExecutorThreadsActive, num_threads);
 }
 
 void PipelineExecutor::spawnThreads()
 {
-    while (auto slot = cpu_slots->tryAcquire())
+    while (auto slot = slots->tryAcquire())
     {
         size_t thread_num = threads.fetch_add(1);
 
@@ -402,7 +371,7 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
         {
             /// If finished_flag is not set, there was an exception.
             /// Cancel execution in this case.
-            cancel(ExecutionStatus::Exception);
+            cancel();
             if (pool)
                 pool->wait();
         }
@@ -416,7 +385,7 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
     }
     else
     {
-        auto slot = cpu_slots->tryAcquire();
+        auto slot = slots->tryAcquire();
         executeSingleThread(0);
     }
 

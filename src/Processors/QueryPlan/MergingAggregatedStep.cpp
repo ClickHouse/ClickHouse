@@ -77,7 +77,7 @@ void MergingAggregatedStep::applyOrder(SortDescription sort_description, DataStr
     input_stream.sort_scope = sort_scope;
     input_stream.sort_description = sort_description;
 
-    /// Columns might be reordered during optimization, so we better to update sort description.
+    /// Columns might be reordered during optimisation, so we better to update sort description.
     group_by_sort_description = std::move(sort_description);
 
     if (memoryBoundMergingWillBeUsed() && should_produce_results_in_order_of_bucket_number)
@@ -133,8 +133,8 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
     else
     {
         auto num_merge_threads = memory_efficient_merge_threads
-                                 ? memory_efficient_merge_threads
-                                 : max_threads;
+                                 ? static_cast<size_t>(memory_efficient_merge_threads)
+                                 : static_cast<size_t>(max_threads);
 
         pipeline.addMergingAggregatedMemoryEfficientTransform(transform_params, num_merge_threads);
     }
@@ -144,7 +144,7 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
 
 void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 {
-    params.explain(settings.out, settings.offset);
+    return params.explain(settings.out, settings.offset);
 }
 
 void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const

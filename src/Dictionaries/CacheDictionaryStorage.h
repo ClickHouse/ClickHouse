@@ -72,11 +72,10 @@ public:
 
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
-        const DictionaryStorageFetchRequest & fetch_request,
-        IColumn::Filter * const default_mask) override
+        const DictionaryStorageFetchRequest & fetch_request) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-            return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request, default_mask);
+            return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for complex key storage");
     }
@@ -109,11 +108,10 @@ public:
 
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<StringRef> & keys,
-        const DictionaryStorageFetchRequest & column_fetch_requests,
-        IColumn::Filter * const default_mask) override
+        const DictionaryStorageFetchRequest & column_fetch_requests) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
-            return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, column_fetch_requests, default_mask);
+            return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, column_fetch_requests);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for simple key storage");
     }
@@ -178,8 +176,7 @@ private:
     template <typename KeysStorageFetchResult>
     KeysStorageFetchResult fetchColumnsForKeysImpl(
         const PaddedPODArray<KeyType> & keys,
-        const DictionaryStorageFetchRequest & fetch_request,
-        IColumn::Filter * const default_mask)
+        const DictionaryStorageFetchRequest & fetch_request)
     {
         KeysStorageFetchResult result;
 
@@ -212,6 +209,7 @@ private:
 
             result.key_index_to_state[key_index] = {key_state, fetched_columns_index};
             fetched_keys[fetched_columns_index] = FetchedKey(cell.element_index, cell.is_default);
+
             ++fetched_columns_index;
 
             result.key_index_to_state[key_index].setDefaultValue(cell.is_default);
@@ -226,125 +224,64 @@ private:
                 continue;
 
             auto & attribute = attributes[attribute_index];
+            const auto & default_value_provider = fetch_request.defaultValueProviderAtIndex(attribute_index);
+
             auto & fetched_column = *result.fetched_columns[attribute_index];
             fetched_column.reserve(fetched_columns_index);
 
-            if (!default_mask)
+            if (unlikely(attribute.is_nullable))
             {
-                const auto & default_value_provider =
-                    fetch_request.defaultValueProviderAtIndex(attribute_index);
-
-                if (unlikely(attribute.is_nullable))
-                {
-                    getItemsForFetchedKeys<Field>(
-                        attribute,
-                        fetched_columns_index,
-                        fetched_keys,
-                        [&](Field & value) { fetched_column.insert(value); },
-                        default_value_provider);
-                }
-                else
-                {
-                    auto type_call = [&](const auto & dictionary_attribute_type)
-                    {
-                        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-                        using AttributeType = typename Type::AttributeType;
-                        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
-                        using ColumnType = typename ColumnProvider::ColumnType;
-                        using ValueType = DictionaryValueType<AttributeType>;
-
-                        ColumnType & column_typed = static_cast<ColumnType &>(fetched_column);
-
-                        if constexpr (std::is_same_v<ValueType, Array>)
-                        {
-                            getItemsForFetchedKeys<ValueType>(
-                                attribute,
-                                fetched_columns_index,
-                                fetched_keys,
-                                [&](Array & value) { fetched_column.insert(value); },
-                                default_value_provider);
-                        }
-                        else if constexpr (std::is_same_v<ValueType, StringRef>)
-                        {
-                            getItemsForFetchedKeys<ValueType>(
-                                attribute,
-                                fetched_columns_index,
-                                fetched_keys,
-                                [&](StringRef value) { fetched_column.insertData(value.data, value.size); },
-                                default_value_provider);
-                        }
-                        else
-                        {
-                            auto & data = column_typed.getData();
-
-                            getItemsForFetchedKeys<ValueType>(
-                                attribute,
-                                fetched_columns_index,
-                                fetched_keys,
-                                [&](auto value) { data.push_back(static_cast<AttributeType>(value)); },
-                                default_value_provider);
-                        }
-                    };
-
-                    callOnDictionaryAttributeType(attribute.type, type_call);
-                }
+                getItemsForFetchedKeys<Field>(
+                    attribute,
+                    fetched_columns_index,
+                    fetched_keys,
+                    [&](Field & value) { fetched_column.insert(value); },
+                    default_value_provider);
             }
             else
             {
-                if (unlikely(attribute.is_nullable))
+                auto type_call = [&](const auto & dictionary_attribute_type)
                 {
-                    getItemsForFetchedKeysShortCircuit<Field>(
-                        attribute,
-                        fetched_columns_index,
-                        fetched_keys,
-                        [&](Field & value) { fetched_column.insert(value); },
-                        *default_mask);
-                }
-                else
-                {
-                    auto type_call = [&](const auto & dictionary_attribute_type)
+                    using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+                    using AttributeType = typename Type::AttributeType;
+                    using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+                    using ColumnType = typename ColumnProvider::ColumnType;
+                    using ValueType = DictionaryValueType<AttributeType>;
+
+                    ColumnType & column_typed = static_cast<ColumnType &>(fetched_column);
+
+                    if constexpr (std::is_same_v<ValueType, Array>)
                     {
-                        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-                        using AttributeType = typename Type::AttributeType;
-                        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
-                        using ColumnType = typename ColumnProvider::ColumnType;
-                        using ValueType = DictionaryValueType<AttributeType>;
+                        getItemsForFetchedKeys<ValueType>(
+                            attribute,
+                            fetched_columns_index,
+                            fetched_keys,
+                            [&](Array & value) { fetched_column.insert(value); },
+                            default_value_provider);
+                    }
+                    else if constexpr (std::is_same_v<ValueType, StringRef>)
+                    {
+                        getItemsForFetchedKeys<ValueType>(
+                            attribute,
+                            fetched_columns_index,
+                            fetched_keys,
+                            [&](StringRef value) { fetched_column.insertData(value.data, value.size); },
+                            default_value_provider);
+                    }
+                    else
+                    {
+                        auto & data = column_typed.getData();
 
-                        ColumnType & column_typed = static_cast<ColumnType &>(fetched_column);
+                        getItemsForFetchedKeys<ValueType>(
+                            attribute,
+                            fetched_columns_index,
+                            fetched_keys,
+                            [&](auto value) { data.push_back(static_cast<AttributeType>(value)); },
+                            default_value_provider);
+                    }
+                };
 
-                        if constexpr (std::is_same_v<ValueType, Array>)
-                        {
-                            getItemsForFetchedKeysShortCircuit<ValueType>(
-                                attribute,
-                                fetched_columns_index,
-                                fetched_keys,
-                                [&](Array & value) { fetched_column.insert(value); },
-                                *default_mask);
-                        }
-                        else if constexpr (std::is_same_v<ValueType, StringRef>)
-                        {
-                            getItemsForFetchedKeysShortCircuit<ValueType>(
-                                attribute,
-                                fetched_columns_index,
-                                fetched_keys,
-                                [&](StringRef value) { fetched_column.insertData(value.data, value.size); },
-                                *default_mask);
-                        }
-                        else
-                        {
-                            auto & data = column_typed.getData();
-
-                            getItemsForFetchedKeysShortCircuit<ValueType>(
-                                attribute,
-                                fetched_columns_index,
-                                fetched_keys,
-                                [&](auto value) { data.push_back(static_cast<AttributeType>(value)); },
-                                *default_mask);
-                        }
-                    };
-
-                    callOnDictionaryAttributeType(attribute.type, type_call);
-                }
+                callOnDictionaryAttributeType(attribute.type, type_call);
             }
         }
 
@@ -395,13 +332,13 @@ private:
                         }
                         else if constexpr (std::is_same_v<ElementType, StringRef>)
                         {
-                            const String & string_value = column_value.safeGet<String>();
+                            const String & string_value = column_value.get<String>();
                             StringRef inserted_value = copyStringInArena(arena, string_value);
                             container.back() = inserted_value;
                         }
                         else
                         {
-                            container.back() = static_cast<ElementType>(column_value.safeGet<ElementType>());
+                            container.back() = static_cast<ElementType>(column_value.get<ElementType>());
                         }
                     });
                 }
@@ -441,7 +378,7 @@ private:
                         }
                         else if constexpr (std::is_same_v<ElementType, StringRef>)
                         {
-                            const String & string_value = column_value.safeGet<String>();
+                            const String & string_value = column_value.get<String>();
                             StringRef inserted_value = copyStringInArena(arena, string_value);
 
                             if (!cell_was_default)
@@ -454,7 +391,7 @@ private:
                         }
                         else
                         {
-                            container[index_to_use] = static_cast<ElementType>(column_value.safeGet<ElementType>());
+                            container[index_to_use] = static_cast<ElementType>(column_value.get<ElementType>());
                         }
                     });
                 }
@@ -651,45 +588,16 @@ private:
                 }
                 else if constexpr (std::is_same_v<ValueType, StringRef>)
                 {
-                    auto & value = default_value.safeGet<String>();
+                    auto & value = default_value.get<String>();
                     value_setter(value);
                 }
                 else
                 {
-                    value_setter(default_value.safeGet<ValueType>());
+                    value_setter(default_value.get<ValueType>());
                 }
             }
             else
             {
-                value_setter(container[fetched_key.element_index]);
-            }
-        }
-    }
-
-    template <typename ValueType, typename ValueSetter>
-    void getItemsForFetchedKeysShortCircuit(
-        Attribute & attribute,
-        size_t fetched_keys_size,
-        PaddedPODArray<FetchedKey> & fetched_keys,
-        ValueSetter && value_setter,
-        IColumn::Filter & default_mask)
-    {
-        default_mask.resize(fetched_keys_size);
-        auto & container = std::get<ContainerType<ValueType>>(attribute.attribute_container);
-
-        for (size_t fetched_key_index = 0; fetched_key_index < fetched_keys_size; ++fetched_key_index)
-        {
-            auto fetched_key = fetched_keys[fetched_key_index];
-
-            if (unlikely(fetched_key.is_default))
-            {
-                default_mask[fetched_key_index] = 1;
-                auto v = ValueType{};
-                value_setter(v);
-            }
-            else
-            {
-                default_mask[fetched_key_index] = 0;
                 value_setter(container[fetched_key.element_index]);
             }
         }
@@ -751,7 +659,7 @@ private:
 
     std::vector<Attribute> attributes;
 
-    void setCellDeadline(Cell & cell, TimePoint now)
+    inline void setCellDeadline(Cell & cell, TimePoint now)
     {
         if (configuration.lifetime.min_sec == 0 && configuration.lifetime.max_sec == 0)
         {
@@ -771,7 +679,7 @@ private:
         cell.deadline = std::chrono::system_clock::to_time_t(deadline);
     }
 
-    size_t getCellIndex(const KeyType key) const
+    inline size_t getCellIndex(const KeyType key) const
     {
         const size_t hash = DefaultHash<KeyType>()(key);
         const size_t index = hash & size_overlap_mask;
@@ -780,7 +688,7 @@ private:
 
     using KeyStateAndCellIndex = std::pair<KeyState::State, size_t>;
 
-    KeyStateAndCellIndex getKeyStateAndCellIndex(const KeyType key, const time_t now) const
+    inline KeyStateAndCellIndex getKeyStateAndCellIndex(const KeyType key, const time_t now) const
     {
         size_t place_value = getCellIndex(key);
         const size_t place_value_end = place_value + max_collision_length;
@@ -807,7 +715,7 @@ private:
         return std::make_pair(KeyState::not_found, place_value & size_overlap_mask);
     }
 
-    size_t getCellIndexForInsert(const KeyType & key) const
+    inline size_t getCellIndexForInsert(const KeyType & key) const
     {
         size_t place_value = getCellIndex(key);
         const size_t place_value_end = place_value + max_collision_length;

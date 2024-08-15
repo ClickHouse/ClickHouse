@@ -5,7 +5,7 @@
 #include <Common/ProfileEvents.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-#include <Storages/ColumnsDescription.h>
+
 
 namespace DB
 {
@@ -46,9 +46,10 @@ struct QueryThreadLogElement
 
     static std::string name() { return "QueryThreadLog"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 

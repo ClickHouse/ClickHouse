@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # Tags: long, no-parallel
-
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
-
 function query()
 {
     # NOTE: database_atomic_wait_for_drop_and_detach_synchronously needed only for local env, CI has it ON
@@ -49,15 +47,11 @@ verify()
 
 query "DROP TABLE IF EXISTS test_table"
 query "CREATE TABLE test_table (data Date) ENGINE = MergeTree PARTITION BY toYear(data) ORDER BY data;"
-
 query "INSERT INTO test_table VALUES ('1992-01-01')"
 verify
-
 query "INSERT INTO test_table VALUES ('1992-01-02')"
 verify
-
 query "OPTIMIZE TABLE test_table FINAL"
 verify
-
 query "DROP TABLE test_table"
 verify

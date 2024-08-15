@@ -415,7 +415,7 @@ ExpressionTransform
         ExpressionTransform × 2
           (SettingQuotaAndLimits)
             (ReadFromStorage)
-            NumbersRange × 2 0 → 1
+            NumbersMt × 2 0 → 1
 ```
 ### EXPLAIN ESTIMATE
 

@@ -28,7 +28,7 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="24.7.3.42"
+ARG VERSION="23.7.5.30"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 #docker-official-library:off
@@ -38,25 +38,12 @@ ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 # from debs created by CI build, for example:
 # docker build . --network host --build-arg version="21.4.1.6282" --build-arg deb_location_url="https://..." -t ...
 ARG deb_location_url=""
-ARG DIRECT_DOWNLOAD_URLS=""
 
 # set non-empty single_binary_location_url to create docker image
 # from a single binary url (useful for non-standard builds - with sanitizers, for arm64).
 ARG single_binary_location_url=""
 
 ARG TARGETARCH
-
-# install from direct URL
-RUN if [ -n "${DIRECT_DOWNLOAD_URLS}" ]; then \
-        echo "installing from custom predefined urls with deb packages: ${DIRECT_DOWNLOAD_URLS}" \
-        && rm -rf /tmp/clickhouse_debs \
-        && mkdir -p /tmp/clickhouse_debs \
-        && for url in $DIRECT_DOWNLOAD_URLS; do \
-            wget --progress=bar:force:noscroll "$url" -P /tmp/clickhouse_debs || exit 1 \
-        ; done \
-        && dpkg -i /tmp/clickhouse_debs/*.deb \
-        && rm -rf /tmp/* ; \
-    fi
 
 # install from a web location with deb packages
 RUN arch="${TARGETARCH:-amd64}" \

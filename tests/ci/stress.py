@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """This script is used in docker images for stress tests and upgrade tests"""
+from multiprocessing import cpu_count
+from pathlib import Path
+from subprocess import Popen, call, check_output, STDOUT, PIPE
+from typing import List
 import argparse
 import logging
 import random
 import time
-from multiprocessing import cpu_count
-from pathlib import Path
-from subprocess import PIPE, STDOUT, Popen, call, check_output
-from typing import List
 
 
 def get_options(i: int, upgrade_check: bool) -> str:
@@ -19,8 +19,8 @@ def get_options(i: int, upgrade_check: bool) -> str:
 
     if i % 3 == 2 and not upgrade_check:
         options.append(f'''--db-engine="Replicated('/test/db/test_{i}', 's1', 'r1')"''')
+        client_options.append("allow_experimental_database_replicated=1")
         client_options.append("enable_deflate_qpl_codec=1")
-        client_options.append("enable_zstd_qat_codec=1")
 
     # If database name is not specified, new database is created for each functional test.
     # Run some threads with one database for all tests.
@@ -47,16 +47,9 @@ def get_options(i: int, upgrade_check: bool) -> str:
 
     if i > 0 and random.random() < 1 / 3:
         client_options.append("use_query_cache=1")
-        client_options.append("query_cache_nondeterministic_function_handling='ignore'")
-        client_options.append("query_cache_system_table_handling='ignore'")
 
     if i % 5 == 1:
         client_options.append("memory_tracker_fault_probability=0.001")
-
-    if i % 5 == 1:
-        client_options.append(
-            "merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.05"
-        )
 
     if i % 2 == 1 and not upgrade_check:
         client_options.append("group_by_use_nulls=1")
@@ -65,23 +58,6 @@ def get_options(i: int, upgrade_check: bool) -> str:
     if i == 12 and not upgrade_check:
         client_options.append("implicit_transaction=1")
         client_options.append("throw_on_unsupported_query_inside_transaction=0")
-
-    if random.random() < 0.1:
-        client_options.append("optimize_trivial_approximate_count_query=1")
-
-    if random.random() < 0.3:
-        client_options.append(f"http_make_head_request={random.randint(0, 1)}")
-
-    # TODO: After release 24.3 use ignore_drop_queries_probability for both
-    #       stress test and upgrade check
-    if not upgrade_check:
-        client_options.append("ignore_drop_queries_probability=0.5")
-
-    if random.random() < 0.2:
-        client_options.append("allow_experimental_parallel_reading_from_replicas=1")
-        client_options.append("max_parallel_replicas=3")
-        client_options.append("cluster_for_parallel_replicas='parallel_replicas'")
-        client_options.append("parallel_replicas_for_non_replicated_merge_tree=1")
 
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
@@ -107,13 +83,12 @@ def run_func_test(
     ]
     pipes = []
     for i, path in enumerate(output_paths):
-        with open(path, "w", encoding="utf-8") as op:
+        with open(path, "w") as op:
             full_command = (
                 f"{cmd} {get_options(i, upgrade_check)} {global_time_limit_option} "
                 f"{skip_tests_option} {upgrade_check_option}"
             )
             logging.info("Run func tests '%s'", full_command)
-            # pylint:disable-next=consider-using-with
             pipes.append(Popen(full_command, shell=True, stdout=op, stderr=op))
             time.sleep(0.5)
     return pipes
@@ -128,11 +103,9 @@ def compress_stress_logs(output_path: Path, files_prefix: str) -> None:
 
 
 def call_with_retry(query: str, timeout: int = 30, retry_count: int = 5) -> None:
-    logging.info("Running command: %s", str(query))
     for i in range(retry_count):
         code = call(query, shell=True, stderr=STDOUT, timeout=timeout)
         if code != 0:
-            logging.info("Command returend %s, retrying", str(code))
             time.sleep(i)
         else:
             break
@@ -141,7 +114,7 @@ def call_with_retry(query: str, timeout: int = 30, retry_count: int = 5) -> None
 def make_query_command(query: str) -> str:
     return (
         f'clickhouse client -q "{query}" --max_untracked_memory=1Gi '
-        "--memory_profiler_step=1Gi --max_memory_usage_for_user=0 --max_memory_usage_in_client=1000000000"
+        "--memory_profiler_step=1Gi --max_memory_usage_for_user=0"
     )
 
 
@@ -150,20 +123,17 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
 
     # We attach gdb to clickhouse-server before running tests
     # to print stacktraces of all crashes even if clickhouse cannot print it for some reason.
-    # However, it obstructs checking for hung queries.
+    # However, it obstruct checking for hung queries.
     logging.info("Will terminate gdb (if any)")
     call_with_retry("kill -TERM $(pidof gdb)")
-    call_with_retry(
-        "timeout 50s tail --pid=$(pidof gdb) -f /dev/null || kill -9 $(pidof gdb) ||:",
-        timeout=60,
-    )
     # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
-    call_with_retry(
-        "kill -CONT $(cat /var/run/clickhouse-server/clickhouse-server.pid) && clickhouse client -q 'SELECT 1 FORMAT Null'"
-    )
+    call_with_retry("kill -CONT $(lsof -ti:9000)")
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
-    call_with_retry(make_query_command("SYSTEM STOP THREAD FUZZER"))
+    call_with_retry("clickhouse client -q 'SYSTEM STOP THREAD FUZZER'")
+
+    call_with_retry(make_query_command("SELECT 1 FORMAT Null"))
+
     # Some tests execute SYSTEM STOP MERGES or similar queries.
     # It may cause some ALTERs to hang.
     # Possibly we should fix tests and forbid to use such queries without specifying table.
@@ -222,7 +192,6 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
                         continue
                     command = make_query_command(f"DETACH DATABASE {db}")
                     # we don't wait for drop
-                    # pylint:disable-next=consider-using-with
                     Popen(command, shell=True)
                 break
             except Exception as ex:
@@ -231,7 +200,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
                 )
                 time.sleep(i)
         else:
-            raise RuntimeError(
+            raise Exception(
                 "Cannot drop databases after stress tests. Probably server consumed "
                 "too much memory and cannot execute simple queries"
             )
@@ -312,9 +281,7 @@ def main():
     args = parse_args()
 
     if args.drop_databases and not args.hung_check:
-        raise argparse.ArgumentTypeError(
-            "--drop-databases only used in hung check (--hung-check)"
-        )
+        raise Exception("--drop-databases only used in hung check (--hung-check)")
 
     # FIXME Hung check with ubsan is temporarily disabled due to
     # https://github.com/ClickHouse/ClickHouse/issues/45372
@@ -380,17 +347,15 @@ def main():
             ]
         )
         hung_check_log = args.output_folder / "hung_check.log"  # type: Path
-        with Popen(["/usr/bin/tee", hung_check_log], stdin=PIPE) as tee:
-            res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT, timeout=600)
-            if tee.stdin is not None:
-                tee.stdin.close()
+        tee = Popen(["/usr/bin/tee", hung_check_log], stdin=PIPE)
+        res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT)
+        if tee.stdin is not None:
+            tee.stdin.close()
         if res != 0 and have_long_running_queries and not suppress_hung_check:
             logging.info("Hung check failed with exit code %d", res)
         else:
             hung_check_status = "No queries hung\tOK\t\\N\t\n"
-            with open(
-                args.output_folder / "test_results.tsv", "w+", encoding="utf-8"
-            ) as results:
+            with open(args.output_folder / "test_results.tsv", "w+") as results:
                 results.write(hung_check_status)
                 hung_check_log.unlink()
 

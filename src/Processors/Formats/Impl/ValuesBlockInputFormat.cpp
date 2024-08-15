@@ -10,7 +10,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -99,7 +98,7 @@ bool ValuesBlockInputFormat::skipToNextRow(ReadBuffer * buf, size_t min_chunk_by
     return true;
 }
 
-Chunk ValuesBlockInputFormat::read()
+Chunk ValuesBlockInputFormat::generate()
 {
     if (total_rows == 0)
         readPrefix();
@@ -195,7 +194,7 @@ void ValuesBlockInputFormat::readUntilTheEndOfRowAndReTokenize(size_t current_co
     auto * row_end = buf->position();
     buf->rollbackToCheckpoint();
     tokens.emplace(buf->position(), row_end);
-    token_iterator.emplace(*tokens, static_cast<unsigned>(context->getSettingsRef().max_parser_depth), static_cast<unsigned>(context->getSettingsRef().max_parser_backtracks));
+    token_iterator.emplace(*tokens, static_cast<unsigned>(context->getSettingsRef().max_parser_depth));
     auto const & first = (*token_iterator).get();
     if (first.isError() || first.isEnd())
     {
@@ -294,7 +293,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
             const auto & type = types[column_idx];
             const auto & serialization = serializations[column_idx];
             if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization);
+                read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
             else
                 serialization->deserializeTextQuoted(column, *buf, format_settings);
         }
@@ -333,7 +332,7 @@ namespace
         {
             const DataTypeTuple & type_tuple = static_cast<const DataTypeTuple &>(data_type);
 
-            Tuple & tuple_value = value.safeGet<Tuple>();
+            Tuple & tuple_value = value.get<Tuple>();
 
             size_t src_tuple_size = tuple_value.size();
             size_t dst_tuple_size = type_tuple.getElements().size();
@@ -360,7 +359,7 @@ namespace
             if (element_type.isNullable())
                 return;
 
-            Array & array_value = value.safeGet<Array>();
+            Array & array_value = value.get<Array>();
             size_t array_value_size = array_value.size();
 
             for (size_t i = 0; i < array_value_size; ++i)
@@ -378,12 +377,12 @@ namespace
             const auto & key_type = *type_map.getKeyType();
             const auto & value_type = *type_map.getValueType();
 
-            auto & map = value.safeGet<Map>();
+            auto & map = value.get<Map>();
             size_t map_size = map.size();
 
             for (size_t i = 0; i < map_size; ++i)
             {
-                auto & map_entry = map[i].safeGet<Tuple>();
+                auto & map_entry = map[i].get<Tuple>();
 
                 auto & entry_key = map_entry[0];
                 auto & entry_value = map_entry[1];
@@ -406,7 +405,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 {
     const Block & header = getPort().getHeader();
     const IDataType & type = *header.getByPosition(column_idx).type;
-    const auto & settings = context->getSettingsRef();
+    auto settings = context->getSettingsRef();
 
     /// Advance the token iterator until the start of the column expression
     readUntilTheEndOfRowAndReTokenize(column_idx);
@@ -419,7 +418,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     {
         Expected expected;
         /// Keep a copy to the start of the column tokens to use if later if necessary
-        ti_start = IParser::Pos(*token_iterator, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
+        ti_start = IParser::Pos(*token_iterator, static_cast<unsigned>(settings.max_parser_depth));
 
         parsed = parser.parse(*token_iterator, ast, expected);
 
@@ -493,7 +492,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 &found_in_cache,
                 delimiter);
 
-            LOG_TEST(getLogger("ValuesBlockInputFormat"), "Will use an expression template to parse column {}: {}",
+            LOG_TEST(&Poco::Logger::get("ValuesBlockInputFormat"), "Will use an expression template to parse column {}: {}",
                      column_idx, structure->dumpTemplate());
 
             templates[column_idx].emplace(structure);
@@ -573,16 +572,9 @@ bool ValuesBlockInputFormat::checkDelimiterAfterValue(size_t column_idx)
     skipWhitespaceIfAny(*buf);
 
     if (likely(column_idx + 1 != num_columns))
-    {
         return checkChar(',', *buf);
-    }
     else
-    {
-        /// Optional trailing comma.
-        if (checkChar(',', *buf))
-            skipWhitespaceIfAny(*buf);
         return checkChar(')', *buf);
-    }
 }
 
 bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
@@ -628,7 +620,7 @@ void ValuesBlockInputFormat::readSuffix()
         return;
     }
 
-    if (buf->hasUnreadData() || !buf->eof())
+    if (buf->hasUnreadData())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.");
 }
 
@@ -711,11 +703,6 @@ std::optional<DataTypes> ValuesSchemaReader::readRowAndGetDataTypes()
     }
 
     return data_types;
-}
-
-void ValuesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
-{
-    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 void registerInputFormatValues(FormatFactory & factory)
