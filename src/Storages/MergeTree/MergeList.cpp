@@ -47,7 +47,7 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
     if (!future_part->parts.empty())
     {
         source_data_version = future_part->parts[0]->info.getDataVersion();
-        is_mutation = (result_part_info.getDataVersion() != source_data_version);
+        is_mutation = (result_part_info.level == future_part->parts[0]->info.level);
 
         WriteBufferFromString out(partition);
         const auto & part = future_part->parts[0];
