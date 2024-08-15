@@ -1031,7 +1031,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             }
             else
                 LOG_TRACE(log, "No space left in cache to reserve {} bytes, reason: {}, "
-                          "will continue without cache download", failure_reason, size);
+                          "will continue without cache download", size, failure_reason);
 
             if (!success)
             {
