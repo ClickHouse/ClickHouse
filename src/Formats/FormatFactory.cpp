@@ -146,11 +146,13 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.validate_types_from_metadata = settings.input_format_json_validate_types_from_metadata;
     format_settings.json.validate_utf8 = settings.output_format_json_validate_utf8;
     format_settings.json_object_each_row.column_for_object_name = settings.format_json_object_each_row_column_for_object_name;
-    format_settings.json.allow_object_type = context->getSettingsRef().allow_experimental_object_type;
+    format_settings.json.allow_deprecated_object_type = context->getSettingsRef().allow_experimental_object_type;
+    format_settings.json.allow_json_type = context->getSettingsRef().allow_experimental_json_type;
     format_settings.json.compact_allow_variable_number_of_columns = settings.input_format_json_compact_allow_variable_number_of_columns;
     format_settings.json.try_infer_objects_as_tuples = settings.input_format_json_try_infer_named_tuples_from_objects;
     format_settings.json.throw_on_bad_escape_sequence = settings.input_format_json_throw_on_bad_escape_sequence;
     format_settings.json.ignore_unnecessary_fields = settings.input_format_json_ignore_unnecessary_fields;
+    format_settings.json.type_json_skip_duplicated_paths = settings.type_json_skip_duplicated_paths;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.force_null_for_omitted_fields = settings.input_format_force_null_for_omitted_fields;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
