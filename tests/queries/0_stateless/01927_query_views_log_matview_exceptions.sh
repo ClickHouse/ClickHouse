@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} -n -q "
+    ${CLICKHOUSE_CLIENT} -q "
         DROP TABLE IF EXISTS matview_exception_a_to_c;
         DROP TABLE IF EXISTS matview_exception_a_to_b;
         DROP TABLE IF EXISTS table_exception_c;
@@ -17,7 +17,7 @@ function cleanup()
 
 function setup()
 {
-    ${CLICKHOUSE_CLIENT} -n -q "
+    ${CLICKHOUSE_CLIENT} -q "
         CREATE TABLE table_exception_a (a String, b Int64) ENGINE = MergeTree ORDER BY b;
         CREATE TABLE table_exception_b (a Float64,  b Int64) ENGINE = MergeTree ORDER BY tuple();
         CREATE TABLE table_exception_c (a Float64) ENGINE = MergeTree ORDER BY a;

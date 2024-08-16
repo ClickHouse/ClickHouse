@@ -11,7 +11,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/transformTypesRecursively.h>
-#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -1216,8 +1216,8 @@ namespace
         {
             if constexpr (is_json)
             {
-                if (settings.json.allow_object_type)
-                    return std::make_shared<DataTypeObject>("json", true);
+                if (settings.json.allow_deprecated_object_type)
+                    return std::make_shared<DataTypeObjectDeprecated>("json", true);
             }
 
             /// Empty Map is Map(Nothing, Nothing)
@@ -1226,8 +1226,8 @@ namespace
 
         if constexpr (is_json)
         {
-            if (settings.json.allow_object_type)
-                return std::make_shared<DataTypeObject>("json", true);
+            if (settings.json.allow_deprecated_object_type)
+                return std::make_shared<DataTypeObjectDeprecated>("json", true);
 
             if (settings.json.read_objects_as_strings)
                 return std::make_shared<DataTypeString>();
@@ -1282,7 +1282,7 @@ namespace
         {
             if constexpr (is_json)
             {
-                if (!settings.json.allow_object_type && settings.json.try_infer_objects_as_tuples)
+                if (!settings.json.allow_deprecated_object_type && settings.json.try_infer_objects_as_tuples)
                     return tryInferJSONPaths(buf, settings, json_info, depth);
             }
 
@@ -1302,7 +1302,7 @@ namespace
         if (checkCharCaseInsensitive('n', buf))
         {
             if (checkStringCaseInsensitive("ull", buf))
-                return makeNullable(std::make_shared<DataTypeNothing>());
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             else if (checkStringCaseInsensitive("an", buf))
                 return std::make_shared<DataTypeFloat64>();
         }
@@ -1568,15 +1568,15 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
         return nested_type ? std::make_shared<DataTypeLowCardinality>(nested_type) : nullptr;
     }
 
-    if (which.isObject())
+    if (which.isObjectDeprecated())
     {
-        const auto * object_type = assert_cast<const DataTypeObject *>(type.get());
+        const auto * object_type = assert_cast<const DataTypeObjectDeprecated *>(type.get());
         if (object_type->hasNullableSubcolumns())
             return type;
-        return std::make_shared<DataTypeObject>(object_type->getSchemaFormat(), true);
+        return std::make_shared<DataTypeObjectDeprecated>(object_type->getSchemaFormat(), true);
     }
 
-    return makeNullable(type);
+    return makeNullableSafe(type);
 }
 
 NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header)

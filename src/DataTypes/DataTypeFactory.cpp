@@ -273,9 +273,10 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);
     registerDataTypeMap(*this);
-    registerDataTypeObject(*this);
+    registerDataTypeObjectDeprecated(*this);
     registerDataTypeVariant(*this);
     registerDataTypeDynamic(*this);
+    registerDataTypeJSON(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()

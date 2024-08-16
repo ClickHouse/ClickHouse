@@ -12,7 +12,7 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE t_json_nested
     (
         id UInt32,
-        data Tuple(String, Map(String, Array(JSON)), JSON)
+        data Tuple(String, Map(String, Array(Object('json'))), Object('json'))
     )
     ENGINE = MergeTree ORDER BY id" --allow_experimental_object_type 1
 
