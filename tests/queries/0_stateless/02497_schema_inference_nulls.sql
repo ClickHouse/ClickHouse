@@ -18,7 +18,7 @@ desc format(JSONEachRow, '{"x" : [[], [null], [1, 2, 3]]}');
 desc format(JSONEachRow, '{"x" : [{"a" : null}, {"b" : 1}]}');
 desc format(JSONEachRow, '{"x" : [["2020-01-01", null, "1234"], ["abcd"]]}');
 
-set schema_inference_make_columns_nullable=0;
+set schema_inference_make_columns_nullable='auto';
 desc format(JSONEachRow, '{"x" : [1, 2]}');
 desc format(JSONEachRow, '{"x" : [null, 1]}');
 desc format(JSONEachRow, '{"x" : [1, 2]}, {"x" : [3]}');
