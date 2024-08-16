@@ -26,6 +26,10 @@ try
     {
         size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
 
+        /// Use cache to avoid reading the column with the same name twice.
+        /// It may happen if there are empty array Nested in the part.
+        ISerialization::SubstreamsCache cache;
+
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
             if (!res_columns[pos])
@@ -52,7 +56,7 @@ try
             };
 
             readPrefix(columns_to_read[pos], buffer_getter, buffer_getter_for_prefix, columns_for_offsets[pos]);
-            readData(columns_to_read[pos], column, rows_to_read, buffer_getter);
+            readData(columns_to_read[pos], column, rows_to_read, buffer_getter, cache);
         }
 
         ++from_mark;

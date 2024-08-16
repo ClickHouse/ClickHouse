@@ -428,7 +428,7 @@ std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
     if (storage.minmax_idx_date_column_pos != -1 && minmax_idx->initialized)
     {
         const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_date_column_pos];
-        return {DayNum(hyperrectangle.left.get<UInt64>()), DayNum(hyperrectangle.right.get<UInt64>())};
+        return {DayNum(hyperrectangle.left.safeGet<UInt64>()), DayNum(hyperrectangle.right.safeGet<UInt64>())};
     }
     else
         return {};
@@ -444,15 +444,15 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
         if (hyperrectangle.left.getType() == Field::Types::UInt64)
         {
             assert(hyperrectangle.right.getType() == Field::Types::UInt64);
-            return {hyperrectangle.left.get<UInt64>(), hyperrectangle.right.get<UInt64>()};
+            return {hyperrectangle.left.safeGet<UInt64>(), hyperrectangle.right.safeGet<UInt64>()};
         }
         /// The case of DateTime64
         else if (hyperrectangle.left.getType() == Field::Types::Decimal64)
         {
             assert(hyperrectangle.right.getType() == Field::Types::Decimal64);
 
-            auto left = hyperrectangle.left.get<DecimalField<Decimal64>>();
-            auto right = hyperrectangle.right.get<DecimalField<Decimal64>>();
+            auto left = hyperrectangle.left.safeGet<DecimalField<Decimal64>>();
+            auto right = hyperrectangle.right.safeGet<DecimalField<Decimal64>>();
 
             assert(left.getScale() == right.getScale());
 
@@ -749,8 +749,16 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
                 /// Probably there is something wrong with files of this part.
                 /// So it can be helpful to add to the error message some information about those files.
                 String files_in_part;
+
                 for (auto it = getDataPartStorage().iterate(); it->isValid(); it->next())
-                    files_in_part += fmt::format("{}{} ({} bytes)", (files_in_part.empty() ? "" : ", "), it->name(), getDataPartStorage().getFileSize(it->name()));
+                {
+                    std::string file_info;
+                    if (!getDataPartStorage().isDirectory(it->name()))
+                        file_info = fmt::format(" ({} bytes)", getDataPartStorage().getFileSize(it->name()));
+
+                    files_in_part += fmt::format("{}{}{}", (files_in_part.empty() ? "" : ", "), it->name(), file_info);
+
+                }
                 if (!files_in_part.empty())
                     e->addMessage("Part contains files: {}", files_in_part);
                 if (isEmpty())
@@ -1654,11 +1662,9 @@ void IMergeTreeDataPart::loadColumns(bool require)
 }
 
 
-/// Project part / part with project parts / compact part doesn't support LWD.
 bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
 {
-    return (part_type == MergeTreeDataPartType::Wide || part_type == MergeTreeDataPartType::Compact) &&
-        parent_part == nullptr && projection_parts.empty();
+    return (part_type == MergeTreeDataPartType::Wide || part_type == MergeTreeDataPartType::Compact);
 }
 
 bool IMergeTreeDataPart::hasLightweightDelete() const
@@ -2141,7 +2147,27 @@ void IMergeTreeDataPart::checkConsistencyBase() const
             }
         }
 
-        checksums.checkSizes(getDataPartStorage());
+        const auto & data_part_storage = getDataPartStorage();
+        for (const auto & [filename, checksum] : checksums.files)
+        {
+            try
+            {
+                checksum.checkSize(data_part_storage, filename);
+            }
+            catch (const Exception & ex)
+            {
+                /// For projection parts check will mark them broken in loadProjections
+                if (!parent_part && filename.ends_with(".proj"))
+                {
+                    std::string projection_name = fs::path(filename).stem();
+                    LOG_INFO(storage.log, "Projection {} doesn't exist on start for part {}, marking it as broken", projection_name, name);
+                    if (hasProjection(projection_name))
+                        markProjectionPartAsBroken(projection_name, ex.message(), ex.code());
+                }
+                else
+                    throw;
+            }
+        }
     }
     else
     {

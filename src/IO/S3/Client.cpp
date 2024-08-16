@@ -46,7 +46,7 @@ namespace ProfileEvents
 
 namespace CurrentMetrics
 {
-    extern const Metric S3DiskNoKeyErrors;
+    extern const Metric DiskS3NoSuchKeyErrors;
 }
 
 namespace DB
@@ -701,7 +701,7 @@ RequestResult Client::processRequestResult(RequestResult && outcome) const
         return std::forward<RequestResult>(outcome);
 
     if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
-        CurrentMetrics::add(CurrentMetrics::S3DiskNoKeyErrors);
+        CurrentMetrics::add(CurrentMetrics::DiskS3NoSuchKeyErrors);
 
     String enriched_message = fmt::format(
         "{} {}",

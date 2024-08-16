@@ -42,11 +42,11 @@ public:
     {
         FunctionArgumentDescriptors mandatory_args{
             {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String"},
-            {"offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), nullptr, "(U)Int8, (U)Int16, (U)Int32, (U)Int64 or Float"},
+            {"offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), nullptr, "(U)Int8/16/32/64 or Float"},
         };
 
         FunctionArgumentDescriptors optional_args{
-            {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), nullptr, "(U)Int8, (U)Int16, (U)Int32, (U)Int64 or Float"},
+            {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), nullptr, "(U)Int8/16/32/64 or Float"},
         };
 
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);

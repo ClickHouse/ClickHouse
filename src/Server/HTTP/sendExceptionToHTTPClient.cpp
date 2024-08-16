@@ -29,7 +29,7 @@ void sendExceptionToHTTPClient(
     if (!out)
     {
         /// If nothing was sent yet.
-        WriteBufferFromHTTPServerResponse out_for_message{response, request.getMethod() == HTTPRequest::HTTP_HEAD, DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT};
+        WriteBufferFromHTTPServerResponse out_for_message{response, request.getMethod() == HTTPRequest::HTTP_HEAD};
 
         out_for_message.writeln(exception_message);
         out_for_message.finalize();
@@ -43,7 +43,6 @@ void sendExceptionToHTTPClient(
             out->position() = out->buffer().begin();
 
         out->writeln(exception_message);
-        out->finalize();
     }
 }
 
