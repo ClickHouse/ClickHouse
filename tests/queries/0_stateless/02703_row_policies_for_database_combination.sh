@@ -3,7 +3,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --multiquery "
+$CLICKHOUSE_CLIENT "
 
 DROP TABLE IF EXISTS 02703_rptable;
 DROP TABLE IF EXISTS 02703_rptable_another;

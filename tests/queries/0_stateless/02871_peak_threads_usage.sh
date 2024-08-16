@@ -26,7 +26,7 @@ ${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_6" --query='SELECT * FROM nu
 ${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_7" --query='SELECT * FROM numbers_mt(5000), numbers(5000) SETTINGS max_threads = 1, joined_subquery_requires_alias=0' "${QUERY_OPTIONS[@]}"
 ${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_8" --query='SELECT * FROM numbers_mt(5000), numbers(5000) SETTINGS max_threads = 4, joined_subquery_requires_alias=0' "${QUERY_OPTIONS[@]}"
 
-${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_9" -mn --query="""
+${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_9" -m --query="""
 SELECT count() FROM 
     (SELECT number FROM numbers_mt(1,100000) 
             UNION ALL SELECT number FROM numbers_mt(10000, 200000)
@@ -38,7 +38,7 @@ SELECT count() FROM
             UNION ALL SELECT number FROM numbers_mt(300000, 4000000)
     ) SETTINGS max_threads = 1""" "${QUERY_OPTIONS[@]}"
 
-${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_10" -mn --query="""
+${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_10" -m --query="""
 SELECT count() FROM 
     (SELECT number FROM numbers_mt(1,100000) 
             UNION ALL SELECT number FROM numbers_mt(10000, 2000)
@@ -50,7 +50,7 @@ SELECT count() FROM
             UNION ALL SELECT number FROM numbers_mt(300000, 4000000)
     ) SETTINGS max_threads = 4""" "${QUERY_OPTIONS[@]}"
 
-${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_11" -mn --query="""
+${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_11" -m --query="""
 SELECT count() FROM 
     (SELECT number FROM numbers_mt(1,100000) 
             UNION ALL SELECT number FROM numbers_mt(1, 1)
@@ -62,20 +62,20 @@ SELECT count() FROM
             UNION ALL SELECT number FROM numbers_mt(1, 4000000)
     ) SETTINGS max_threads = 4""" "${QUERY_OPTIONS[@]}"
 
-${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_12" -mn --query="""
+${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_12" -m --query="""
 SELECT sum(number) FROM numbers_mt(100000)
 GROUP BY number % 2
 WITH TOTALS ORDER BY number % 2
 SETTINGS max_threads = 4""" "${QUERY_OPTIONS[@]}"
 
-${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_13" -mn --query="SELECT * FROM numbers(100000) SETTINGS max_threads = 1" "${QUERY_OPTIONS[@]}"
+${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_13" -m --query="SELECT * FROM numbers(100000) SETTINGS max_threads = 1" "${QUERY_OPTIONS[@]}"
 
-${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_14" -mn --query="SELECT * FROM numbers(100000) SETTINGS max_threads = 4" "${QUERY_OPTIONS[@]}"
+${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_14" -m --query="SELECT * FROM numbers(100000) SETTINGS max_threads = 4" "${QUERY_OPTIONS[@]}"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
 for i in {1..14}
 do
-    ${CLICKHOUSE_CLIENT} -mn --query="""
+    ${CLICKHOUSE_CLIENT} -m --query="""
     SELECT '${i}',
            peak_threads_usage, 
            (select count() from system.query_thread_log WHERE system.query_thread_log.query_id = '${UNIQUE_QUERY_ID}_${i}' AND current_database = currentDatabase()) = length(thread_ids),

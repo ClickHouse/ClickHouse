@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DATABASE_ATOMIC="${CLICKHOUSE_DATABASE}_atomic"
 DATABASE_LAZY="${CLICKHOUSE_DATABASE}_lazy"
 
-$CLICKHOUSE_CLIENT --multiquery "
+$CLICKHOUSE_CLIENT "
 
 SELECT 'database atomic tests';
 DROP DATABASE IF EXISTS ${DATABASE_ATOMIC};
@@ -36,7 +36,7 @@ DROP DATABASE ${DATABASE_ATOMIC} SYNC;
 
 "
 
-$CLICKHOUSE_CLIENT --multiquery "
+$CLICKHOUSE_CLIENT "
 
 SELECT '-----------------------';
 SELECT 'database lazy tests';

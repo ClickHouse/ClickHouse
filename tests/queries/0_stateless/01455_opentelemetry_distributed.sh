@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function check_log
 {
-${CLICKHOUSE_CLIENT} --format=JSONEachRow -nq "
+${CLICKHOUSE_CLIENT} --format=JSONEachRow -q "
 set enable_analyzer = 1;
 system flush logs;
 

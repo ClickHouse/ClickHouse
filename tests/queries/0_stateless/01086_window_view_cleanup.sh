@@ -13,7 +13,7 @@ opts=(
 
 DATABASE_ORDINARY="${CLICKHOUSE_DATABASE}_ordinary"
 
-$CLICKHOUSE_CLIENT "${opts[@]}" --allow_deprecated_database_ordinary=1 --multiquery "
+$CLICKHOUSE_CLIENT "${opts[@]}" --allow_deprecated_database_ordinary=1 "
     SET allow_experimental_window_view = 1;
     SET window_view_clean_interval = 1;
 
