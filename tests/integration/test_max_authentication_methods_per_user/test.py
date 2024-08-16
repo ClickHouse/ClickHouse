@@ -76,13 +76,13 @@ def test_create_default_setting(started_cluster):
     expected_error = "User can not be created/updated because it exceeds the allowed quantity of authentication methods per user"
 
     query_exceeds = get_query_with_multiple_identified_with(
-        "CREATE", "u_max_authentication_methods", 257
+        "CREATE", "u_max_authentication_methods", 101
     )
 
     assert expected_error in default_node.query_and_get_error(query_exceeds)
 
     query_not_exceeds = get_query_with_multiple_identified_with(
-        "CREATE", "u_max_authentication_methods", 256
+        "CREATE", "u_max_authentication_methods", 100
     )
 
     assert expected_error not in default_node.query_and_get_answer_with_error(
@@ -96,19 +96,19 @@ def test_alter_default_setting(started_cluster):
     default_node.query("CREATE USER u_max_authentication_methods IDENTIFIED BY '1'")
 
     query_add_exceeds = get_query_with_multiple_identified_with(
-        "ALTER", "u_max_authentication_methods", 256, "ADD"
+        "ALTER", "u_max_authentication_methods", 100, "ADD"
     )
 
     assert expected_error in default_node.query_and_get_error(query_add_exceeds)
 
     query_replace_exceeds = get_query_with_multiple_identified_with(
-        "ALTER", "u_max_authentication_methods", 257
+        "ALTER", "u_max_authentication_methods", 101
     )
 
     assert expected_error in default_node.query_and_get_error(query_replace_exceeds)
 
     query_add_not_exceeds = get_query_with_multiple_identified_with(
-        "ALTER", "u_max_authentication_methods", 1, "ADD"
+        "ALTER", "u_max_authentication_methods", 99, "ADD"
     )
 
     assert expected_error not in default_node.query_and_get_answer_with_error(
@@ -116,7 +116,7 @@ def test_alter_default_setting(started_cluster):
     )
 
     query_replace_not_exceeds = get_query_with_multiple_identified_with(
-        "ALTER", "u_max_authentication_methods", 2
+        "ALTER", "u_max_authentication_methods", 100
     )
 
     assert expected_error not in default_node.query_and_get_answer_with_error(
