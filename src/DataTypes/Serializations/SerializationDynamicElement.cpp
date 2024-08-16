@@ -53,6 +53,7 @@ void SerializationDynamicElement::enumerateStreams(
                             .withColumn(data.column)
                             .withSerializationInfo(data.serialization_info)
                             .withDeserializeState(deserialize_state->variant_element_state);
+    settings.path.back().data = variant_data;
     deserialize_state->variant_serialization->enumerateStreams(settings, callback, variant_data);
     settings.path.pop_back();
 }
