@@ -2006,7 +2006,7 @@ static void executeMergeAggregatedImpl(
     const NamesAndTypesList & aggregation_keys,
     const AggregateDescriptions & aggregates,
     bool should_produce_results_in_order_of_bucket_number,
-    SortDescription group_by_sort_description)
+    [[maybe_unused]] SortDescription group_by_sort_description)
 {
     auto keys = aggregation_keys.getNames();
     if (has_grouping_sets)
@@ -2040,7 +2040,7 @@ static void executeMergeAggregatedImpl(
         should_produce_results_in_order_of_bucket_number,
         settings.max_block_size,
         settings.aggregation_in_order_max_block_bytes,
-        std::move(group_by_sort_description),
+        SortDescription{},
         settings.enable_memory_bound_merging_of_aggregation_results);
 
     query_plan.addStep(std::move(merging_aggregated));

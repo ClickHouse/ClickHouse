@@ -45,7 +45,7 @@ private:
 
     Aggregator::Params params;
     bool final;
-    bool memory_efficient_aggregation;
+    const bool memory_efficient_aggregation;
     size_t max_threads;
     size_t memory_efficient_merge_threads;
     const size_t max_block_size;

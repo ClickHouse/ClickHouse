@@ -171,7 +171,7 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
         stack.pop_back();
 
         auto it = properties.begin() + (properties.size() - node->children.size());
-        auto property = applyOrder(node, &*it, optimization_settings);
+        auto property = applyOrder(node, (it == properties.end()) ? nullptr : &*it, optimization_settings);
         properties.erase(it, properties.end());
         properties.push_back(std::move(property));
     }
