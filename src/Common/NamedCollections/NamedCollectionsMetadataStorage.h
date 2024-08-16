@@ -35,7 +35,9 @@ public:
 private:
     class INamedCollectionsStorage;
     class LocalStorage;
+    class LocalStorageEncrypted;
     class ZooKeeperStorage;
+    class ZooKeeperEncrypted;
 
     std::shared_ptr<INamedCollectionsStorage> storage;
 
