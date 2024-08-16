@@ -774,10 +774,8 @@ class ClickhouseIntegrationTestsRunner:
         logging.info("Found '%s' tests to run", " ".join(tests_to_run))
         result_state = "success"
         description_prefix = "No flaky tests: "
-        start = time.time()
         logging.info("Starting check with retries")
         final_retry = 0
-        logs = []
         counters = {
             "ERROR": [],
             "PASSED": [],
@@ -858,7 +856,7 @@ class ClickhouseIntegrationTestsRunner:
             ]
         )
 
-        return result_state, status_text, test_result, logs
+        return result_state, status_text, test_result, tests_log_paths
 
     def run_impl(self, repo_path, build_path):
         if self.flaky_check or self.bugfix_validate_check:
