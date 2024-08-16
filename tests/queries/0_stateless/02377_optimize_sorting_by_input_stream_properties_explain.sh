@@ -15,7 +15,7 @@ FIND_SORTMODE="$GREP_SORTMODE | $TRIM_LEADING_SPACES"
 
 function explain_sorting {
     echo "-- QUERY: "$1
-    $CLICKHOUSE_CLIENT --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.0 -nq "$1" | eval $FIND_SORTING
+    $CLICKHOUSE_CLIENT --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.0 -q "$1" | eval $FIND_SORTING
 }
 
 function explain_sortmode {

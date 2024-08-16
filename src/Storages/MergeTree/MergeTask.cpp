@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Core/Settings.h>
+#include <Common/ProfileEvents.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -38,6 +39,18 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+
+namespace ProfileEvents
+{
+    extern const Event Merge;
+    extern const Event MergedColumns;
+    extern const Event GatheredColumns;
+    extern const Event MergeTotalMilliseconds;
+    extern const Event MergeExecuteMilliseconds;
+    extern const Event MergeHorizontalStageExecuteMilliseconds;
+    extern const Event MergeVerticalStageExecuteMilliseconds;
+    extern const Event MergeProjectionStageExecuteMilliseconds;
+}
 
 namespace DB
 {
@@ -169,6 +182,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 {
+    ProfileEvents::increment(ProfileEvents::Merge);
+
     String local_tmp_prefix;
     if (global_ctx->need_prefix)
     {
@@ -446,6 +461,13 @@ void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const Str
 
 MergeTask::StageRuntimeContextPtr MergeTask::ExecuteAndFinalizeHorizontalPart::getContextForNextStage()
 {
+    /// Do not increment for projection stage because time is already accounted in main task.
+    if (global_ctx->parent_part == nullptr)
+    {
+        ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+        ProfileEvents::increment(ProfileEvents::MergeHorizontalStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    }
+
     auto new_ctx = std::make_shared<VerticalMergeRuntimeContext>();
 
     new_ctx->rows_sources_write_buf = std::move(ctx->rows_sources_write_buf);
@@ -463,8 +485,14 @@ MergeTask::StageRuntimeContextPtr MergeTask::ExecuteAndFinalizeHorizontalPart::g
 
 MergeTask::StageRuntimeContextPtr MergeTask::VerticalMergeStage::getContextForNextStage()
 {
-    auto new_ctx = std::make_shared<MergeProjectionsRuntimeContext>();
+    /// Do not increment for projection stage because time is already accounted in main task.
+    if (global_ctx->parent_part == nullptr)
+    {
+        ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+        ProfileEvents::increment(ProfileEvents::MergeVerticalStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    }
 
+    auto new_ctx = std::make_shared<MergeProjectionsRuntimeContext>();
     new_ctx->need_sync = std::move(ctx->need_sync);
 
     ctx.reset();
@@ -474,9 +502,14 @@ MergeTask::StageRuntimeContextPtr MergeTask::VerticalMergeStage::getContextForNe
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
 {
-    assert(subtasks_iterator != subtasks.end());
-    if ((this->**subtasks_iterator)())
-        return true;
+    chassert(subtasks_iterator != subtasks.end());
+
+    Stopwatch watch;
+    bool res = (this->**subtasks_iterator)();
+    ctx->elapsed_execute_ns += watch.elapsedNanoseconds();
+
+    if (res)
+        return res;
 
     /// Move to the next subtask in an array of subtasks
     ++subtasks_iterator;
@@ -534,7 +567,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
 
 bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 {
-     /// No need to execute this part if it is horizontal merge.
+    /// No need to execute this part if it is horizontal merge.
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
         return false;
 
@@ -784,6 +817,9 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
 
     /// Print overall profiling info. NOTE: it may duplicates previous messages
     {
+        ProfileEvents::increment(ProfileEvents::MergedColumns, global_ctx->merging_columns.size());
+        ProfileEvents::increment(ProfileEvents::GatheredColumns, global_ctx->gathering_columns.size());
+
         double elapsed_seconds = global_ctx->merge_list_element_ptr->watch.elapsedSeconds();
         LOG_DEBUG(ctx->log,
             "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",
@@ -796,6 +832,16 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             ReadableSize(global_ctx->merge_list_element_ptr->bytes_read_uncompressed / elapsed_seconds));
     }
 
+
+    const auto mode = global_ctx->data->getSettings()->deduplicate_merge_projection_mode;
+    /// Under throw mode, we still choose to drop projections due to backward compatibility since some
+    /// users might have projections before this change.
+    if (global_ctx->data->merging_params.mode != MergeTreeData::MergingParams::Ordinary
+        && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::DROP))
+    {
+        ctx->projections_iterator = ctx->tasks_for_projections.begin();
+        return false;
+    }
 
     const auto & projections = global_ctx->metadata_snapshot->getProjections();
 
@@ -896,12 +942,29 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     return false;
 }
 
+MergeTask::StageRuntimeContextPtr MergeTask::MergeProjectionsStage::getContextForNextStage()
+{
+    /// Do not increment for projection stage because time is already accounted in main task.
+    /// The projection stage has its own empty projection stage which may add a drift of several milliseconds.
+    if (global_ctx->parent_part == nullptr)
+    {
+        ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+        ProfileEvents::increment(ProfileEvents::MergeProjectionStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+    }
+
+    return nullptr;
+}
 
 bool MergeTask::VerticalMergeStage::execute()
 {
-    assert(subtasks_iterator != subtasks.end());
-    if ((this->**subtasks_iterator)())
-        return true;
+    chassert(subtasks_iterator != subtasks.end());
+
+    Stopwatch watch;
+    bool res = (this->**subtasks_iterator)();
+    ctx->elapsed_execute_ns += watch.elapsedNanoseconds();
+
+    if (res)
+        return res;
 
     /// Move to the next subtask in an array of subtasks
     ++subtasks_iterator;
@@ -910,9 +973,14 @@ bool MergeTask::VerticalMergeStage::execute()
 
 bool MergeTask::MergeProjectionsStage::execute()
 {
-    assert(subtasks_iterator != subtasks.end());
-    if ((this->**subtasks_iterator)())
-        return true;
+    chassert(subtasks_iterator != subtasks.end());
+
+    Stopwatch watch;
+    bool res = (this->**subtasks_iterator)();
+    ctx->elapsed_execute_ns += watch.elapsedNanoseconds();
+
+    if (res)
+        return res;
 
     /// Move to the next subtask in an array of subtasks
     ++subtasks_iterator;
@@ -959,12 +1027,26 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForAllColumns() const
 
 bool MergeTask::execute()
 {
-    assert(stages_iterator != stages.end());
-    if ((*stages_iterator)->execute())
+    chassert(stages_iterator != stages.end());
+    const auto & current_stage = *stages_iterator;
+
+    if (current_stage->execute())
         return true;
 
-    /// Stage is finished, need initialize context for the next stage
-    auto next_stage_context = (*stages_iterator)->getContextForNextStage();
+    /// Stage is finished, need to initialize context for the next stage and update profile events.
+
+    UInt64 current_elapsed_ms = global_ctx->merge_list_element_ptr->watch.elapsedMilliseconds();
+    UInt64 stage_elapsed_ms = current_elapsed_ms - global_ctx->prev_elapsed_ms;
+    global_ctx->prev_elapsed_ms = current_elapsed_ms;
+
+    auto next_stage_context = current_stage->getContextForNextStage();
+
+    /// Do not increment for projection stage because time is already accounted in main task.
+    if (global_ctx->parent_part == nullptr)
+    {
+        ProfileEvents::increment(current_stage->getTotalTimeProfileEvent(), stage_elapsed_ms);
+        ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, stage_elapsed_ms);
+    }
 
     /// Move to the next stage in an array of stages
     ++stages_iterator;
@@ -1089,7 +1171,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
                 /* limit_= */0,
                 /* always_read_till_end_= */false,
                 ctx->rows_sources_write_buf.get(),
-                true,
                 ctx->blocks_are_granules_size);
             break;
 

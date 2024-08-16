@@ -54,8 +54,6 @@ source /utils.lib
 /usr/share/clickhouse-test/config/install.sh
 
 ./setup_minio.sh stateless
-./mc admin trace clickminio > /test_output/minio.log &
-MC_ADMIN_PID=$!
 
 ./setup_hdfs_minicluster.sh
 
@@ -174,7 +172,56 @@ do
 done
 
 setup_logs_replication
-attach_gdb_to_clickhouse || true  # FIXME: to not break old builds, clean on 2023-09-01
+attach_gdb_to_clickhouse
+
+# create tables for minio log webhooks
+clickhouse-client --query "CREATE TABLE minio_audit_logs
+(
+    log String,
+    event_time DateTime64(9) MATERIALIZED parseDateTime64BestEffortOrZero(trim(BOTH '\"' FROM JSONExtractRaw(log, 'time')), 9, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY tuple()"
+
+clickhouse-client --query "CREATE TABLE minio_server_logs
+(
+    log String,
+    event_time DateTime64(9) MATERIALIZED parseDateTime64BestEffortOrZero(trim(BOTH '\"' FROM JSONExtractRaw(log, 'time')), 9, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY tuple()"
+
+# create minio log webhooks for both audit and server logs
+# use async inserts to avoid creating too many parts
+./mc admin config set clickminio logger_webhook:ch_server_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&query=INSERT%20INTO%20minio_server_logs%20FORMAT%20LineAsString" queue_size=1000000 batch_size=500
+./mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&query=INSERT%20INTO%20minio_audit_logs%20FORMAT%20LineAsString" queue_size=1000000 batch_size=500
+
+max_retries=100
+retry=1
+while [ $retry -le $max_retries ]; do
+    echo "clickminio restart attempt $retry:"
+
+    output=$(./mc admin service restart clickminio --wait --json 2>&1 | jq -r .status)
+    echo "Output of restart status: $output"
+
+    expected_output="success
+success"
+    if [ "$output" = "$expected_output" ]; then
+        echo "Restarted clickminio successfully."
+        break
+    fi
+
+    sleep 1
+
+    retry=$((retry + 1))
+done
+
+if [ $retry -gt $max_retries ]; then
+    echo "Failed to restart clickminio after $max_retries attempts."
+fi
+
+./mc admin trace clickminio > /test_output/minio.log &
+MC_ADMIN_PID=$!
 
 function fn_exists() {
     declare -F "$1" > /dev/null;
@@ -264,11 +311,22 @@ function run_tests()
     TIMEOUT=$((MAX_RUN_TIME - 800 > 8400 ? 8400 : MAX_RUN_TIME - 800))
     START_TIME=${SECONDS}
     set +e
-    timeout --preserve-status --signal TERM --kill-after 60m ${TIMEOUT}s \
-        clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
-            --no-drop-if-fail --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
-    | ts '%Y-%m-%d %H:%M:%S' \
-    | tee -a test_output/test_result.txt
+
+    TEST_ARGS=(
+        --testname
+        --shard
+        --zookeeper
+        --check-zookeeper-session
+        --hung-check
+        --print-time
+        --no-drop-if-fail
+        --capture-client-stacktrace
+        --test-runs "$NUM_TRIES"
+        "${ADDITIONAL_OPTIONS[@]}"
+    )
+    timeout --preserve-status --signal TERM --kill-after 60m ${TIMEOUT}s clickhouse-test "${TEST_ARGS[@]}" 2>&1 \
+        | ts '%Y-%m-%d %H:%M:%S' \
+        | tee -a test_output/test_result.txt
     set -e
     DURATION=$((SECONDS - START_TIME))
 
@@ -327,6 +385,14 @@ do
         fi
     fi
 done
+
+
+# collect minio audit and server logs
+# wait for minio to flush its batch if it has any
+sleep 1
+clickhouse-client -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+clickhouse-client -q "SELECT log FROM minio_audit_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow"
+clickhouse-client -q "SELECT log FROM minio_server_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow"
 
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?

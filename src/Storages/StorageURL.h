@@ -141,6 +141,9 @@ private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 };
 
+bool urlWithGlobs(const String & uri);
+
+String getSampleURI(String uri, ContextPtr context);
 
 class StorageURLSource : public SourceWithKeyCondition, WithContext
 {
@@ -250,10 +253,10 @@ public:
         const HTTPHeaderEntries & headers = {},
         const String & method = Poco::Net::HTTPRequest::HTTP_POST);
 
+    ~StorageURLSink() override;
+
     std::string getName() const override { return "StorageURLSink"; }
     void consume(Chunk & chunk) override;
-    void onCancel() override;
-    void onException(std::exception_ptr exception) override;
     void onFinish() override;
 
 private:
@@ -263,8 +266,6 @@ private:
 
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
-    std::mutex cancel_mutex;
-    bool cancelled = false;
 };
 
 class StorageURL : public IStorageURLBase
