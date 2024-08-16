@@ -8108,6 +8108,13 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
     DataPartsVector src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, partition_id);
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
+    std::optional<ZooKeeperMetadataTransaction> txn;
+    if (auto query_txn = query_context->getZooKeeperMetadataTransaction())
+        txn.emplace(query_txn->getZooKeeper(),
+            query_txn->getDatabaseZooKeeperPath(),
+            query_txn->isInitialQuery(),
+            query_txn->getTaskZooKeeperPath());
+
     /// Retry if alter_partition_version changes
     for (size_t retry = 0; retry < 1000; ++retry)
     {
@@ -8275,7 +8282,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
                 ephemeral_locks[i].getUnlockOp(ops);
             }
 
-            if (auto txn = query_context->getZooKeeperMetadataTransaction())
+            if (txn)
                 txn->moveOpsTo(ops);
 
             delimiting_block_lock->getUnlockOp(ops);
