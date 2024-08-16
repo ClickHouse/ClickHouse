@@ -708,7 +708,7 @@ def test_no_key_found_disk(cluster, broken_s3):
             """
             SELECT value
             FROM system.metrics
-            WHERE metric = 'S3DiskNoKeyErrors'
+            WHERE metric = 'DiskS3NoSuchKeyErrors'
             """
         ).strip()
     )
