@@ -20,12 +20,6 @@ DataStream ITransformingStep::createOutputStream(
 {
     DataStream output_stream{.header = std::move(output_header)};
 
-    // if (stream_traits.preserves_sorting)
-    // {
-    //     output_stream.sort_description = input_stream.sort_description;
-    //     output_stream.sort_scope = input_stream.sort_scope;
-    // }
-
     return output_stream;
 }
 

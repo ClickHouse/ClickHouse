@@ -39,8 +39,7 @@ public:
         const DataStream & input_stream,
         SortDescription description_,
         UInt64 limit_,
-        const Settings & settings_,
-        bool optimize_sorting_by_input_stream_properties_);
+        const Settings & settings_);
 
     /// Full with partitioning
     SortingStep(
@@ -48,8 +47,7 @@ public:
         const SortDescription & description_,
         const SortDescription & partition_by_description_,
         UInt64 limit_,
-        const Settings & settings_,
-        bool optimize_sorting_by_input_stream_properties_);
+        const Settings & settings_);
 
     /// FinishSorting
     SortingStep(
@@ -132,8 +130,6 @@ private:
     bool use_buffering = false;
 
     Settings sort_settings;
-
-    // [[maybe_unused]] const bool optimize_sorting_by_input_stream_properties = false;
 };
 
 }

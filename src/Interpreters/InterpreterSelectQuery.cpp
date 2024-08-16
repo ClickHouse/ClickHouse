@@ -1687,7 +1687,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     if (!joined_plan)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no joined plan for query");
 
-                    auto add_sorting = [&settings, this] (QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
+                    auto add_sorting = [this] (QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
                     {
                         SortDescription order_descr;
                         order_descr.reserve(key_names.size());
@@ -1699,8 +1699,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         auto sorting_step = std::make_unique<SortingStep>(
                             plan.getCurrentDataStream(),
                             std::move(order_descr),
-                            0 /* LIMIT */, sort_settings,
-                            settings.optimize_sorting_by_input_stream_properties);
+                            0 /* LIMIT */, sort_settings);
                         sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos));
                         plan.addStep(std::move(sorting_step));
                     };
@@ -2931,8 +2930,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
                 window.full_sort_description,
                 window.partition_by,
                 0 /* LIMIT */,
-                sort_settings,
-                settings.optimize_sorting_by_input_stream_properties);
+                sort_settings);
             sorting_step->setStepDescription("Sorting for window '" + window.window_name + "'");
             query_plan.addStep(std::move(sorting_step));
         }
@@ -2981,8 +2979,6 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         return;
     }
 
-    const Settings & settings = context->getSettingsRef();
-
     SortingStep::Settings sort_settings(*context);
 
     /// Merge the sorted blocks.
@@ -2990,8 +2986,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         query_plan.getCurrentDataStream(),
         output_order_descr,
         limit,
-        sort_settings,
-        settings.optimize_sorting_by_input_stream_properties);
+        sort_settings);
 
     sorting_step->setStepDescription("Sorting for ORDER BY");
     query_plan.addStep(std::move(sorting_step));

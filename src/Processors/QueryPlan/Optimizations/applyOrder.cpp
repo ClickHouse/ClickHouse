@@ -25,16 +25,13 @@ namespace QueryPlanOptimizations
 
 struct SortingProperty
 {
-    /// Sorting scope. Please keep the mutual order (more strong mode should have greater value).
+    /// Sorting scope.
     enum class SortScope : uint8_t
     {
-        // None   = 0,
-        // Chunk  = 1, /// Separate chunks are sorted
         Stream = 0, /// Each data steam is sorted
         Global = 1, /// Data is globally sorted
     };
 
-    /// It is not guaranteed that header has columns from sort_description.
     SortDescription sort_description = {};
     SortScope sort_scope = SortScope::Stream;
 };

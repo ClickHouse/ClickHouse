@@ -74,50 +74,23 @@ static ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow
 
 using StepStack = std::vector<IQueryPlanStep*>;
 
-static QueryPlan::Node * findReadingStep(QueryPlan::Node & node, StepStack & backward_path, bool allow_existing_order)
+static QueryPlan::Node * findReadingStep(QueryPlan::Node & node, bool allow_existing_order)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = checkSupportedReadingStep(step, allow_existing_order))
-    {
-        backward_path.push_back(node.step.get());
         return &node;
-    }
 
     if (node.children.size() != 1)
         return nullptr;
 
-    backward_path.push_back(node.step.get());
-
     if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
-        return findReadingStep(*node.children.front(), backward_path, allow_existing_order);
+        return findReadingStep(*node.children.front(), allow_existing_order);
 
     if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
-        return findReadingStep(*node.children.front(), backward_path, allow_existing_order);
+        return findReadingStep(*node.children.front(), allow_existing_order);
 
     return nullptr;
 }
-
-// void updateStepsDataStreams(StepStack & steps_to_update)
-// {
-//     /// update data stream's sorting properties for found transforms
-//     if (!steps_to_update.empty())
-//     {
-//         const DataStream * input_stream = &steps_to_update.back()->getOutputStream();
-//         chassert(dynamic_cast<ISourceStep *>(steps_to_update.back()));
-//         steps_to_update.pop_back();
-
-//         while (!steps_to_update.empty())
-//         {
-//             auto * transforming_step = dynamic_cast<ITransformingStep *>(steps_to_update.back());
-//             if (!transforming_step)
-//                 break;
-
-//             transforming_step->updateInputStream(*input_stream);
-//             input_stream = &steps_to_update.back()->getOutputStream();
-//             steps_to_update.pop_back();
-//         }
-//     }
-// }
 
 /// FixedColumns are columns which values become constants after filtering.
 /// In a query "SELECT x, y, z FROM table WHERE x = 1 AND y = 'a' ORDER BY x, y, z"
@@ -799,9 +772,9 @@ AggregationInputOrder buildInputOrderInfo(
     return order_info;
 }
 
-InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & node, StepStack & backward_path)
+InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & node)
 {
-    QueryPlan::Node * reading_node = findReadingStep(node, backward_path, false);
+    QueryPlan::Node * reading_node = findReadingStep(node, false);
     if (!reading_node)
         return nullptr;
 
@@ -853,9 +826,9 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
     return nullptr;
 }
 
-AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & node, StepStack & backward_path)
+AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & node)
 {
-    QueryPlan::Node * reading_node = findReadingStep(node, backward_path, false);
+    QueryPlan::Node * reading_node = findReadingStep(node, false);
     if (!reading_node)
         return {};
 
@@ -937,13 +910,13 @@ bool canImproveOrderForDistinct(AggregationInputOrder & required_order, const In
     return true;
 }
 
-AggregationInputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, StepStack & backward_path)
+AggregationInputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
 {
     /// Here we allow improving existing in-order optimization.
     /// Example: SELECT DISTINCT a, b FROM t ORDER BY a; -- sorting key: a, b
     /// If read in order for ORDER BY is already applied, then output sort description will contain only column `a`,
     /// but we need columns `a, b`, applying read in order for distinct will still benefit `order by`
-    QueryPlan::Node * reading_node = findReadingStep(node, backward_path, true);
+    QueryPlan::Node * reading_node = findReadingStep(node, true);
     if (!reading_node)
         return {};
 
@@ -1008,7 +981,6 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     if (sorting->getType() != SortingStep::Type::Full)
         return;
 
-    StepStack steps_to_update;
     if (typeid_cast<UnionStep *>(node.children.front()->step.get()))
     {
         auto & union_node = node.children.front();
@@ -1021,7 +993,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
         for (auto * child : union_node->children)
         {
-            infos.push_back(buildInputOrderInfo(*sorting, *child, steps_to_update));
+            infos.push_back(buildInputOrderInfo(*sorting, *child));
 
             if (infos.back())
             {
@@ -1052,8 +1024,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
                     child->step->getOutputStream(),
                     descr,
                     limit, /// TODO: support limit with ties
-                    sorting->getSettings(),
-                    false);
+                    sorting->getSettings());
             }
             else if (info->sort_description_for_merging.size() < max_sort_descr->size())
             {
@@ -1076,7 +1047,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
         sorting->convertToFinishSorting(*max_sort_descr, use_buffering);
     }
-    else if (auto order_info = buildInputOrderInfo(*sorting, *node.children.front(), steps_to_update))
+    else if (auto order_info = buildInputOrderInfo(*sorting, *node.children.front()))
     {
         /// Use buffering only if have filter or don't have limit.
         bool use_buffering = order_info->limit == 0;
@@ -1102,13 +1073,9 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
         return;
 
     /// TODO: maybe add support for UNION later.
-    std::vector<IQueryPlanStep*> steps_to_update;
-    if (auto order_info = buildInputOrderInfo(*aggregating, *node.children.front(), steps_to_update); order_info.input_order)
-    {
+    auto order_info = buildInputOrderInfo(*aggregating, *node.children.front());
+    if (order_info.input_order)
         aggregating->applyOrder(std::move(order_info.sort_description_for_merging), std::move(order_info.group_by_sort_description));
-        /// update data stream's sorting properties
-        // updateStepsDataStreams(steps_to_update);
-    }
 }
 
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
@@ -1126,15 +1093,9 @@ void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
     if (!distinct->getSortDescription().empty())
         return;
 
-    /// TODO: maybe add support for UNION later.
-    std::vector<IQueryPlanStep*> steps_to_update;
-
-    if (auto order_info = buildInputOrderInfo(*distinct, *node.children.front(), steps_to_update); order_info.input_order)
-    {
+    auto order_info = buildInputOrderInfo(*distinct, *node.children.front());
+    if (order_info.input_order)
         distinct->applyOrder(std::move(order_info.sort_description_for_merging));
-        /// update data stream's sorting properties
-        // updateStepsDataStreams(steps_to_update);
-    }
 }
 
 /// This optimization is obsolete and will be removed.

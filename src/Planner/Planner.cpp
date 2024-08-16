@@ -660,15 +660,13 @@ void addSortingStep(QueryPlan & query_plan,
 {
     const auto & sort_description = query_analysis_result.sort_description;
     const auto & query_context = planner_context->getQueryContext();
-    const Settings & settings = query_context->getSettingsRef();
     SortingStep::Settings sort_settings(*query_context);
 
     auto sorting_step = std::make_unique<SortingStep>(
         query_plan.getCurrentDataStream(),
         sort_description,
         query_analysis_result.partial_sorting_limit,
-        sort_settings,
-        settings.optimize_sorting_by_input_stream_properties);
+        sort_settings);
     sorting_step->setStepDescription("Sorting for ORDER BY");
     query_plan.addStep(std::move(sorting_step));
 }
@@ -991,8 +989,7 @@ void addWindowSteps(QueryPlan & query_plan,
                 window_description.full_sort_description,
                 window_description.partition_by,
                 0 /*limit*/,
-                sort_settings,
-                settings.optimize_sorting_by_input_stream_properties);
+                sort_settings);
             sorting_step->setStepDescription("Sorting for window '" + window_description.window_name + "'");
             query_plan.addStep(std::move(sorting_step));
         }
