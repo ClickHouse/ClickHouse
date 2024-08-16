@@ -282,7 +282,7 @@ struct ScatteredBlock : private boost::noncopyable
         SCOPE_EXIT(filterBySelector());
 
         if (num_rows >= rows())
-            return ScatteredBlock{block.cloneEmpty()};
+            return ScatteredBlock{Block{}};
 
         chassert(block);
 
