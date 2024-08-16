@@ -12,7 +12,6 @@ node = cluster.add_instance(
     stay_alive=True,
 )
 
-    ("system.query_metric_log", 1),
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
