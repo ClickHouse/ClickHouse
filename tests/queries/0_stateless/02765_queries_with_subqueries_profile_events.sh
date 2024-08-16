@@ -14,14 +14,14 @@ $CLICKHOUSE_CLIENT -n -q "
     CREATE MATERIALIZED VIEW mv TO output SQL SECURITY NONE AS SELECT * FROM input;
 "
 
-for allow_experimental_analyzer in 0 1; do
+for enable_analyzer in 0 1; do
     query_id="$(random_str 10)"
-    $CLICKHOUSE_CLIENT --allow_experimental_analyzer "$allow_experimental_analyzer" --query_id "$query_id" -q "INSERT INTO input SELECT * FROM numbers(1)"
+    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "INSERT INTO input SELECT * FROM numbers(1)"
     $CLICKHOUSE_CLIENT -mn -q "
         SYSTEM FLUSH LOGS;
         SELECT
             1 view,
-            $allow_experimental_analyzer allow_experimental_analyzer,
+            $enable_analyzer enable_analyzer,
             ProfileEvents['InsertQuery'] InsertQuery,
             ProfileEvents['SelectQuery'] SelectQuery,
             ProfileEvents['InsertQueriesWithSubqueries'] InsertQueriesWithSubqueries,
@@ -34,12 +34,12 @@ for allow_experimental_analyzer in 0 1; do
     "
 
     query_id="$(random_str 10)"
-    $CLICKHOUSE_CLIENT --allow_experimental_analyzer "$allow_experimental_analyzer" --query_id "$query_id" -q "SELECT * FROM system.one WHERE dummy IN (SELECT * FROM system.one) FORMAT Null"
+    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "SELECT * FROM system.one WHERE dummy IN (SELECT * FROM system.one) FORMAT Null"
     $CLICKHOUSE_CLIENT -mn -q "
         SYSTEM FLUSH LOGS;
         SELECT
             1 subquery,
-            $allow_experimental_analyzer allow_experimental_analyzer,
+            $enable_analyzer enable_analyzer,
             ProfileEvents['InsertQuery'] InsertQuery,
             ProfileEvents['SelectQuery'] SelectQuery,
             ProfileEvents['InsertQueriesWithSubqueries'] InsertQueriesWithSubqueries,
@@ -51,12 +51,12 @@ for allow_experimental_analyzer in 0 1; do
     "
 
     query_id="$(random_str 10)"
-    $CLICKHOUSE_CLIENT --allow_experimental_analyzer "$allow_experimental_analyzer" --query_id "$query_id" -q "WITH (SELECT * FROM system.one) AS x SELECT x FORMAT Null"
+    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "WITH (SELECT * FROM system.one) AS x SELECT x FORMAT Null"
     $CLICKHOUSE_CLIENT -mn -q "
         SYSTEM FLUSH LOGS;
         SELECT
             1 CSE,
-            $allow_experimental_analyzer allow_experimental_analyzer,
+            $enable_analyzer enable_analyzer,
             ProfileEvents['InsertQuery'] InsertQuery,
             ProfileEvents['SelectQuery'] SelectQuery,
             ProfileEvents['InsertQueriesWithSubqueries'] InsertQueriesWithSubqueries,
@@ -68,12 +68,12 @@ for allow_experimental_analyzer in 0 1; do
     "
 
     query_id="$(random_str 10)"
-    $CLICKHOUSE_CLIENT --allow_experimental_analyzer "$allow_experimental_analyzer" --query_id "$query_id" -q "WITH (SELECT * FROM system.one) AS x SELECT x, x FORMAT Null"
+    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "WITH (SELECT * FROM system.one) AS x SELECT x, x FORMAT Null"
     $CLICKHOUSE_CLIENT -mn -q "
         SYSTEM FLUSH LOGS;
         SELECT
             1 CSE_Multi,
-            $allow_experimental_analyzer allow_experimental_analyzer,
+            $enable_analyzer enable_analyzer,
             ProfileEvents['InsertQuery'] InsertQuery,
             ProfileEvents['SelectQuery'] SelectQuery,
             ProfileEvents['InsertQueriesWithSubqueries'] InsertQueriesWithSubqueries,
@@ -85,12 +85,12 @@ for allow_experimental_analyzer in 0 1; do
     "
 
     query_id="$(random_str 10)"
-    $CLICKHOUSE_CLIENT --allow_experimental_analyzer "$allow_experimental_analyzer" --query_id "$query_id" -q "WITH x AS (SELECT * FROM system.one) SELECT * FROM x FORMAT Null"
+    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "WITH x AS (SELECT * FROM system.one) SELECT * FROM x FORMAT Null"
     $CLICKHOUSE_CLIENT -mn -q "
         SYSTEM FLUSH LOGS;
         SELECT
             1 CTE,
-            $allow_experimental_analyzer allow_experimental_analyzer,
+            $enable_analyzer enable_analyzer,
             ProfileEvents['InsertQuery'] InsertQuery,
             ProfileEvents['SelectQuery'] SelectQuery,
             ProfileEvents['InsertQueriesWithSubqueries'] InsertQueriesWithSubqueries,
@@ -102,12 +102,12 @@ for allow_experimental_analyzer in 0 1; do
     "
 
     query_id="$(random_str 10)"
-    $CLICKHOUSE_CLIENT --allow_experimental_analyzer "$allow_experimental_analyzer" --query_id "$query_id" -q "WITH x AS (SELECT * FROM system.one) SELECT * FROM x UNION ALL SELECT * FROM x FORMAT Null"
+    $CLICKHOUSE_CLIENT --enable_analyzer "$enable_analyzer" --query_id "$query_id" -q "WITH x AS (SELECT * FROM system.one) SELECT * FROM x UNION ALL SELECT * FROM x FORMAT Null"
     $CLICKHOUSE_CLIENT -mn -q "
         SYSTEM FLUSH LOGS;
         SELECT
             1 CTE_Multi,
-            $allow_experimental_analyzer allow_experimental_analyzer,
+            $enable_analyzer enable_analyzer,
             ProfileEvents['InsertQuery'] InsertQuery,
             ProfileEvents['SelectQuery'] SelectQuery,
             ProfileEvents['InsertQueriesWithSubqueries'] InsertQueriesWithSubqueries,

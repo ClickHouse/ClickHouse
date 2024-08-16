@@ -46,6 +46,7 @@ struct FormatSettings
     bool try_infer_integers = true;
     bool try_infer_dates = true;
     bool try_infer_datetimes = true;
+    bool try_infer_datetimes_only_datetime64 = false;
     bool try_infer_exponent_floats = false;
 
     enum class DateTimeInputFormat : uint8_t
@@ -205,6 +206,7 @@ struct FormatSettings
 
     struct JSON
     {
+        size_t max_depth = 1000;
         bool array_of_rows = false;
         bool quote_64bit_integers = true;
         bool quote_64bit_floats = false;
@@ -233,7 +235,6 @@ struct FormatSettings
         bool infer_incomplete_types_as_strings = true;
         bool throw_on_bad_escape_sequence = true;
         bool ignore_unnecessary_fields = true;
-        bool case_insensitive_column_matching = false;
     } json{};
 
     struct

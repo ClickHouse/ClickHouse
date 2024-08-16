@@ -262,7 +262,7 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
         {
             case orc::BOOLEAN: {
                 /// May throw exception
-                auto val = field.get<UInt64>();
+                auto val = field.safeGet<UInt64>();
                 return orc::Literal(val != 0);
             }
             case orc::BYTE:
@@ -275,7 +275,7 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
                 ///   SELECT * FROM file('t.orc', ORC, 'x UInt8') WHERE x > 10
                 /// We have to reject this, otherwise it would miss values > 127 (because
                 /// they're treated as negative by ORC).
-                auto val = field.get<Int64>();
+                auto val = field.safeGet<Int64>();
                 return orc::Literal(val);
             }
             case orc::FLOAT:
@@ -1143,24 +1143,42 @@ readColumnWithStringData(const orc::ColumnVectorBatch * orc_column, const orc::T
         reserver_size += 1;
     }
 
-    column_chars_t.reserve(reserver_size);
-    column_offsets.reserve(orc_str_column->numElements);
+    column_chars_t.resize_exact(reserver_size);
+    column_offsets.resize_exact(orc_str_column->numElements);
 
     size_t curr_offset = 0;
-    for (size_t i = 0; i < orc_str_column->numElements; ++i)
+    if (!orc_str_column->hasNulls)
     {
-        if (!orc_str_column->hasNulls || orc_str_column->notNull[i])
+        for (size_t i = 0; i < orc_str_column->numElements; ++i)
         {
             const auto * buf = orc_str_column->data[i];
             size_t buf_size = orc_str_column->length[i];
-            column_chars_t.insert_assume_reserved(buf, buf + buf_size);
+            memcpy(&column_chars_t[curr_offset], buf, buf_size);
             curr_offset += buf_size;
+
+            column_chars_t[curr_offset] = 0;
+            ++curr_offset;
+
+            column_offsets[i] = curr_offset;
         }
+    }
+    else
+    {
+        for (size_t i = 0; i < orc_str_column->numElements; ++i)
+        {
+            if (orc_str_column->notNull[i])
+            {
+                const auto * buf = orc_str_column->data[i];
+                size_t buf_size = orc_str_column->length[i];
+                memcpy(&column_chars_t[curr_offset], buf, buf_size);
+                curr_offset += buf_size;
+            }
 
-        column_chars_t.push_back(0);
-        ++curr_offset;
+            column_chars_t[curr_offset] = 0;
+            ++curr_offset;
 
-        column_offsets.push_back(curr_offset);
+            column_offsets[i] = curr_offset;
+        }
     }
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
