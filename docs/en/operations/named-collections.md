@@ -312,7 +312,7 @@ The description of parameters see [postgresql](../sql-reference/table-functions/
 - `username` for `user`
 - `db` for `database`.
 
-Parameter `addresses_expr` is used in a collection instead of `host:port`. The parameter is optional, because there are other optional ones: `host`, `hostname`, `port`. The following pseudocode explains the priority:
+Parameter `addresses_expr` is used in a collection instead of `host:port`. The parameter is optional, because there are other optional ones: `host`, `hostname`, `port`. The following pseudo code explains the priority:
 
 ```sql
 CASE 
