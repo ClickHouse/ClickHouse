@@ -853,9 +853,9 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     /// Parse numbers (including decimals), strings, arrays and tuples of them.
 
+    Pos begin = pos;
     const char * data_begin = pos->begin;
     const char * data_end = pos->end;
-    bool is_string_literal = pos->type == StringLiteral;
 
     if (pos->type == Minus)
     {
@@ -866,7 +866,7 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         data_end = pos->end;
         ++pos;
     }
-    else if (pos->type == Number || is_string_literal)
+    else if (pos->type == Number || pos->type == StringLiteral)
     {
         ++pos;
     }
@@ -939,18 +939,22 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     {
         String s;
         size_t data_size = data_end - data_begin;
-        if (is_string_literal)
+        if (begin->type == StringLiteral)
         {
-            ReadBufferFromMemory buf(data_begin, data_size);
-            readQuotedStringWithSQLStyle(s, buf);
-            assert(buf.count() == data_size);
+            ASTPtr literal;
+            if (ParserStringLiteral().parse(begin, literal, expected))
+            {
+                node = createFunctionCast(literal, type_ast);
+                return true;
+            }
+            return false;
         }
         else
-            s = String(data_begin, data_size);
-
-        auto literal = std::make_shared<ASTLiteral>(std::move(s));
-        node = createFunctionCast(literal, type_ast);
-        return true;
+        {
+            auto literal = std::make_shared<ASTLiteral>(String(data_begin, data_size));
+            node = createFunctionCast(literal, type_ast);
+            return true;
+        }
     }
 
     return false;
