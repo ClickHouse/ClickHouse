@@ -19,6 +19,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 struct AggregateFunctionDistinctJSONPathsData
 {
     static constexpr auto name = "distinctJSONPaths";
@@ -44,7 +50,7 @@ struct AggregateFunctionDistinctJSONPathsData
         for (size_t i = start; i != end; ++i)
             data.insert(shared_data_paths->getDataAt(i).toString());
     }
-    
+
     void addWholeColumn(const ColumnObject & column, const std::unordered_map<String, String> &)
     {
         for (const auto & [path, _] : column.getTypedPaths())
@@ -98,7 +104,7 @@ struct AggregateFunctionDistinctJSONPathsData
             string_column.insertData(path.data(), path.size());
         array_column.getOffsets().push_back(string_column.size());
     }
-    
+
     static DataTypePtr getResultType()
     {
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
@@ -110,7 +116,7 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
     static constexpr auto name = "distinctJSONPathsAndTypes";
 
     std::unordered_map<String, std::unordered_set<String>> data;
-    
+
     void add(const ColumnObject & column, size_t row_num, const std::unordered_map<String, String> & typed_paths_type_names)
     {
         for (const auto & [path, _] : column.getTypedPaths())
@@ -137,7 +143,7 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
                 data[path].insert(type->getName());
         }
     }
-    
+
     void addWholeColumn(const ColumnObject & column, const std::unordered_map<String, String> & typed_paths_type_names)
     {
         for (const auto & [path, _] : column.getTypedPaths())
@@ -229,7 +235,7 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
 
         array_column.getOffsets().push_back(key_column.size());
     }
-    
+
     static DataTypePtr getResultType()
     {
         return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
@@ -302,7 +308,7 @@ public:
     {
         this->data(place).insertResultInto(to);
     }
-    
+
 private:
     std::unordered_map<String, String> typed_paths_type_names;
 };
