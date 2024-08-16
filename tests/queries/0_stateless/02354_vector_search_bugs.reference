@@ -1,3 +1,4 @@
+Rejects INSERTs of Arrays with different sizes
 Issue #52258: Empty Arrays or Arrays with default values are rejected
 It is possible to create parts with different Array vector sizes but there will be an error at query time
 Correctness of index with > 1 mark
