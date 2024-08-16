@@ -593,8 +593,8 @@ ReturnType parseDateTimeBestEffortImpl(
                     else
                         return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word");
 
-                    while (!in.eof() && isAlphaASCII(*in.position()))
-                        ++in.position();
+//                    while (!in.eof() && isAlphaASCII(*in.position()))
+//                        ++in.position();
 
                     /// For RFC 2822
                     if (has_day_of_week)

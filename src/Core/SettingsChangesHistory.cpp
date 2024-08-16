@@ -87,6 +87,9 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"allow_experimental_time_series_table", false, false, "Added new setting to allow the TimeSeries table engine"},
             {"enable_analyzer", 1, 1, "Added an alias to a setting `allow_experimental_analyzer`."},
             {"optimize_functions_to_subcolumns", false, true, "Enabled settings by default"},
+            {"allow_experimental_json_type", false, false, "Add new experimental JSON type"},
+            {"use_json_alias_for_old_object_type", true, false, "Use JSON type alias to create new JSON type"},
+            {"type_json_skip_duplicated_paths", false, false, "Allow to skip duplicated paths during JSON parsing"},
             {"allow_experimental_vector_similarity_index", false, false, "Added new setting to allow experimental vector similarity indexes"},
             {"input_format_try_infer_datetimes_only_datetime64", true, false, "Allow to infer DateTime instead of DateTime64 in data formats"}
         }
