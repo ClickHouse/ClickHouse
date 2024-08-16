@@ -180,8 +180,8 @@ ReturnType parseDateTimeBestEffortImpl(
             }
             else if (num_digits == 10 && !year && !has_time)
             {
-                if (strict && month)
-                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: month component is duplicated");
+                if (strict)
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Strict best effort parsing doesn't allow timestamps");
 
                 /// This is unix timestamp.
                 readDecimalNumber<10>(res, digits);
@@ -189,8 +189,8 @@ ReturnType parseDateTimeBestEffortImpl(
             }
             else if (num_digits == 9 && !year && !has_time)
             {
-                if (strict && month)
-                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: month component is duplicated");
+                if (strict)
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Strict best effort parsing doesn't allow timestamps");
 
                 /// This is unix timestamp.
                 readDecimalNumber<9>(res, digits);
@@ -198,8 +198,8 @@ ReturnType parseDateTimeBestEffortImpl(
             }
             else if (num_digits == 14 && !year && !has_time)
             {
-                if (strict && month)
-                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: month component is duplicated");
+                if (strict)
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Strict best effort parsing doesn't allow date times without separators");
 
                 /// This is YYYYMMDDhhmmss
                 readDecimalNumber<4>(year, digits);
@@ -212,8 +212,8 @@ ReturnType parseDateTimeBestEffortImpl(
             }
             else if (num_digits == 8 && !year)
             {
-                if (strict && month)
-                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: month component is duplicated");
+                if (strict)
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Strict best effort parsing doesn't allow date times without separators");
 
                 /// This is YYYYMMDD
                 readDecimalNumber<4>(year, digits);
@@ -222,6 +222,9 @@ ReturnType parseDateTimeBestEffortImpl(
             }
             else if (num_digits == 6)
             {
+                if (strict)
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Strict best effort parsing doesn't allow date times without separators");
+
                 /// This is YYYYMM or hhmmss
                 if (!year && !month)
                 {
@@ -593,8 +596,8 @@ ReturnType parseDateTimeBestEffortImpl(
                     else
                         return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word");
 
-//                    while (!in.eof() && isAlphaASCII(*in.position()))
-//                        ++in.position();
+                    while (!in.eof() && isAlphaASCII(*in.position()))
+                        ++in.position();
 
                     /// For RFC 2822
                     if (has_day_of_week)
