@@ -5,7 +5,6 @@
 #include <Parsers/IAST.h>
 
 #include <boost/noncopyable.hpp>
-#include <vector>
 
 #define LIST_OF_ALL_SYSTEM_LOGS(M) \
     M(QueryLog,              query_log,            "Contains information about executed queries, for example, start time, duration of processing, error messages.") \
@@ -30,6 +29,7 @@
     M(AsynchronousInsertLog, asynchronous_insert_log, "Contains a history for all asynchronous inserts executed on current server.") \
     M(BackupLog,             backup_log,           "Contains logging entries with the information about BACKUP and RESTORE operations.") \
     M(BlobStorageLog,        blob_storage_log,     "Contains logging entries with information about various blob storage operations such as uploads and deletes.") \
+    M(QueryMetricLog,        query_metric_log,     "Contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk.") \
 
 
 namespace DB
@@ -68,8 +68,6 @@ LIST_OF_ALL_SYSTEM_LOGS(FORWARD_DECLARATION)
 #undef FORWARD_DECLARATION
 /// NOLINTEND(bugprone-macro-parentheses)
 
-class QueryMetricLog;
-
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
 class SystemLogs
@@ -86,7 +84,6 @@ public:
 
 #define DECLARE_PUBLIC_MEMBERS(log_type, member, descr) \
     std::shared_ptr<log_type> member; \
-    std::shared_ptr<QueryMetricLog> query_metric_log;   /// Used to log all metrics for individual queries.
 
     LIST_OF_ALL_SYSTEM_LOGS(DECLARE_PUBLIC_MEMBERS)
 #undef DECLARE_PUBLIC_MEMBERS

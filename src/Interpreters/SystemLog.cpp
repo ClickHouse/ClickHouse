@@ -292,10 +292,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     LIST_OF_ALL_SYSTEM_LOGS(CREATE_PUBLIC_MEMBERS)
 #undef CREATE_PUBLIC_MEMBERS
 /// NOLINTEND(bugprone-macro-parentheses)
-    query_metric_log = createSystemLog<QueryMetricLog>(global_context, "system", "query_metric_log", config, "query_metric_log", "Contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk.");
 
-    if (query_metric_log)
-        logs.emplace_back(query_metric_log.get());
     if (session_log)
         global_context->addWarningMessage("Table system.session_log is enabled. It's unreliable and may contain garbage. Do not use it for any kind of security monitoring.");
 
