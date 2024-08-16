@@ -571,7 +571,7 @@ SELECT arrayJoin(distinctJSONPaths(json)) FROM s3('s3://clickhouse-public-datase
 ```
 
 ```sql
-SELECT arrayJoin(distinctJSONPathsAndTypes(json)) FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject) 
+SELECT arrayJoin(distinctJSONPathsAndTypes(json)) FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject) SETTINGS date_time_input_format='best_effort'
 ```
 
 
@@ -583,7 +583,7 @@ SELECT arrayJoin(distinctJSONPathsAndTypes(json)) FROM s3('s3://clickhouse-publi
 │ ('actor.id',['Int64'])                                      │
 │ ('actor.login',['String'])                                  │
 │ ('actor.url',['String'])                                    │
-│ ('created_at',['String'])                                   │
+│ ('created_at',['DateTime'])                                 │
 │ ('id',['String'])                                           │
 │ ('org.avatar_url',['String'])                               │
 │ ('org.gravatar_id',['String'])                              │
@@ -598,7 +598,7 @@ SELECT arrayJoin(distinctJSONPathsAndTypes(json)) FROM s3('s3://clickhouse-publi
 │ ('payload.comment.author_association',['String'])           │
 │ ('payload.comment.body',['String'])                         │
 │ ('payload.comment.commit_id',['String'])                    │
-│ ('payload.comment.created_at',['String'])                   │
+│ ('payload.comment.created_at',['DateTime'])                 │
 │ ('payload.comment.diff_hunk',['String'])                    │
 │ ('payload.comment.html_url',['String'])                     │
 │ ('payload.comment.id',['Int64'])                            │
@@ -614,7 +614,7 @@ SELECT arrayJoin(distinctJSONPathsAndTypes(json)) FROM s3('s3://clickhouse-publi
 ...
 │ ('payload.release.node_id',['String'])                      │
 │ ('payload.release.prerelease',['Bool'])                     │
-│ ('payload.release.published_at',['String'])                 │
+│ ('payload.release.published_at',['DateTime'])               │
 │ ('payload.release.tag_name',['String'])                     │
 │ ('payload.release.tarball_url',['String'])                  │
 │ ('payload.release.target_commitish',['String'])             │
