@@ -614,6 +614,7 @@ bool tryReadDoubleQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 void readJSONString(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
 
 void readBackQuotedString(String & s, ReadBuffer & buf);
+bool tryReadBackQuotedString(String & s, ReadBuffer & buf);
 void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readStringUntilEOF(String & s, ReadBuffer & buf);
@@ -700,6 +701,10 @@ ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf);
 
 template <typename Vector, typename ReturnType = void>
 ReturnType readJSONArrayInto(Vector & s, ReadBuffer & buf);
+
+/// Similar to readJSONObjectPossiblyInvalid but avoids copying the data if JSON object fits into current read buffer
+/// If copying is unavoidable, it copies data into provided object_buffer and returns string_view to it.
+std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer);
 
 template <typename Vector>
 void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
@@ -1936,6 +1941,8 @@ struct PcgDeserializer
         rng.state_ = state;
     }
 };
+
+void readParsedValueIntoString(String & s, ReadBuffer & buf, std::function<void(ReadBuffer &)> parse_func);
 
 template <typename ReturnType = void, typename Vector>
 ReturnType readQuotedFieldInto(Vector & s, ReadBuffer & buf);
