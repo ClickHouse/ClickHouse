@@ -78,12 +78,12 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 
         for (size_t i = 1; i < parent_node->children.size(); ++i)
         {
-            auto & expr_node = nodes.emplace_back();
-            expr_node.children.push_back(parent_node->children[i]);
-            parent_node->children[i] = &expr_node;
+            auto & distinct_node = nodes.emplace_back();
+            distinct_node.children.push_back(parent_node->children[i]);
+            parent_node->children[i] = &distinct_node;
 
-            expr_node.step = std::make_unique<DistinctStep>(
-                expr_node.children.front()->step->getOutputStream(),
+            distinct_node.step = std::make_unique<DistinctStep>(
+                distinct_node.children.front()->step->getOutputStream(),
                 distinct->getSetSizeLimits(),
                 distinct->getLimitHint(),
                 distinct->getColumnNames(),
