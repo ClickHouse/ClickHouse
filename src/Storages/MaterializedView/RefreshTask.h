@@ -26,6 +26,7 @@ public:
 
     /// The only proper way to construct task
     static RefreshTaskHolder create(
+        const StorageMaterializedView & view,
         ContextMutablePtr context,
         const DB::ASTRefreshStrategy & strategy);
 
@@ -83,11 +84,9 @@ private:
 
     RefreshSchedule refresh_schedule;
     RefreshSettings refresh_settings; // TODO: populate, use, update on alter
-    std::vector<StorageID> initial_dependencies;
     RefreshSet::Handle set_handle;
 
     /// StorageIDs of our dependencies that we're waiting for.
-    using DatabaseAndTableNameSet = std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     DatabaseAndTableNameSet remaining_dependencies;
     bool time_arrived = false;
 

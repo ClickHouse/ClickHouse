@@ -705,8 +705,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     {
         auto size = reader->available();
 
-        std::string failure_reason;
-        if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds, failure_reason))
+        if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds))
         {
             LOG_TEST(
                 log, "Failed to reserve space during background download "

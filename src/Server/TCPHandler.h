@@ -18,8 +18,6 @@
 #include <Interpreters/ProfileEventsExt.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-#include <IO/ReadBufferFromPocoSocketChunked.h>
-#include <IO/WriteBufferFromPocoSocketChunked.h>
 
 #include "Core/Types.h"
 #include "IServer.h"
@@ -188,8 +186,6 @@ private:
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
     UInt32 client_tcp_protocol_version = 0;
-    String proto_send_chunked_cl = "notchunked";
-    String proto_recv_chunked_cl = "notchunked";
     String quota_key;
 
     /// Connection settings, which are extracted from a context.
@@ -208,8 +204,8 @@ private:
     ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::NO_QUERY;
 
     /// Streams for reading/writing from/to client connection socket.
-    std::shared_ptr<ReadBufferFromPocoSocketChunked> in;
-    std::shared_ptr<WriteBufferFromPocoSocketChunked> out;
+    std::shared_ptr<ReadBuffer> in;
+    std::shared_ptr<WriteBuffer> out;
 
     ProfileEvents::Event read_event;
     ProfileEvents::Event write_event;

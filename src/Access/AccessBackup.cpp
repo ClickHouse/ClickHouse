@@ -93,7 +93,7 @@ namespace
                         break;
                     }
 
-                    UUID id = parse<UUID>(line.substr(0, line.find('\t')));
+                    UUID id = parse<UUID>(line);
                     line.clear();
 
                     String queries;

@@ -804,8 +804,7 @@ bool FileCache::tryReserve(
     const size_t size,
     FileCacheReserveStat & reserve_stat,
     const UserInfo & user,
-    size_t lock_wait_timeout_milliseconds,
-    std::string & failure_reason)
+    size_t lock_wait_timeout_milliseconds)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheReserveMicroseconds);
 
@@ -818,7 +817,6 @@ bool FileCache::tryReserve(
     if (cache_is_being_resized.load(std::memory_order_relaxed))
     {
         ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfCacheResize);
-        failure_reason = "cache is being resized";
         return false;
     }
 
@@ -826,7 +824,6 @@ bool FileCache::tryReserve(
     if (!cache_lock)
     {
         ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfLockContention);
-        failure_reason = "cache contention";
         return false;
     }
 
@@ -850,7 +847,6 @@ bool FileCache::tryReserve(
             LOG_TEST(log, "Query limit exceeded, space reservation failed, "
                      "recache_on_query_limit_exceeded is disabled (while reserving for {}:{})",
                      file_segment.key(), file_segment.offset());
-            failure_reason = "query limit exceeded";
             return false;
         }
 
@@ -881,7 +877,6 @@ bool FileCache::tryReserve(
         if (!query_priority->collectCandidatesForEviction(
                 size, required_elements_num, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
         {
-            failure_reason = "cannot evict enough space for query limit";
             return false;
         }
 
@@ -896,15 +891,11 @@ bool FileCache::tryReserve(
     if (!main_priority->collectCandidatesForEviction(
             size, required_elements_num, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
     {
-        failure_reason = "cannot evict enough space";
         return false;
     }
 
     if (!file_segment.getKeyMetadata()->createBaseDirectory())
-    {
-        failure_reason = "not enough space on device";
         return false;
-    }
 
     if (eviction_candidates.size() > 0)
     {

@@ -145,16 +145,12 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentialsSecurely() const
 {
     String user_agent_string = awsComputeUserAgentString();
     auto [new_token, response_code] = getEC2MetadataToken(user_agent_string);
-    if (response_code == Aws::Http::HttpResponseCode::BAD_REQUEST
-        || response_code == Aws::Http::HttpResponseCode::REQUEST_NOT_MADE)
-    {
-        /// At least the host should be available and reply, otherwise neither IMDSv2 nor IMDSv1 are usable.
+    if (response_code == Aws::Http::HttpResponseCode::BAD_REQUEST)
         return {};
-    }
     else if (response_code != Aws::Http::HttpResponseCode::OK || new_token.empty())
     {
         LOG_TRACE(logger, "Calling EC2MetadataService to get token failed, "
-                  "falling back to a less secure way. HTTP response code: {}", response_code);
+                  "falling back to less secure way. HTTP response code: {}", response_code);
         return getDefaultCredentials();
     }
 
@@ -251,7 +247,7 @@ static Aws::String getAWSMetadataEndpoint()
     return ec2_metadata_service_endpoint;
 }
 
-std::shared_ptr<AWSEC2MetadataClient> createEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
+std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
 {
     auto endpoint = getAWSMetadataEndpoint();
     return std::make_shared<AWSEC2MetadataClient>(client_configuration, endpoint.c_str());
@@ -785,13 +781,11 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
 
             /// EC2MetadataService throttles by delaying the response so the service client should set a large read timeout.
             /// EC2MetadataService delay is in order of seconds so it only make sense to retry after a couple of seconds.
-            /// But the connection timeout should be small because there is the case when there is no IMDS at all,
-            /// like outside of the cloud, on your own machines.
-            aws_client_configuration.connectTimeoutMs = 10;
+            aws_client_configuration.connectTimeoutMs = 1000;
             aws_client_configuration.requestTimeoutMs = 1000;
 
             aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
-            auto ec2_metadata_client = createEC2MetadataClient(aws_client_configuration);
+            auto ec2_metadata_client = InitEC2MetadataClient(aws_client_configuration);
             auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, !credentials_configuration.use_insecure_imds_request);
 
             AddProvider(std::make_shared<AWSInstanceProfileCredentialsProvider>(config_loader));

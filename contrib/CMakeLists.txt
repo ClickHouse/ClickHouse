@@ -209,8 +209,9 @@ endif()
 option(ENABLE_USEARCH "Enable USearch" ${ENABLE_LIBRARIES})
 if (ENABLE_USEARCH)
     add_contrib (FP16-cmake FP16)
+    add_contrib (robin-map-cmake robin-map)
     add_contrib (SimSIMD-cmake SimSIMD)
-    add_contrib (usearch-cmake usearch) # requires: FP16, SimdSIMD
+    add_contrib (usearch-cmake usearch) # requires: FP16, robin-map, SimdSIMD
 else ()
     message(STATUS "Not using USearch")
 endif ()

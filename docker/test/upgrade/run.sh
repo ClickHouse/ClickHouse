@@ -129,7 +129,6 @@ configure
 
 # Check that all new/changed setting were added in settings changes history.
 # Some settings can be different for builds with sanitizers, so we check
-# Also the automatic value of 'max_threads' and similar was displayed as "'auto(...)'" in previous versions instead of "auto(...)".
 # settings changes only for non-sanitizer builds.
 IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
 if [ "${IS_SANITIZED}" -eq "0" ]
@@ -146,9 +145,7 @@ then
       old_settings.value AS old_value
   FROM new_settings
   LEFT JOIN old_settings ON new_settings.name = old_settings.name
-  WHERE (new_value != old_value)
-      AND NOT (startsWith(new_value, 'auto(') AND old_value LIKE '%auto(%')
-      AND (name NOT IN (
+  WHERE (new_settings.value != old_settings.value) AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
       (
@@ -180,7 +177,7 @@ then
   if [ -s changed_settings.txt ]
   then
       mv changed_settings.txt /test_output/
-      echo -e "Changed settings are not reflected in the settings changes history (see changed_settings.txt)$FAIL$(head_escaped /test_output/changed_settings.txt)" >> /test_output/test_results.tsv
+      echo -e "Changed settings are not reflected in settings changes history (see changed_settings.txt)$FAIL$(head_escaped /test_output/changed_settings.txt)" >> /test_output/test_results.tsv
   else
       echo -e "There are no changed settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
   fi

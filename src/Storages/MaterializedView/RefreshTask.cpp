@@ -33,6 +33,7 @@ RefreshTask::RefreshTask(
 {}
 
 RefreshTaskHolder RefreshTask::create(
+    const StorageMaterializedView & view,
     ContextMutablePtr context,
     const DB::ASTRefreshStrategy & strategy)
 {
@@ -45,9 +46,12 @@ RefreshTaskHolder RefreshTask::create(
                 t->refreshTask();
         });
 
+    std::vector<StorageID> deps;
     if (strategy.dependencies)
         for (auto && dependency : strategy.dependencies->children)
-            task->initial_dependencies.emplace_back(dependency->as<const ASTTableIdentifier &>());
+            deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
+
+    context->getRefreshSet().emplace(view.getStorageID(), deps, task);
 
     return task;
 }
@@ -57,7 +61,6 @@ void RefreshTask::initializeAndStart(std::shared_ptr<StorageMaterializedView> vi
     view_to_refresh = view;
     if (view->getContext()->getSettingsRef().stop_refreshable_materialized_views_on_startup)
         stop_requested = true;
-    view->getContext()->getRefreshSet().emplace(view->getStorageID(), initial_dependencies, shared_from_this());
     populateDependencies();
     advanceNextRefreshTime(currentTime());
     refresh_task->schedule();
@@ -66,8 +69,7 @@ void RefreshTask::initializeAndStart(std::shared_ptr<StorageMaterializedView> vi
 void RefreshTask::rename(StorageID new_id)
 {
     std::lock_guard guard(mutex);
-    if (set_handle)
-        set_handle.rename(new_id);
+    set_handle.rename(new_id);
 }
 
 void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy)

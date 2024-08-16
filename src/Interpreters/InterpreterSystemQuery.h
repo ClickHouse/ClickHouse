@@ -74,7 +74,7 @@ private:
     void flushDistributed(ASTSystemQuery & query);
     [[noreturn]] void restartDisk(String & name);
 
-    RefreshTaskList getRefreshTasks();
+    RefreshTaskHolder getRefreshTask();
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);

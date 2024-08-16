@@ -165,8 +165,7 @@ public:
         size_t size,
         FileCacheReserveStat & stat,
         const UserInfo & user,
-        size_t lock_wait_timeout_milliseconds,
-        std::string & failure_reason);
+        size_t lock_wait_timeout_milliseconds);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const UserID & user_id);
 

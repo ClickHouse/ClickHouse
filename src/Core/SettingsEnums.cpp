@@ -175,8 +175,7 @@ IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGU
 
 IMPLEMENT_SETTING_ENUM(LightweightMutationProjectionMode, ErrorCodes::BAD_ARGUMENTS,
     {{"throw", LightweightMutationProjectionMode::THROW},
-     {"drop", LightweightMutationProjectionMode::DROP},
-     {"rebuild", LightweightMutationProjectionMode::REBUILD}})
+     {"drop", LightweightMutationProjectionMode::DROP}})
 
 IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS,
     {{"throw", DeduplicateMergeProjectionMode::THROW},

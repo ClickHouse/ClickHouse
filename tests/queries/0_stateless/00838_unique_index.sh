@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS set_idx;"
 
-$CLICKHOUSE_CLIENT --query="
+$CLICKHOUSE_CLIENT -n --query="
 CREATE TABLE set_idx
 (
     u64 UInt64,

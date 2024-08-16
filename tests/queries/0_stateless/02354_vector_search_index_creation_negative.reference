@@ -3,5 +3,8 @@ Two or six index arguments
 2nd argument (distance function) must be String and L2Distance or cosineDistance
 3nd argument (quantization), if given, must be String and f32, f16, ...
 4nd argument (M), if given, must be UInt64 and > 1
+5nd argument (ef_construction), if given, must be UInt64 and > 0
+6nd argument (ef_search), if given, must be UInt64 and > 0
 Must be created on single column
 Must be created on Array(Float32) columns
+Rejects INSERTs of Arrays with different sizes

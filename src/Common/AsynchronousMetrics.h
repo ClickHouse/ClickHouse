@@ -126,8 +126,6 @@ private:
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_period TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_quota TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_max TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> cgroupcpu_stat TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> cgroupcpuacct_stat TSA_GUARDED_BY(data_mutex);
 
     std::optional<ReadBufferFromFilePRead> vm_max_map_count TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> vm_maps TSA_GUARDED_BY(data_mutex);
@@ -223,16 +221,6 @@ private:
     void openBlockDevices();
     void openSensorsChips();
     void openEDAC();
-
-    void applyCPUMetricsUpdate(
-        AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier);
-
-    void applyNormalizedCPUMetricsUpdate(
-        AsynchronousMetricValues & new_values,
-        double num_cpus_to_normalize,
-        const ProcStatValuesCPU & delta_values_all_cpus,
-        double multiplier);
-
 #endif
 
     void run();

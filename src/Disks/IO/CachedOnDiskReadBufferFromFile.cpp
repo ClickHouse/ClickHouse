@@ -645,9 +645,8 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
 
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, current_impl_buffer_size);
 
-            std::string failure_reason;
             bool continue_predownload = file_segment.reserve(
-                current_predownload_size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, failure_reason);
+                current_predownload_size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds);
             if (continue_predownload)
             {
                 LOG_TEST(log, "Left to predownload: {}, buffer size: {}", bytes_to_predownload, current_impl_buffer_size);
@@ -1003,8 +1002,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         {
             chassert(file_offset_of_buffer_end + size - 1 <= file_segment.range().right);
 
-            std::string failure_reason;
-            bool success = file_segment.reserve(size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, failure_reason);
+            bool success = file_segment.reserve(size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds);
             if (success)
             {
                 chassert(file_segment.getCurrentWriteOffset() == static_cast<size_t>(implementation_buffer->getPosition()));
@@ -1030,8 +1028,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                     LOG_TRACE(log, "Bypassing cache because writeCache method failed");
             }
             else
-                LOG_TRACE(log, "No space left in cache to reserve {} bytes, reason: {}, "
-                          "will continue without cache download", size, failure_reason);
+                LOG_TRACE(log, "No space left in cache to reserve {} bytes, will continue without cache download", size);
 
             if (!success)
             {
