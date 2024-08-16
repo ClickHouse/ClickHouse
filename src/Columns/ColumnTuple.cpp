@@ -595,6 +595,14 @@ void ColumnTuple::reserve(size_t n)
         getColumn(i).reserve(n);
 }
 
+size_t ColumnTuple::capacity() const
+{
+    if (columns.empty())
+        return size();
+
+    return getColumn(0).capacity();
+}
+
 void ColumnTuple::prepareForSquashing(const Columns & source_columns)
 {
     const size_t tuple_size = columns.size();

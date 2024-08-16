@@ -4,25 +4,25 @@ JSON
 {"d":"str","dynamicType(d)":"String"}
 {"d":["1","2","3"],"dynamicType(d)":"Array(Int64)"}
 {"d":"2020-01-01","dynamicType(d)":"Date"}
-{"d":"2020-01-01 10:00:00.000000000","dynamicType(d)":"DateTime64(9)"}
+{"d":"2020-01-01 10:00:00","dynamicType(d)":"DateTime"}
 {"d":{"a":"42","b":"str"},"dynamicType(d)":"Tuple(a Int64, b String)"}
 {"d":{"a":"43"},"dynamicType(d)":"Tuple(a Int64)"}
 {"d":{"a":"44","c":["1","2","3"]},"dynamicType(d)":"Tuple(a Int64, c Array(Int64))"}
 {"d":["1","str",["1","2","3"]],"dynamicType(d)":"Tuple(Int64, String, Array(Int64))"}
 {"d":null,"dynamicType(d)":"None"}
 {"d":true,"dynamicType(d)":"Bool"}
-{"d":"42","dynamicType(d)":"Int64"}
-{"d":"42.42","dynamicType(d)":"String"}
-{"d":"str","dynamicType(d)":"String"}
-{"d":null,"dynamicType(d)":"None"}
-{"d":"1","dynamicType(d)":"Int64"}
+{"d":"42","dynamicType(d)":"Int64","isDynamicElementInSharedData(d)":false}
+{"d":42.42,"dynamicType(d)":"Float64","isDynamicElementInSharedData(d)":false}
+{"d":"str","dynamicType(d)":"String","isDynamicElementInSharedData(d)":true}
+{"d":null,"dynamicType(d)":"None","isDynamicElementInSharedData(d)":false}
+{"d":true,"dynamicType(d)":"Bool","isDynamicElementInSharedData(d)":true}
 CSV
 42,"Int64"
 42.42,"Float64"
 "str","String"
 "[1,2,3]","Array(Int64)"
 "2020-01-01","Date"
-"2020-01-01 10:00:00.000000000","DateTime64(9)"
+"2020-01-01 10:00:00","DateTime"
 "[1, 'str', [1, 2, 3]]","String"
 \N,"None"
 true,"Bool"
@@ -32,24 +32,24 @@ TSV
 str	String
 [1,2,3]	Array(Int64)
 2020-01-01	Date
-2020-01-01 10:00:00.000000000	DateTime64(9)
+2020-01-01 10:00:00	DateTime
 [1, \'str\', [1, 2, 3]]	String
 \N	None
 true	Bool
 Values
-(42,'Int64'),(42.42,'Float64'),('str','String'),([1,2,3],'Array(Int64)'),('2020-01-01','Date'),('2020-01-01 10:00:00.000000000','DateTime64(9)'),(NULL,'None'),(true,'Bool')
+(42,'Int64'),(42.42,'Float64'),('str','String'),([1,2,3],'Array(Int64)'),('2020-01-01','Date'),('2020-01-01 10:00:00','DateTime'),(NULL,'None'),(true,'Bool')
 Cast using parsing
 42	Int64
 42.42	Float64
 [1,2,3]	Array(Int64)
 2020-01-01	Date
-2020-01-01 10:00:00.000000000	DateTime64(9)
-\N	None
+2020-01-01 10:00:00	DateTime
+NULL	String
 true	Bool
-42	Int64
-42.42	Float64
-[1, 2, 3]	String
-2020-01-01	String
-2020-01-01 10:00:00	String
-\N	None
-true	String
+42	Int64	false
+42.42	Float64	false
+[1,2,3]	Array(Int64)	false
+2020-01-01	Date	true
+2020-01-01 10:00:00	DateTime	true
+NULL	String	true
+true	Bool	true
