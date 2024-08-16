@@ -97,9 +97,9 @@ public:
 
     void removeWithPredicate(std::function<bool(const Key&, const MappedPtr&)> predicate) override
     {
-        for(auto it = cells.begin(); it != cells.end();)
+        for (auto it = cells.begin(); it != cells.end();)
         {
-            if(predicate(it->first, it->second.value))
+            if (predicate(it->first, it->second.value))
             {
                 auto & cell = it->second;
 

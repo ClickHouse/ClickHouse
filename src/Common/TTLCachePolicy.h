@@ -135,9 +135,9 @@ public:
 
     void removeWithPredicate(std::function<bool(const Key&, const MappedPtr&)> predicate) override
     {
-        for(auto it = cache.begin(); it != cache.end();)
+        for (auto it = cache.begin(); it != cache.end();)
         {
-            if(predicate(it->first, it->second))
+            if (predicate(it->first, it->second))
             {
                 size_t sz = weight_function(*it->second);
                 if (it->first.user_id.has_value())

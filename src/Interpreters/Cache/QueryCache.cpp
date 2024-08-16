@@ -621,10 +621,11 @@ QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::millis
 
 void QueryCache::clearWithTag(const String & tag)
 {
-    auto removeWithTag = [tag](const Key & k, const Cache::MappedPtr & _){
+    auto remove_with_tag = [tag](const Key & k, const Cache::MappedPtr & _)
+    {
       return k.tag == tag;
     };
-    cache.removeWithPredicate(removeWithTag);
+    cache.removeWithPredicate(remove_with_tag);
     std::lock_guard lock(mutex);
 }
 
