@@ -87,7 +87,7 @@ public:
         if (dynamic_column.isNullAt(row_num))
             return;
 
-        this->data(place).add(dynamic_column.getTypeNameAt(row_num));
+        data(place).add(dynamic_column.getTypeNameAt(row_num));
     }
 
     void ALWAYS_INLINE addBatchSinglePlace(
@@ -100,7 +100,7 @@ public:
         /// In this case we can avoid iterating over all rows because we can get all types
         /// in Dynamic column in a more efficient way.
         else
-            assert_cast<const ColumnDynamic & >(*columns[0]).getAllTypeNames(this->data(place).data);
+            assert_cast<const ColumnDynamic & >(*columns[0]).getAllTypeNames(data(place).data);
     }
 
     void addManyDefaults(
@@ -114,22 +114,22 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).merge(this->data(rhs));
+        data(place).merge(data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).serialize(buf);
+        data(place).serialize(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        this->data(place).deserialize(buf);
+        data(place).deserialize(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        this->data(place).insertResultInto(to);
+        data(place).insertResultInto(to);
     }
 };
 
