@@ -129,6 +129,7 @@ public:
     String storage_policy;
     String volume;
     String disk;
+    String query_cache_tag;
     UInt64 seconds{};
 
     String filesystem_cache_name;

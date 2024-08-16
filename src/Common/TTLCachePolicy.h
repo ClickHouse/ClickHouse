@@ -133,6 +133,23 @@ public:
         Base::user_quotas->clear();
     }
 
+    void removeWithPredicate(std::function<bool(const Key&, const MappedPtr&)> predicate) override
+    {
+        for(auto it = cache.begin(); it != cache.end();)
+        {
+            if(predicate(it->first, it->second))
+            {
+                size_t sz = weight_function(*it->second);
+                if (it->first.user_id.has_value())
+                    Base::user_quotas->decreaseActual(*it->first.user_id, sz);
+                it = cache.erase(it);
+                size_in_bytes -= sz;
+            }
+            else
+                ++it;
+        }
+    }
+
     void remove(const Key & key) override
     {
         auto it = cache.find(key);

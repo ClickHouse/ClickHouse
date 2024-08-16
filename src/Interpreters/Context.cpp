@@ -3236,6 +3236,14 @@ void Context::clearQueryCache() const
         shared->query_cache->clear();
 }
 
+void Context::clearQueryCacheWithTag(const String & tag) const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->query_cache)
+        shared->query_cache->clearWithTag(tag);
+}
+
 void Context::clearCaches() const
 {
     std::lock_guard lock(shared->mutex);

@@ -197,6 +197,12 @@ public:
         cache_policy->remove(key);
     }
 
+    void removeWithPredicate(std::function<bool(const Key&, const MappedPtr &)> predicate)
+    {
+        std::lock_guard lock(mutex);
+        cache_policy->removeWithPredicate(predicate);
+    }
+
     size_t sizeInBytes() const
     {
         std::lock_guard lock(mutex);
