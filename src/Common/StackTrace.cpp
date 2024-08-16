@@ -267,7 +267,7 @@ void StackTrace::forEachFrame(
                     ///    frame is interrupted by signal or not. We could propagate this information
                     ///    from libunwind to here and avoid subtracting 1 in this case, but currently
                     ///    we don't do this.
-                    ///    But we don't do the decrement for findSymbol() below (because `call` is
+                    ///    But we don't do the decrement for findSymbol below (because `call` is
                     ///    ~never the last instruction of a function), so the function name should be
                     ///    correct for both pre-signal frames and regular frames.
                     adjusted_addr -= 1;
