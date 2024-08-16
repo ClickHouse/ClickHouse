@@ -856,6 +856,7 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     Pos begin = pos;
     const char * data_begin = pos->begin;
     const char * data_end = pos->end;
+    ASTPtr string_literal;
 
     if (pos->type == Minus)
     {
@@ -866,9 +867,14 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         data_end = pos->end;
         ++pos;
     }
-    else if (pos->type == Number || pos->type == StringLiteral)
+    else if (pos->type == Number)
     {
         ++pos;
+    }
+    else if (pos->type == StringLiteral)
+    {
+        if (!ParserStringLiteral().parse(begin, string_literal, expected))
+            return false;
     }
     else if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(pos->type))
     {
@@ -939,15 +945,10 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     {
         String s;
         size_t data_size = data_end - data_begin;
-        if (begin->type == StringLiteral)
+        if (string_literal)
         {
-            ASTPtr literal;
-            if (ParserStringLiteral().parse(begin, literal, expected))
-            {
-                node = createFunctionCast(literal, type_ast);
-                return true;
-            }
-            return false;
+            node = createFunctionCast(string_literal, type_ast);
+            return true;
         }
         else
         {
