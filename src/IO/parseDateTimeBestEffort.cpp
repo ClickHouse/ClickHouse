@@ -350,7 +350,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     if (month && !day_of_month)
                         day_of_month = hour_or_day_of_month_or_month;
                 }
-                else if (checkChar('/', in) || checkChar('.', in) || checkChar('-', in))
+                else if ((!in.eof() && isSymbolIn(*in.position(), allowed_date_delimiters)) && (checkChar('/', in) || checkChar('.', in) || checkChar('-', in)))
                 {
                     if (day_of_month)
                         return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: day of month is duplicated");
@@ -399,7 +399,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     if (month > 12)
                         std::swap(month, day_of_month);
 
-                    if (checkChar('/', in) || checkChar('.', in) || checkChar('-', in))
+                    if ((!in.eof() && isSymbolIn(*in.position(), allowed_date_delimiters)) && (checkChar('/', in) || checkChar('.', in) || checkChar('-', in)))
                     {
                         if (year)
                             return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year component is duplicated");

@@ -265,5 +265,5 @@ select x, toTypeName(x) from format(JSONEachRow, '{"x" : "2000 00:00:00"}');
 select x, toTypeName(x) from format(JSONEachRow, '{"x" : "2000 00:00:00.000"}');
 select x, toTypeName(x) from format(JSONEachRow, '{"x" : "Mar 2000-01-01 00:00:00"}');
 select x, toTypeName(x) from format(JSONEachRow, '{"x" : "Mar 2000-01-01 00:00:00.000"}');
-
+select x, toTypeName(x) from format(JSONEachRow, '{"x" : "1.7.10"}');
 
