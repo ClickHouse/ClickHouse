@@ -627,7 +627,8 @@ void MemoryTracker::updateMemoryCredits(size_t size)
 
     if (elapsed_time > 0 && size > update_threshold)
     {
-        size_t delta = size * elapsed_time;
+        // Use a more precise calculation for delta
+        size_t delta = (size * elapsed_time) / (1024 * 1024);
         ProfileEvents::increment(ProfileEvents::MemoryCredits, delta);
         stopwatch.restart();
     }
