@@ -500,7 +500,6 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::applyOrder(optimization_settings, *root);
     QueryPlanOptimizations::optimizeTreeThirdPass(*this, *root, nodes);
 
     updateDataStreams(*root);
