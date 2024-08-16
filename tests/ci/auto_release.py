@@ -1,4 +1,5 @@
 import argparse
+import copy
 import dataclasses
 import json
 import os
@@ -46,6 +47,7 @@ def parse_args():
 
 MAX_NUMBER_OF_COMMITS_TO_CONSIDER_FOR_RELEASE = 5
 AUTORELEASE_INFO_FILE = "/tmp/autorelease_info.json"
+AUTORELEASE_MATRIX_PARAMS = "/tmp/autorelease_params.json"
 
 
 @dataclasses.dataclass
@@ -73,6 +75,12 @@ class AutoReleaseInfo:
         print(f"Dump release info into [{AUTORELEASE_INFO_FILE}]")
         with open(AUTORELEASE_INFO_FILE, "w", encoding="utf-8") as f:
             print(json.dumps(dataclasses.asdict(self), indent=2), file=f)
+
+        # dump file for GH action matrix that is similar to the file above but with dropped not ready release branches
+        params = copy.deepcopy(self)
+        params.releases = [release for release in params.releases if release.ready]
+        with open(AUTORELEASE_MATRIX_PARAMS, "w", encoding="utf-8") as f:
+            print(json.dumps(params, indent=2), file=f)
 
     @staticmethod
     def from_file() -> "AutoReleaseInfo":
@@ -136,6 +144,7 @@ def _prepare(token):
             commit_ci_status = CI.GH.get_commit_status_by_name(
                 token=token,
                 commit_sha=commit,
+                # handle old name for old releases
                 status_name=(CI.JobNames.BUILD_CHECK, "ClickHouse build check"),
             )
             commit_sha = commit
