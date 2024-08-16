@@ -742,10 +742,21 @@ def create_test_html_report(
         has_test_time = any(tr.time is not None for tr in test_results)
         has_log_urls = False
 
-        # Display entires with logs at the top (they correspond to failed tests)
-        test_results.sort(
-            key=lambda result: result.raw_logs is None and result.log_files is None
-        )
+        def sort_key(status):
+            if "fail" in status.lower():
+                return 0
+            elif "error" in status.lower():
+                return 1
+            elif "not" in status.lower():
+                return 2
+            elif "ok" in status.lower():
+                return 10
+            elif "success" in status.lower():
+                return 9
+            else:
+                return 5
+
+        test_results.sort(key=lambda result: sort_key(result.status))
 
         for test_result in test_results:
             colspan = 0

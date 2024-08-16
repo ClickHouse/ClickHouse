@@ -1070,7 +1070,8 @@ def handle_sigterm(signum, _frame):
     print(f"WARNING: Received signal {signum}")
     global timeout_expired
     timeout_expired = True
-    runner_subprocess.send_signal(signal.SIGTERM)
+    if runner_subprocess:
+        runner_subprocess.send_signal(signal.SIGTERM)
 
 
 if __name__ == "__main__":
