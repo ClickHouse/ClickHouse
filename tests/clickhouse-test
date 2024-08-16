@@ -30,6 +30,7 @@ import subprocess
 import sys
 import traceback
 import urllib.parse
+import io
 
 # for crc32
 import zlib
@@ -39,6 +40,8 @@ from errno import ESRCH
 from subprocess import PIPE, Popen
 from time import sleep, time
 from typing import Dict, List, Optional, Set, Tuple, Union
+from contextlib import redirect_stdout
+
 
 try:
     import termcolor  # type: ignore
@@ -1324,9 +1327,13 @@ class TestCase:
         return None
 
     def process_result_impl(self, proc, total_time: float):
+        kill_output = ""
         if proc:
             if proc.returncode is None:
-                kill_process_group(os.getpgid(proc.pid))
+                f = io.StringIO()
+                with redirect_stdout(f):
+                    kill_process_group(os.getpgid(proc.pid))
+                kill_output = f.getvalue()
 
         description = ""
 
@@ -1342,7 +1349,7 @@ class TestCase:
             with open(self.stdout_file, "rb") as stdfd:
                 stdout = str(stdfd.read(), errors="replace", encoding="utf-8")
 
-        stderr = ""
+        stderr = kill_output
         if os.path.exists(self.stderr_file):
             with open(self.stderr_file, "rb") as stdfd:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
