@@ -570,6 +570,8 @@ class ClickHouseCluster:
         self.spark_session = None
 
         self.with_azurite = False
+        self.azurite_container = "azurite-container"
+        self.blob_service_client = None
         self._azurite_port = 0
 
         # available when with_hdfs == True
@@ -736,6 +738,25 @@ class ClickHouseCluster:
         self.jdbc_bridge_port = 9019
         self.jdbc_driver_dir = p.abspath(p.join(self.instances_dir, "jdbc_driver"))
         self.jdbc_driver_logs_dir = os.path.join(self.jdbc_driver_dir, "logs")
+
+        # available when with_prometheus == True
+        self.with_prometheus = False
+        self.prometheus_writer_host = "prometheus_writer"
+        self.prometheus_writer_port = 9090
+        self.prometheus_writer_logs_dir = p.abspath(
+            p.join(self.instances_dir, "prometheus_writer/logs")
+        )
+        self.prometheus_reader_host = "prometheus_reader"
+        self.prometheus_reader_port = 9091
+        self.prometheus_reader_logs_dir = p.abspath(
+            p.join(self.instances_dir, "prometheus_reader/logs")
+        )
+        self.prometheus_remote_write_handler_host = None
+        self.prometheus_remote_write_handler_port = 9092
+        self.prometheus_remote_write_handler_path = "/write"
+        self.prometheus_remote_read_handler_host = None
+        self.prometheus_remote_read_handler_port = 9092
+        self.prometheus_remote_read_handler_path = "/read"
 
         self.docker_client = None
         self.is_up = False
@@ -1619,6 +1640,42 @@ class ClickHouseCluster:
         ]
         return self.base_hive_cmd
 
+    def setup_prometheus_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        env_variables["PROMETHEUS_WRITER_HOST"] = self.prometheus_writer_host
+        env_variables["PROMETHEUS_WRITER_PORT"] = str(self.prometheus_writer_port)
+        env_variables["PROMETHEUS_WRITER_LOGS"] = self.prometheus_writer_logs_dir
+        env_variables["PROMETHEUS_WRITER_LOGS_FS"] = "bind"
+        env_variables["PROMETHEUS_READER_HOST"] = self.prometheus_reader_host
+        env_variables["PROMETHEUS_READER_PORT"] = str(self.prometheus_reader_port)
+        env_variables["PROMETHEUS_READER_LOGS"] = self.prometheus_reader_logs_dir
+        env_variables["PROMETHEUS_READER_LOGS_FS"] = "bind"
+        if self.prometheus_remote_write_handler_host:
+            env_variables["PROMETHEUS_REMOTE_WRITE_HANDLER"] = (
+                f"http://{self.prometheus_remote_write_handler_host}:{self.prometheus_remote_write_handler_port}/{self.prometheus_remote_write_handler_path.strip('/')}"
+            )
+        if self.prometheus_remote_read_handler_host:
+            env_variables["PROMETHEUS_REMOTE_READ_HANDLER"] = (
+                f"http://{self.prometheus_remote_read_handler_host}:{self.prometheus_remote_read_handler_port}/{self.prometheus_remote_read_handler_path.strip('/')}"
+            )
+        if not self.with_prometheus:
+            self.with_prometheus = True
+            self.base_cmd.extend(
+                [
+                    "--file",
+                    p.join(docker_compose_yml_dir, "docker_compose_prometheus.yml"),
+                ]
+            )
+            self.base_prometheus_cmd = [
+                "docker-compose",
+                "--env-file",
+                instance.env_file,
+                "--project-name",
+                self.project_name,
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_prometheus.yml"),
+            ]
+        return self.base_prometheus_cmd
+
     def add_instance(
         self,
         name,
@@ -1659,6 +1716,9 @@ class ClickHouseCluster:
         with_jdbc_bridge=False,
         with_hive=False,
         with_coredns=False,
+        with_prometheus=False,
+        handle_prometheus_remote_write=False,
+        handle_prometheus_remote_read=False,
         use_old_analyzer=None,
         hostname=None,
         env_variables=None,
@@ -1999,6 +2059,17 @@ class ClickHouseCluster:
         if with_hive:
             cmds.append(
                 self.setup_hive(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_prometheus:
+            if handle_prometheus_remote_write:
+                self.prometheus_remote_write_handler_host = instance.hostname
+            if handle_prometheus_remote_read:
+                self.prometheus_remote_read_handler_host = instance.hostname
+            cmds.append(
+                self.setup_prometheus_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
             )
 
         logging.debug(
@@ -2623,6 +2694,32 @@ class ClickHouseCluster:
                     connection_string
                 )
                 logging.debug(blob_service_client.get_account_information())
+                containers = [
+                    c
+                    for c in blob_service_client.list_containers(
+                        name_starts_with=self.azurite_container
+                    )
+                    if c.name == self.azurite_container
+                ]
+                if len(containers) > 0:
+                    for c in containers:
+                        blob_service_client.delete_container(c)
+
+                container_client = blob_service_client.get_container_client(
+                    self.azurite_container
+                )
+                if container_client.exists():
+                    logging.debug(
+                        f"azurite container '{self.azurite_container}' exist, deleting all blobs"
+                    )
+                    for b in container_client.list_blobs():
+                        container_client.delete_blob(b.name)
+                else:
+                    logging.debug(
+                        f"azurite container '{self.azurite_container}' doesn't exist, creating it"
+                    )
+                    container_client.create_container()
+
                 self.blob_service_client = blob_service_client
                 return
             except Exception as ex:
@@ -3063,6 +3160,12 @@ class ClickHouseCluster:
                 self.wait_for_url(
                     f"http://{self.jdbc_bridge_ip}:{self.jdbc_bridge_port}/ping"
                 )
+
+            if self.with_prometheus:
+                os.makedirs(self.prometheus_writer_logs_dir)
+                os.chmod(self.prometheus_writer_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                os.makedirs(self.prometheus_reader_logs_dir)
+                os.chmod(self.prometheus_reader_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
             clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
             logging.debug(

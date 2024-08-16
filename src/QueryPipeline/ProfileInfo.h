@@ -32,13 +32,16 @@ struct ProfileInfo
     size_t getRowsBeforeLimit() const;
     bool hasAppliedLimit() const;
 
+    size_t getRowsBeforeAggregation() const;
+    bool hasAppliedAggregation() const;
+
     void update(Block & block);
     void update(size_t num_rows, size_t num_bytes);
 
     /// Binary serialization and deserialization of main fields.
     /// Writes only main fields i.e. fields that required by internal transmission protocol.
-    void read(ReadBuffer & in);
-    void write(WriteBuffer & out) const;
+    void read(ReadBuffer & in, UInt64 server_revision);
+    void write(WriteBuffer & out, UInt64 client_revision) const;
 
     /// Sets main fields from other object (see methods above).
     /// If skip_block_size_info if true, then rows, bytes and block fields are ignored.
@@ -51,11 +54,21 @@ struct ProfileInfo
         rows_before_limit = rows_before_limit_;
     }
 
+    /// Only for Processors.
+    void setRowsBeforeAggregation(size_t rows_before_aggregation_)
+    {
+        applied_aggregation = true;
+        rows_before_aggregation = rows_before_aggregation_;
+    }
+
 private:
     /// For these fields we make accessors, because they must be calculated beforehand.
     mutable bool applied_limit = false;                    /// Whether LIMIT was applied
     mutable size_t rows_before_limit = 0;
-    mutable bool calculated_rows_before_limit = false;    /// Whether the field rows_before_limit was calculated
+    mutable bool calculated_rows_before_limit = false; /// Whether the field rows was calculated
+
+    mutable bool applied_aggregation = false; /// Whether GROUP BY was applied
+    mutable size_t rows_before_aggregation = 0;
 };
 
 }
