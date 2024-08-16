@@ -17,6 +17,11 @@ Projections will create internally a new hidden table, this means that more IO a
 Example, If the projection has defined a different primary key, all the data from the original table will be duplicated.
 :::
 
+:::note Incompatibility with ReplacingMergeTree/CollapsingMergeTree
+
+Projections may produce inconsistent results if they are defined on tables with the ReplacingMergeTree or CollapsingMergeTree engines
+:::
+
 You can see more technical details about how projections work internally on this [page](/docs/en/guides/best-practices/sparse-primary-indexes.md/#option-3-projections).
 
 ## Example filtering without using primary keys
