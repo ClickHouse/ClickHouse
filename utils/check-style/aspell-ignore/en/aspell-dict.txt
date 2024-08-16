@@ -2127,6 +2127,7 @@ namespace
 namespaces
 natively
 nats
+ness
 nestjs
 netloc
 newjson
