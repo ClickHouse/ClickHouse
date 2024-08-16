@@ -1,0 +1,30 @@
+<test>
+    <fill_query>
+        INSERT INTO FUNCTION file('test_pq_index', Parquet) SELECT * FROM generateRandom('int64_column Nullable(Int64), tuple_column Tuple(a Nullable(String), b Nullable(Float64), c Tuple(i UInt32, j UInt32)),array_tuple_column Array(Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64))), map_tuple_column Map(String, Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64)))') limit 1000000 SETTINGS output_format_parquet_use_custom_encoder=false, output_format_parquet_write_page_index=true
+    </fill_query>
+
+    <query>
+        SELECT * FROM file('test_pq_index', Parquet, 'tuple_column Tuple(a Nullable(String))') Format Null
+    </query>
+
+    <query>
+        SELECT tuple_column.a FROM file('test_pq_index', Parquet) Format Null
+    </query>
+
+    <query>
+        SELECT tuple_column.a FROM file('test_pq_index', Parquet, 'tuple_column Tuple(a Nullable(String))') Format Null
+    </query>
+
+    <query>
+        SELECT tuple_column.c.i FROM file('test_pq_index', Parquet) Format Null
+    </query>
+
+    <query>
+        SELECT * FROM file('test_pq_index', Parquet, 'array_tuple_column Array (Tuple(a Nullable(String)))') Format Null
+    </query>
+
+    <query>
+        SELECT * FROM file('test_pq_index', Parquet, 'map_tuple_column Map(String, Tuple(a Nullable(String)))') Format Null
+    </query>
+
+</test>

@@ -10,7 +10,7 @@
 namespace DB
 {
 
-enum class RefreshState : RefreshTaskStateUnderlying
+enum class RefreshState
 {
     Disabled = 0,
     Scheduled,
@@ -18,11 +18,11 @@ enum class RefreshState : RefreshTaskStateUnderlying
     Running,
 };
 
-enum class LastRefreshResult : RefreshTaskStateUnderlying
+enum class LastRefreshResult
 {
     Unknown = 0,
     Cancelled,
-    Exception,
+    Error,
     Finished
 };
 
@@ -36,7 +36,8 @@ struct RefreshInfo
     UInt64 last_attempt_duration_ms = 0;
     UInt32 next_refresh_time = 0;
     UInt64 refresh_count = 0;
-    String exception_message; // if last_refresh_result is Exception
+    UInt64 retry = 0;
+    String exception_message; // if last_refresh_result is Error
     std::vector<StorageID> remaining_dependencies;
     ProgressValues progress;
 };
