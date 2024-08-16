@@ -208,7 +208,6 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
         const auto & settings = context->getSettingsRef();
 
         std::optional<PostgreSQLDictionarySource::Configuration> dictionary_configuration;
-        String database, schema, table;
         postgres::PoolWithFailover::ReplicasConfigurationByPriority replicas_by_priority;
 
         auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, context) : nullptr;
