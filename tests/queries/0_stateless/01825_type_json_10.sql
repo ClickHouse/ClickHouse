@@ -4,7 +4,7 @@ SET allow_experimental_object_type = 1;
 SET output_format_json_named_tuples_as_objects = 1;
 
 DROP TABLE IF EXISTS t_json_10;
-CREATE TABLE t_json_10 (o JSON) ENGINE = Memory;
+CREATE TABLE t_json_10 (o Object('json')) ENGINE = Memory;
 
 INSERT INTO t_json_10 FORMAT JSONAsObject {"a": {"b": 1, "c": [{"d": 10, "e": [31]}, {"d": 20, "e": [63, 127]}]}} {"a": {"b": 2, "c": []}}
 
