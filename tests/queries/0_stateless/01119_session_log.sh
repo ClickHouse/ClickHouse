@@ -35,7 +35,7 @@ $session_log_query_prefix and type != 'Logout' order by type, user, interface;
 "
 
 # Wait for logout events.
-for attempt in {1..10}
+for _ in {1..10}
 do
     if [ "`$CLICKHOUSE_CLIENT -q "$session_log_query_prefix and type = 'Logout'" | wc -l`" -eq 3 ]
     then
