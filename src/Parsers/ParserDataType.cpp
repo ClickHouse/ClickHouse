@@ -1,9 +1,10 @@
 #include <Parsers/ParserDataType.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTObjectTypeArgument.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -16,8 +17,8 @@ namespace DB
 namespace
 {
 
-/// Parser of Dynamic type arguments: Dynamic(max_types=N)
-class DynamicArgumentsParser : public IParserBase
+/// Parser of Dynamic type argument: Dynamic(max_types=N)
+class DynamicArgumentParser : public IParserBase
 {
 private:
     const char * getName() const override { return "Dynamic data type optional argument"; }
@@ -46,56 +47,84 @@ private:
     }
 };
 
-/// Wrapper to allow mixed lists of nested and normal types.
-/// Parameters are either:
-/// - Nested table elements;
-/// - Enum element in form of 'a' = 1;
-/// - literal;
-/// - Dynamic type arguments;
-/// - another data type (or identifier);
-class ParserDataTypeArgument : public IParserBase
+/// Parser of Object type argument. For example: JSON(some_parameter=N, some.path SomeType, SKIP skip.path, ...)
+class ObjectArgumentParser : public IParserBase
 {
-public:
-    explicit ParserDataTypeArgument(std::string_view type_name_) : type_name(type_name_)
-    {
-    }
-
 private:
-    const char * getName() const override { return "data type argument"; }
+    const char * getName() const override { return "JSON data type optional argument"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
-        if (type_name == "Dynamic")
+        auto argument = std::make_shared<ASTObjectTypeArgument>();
+
+        /// SKIP arguments
+        if (ParserKeyword(Keyword::SKIP).ignore(pos))
         {
-            DynamicArgumentsParser parser;
-            return parser.parse(pos, node, expected);
+            /// SKIP REGEXP '<some_regexp>'
+            if (ParserKeyword(Keyword::REGEXP).ignore(pos))
+            {
+                ParserStringLiteral literal_parser;
+                ASTPtr literal;
+                if (!literal_parser.parse(pos, literal, expected))
+                    return false;
+                argument->skip_path_regexp = literal;
+                argument->children.push_back(argument->skip_path_regexp);
+            }
+            /// SKIP some.path
+            else
+            {
+                ParserCompoundIdentifier compound_identifier_parser;
+                ASTPtr compound_identifier;
+                if (!compound_identifier_parser.parse(pos, compound_identifier, expected))
+                    return false;
+
+                argument->skip_path = compound_identifier;
+                argument->children.push_back(argument->skip_path);
+            }
+
+            node = argument;
+            return true;
         }
 
-        ParserNestedTable nested_parser;
-        ParserDataType data_type_parser;
-        ParserAllCollectionsOfLiterals literal_parser(false);
+        ParserCompoundIdentifier compound_identifier_parser;
+        ASTPtr identifier;
+        if (!compound_identifier_parser.parse(pos, identifier, expected))
+            return false;
 
-        const char * operators[] = {"=", "equals", nullptr};
-        ParserLeftAssociativeBinaryOperatorList enum_parser(operators, std::make_unique<ParserLiteral>());
+        /// some_parameter=N
+        if (pos->type == TokenType::Equals)
+        {
+            ++pos;
+            ASTPtr number;
+            ParserNumber number_parser;
+            if (!number_parser.parse(pos, number, expected))
+                return false;
 
-        if (pos->type == TokenType::BareWord && std::string_view(pos->begin, pos->size()) == "Nested")
-            return nested_parser.parse(pos, node, expected);
+            argument->parameter = makeASTFunction("equals", identifier, number);
+            argument->children.push_back(argument->parameter);
+            node = argument;
+            return true;
+        }
 
-        return enum_parser.parse(pos, node, expected)
-            || literal_parser.parse(pos, node, expected)
-            || data_type_parser.parse(pos, node, expected);
+        ParserDataType type_parser;
+        ASTPtr type;
+        if (!type_parser.parse(pos, type, expected))
+            return false;
+
+        auto name_and_type = std::make_shared<ASTNameTypePair>();
+        name_and_type->name = getIdentifierName(identifier);
+        name_and_type->type = type;
+        name_and_type->children.push_back(name_and_type->type);
+        argument->path_with_type = name_and_type;
+        argument->children.push_back(argument->path_with_type);
+        node = argument;
+        return true;
     }
-
-    std::string_view type_name;
 };
 
 }
 
 bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserNestedTable nested;
-    if (nested.parse(pos, node, expected))
-        return true;
-
     String type_name;
 
     ParserIdentifier name_parser;
@@ -198,34 +227,123 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    auto function_node = std::make_shared<ASTFunction>();
-    function_node->name = type_name;
-    function_node->no_empty_args = true;
+    auto data_type_node = std::make_shared<ASTDataType>();
+    data_type_node->name = type_name;
 
     if (pos->type != TokenType::OpeningRoundBracket)
     {
-        node = function_node;
+        node = data_type_node;
         return true;
     }
     ++pos;
 
     /// Parse optional parameters
-    ParserList args_parser(std::make_unique<ParserDataTypeArgument>(type_name), std::make_unique<ParserToken>(TokenType::Comma));
-    ASTPtr expr_list_args;
+    ASTPtr expr_list_args = std::make_shared<ASTExpressionList>();
 
-    if (!args_parser.parse(pos, expr_list_args, expected))
-        return false;
-    if (pos->type == TokenType::Comma)
-        // ignore trailing comma inside Nested structures like Tuple(Int, Tuple(Int, String),)
-        ++pos;
+    /// Allow mixed lists of nested and normal types.
+    /// Parameters are either:
+    /// - Nested table element;
+    /// - Tuple element
+    /// - Enum element in form of 'a' = 1;
+    /// - literal;
+    /// - Dynamic type argument;
+    /// - JSON type argument;
+    /// - another data type (or identifier);
+
+    size_t arg_num = 0;
+    bool have_version_of_aggregate_function = false;
+    while (true)
+    {
+        if (arg_num > 0)
+        {
+            if (pos->type == TokenType::Comma)
+                ++pos;
+            else
+                break;
+        }
+
+        ASTPtr arg;
+        if (type_name == "Dynamic")
+        {
+            DynamicArgumentParser parser;
+            parser.parse(pos, arg, expected);
+        }
+        else if (type_name == "JSON")
+        {
+            ObjectArgumentParser parser;
+            parser.parse(pos, arg, expected);
+        }
+        else if (type_name == "Nested")
+        {
+            ParserNameTypePair name_and_type_parser;
+            name_and_type_parser.parse(pos, arg, expected);
+        }
+        else if (type_name == "Tuple")
+        {
+            ParserNameTypePair name_and_type_parser;
+            ParserDataType only_type_parser;
+            name_and_type_parser.parse(pos, arg, expected) || only_type_parser.parse(pos, arg, expected);
+        }
+        else if (type_name == "AggregateFunction" || type_name == "SimpleAggregateFunction")
+        {
+            /// This is less trivial.
+            /// The first optional argument for AggregateFunction is a numeric literal, defining the version.
+            /// The next argument is the function name, optionally with parameters.
+            /// Subsequent arguments are data types.
+
+            if (arg_num == 0 && type_name == "AggregateFunction")
+            {
+                ParserUnsignedInteger version_parser;
+                if (version_parser.parse(pos, arg, expected))
+                {
+                    have_version_of_aggregate_function = true;
+                    expr_list_args->children.emplace_back(std::move(arg));
+                    ++arg_num;
+                    continue;
+                }
+            }
+
+            if (arg_num == (have_version_of_aggregate_function ? 1 : 0))
+            {
+                ParserFunction function_parser;
+                ParserIdentifier identifier_parser;
+                function_parser.parse(pos, arg, expected)
+                    || identifier_parser.parse(pos, arg, expected);
+            }
+            else
+            {
+                ParserDataType data_type_parser;
+                data_type_parser.parse(pos, arg, expected);
+            }
+        }
+        else
+        {
+            ParserDataType data_type_parser;
+            ParserAllCollectionsOfLiterals literal_parser(false);
+
+            const char * operators[] = {"=", "equals", nullptr};
+            ParserLeftAssociativeBinaryOperatorList enum_parser(operators, std::make_unique<ParserLiteral>());
+
+            enum_parser.parse(pos, arg, expected)
+               || literal_parser.parse(pos, arg, expected)
+               || data_type_parser.parse(pos, arg, expected);
+        }
+
+        if (!arg)
+            break;
+
+        expr_list_args->children.emplace_back(std::move(arg));
+        ++arg_num;
+    }
+
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
     ++pos;
 
-    function_node->arguments = expr_list_args;
-    function_node->children.push_back(function_node->arguments);
+    data_type_node->arguments = expr_list_args;
+    data_type_node->children.push_back(data_type_node->arguments);
 
-    node = function_node;
+    node = data_type_node;
     return true;
 }
 

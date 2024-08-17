@@ -133,16 +133,31 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
         const size_t chunk_length = chunk.length();
 
-        for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
+        const size_t null_count = chunk.null_count();
+        if (null_count == 0)
         {
-            if (!chunk.IsNull(offset_i) && buffer)
+            for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
             {
                 const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
                 column_chars_t.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
-            }
-            column_chars_t.emplace_back('\0');
+                column_chars_t.emplace_back('\0');
 
-            column_offsets.emplace_back(column_chars_t.size());
+                column_offsets.emplace_back(column_chars_t.size());
+            }
+        }
+        else
+        {
+            for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
+            {
+                if (!chunk.IsNull(offset_i) && buffer)
+                {
+                    const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
+                    column_chars_t.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
+                }
+                column_chars_t.emplace_back('\0');
+
+                column_offsets.emplace_back(column_chars_t.size());
+            }
         }
     }
     return {std::move(internal_column), std::move(internal_type), column_name};
@@ -743,6 +758,15 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     case TypeIndex::IPv6:
                         return readIPv6ColumnFromBinaryData(arrow_column, column_name);
                     /// ORC format outputs big integers as binary column, because there is no fixed binary in ORC.
+                    ///
+                    /// When ORC/Parquet file says the type is "byte array" or "fixed len byte array",
+                    /// but the clickhouse query says to interpret the column as e.g. Int128, it
+                    /// may mean one of two things:
+                    ///  * The byte array is the 16 bytes of Int128, little-endian.
+                    ///  * The byte array is an ASCII string containing the Int128 formatted in base 10.
+                    /// There's no reliable way to distinguish these cases. We just guess: if the
+                    /// byte array is variable-length, and the length is different from sizeof(type),
+                    /// we parse as text, otherwise as binary.
                     case TypeIndex::Int128:
                         return readColumnWithBigNumberFromBinaryData<ColumnInt128>(arrow_column, column_name, type_hint);
                     case TypeIndex::UInt128:

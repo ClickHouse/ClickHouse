@@ -21,8 +21,8 @@ class IQueryPlanStep;
 struct StorageLimits;
 using StorageLimitsList = std::list<StorageLimits>;
 
-class RowsBeforeLimitCounter;
-using RowsBeforeLimitCounterPtr = std::shared_ptr<RowsBeforeLimitCounter>;
+class RowsBeforeStepCounter;
+using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
@@ -162,7 +162,7 @@ public:
         ExpandPipeline,
     };
 
-    static std::string statusToName(Status status);
+    static std::string statusToName(std::optional<Status> status);
 
     /** Method 'prepare' is responsible for all cheap ("instantaneous": O(1) of data volume, no wait) calculations.
       *
@@ -221,6 +221,23 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'schedule' is not implemented for {} processor", getName());
     }
 
+    /* The method is called right after asynchronous job is done
+     * i.e. when file descriptor returned by schedule() is readable.
+     * The sequence of method calls:
+     * ... prepare() -> schedule() -> onAsyncJobReady() -> work() ...
+     * See also comment to schedule() method
+     *
+     * It allows doing some preprocessing immediately after asynchronous job is done.
+     * The implementation should return control quickly, to avoid blocking another asynchronous completed jobs
+     * created by the same pipeline.
+     *
+     * Example, scheduling tasks for remote workers (file descriptor in this case is a socket)
+     * When the remote worker asks for the next task, doing it in onAsyncJobReady() we can provide it immediately.
+     * Otherwise, the returning of the next task for the remote worker can be delayed by current work done in the pipeline
+     * (by other processors), which will create unnecessary latency in query processing by remote workers
+     */
+    virtual void onAsyncJobReady() {}
+
     /** You must call this method if 'prepare' returned ExpandPipeline.
       * This method cannot access any port, but it can create new ports for current processor.
       *
@@ -238,7 +255,7 @@ public:
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
     bool isCancelled() const { return is_cancelled.load(std::memory_order_acquire); }
-    void cancel();
+    void cancel() noexcept;
 
     /// Additional method which is called in case if ports were updated while work() method.
     /// May be used to stop execution in rare cases.
@@ -360,10 +377,14 @@ public:
 
     /// Set rows_before_limit counter for current processor.
     /// This counter is used to calculate the number of rows right before any filtration of LimitTransform.
-    virtual void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr /* counter */) {}
+    virtual void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr /* counter */) { }
+
+    /// Set rows_before_aggregation counter for current processor.
+    /// This counter is used to calculate the number of rows right before AggregatingTransform.
+    virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
 
 protected:
-    virtual void onCancel() {}
+    virtual void onCancel() noexcept {}
 
     std::atomic<bool> is_cancelled{false};
 
