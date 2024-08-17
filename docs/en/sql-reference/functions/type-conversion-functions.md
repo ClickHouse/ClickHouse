@@ -4952,7 +4952,7 @@ toIntervalMonth(n)
 
 **Arguments**
 
-- `n` — Number of m. Positive integer number. [Int*](../data-types/int-uint.md).
+- `n` — Number of months. Positive integer number. [Int*](../data-types/int-uint.md).
 
 **Returned values**
 
