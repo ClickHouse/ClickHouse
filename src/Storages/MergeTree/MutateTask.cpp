@@ -38,13 +38,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event MutationTotalParts;
-    extern const Event MutationUntouchedParts;
-    extern const Event MutationTotalMilliseconds;
-    extern const Event MutationExecuteMilliseconds;
-    extern const Event MutationAllPartColumns;
-    extern const Event MutationSomePartColumns;
-    extern const Event MutateTaskProjectionsCalculationMicroseconds;
+extern const Event MutateTaskProjectionsCalculationMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -1052,7 +1046,6 @@ struct MutationContext
 
     /// Whether we need to count lightweight delete rows in this mutation
     bool count_lightweight_deleted_rows;
-    UInt64 execute_elapsed_ns = 0;
 };
 
 using MutationContextPtr = std::shared_ptr<MutationContext>;
@@ -2049,9 +2042,6 @@ MutateTask::MutateTask(
 
 bool MutateTask::execute()
 {
-    Stopwatch watch;
-    SCOPE_EXIT({ ctx->execute_elapsed_ns += watch.elapsedNanoseconds(); });
-
     switch (state)
     {
         case State::NEED_PREPARE:
@@ -2083,15 +2073,6 @@ bool MutateTask::execute()
         }
     }
     return false;
-}
-
-void MutateTask::updateProfileEvents() const
-{
-    UInt64 total_elapsed_ms = (*ctx->mutate_entry)->watch.elapsedMilliseconds();
-    UInt64 execute_elapsed_ms = ctx->execute_elapsed_ns / 1000000UL;
-
-    ProfileEvents::increment(ProfileEvents::MutationTotalMilliseconds, total_elapsed_ms);
-    ProfileEvents::increment(ProfileEvents::MutationExecuteMilliseconds, execute_elapsed_ms);
 }
 
 static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const MutationCommand & command)
@@ -2156,7 +2137,6 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
 
 bool MutateTask::prepare()
 {
-    ProfileEvents::increment(ProfileEvents::MutationTotalParts);
     MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry);
 
     if (ctx->future_part->parts.size() != 1)
@@ -2219,7 +2199,6 @@ bool MutateTask::prepare()
             ctx->temporary_directory_lock = std::move(lock);
         }
 
-        ProfileEvents::increment(ProfileEvents::MutationUntouchedParts);
         promise.set_value(std::move(part));
         return false;
     }
@@ -2346,7 +2325,6 @@ bool MutateTask::prepare()
         ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
         task = std::make_unique<MutateAllPartColumnsTask>(ctx);
-        ProfileEvents::increment(ProfileEvents::MutationAllPartColumns);
     }
     else /// TODO: check that we modify only non-key columns in this case.
     {
@@ -2406,7 +2384,6 @@ bool MutateTask::prepare()
         ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
 
         task = std::make_unique<MutateSomePartColumnsTask>(ctx);
-        ProfileEvents::increment(ProfileEvents::MutationSomePartColumns);
     }
 
     return true;
