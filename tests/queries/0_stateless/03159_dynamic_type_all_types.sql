@@ -1,12 +1,11 @@
 -- Tags: no-random-settings
 
 SET allow_experimental_dynamic_type=1;
-SET allow_experimental_object_type=1;
 SET allow_experimental_variant_type=1;
 SET allow_suspicious_low_cardinality_types=1;
 
 
-CREATE TABLE t (d Dynamic(max_types=255)) ENGINE = Memory;
+CREATE TABLE t (d Dynamic(max_types=254)) ENGINE = Memory;
 -- Integer types: signed and unsigned integers (UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256)
 INSERT INTO t VALUES (-128::Int8), (-127::Int8), (-1::Int8), (0::Int8), (1::Int8), (126::Int8), (127::Int8);
 INSERT INTO t VALUES (-128::Int8), (-127::Int8), (-1::Int8), (0::Int8), (1::Int8), (126::Int8), (127::Int8);
@@ -84,7 +83,7 @@ INSERT INTO t VALUES ([(1, (2, ['aa', 'bb']), [(3, 'cc'), (4, 'dd')]), (5, (6, [
 
 SELECT dynamicType(d), d FROM t ORDER BY substring(dynamicType(d),1,1), length(dynamicType(d)), d;
 
-CREATE TABLE t2 (d Dynamic(max_types=255)) ENGINE = Memory;
+CREATE TABLE t2 (d Dynamic(max_types=254)) ENGINE = Memory;
 INSERT INTO t2 SELECT * FROM t;
 
 SELECT '';

@@ -234,7 +234,7 @@ void MergeTreeReaderCompact::readPrefix(
             serialization = getSerializationInPart(name_and_type);
 
         deserialize_settings.getter = buffer_getter;
-        deserialize_settings.dynamic_read_statistics = true;
+        deserialize_settings.object_and_dynamic_read_statistics = true;
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name_and_type.name], nullptr);
     }
     catch (Exception & e)

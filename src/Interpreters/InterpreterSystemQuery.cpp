@@ -663,13 +663,20 @@ BlockIO InterpreterSystemQuery::execute()
             startStopAction(ActionLocks::ViewRefresh, false);
             break;
         case Type::REFRESH_VIEW:
-            getRefreshTask()->run();
+            for (const auto & task : getRefreshTasks())
+                task->run();
+            break;
+        case Type::WAIT_VIEW:
+            for (const auto & task : getRefreshTasks())
+                task->wait();
             break;
         case Type::CANCEL_VIEW:
-            getRefreshTask()->cancel();
+            for (const auto & task : getRefreshTasks())
+                task->cancel();
             break;
         case Type::TEST_VIEW:
-            getRefreshTask()->setFakeTime(query.fake_time_for_view);
+            for (const auto & task : getRefreshTasks())
+                task->setFakeTime(query.fake_time_for_view);
             break;
         case Type::DROP_REPLICA:
             dropReplica(query);
@@ -1242,15 +1249,15 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RESTART DISK is not supported");
 }
 
-RefreshTaskHolder InterpreterSystemQuery::getRefreshTask()
+RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
 {
     auto ctx = getContext();
     ctx->checkAccess(AccessType::SYSTEM_VIEWS);
-    auto task = ctx->getRefreshSet().getTask(table_id);
-    if (!task)
+    auto tasks = ctx->getRefreshSet().findTasks(table_id);
+    if (tasks.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Refreshable view {} doesn't exist", table_id.getNameForLogs());
-    return task;
+    return tasks;
 }
 
 
@@ -1406,6 +1413,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::REFRESH_VIEW:
+        case Type::WAIT_VIEW:
         case Type::START_VIEW:
         case Type::START_VIEWS:
         case Type::STOP_VIEW:

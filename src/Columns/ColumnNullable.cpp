@@ -706,6 +706,11 @@ void ColumnNullable::reserve(size_t n)
     getNullMapData().reserve(n);
 }
 
+size_t ColumnNullable::capacity() const
+{
+    return getNullMapData().capacity();
+}
+
 void ColumnNullable::prepareForSquashing(const Columns & source_columns)
 {
     size_t new_size = size();
