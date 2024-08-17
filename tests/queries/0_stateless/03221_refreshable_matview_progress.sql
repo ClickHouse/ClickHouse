@@ -1,3 +1,5 @@
+-- Tags: no-ordinary-database
+
 set allow_experimental_refreshable_materialized_view=1;
 
 CREATE MATERIALIZED VIEW 03221_rmv
