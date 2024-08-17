@@ -475,6 +475,9 @@ public:
     /// It affects performance only (not correctness).
     virtual void reserve(size_t /*n*/) {}
 
+    /// Returns the number of elements allocated in reserve.
+    virtual size_t capacity() const { return size(); }
+
     /// Reserve memory before squashing all specified source columns into this column.
     virtual void prepareForSquashing(const std::vector<Ptr> & source_columns)
     {
