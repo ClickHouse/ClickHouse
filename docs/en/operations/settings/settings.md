@@ -1381,7 +1381,7 @@ Default value: `2`.
 
 Close connection before returning connection to the pool.
 
-Default value: true.
+Default value: false.
 
 ## odbc_bridge_connection_pool_size {#odbc-bridge-connection-pool-size}
 
