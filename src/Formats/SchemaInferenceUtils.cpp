@@ -333,7 +333,7 @@ namespace
             type = variant_type;
         type_indexes = {TypeIndex::Variant};
     }
-  
+
     /// If we have only date/datetimes types (Date/DateTime/DateTime64), convert all of them to the common type,
     /// otherwise, convert all Date, DateTime and DateTime64 to String.
     void transformDatesAndDateTimes(DataTypes & data_types, TypeIndexesSet & type_indexes)
