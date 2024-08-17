@@ -95,6 +95,9 @@ public:
     /// Get the key indices of key names used in the condition.
     const std::vector<size_t> & getKeyIndices() const { return key_indices; }
 
+    /// Get the columns required for filtering
+    std::unordered_set<std::string> getFilteringColumnNames() const;
+
     /// Condition description for EXPLAIN query.
     struct Description
     {
@@ -335,6 +338,7 @@ private:
 
     ColumnIndices key_columns;
     std::vector<size_t> key_indices;
+    std::vector<std::string> key_column_names;
 
     /// Expression which is used for key condition.
     const ExpressionActionsPtr key_expr;

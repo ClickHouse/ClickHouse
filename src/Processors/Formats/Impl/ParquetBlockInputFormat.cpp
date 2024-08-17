@@ -270,7 +270,8 @@ static ParquetBloomFilterCondition::IndexColumnToColumnBF buildColumnIndexToBF(
     parquet::BloomFilterReader & bf_reader,
     int row_group,
     const Block & header,
-    const std::vector<std::pair<std::string, int>> & column_name_to_index
+    const std::vector<std::pair<std::string, int>> & column_name_to_index,
+    const std::unordered_set<std::string> & filtering_columns
 )
 {
     auto rg_bf = bf_reader.RowGroup(row_group);
@@ -287,6 +288,11 @@ static ParquetBloomFilterCondition::IndexColumnToColumnBF buildColumnIndexToBF(
         if (!header.has(column_name))
         {
             // complex types, not supported for now
+            continue;
+        }
+
+        if (!filtering_columns.contains(column_name))
+        {
             continue;
         }
 
@@ -468,9 +474,10 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
 static std::vector<ParquetBloomFilterCondition::ConditionElement> createConditionsFromRpn(parquet::BloomFilterReader & bf_reader,
                                                                                           const Block & header,
                                                                                           const std::vector<std::pair<std::string, int>> & column_name_to_index,
-                                                                                          const std::shared_ptr<const KeyCondition> & key_condition)
+                                                                                          const std::shared_ptr<const KeyCondition> & key_condition,
+                                                                                          const std::unordered_set<std::string> & filtering_columns)
 {
-    const auto column_index_to_bf = buildColumnIndexToBF(bf_reader, 0, header, column_name_to_index);
+    const auto column_index_to_bf = buildColumnIndexToBF(bf_reader, 0, header, column_name_to_index, filtering_columns);
     return keyConditionRPNToParquetBloomFilterCondition(key_condition->getRPN(), header.getDataTypes(), column_index_to_bf);
 };
 
@@ -534,12 +541,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         return;
     }
 
-    auto parquet_reader = parquet::ParquetFileReader::Open(
-        arrow_file,
-        parquet::default_reader_properties(),
-        metadata);
-
-    auto & bf_reader = parquet_reader->GetBloomFilterReader();
+    auto bf_reader = parquet::BloomFilterReader::Make(arrow_file, metadata, parquet::default_reader_properties(), nullptr);
 
     row_group_batches.reserve(num_row_groups);
 
@@ -563,9 +565,11 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
     std::unique_ptr<ParquetBloomFilterCondition> parquet_bloom_filter_condition;
 
+    const auto filtering_columns = key_condition->getFilteringColumnNames();
+
     if (format_settings.parquet.bloom_filter_push_down && key_condition)
     {
-        const auto parquet_conditions = createConditionsFromRpn(bf_reader, getPort().getHeader(), column_name_to_index, key_condition);
+        const auto parquet_conditions = createConditionsFromRpn(*bf_reader, getPort().getHeader(), column_name_to_index, key_condition, filtering_columns);
         parquet_bloom_filter_condition = std::make_unique<ParquetBloomFilterCondition>(parquet_conditions);
     }
 
@@ -576,7 +580,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
         if (parquet_bloom_filter_condition)
         {
-            const auto column_index_to_bf = buildColumnIndexToBF(bf_reader, row_group, getPort().getHeader(), column_name_to_index);
+            const auto column_index_to_bf = buildColumnIndexToBF(*bf_reader, row_group, getPort().getHeader(), column_name_to_index, filtering_columns);
 
             if (!parquet_bloom_filter_condition->mayBeTrueOnRowGroup(column_index_to_bf))
             {
