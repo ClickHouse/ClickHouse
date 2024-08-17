@@ -943,7 +943,6 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (ParserToken(DoubleColon).ignore(pos, expected)
         && ParserDataType().parse(pos, type_ast, expected))
     {
-        String s;
         size_t data_size = data_end - data_begin;
         if (string_literal)
         {
