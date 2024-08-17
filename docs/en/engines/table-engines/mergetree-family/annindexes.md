@@ -22,10 +22,10 @@ ORDER BY Distance(vectors, Point)
 LIMIT N
 ```
 
-`vectors` contains N-dimensional values of type [Array(Float32)](../../../sql-reference/data-types/array.md), for example embeddings.
-Function `Distance` computes the distance between two vectors. Often, the Euclidean (L2) distance is chosen as distance function but [other
-distance functions](/docs/en/sql-reference/functions/distance-functions.md) are also possible. `Point` is the reference point, e.g. `(0.17,
-0.33, ...)`, and `N` limits the number of search results.
+`vectors` contains N-dimensional values of type [Array(Float32)](../../../sql-reference/data-types/array.md) or Array(Float64), for example
+embeddings. Function `Distance` computes the distance between two vectors. Often, the Euclidean (L2) distance is chosen as distance function
+but [other distance functions](/docs/en/sql-reference/functions/distance-functions.md) are also possible. `Point` is the reference point,
+e.g. `(0.17, 0.33, ...)`, and `N` limits the number of search results.
 
 This query returns the top-`N` closest points to the reference point. Parameter `N` limits the number of returned values which is useful for
 situations where `MaxDistance` is difficult to determine in advance.
