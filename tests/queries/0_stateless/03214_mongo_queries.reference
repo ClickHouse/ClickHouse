@@ -1,0 +1,36 @@
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 2)
+   ExpressionList (children 1)
+    Function divide (alias b0) (children 1)
+     ExpressionList (children 2)
+      Identifier c0
+      Identifier c1
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 1)
+      TableIdentifier test
+4	5	b
+1	2	ac
+1	2	ac
+1	2	ac
+1	2	ac
+1	2	ac
+1	2	ac
+1	2	ac
+1	2	ac
+1	2	ac
+1	2	ac
+1	2	ac
+1	2	ac
+4	5	b
+1
+4
+1	3
+4	9
+1	2
+4	20
+1	0.5
+4	0.8
+1	3
+4	24
