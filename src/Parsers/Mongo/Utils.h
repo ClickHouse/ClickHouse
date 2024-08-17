@@ -1,18 +1,44 @@
 #pragma once
 
 #include <optional>
-#include <vector>
 
 #include <rapidjson/document.h>
-#include <Poco/JSON/Object.h>
+
+#include <Common/Exception.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
+
 namespace Mongo
 {
 
-const char * findKth(const char * begin, const char * end, char token, size_t k);
+template <char token>
+const char * findKth(const char * begin, const char * end, size_t k)
+{
+    const char * iter = begin;
+    for (size_t i = 0; i < k; ++i)
+    {
+        if (i != 0 && iter != end)
+        {
+            iter++;
+        }
+        while (iter < end && iter[0] != token)
+        {
+            iter++;
+        }
+        if (iter == end)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: there is less than {} tokens {}", k, token);
+        }
+    }
+    return iter;
+
+}
 
 std::pair<const char *, const char *> getMetadataSubstring(const char * begin, const char * end);
 

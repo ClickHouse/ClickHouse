@@ -1,10 +1,11 @@
 #pragma once
 
+#include <rapidjson/document.h>
+
 #include <Parsers/IParserBase.h>
+
 #include <Parsers/Mongo/Metadata.h>
 #include <Parsers/Mongo/ParserMongoQuery.h>
-
-#include <rapidjson/document.h>
 
 namespace DB
 {

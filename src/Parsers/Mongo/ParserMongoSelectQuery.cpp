@@ -1,10 +1,10 @@
 #include "ParserMongoSelectQuery.h"
 
+#include <rapidjson/document.h>
+
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/IParserBase.h>
-
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -12,10 +12,10 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithElement.h>
+#include <Parsers/IParserBase.h>
+#include <Parsers/IAST_fwd.h>
 
 #include <Parsers/Mongo/ParserMongoFilter.h>
-#include <rapidjson/document.h>
-#include <Parsers/IAST_fwd.h>
 #include <Parsers/Mongo/ParserMongoOrderBy.h>
 #include <Parsers/Mongo/ParserMongoProjection.h>
 #include <Parsers/Mongo/Utils.h>
@@ -31,6 +31,7 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
     auto select_query = std::make_shared<ASTSelectQuery>();
 
     auto projection = findField(data, "$projection");
+    /// Equals to SELECT * ...
     if (!projection)
     {
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
@@ -38,6 +39,7 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
     }
     else
     {
+        /// Otherwise traverse projection tree to parse projection
         data.EraseMember("$projection");
         ASTPtr projection_node;
 
@@ -49,6 +51,7 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_node));
     }
 
+    /// Attach collection to AST.
     node = select_query;
     ASTPtr tables = std::make_shared<ASTTablesInSelectQuery>();
 
@@ -83,7 +86,7 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
         select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by_node));
     }
 
-    /// Traverse data tree
+    /// Traverse data tree for WHERE operator
     ASTPtr where_condition;
     if (ParserMongoFilter(std::move(data), metadata, "").parseImpl(where_condition))
     {

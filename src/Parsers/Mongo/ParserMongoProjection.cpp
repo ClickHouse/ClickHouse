@@ -1,4 +1,5 @@
 #include "Parsers/Mongo/ParserMongoProjection.h"
+
 #include <memory>
 
 #include <Parsers/ASTQueryParameter.h>
@@ -17,7 +18,10 @@ namespace Mongo
 
 bool ParserMongoProjection::parseImpl(ASTPtr & node)
 {
-    chassert(data.IsObject());
+    if (!data.IsObject())
+    {
+        return false;
+    }
 
     auto result = std::make_shared<ASTExpressionList>();
     for (auto it = data.MemberBegin(); it != data.MemberEnd(); ++it)

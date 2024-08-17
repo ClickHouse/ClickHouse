@@ -1,11 +1,11 @@
 #pragma once
 
 #include <memory>
+
 #include <Parsers/IParserBase.h>
+
 #include <Parsers/Mongo/Metadata.h>
 #include <Parsers/Mongo/ParserMongoQuery.h>
-
-#include <Poco/JSON/Object.h>
 
 namespace DB
 {

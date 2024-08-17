@@ -66,7 +66,7 @@ public:
     bool parseImpl(ASTPtr & node) override;
 };
 
-
+/// Base class for arithmetic functions like add, multiplication and others.
 class IMongoArithmeticFunction : public IMongoFunction
 {
 public:

@@ -1,16 +1,14 @@
 #include "ParserMongoFunction.h"
 
-#include "Parsers/IAST_fwd.h"
-#include "Parsers/Mongo/ParserMongoQuery.h"
+#include <Core/Field.h>
 
-#include "Parsers/ASTFunction.h"
-#include "base/defines.h"
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/IAST_fwd.h>
 
+#include <Parsers/Mongo/ParserMongoQuery.h>
 #include <Parsers/Mongo/Utils.h>
-
-#include "Core/Field.h"
-#include "Parsers/ASTIdentifier.h"
-#include "Parsers/ASTLiteral.h"
 
 namespace DB
 {
@@ -38,7 +36,7 @@ bool MongoIdentityFunction::parseImpl(ASTPtr & node)
     }
     if (data.IsObject())
     {
-        auto parser = createSkipParser(std::move(data), metadata, edge_name);
+        auto parser = createInversedParser(std::move(data), metadata, edge_name);
         if (!parser->parseImpl(node))
         {
             return false;
@@ -64,17 +62,16 @@ bool MongoLiteralFunction::parseImpl(ASTPtr & node)
         }
 
         auto it = data.MemberBegin();
+        
+        const char * name = it->name.GetString();
+        auto parser = createParser(copyValue(it->value), metadata, name);
+        ASTPtr child_node;
+        if (!parser->parseImpl(child_node))
         {
-            const char * name = it->name.GetString();
-            auto parser = createParser(copyValue(it->value), metadata, name);
-            ASTPtr child_node;
-            if (!parser->parseImpl(child_node))
-            {
-                return false;
-            }
-            node = child_node;
-            return true;
+            return false;
         }
+        node = child_node;
+        return true;
     }
     return false;
 }
@@ -82,7 +79,11 @@ bool MongoLiteralFunction::parseImpl(ASTPtr & node)
 
 bool MongoOrFunction::parseImpl(ASTPtr & node)
 {
-    chassert(data.IsArray());
+    if (!data.IsArray())
+    {
+        return false;
+    }
+
     std::vector<ASTPtr> child_trees;
     for (unsigned int i = 0; i < data.Size(); ++i)
     {
@@ -122,6 +123,7 @@ bool IMongoArithmeticFunction::parseImpl(ASTPtr & node)
     {
         return false;
     }
+
     std::vector<ASTPtr> children;
     for (unsigned int i = 0; i < data.Size(); ++i)
     {
@@ -133,6 +135,15 @@ bool IMongoArithmeticFunction::parseImpl(ASTPtr & node)
         }
         children.push_back(std::move(child_node));
     }
+
+    /// Wrap function as tree of binary operators like
+    ///
+    ///      +
+    ///     / \
+    ///    c0  +
+    ///       / \
+    ///      c1  c2
+    ///
     auto function = makeASTFunction(getFunctionAlias(), children[0], children[1]);
     for (size_t i = 2; i < children.size(); ++i)
     {

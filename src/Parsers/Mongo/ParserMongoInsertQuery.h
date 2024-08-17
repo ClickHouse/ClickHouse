@@ -23,8 +23,6 @@ public:
 
 class ParserMongoInsertOneQuery : public IMongoParser
 {
-    bool add_data_to_query;
-
 public:
     explicit ParserMongoInsertOneQuery(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_)
         : IMongoParser(std::move(data_), metadata_, "")

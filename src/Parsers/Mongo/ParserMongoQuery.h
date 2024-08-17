@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Parsers/IParserBase.h>
-#include <Parsers/Mongo/Metadata.h>
-
 #include <rapidjson/document.h>
+
+#include <Parsers/IParserBase.h>
+
+#include <Parsers/Mongo/Metadata.h>
 
 namespace DB
 {
@@ -11,6 +12,19 @@ namespace DB
 namespace Mongo
 {
 
+/// Base class for Mongo parsers.
+/// Contains data, that should be parsed in parseImpl method,
+/// metadata about query (for example collection),
+/// edge name for parent edge.
+///
+/// Example:
+///
+/// { quantity: { $lt: 20 } }
+///                 ^
+///                 |
+///            current vertex
+///
+/// For this vertex edge_name = "quantity" and data = { [$lt]: 20 }
 class IMongoParser
 {
 protected:
@@ -24,6 +38,7 @@ public:
     {
     }
 
+    /// Returns false if data is incorrect and cannot be parsed into node.
     virtual bool parseImpl(ASTPtr & node) = 0;
 
     virtual ~IMongoParser() = default;
@@ -32,13 +47,35 @@ public:
 
 /// Creates a parser based on edge name and data.
 std::shared_ptr<IMongoParser> createParser(
-    rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_, bool literal_as_default = false);
+    rapidjson::Value data_, 
+    std::shared_ptr<QueryMetadata> metadata_, 
+    const std::string & edge_name_, 
+    bool literal_as_default = false);
 
-/// Creates a parser based on edge name and data.
+/// Creates a inversed parsed based on edge name and data.
+/// Inversed means that mongo syntax have inversed order of elements in tree.
+/// Example : $lt operator. In mongo syntax it should have structure like { quantity: { $lt: 20 } }
+/// So tree for this json looks like
+///
+///       quantity
+///      /        \
+/// (operator <)  20
+///
+/// But in AST representation looks like
+///
+///     (operator <) 
+///    /           \
+///  quantity      20
+///
+/// So some operators needs in special parsers
 std::shared_ptr<IMongoParser>
-createSkipParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_);
+createInversedParser(
+    rapidjson::Value data_, 
+    std::shared_ptr<QueryMetadata> metadata_,
+    const std::string & edge_name_);
 
 
+/// Class to connect mongo and clickhouse parsers
 class ParserMongoQuery : public IParserBase
 {
 private:
