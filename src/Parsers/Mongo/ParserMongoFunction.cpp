@@ -1,5 +1,5 @@
 #include "ParserMongoFunction.h"
-#include "Parsers/ASTExpressionList.h"
+
 #include "Parsers/IAST_fwd.h"
 #include "Parsers/Mongo/ParserMongoQuery.h"
 
@@ -11,7 +11,6 @@
 #include "Core/Field.h"
 #include "Parsers/ASTIdentifier.h"
 #include "Parsers/ASTLiteral.h"
-#include "Parsers/Mongo/ParserMongoFilter.h"
 
 namespace DB
 {
@@ -66,7 +65,7 @@ bool MongoLiteralFunction::parseImpl(ASTPtr & node)
 
         auto it = data.MemberBegin();
         {
-            const char* name = it->name.GetString();
+            const char * name = it->name.GetString();
             auto parser = createParser(copyValue(it->value), metadata, name);
             ASTPtr child_node;
             if (!parser->parseImpl(child_node))
@@ -76,7 +75,6 @@ bool MongoLiteralFunction::parseImpl(ASTPtr & node)
             node = child_node;
             return true;
         }
-
     }
     return false;
 }
@@ -96,20 +94,20 @@ bool MongoOrFunction::parseImpl(ASTPtr & node)
         }
         child_trees.push_back(child_node);
     }
-    
+
     if (child_trees.empty())
     {
         return false;
     }
-    
+
     if (child_trees.size() == 1)
     {
         node = child_trees[0];
-        return true;  
+        return true;
     }
 
     auto result = makeASTFunction("or");
-    for (const auto& elem: child_trees)
+    for (const auto & elem : child_trees)
     {
         result->arguments->children.push_back(elem);
     }
@@ -170,7 +168,6 @@ bool MongoArithmeticFunctionElement::parseImpl(ASTPtr & node)
     }
     return false;
 }
-
 
 
 }

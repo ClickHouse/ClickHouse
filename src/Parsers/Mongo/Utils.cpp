@@ -1,31 +1,32 @@
 #include "Utils.h"
 #include <optional>
 #include <stdexcept>
-#include "Common/Exception.h"
 #include <string>
+#include <Common/Exception.h>
 
-#include <Poco/JSON/Parser.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Array.h>
 #include <Poco/Dynamic/Var.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace Mongo
 {
 
-const char* findKth(const char* begin, const char* end, char token, size_t k)
+const char * findKth(const char * begin, const char * end, char token, size_t k)
 {
-    const char* iter = begin;
+    const char * iter = begin;
     for (size_t i = 0; i < k; ++i)
     {
-        if (i != 0 && iter != end) {
+        if (i != 0 && iter != end)
+        {
             iter++;
         }
         while (iter < end && iter[0] != token)
@@ -40,9 +41,9 @@ const char* findKth(const char* begin, const char* end, char token, size_t k)
     return iter;
 }
 
-std::pair<const char*, const char*> getMetadataSubstring(const char* begin, const char* end)
+std::pair<const char *, const char *> getMetadataSubstring(const char * begin, const char * end)
 {
-    const char* position = findKth(begin, end, '(', 1);
+    const char * position = findKth(begin, end, '(', 1);
     if (position == end)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not find ) in query");
@@ -50,15 +51,15 @@ std::pair<const char*, const char*> getMetadataSubstring(const char* begin, cons
     return {begin, position};
 }
 
-std::pair<const char*, const char*> getSettingsSubstring(const char* begin, const char* end)
+std::pair<const char *, const char *> getSettingsSubstring(const char * begin, const char * end)
 {
-    const char* position_start = findKth(begin, end, '(', 1);
+    const char * position_start = findKth(begin, end, '(', 1);
     if (position_start == end)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not find ( in query");
     }
-    
-    const char* position_end = findKth(begin, end, ')', 1);
+
+    const char * position_end = findKth(begin, end, ')', 1);
     if (position_end == end)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: : can not find ) in your query ");
@@ -66,16 +67,16 @@ std::pair<const char*, const char*> getSettingsSubstring(const char* begin, cons
     return {position_start + 1, position_end};
 }
 
-void validateFirstMetadataArgument(const char* begin, const char* end)
+void validateFirstMetadataArgument(const char * begin, const char * end)
 {
     size_t size = end - begin;
     if (size < 2 || *(end - 1) != 'b' || *(end - 2) != 'd')
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: first argument of query should be 'db'");
-    } 
+    }
 }
 
-std::optional<rapidjson::Value> findField(const rapidjson::Value& value, const std::string& key)
+std::optional<rapidjson::Value> findField(const rapidjson::Value & value, const std::string & key)
 {
     for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it)
     {
@@ -87,21 +88,21 @@ std::optional<rapidjson::Value> findField(const rapidjson::Value& value, const s
     return std::nullopt;
 }
 
-rapidjson::Value parseData(const char* begin, const char* end)
+rapidjson::Value parseData(const char * begin, const char * end)
 {
     std::string input(begin, end);
     std::replace(input.begin(), input.end(), '\'', '"');
 
     rapidjson::Document document;
 
-    if (document.Parse(input.data()).HasParseError()) 
+    if (document.Parse(input.data()).HasParseError())
     {
         throw std::runtime_error("Error while parsing json in parseData #" + input + "#");
     }
     return copyValue(document);
 }
 
-std::optional<size_t> MongoQueryKeyNameExtractor::findPosition(const char* begin, const char* end)
+std::optional<size_t> MongoQueryKeyNameExtractor::findPosition(const char * begin, const char * end)
 {
     size_t size_str = end - begin;
     for (size_t i = 0; i < size_str - pattern.size() + 1; ++i)
@@ -113,7 +114,7 @@ std::optional<size_t> MongoQueryKeyNameExtractor::findPosition(const char* begin
             {
                 match = false;
                 break;
-            }   
+            }
         }
         if (match)
         {
@@ -127,7 +128,7 @@ std::optional<size_t> MongoQueryKeyNameExtractor::findPosition(const char* begin
     return std::nullopt;
 }
 
-std::optional<int> MongoQueryKeyNameExtractor::extractInt(const char* begin, const char* end)
+std::optional<int> MongoQueryKeyNameExtractor::extractInt(const char * begin, const char * end)
 {
     auto maybe_start_position = findPosition(begin, end);
     if (!maybe_start_position)
@@ -148,7 +149,7 @@ std::optional<int> MongoQueryKeyNameExtractor::extractInt(const char* begin, con
     return std::stoi(str_representation);
 }
 
-std::optional<std::string> MongoQueryKeyNameExtractor::extractString(const char* begin, const char* end)
+std::optional<std::string> MongoQueryKeyNameExtractor::extractString(const char * begin, const char * end)
 {
     auto maybe_start_position = findPosition(begin, end);
     if (!maybe_start_position)

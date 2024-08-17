@@ -10,8 +10,18 @@ CREATE TABLE test
 ENGINE = Memory;
 INSERT INTO test(c0, c1, c2) VALUES (1, 2, 'ac');
 INSERT INTO test(c0, c1, c2) VALUES (4, 5, 'b');
-
-EXPLAIN AST SELECT c0 / c1 as b0 FROM test;
+INSERT INTO test(c0, c1, c2) VALUES (7, 3, 'efaaaa');
+INSERT INTO test(c0, c1, c2) VALUES (8, 6, 'gh');
+INSERT INTO test(c0, c1, c2) VALUES (2, 9, 'ij');
+INSERT INTO test(c0, c1, c2) VALUES (3, 4, 'kl');
+INSERT INTO test(c0, c1, c2) VALUES (5, 7, 'mn');
+INSERT INTO test(c0, c1, c2) VALUES (9, 8, 'op');
+INSERT INTO test(c0, c1, c2) VALUES (6, 1, 'qr');
+INSERT INTO test(c0, c1, c2) VALUES (10, 12, 'st');
+INSERT INTO test(c0, c1, c2) VALUES (11, 14, 'uv');
+INSERT INTO test(c0, c1, c2) VALUES (13, 15, 'wx');
+INSERT INTO test(c0, c1, c2) VALUES (16, 11, 'yz');
+INSERT INTO test(c0, c1, c2) VALUES (14, 13, 'ab');
 
 SET dialect='mongo';
 db.test.find({});

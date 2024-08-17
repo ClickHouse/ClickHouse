@@ -2,23 +2,23 @@
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/IParserBase.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/IParserBase.h>
 
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTWithElement.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTWithElement.h>
 
 #include <Parsers/Mongo/ParserMongoFilter.h>
 #include <rapidjson/document.h>
-#include "Parsers/IAST_fwd.h"
-#include "Parsers/Mongo/ParserMongoOrderBy.h"
-#include "Parsers/Mongo/ParserMongoProjection.h"
-#include "Parsers/Mongo/Utils.h"
+#include <Parsers/IAST_fwd.h>
+#include <Parsers/Mongo/ParserMongoOrderBy.h>
+#include <Parsers/Mongo/ParserMongoProjection.h>
+#include <Parsers/Mongo/Utils.h>
 
 namespace DB
 {
@@ -36,7 +36,7 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
         select_query->select()->children.push_back(std::make_shared<ASTAsterisk>());
     }
-    else 
+    else
     {
         data.EraseMember("$projection");
         ASTPtr projection_node;
@@ -90,7 +90,7 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
         select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_condition));
         return true;
     }
-    else 
+    else
     {
         return false;
     }
