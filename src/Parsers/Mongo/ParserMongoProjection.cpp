@@ -1,17 +1,12 @@
 #include "Parsers/Mongo/ParserMongoProjection.h"
-#include "ParserMongoFilter.h"
 #include <memory>
 
 #include <Parsers/ASTQueryParameter.h>
-#include "Core/Field.h"
-#include "Parsers/ASTExpressionList.h"
-#include "Parsers/ASTFunction.h"
-#include "Parsers/ASTIdentifier.h"
-#include "Parsers/ASTLiteral.h"
-#include "Parsers/ASTOrderByElement.h"
-#include "Parsers/IAST_fwd.h"
-#include "Parsers/Mongo/ParserMongoQuery.h"
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/IAST_fwd.h>
 
+#include <Parsers/Mongo/ParserMongoQuery.h>
 #include <Parsers/Mongo/Utils.h>
 
 namespace DB

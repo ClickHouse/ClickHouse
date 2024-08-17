@@ -3,8 +3,8 @@
 #include <optional>
 #include <vector>
 
-#include <Poco/JSON/Object.h>
 #include <rapidjson/document.h>
+#include <Poco/JSON/Object.h>
 
 namespace DB
 {
@@ -12,16 +12,16 @@ namespace DB
 namespace Mongo
 {
 
-const char* findKth(const char* begin, const char* end, char token, size_t k);
+const char * findKth(const char * begin, const char * end, char token, size_t k);
 
-std::pair<const char*, const char*> getMetadataSubstring(const char* begin, const char* end);
+std::pair<const char *, const char *> getMetadataSubstring(const char * begin, const char * end);
 
-std::pair<const char*, const char*> getSettingsSubstring(const char* begin, const char* end);
+std::pair<const char *, const char *> getSettingsSubstring(const char * begin, const char * end);
 
-void validateFirstMetadataArgument(const char* begin, const char* end);
+void validateFirstMetadataArgument(const char * begin, const char * end);
 
 template <typename T>
-rapidjson::Value copyValue(const T& value)
+rapidjson::Value copyValue(const T & value)
 {
     static rapidjson::Document::AllocatorType allocator;
 
@@ -30,24 +30,22 @@ rapidjson::Value copyValue(const T& value)
     return result;
 }
 
-std::optional<rapidjson::Value> findField(const rapidjson::Value& value, const std::string& key);
+std::optional<rapidjson::Value> findField(const rapidjson::Value & value, const std::string & key);
 
-rapidjson::Value parseData(const char* begin, const char* end);
+rapidjson::Value parseData(const char * begin, const char * end);
 
 
 class MongoQueryKeyNameExtractor
 {
 public:
-    explicit MongoQueryKeyNameExtractor(const std::string& pattern_)
-        : pattern(pattern_)
-    {}
+    explicit MongoQueryKeyNameExtractor(const std::string & pattern_) : pattern(pattern_) { }
 
-    std::optional<int> extractInt(const char* begin, const char* end);    
+    std::optional<int> extractInt(const char * begin, const char * end);
 
-    std::optional<std::string> extractString(const char* begin, const char* end);    
+    std::optional<std::string> extractString(const char * begin, const char * end);
 
 private:
-    std::optional<size_t> findPosition(const char* begin, const char* end);
+    std::optional<size_t> findPosition(const char * begin, const char * end);
 
     std::string pattern;
 };

@@ -1,30 +1,29 @@
 #include "ParserMongoQuery.h"
 #include <memory>
-#include <optional>
 #include <stdexcept>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/IParserBase.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/IParserBase.h>
 
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTWithElement.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTWithElement.h>
 
 #include <Core/Settings.h>
-#include <Common/CurrentThread.h>
-#include "Parsers/Mongo/Metadata.h"
-#include "Parsers/Mongo/ParserMongoInsertQuery.h"
-#include "Parsers/Mongo/Utils.h"
-#include <Parsers/Mongo/ParserMongoSelectQuery.h>
-#include <Parsers/Mongo/ParserMongoFunction.h>
 #include <Interpreters/Context.h>
 #include <Parsers/Mongo/ParserMongoFilter.h>
+#include <Parsers/Mongo/ParserMongoFunction.h>
+#include <Parsers/Mongo/ParserMongoSelectQuery.h>
+#include <Common/CurrentThread.h>
+#include <Parsers/Mongo/Metadata.h>
+#include <Parsers/Mongo/ParserMongoInsertQuery.h>
+#include <Parsers/Mongo/Utils.h>
 
 #include <Parsers/Mongo/ParserMongoCompareFunctions.h>
 
@@ -34,35 +33,24 @@ namespace DB
 namespace Mongo
 {
 
-bool ParserMongoQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserMongoQuery::parseImpl(Pos & /*pos*/, ASTPtr & node, Expected & /*expected*/)
 {
-    (void)pos;
-    (void)expected;
-
     switch (metadata->getQueryType())
     {
-        case QueryMetadata::QueryType::select:
-        {
+        case QueryMetadata::QueryType::select: {
             return ParserMongoSelectQuery(std::move(data), metadata).parseImpl(node);
         }
-        case QueryMetadata::QueryType::insert_many:
-        {
-            // TODO
-            return false;
+        case QueryMetadata::QueryType::insert_many: {
+            return ParserMongoInsertManyQuery(std::move(data), metadata).parseImpl(node);
         }
-        case QueryMetadata::QueryType::insert_one:
-        {
+        case QueryMetadata::QueryType::insert_one: {
             return ParserMongoInsertOneQuery(std::move(data), metadata).parseImpl(node);
         }
     }
-
 }
 
-std::shared_ptr<IMongoParser> createParser(
-    rapidjson::Value data_,
-    std::shared_ptr<QueryMetadata> metadata_,
-    const std::string& edge_name_,
-    bool literal_as_default)
+std::shared_ptr<IMongoParser>
+createParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_, bool literal_as_default)
 {
     if (edge_name_ == "$or")
     {
@@ -102,10 +90,8 @@ std::shared_ptr<IMongoParser> createParser(
     }
 }
 
-std::shared_ptr<IMongoParser> createSkipParser(
-    rapidjson::Value data_,
-    std::shared_ptr<QueryMetadata> metadata_,
-    const std::string& edge_name_)
+std::shared_ptr<IMongoParser>
+createSkipParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
 {
     if (static_cast<std::string>(data_.MemberBegin()->name.GetString()) == "$lt")
     {

@@ -3,7 +3,7 @@
 #include <Parsers/IParserBase.h>
 #include <Parsers/Mongo/Metadata.h>
 
-#include "rapidjson/document.h"
+#include <rapidjson/document.h>
 
 namespace DB
 {
@@ -19,10 +19,8 @@ protected:
     std::string edge_name;
 
 public:
-    explicit IMongoParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string& edge_name_)
-        : data(std::move(data_))
-        , metadata(metadata_)
-        , edge_name(edge_name_)
+    explicit IMongoParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
+        : data(std::move(data_)), metadata(metadata_), edge_name(edge_name_)
     {
     }
 
@@ -34,19 +32,16 @@ public:
 
 /// Creates a parser based on edge name and data.
 std::shared_ptr<IMongoParser> createParser(
-    rapidjson::Value data_,
-    std::shared_ptr<QueryMetadata> metadata_,
-    const std::string& edge_name_,
-    bool literal_as_default = false);
+    rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_, bool literal_as_default = false);
 
 /// Creates a parser based on edge name and data.
-std::shared_ptr<IMongoParser> createSkipParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string& edge_name_);
+std::shared_ptr<IMongoParser>
+createSkipParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_);
 
 
 class ParserMongoQuery : public IParserBase
 {
 private:
-
     // These fields are not used when Mongo is disabled at build time.
     [[maybe_unused]] size_t max_query_size;
     [[maybe_unused]] size_t max_parser_depth;
@@ -56,10 +51,8 @@ private:
     std::shared_ptr<QueryMetadata> metadata;
 
 public:
-    explicit ParserMongoQuery(size_t max_query_size_, size_t max_parser_depth_, size_t max_parser_backtracks_) 
-        : max_query_size(max_query_size_)
-        , max_parser_depth(max_parser_depth_)
-        , max_parser_backtracks(max_parser_backtracks_)
+    explicit ParserMongoQuery(size_t max_query_size_, size_t max_parser_depth_, size_t max_parser_backtracks_)
+        : max_query_size(max_query_size_), max_parser_depth(max_parser_depth_), max_parser_backtracks(max_parser_backtracks_)
     {
     }
 

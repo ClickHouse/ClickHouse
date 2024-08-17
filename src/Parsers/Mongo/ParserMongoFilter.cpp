@@ -2,11 +2,8 @@
 #include <memory>
 
 #include <Parsers/ASTQueryParameter.h>
-#include "Core/Field.h"
-#include "Parsers/ASTFunction.h"
-#include "Parsers/ASTIdentifier.h"
-#include "Parsers/ASTLiteral.h"
-#include "Parsers/IAST_fwd.h"
+#include <Parsers/ASTFunction.h>
+#include <Parsers/IAST_fwd.h>
 
 #include <Parsers/Mongo/Utils.h>
 
@@ -35,21 +32,20 @@ bool ParserMongoFilter::parseImpl(ASTPtr & node)
     {
         return true;
     }
-    
+
     if (child_trees.size() == 1)
     {
         node = child_trees[0];
-        return true;  
+        return true;
     }
 
     auto result = makeASTFunction("and");
-    for (const auto& elem: child_trees)
+    for (const auto & elem : child_trees)
     {
         result->arguments->children.push_back(elem);
     }
     node = result;
     return true;
-
 }
 
 }
