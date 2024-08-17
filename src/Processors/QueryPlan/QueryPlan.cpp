@@ -340,7 +340,7 @@ static void explainStep(
 
     if (options.sorting)
     {
-        if (auto sort_description = step.getSortDescription(); !sort_description.empty())
+        if (const auto & sort_description = step.getSortDescription(); !sort_description.empty())
         {
             settings.out << prefix << "Sorting: ";
             dumpSortDescription(sort_description, settings.out);
