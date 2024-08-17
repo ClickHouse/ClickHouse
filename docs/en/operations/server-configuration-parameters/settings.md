@@ -1400,6 +1400,16 @@ The number of seconds that ClickHouse waits for incoming requests before closing
 <keep_alive_timeout>10</keep_alive_timeout>
 ```
 
+## max_keep_alive_requests {#max-keep-alive-requests}
+
+Maximal number of requests through a single keep-alive connection until it will be closed by ClickHouse server. Default to 10000.
+
+**Example**
+
+``` xml
+<max_keep_alive_requests>10</max_keep_alive_requests>
+```
+
 ## listen_host {#listen_host}
 
 Restriction on hosts that requests can come from. If you want the server to answer all of them, specify `::`.

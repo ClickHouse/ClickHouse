@@ -13,7 +13,6 @@ class LibraryBridgeHandlerFactory : public HTTPRequestHandlerFactory, WithContex
 public:
     LibraryBridgeHandlerFactory(
         const std::string & name_,
-        size_t keep_alive_timeout_,
         ContextPtr context_);
 
     std::unique_ptr<HTTPRequestHandler> createRequestHandler(const HTTPServerRequest & request) override;
@@ -21,7 +20,6 @@ public:
 private:
     LoggerPtr log;
     const std::string name;
-    const size_t keep_alive_timeout;
 };
 
 }

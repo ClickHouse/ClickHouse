@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/mergetree_mutations.lib
 
 
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
     DROP TABLE IF EXISTS fetches_r1 SYNC;
     DROP TABLE IF EXISTS fetches_r2 SYNC"
 
@@ -17,7 +17,7 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE fetches_r2(x UInt32) ENGINE Replicate
     SETTINGS prefer_fetch_merged_part_time_threshold=0, \
              prefer_fetch_merged_part_size_threshold=0"
 
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
     SET insert_keeper_fault_injection_probability=0;
     INSERT INTO fetches_r1 VALUES (1);
     INSERT INTO fetches_r1 VALUES (2);
@@ -51,6 +51,6 @@ ${CLICKHOUSE_CLIENT} --query="SYSTEM SYNC REPLICA fetches_r2"
 ${CLICKHOUSE_CLIENT} --query="SELECT '*** Check data after fetch/clone of mutated part ***'"
 ${CLICKHOUSE_CLIENT} --query="SELECT _part, * FROM fetches_r2 ORDER BY x"
 
-${CLICKHOUSE_CLIENT} -n --query="
+${CLICKHOUSE_CLIENT} --query="
     DROP TABLE fetches_r1 SYNC;
     DROP TABLE fetches_r2 SYNC"
