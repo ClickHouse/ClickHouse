@@ -2,8 +2,9 @@
 
 #include <memory>
 
-#include <Parsers/Mongo/Utils.h>
 #include <Parsers/ParserQuery.h>
+
+#include <Parsers/Mongo/Utils.h>
 
 namespace DB
 {

@@ -1,13 +1,7 @@
 #include "Utils.h"
-#include <optional>
-#include <stdexcept>
-#include <string>
-#include <Common/Exception.h>
 
-#include <Poco/Dynamic/Var.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Parser.h>
+#include <optional>
+#include <string>
 
 namespace DB
 {
@@ -20,30 +14,9 @@ extern const int BAD_ARGUMENTS;
 namespace Mongo
 {
 
-const char * findKth(const char * begin, const char * end, char token, size_t k)
-{
-    const char * iter = begin;
-    for (size_t i = 0; i < k; ++i)
-    {
-        if (i != 0 && iter != end)
-        {
-            iter++;
-        }
-        while (iter < end && iter[0] != token)
-        {
-            iter++;
-        }
-        if (iter == end)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: there is less than {} tokens {}", k, token);
-        }
-    }
-    return iter;
-}
-
 std::pair<const char *, const char *> getMetadataSubstring(const char * begin, const char * end)
 {
-    const char * position = findKth(begin, end, '(', 1);
+    const char * position = findKth<'('>(begin, end, 1);
     if (position == end)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not find ) in query");
@@ -53,13 +26,13 @@ std::pair<const char *, const char *> getMetadataSubstring(const char * begin, c
 
 std::pair<const char *, const char *> getSettingsSubstring(const char * begin, const char * end)
 {
-    const char * position_start = findKth(begin, end, '(', 1);
+    const char * position_start = findKth<'('>(begin, end, 1);
     if (position_start == end)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not find ( in query");
     }
 
-    const char * position_end = findKth(begin, end, ')', 1);
+    const char * position_end = findKth<')'>(begin, end, 1);
     if (position_end == end)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: : can not find ) in your query ");
@@ -97,7 +70,7 @@ rapidjson::Value parseData(const char * begin, const char * end)
 
     if (document.Parse(input.data()).HasParseError())
     {
-        throw std::runtime_error("Error while parsing json in parseData #" + input + "#");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing json in parseData {}", input);
     }
     return copyValue(document);
 }

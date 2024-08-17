@@ -1,12 +1,15 @@
 #include "ParserMongoQuery.h"
+
 #include <memory>
-#include <stdexcept>
+
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IParserBase.h>
-
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -15,16 +18,12 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithElement.h>
 
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include <Parsers/Mongo/ParserMongoFilter.h>
 #include <Parsers/Mongo/ParserMongoFunction.h>
 #include <Parsers/Mongo/ParserMongoSelectQuery.h>
-#include <Common/CurrentThread.h>
 #include <Parsers/Mongo/Metadata.h>
 #include <Parsers/Mongo/ParserMongoInsertQuery.h>
 #include <Parsers/Mongo/Utils.h>
-
 #include <Parsers/Mongo/ParserMongoCompareFunctions.h>
 
 namespace DB
@@ -91,7 +90,7 @@ createParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, c
 }
 
 std::shared_ptr<IMongoParser>
-createSkipParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
+createInversedParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
 {
     if (static_cast<std::string>(data_.MemberBegin()->name.GetString()) == "$lt")
     {
@@ -117,7 +116,7 @@ createSkipParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata
     {
         return std::make_shared<MongoLikeFunction>(copyValue(data_.MemberBegin()->value), metadata_, edge_name_);
     }
-    throw std::runtime_error("Incorrect edge name in skip parser");
+    return nullptr;
 }
 
 }

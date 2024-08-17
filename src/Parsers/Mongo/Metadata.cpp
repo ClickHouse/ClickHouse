@@ -23,8 +23,8 @@ std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, co
 {
     auto [token_begin, token_end] = getMetadataSubstring(begin, end);
 
-    const char * token_begin_collection_name = findKth(token_begin, token_end, '.', 1) + 1;
-    const char * token_end_collection_name = findKth(token_begin, token_end, '.', 2);
+    const char * token_begin_collection_name = findKth<'.'>(token_begin, token_end, 1) + 1;
+    const char * token_end_collection_name = findKth<'.'>(token_begin, token_end, 2);
 
     const char * token_begin_query_type = token_end_collection_name + 1;
     const char * token_end_query_type = token_end;
