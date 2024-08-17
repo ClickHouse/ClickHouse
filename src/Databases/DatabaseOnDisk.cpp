@@ -504,7 +504,7 @@ void DatabaseOnDisk::renameTable(
 }
 
 
-/// It returns create table statement (even if table is detached)
+/// It returns the create table statement (even if table is detached)
 ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const
 {
     ASTPtr ast;

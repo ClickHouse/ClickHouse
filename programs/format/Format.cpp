@@ -264,7 +264,11 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     if (!backslash)
                     {
                         WriteBufferFromOwnString str_buf;
-                        formatAST(*res, str_buf, hilite, oneline || approx_query_length < max_line_length);
+                        oneline = oneline || approx_query_length < max_line_length;
+                        IAST::FormatSettings settings(str_buf, oneline, hilite);
+                        settings.show_secrets = true;
+                        settings.print_pretty_type_names = !oneline;
+                        res->format(settings);
 
                         if (insert_query_payload)
                         {
