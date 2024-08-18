@@ -419,10 +419,11 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
     String result = getAdditionalFormatInfoForAllRowBasedFormats(settings);
     /// First, settings that are common for all text formats:
     result += fmt::format(
-        ", try_infer_integers={}, try_infer_dates={}, try_infer_datetimes={}",
+        ", try_infer_integers={}, try_infer_dates={}, try_infer_datetimes={}, try_infer_datetimes_only_datetime64={}",
         settings.try_infer_integers,
         settings.try_infer_dates,
-        settings.try_infer_datetimes);
+        settings.try_infer_datetimes,
+        settings.try_infer_datetimes_only_datetime64);
 
     /// Second, format-specific settings:
     switch (escaping_rule)
@@ -439,13 +440,15 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
         case FormatSettings::EscapingRule::CSV:
             result += fmt::format(
                 ", use_best_effort_in_schema_inference={}, bool_true_representation={}, bool_false_representation={},"
-                " null_representation={}, delimiter={}, tuple_delimiter={}",
+                " null_representation={}, delimiter={}, tuple_delimiter={}, try_infer_numbers_from_strings={}, try_infer_strings_from_quoted_tuples={}",
                 settings.csv.use_best_effort_in_schema_inference,
                 settings.bool_true_representation,
                 settings.bool_false_representation,
                 settings.csv.null_representation,
                 settings.csv.delimiter,
-                settings.csv.tuple_delimiter);
+                settings.csv.tuple_delimiter,
+                settings.csv.try_infer_numbers_from_strings,
+                settings.csv.try_infer_strings_from_quoted_tuples);
             break;
         case FormatSettings::EscapingRule::JSON:
             result += fmt::format(
@@ -461,7 +464,7 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
                 settings.json.read_arrays_as_strings,
                 settings.json.try_infer_objects_as_tuples,
                 settings.json.infer_incomplete_types_as_strings,
-                settings.json.allow_object_type,
+                settings.json.allow_deprecated_object_type,
                 settings.json.use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects);
             break;
         default:

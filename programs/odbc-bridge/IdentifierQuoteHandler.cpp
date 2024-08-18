@@ -11,6 +11,7 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include "getIdentifierQuote.h"
 #include "validateODBCConnectionString.h"
 #include "ODBCPooledConnectionFactory.h"
@@ -73,7 +74,7 @@ void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServ
 
         auto identifier = getIdentifierQuote(std::move(connection));
 
-        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
         try
         {
             writeStringBinary(identifier, out);

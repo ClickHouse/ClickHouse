@@ -1,8 +1,11 @@
-add_compile_options($<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>)
+add_compile_options("$<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>")
 
 if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
+
+set(MAX_LINKER_MEMORY 3500)
+include(../cmake/limit_jobs.cmake)
 
 include(${ClickHouse_SOURCE_DIR}/cmake/split_debug_symbols.cmake)
 
@@ -66,16 +69,16 @@ else()
     message(STATUS "Library bridge mode: OFF")
 endif()
 
-if (ENABLE_CLICKHOUSE_KEEPER)
-    message(STATUS "ClickHouse keeper mode: ON")
-else()
-    message(STATUS "ClickHouse keeper mode: OFF")
-endif()
-
 if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     message(STATUS "ClickHouse keeper-converter mode: ON")
 else()
     message(STATUS "ClickHouse keeper-converter mode: OFF")
+endif()
+
+if (ENABLE_CLICKHOUSE_KEEPER)
+    message(STATUS "ClickHouse Keeper: ON")
+else()
+    message(STATUS "ClickHouse Keeper: OFF")
 endif()
 
 if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
@@ -131,16 +134,16 @@ add_subdirectory (static-files-disk-uploader)
 add_subdirectory (su)
 add_subdirectory (disks)
 
-if (ENABLE_CLICKHOUSE_KEEPER)
-    add_subdirectory (keeper)
-endif()
-
 if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     add_subdirectory (keeper-converter)
 endif()
 
 if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
     add_subdirectory (keeper-client)
+endif()
+
+if (ENABLE_CLICKHOUSE_KEEPER)
+    add_subdirectory (keeper)
 endif()
 
 if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)

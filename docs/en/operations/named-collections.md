@@ -5,6 +5,10 @@ sidebar_label: "Named collections"
 title: "Named collections"
 ---
 
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+<CloudNotSupportedBadge />
+
 Named collections provide a way to store collections of key-value pairs to be
 used to configure integrations with external sources. You can use named collections with
 dictionaries, tables, table functions, and object storage.
@@ -303,8 +307,22 @@ SELECT dictGet('dict', 'B', 2);
 
 ## Named collections for accessing PostgreSQL database
 
-The description of parameters see [postgresql](../sql-reference/table-functions/postgresql.md).
+The description of parameters see [postgresql](../sql-reference/table-functions/postgresql.md). Additionally, there are aliases:
 
+- `username` for `user`
+- `db` for `database`.
+
+Parameter `addresses_expr` is used in a collection instead of `host:port`. The parameter is optional, because there are other optional ones: `host`, `hostname`, `port`. The following pseudo code explains the priority:
+
+```sql
+CASE 
+    WHEN collection['addresses_expr'] != '' THEN collection['addresses_expr']
+    WHEN collection['host'] != ''           THEN collection['host'] || ':' || if(collection['port'] != '', collection['port'], '5432')
+    WHEN collection['hostname'] != ''       THEN collection['hostname'] || ':' || if(collection['port'] != '', collection['port'], '5432')
+END
+```
+
+Example of creation:
 ```sql
 CREATE NAMED COLLECTION mypg AS
 user = 'pguser',
@@ -312,7 +330,7 @@ password = 'jw8s0F4',
 host = '127.0.0.1',
 port = 5432,
 database = 'test',
-schema = 'test_schema',
+schema = 'test_schema'
 ```
 
 Example of configuration:
@@ -364,6 +382,10 @@ SELECT * FROM mypgtable;
 │ 3 │
 └───┘
 ```
+
+:::note
+PostgreSQL copies data from the named collection when the table is being created. A change in the collection does not affect the existing tables.
+:::
 
 ### Example of using named collections with database with engine PostgreSQL
 

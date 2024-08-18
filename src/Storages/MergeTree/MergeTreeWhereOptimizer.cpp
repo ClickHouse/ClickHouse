@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -112,7 +113,7 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
     LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE", select.prewhere()->formatForLogging(log_queries_cut_to_length));
 }
 
-MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::optimize(const ActionsDAGPtr & filter_dag,
+MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::optimize(const ActionsDAG & filter_dag,
     const std::string & filter_column_name,
     const ContextPtr & context,
     bool is_final)
@@ -126,7 +127,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.use_statistics = context->getSettingsRef().allow_statistics_optimize;
 
     RPNBuilderTreeContext tree_context(context);
-    RPNBuilderTreeNode node(&filter_dag->findInOutputs(filter_column_name), tree_context);
+    RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), tree_context);
 
     auto optimize_result = optimizeImpl(node, where_optimizer_context);
     if (!optimize_result)
@@ -221,18 +222,18 @@ static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet 
     /// check the value with respect to threshold
     if (type == Field::Types::UInt64)
     {
-        const auto value = output_value.get<UInt64>();
+        const auto value = output_value.safeGet<UInt64>();
         return value > threshold;
     }
     else if (type == Field::Types::Int64)
     {
-        const auto value = output_value.get<Int64>();
+        const auto value = output_value.safeGet<Int64>();
         return value < -threshold || threshold < value;
     }
     else if (type == Field::Types::Float64)
     {
-        const auto value = output_value.get<Float64>();
-        return value < threshold || threshold < value;
+        const auto value = output_value.safeGet<Float64>();
+        return value < -threshold || threshold < value;
     }
 
     return false;

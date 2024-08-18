@@ -516,8 +516,14 @@
     /// Save query in history only if it is different.
     let previous_query = '';
 
+    /// Start of the last query
+    let last_query_start = 0;
+
     const current_url = new URL(window.location);
     const opened_locally = location.protocol == 'file:';
+
+    /// Run query instantly after page is loaded if the run parameter is present.
+    const run_immediately = current_url.searchParams.has("run");
 
     const server_address = current_url.searchParams.get('url');
     if (server_address) {
@@ -567,6 +573,8 @@
             '&password=' + encodeURIComponent(password)
         }
 
+        last_query_start = performance.now();
+
         const xhr = new XMLHttpRequest;
 
         xhr.open('POST', url, true);
@@ -579,7 +587,8 @@
             if (posted_request_num != request_num) {
                 return;
             } else if (this.readyState === XMLHttpRequest.DONE) {
-                renderResponse(this.status, this.response);
+                const elapsed_msec = performance.now() - last_query_start;
+                renderResponse(this.status, this.response, elapsed_msec);
 
                 /// The query is saved in browser history (in state JSON object)
                 /// as well as in URL fragment identifier.
@@ -587,11 +596,15 @@
                     const state = {
                         query: query,
                         status: this.status,
-                        response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
+                        response: this.response.length > 100000 ? null : this.response, /// Lower than the browser's limit.
+                        elapsed_msec: elapsed_msec,
                     };
                     const title = "ClickHouse Query: " + query;
 
                     let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
+                    if (run_immediately) {
+                        history_url += "&run=1";
+                    }
                     if (server_address != location.origin) {
                         /// Save server's address in URL if it's not identical to the address of the play UI.
                         history_url += '&url=' + encodeURIComponent(server_address);
@@ -617,7 +630,7 @@
         xhr.send(query);
     }
 
-    function renderResponse(status, response) {
+    function renderResponse(status, response, elapsed_msec) {
         document.getElementById('hourglass').style.display = 'none';
 
         if (status === 200) {
@@ -632,6 +645,7 @@
                 renderChart(json);
             } else {
                 renderUnparsedResult(response);
+                stats.innerText = `Elapsed (client-side): ${(elapsed_msec / 1000).toFixed(3)} sec.`;
             }
             document.getElementById('check-mark').style.display = 'inline';
         } else {
@@ -651,7 +665,7 @@
             clear();
             return;
         }
-        renderResponse(event.state.status, event.state.response);
+        renderResponse(event.state.status, event.state.response, event.state.elapsed_msec);
     };
 
     if (window.location.hash) {
@@ -1150,6 +1164,10 @@
         media_query_list.addEventListener('change', function(e) {
             setColorTheme(e.matches ? 'dark' : 'light');
         });
+    }
+
+    if (run_immediately) {
+        post();
     }
 
     document.getElementById('toggle-light').onclick = function() {

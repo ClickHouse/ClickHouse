@@ -3,6 +3,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
+#include <Core/Settings.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -31,6 +32,12 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
 
 bool DatabaseReplicatedDDLWorker::initializeMainThread()
 {
+    {
+        std::lock_guard lock(initialization_duration_timer_mutex);
+        initialization_duration_timer.emplace();
+        initialization_duration_timer->start();
+    }
+
     while (!stop_flag)
     {
         try
@@ -68,6 +75,10 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
 
             initializeReplication();
             initialized = true;
+            {
+                std::lock_guard lock(initialization_duration_timer_mutex);
+                initialization_duration_timer.reset();
+            }
             return true;
         }
         catch (...)
@@ -75,6 +86,11 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
             tryLogCurrentException(log, fmt::format("Error on initialization of {}", database->getDatabaseName()));
             sleepForSeconds(5);
         }
+    }
+
+    {
+        std::lock_guard lock(initialization_duration_timer_mutex);
+        initialization_duration_timer.reset();
     }
 
     return false;
@@ -456,6 +472,12 @@ UInt32 DatabaseReplicatedDDLWorker::getLogPointer() const
     ///  - max_id can be equal to log_ptr - 1 due to race condition (when it's updated in zk, but not updated in memory yet)
     ///  - max_id can be greater than log_ptr, because log_ptr is not updated for failed and dummy entries
     return max_id.load();
+}
+
+UInt64 DatabaseReplicatedDDLWorker::getCurrentInitializationDurationMs() const
+{
+    std::lock_guard lock(initialization_duration_timer_mutex);
+    return initialization_duration_timer ? initialization_duration_timer->elapsedMilliseconds() : 0;
 }
 
 }

@@ -179,7 +179,9 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
                 columns[i]->insertRangeFrom(*concatenated.getColumns()[i], offset, count);
 
             Chunks piece;
-            piece.emplace_back(std::move(columns), count, concatenated.getChunkInfo());
+            piece.emplace_back(std::move(columns), count);
+            piece.back().setChunkInfos(concatenated.getChunkInfos());
+
             writeRowGroup(std::move(piece));
         }
     }
@@ -268,7 +270,7 @@ void ParquetBlockOutputFormat::resetFormatterImpl()
     staging_bytes = 0;
 }
 
-void ParquetBlockOutputFormat::onCancel()
+void ParquetBlockOutputFormat::onCancel() noexcept
 {
     is_stopped = true;
 }
@@ -321,6 +323,9 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
         parquet::WriterProperties::Builder builder;
         builder.version(getParquetVersion(format_settings));
         builder.compression(getParquetCompression(format_settings.parquet.output_compression_method));
+        // write page index is disable at default.
+        if (format_settings.parquet.write_page_index)
+            builder.enable_write_page_index();
 
         parquet::ArrowWriterProperties::Builder writer_props_builder;
         if (format_settings.parquet.output_compliant_nested_types)

@@ -86,6 +86,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SHA256_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::DOUBLE_SHA1_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::LDAP),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::JWT),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::KERBEROS),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSH_KEY),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSL_CERTIFICATE),
@@ -93,7 +94,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::HTTP),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 10);
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 11);
 
     auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -104,9 +105,10 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             {"MySQL",                  static_cast<Int8>(Interface::MYSQL)},
             {"PostgreSQL",             static_cast<Int8>(Interface::POSTGRESQL)},
             {"Local",                  static_cast<Int8>(Interface::LOCAL)},
-            {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)}
+            {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)},
+            {"Prometheus",             static_cast<Int8>(Interface::PROMETHEUS)},
         });
-    static_assert(magic_enum::enum_count<Interface>() == 7);
+    static_assert(magic_enum::enum_count<Interface>() == 8);
 
     auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 

@@ -29,7 +29,14 @@
           -->
         <size>1000M</size>
         <count>10</count>
+
         <!-- <console>1</console> --> <!-- Default behavior is autodetection (log to console if not daemon mode and is tty) -->
+        <!-- <console_log_level>trace</console_log_level> -->
+
+        <!-- <use_syslog>0</use_syslog> -->
+        <!-- <syslog_level>trace</syslog_level> -->
+
+        <!-- <stream_compress>0</stream_compress> -->
 
         <!-- Per level overrides (legacy):
 
@@ -142,6 +149,21 @@
          See also 'tcp_port_secure' for secure connections.
     -->
     <tcp_port>9000</tcp_port>
+
+    <!-- Chunked capabilities for native protocol by server.
+         Can be enabled separately for send and receive channels.
+         Supported modes:
+         - chunked - server requires from client to have chunked enabled;
+         - chunked_optional - server supports both chunked and notchunked protocol;
+         - notchunked - server requires from client notchunked protocol (current default);
+         - notchunked_optional - server supports both chunked and notchunked protocol.
+     -->
+    <!--
+    <proto_caps>
+        <send>notchunked_optional</send>
+        <recv>notchunked_optional</recv>
+    </proto_caps>
+    -->
 
     <!-- Compatibility with MySQL protocol.
          ClickHouse will pretend to be MySQL for applications connecting to this port.
@@ -408,13 +430,11 @@
 
     <!-- Approximate size of mark cache, used in tables of MergeTree family.
          In bytes. Cache is single for server. Memory is allocated only on demand.
-         You should not lower this value.
-      -->
-    <mark_cache_size>5368709120</mark_cache_size>
+         You should not lower this value. -->
+    <!-- <mark_cache_size>5368709120</mark_cache_size> -->
 
-    <!-- For marks of secondary indices.
-      -->
-    <index_mark_cache_size>5368709120</index_mark_cache_size>
+    <!-- For marks of secondary indices. -->
+    <!-- <index_mark_cache_size>5368709120</index_mark_cache_size> -->
 
     <!-- If you enable the `min_bytes_to_use_mmap_io` setting,
          the data in MergeTree tables can be read with mmap to avoid copying from kernel to userspace.
@@ -432,13 +452,23 @@
          The cache is dropped (the files are closed) automatically on removal of old parts in MergeTree,
          also it can be dropped manually by the SYSTEM DROP MMAP CACHE query.
       -->
-    <mmap_cache_size>1000</mmap_cache_size>
+    <!-- <mmap_cache_size>1024</mmap_cache_size> -->
 
     <!-- Cache size in bytes for compiled expressions.-->
-    <compiled_expression_cache_size>134217728</compiled_expression_cache_size>
+    <!-- <compiled_expression_cache_size>134217728</compiled_expression_cache_size> -->
 
     <!-- Cache size in elements for compiled expressions.-->
-    <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size>
+    <!-- <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size> -->
+
+    <!-- Configuration for the query cache -->
+    <!--
+    <query_cache>
+        <max_size_in_bytes>1073741824</max_size_in_bytes>
+        <max_entries>1024</max_entries>
+        <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
+        <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
+    </query_cache>
+    -->
 
     <!-- Cache path for custom (created from SQL) cached disks -->
     <custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
@@ -1115,8 +1145,7 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_views_log>
 
-    <!-- Uncomment if use part log.
-         Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).-->
+    <!-- Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads). -->
     <part_log>
         <database>system</database>
         <table>part_log</table>
@@ -1128,9 +1157,9 @@
         <flush_on_crash>false</flush_on_crash>
     </part_log>
 
-    <!-- Uncomment to write text log into table.
-         Text log contains all information from usual server log but stores it in structured and efficient way.
+    <!-- Text log contains all information from usual server log but stores it in structured and efficient way.
          The level of the messages that goes to the table can be limited (<level>), if not specified all messages will go to the table.
+    -->
     <text_log>
         <database>system</database>
         <table>text_log</table>
@@ -1139,9 +1168,8 @@
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <flush_on_crash>false</flush_on_crash>
-        <level></level>
+        <level>trace</level>
     </text_log>
-    -->
 
     <!-- Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval. -->
     <metric_log>
@@ -1296,6 +1324,31 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <ttl>event_date + INTERVAL 30 DAY</ttl>
     </blob_storage_log>
+
+    <!-- Configure system.dashboards for dashboard.html.
+
+         Could have any query parameters, for which there will be an input on the page.
+         For instance an example from comments have the following:
+         - seconds
+         - rounding
+
+         NOTE: All default dashboards will be overwritten if it was set here. -->
+    <!-- Here is an example without merge() function, to make it work with readonly user -->
+    <!--
+    <dashboards>
+        <dashboard>
+            <dashboard>Overview</dashboard>
+            <title>Queries/second</title>
+            <query>
+                SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_Query)
+                FROM system.metric_log
+                WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+                GROUP BY t
+                ORDER BY t WITH FILL STEP {rounding:UInt32}
+            </query>
+        </dashboard>
+    </dashboards>
+    -->
 
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
@@ -1641,14 +1694,6 @@
         </consumer>
         -->
     <!-- </kafka> -->
-
-    <!-- Configuration for the query cache -->
-    <query_cache>
-        <max_size_in_bytes>1073741824</max_size_in_bytes>
-        <max_entries>1024</max_entries>
-        <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
-        <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
-    </query_cache>
 
     <backups>
         <allowed_path>backups</allowed_path>

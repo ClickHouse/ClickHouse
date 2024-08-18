@@ -14,7 +14,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -48,7 +48,7 @@ namespace
 
 UserDefinedSQLObjectsZooKeeperStorage::UserDefinedSQLObjectsZooKeeperStorage(
     const ContextPtr & global_context_, const String & zookeeper_path_)
-    : global_context{global_context_}
+    : UserDefinedSQLObjectsStorageBase(global_context_)
     , zookeeper_getter{[global_context_]() { return global_context_->getZooKeeper(); }}
     , zookeeper_path{zookeeper_path_}
     , watch_queue{std::make_shared<ConcurrentBoundedQueue<std::pair<UserDefinedSQLObjectType, String>>>(std::numeric_limits<size_t>::max())}

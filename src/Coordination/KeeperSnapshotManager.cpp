@@ -54,7 +54,7 @@ namespace
         std::filesystem::path path(snapshot_path);
         std::string filename = path.stem();
         Strings name_parts;
-        splitInto<'_'>(name_parts, filename);
+        splitInto<'_', '.'>(name_parts, filename);
         return parse<uint64_t>(name_parts[1]);
     }
 
@@ -66,7 +66,8 @@ namespace
         return base;
     }
 
-    void writeNode(const KeeperStorage::Node & node, SnapshotVersion version, WriteBuffer & out)
+    template<typename Node>
+    void writeNode(const Node & node, SnapshotVersion version, WriteBuffer & out)
     {
         writeBinary(node.getData(), out);
 
@@ -86,7 +87,7 @@ namespace
         writeBinary(node.aversion, out);
         writeBinary(node.ephemeralOwner(), out);
         if (version < SnapshotVersion::V6)
-            writeBinary(static_cast<int32_t>(node.data_size), out);
+            writeBinary(static_cast<int32_t>(node.getData().size()), out);
         writeBinary(node.numChildren(), out);
         writeBinary(node.pzxid, out);
 
@@ -96,7 +97,8 @@ namespace
             writeBinary(node.sizeInBytes(), out);
     }
 
-    void readNode(KeeperStorage::Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map)
+    template<typename Node>
+    void readNode(Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map)
     {
         readVarUInt(node.data_size, in);
         if (node.data_size != 0)
@@ -195,7 +197,8 @@ namespace
     }
 }
 
-void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context)
+template<typename Storage>
+void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Storage> & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context)
 {
     writeBinary(static_cast<uint8_t>(snapshot.version), out);
     serializeSnapshotMetadata(snapshot.snapshot_meta, out);
@@ -205,11 +208,11 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
         writeBinary(snapshot.zxid, out);
         if (keeper_context->digestEnabled())
         {
-            writeBinary(static_cast<uint8_t>(KeeperStorage::CURRENT_DIGEST_VERSION), out);
+            writeBinary(static_cast<uint8_t>(Storage::CURRENT_DIGEST_VERSION), out);
             writeBinary(snapshot.nodes_digest, out);
         }
         else
-            writeBinary(static_cast<uint8_t>(KeeperStorage::NO_DIGEST), out);
+            writeBinary(static_cast<uint8_t>(Storage::NO_DIGEST), out);
     }
 
     writeBinary(snapshot.session_id, out);
@@ -255,7 +258,6 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
         /// slightly bigger than required.
         if (node.mzxid > snapshot.zxid)
             break;
-
         writeBinary(path, out);
         writeNode(node, snapshot.version, out);
 
@@ -282,7 +284,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
         writeBinary(session_id, out);
         writeBinary(timeout, out);
 
-        KeeperStorage::AuthIDs ids;
+        KeeperStorageBase::AuthIDs ids;
         if (snapshot.session_and_auth.contains(session_id))
             ids = snapshot.session_and_auth.at(session_id);
 
@@ -303,7 +305,8 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     }
 }
 
-void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context)
+template<typename Storage>
+void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<Storage> & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context)
 {
     uint8_t version;
     readBinary(version, in);
@@ -312,7 +315,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported snapshot version {}", version);
 
     deserialization_result.snapshot_meta = deserializeSnapshotMetadata(in);
-    KeeperStorage & storage = *deserialization_result.storage;
+    Storage & storage = *deserialization_result.storage;
 
     bool recalculate_digest = keeper_context->digestEnabled();
     if (version >= SnapshotVersion::V5)
@@ -320,11 +323,11 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         readBinary(storage.zxid, in);
         uint8_t digest_version;
         readBinary(digest_version, in);
-        if (digest_version != KeeperStorage::DigestVersion::NO_DIGEST)
+        if (digest_version != Storage::DigestVersion::NO_DIGEST)
         {
             uint64_t nodes_digest;
             readBinary(nodes_digest, in);
-            if (digest_version == KeeperStorage::CURRENT_DIGEST_VERSION)
+            if (digest_version == Storage::CURRENT_DIGEST_VERSION)
             {
                 storage.nodes_digest = nodes_digest;
                 recalculate_digest = false;
@@ -374,8 +377,8 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
 
     size_t snapshot_container_size;
     readBinary(snapshot_container_size, in);
-
-    storage.container.reserve(snapshot_container_size);
+    if constexpr (!use_rocksdb)
+        storage.container.reserve(snapshot_container_size);
 
     if (recalculate_digest)
         storage.nodes_digest = 0;
@@ -389,7 +392,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         in.readStrict(path_data.get(), path_size);
         std::string_view path{path_data.get(), path_size};
 
-        KeeperStorage::Node node{};
+        typename Storage::Node node{};
         readNode(node, in, current_version, storage.acl_map);
 
         using enum Coordination::PathMatchResult;
@@ -421,7 +424,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                 if (keeper_context->ignoreSystemPathOnStartup() || keeper_context->getServerState() != KeeperContext::Phase::INIT)
                 {
                     LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", get_error_msg());
-                    node = KeeperStorage::Node{};
+                    node = typename Storage::Node{};
                 }
                 else
                     throw Exception(
@@ -433,8 +436,9 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         }
 
         auto ephemeral_owner = node.ephemeralOwner();
-        if (!node.isEphemeral() && node.numChildren() > 0)
-            node.getChildren().reserve(node.numChildren());
+        if constexpr (!use_rocksdb)
+            if (!node.isEphemeral() && node.numChildren() > 0)
+                node.getChildren().reserve(node.numChildren());
 
         if (ephemeral_owner != 0)
             storage.ephemerals[node.ephemeralOwner()].insert(std::string{path});
@@ -447,35 +451,37 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
 
     LOG_TRACE(getLogger("KeeperSnapshotManager"), "Building structure for children nodes");
 
-    for (const auto & itr : storage.container)
+    if constexpr (!use_rocksdb)
     {
-        if (itr.key != "/")
+        for (const auto & itr : storage.container)
         {
-            auto parent_path = parentNodePath(itr.key);
-            storage.container.updateValue(
-                parent_path, [path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseNodeName(path)); });
-        }
-    }
-
-    for (const auto & itr : storage.container)
-    {
-        if (itr.key != "/")
-        {
-            if (itr.value.numChildren() != static_cast<int32_t>(itr.value.getChildren().size()))
+            if (itr.key != "/")
             {
+                auto parent_path = parentNodePath(itr.key);
+                storage.container.updateValue(
+                    parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(getBaseNodeName(path)); });
+            }
+        }
+
+        for (const auto & itr : storage.container)
+        {
+            if (itr.key != "/")
+            {
+                if (itr.value.numChildren() != static_cast<int32_t>(itr.value.getChildren().size()))
+                {
 #ifdef NDEBUG
-                /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
-                LOG_ERROR(getLogger("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
-                            " is different from actual children size {} for node {}", itr.value.numChildren(), itr.value.getChildren().size(), itr.key);
+                    /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
+                    LOG_ERROR(getLogger("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
+                                " is different from actual children size {} for node {}", itr.value.numChildren(), itr.value.getChildren().size(), itr.key);
 #else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
-                                " is different from actual children size {} for node {}",
-                                itr.value.numChildren(), itr.value.getChildren().size(), itr.key);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
+                                    " is different from actual children size {} for node {}",
+                                    itr.value.numChildren(), itr.value.getChildren().size(), itr.key);
 #endif
+                }
             }
         }
     }
-
 
     size_t active_sessions_size;
     readBinary(active_sessions_size, in);
@@ -493,14 +499,14 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
             size_t session_auths_size;
             readBinary(session_auths_size, in);
 
-            KeeperStorage::AuthIDs ids;
+            typename Storage::AuthIDs ids;
             size_t session_auth_counter = 0;
             while (session_auth_counter < session_auths_size)
             {
                 String scheme, id;
                 readBinary(scheme, in);
                 readBinary(id, in);
-                ids.emplace_back(KeeperStorage::AuthID{scheme, id});
+                ids.emplace_back(typename Storage::AuthID{scheme, id});
 
                 session_auth_counter++;
             }
@@ -523,7 +529,8 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
     }
 }
 
-KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_)
+template<typename Storage>
+KeeperStorageSnapshot<Storage>::KeeperStorageSnapshot(Storage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_)
     : storage(storage_)
     , snapshot_meta(std::make_shared<SnapshotMetadata>(up_to_log_idx_, 0, std::make_shared<nuraft::cluster_config>()))
     , session_id(storage->session_id_counter)
@@ -540,8 +547,9 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t 
     session_and_auth = storage->session_and_auth;
 }
 
-KeeperStorageSnapshot::KeeperStorageSnapshot(
-    KeeperStorage * storage_, const SnapshotMetadataPtr & snapshot_meta_, const ClusterConfigPtr & cluster_config_)
+template<typename Storage>
+KeeperStorageSnapshot<Storage>::KeeperStorageSnapshot(
+    Storage * storage_, const SnapshotMetadataPtr & snapshot_meta_, const ClusterConfigPtr & cluster_config_)
     : storage(storage_)
     , snapshot_meta(snapshot_meta_)
     , session_id(storage->session_id_counter)
@@ -558,12 +566,14 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(
     session_and_auth = storage->session_and_auth;
 }
 
-KeeperStorageSnapshot::~KeeperStorageSnapshot()
+template<typename Storage>
+KeeperStorageSnapshot<Storage>::~KeeperStorageSnapshot()
 {
     storage->disableSnapshotMode();
 }
 
-KeeperSnapshotManager::KeeperSnapshotManager(
+template<typename Storage>
+KeeperSnapshotManager<Storage>::KeeperSnapshotManager(
     size_t snapshots_to_keep_,
     const KeeperContextPtr & keeper_context_,
     bool compress_snapshots_zstd_,
@@ -651,7 +661,8 @@ KeeperSnapshotManager::KeeperSnapshotManager(
     moveSnapshotsIfNeeded();
 }
 
-SnapshotFileInfoPtr KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx)
+template<typename Storage>
+SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx)
 {
     ReadBufferFromNuraftBuffer reader(buffer);
 
@@ -680,7 +691,8 @@ SnapshotFileInfoPtr KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft:
     return snapshot_file_info;
 }
 
-nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeLatestSnapshotBufferFromDisk()
+template<typename Storage>
+nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeLatestSnapshotBufferFromDisk()
 {
     while (!existing_snapshots.empty())
     {
@@ -701,7 +713,8 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeLatestSnapshotBuff
     return nullptr;
 }
 
-nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const
+template<typename Storage>
+nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const
 {
     const auto & [snapshot_path, snapshot_disk, size] = *existing_snapshots.at(up_to_log_idx);
     WriteBufferFromNuraftBuffer writer;
@@ -710,7 +723,8 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeSnapshotBufferFrom
     return writer.getBuffer();
 }
 
-nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot) const
+template<typename Storage>
+nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::serializeSnapshotToBuffer(const KeeperStorageSnapshot<Storage> & snapshot) const
 {
     std::unique_ptr<WriteBufferFromNuraftBuffer> writer = std::make_unique<WriteBufferFromNuraftBuffer>();
     auto * buffer_raw_ptr = writer.get();
@@ -720,13 +734,13 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::serializeSnapshotToBuffer(con
     else
         compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
 
-    KeeperStorageSnapshot::serialize(snapshot, *compressed_writer, keeper_context);
+    KeeperStorageSnapshot<Storage>::serialize(snapshot, *compressed_writer, keeper_context);
     compressed_writer->finalize();
     return buffer_raw_ptr->getBuffer();
 }
 
-
-bool KeeperSnapshotManager::isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer)
+template<typename Storage>
+bool KeeperSnapshotManager<Storage>::isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer)
 {
     static constexpr unsigned char ZSTD_COMPRESSED_MAGIC[4] = {0x28, 0xB5, 0x2F, 0xFD};
 
@@ -737,7 +751,8 @@ bool KeeperSnapshotManager::isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer)
     return memcmp(magic_from_buffer, ZSTD_COMPRESSED_MAGIC, 4) == 0;
 }
 
-SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
+template<typename Storage>
+SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
 {
     bool is_zstd_compressed = isZstdCompressed(buffer);
 
@@ -749,14 +764,15 @@ SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuff
     else
         compressed_reader = std::make_unique<CompressedReadBuffer>(*reader);
 
-    SnapshotDeserializationResult result;
-    result.storage = std::make_unique<KeeperStorage>(storage_tick_time, superdigest, keeper_context, /* initialize_system_nodes */ false);
-    KeeperStorageSnapshot::deserialize(result, *compressed_reader, keeper_context);
+    SnapshotDeserializationResult<Storage> result;
+    result.storage = std::make_unique<Storage>(storage_tick_time, superdigest, keeper_context, /* initialize_system_nodes */ false);
+    KeeperStorageSnapshot<Storage>::deserialize(result, *compressed_reader, keeper_context);
     result.storage->initializeSystemNodes();
     return result;
 }
 
-SnapshotDeserializationResult KeeperSnapshotManager::restoreFromLatestSnapshot()
+template<typename Storage>
+SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::restoreFromLatestSnapshot()
 {
     if (existing_snapshots.empty())
         return {};
@@ -767,23 +783,27 @@ SnapshotDeserializationResult KeeperSnapshotManager::restoreFromLatestSnapshot()
     return deserializeSnapshotFromBuffer(buffer);
 }
 
-DiskPtr KeeperSnapshotManager::getDisk() const
+template<typename Storage>
+DiskPtr KeeperSnapshotManager<Storage>::getDisk() const
 {
     return keeper_context->getSnapshotDisk();
 }
 
-DiskPtr KeeperSnapshotManager::getLatestSnapshotDisk() const
+template<typename Storage>
+DiskPtr KeeperSnapshotManager<Storage>::getLatestSnapshotDisk() const
 {
     return keeper_context->getLatestSnapshotDisk();
 }
 
-void KeeperSnapshotManager::removeOutdatedSnapshotsIfNeeded()
+template<typename Storage>
+void KeeperSnapshotManager<Storage>::removeOutdatedSnapshotsIfNeeded()
 {
     while (existing_snapshots.size() > snapshots_to_keep)
         removeSnapshot(existing_snapshots.begin()->first);
 }
 
-void KeeperSnapshotManager::moveSnapshotsIfNeeded()
+template<typename Storage>
+void KeeperSnapshotManager<Storage>::moveSnapshotsIfNeeded()
 {
     /// move snapshots to correct disks
 
@@ -813,7 +833,8 @@ void KeeperSnapshotManager::moveSnapshotsIfNeeded()
 
 }
 
-void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
+template<typename Storage>
+void KeeperSnapshotManager<Storage>::removeSnapshot(uint64_t log_idx)
 {
     auto itr = existing_snapshots.find(log_idx);
     if (itr == existing_snapshots.end())
@@ -823,7 +844,8 @@ void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
     existing_snapshots.erase(itr);
 }
 
-SnapshotFileInfoPtr KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot)
+template<typename Storage>
+SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(const KeeperStorageSnapshot<Storage> & snapshot)
 {
     auto up_to_log_idx = snapshot.snapshot_meta->get_last_log_idx();
     auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
@@ -842,7 +864,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperS
     else
         compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
 
-    KeeperStorageSnapshot::serialize(snapshot, *compressed_writer, keeper_context);
+    KeeperStorageSnapshot<Storage>::serialize(snapshot, *compressed_writer, keeper_context);
     compressed_writer->finalize();
     compressed_writer->sync();
 
@@ -864,14 +886,16 @@ SnapshotFileInfoPtr KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperS
     return snapshot_file_info;
 }
 
-size_t KeeperSnapshotManager::getLatestSnapshotIndex() const
+template<typename Storage>
+size_t KeeperSnapshotManager<Storage>::getLatestSnapshotIndex() const
 {
     if (!existing_snapshots.empty())
         return existing_snapshots.rbegin()->first;
     return 0;
 }
 
-SnapshotFileInfoPtr KeeperSnapshotManager::getLatestSnapshotInfo() const
+template<typename Storage>
+SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::getLatestSnapshotInfo() const
 {
     if (!existing_snapshots.empty())
     {
@@ -890,4 +914,10 @@ SnapshotFileInfoPtr KeeperSnapshotManager::getLatestSnapshotInfo() const
     return nullptr;
 }
 
+template struct KeeperStorageSnapshot<KeeperMemoryStorage>;
+template class KeeperSnapshotManager<KeeperMemoryStorage>;
+#if USE_ROCKSDB
+template struct KeeperStorageSnapshot<KeeperRocksStorage>;
+template class KeeperSnapshotManager<KeeperRocksStorage>;
+#endif
 }

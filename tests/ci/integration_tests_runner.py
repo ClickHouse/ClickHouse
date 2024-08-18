@@ -20,6 +20,7 @@ from typing import Any, Dict
 
 from env_helper import IS_CI
 from integration_test_images import IMAGES
+from tee_popen import TeePopen
 
 MAX_RETRY = 1
 NUM_WORKERS = 5
@@ -29,7 +30,8 @@ CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-odbc-bridge"
 CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-library-bridge"
 
-FLAKY_TRIES_COUNT = 10
+FLAKY_TRIES_COUNT = 10  # run whole pytest several times
+FLAKY_REPEAT_COUNT = 5  # runs test case in single module several times
 MAX_TIME_SECONDS = 3600
 
 MAX_TIME_IN_SANDBOX = 20 * 60  # 20 minutes
@@ -67,9 +69,9 @@ def get_changed_tests_to_run(pr_info, repo_path):
         return []
 
     for fpath in changed_files:
-        if "tests/integration/test_" in fpath:
+        if re.search(r"tests/integration/test_.*/test.*\.py", fpath) is not None:
             logging.info("File %s changed and seems like integration test", fpath)
-            result.add(fpath.split("/")[2])
+            result.add("/".join(fpath.split("/")[2:]))
     return filter_existing_tests(result, repo_path)
 
 
@@ -355,20 +357,13 @@ class ClickhouseIntegrationTestsRunner:
                     logging.info("Package found in %s", full_path)
                     log_name = "install_" + f + ".log"
                     log_path = os.path.join(str(self.path()), log_name)
-                    with open(log_path, "w", encoding="utf-8") as log:
-                        cmd = f"dpkg -x {full_path} ."
-                        logging.info("Executing installation cmd %s", cmd)
-                        with subprocess.Popen(
-                            cmd, shell=True, stderr=log, stdout=log
-                        ) as proc:
-                            if proc.wait() == 0:
-                                logging.info(
-                                    "Installation of %s successfull", full_path
-                                )
-                            else:
-                                raise RuntimeError(
-                                    f"Installation of {full_path} failed"
-                                )
+                    cmd = f"dpkg -x {full_path} ."
+                    logging.info("Executing installation cmd %s", cmd)
+                    with TeePopen(cmd, log_file=log_path) as proc:
+                        if proc.wait() == 0:
+                            logging.info("Installation of %s successfull", full_path)
+                        else:
+                            raise RuntimeError(f"Installation of {full_path} failed")
                     break
             else:
                 raise FileNotFoundError(f"Package with {package} not found")
@@ -434,7 +429,14 @@ class ClickhouseIntegrationTestsRunner:
             "Getting all tests to the file %s with cmd: \n%s", out_file_full, cmd
         )
         with open(out_file_full, "wb") as ofd:
-            subprocess.check_call(cmd, shell=True, stdout=ofd, stderr=ofd)
+            try:
+                subprocess.check_call(cmd, shell=True, stdout=ofd, stderr=ofd)
+            except subprocess.CalledProcessError as ex:
+                print("ERROR: Setting test plan failed. Output:")
+                with open(out_file_full, "r", encoding="utf-8") as file:
+                    for line in file:
+                        print("    " + line, end="")
+                raise ex
 
         all_tests = set()
         with open(out_file_full, "r", encoding="utf-8") as all_tests_fd:
@@ -561,6 +563,7 @@ class ClickhouseIntegrationTestsRunner:
         tests_in_group,
         num_tries,
         num_workers,
+        repeat_count,
     ):
         try:
             return self.run_test_group(
@@ -569,6 +572,7 @@ class ClickhouseIntegrationTestsRunner:
                 tests_in_group,
                 num_tries,
                 num_workers,
+                repeat_count,
             )
         except Exception as e:
             logging.info("Failed to run %s:\n%s", test_group, e)
@@ -591,6 +595,7 @@ class ClickhouseIntegrationTestsRunner:
         tests_in_group,
         num_tries,
         num_workers,
+        repeat_count,
     ):
         counters = {
             "ERROR": [],
@@ -632,6 +637,7 @@ class ClickhouseIntegrationTestsRunner:
 
             test_cmd = " ".join([shlex.quote(test) for test in sorted(test_names)])
             parallel_cmd = f" --parallel {num_workers} " if num_workers > 0 else ""
+            repeat_cmd = f" --count {repeat_count} " if repeat_count > 0 else ""
             # -r -- show extra test summary:
             # -f -- (f)ailed
             # -E -- (E)rror
@@ -640,7 +646,7 @@ class ClickhouseIntegrationTestsRunner:
             cmd = (
                 f"cd {repo_path}/tests/integration && "
                 f"timeout --signal=KILL 1h ./runner {self._get_runner_opts()} "
-                f"{image_cmd} -t {test_cmd} {parallel_cmd} -- -rfEps --run-id={i} "
+                f"{image_cmd} -t {test_cmd} {parallel_cmd} {repeat_cmd} -- -rfEps --run-id={i} "
                 f"--color=no --durations=0 {_get_deselect_option(self.should_skip_tests())} "
                 f"| tee {info_path}"
             )
@@ -772,12 +778,17 @@ class ClickhouseIntegrationTestsRunner:
         logging.info("Starting check with retries")
         final_retry = 0
         logs = []
-        tires_num = 1 if should_fail else FLAKY_TRIES_COUNT
-        for i in range(tires_num):
+        tries_num = 1 if should_fail else FLAKY_TRIES_COUNT
+        for i in range(tries_num):
             final_retry += 1
             logging.info("Running tests for the %s time", i)
             counters, tests_times, log_paths = self.try_run_test_group(
-                repo_path, "bugfix" if should_fail else "flaky", tests_to_run, 1, 1
+                repo_path,
+                "bugfix" if should_fail else "flaky",
+                tests_to_run,
+                1,
+                1,
+                FLAKY_REPEAT_COUNT,
             )
             logs += log_paths
             if counters["FAILED"]:
@@ -912,7 +923,7 @@ class ClickhouseIntegrationTestsRunner:
         for group, tests in items_to_run:
             logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(
-                repo_path, group, tests, MAX_RETRY, NUM_WORKERS
+                repo_path, group, tests, MAX_RETRY, NUM_WORKERS, 0
             )
             total_tests = 0
             for counter, value in group_counters.items():

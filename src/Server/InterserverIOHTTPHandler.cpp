@@ -3,6 +3,7 @@
 #include <Server/IServer.h>
 
 #include <Compression/CompressedWriteBuffer.h>
+#include <Core/ServerSettings.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterserverIOHandler.h>
@@ -86,9 +87,8 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         response.setChunkedTransferEncoding(true);
 
     Output used_output;
-    const auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-        response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout, write_event);
+        response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, write_event);
 
     auto finalize_output = [&]
     {

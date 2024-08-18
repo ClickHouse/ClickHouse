@@ -133,7 +133,7 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
             }
             else
             {
-                /// In global mode AWS C++ SDK send `us-east-1` but accept switching to another one if being suggested.
+                /// In global mode AWS C++ SDK sends `us-east-1` but accepts switching to another one if being suggested.
                 region = Aws::Region::AWS_GLOBAL;
             }
         }

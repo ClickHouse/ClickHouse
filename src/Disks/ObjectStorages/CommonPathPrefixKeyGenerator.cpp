@@ -1,5 +1,7 @@
-#include "CommonPathPrefixKeyGenerator.h"
+#include <Disks/ObjectStorages/CommonPathPrefixKeyGenerator.h>
+#include <Disks/ObjectStorages/InMemoryPathMap.h>
 
+#include <Common/SharedLockGuard.h>
 #include <Common/getRandomASCIIString.h>
 
 #include <deque>
@@ -9,21 +11,22 @@
 namespace DB
 {
 
-CommonPathPrefixKeyGenerator::CommonPathPrefixKeyGenerator(
-    String key_prefix_, SharedMutex & shared_mutex_, std::weak_ptr<PathMap> path_map_)
-    : storage_key_prefix(key_prefix_), shared_mutex(shared_mutex_), path_map(std::move(path_map_))
+CommonPathPrefixKeyGenerator::CommonPathPrefixKeyGenerator(String key_prefix_, std::weak_ptr<InMemoryPathMap> path_map_)
+    : storage_key_prefix(key_prefix_), path_map(std::move(path_map_))
 {
 }
 
-ObjectStorageKey CommonPathPrefixKeyGenerator::generate(const String & path, bool is_directory) const
+ObjectStorageKey
+CommonPathPrefixKeyGenerator::generate(const String & path, bool is_directory, const std::optional<String> & key_prefix) const
 {
-    const auto & [object_key_prefix, suffix_parts] = getLongestObjectKeyPrefix(path);
+    const auto & [object_key_prefix, suffix_parts]
+        = getLongestObjectKeyPrefix(is_directory ? std::filesystem::path(path).parent_path().string() : path);
 
-    auto key = std::filesystem::path(object_key_prefix.empty() ? storage_key_prefix : object_key_prefix);
+    auto key = std::filesystem::path(object_key_prefix);
 
     /// The longest prefix is the same as path, meaning that the  path is already mapped.
     if (suffix_parts.empty())
-        return ObjectStorageKey::createAsRelative(std::move(key));
+        return ObjectStorageKey::createAsRelative(key_prefix.has_value() ? *key_prefix : storage_key_prefix, std::move(key));
 
     /// File and top-level directory paths are mapped as is.
     if (!is_directory || object_key_prefix.empty())
@@ -39,7 +42,7 @@ ObjectStorageKey CommonPathPrefixKeyGenerator::generate(const String & path, boo
         key /= getRandomASCIIString(part_size);
     }
 
-    return ObjectStorageKey::createAsRelative(key);
+    return ObjectStorageKey::createAsRelative(key_prefix.has_value() ? *key_prefix : storage_key_prefix, key);
 }
 
 std::tuple<std::string, std::vector<std::string>> CommonPathPrefixKeyGenerator::getLongestObjectKeyPrefix(const std::string & path) const
@@ -47,14 +50,13 @@ std::tuple<std::string, std::vector<std::string>> CommonPathPrefixKeyGenerator::
     std::filesystem::path p(path);
     std::deque<std::string> dq;
 
-    std::shared_lock lock(shared_mutex);
-
-    auto ptr = path_map.lock();
+    const auto ptr = path_map.lock();
+    SharedLockGuard lock(ptr->mutex);
 
     while (p != p.root_path())
     {
-        auto it = ptr->find(p / "");
-        if (it != ptr->end())
+        auto it = ptr->map.find(p);
+        if (it != ptr->map.end())
         {
             std::vector<std::string> vec(std::make_move_iterator(dq.begin()), std::make_move_iterator(dq.end()));
             return std::make_tuple(it->second, std::move(vec));

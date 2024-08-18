@@ -201,18 +201,18 @@ ClickHouse 不要求主键唯一，所以您可以插入多条具有相同主键
 
 主键中列的数量并没有明确的限制。依据数据结构，您可以在主键包含多些或少些列。这样可以：
 
-  - 改善索引的性能。
+- 改善索引的性能。
 
-  - 如果当前主键是 `(a, b)` ，在下列情况下添加另一个 `c` 列会提升性能：
+    如果当前主键是 `(a, b)` ，在下列情况下添加另一个 `c` 列会提升性能：
 
-  - 查询会使用 `c` 列作为条件
-  - 很长的数据范围（ `index_granularity` 的数倍）里 `(a, b)` 都是相同的值，并且这样的情况很普遍。换言之，就是加入另一列后，可以让您的查询略过很长的数据范围。
+    - 查询会使用 `c` 列作为条件
+    - 很长的数据范围（ `index_granularity` 的数倍）里 `(a, b)` 都是相同的值，并且这样的情况很普遍。换言之，就是加入另一列后，可以让您的查询略过很长的数据范围。
 
-  - 改善数据压缩。
+- 改善数据压缩。
 
-    ClickHouse 以主键排序片段数据，所以，数据的一致性越高，压缩越好。
+   ClickHouse 以主键排序片段数据，所以，数据的一致性越高，压缩越好。
 
-  - 在[CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) 和 [SummingMergeTree](summingmergetree.md) 引擎里进行数据合并时会提供额外的处理逻辑。
+- 在[CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) 和 [SummingMergeTree](summingmergetree.md) 引擎里进行数据合并时会提供额外的处理逻辑。
 
     在这种情况下，指定与主键不同的 *排序键* 也是有意义的。
 

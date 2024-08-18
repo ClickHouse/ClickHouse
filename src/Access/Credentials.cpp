@@ -1,6 +1,6 @@
 #include <Access/Credentials.h>
+#include <Access/Common/SSLCertificateSubjects.h>
 #include <Common/Exception.h>
-
 
 namespace DB
 {
@@ -48,18 +48,18 @@ void AlwaysAllowCredentials::setUserName(const String & user_name_)
     user_name = user_name_;
 }
 
-SSLCertificateCredentials::SSLCertificateCredentials(const String & user_name_, const String & common_name_)
+SSLCertificateCredentials::SSLCertificateCredentials(const String & user_name_, SSLCertificateSubjects && subjects_)
     : Credentials(user_name_)
-    , common_name(common_name_)
+    , certificate_subjects(subjects_)
 {
     is_ready = true;
 }
 
-const String & SSLCertificateCredentials::getCommonName() const
+const SSLCertificateSubjects & SSLCertificateCredentials::getSSLCertificateSubjects() const
 {
     if (!isReady())
         throwNotReady();
-    return common_name;
+    return certificate_subjects;
 }
 
 BasicCredentials::BasicCredentials()

@@ -2,6 +2,7 @@
 #include <base/sort.h>
 #include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
+#include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <IO/WriteHelpers.h>
@@ -537,7 +538,7 @@ void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeep
 
     /// Bool type is really weird, sometimes it's Bool and sometimes it's UInt64...
     assert(value.getType() == Field::Types::Bool || value.getType() == Field::Types::UInt64);
-    if (!value.get<UInt64>())
+    if (!value.safeGet<UInt64>())
         return;
 
     zookeeper->createIfNotExists(getSyncedNodePath(), "");

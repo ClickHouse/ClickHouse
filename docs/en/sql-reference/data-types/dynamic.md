@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/dynamic
-sidebar_position: 56
+sidebar_position: 62
 sidebar_label: Dynamic
 ---
 
@@ -14,7 +14,7 @@ To declare a column of `Dynamic` type, use the following syntax:
 <column_name> Dynamic(max_types=N)
 ```
 
-Where `N` is an optional parameter between `1` and `255` indicating how many different data types can be stored inside a column with type `Dynamic` across single block of data that is stored separately (for example across single data part for MergeTree table). If this limit is exceeded, all new types will be converted to type `String`. Default value of `max_types` is `32`.
+Where `N` is an optional parameter between `0` and `254` indicating how many different data types can be stored as separate subcolumns inside a column with type `Dynamic` across single block of data that is stored separately (for example across single data part for MergeTree table). If this limit is exceeded, all values with new types will be stored together in a special shared data structure in binary form. Default value of `max_types` is `32`.
 
 :::note
 The Dynamic data type is an experimental feature. To use it, set `allow_experimental_dynamic_type = 1`.
@@ -224,41 +224,43 @@ SELECT d::Dynamic(max_types=5) as d2, dynamicType(d2) FROM test;
 └───────┴────────────────┘
 ```
 
-If `K < N`, then the values with the rarest types are converted to `String`:
+If `K < N`, then the values with the rarest types will be inserted into a single special subcolumn, but still will be accessible:
 ```text
 CREATE TABLE test (d Dynamic(max_types=4)) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), (43), ('42.42'), (true), ([1, 2, 3]);
-SELECT d, dynamicType(d), d::Dynamic(max_types=2) as d2, dynamicType(d2) FROM test;
+SELECT d, dynamicType(d), d::Dynamic(max_types=2) as d2, dynamicType(d2), isDynamicElementInSharedData(d2) FROM test;
 ```
 
 ```text
-┌─d───────┬─dynamicType(d)─┬─d2──────┬─dynamicType(d2)─┐
-│ ᴺᵁᴸᴸ    │ None           │ ᴺᵁᴸᴸ    │ None            │
-│ 42      │ Int64          │ 42      │ Int64           │
-│ 43      │ Int64          │ 43      │ Int64           │
-│ 42.42   │ String         │ 42.42   │ String          │
-│ true    │ Bool           │ true    │ String          │
-│ [1,2,3] │ Array(Int64)   │ [1,2,3] │ String          │
-└─────────┴────────────────┴─────────┴─────────────────┘
+┌─d───────┬─dynamicType(d)─┬─d2──────┬─dynamicType(d2)─┬─isDynamicElementInSharedData(d2)─┐
+│ ᴺᵁᴸᴸ    │ None           │ ᴺᵁᴸᴸ    │ None            │ false                            │
+│ 42      │ Int64          │ 42      │ Int64           │ false                            │
+│ 43      │ Int64          │ 43      │ Int64           │ false                            │
+│ 42.42   │ String         │ 42.42   │ String          │ false                            │
+│ true    │ Bool           │ true    │ Bool            │ true                             │
+│ [1,2,3] │ Array(Int64)   │ [1,2,3] │ Array(Int64)    │ true                             │
+└─────────┴────────────────┴─────────┴─────────────────┴──────────────────────────────────┘
 ```
 
-If `K=1`, all types are converted to `String`:
+Functions `isDynamicElementInSharedData` returns `true` for rows that are stored in a special shared data structure inside `Dynamic` and as we can see, resulting column contains only 2 types that are not stored in shared data structure.
+
+If `K=0`, all types will be inserted into single special subcolumn:
 
 ```text
 CREATE TABLE test (d Dynamic(max_types=4)) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), (43), ('42.42'), (true), ([1, 2, 3]);
-SELECT d, dynamicType(d), d::Dynamic(max_types=1) as d2, dynamicType(d2) FROM test;
+SELECT d, dynamicType(d), d::Dynamic(max_types=0) as d2, dynamicType(d2), isDynamicElementInSharedData(d2) FROM test;
 ```
 
 ```text
-┌─d───────┬─dynamicType(d)─┬─d2──────┬─dynamicType(d2)─┐
-│ ᴺᵁᴸᴸ    │ None           │ ᴺᵁᴸᴸ    │ None            │
-│ 42      │ Int64          │ 42      │ String          │
-│ 43      │ Int64          │ 43      │ String          │
-│ 42.42   │ String         │ 42.42   │ String          │
-│ true    │ Bool           │ true    │ String          │
-│ [1,2,3] │ Array(Int64)   │ [1,2,3] │ String          │
-└─────────┴────────────────┴─────────┴─────────────────┘
+┌─d───────┬─dynamicType(d)─┬─d2──────┬─dynamicType(d2)─┬─isDynamicElementInSharedData(d2)─┐
+│ ᴺᵁᴸᴸ    │ None           │ ᴺᵁᴸᴸ    │ None            │ false                            │
+│ 42      │ Int64          │ 42      │ Int64           │ true                             │
+│ 43      │ Int64          │ 43      │ Int64           │ true                             │
+│ 42.42   │ String         │ 42.42   │ String          │ true                             │
+│ true    │ Bool           │ true    │ Bool            │ true                             │
+│ [1,2,3] │ Array(Int64)   │ [1,2,3] │ Array(Int64)    │ true                             │
+└─────────┴────────────────┴─────────┴─────────────────┴──────────────────────────────────┘
 ```
 
 ## Reading Dynamic type from the data
@@ -411,17 +413,17 @@ SELECT d, dynamicType(d) FROM test ORDER by d;
 
 ## Reaching the limit in number of different data types stored inside Dynamic
 
-`Dynamic` data type can store only limited number of different data types inside. By default, this limit is 32, but you can change it in type declaration using syntax `Dynamic(max_types=N)` where N is between 1 and 255 (due to implementation details, it's impossible to have more than 255 different data types inside Dynamic).
-When the limit is reached, all new data types inserted to `Dynamic` column will be casted to `String` and stored as `String` values.
+`Dynamic` data type can store only limited number of different data types as separate subcolumns. By default, this limit is 32, but you can change it in type declaration using syntax `Dynamic(max_types=N)` where N is between 0 and 254 (due to implementation details, it's impossible to have more than 254 different data types that can be stored as separate subcolumns inside Dynamic).
+When the limit is reached, all new data types inserted to `Dynamic` column will be inserted into a single shared data structure that stores values with different data types in binary form.
 
 Let's see what happens when the limit is reached in different scenarios.
 
 ### Reaching the limit during data parsing
 
-During parsing of `Dynamic` values from the data, when the limit is reached for current block of data, all new values will be inserted as `String` values:
+During parsing of `Dynamic` values from the data, when the limit is reached for current block of data, all new values will be inserted into shared data structure:
 
 ```sql
-SELECT d, dynamicType(d) FROM format(JSONEachRow, 'd Dynamic(max_types=3)', '
+SELECT d, dynamicType(d), isDynamicElementInSharedData(d) FROM format(JSONEachRow, 'd Dynamic(max_types=3)', '
 {"d" : 42}
 {"d" : [1, 2, 3]}
 {"d" : "Hello, World!"}
@@ -432,22 +434,22 @@ SELECT d, dynamicType(d) FROM format(JSONEachRow, 'd Dynamic(max_types=3)', '
 ```
 
 ```text
-┌─d──────────────────────────┬─dynamicType(d)─┐
-│ 42                         │ Int64          │
-│ [1,2,3]                    │ Array(Int64)   │
-│ Hello, World!              │ String         │
-│ 2020-01-01                 │ String         │
-│ ["str1", "str2", "str3"]   │ String         │
-│ {"a" : 1, "b" : [1, 2, 3]} │ String         │
-└────────────────────────────┴────────────────┘
+┌─d──────────────────────┬─dynamicType(d)─────────────────┬─isDynamicElementInSharedData(d)─┐
+│ 42                     │ Int64                          │ false                           │
+│ [1,2,3]                │ Array(Int64)                   │ false                           │
+│ Hello, World!          │ String                         │ false                           │
+│ 2020-01-01             │ Date                           │ true                            │
+│ ['str1','str2','str3'] │ Array(String)                  │ true                            │
+│ (1,[1,2,3])            │ Tuple(a Int64, b Array(Int64)) │ true                            │
+└────────────────────────┴────────────────────────────────┴─────────────────────────────────┘
 ```
 
-As we can see, after inserting 3 different data types `Int64`, `Array(Int64)` and `String` all new types were converted to `String`.
+As we can see, after inserting 3 different data types `Int64`, `Array(Int64)` and `String` all new types were inserted into special shared data structure.
 
 ### During merges of data parts in MergeTree table engines
 
-During merge of several data parts in MergeTree table the `Dynamic` column in the resulting data part can reach the limit of different data types inside and won't be able to store all types from source parts.
-In this case ClickHouse chooses what types will remain after merge and what types will be casted to `String`.  In most cases ClickHouse tries to keep the most frequent types and cast the rarest types to `String`, but it depends on the implementation.
+During merge of several data parts in MergeTree table the `Dynamic` column in the resulting data part can reach the limit of different data types that can be stored in separate subcolumns inside and won't be able to store all types as subcolumns from source parts.
+In this case ClickHouse chooses what types will remain as separate subcolumns after merge and what types will be inserted into shared data structure. In most cases ClickHouse tries to keep the most frequent types and store the rarest types in shared data structure, but it depends on the implementation.
 
 Let's see an example of such merge. First, let's create a table with `Dynamic` column, set the limit of different data types to `3` and insert values with `5` different types:
 
@@ -463,17 +465,17 @@ INSERT INTO test SELECT number, 'str_' || toString(number) FROM numbers(1);
 
 Each insert will create a separate data pert with `Dynamic` column containing single type:
 ```sql
-SELECT count(), dynamicType(d), _part FROM test GROUP BY _part, dynamicType(d) ORDER BY _part;
+SELECT count(), dynamicType(d), isDynamicElementInSharedData(d), _part FROM test GROUP BY _part, dynamicType(d), isDynamicElementInSharedData(d) ORDER BY _part, count();
 ```
 
 ```text
-┌─count()─┬─dynamicType(d)──────┬─_part─────┐
-│       5 │ UInt64              │ all_1_1_0 │
-│       4 │ Array(UInt64)       │ all_2_2_0 │
-│       3 │ Date                │ all_3_3_0 │
-│       2 │ Map(UInt64, UInt64) │ all_4_4_0 │
-│       1 │ String              │ all_5_5_0 │
-└─────────┴─────────────────────┴───────────┘
+┌─count()─┬─dynamicType(d)──────┬─isDynamicElementInSharedData(d)─┬─_part─────┐
+│       5 │ UInt64              │ false                           │ all_1_1_0 │
+│       4 │ Array(UInt64)       │ false                           │ all_2_2_0 │
+│       3 │ Date                │ false                           │ all_3_3_0 │
+│       2 │ Map(UInt64, UInt64) │ false                           │ all_4_4_0 │
+│       1 │ String              │ false                           │ all_5_5_0 │
+└─────────┴─────────────────────┴─────────────────────────────────┴───────────┘
 ```
 
 Now, let's merge all parts into one and see what will happen:
@@ -481,15 +483,59 @@ Now, let's merge all parts into one and see what will happen:
 ```sql
 SYSTEM START MERGES test;
 OPTIMIZE TABLE test FINAL;
-SELECT count(), dynamicType(d), _part FROM test GROUP BY _part, dynamicType(d) ORDER BY _part;
+SELECT count(), dynamicType(d), isDynamicElementInSharedData(d), _part FROM test GROUP BY _part, dynamicType(d), isDynamicElementInSharedData(d) ORDER BY _part, count() desc;
 ```
 
 ```text
-┌─count()─┬─dynamicType(d)─┬─_part─────┐
-│       5 │ UInt64         │ all_1_5_2 │
-│       6 │ String         │ all_1_5_2 │
-│       4 │ Array(UInt64)  │ all_1_5_2 │
-└─────────┴────────────────┴───────────┘
+┌─count()─┬─dynamicType(d)──────┬─isDynamicElementInSharedData(d)─┬─_part─────┐
+│       5 │ UInt64              │ false                           │ all_1_5_2 │
+│       4 │ Array(UInt64)       │ false                           │ all_1_5_2 │
+│       3 │ Date                │ false                           │ all_1_5_2 │
+│       2 │ Map(UInt64, UInt64) │ true                            │ all_1_5_2 │
+│       1 │ String              │ true                            │ all_1_5_2 │
+└─────────┴─────────────────────┴─────────────────────────────────┴───────────┘
 ```
 
-As we can see, ClickHouse kept the most frequent types `UInt64` and `Array(UInt64)` and casted all other types to `String`.
+As we can see, ClickHouse kept the most frequent types `UInt64` and `Array(UInt64)` as subcolumns and inserted all other types into shared data.
+
+## JSONExtract functions with Dynamic
+
+All `JSONExtract*` functions support `Dynamic` type:
+
+```sql
+SELECT JSONExtract('{"a" : [1, 2, 3]}', 'a', 'Dynamic') AS dynamic, dynamicType(dynamic) AS dynamic_type;
+```
+
+```text
+┌─dynamic─┬─dynamic_type───────────┐
+│ [1,2,3] │ Array(Nullable(Int64)) │
+└─────────┴────────────────────────┘
+```
+
+```sql
+SELECT JSONExtract('{"obj" : {"a" : 42, "b" : "Hello", "c" : [1,2,3]}}', 'obj', 'Map(String, Dynamic)') AS map_of_dynamics, mapApply((k, v) -> (k, dynamicType(v)), map_of_dynamics) AS map_of_dynamic_types
+```
+
+```text
+┌─map_of_dynamics──────────────────┬─map_of_dynamic_types────────────────────────────────────┐
+│ {'a':42,'b':'Hello','c':[1,2,3]} │ {'a':'Int64','b':'String','c':'Array(Nullable(Int64))'} │
+└──────────────────────────────────┴─────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Dynamic') AS dynamics, arrayMap(x -> (x.1, dynamicType(x.2)), dynamics) AS dynamic_types```
+```
+
+```text
+┌─dynamics───────────────────────────────┬─dynamic_types─────────────────────────────────────────────────┐
+│ [('a',42),('b','Hello'),('c',[1,2,3])] │ [('a','Int64'),('b','String'),('c','Array(Nullable(Int64))')] │
+└────────────────────────────────────────┴───────────────────────────────────────────────────────────────┘
+```
+
+### Binary output format
+
+In RowBinary format values of `Dynamic` type are serialized in the following format:
+
+```text
+<binary_encoded_data_type><value_in_binary_format_according_to_the_data_type>
+```

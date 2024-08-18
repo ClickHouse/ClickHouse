@@ -118,7 +118,7 @@ void Settings::set(std::string_view name, const Field & value)
     {
         if (value.getType() != Field::Types::Which::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type of value for setting 'compatibility'. Expected String, got {}", value.getTypeName());
-        applyCompatibilitySetting(value.get<String>());
+        applyCompatibilitySetting(value.safeGet<String>());
     }
     /// If we change setting that was changed by compatibility setting before
     /// we should remove it from settings_changed_by_compatibility_setting,
@@ -142,6 +142,7 @@ void Settings::applyCompatibilitySetting(const String & compatibility_value)
         return;
 
     ClickHouseVersion version(compatibility_value);
+    const auto & settings_changes_history = getSettingsChangesHistory();
     /// Iterate through ClickHouse version in descending order and apply reversed
     /// changes for each version that is higher that version from compatibility setting
     for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)
