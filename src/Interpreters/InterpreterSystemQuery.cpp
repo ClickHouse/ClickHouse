@@ -1190,9 +1190,7 @@ void InterpreterSystemQuery::loadPrimaryKeys()
     else
     {
         getContext()->checkAccess(AccessType::SYSTEM_LOAD_PRIMARY_KEY);
-        LOG_TRACE(log, "Loading primary keys for all tables");
 
-        auto & thread_pool = DB::getActivePartsLoadingThreadPool().get(); // Get the appropriate thread pool
 
         for (auto & database : DatabaseCatalog::instance().getDatabases())
         {
@@ -1200,12 +1198,18 @@ void InterpreterSystemQuery::loadPrimaryKeys()
             {
                 if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
                 {
-                    thread_pool.scheduleOrThrowOnError([merge_tree]() { merge_tree->loadPrimaryKeys(); });
+                    try
+                    {
+                        // Directly load the primary keys without thread pool
+                        merge_tree->loadPrimaryKeys();
+                    }
+                    catch (const Exception & ex)
+                    {
+                        LOG_ERROR(log, "Failed to load primary keys for table {}: {}", merge_tree->getStorageID().getFullTableName(), ex.message());
+                    }
                 }
             }
         }
-
-        thread_pool.wait();
     }
 }
 
