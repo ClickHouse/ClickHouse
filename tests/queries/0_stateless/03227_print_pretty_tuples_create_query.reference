@@ -1,6 +1,6 @@
 
 SHOW CREATE TABLE:
-CREATE TABLE test.test
+CREATE TABLE default.test
 (
     `x` Tuple(
         a String,
@@ -13,7 +13,7 @@ CREATE TABLE test.test
 ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS index_granularity = 8192
-CREATE TABLE test.test
+CREATE TABLE default.test
 (
     `x` Tuple(a String, b Array(Tuple(c Tuple(e String), d String))),
     `y` String
