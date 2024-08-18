@@ -20,12 +20,16 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
 extern const int CANNOT_SET_SIGNAL_HANDLER;
 extern const int CANNOT_SEND_SIGNAL;
 }
+
 }
+
+extern const char * GIT_HASH;
 
 using namespace DB;
 
