@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-ordinary-database
+# Tags: no-random-settings, no-ordinary-database, no-fasttest
+# no-fasttest: The test is slow (too many small blocks)
 # shellcheck disable=SC2009
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -41,7 +42,7 @@ function insert_data
     else
         # client will send 1000-rows blocks, server will squash them into 110000-rows blocks (more chances to catch a bug on query cancellation)
         $CLICKHOUSE_CLIENT --stacktrace --query_id="$ID" --throw_on_unsupported_query_inside_transaction=0 --implicit_transaction="$IMPLICIT" \
-            --max_block_size=1000 --max_insert_block_size=1000 --multiquery -q \
+            --max_block_size=1000 --max_insert_block_size=1000 -q \
             "${BEGIN}insert into dedup_test settings max_insert_block_size=110000, min_insert_block_size_rows=110000 format TSV$COMMIT" < $DATA_FILE \
             | grep -Fv "Transaction is not in RUNNING state"
     fi

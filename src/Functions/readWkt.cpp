@@ -87,6 +87,11 @@ struct ReadWKTLineStringNameHolder
     static constexpr const char * name = "readWKTLineString";
 };
 
+struct ReadWKTMultiLineStringNameHolder
+{
+    static constexpr const char * name = "readWKTMultiLineString";
+};
+
 struct ReadWKTRingNameHolder
 {
     static constexpr const char * name = "readWKTRing";
@@ -127,6 +132,31 @@ Parses a Well-Known Text (WKT) representation of a LineString geometry and retur
 ┌─toTypeName(readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)'))─┐
 │ LineString                                                       │
 └──────────────────────────────────────────────────────────────────┘
+            )"},
+        },
+        .categories{"Unique identifiers"}
+    });
+    factory.registerFunction<FunctionReadWKT<DataTypeMultiLineStringName, CartesianMultiLineString, MultiLineStringSerializer<CartesianPoint>, ReadWKTMultiLineStringNameHolder>>(FunctionDocumentation
+    {
+        .description=R"(
+Parses a Well-Known Text (WKT) representation of a MultiLineString geometry and returns it in the internal ClickHouse format.
+)",
+        .syntax = "readWKTMultiLineString(wkt_string)",
+        .arguments{
+            {"wkt_string", "The input WKT string representing a MultiLineString geometry."}
+        },
+        .returned_value = "The function returns a ClickHouse internal representation of the multilinestring geometry.",
+        .examples{
+            {"first call", "SELECT readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6))');", R"(
+┌─readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6))')─┐
+│ [[(1,1),(2,2),(3,3)],[(4,4),(5,5),(6,6)]]                                    │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+            )"},
+            {"second call", "SELECT toTypeName(readWKTLineString('MULTILINESTRING ((1 1, 2 2, 3 3, 1 1))'));", R"(
+┌─toTypeName(readWKTLineString('MULTILINESTRING ((1 1, 2 2, 3 3, 1 1))'))─┐
+│ MultiLineString                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
             )"},
         },
         .categories{"Unique identifiers"}
