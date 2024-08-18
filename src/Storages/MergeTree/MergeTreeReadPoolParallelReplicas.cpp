@@ -44,14 +44,16 @@ size_t chooseSegmentSize(
         min_marks_per_task * threads,
         sum_marks / number_of_replicas / number_of_replicas);
 
-    /// Here we take max of three numbers:
-    /// * user provided setting (0 by default)
+    /// Here we take max of two numbers:
     /// * (min_marks_per_task * threads) = the number of marks we request from the coordinator each time - there is no point to have segments smaller than one unit of work for a replica
     /// * (sum_marks / number_of_replicas^2) - we use consistent hashing for work distribution (including work stealing). If we have a really slow replica
     ///   everything up to (1/number_of_replicas) portion of its work will be stolen by other replicas. And it owns (1/number_of_replicas) share of total number of marks.
     ///   Also important to note here that sum_marks is calculated after PK analysis, it means in particular that different segment sizes might be used for the
     ///   same table for different queries (it is intentional).
-    mark_segment_size = std::max({mark_segment_size, min_marks_per_task * threads, sum_marks / number_of_replicas / number_of_replicas});
+    ///
+    /// Positive `mark_segment_size` means it is a user provided value, we have to preserve it.
+    if (mark_segment_size == 0)
+        mark_segment_size = std::max(min_marks_per_task * threads, sum_marks / number_of_replicas / number_of_replicas);
 
     /// Squeeze the value to the borders.
     mark_segment_size = std::clamp(mark_segment_size, borders.front(), borders.back());

@@ -20,6 +20,10 @@ namespace ErrorCodes
 
 namespace
 {
+/// Previously we had a separate protocol version number for parallel replicas.
+/// But we didn't maintain backward compatibility and every protocol change was breaking.
+/// Now we have to support at least minimal tail of the previous versions and the implementation
+/// is based on the common tcp protocol version as in all other places.
 constexpr UInt64 DEPRECATED_FIELD_PARALLEL_REPLICAS_PROTOCOL_VERSION = 3;
 
 CoordinationMode validateAndGet(uint8_t candidate)
