@@ -8,7 +8,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ghdata"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ghdata (data JSON) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'" --allow_experimental_json_type 1
 
-cat $CUR_DIR/data_json/ghdata_sample.json | ${CLICKHOUSE_CLIENT} --max_block_size 8192 --max_insert_block_size 8192 --max_insert_threads 1 --min_insert_block_size_bytes 0 --min_insert_block_size_rows 0 -q "INSERT INTO ghdata FORMAT JSONAsObject"
+cat $CUR_DIR/data_json/ghdata_sample.json | ${CLICKHOUSE_CLIENT} \
+  --max_memory_usage 10G --query "INSERT INTO ghdata FORMAT JSONAsObject"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ghdata WHERE NOT ignore(*)"
 
@@ -16,7 +17,7 @@ ${CLICKHOUSE_CLIENT} -q \
 "SELECT data.repo.name, count() AS stars FROM ghdata \
     WHERE data.type = 'WatchEvent' GROUP BY data.repo.name ORDER BY stars DESC, data.repo.name LIMIT 5"
 
-${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q \
+${CLICKHOUSE_CLIENT} --enable_analyzer=1 -q \
 "SELECT data.payload.commits[].author.name AS name, count() AS c FROM ghdata \
     ARRAY JOIN data.payload.commits[].author.name \
     GROUP BY name ORDER BY c DESC, name LIMIT 5"
