@@ -23,7 +23,11 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
+
+constexpr static size_t DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE = 0xFFFFFF;
+
 
 struct AggregateFunctionDistinctJSONPathsData
 {
@@ -85,6 +89,9 @@ struct AggregateFunctionDistinctJSONPathsData
     {
         size_t size;
         readVarUInt(size, buf);
+        if (size > DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {}): {}", DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE, size);
+
         String path;
         for (size_t i = 0; i != size; ++i)
         {
@@ -192,12 +199,18 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
     {
         size_t paths_size, types_size;
         readVarUInt(paths_size, buf);
+        if (paths_size > DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {}): {}", DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE, paths_size);
+
         data.reserve(paths_size);
         String path, type;
         for (size_t i = 0; i != paths_size; ++i)
         {
             readStringBinary(path, buf);
             readVarUInt(types_size, buf);
+            if (types_size > DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {}): {}", DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE, types_size);
+
             data[path].reserve(types_size);
             for (size_t j = 0; j != types_size; ++j)
             {

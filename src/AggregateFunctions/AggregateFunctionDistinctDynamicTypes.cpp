@@ -19,10 +19,13 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 struct AggregateFunctionDistinctDynamicTypesData
 {
+    constexpr static size_t MAX_ARRAY_SIZE = 0xFFFFFF;
+
     std::unordered_set<String> data;
 
     void add(const String & type)
@@ -46,6 +49,9 @@ struct AggregateFunctionDistinctDynamicTypesData
     {
         size_t size;
         readVarUInt(size, buf);
+        if (size > MAX_ARRAY_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {}): {}", MAX_ARRAY_SIZE, size);
+
         data.reserve(size);
         String type;
         for (size_t i = 0; i != size; ++i)
