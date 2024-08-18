@@ -87,10 +87,6 @@ static size_t calculateMinMarksPerTask(
         }
     }
 
-    if (min_marks_per_task == 0)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
-
     LOG_TEST(&Poco::Logger::get("MergeTreeReadPoolBase"), "Will use min_marks_per_task={}", min_marks_per_task);
     return min_marks_per_task;
 }
