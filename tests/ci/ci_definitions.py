@@ -57,6 +57,7 @@ class Runners(metaclass=WithIter):
     """
 
     BUILDER = "builder"
+    BUILDER_ARM = "builder-aarch64"
     STYLE_CHECKER = "style-checker"
     STYLE_CHECKER_ARM = "style-checker-aarch64"
     FUNC_TESTER = "func-tester"
