@@ -110,7 +110,7 @@ namespace
         errno = saved_errno;
     }
 
-    [[maybe_unused]] constexpr UInt32 TIMER_PRECISION = 1e9;
+    [[maybe_unused]] constexpr UInt64 TIMER_PRECISION = 1e9;
 }
 
 namespace ErrorCodes
@@ -167,18 +167,18 @@ void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal
     }
 }
 
-void Timer::set(UInt32 period)
+void Timer::set(UInt64 period)
 {
     /// Too high frequency can introduce infinite busy loop of signal handlers. We will limit maximum frequency (with 1000 signals per second).
-    period = std::max<UInt32>(period, 1000000);
+    period = std::max<UInt64>(period, 1000000);
     /// Randomize offset as uniform random value from 0 to period - 1.
     /// It will allow to sample short queries even if timer period is large.
     /// (For example, with period of 1 second, query with 50 ms duration will be sampled with 1 / 20 probability).
     /// It also helps to avoid interference (moire).
-    UInt32 period_rand = std::uniform_int_distribution<UInt32>(0, period)(thread_local_rng);
+    UInt64 period_rand = std::uniform_int_distribution<UInt64>(0, period)(thread_local_rng);
 
-    struct timespec interval{.tv_sec = period / TIMER_PRECISION, .tv_nsec = period % TIMER_PRECISION};
-    struct timespec offset{.tv_sec = period_rand / TIMER_PRECISION, .tv_nsec = period_rand % TIMER_PRECISION};
+    struct timespec interval{.tv_sec = time_t(period / TIMER_PRECISION), .tv_nsec = int64_t(period % TIMER_PRECISION)};
+    struct timespec offset{.tv_sec = time_t(period_rand / TIMER_PRECISION), .tv_nsec = int64_t(period_rand % TIMER_PRECISION)};
 
     struct itimerspec timer_spec = {.it_interval = interval, .it_value = offset};
     if (timer_settime(*timer_id, 0, &timer_spec, nullptr))
@@ -229,7 +229,7 @@ void Timer::cleanup()
 
 template <typename ProfilerImpl>
 QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
-    [[maybe_unused]] UInt64 thread_id, [[maybe_unused]] int clock_type, [[maybe_unused]] UInt32 period, [[maybe_unused]] int pause_signal_)
+    [[maybe_unused]] UInt64 thread_id, [[maybe_unused]] int clock_type, [[maybe_unused]] UInt64 period, [[maybe_unused]] int pause_signal_)
     : log(getLogger("QueryProfiler")), pause_signal(pause_signal_)
 {
 #if defined(SANITIZER)
@@ -270,7 +270,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
 
 
 template <typename ProfilerImpl>
-void QueryProfilerBase<ProfilerImpl>::setPeriod([[maybe_unused]] UInt32 period_)
+void QueryProfilerBase<ProfilerImpl>::setPeriod([[maybe_unused]] UInt64 period_)
 {
 #if defined(SANITIZER)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
@@ -307,7 +307,7 @@ void QueryProfilerBase<ProfilerImpl>::cleanup()
 template class QueryProfilerBase<QueryProfilerReal>;
 template class QueryProfilerBase<QueryProfilerCPU>;
 
-QueryProfilerReal::QueryProfilerReal(UInt64 thread_id, UInt32 period)
+QueryProfilerReal::QueryProfilerReal(UInt64 thread_id, UInt64 period)
     : QueryProfilerBase(thread_id, CLOCK_MONOTONIC, period, SIGUSR1)
 {}
 
@@ -320,7 +320,7 @@ void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
     writeTraceInfo(TraceType::Real, sig, info, context);
 }
 
-QueryProfilerCPU::QueryProfilerCPU(UInt64 thread_id, UInt32 period)
+QueryProfilerCPU::QueryProfilerCPU(UInt64 thread_id, UInt64 period)
     : QueryProfilerBase(thread_id, CLOCK_THREAD_CPUTIME_ID, period, SIGUSR2)
 {}
 

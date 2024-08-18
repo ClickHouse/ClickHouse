@@ -32,6 +32,8 @@
 #cmakedefine01 USE_IDNA
 #cmakedefine01 USE_NLP
 #cmakedefine01 USE_VECTORSCAN
+#cmakedefine01 USE_QPL
+#cmakedefine01 USE_QATLIB
 #cmakedefine01 USE_LIBURING
 #cmakedefine01 USE_AVRO
 #cmakedefine01 USE_CAPNP
@@ -56,10 +58,11 @@
 #cmakedefine01 USE_FILELOG
 #cmakedefine01 USE_ODBC
 #cmakedefine01 USE_BLAKE3
+#cmakedefine01 USE_USEARCH
 #cmakedefine01 USE_SKIM
 #cmakedefine01 USE_PRQL
 #cmakedefine01 USE_ULID
-#cmakedefine01 FIU_ENABLE
+#cmakedefine01 USE_LIBFIU
 #cmakedefine01 USE_BCRYPT
 #cmakedefine01 USE_LIBARCHIVE
 #cmakedefine01 USE_POCKETFFT

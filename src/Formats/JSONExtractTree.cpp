@@ -8,7 +8,6 @@
 #if USE_RAPIDJSON
 #include <Common/JSONParsers/RapidJSONParser.h>
 #endif
-
 #include <Common/JSONParsers/DummyJSONParser.h>
 
 #include <Columns/ColumnArray.h>
@@ -22,6 +21,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsDateTime.h>
+#include <Columns/ColumnObject.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -38,8 +38,10 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
+#include <DataTypes/Serializations/SerializationObject.h>
 
 
 #include <IO/ReadBufferFromMemory.h>
@@ -53,6 +55,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
 }
 
 template <typename JSONParser>
@@ -123,7 +126,7 @@ void jsonElementToString(const typename JSONParser::Element & element, WriteBuff
 
 template <typename JSONParser, typename NumberType>
 bool tryGetNumericValueFromJSONElement(
-    NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_integer, String & error)
+    NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error)
 {
     switch (element.type())
     {
@@ -135,7 +138,7 @@ bool tryGetNumericValueFromJSONElement(
                 /// But it will be more convenient for user to perform conversion.
                 value = static_cast<NumberType>(element.getDouble());
             }
-            else if (!accurate::convertNumeric<Float64, NumberType, false>(element.getDouble(), value))
+            else if (!allow_type_conversion || !accurate::convertNumeric<Float64, NumberType, false>(element.getDouble(), value))
             {
                 error = fmt::format("cannot convert double value {} to {}", element.getDouble(), TypeName<NumberType>);
                 return false;
@@ -158,7 +161,7 @@ bool tryGetNumericValueFromJSONElement(
         case ElementType::BOOL:
             if constexpr (is_integer<NumberType>)
             {
-                if (convert_bool_to_integer)
+                if (convert_bool_to_integer && allow_type_conversion)
                 {
                     value = static_cast<NumberType>(element.getBool());
                     break;
@@ -166,13 +169,17 @@ bool tryGetNumericValueFromJSONElement(
             }
             error = fmt::format("cannot convert bool value to {}", TypeName<NumberType>);
             return false;
-        case ElementType::STRING: {
+        case ElementType::STRING:
+        {
+            if (!allow_type_conversion)
+                return false;
+
             auto rb = ReadBufferFromMemory{element.getString()};
             if constexpr (std::is_floating_point_v<NumberType>)
             {
                 if (!tryReadFloatText(value, rb) || !rb.eof())
                 {
-                    error = fmt::format("cannot parse {} value here: {}", TypeName<NumberType>, element.getString());
+                    error = fmt::format("cannot parse {} value here: \"{}\"", TypeName<NumberType>, element.getString());
                     return false;
                 }
             }
@@ -186,13 +193,13 @@ bool tryGetNumericValueFromJSONElement(
                 rb.position() = rb.buffer().begin();
                 if (!tryReadFloatText(tmp_float, rb) || !rb.eof())
                 {
-                    error = fmt::format("cannot parse {} value here: {}", TypeName<NumberType>, element.getString());
+                    error = fmt::format("cannot parse {} value here: \"{}\"", TypeName<NumberType>, element.getString());
                     return false;
                 }
 
                 if (!accurate::convertNumeric<Float64, NumberType, false>(tmp_float, value))
                 {
-                    error = fmt::format("cannot parse {} value here: {}", TypeName<NumberType>, element.getString());
+                    error = fmt::format("cannot parse {} value here: \"{}\"", TypeName<NumberType>, element.getString());
                     return false;
                 }
             }
@@ -241,8 +248,16 @@ public:
             return false;
         }
 
+        if (is_bool_type && !insert_settings.allow_type_conversion)
+        {
+            if (!element.isBool())
+                return false;
+            assert_cast<ColumnVector<NumberType> &>(column).insertValue(element.getBool());
+            return true;
+        }
+
         NumberType value;
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, insert_settings.convert_bool_to_integer || is_bool_type, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, insert_settings.convert_bool_to_integer || is_bool_type, insert_settings.allow_type_conversion, error))
         {
             if (error.empty())
                 error = fmt::format("cannot read {} value from JSON element: {}", TypeName<NumberType>, jsonElementToString<JSONParser>(element, format_settings));
@@ -289,8 +304,17 @@ public:
             return false;
         }
 
+        if (this->is_bool_type && !insert_settings.allow_type_conversion)
+        {
+            if (!element.isBool())
+                return false;
+            UInt8 value = element.getBool();
+            assert_cast<ColumnLowCardinality &>(column).insertData(reinterpret_cast<const char *>(&value), sizeof(value));
+            return true;
+        }
+
         NumberType value;
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, insert_settings.convert_bool_to_integer || this->is_bool_type, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, insert_settings.convert_bool_to_integer || this->is_bool_type, insert_settings.allow_type_conversion, error))
         {
             if (error.empty())
                 error = fmt::format("cannot read {} value from JSON element: {}", TypeName<NumberType>, jsonElementToString<JSONParser>(element, format_settings));
@@ -316,7 +340,7 @@ public:
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings &,
+        const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         String & error) const override
     {
@@ -333,6 +357,9 @@ public:
 
         if (!element.isString())
         {
+            if (!insert_settings.allow_type_conversion)
+                return false;
+
             auto & col_str = assert_cast<ColumnString &>(column);
             auto & chars = col_str.getChars();
             WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
@@ -360,7 +387,7 @@ public:
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings &,
+        const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         String & error) const override
     {
@@ -378,6 +405,9 @@ public:
 
         if (!element.isString())
         {
+            if (!insert_settings.allow_type_conversion)
+                return false;
+
             auto value = jsonElementToString<JSONParser>(element, format_settings);
             assert_cast<ColumnLowCardinality &>(column).insertData(value.data(), value.size());
         }
@@ -402,7 +432,7 @@ public:
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings &,
+        const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         String & error) const override
     {
@@ -419,7 +449,11 @@ public:
         }
 
         if (!element.isString())
+        {
+            if (!insert_settings.allow_type_conversion)
+                return false;
             return checkValueSizeAndInsert(column, jsonElementToString<JSONParser>(element, format_settings), error);
+        }
         return checkValueSizeAndInsert(column, element.getString(), error);
     }
 
@@ -450,7 +484,7 @@ public:
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings &,
+        const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         String & error) const override
     {
@@ -466,7 +500,11 @@ public:
         }
 
         if (!element.isString())
+        {
+            if (!insert_settings.allow_type_conversion)
+                return false;
             return checkValueSizeAndInsert(column, jsonElementToString<JSONParser>(element, format_settings), error);
+        }
         return checkValueSizeAndInsert(column, element.getString(), error);
     }
 
@@ -630,7 +668,7 @@ public:
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings &,
+        const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         String & error) const override
     {
@@ -649,7 +687,7 @@ public:
                 return false;
             }
         }
-        else if (element.isUInt64())
+        else if (element.isUInt64() && insert_settings.allow_type_conversion)
         {
             value = element.getUInt64();
         }
@@ -712,7 +750,8 @@ public:
             case ElementType::INT64:
                 value = convertToDecimal<DataTypeNumber<Int64>, DataTypeDecimal<DecimalType>>(element.getInt64(), scale);
                 break;
-            case ElementType::STRING: {
+            case ElementType::STRING:
+            {
                 auto rb = ReadBufferFromMemory{element.getString()};
                 if (!SerializationDecimal<DecimalType>::tryReadText(value, rb, DecimalUtils::max_precision<DecimalType>, scale))
                 {
@@ -721,7 +760,8 @@ public:
                 }
                 break;
             }
-            case ElementType::NULL_VALUE: {
+            case ElementType::NULL_VALUE:
+            {
                 if (!format_settings.null_as_default)
                 {
                     error = "cannot convert null to Decimal value";
@@ -756,7 +796,7 @@ public:
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings &,
+        const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         String & error) const override
     {
@@ -777,6 +817,9 @@ public:
         }
         else
         {
+            if (!insert_settings.allow_type_conversion)
+                return false;
+
             switch (element.type())
             {
                 case ElementType::DOUBLE:
@@ -1104,7 +1147,7 @@ public:
             }
         }
 
-        if (!were_valid_elements)
+        if (data.size() != old_size && !were_valid_elements)
         {
             data.popBack(data.size() - old_size);
             return false;
@@ -1174,7 +1217,7 @@ public:
                 else
                 {
                     set_size(old_size);
-                    error += fmt::format("(during reading tuple {} element)", index);
+                    error += fmt::format(" (during reading tuple {} element)", index);
                     return false;
                 }
             }
@@ -1202,7 +1245,7 @@ public:
                     else
                     {
                         set_size(old_size);
-                        error += fmt::format("(during reading tuple {} element)", index);
+                        error += fmt::format(" (during reading tuple {} element)", index);
                         return false;
                     }
                 }
@@ -1221,7 +1264,7 @@ public:
                         else if (!insert_settings.insert_default_on_invalid_elements_in_complex_types)
                         {
                             set_size(old_size);
-                            error += fmt::format("(during reading tuple element \"{}\")", key);
+                            error += fmt::format(" (during reading tuple element \"{}\")", key);
                             return false;
                         }
                     }
@@ -1288,7 +1331,7 @@ public:
                 {
                     key_col.popBack(key_col.size() - offsets.back());
                     value_col.popBack(value_col.size() - offsets.back());
-                    error += fmt::format("(during reading value of key \"{}\")", pair.first);
+                    error += fmt::format(" (during reading value of key \"{}\")", pair.first);
                     return false;
                 }
             }
@@ -1346,6 +1389,13 @@ template <typename JSONParser>
 class DynamicNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
+    explicit DynamicNode(
+        size_t max_dynamic_paths_for_object_ = DataTypeObject::DEFAULT_MAX_SEPARATELY_STORED_PATHS,
+        size_t max_dynamic_types_for_object_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES)
+        :  max_dynamic_paths_for_object(max_dynamic_paths_for_object_), max_dynamic_types_for_object(max_dynamic_types_for_object_)
+    {
+    }
+
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
@@ -1354,7 +1404,7 @@ public:
         String & error) const override
     {
         auto & column_dynamic = assert_cast<ColumnDynamic &>(column);
-        /// First, check if element is NULL.
+        /// Check if element is NULL.
         if (element.isNull())
         {
             column_dynamic.insertDefault();
@@ -1362,59 +1412,86 @@ public:
         }
 
         auto & variant_column = column_dynamic.getVariantColumn();
-        auto variant_info = column_dynamic.getVariantInfo();
-        /// Second, infer ClickHouse type for this element and add it as a new variant.
-        auto element_type = elementToDataType(element, format_settings);
-        if (column_dynamic.addNewVariant(element_type))
+        const auto & variant_info = column_dynamic.getVariantInfo();
+        const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+
+        /// Try to insert element into current variants but with no types conversion.
+        /// We want to avoid inferring the type on each row, so if we can insert this element into
+        /// any existing variant with no types conversion (like Integer -> String, Double -> Integer, etc)
+        /// we will do it and won't try to infer the type.
+        auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
+        auto insert_settings_with_no_type_conversion = insert_settings;
+        insert_settings_with_no_type_conversion.allow_type_conversion = false;
+        for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
         {
-            auto node = buildJSONExtractTree<JSONParser>(element_type, "Dynamic inference");
-            auto global_discriminator = variant_info.variant_name_to_discriminator[element_type->getName()];
+            if (i != shared_variant_discr)
+            {
+                auto it = json_extract_nodes_cache.find(variant_info.variant_names[i]);
+                if (it == json_extract_nodes_cache.end())
+                    it = json_extract_nodes_cache.emplace(variant_info.variant_names[i], buildJSONExtractTree<JSONParser>(variant_types[i], "Dynamic inference")).first;
+
+                if (it->second->insertResultToColumn(variant_column.getVariantByGlobalDiscriminator(i), element, insert_settings_with_no_type_conversion, format_settings, error))
+                {
+                    variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(i));
+                    variant_column.getOffsets().push_back(variant_column.getVariantByGlobalDiscriminator(i).size() - 1);
+                    return true;
+                }
+            }
+        }
+
+        /// We couldn't insert element into current variants, infer ClickHouse type for this element and add it as a new variant.
+        auto element_type = removeNullable(elementToDataType(element, format_settings));
+        if (!checkIfTypeIsComplete(element_type))
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Cannot infer the type of JSON element {}, because it contains only nulls. To use String type for elements with incomplete "
+                "type, enable setting input_format_json_infer_incomplete_types_as_strings",
+                jsonElementToString<JSONParser>(element, format_settings));
+        }
+
+        auto element_type_name = element_type->getName();
+        if (column_dynamic.addNewVariant(element_type, element_type_name))
+        {
+            auto it = json_extract_nodes_cache.find(element_type_name);
+            if (it == json_extract_nodes_cache.end())
+                it = json_extract_nodes_cache.emplace(element_type_name, buildJSONExtractTree<JSONParser>(element_type, "Dynamic inference")).first;
+            auto global_discriminator = variant_info.variant_name_to_discriminator.at(element_type_name);
             auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discriminator);
-            if (!node->insertResultToColumn(variant, element, insert_settings, format_settings, error))
+            if (!it->second->insertResultToColumn(variant, element, insert_settings, format_settings, error))
                 return false;
             variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(global_discriminator));
             variant_column.getOffsets().push_back(variant.size() - 1);
             return true;
         }
 
-        /// We couldn't add new variant. Try to insert element into current variants.
-        auto variant_node = buildJSONExtractTree<JSONParser>(variant_info.variant_type, "Dynamic inference");
-        if (variant_node->insertResultToColumn(variant_column, element, insert_settings, format_settings, error))
-            return true;
-
-        /// We couldn't insert element into any existing variant, add String variant and read value as String.
-        column_dynamic.addStringVariant();
-        auto string_global_discriminator = variant_info.variant_name_to_discriminator["String"];
-        auto & string_column = variant_column.getVariantByGlobalDiscriminator(string_global_discriminator);
-        if (!getStringNode()->insertResultToColumn(string_column, element, insert_settings, format_settings, error))
+        /// We couldn't add this variant, insert it into shared variant.
+        auto tmp_variant_column = element_type->createColumn();
+        auto node = buildJSONExtractTree<JSONParser>(element_type, "Dynamic inference");
+        if (!node->insertResultToColumn(*tmp_variant_column, element, insert_settings, format_settings, error))
             return false;
-        variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(string_global_discriminator));
-        variant_column.getOffsets().push_back(string_column.size() - 1);
+
+        column_dynamic.insertValueIntoSharedVariant(*tmp_variant_column, element_type, element_type_name, 0);
         return true;
     }
 
-    static const std::unique_ptr<JSONExtractTreeNode<JSONParser>> & getStringNode()
-    {
-        static const std::unique_ptr<JSONExtractTreeNode<JSONParser>> string_node
-            = buildJSONExtractTree<JSONParser>(std::make_shared<DataTypeString>(), "Dynamic inference");
-        return string_node;
-    }
-
-    static DataTypePtr elementToDataType(const typename JSONParser::Element & element, const FormatSettings & format_settings)
+    DataTypePtr elementToDataType(const typename JSONParser::Element & element, const FormatSettings & format_settings) const
     {
         JSONInferenceInfo json_inference_info;
         auto type = elementToDataTypeImpl(element, format_settings, json_inference_info);
         transformFinalInferredJSONTypeIfNeeded(type, format_settings, &json_inference_info);
+        if (format_settings.schema_inference_make_columns_nullable && type->haveSubtypes())
+            type = makeNullableRecursively(type);
         return type;
     }
 
 private:
-    static DataTypePtr elementToDataTypeImpl(const typename JSONParser::Element & element, const FormatSettings & format_settings, JSONInferenceInfo & json_inference_info)
+    DataTypePtr elementToDataTypeImpl(const typename JSONParser::Element & element, const FormatSettings & format_settings, JSONInferenceInfo & json_inference_info) const
     {
         switch (element.type())
         {
             case ElementType::NULL_VALUE:
-                return makeNullable(std::make_shared<DataTypeNothing>());
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             case ElementType::BOOL:
                 return DataTypeFactory::instance().get("Bool");
             case ElementType::INT64:
@@ -1452,10 +1529,10 @@ private:
                 DataTypes types;
                 types.reserve(array.size());
                 for (auto value : array)
-                    types.push_back(makeNullableSafe(elementToDataTypeImpl(value, format_settings, json_inference_info)));
+                    types.push_back(elementToDataTypeImpl(value, format_settings, json_inference_info));
 
                 if (types.empty())
-                    return std::make_shared<DataTypeArray>(makeNullable(std::make_shared<DataTypeNothing>()));
+                    return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
 
                 if (checkIfTypesAreEqual(types))
                     return std::make_shared<DataTypeArray>(types.back());
@@ -1482,12 +1559,238 @@ private:
 
                 return std::make_shared<DataTypeTuple>(types);
             }
-            case ElementType::OBJECT: {
-                /// TODO: Use new JSON type here when it's ready.
-                return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), makeNullable(std::make_shared<DataTypeString>()));
+            case ElementType::OBJECT:
+            {
+                return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON, max_dynamic_paths_for_object, max_dynamic_types_for_object);
             }
         }
     }
+
+    size_t max_dynamic_paths_for_object;
+    size_t max_dynamic_types_for_object;
+
+    /// Avoid building JSONExtractTreeNode for the same data types on each row by using cache.
+    mutable std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> json_extract_nodes_cache;
+};
+
+template <typename JSONParser>
+class ObjectJSONNode : public JSONExtractTreeNode<JSONParser>
+{
+public:
+    ObjectJSONNode(
+        std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes_,
+        const std::unordered_set<String> & paths_to_skip_,
+        const std::vector<String> & path_regexps_to_skip_,
+        size_t max_dynamic_paths_,
+        size_t max_dynamic_types_)
+        : typed_path_nodes(std::move(typed_path_nodes_))
+        , paths_to_skip(paths_to_skip_)
+        , dynamic_node(std::make_unique<DynamicNode<JSONParser>>(
+              max_dynamic_paths_ / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR,
+              max_dynamic_types_ / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR))
+        , dynamic_serialization(std::make_shared<SerializationDynamic>())
+    {
+        sorted_paths_to_skip.assign(paths_to_skip.begin(), paths_to_skip.end());
+        std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
+        for (const auto & regexp : path_regexps_to_skip_)
+            path_regexps_to_skip.emplace_back(regexp);
+    }
+
+    bool insertResultToColumn(IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
+    {
+        if (element.isNull() && format_settings.null_as_default)
+        {
+            column.insertDefault();
+            return true;
+        }
+
+        if (!element.isObject())
+        {
+            error = fmt::format("Cannot read JSON object from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+            return false;
+        }
+
+        auto & column_object = assert_cast<ColumnObject &>(column);
+        size_t prev_size = column_object.size();
+
+        /// Paths in shared data should be sorted, so we cannot insert paths there during traverse.
+        /// Instead we collect all paths and values that should go to shared data, sort them and insert later.
+        /// It's not optimal, but it's a price we pay for faster reading of subcolumns.
+        std::vector<std::pair<String, String>> paths_and_values_for_shared_data;
+        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error))
+        {
+            /// If there was an error, restore previous state.
+            SerializationObject::restoreColumnObject(column_object, prev_size);
+            return false;
+        }
+
+        /// Fill shared data.
+        auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
+        std::sort(paths_and_values_for_shared_data.begin(), paths_and_values_for_shared_data.end());
+        for (size_t i = 0; i != paths_and_values_for_shared_data.size(); ++i)
+        {
+            const auto & [path, value] = paths_and_values_for_shared_data[i];
+            /// Check if we duplicated paths.
+            if (i != 0 && path == paths_and_values_for_shared_data[i - 1].first)
+            {
+                if (!format_settings.json.type_json_skip_duplicated_paths)
+                {
+                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
+                    SerializationObject::restoreColumnObject(column_object, prev_size);
+                    return false;
+                }
+            }
+            else
+            {
+                shared_data_paths->insertData(path.data(), path.size());
+                shared_data_values->insertData(value.data(), value.size());
+            }
+        }
+        column_object.getSharedDataOffsets().push_back(shared_data_paths->size());
+
+        /// Fill remaining typed and dynamic paths.
+        for (auto & [_, typed_column] : column_object.getTypedPaths())
+        {
+            if (typed_column->size() == prev_size)
+                typed_column->insertDefault();
+        }
+
+        for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
+        {
+            if (dynamic_column->size() == prev_size)
+                dynamic_column->insertDefault();
+        }
+
+        return true;
+    }
+
+private:
+    bool traverseAndInsert(
+        ColumnObject & column_object,
+        const typename JSONParser::Element & element,
+        const String & current_path,
+        const JSONExtractInsertSettings & insert_settings,
+        const FormatSettings & format_settings,
+        std::vector<std::pair<String, String>> & paths_and_values_for_shared_data,
+        size_t current_size,
+        String & error) const
+    {
+        if (shouldSkipPath(current_path))
+            return true;
+
+        if (element.isObject() && !typed_path_nodes.contains(current_path))
+        {
+            for (auto [key, value] : element.getObject())
+            {
+                String path = current_path;
+                if (!path.empty())
+                    path.append(".");
+                path += key;
+                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error))
+                    return false;
+            }
+
+            return true;
+        }
+
+        auto & typed_paths = column_object.getTypedPaths();
+        auto & dynamic_paths_ptrs = column_object.getDynamicPathsPtrs();
+        /// Check if we have this path in typed paths.
+        if (auto typed_it = typed_paths.find(current_path); typed_it != typed_paths.end())
+        {
+            /// Check if we already had this path.
+            if (typed_it->second->size() > current_size)
+            {
+                if (!format_settings.json.type_json_skip_duplicated_paths)
+                {
+                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", current_path);
+                    return false;
+                }
+            }
+            else if (!typed_path_nodes.at(current_path)->insertResultToColumn(*typed_it->second, element, insert_settings, format_settings, error))
+            {
+                error += fmt::format(" (while reading path {})", current_path);
+                return false;
+            }
+        }
+        /// Check if we have this path in dynamic paths.
+        else if (auto dynamic_it = dynamic_paths_ptrs.find(current_path); dynamic_it != dynamic_paths_ptrs.end())
+        {
+            /// Check if we already had this path.
+            if (dynamic_it->second->size() > current_size)
+            {
+                if (!format_settings.json.type_json_skip_duplicated_paths)
+                {
+                    error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", current_path);
+                    return false;
+                }
+            }
+            else if (!dynamic_node->insertResultToColumn(*dynamic_it->second, element, insert_settings, format_settings, error))
+            {
+                error += fmt::format(" (while reading path {})", current_path);
+                return false;
+            }
+        }
+        /// Don't create new dynamic paths for null and don't insert null values into shared data.
+        /// We consider null equivalent to the absence of this path.
+        else if (element.isNull())
+        {
+        }
+        /// Try to add a new dynamic path.
+        else if (auto * dynamic_column = column_object.tryToAddNewDynamicPath(current_path))
+        {
+            if (!dynamic_node->insertResultToColumn(*dynamic_column, element, insert_settings, format_settings, error))
+            {
+                error += fmt::format(" (while reading path {})", current_path);
+                return false;
+            }
+        }
+        /// Otherwise this path should go to the shared data.
+        else
+        {
+            auto tmp_dynamic_column = ColumnDynamic::create();
+            tmp_dynamic_column->reserve(1);
+            if (!dynamic_node->insertResultToColumn(*tmp_dynamic_column, element, insert_settings, format_settings, error))
+            {
+                error += fmt::format(" (while reading path {})", current_path);
+                return false;
+            }
+
+            paths_and_values_for_shared_data.emplace_back(current_path, "");
+            WriteBufferFromString buf(paths_and_values_for_shared_data.back().second);
+            dynamic_serialization->serializeBinary(*tmp_dynamic_column, 0, buf, format_settings);
+        }
+
+        return true;
+    }
+
+    bool shouldSkipPath(const String & path) const
+    {
+        if (paths_to_skip.contains(path))
+            return true;
+
+        if (!sorted_paths_to_skip.empty())
+        {
+            auto it = std::lower_bound(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end(), path);
+            if (it != sorted_paths_to_skip.begin() && path.starts_with(*std::prev(it)))
+                return true;
+        }
+
+        for (const auto & regexp : path_regexps_to_skip)
+        {
+            if (re2::RE2::FullMatch(path, regexp))
+                return true;
+        }
+
+        return false;
+    }
+
+    std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
+    std::unordered_set<String> paths_to_skip;
+    std::vector<String> sorted_paths_to_skip;
+    std::list<re2::RE2> path_regexps_to_skip;
+    std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
+    std::shared_ptr<SerializationDynamic> dynamic_serialization;
 };
 
 }
@@ -1634,6 +1937,26 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
         }
         case TypeIndex::Dynamic:
             return std::make_unique<DynamicNode<JSONParser>>();
+        case TypeIndex::Object:
+        {
+            const auto & object_type = assert_cast<const DataTypeObject &>(*type);
+            const auto & typed_paths = object_type.getTypedPaths();
+            std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
+            typed_path_nodes.reserve(typed_paths.size());
+            for (const auto & [path, path_type] : typed_paths)
+                typed_path_nodes[path] = buildJSONExtractTree<JSONParser>(path_type, source_for_exception_message);
+
+            switch (object_type.getSchemaFormat())
+            {
+                case DataTypeObject::SchemaFormat::JSON:
+                    return std::make_unique<ObjectJSONNode<JSONParser>>(
+                        std::move(typed_path_nodes),
+                        object_type.getPathsToSkip(),
+                        object_type.getPathRegexpsToSkip(),
+                        object_type.getMaxDynamicPaths(),
+                        object_type.getMaxDynamicTypes());
+            }
+        }
         default:
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -1651,7 +1974,7 @@ template std::unique_ptr<JSONExtractTreeNode<SimdJSONParser>> buildJSONExtractTr
 #if USE_RAPIDJSON
 template void jsonElementToString<RapidJSONParser>(const RapidJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<RapidJSONParser>> buildJSONExtractTree<RapidJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
-template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float64 & value, const RapidJSONParser::Element & element, bool convert_bool_to_integer, String & error);
+template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float64 & value, const RapidJSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error);
 #else
 template void jsonElementToString<DummyJSONParser>(const DummyJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<DummyJSONParser>> buildJSONExtractTree<DummyJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);

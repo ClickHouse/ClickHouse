@@ -5,7 +5,7 @@ SET output_format_json_named_tuples_as_objects = 1;
 
 DROP TABLE IF EXISTS t_json_wide_parts;
 
-CREATE TABLE t_json_wide_parts (data JSON)
+CREATE TABLE t_json_wide_parts (data Object('json'))
 ENGINE MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0;
 

@@ -297,7 +297,7 @@ public:
     }
 
     /// Only inserts the value if key isn't already present
-    void ALWAYS_INLINE insertIfNotPresent(const Key & x, const Cell::Mapped & value)
+    void ALWAYS_INLINE insertIfNotPresent(const Key & x, const typename Cell::Mapped & value)
     {
         LookupResult it;
         bool inserted;

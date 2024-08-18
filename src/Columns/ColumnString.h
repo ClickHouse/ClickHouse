@@ -123,7 +123,7 @@ public:
 
     void insert(const Field & x) override
     {
-        const String & s = x.get<const String &>();
+        const String & s = x.safeGet<const String &>();
         const size_t old_size = chars.size();
         const size_t size_to_append = s.size() + 1;
         const size_t new_size = old_size + size_to_append;
@@ -283,6 +283,8 @@ public:
     ColumnPtr compress() const override;
 
     void reserve(size_t n) override;
+    size_t capacity() const override;
+    void prepareForSquashing(const Columns & source_columns) override;
     void shrinkToFit() override;
 
     void getExtremes(Field & min, Field & max) const override;
