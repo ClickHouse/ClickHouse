@@ -20,6 +20,7 @@
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/standard/StandardHttpResponse.h>
 
+
 namespace Aws::Http::Standard
 {
 class StandardHttpResponse;
@@ -27,14 +28,16 @@ class StandardHttpResponse;
 
 namespace DB
 {
-
 class Context;
 }
 
+
 namespace DB::S3
 {
+
 class ClientFactory;
 class PocoHTTPClient;
+
 
 struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
@@ -76,6 +79,7 @@ private:
     friend ClientFactory;
 };
 
+
 class PocoHTTPResponse : public Aws::Http::Standard::StandardHttpResponse
 {
 public:
@@ -114,6 +118,7 @@ public:
 private:
     Aws::Utils::Stream::ResponseStream body_stream;
 };
+
 
 class PocoHTTPClient : public Aws::Http::HttpClient
 {
@@ -170,10 +175,10 @@ protected:
     std::function<void(const ProxyConfiguration &)> error_report;
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
-    unsigned int s3_max_redirects;
+    unsigned int s3_max_redirects = 0;
     bool s3_use_adaptive_timeouts = true;
     bool enable_s3_requests_logging = false;
-    bool for_disk_s3;
+    bool for_disk_s3 = false;
 
     /// Limits get request per second rate for GET, SELECT and all other requests, excluding throttled by put throttler
     /// (i.e. throttles GetObject, HeadObject)
