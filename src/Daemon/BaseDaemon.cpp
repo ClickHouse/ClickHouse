@@ -24,9 +24,7 @@
 #include <algorithm>
 #include <typeinfo>
 #include <iostream>
-#include <fstream>
 #include <memory>
-#include <base/scope_guard.h>
 
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
@@ -36,17 +34,11 @@
 #include <Common/ErrorHandlers.h>
 #include <Common/SignalHandlers.h>
 #include <base/argsToConfig.h>
-#include <base/getThreadId.h>
 #include <base/coverage.h>
-#include <base/sleep.h>
 
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
-#include <Common/PipeFDs.h>
-#include <Common/StackTrace.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
