@@ -78,7 +78,7 @@ struct ScanState
     size_t lazy_skip_rows = 0;
 
     // for dictionary encoding
-    PaddedPODArray<UInt32> idx_buffer;
+    PaddedPODArray<Int32> idx_buffer;
     std::unique_ptr<FilterCache> filter_cache;
 
     size_t remain_rows = 0;
@@ -93,30 +93,7 @@ public:
     PlainDecoder(const uint8_t *& buffer_, size_t & remain_rows_) : buffer(buffer_), remain_rows(remain_rows_) { }
 
     template <typename T>
-    void decodeFixedValue(PaddedPODArray<T> & data, const OptionalRowSet & row_set, size_t rows_to_read)
-    {
-        const T * start = reinterpret_cast<const T *>(buffer);
-        if (!row_set.has_value())
-        {
-            data.insert_assume_reserved(start, start + rows_to_read);
-        }
-        else
-        {
-            size_t rows_read = 0;
-            const auto & sets = row_set.value();
-            while (rows_read < rows_to_read)
-            {
-                if (sets.get(rows_read))
-                {
-                    data.push_back(start[rows_read]);
-                }
-                rows_read++;
-            }
-        }
-
-        buffer += rows_to_read * sizeof(T);
-        remain_rows -= rows_to_read;
-    }
+    void decodeFixedValue(PaddedPODArray<T> & data, const OptionalRowSet & row_set, size_t rows_to_read);
 
     void decodeString(ColumnString::Chars & chars, ColumnString::Offsets & offsets, const OptionalRowSet & row_set, size_t rows_to_read)
     {
@@ -322,7 +299,7 @@ private:
 class DictDecoder
 {
 public:
-    DictDecoder(PaddedPODArray<UInt32> & idx_buffer_, size_t & remain_rows_) : idx_buffer(idx_buffer_), remain_rows(remain_rows_) { }
+    DictDecoder(PaddedPODArray<Int32> & idx_buffer_, size_t & remain_rows_) : idx_buffer(idx_buffer_), remain_rows(remain_rows_) { }
 
     template <class DictValueType>
     void decodeFixedValue(PaddedPODArray<DictValueType> & dict, PaddedPODArray<DictValueType> & data, const OptionalRowSet & row_set, size_t rows_to_read);
@@ -351,7 +328,7 @@ public:
         size_t rows_to_read);
 
 private:
-    PaddedPODArray<UInt32> & idx_buffer;
+    PaddedPODArray<Int32> & idx_buffer;
     size_t & remain_rows;
 };
 

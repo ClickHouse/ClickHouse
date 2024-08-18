@@ -1,6 +1,7 @@
 #include "ColumnFilter.h"
 #include <Columns/ColumnSet.h>
 #include <Interpreters/Set.h>
+#include <Processors/Formats/Impl/Parquet/xsimd_wrapper.h>
 
 namespace DB
 {
@@ -11,11 +12,161 @@ extern const int PARQUET_EXCEPTION;
 extern const int LOGICAL_ERROR;
 }
 
+template<class T>
+struct PhysicTypeTraits
+{
+    using simd_type = xsimd::batch<T>;
+    using simd_bool_type = xsimd::batch_bool<T>;
+    using simd_idx_type = xsimd::batch<T>;
+    using idx_type = T;
+};
+template struct PhysicTypeTraits<Int32>;
+template struct PhysicTypeTraits<Int64>;
+template<> struct PhysicTypeTraits<Float32>
+{
+    using simd_type = xsimd::batch<Float32>;
+    using simd_bool_type = xsimd::batch_bool<Float32>;
+    using simd_idx_type = xsimd::batch<Int32>;
+    using idx_type = Int32;
+};
+template<> struct PhysicTypeTraits<Float64>
+{
+    using simd_type = xsimd::batch<Float64>;
+    using simd_bool_type = xsimd::batch_bool<Float64>;
+    using simd_idx_type = xsimd::batch<Int64>;
+    using idx_type = Int64;
+};
+
+template <typename T>
+void FilterHelper::filterPlainFixedData(const T* src, PaddedPODArray<T> & dst, const RowSet & row_set, size_t rows_to_read)
+{
+    using batch_type = PhysicTypeTraits<T>::simd_type;
+    using bool_type = PhysicTypeTraits<T>::simd_bool_type;
+    auto increment = batch_type::size;
+    auto num_batched = rows_to_read / increment;
+    for (size_t i = 0; i < num_batched; ++i)
+    {
+        auto rows = i * increment;
+        bool_type mask = bool_type::load_aligned(row_set.maskReference().data() + rows);
+        if (xsimd::none(mask))
+            continue;
+        else if (xsimd::all(mask))
+        {
+            dst.resize(dst.size() + increment);
+            batch_type data = batch_type::load_unaligned(src + rows);
+            data.store_unaligned(dst.data() + rows);
+        }
+        else
+        {
+            for (size_t j = 0; j < increment; ++j)
+                if (row_set.get(rows + j))
+                    dst.push_back(src[rows + j]);
+        }
+    }
+    for (size_t i = num_batched * increment; i < rows_to_read; ++i)
+    {
+        if (row_set.get(i))
+            dst.push_back(src[i]);
+    }
+}
+
+template void FilterHelper::filterPlainFixedData<Int32>(Int32 const*, DB::PaddedPODArray<Int32>&, DB::RowSet const&, size_t);
+template void FilterHelper::filterPlainFixedData<Int64>(const Int64* src, PaddedPODArray<Int64> & dst, const RowSet & row_set, size_t rows_to_read);
+template void FilterHelper::filterPlainFixedData<Float32>(const Float32* src, PaddedPODArray<Float32> & dst, const RowSet & row_set, size_t rows_to_read);
+template void FilterHelper::filterPlainFixedData<Float64>(const Float64* src, PaddedPODArray<Float64> & dst, const RowSet & row_set, size_t rows_to_read);
+
+template <typename T>
+void FilterHelper::gatherDictFixedValue(
+    const PaddedPODArray<T> & dict, PaddedPODArray<T> & dst, const PaddedPODArray<Int32> & idx, size_t rows_to_read)
+{
+    using batch_type = PhysicTypeTraits<T>::simd_type;
+    using idx_batch_type = PhysicTypeTraits<T>::simd_idx_type;
+    auto increment = batch_type::size;
+    auto num_batched = rows_to_read / increment;
+    dst.resize(dst.size() + (num_batched * increment));
+    for (size_t i = 0; i < num_batched; ++i)
+    {
+        auto rows = i * increment;
+        idx_batch_type idx_batch = idx_batch_type::load_unaligned(idx.data() + rows);
+        batch_type::gather(dict.data(), idx_batch).store_aligned(dst.data() + rows);
+    }
+    for (size_t i = num_batched * increment; i < rows_to_read; ++i)
+    {
+        dst.push_back(dict[idx[i]]);
+    }
+}
+
+template void FilterHelper::gatherDictFixedValue(
+    const PaddedPODArray<Int32> & dict, PaddedPODArray<Int32> & data, const PaddedPODArray<Int32> & idx, size_t rows_to_read);
+template void FilterHelper::gatherDictFixedValue(
+    const PaddedPODArray<Int64> & dict, PaddedPODArray<Int64> & data, const PaddedPODArray<Int32> & idx, size_t rows_to_read);
+template void FilterHelper::gatherDictFixedValue(
+    const PaddedPODArray<Float32> & dict, PaddedPODArray<Float32> & data, const PaddedPODArray<Int32> & idx, size_t rows_to_read);
+template void FilterHelper::gatherDictFixedValue(
+    const PaddedPODArray<Float64> & dict, PaddedPODArray<Float64> & data, const PaddedPODArray<Int32> & idx, size_t rows_to_read);
+
+template <typename T>
+void FilterHelper::filterDictFixedData(const PaddedPODArray<T> & dict, PaddedPODArray<T> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read)
+{
+    using batch_type = PhysicTypeTraits<T>::simd_type;
+    using bool_type = PhysicTypeTraits<T>::simd_bool_type;
+    using idx_batch_type = PhysicTypeTraits<T>::simd_idx_type;
+    auto increment = batch_type::size;
+    auto num_batched = rows_to_read / increment;
+    for (size_t i = 0; i < num_batched; ++i)
+    {
+        auto rows = i * increment;
+        bool_type mask = bool_type::load_aligned(row_set.maskReference().data() + rows);
+        if (xsimd::none(mask))
+            continue;
+        else if (xsimd::all(mask))
+        {
+            dst.resize(dst.size() + increment);
+            idx_batch_type idx_batch = idx_batch_type::load_unaligned(idx.data() + rows);
+            batch_type::gather(dict.data(), idx_batch).store_unaligned(dst.data() + rows);
+        }
+        else
+        {
+            for (size_t j = 0; j < increment; ++j)
+                if (row_set.get(rows + j))
+                    dst.push_back(dict[idx[rows + j]]);
+        }
+    }
+    for (size_t i = num_batched * increment; i < rows_to_read; ++i)
+    {
+        if (row_set.get(i))
+            dst.push_back(dict[idx[i]]);
+    }
+}
+
+template void FilterHelper::filterDictFixedData(const PaddedPODArray<Int32> & dict, PaddedPODArray<Int32> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read);
+template void FilterHelper::filterDictFixedData(const PaddedPODArray<Int64> & dict, PaddedPODArray<Int64> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read);
+template void FilterHelper::filterDictFixedData(const PaddedPODArray<Float32> & dict, PaddedPODArray<Float32> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read);
+template void FilterHelper::filterDictFixedData(const PaddedPODArray<Float64> & dict, PaddedPODArray<Float64> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read);
+
 void Int64RangeFilter::testInt64Values(DB::RowSet & row_set, size_t offset, size_t len, const Int64 * data) const
 {
-    for (size_t t = 0; t < len; ++t)
+    using batch_type = xsimd::batch<Int64>;
+    auto increment = batch_type::size;
+    auto num_batched = len / increment;
+    batch_type min_batch = batch_type::broadcast(min);
+    batch_type max_batch = batch_type::broadcast(max);
+    bool aligned = offset % increment == 0;
+    for (size_t i = 0; i < num_batched; ++i)
     {
-        row_set.set(offset + t, data[t] >= min && data[t] <= max);
+        batch_type value;
+        const auto rows = offset + (i * increment);
+        if (aligned)
+            value = batch_type::load_aligned(data + rows);
+        else
+            value = batch_type::load_unaligned(data + rows);
+        auto mask = (value >= min_batch) && (value <= max_batch);
+        if (aligned)
+            mask.store_aligned(row_set.maskReference().data() + rows);
+    }
+    for (size_t i = offset + (num_batched * increment); i < offset + len ; ++i)
+    {
+        row_set.maskReference()[i] = data[i] >= min & data[i] <= max;
     }
 }
 
@@ -297,5 +448,61 @@ OptionalFilter createFloatRangeFilter(const ActionsDAG::Node & node)
     {
         return Float64RangeFilter::create(node);
     }
+}
+
+bool RowSet::none() const
+{
+    bool res = true;
+    auto increment = xsimd::batch_bool<unsigned char>::size;
+    auto num_batched = max_rows / increment;
+    for (size_t i = 0; i < num_batched; i += increment)
+    {
+        auto batch = xsimd::batch_bool<unsigned char>::load_aligned(mask.data() + (i * increment));
+        res &= xsimd::none(batch);
+        if (!res)
+            return false;
+    }
+    for (size_t i = num_batched * increment; i < max_rows; ++i)
+    {
+        res &= !mask[i];
+    }
+    return res;
+}
+bool RowSet::all() const
+{
+    bool res = true;
+    auto increment = xsimd::batch_bool<unsigned char>::size;
+    auto num_batched = max_rows / increment;
+    for (size_t i = 0; i < num_batched; i += increment)
+    {
+        auto batch = xsimd::batch_bool<unsigned char>::load_aligned(mask.data() + (i * increment));
+        res &= xsimd::all(batch);
+        if (!res)
+            return res;
+    }
+    for (size_t i = num_batched * increment; i < max_rows; ++i)
+    {
+        res &= mask[i];
+    }
+    return res;
+}
+
+bool RowSet::any() const
+{
+    bool res = true;
+    auto increment = xsimd::batch_bool<unsigned char>::size;
+    auto num_batched = max_rows / increment;
+    for (size_t i = 0; i < num_batched; i += increment)
+    {
+        auto batch = xsimd::batch_bool<unsigned char>::load_aligned(mask.data() + (i * increment));
+        res &= xsimd::any(batch);
+        if (res)
+            return true;
+    }
+    for (size_t i = num_batched * increment; i < max_rows; ++i)
+    {
+        res &= mask[i];
+    }
+    return res;
 }
 }

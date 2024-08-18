@@ -136,7 +136,7 @@ RowGroupChunkReader::RowGroupChunkReader(
         auto range = getColumnRange(*row_group_meta->ColumnChunk(idx));
         size_t compress_size = range.second;
         size_t offset = range.first;
-        column_buffers[reader_idx].resize_fill(compress_size, 0);
+        column_buffers[reader_idx].resize(compress_size, 0);
         remain_rows = row_group_meta->ColumnChunk(idx)->num_values();
         parquet_reader->file.seek(offset, SEEK_SET);
         size_t count = parquet_reader->file.readBig(reinterpret_cast<char *>(column_buffers[reader_idx].data()), compress_size);
@@ -162,6 +162,21 @@ RowGroupChunkReader::RowGroupChunkReader(
     }
 }
 
+
+template <typename T>
+void PlainDecoder::decodeFixedValue(PaddedPODArray<T> & data, const OptionalRowSet & row_set, size_t rows_to_read)
+{
+    const T * start = reinterpret_cast<const T *>(buffer);
+    if (!row_set.has_value())
+        data.insert_assume_reserved(start, start + rows_to_read);
+    else
+    {
+        const auto & sets = row_set.value();
+        FilterHelper::filterPlainFixedData(start, data, sets, rows_to_read);
+    }
+    buffer += rows_to_read * sizeof(T);
+    remain_rows -= rows_to_read;
+}
 
 void SelectiveColumnReader::readPageIfNeeded()
 {
@@ -1094,26 +1109,14 @@ void DictDecoder::decodeFixedValue(
     const OptionalRowSet & row_set,
     size_t rows_to_read)
 {
-    size_t rows_read = 0;
     if (row_set.has_value())
     {
         const auto & sets = row_set.value();
-        while (rows_read < rows_to_read)
-        {
-            if (sets.get(rows_read))
-            {
-                data.push_back(dict[idx_buffer[rows_read]]);
-            }
-            rows_read++;
-        }
+        FilterHelper::filterDictFixedData(dict, data, idx_buffer, sets, rows_to_read);
     }
     else
     {
-        while (rows_read < rows_to_read)
-        {
-            data.push_back(dict[idx_buffer[rows_read]]);
-            rows_read++;
-        }
+        FilterHelper::gatherDictFixedValue(dict, data, idx_buffer, rows_to_read);
     }
     idx_buffer.resize(0);
     remain_rows -= rows_to_read;

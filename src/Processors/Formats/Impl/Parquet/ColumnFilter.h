@@ -6,6 +6,8 @@
 #include <base/types.h>
 #include <boost/dynamic_bitset.hpp>
 #include <Common/Exception.h>
+#include <Columns/ColumnsCommon.h>
+
 
 namespace DB
 {
@@ -17,20 +19,21 @@ extern const int PARQUET_EXCEPTION;
 class RowSet
 {
 public:
-    explicit RowSet(size_t max_rows_) : max_rows(max_rows_) { bitset.resize(max_rows, true); }
+    explicit RowSet(size_t max_rows_) : max_rows(max_rows_) { mask.resize_fill(max_rows, 1); }
 
-    void set(size_t i, bool value) { bitset.set(i, value); }
-    bool get(size_t i) const { return bitset.test(i); }
-    size_t totalRows() const { return max_rows; }
-    bool none() const { return bitset.none(); }
-    bool all() const { return bitset.all(); }
-    bool any() const { return bitset.any(); }
-    void setAllTrue() { bitset.resize(max_rows, true); }
-    void setAllFalse() { bitset.resize(max_rows, false); }
-
+    inline void set(size_t i, bool value) { mask[i] = value; }
+    inline bool get(size_t i) const { return mask[i]; }
+    inline size_t totalRows() const { return max_rows; }
+    bool none() const;
+    bool all() const;
+    bool any() const;
+    void setAllTrue() { mask.resize(max_rows, true); }
+    void setAllFalse() { mask.resize(max_rows, false); }
+    PaddedPODArray<bool>& maskReference() { return mask; }
+    const PaddedPODArray<bool>& maskReference() const { return mask; }
 private:
     size_t max_rows = 0;
-    boost::dynamic_bitset<> bitset;
+    PaddedPODArray<bool> mask;
 };
 using OptionalRowSet = std::optional<RowSet>;
 
@@ -56,6 +59,17 @@ enum ColumnFilterKind
     ByteValues
 };
 
+class FilterHelper
+{
+public:
+    template <typename T>
+    static void filterPlainFixedData(const T* src, PaddedPODArray<T> & dst, const RowSet & row_set, size_t rows_to_read);
+    template <typename T>
+    static void gatherDictFixedValue(
+        const PaddedPODArray<T> & dict, PaddedPODArray<T> & dst, const PaddedPODArray<Int32> & idx, size_t rows_to_read);
+    template <typename T>
+    static void filterDictFixedData(const PaddedPODArray<T> & dict, PaddedPODArray<T> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read);
+};
 
 class ColumnFilter
 {
