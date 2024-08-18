@@ -93,7 +93,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || external_ddl_p.parse(pos, node, expected)
         || transaction_control_p.parse(pos, node, expected)
         || delete_p.parse(pos, node, expected)
-        || implicit_select_p.parse(pos, node, expected);
+        || (implicit_select && implicit_select_p.parse(pos, node, expected));
 
     return res;
 }

@@ -68,7 +68,7 @@ WriteBuffer & operator<< (WriteBuffer & out, const Expected & expected)
 }
 
 
-/// Hilite place of syntax error.
+/// Highlight the place of syntax error.
 void writeQueryWithHighlightedErrorPositions(
     WriteBuffer & out,
     const char * begin,
@@ -450,7 +450,8 @@ std::pair<const char *, bool> splitMultipartQuery(
     size_t max_query_size,
     size_t max_parser_depth,
     size_t max_parser_backtracks,
-    bool allow_settings_after_format_in_insert)
+    bool allow_settings_after_format_in_insert,
+    bool implicit_select)
 {
     ASTPtr ast;
 
@@ -458,7 +459,7 @@ std::pair<const char *, bool> splitMultipartQuery(
     const char * pos = begin; /// parser moves pos from begin to the end of current query
     const char * end = begin + queries.size();
 
-    ParserQuery parser(end, allow_settings_after_format_in_insert);
+    ParserQuery parser(end, allow_settings_after_format_in_insert, implicit_select);
 
     queries_list.clear();
 

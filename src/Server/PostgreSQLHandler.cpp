@@ -286,7 +286,8 @@ void PostgreSQLHandler::processQuery()
             settings.max_query_size,
             settings.max_parser_depth,
             settings.max_parser_backtracks,
-            settings.allow_settings_after_format_in_insert);
+            settings.allow_settings_after_format_in_insert,
+            settings.implicit_select);
         if (!parse_res.second)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute the following part of query: {}", String(parse_res.first));
 

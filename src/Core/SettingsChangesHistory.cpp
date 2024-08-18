@@ -71,11 +71,12 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.9",
         {
+            {"implicit_select", false, false, "A new setting."},
         }
     },
     {"24.8",
         {
-            {"create_if_not_exists", false, false, "New setting."},
+            {"create_if_not_exists", false, false, "A new setting."},
             {"rows_before_aggregation", true, true, "Provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation"},
             {"restore_replace_external_table_functions_to_null", false, false, "New setting."},
             {"restore_replace_external_engines_to_null", false, false, "New setting."},

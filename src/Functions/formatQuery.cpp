@@ -43,6 +43,7 @@ public:
         max_query_size = settings.max_query_size;
         max_parser_depth = settings.max_parser_depth;
         max_parser_backtracks = settings.max_parser_backtracks;
+        implicit_select = settings.implicit_select;
     }
 
     String getName() const override { return name; }
@@ -106,7 +107,7 @@ private:
             const char * begin = reinterpret_cast<const char *>(&data[prev_offset]);
             const char * end = begin + offsets[i] - prev_offset - 1;
 
-            ParserQuery parser(end);
+            ParserQuery parser(end, false, implicit_select);
             ASTPtr ast;
             WriteBufferFromOwnString buf;
 
@@ -165,6 +166,7 @@ private:
     size_t max_query_size;
     size_t max_parser_depth;
     size_t max_parser_backtracks;
+    bool implicit_select;
 };
 
 }
