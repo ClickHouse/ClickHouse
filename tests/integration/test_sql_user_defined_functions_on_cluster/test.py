@@ -28,7 +28,7 @@ def test_sql_user_defined_functions_on_cluster():
         error_message = node.query_and_get_error("SELECT test_function(1);")
         assert (
             "Unknown function test_function" in error_message
-            or "Function with name 'test_function' does not exist. In scope SELECT test_function(1)"
+            or "Function with name `test_function` does not exist. In scope SELECT test_function(1)"
             in error_message
         )
 
