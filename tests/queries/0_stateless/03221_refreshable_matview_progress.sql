@@ -16,5 +16,3 @@ SELECT rand64() AS x;
 SELECT sleep(2);
 
 SELECT read_rows, total_rows, progress FROM system.view_refreshes WHERE database = currentDatabase() and view = '03221_rmv';
-
-DROP TABLE 03221_rmv;
