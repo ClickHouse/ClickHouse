@@ -345,8 +345,6 @@ void SignalListener::run()
     }
 }
 
-extern const char * GIT_HASH;
-
 void SignalListener::onTerminate(std::string_view message, UInt32 thread_num) const
 {
     size_t pos = message.find('\n');
