@@ -54,6 +54,7 @@ void ASTDataType::formatImpl(const FormatSettings & settings, FormatState & stat
         }
         else
         {
+            frame.expression_list_prepend_whitespace = false;
             arguments->formatImpl(settings, state, frame);
         }
 
