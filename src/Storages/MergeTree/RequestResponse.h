@@ -102,9 +102,9 @@ struct InitialAllRangesAnnouncement
     size_t replica_num;
     size_t mark_segment_size;
 
-    void serialize(WriteBuffer & out) const;
+    void serialize(WriteBuffer & out, UInt64 client_protocol_revision) const;
     String describe();
-    static InitialAllRangesAnnouncement deserialize(ReadBuffer & in);
+    static InitialAllRangesAnnouncement deserialize(ReadBuffer & i, UInt64 client_protocol_revisionn);
 };
 
 

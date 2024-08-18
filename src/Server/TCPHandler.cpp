@@ -1221,7 +1221,7 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
 void TCPHandler::sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRangesAnnouncement announcement)
 {
     writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
-    announcement.serialize(*out);
+    announcement.serialize(*out, client_tcp_protocol_version);
     out->next();
 }
 

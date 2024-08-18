@@ -2,10 +2,10 @@
 #include <Storages/MergeTree/RequestResponse.h>
 
 #include <Core/ProtocolDefines.h>
-#include <Common/SipHash.h>
+#include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
+#include <Common/SipHash.h>
 
 #include <consistent_hashing.h>
 
@@ -20,20 +20,21 @@ namespace ErrorCodes
 
 namespace
 {
-     CoordinationMode validateAndGet(uint8_t candidate)
-    {
-        if (candidate <= static_cast<uint8_t>(CoordinationMode::MAX))
-            return static_cast<CoordinationMode>(candidate);
+constexpr UInt64 DEPRECATED_FIELD_PARALLEL_REPLICAS_PROTOCOL_VERSION = 3;
 
-        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unknown reading mode: {}", candidate);
-    }
+CoordinationMode validateAndGet(uint8_t candidate)
+{
+    if (candidate <= static_cast<uint8_t>(CoordinationMode::MAX))
+        return static_cast<CoordinationMode>(candidate);
+
+    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unknown reading mode: {}", candidate);
+}
 }
 
 void ParallelReadRequest::serialize(WriteBuffer & out) const
 {
-    UInt64 version = DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION;
     /// Must be the first
-    writeIntBinary(version, out);
+    writeIntBinary(DEPRECATED_FIELD_PARALLEL_REPLICAS_PROTOCOL_VERSION, out);
 
     writeIntBinary(mode, out);
     writeIntBinary(replica_num, out);
@@ -55,10 +56,13 @@ ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in)
 {
     UInt64 version;
     readIntBinary(version, in);
-    if (version != DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol versions for parallel reading "\
+    if (version != DEPRECATED_FIELD_PARALLEL_REPLICAS_PROTOCOL_VERSION)
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Protocol versions for parallel reading "
             "from replicas differ. Got: {}, supported version: {}",
-            version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+            version,
+            DEPRECATED_FIELD_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
     CoordinationMode mode;
     size_t replica_num;
@@ -90,9 +94,8 @@ void ParallelReadRequest::merge(ParallelReadRequest & other)
 
 void ParallelReadResponse::serialize(WriteBuffer & out) const
 {
-    UInt64 version = DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION;
     /// Must be the first
-    writeIntBinary(version, out);
+    writeIntBinary(DEPRECATED_FIELD_PARALLEL_REPLICAS_PROTOCOL_VERSION, out);
 
     writeBoolText(finish, out);
     description.serialize(out);
@@ -107,26 +110,29 @@ void ParallelReadResponse::deserialize(ReadBuffer & in)
 {
     UInt64 version;
     readIntBinary(version, in);
-    if (version != DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol versions for parallel reading " \
+    if (version != DEPRECATED_FIELD_PARALLEL_REPLICAS_PROTOCOL_VERSION)
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Protocol versions for parallel reading "
             "from replicas differ. Got: {}, supported version: {}",
-            version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+            version,
+            DEPRECATED_FIELD_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
     readBoolText(finish, in);
     description.deserialize(in);
 }
 
 
-void InitialAllRangesAnnouncement::serialize(WriteBuffer & out) const
+void InitialAllRangesAnnouncement::serialize(WriteBuffer & out, UInt64 client_protocol_revision) const
 {
-    UInt64 version = DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION;
     /// Must be the first
-    writeIntBinary(version, out);
+    writeIntBinary(DEPRECATED_FIELD_PARALLEL_REPLICAS_PROTOCOL_VERSION, out);
 
     writeIntBinary(mode, out);
     description.serialize(out);
     writeIntBinary(replica_num, out);
-    writeIntBinary(mark_segment_size, out);
+    if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_ADAPTIVE_MARK_SEGMENT_FOR_PARALLEL_REPLICAS)
+        writeIntBinary(mark_segment_size, out);
 }
 
 
@@ -138,14 +144,17 @@ String InitialAllRangesAnnouncement::describe()
     return result;
 }
 
-InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffer & in)
+InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffer & in, UInt64 client_protocol_revision)
 {
     UInt64 version;
     readIntBinary(version, in);
-    if (version != DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol versions for parallel reading " \
+    if (version != DEPRECATED_FIELD_PARALLEL_REPLICAS_PROTOCOL_VERSION)
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Protocol versions for parallel reading "
             "from replicas differ. Got: {}, supported version: {}",
-            version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+            version,
+            DEPRECATED_FIELD_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
     CoordinationMode mode;
     RangesInDataPartsDescription description;
@@ -158,7 +167,7 @@ InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffe
     readIntBinary(replica_num, in);
 
     size_t mark_segment_size = 128;
-    if (version >= 4)
+    if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_ADAPTIVE_MARK_SEGMENT_FOR_PARALLEL_REPLICAS)
         readIntBinary(mark_segment_size, in);
 
     return InitialAllRangesAnnouncement{

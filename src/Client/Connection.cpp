@@ -1330,7 +1330,7 @@ ParallelReadRequest Connection::receiveParallelReadRequest() const
 
 InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement() const
 {
-    return InitialAllRangesAnnouncement::deserialize(*in);
+    return InitialAllRangesAnnouncement::deserialize(*in, server_revision);
 }
 
 
