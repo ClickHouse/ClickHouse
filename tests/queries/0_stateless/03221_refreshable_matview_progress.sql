@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database
+-- Tags: no-replicated-database, no-ordinary-database
 
 set allow_experimental_refreshable_materialized_view=1;
 
