@@ -1,8 +1,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionStringToString.h>
+#include <Functions/LowerUpperUTF8Impl.h>
 #include <Functions/FunctionFactory.h>
 #include <Poco/Unicode.h>
-#include <Common/UTF8Helpers.h>
+
 
 namespace DB
 {
