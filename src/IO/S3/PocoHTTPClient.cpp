@@ -397,8 +397,11 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
     try
     {
-        const auto proxy_configuration = per_request_configuration();
-        for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
+        ProxyConfiguration proxy_configuration;
+        if (per_request_configuration)
+            proxy_configuration = per_request_configuration();
+
+        for (size_t attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
             Poco::URI target_uri(uri);
 
@@ -516,7 +519,6 @@ void PocoHTTPClient::makeRequestInternalImpl(
                     LOG_TEST(log, "Redirecting request to new location: {}", location);
 
                 addMetric(request, S3MetricType::Redirects);
-
                 continue;
             }
 
@@ -564,9 +566,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
             }
             else
             {
-
                 if (status_code == 429 || status_code == 503)
-                { // API throttling
+                {
+                    /// API throttling
                     addMetric(request, S3MetricType::Throttling);
                 }
                 else if (status_code >= 300)
