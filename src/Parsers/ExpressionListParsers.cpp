@@ -1667,6 +1667,11 @@ public:
                 if (!mergeElement())
                     return false;
 
+                /// Skip replaceRegex if trying to TRIM an empty string to avoid exception
+                if (char_override && elements[0]->getID() == "Literal_''") {
+                    char_override = false;
+                }
+
                 to_remove = makeASTFunction("regexpQuoteMeta", elements[0]);
                 elements.clear();
                 state = 2;
