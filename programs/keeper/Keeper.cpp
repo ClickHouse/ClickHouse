@@ -66,6 +66,8 @@
 /// A minimal file used when the keeper is run without installation
 INCBIN(keeper_resource_embedded_xml, SOURCE_DIR "/programs/keeper/keeper_embedded.xml");
 
+extern const char * GIT_HASH;
+
 int mainEntryClickHouseKeeper(int argc, char ** argv)
 {
     DB::Keeper app;
@@ -675,7 +677,7 @@ void Keeper::logRevision() const
         "Starting ClickHouse Keeper {} (revision: {}, git hash: {}, build id: {}), PID {}",
         VERSION_STRING,
         ClickHouseRevision::getVersionRevision(),
-        git_hash.empty() ? "<unknown>" : git_hash,
+        GIT_HASH,
         build_id.empty() ? "<unknown>" : build_id,
         getpid());
 }
