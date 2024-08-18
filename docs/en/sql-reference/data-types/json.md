@@ -13,7 +13,7 @@ keywords: [object, data type]
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
-`JSON` is an alias for `Object('json')`.
+`JSON` can be used as an alias to `Object('json')` when setting [use_json_alias_for_old_object_type](../../operations/settings/settings.md#usejsonaliasforoldobjecttype) is enabled.
 
 ## Example
 
@@ -79,5 +79,5 @@ SELECT * FROM json FORMAT JSONEachRow
 
 ## Related Content
 
-- [Using JSON in ClickHouse](/docs/en/integrations/data-formats/json)
+- [Using JSON in ClickHouse](/en/integrations/data-formats/json/overview)
 - [Getting Data Into ClickHouse - Part 2 - A JSON detour](https://clickhouse.com/blog/getting-data-into-clickhouse-part-2-json)
