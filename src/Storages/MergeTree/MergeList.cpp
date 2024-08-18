@@ -30,8 +30,10 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
     if (result_part_name != result_part_info.getPartNameV1())
         format_version = MERGE_TREE_DATA_OLD_FORMAT_VERSION;
 
+    size_t normal_parts_count = 0;
     for (const auto & source_part : future_part->parts)
     {
+        normal_parts_count += !source_part->getParentPart();
         if (!source_part->getParentPart() && !result_part_info.contains(MergeTreePartInfo::fromPartName(source_part->name, format_version)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Source part {} is not covered by result part {}", source_part->name, result_part_info.getPartNameV1());
 
@@ -54,7 +56,7 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         part->partition.serializeText(part->storage, out, {});
     }
 
-    if (is_mutation && future_part->parts.size() != 1)
+    if (is_mutation && normal_parts_count != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} source parts for mutation {}", future_part->parts.size(), result_part_info.getPartNameV1());
 
     thread_group = ThreadGroup::createForBackgroundProcess(context);
