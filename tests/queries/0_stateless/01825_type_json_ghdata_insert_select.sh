@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-s3-storage
+# Tags: no-fasttest, no-s3-storage, long
 # ^ no-s3-storage: too memory hungry
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
