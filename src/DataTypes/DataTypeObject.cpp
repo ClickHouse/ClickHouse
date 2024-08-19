@@ -56,8 +56,8 @@ DataTypeObject::DataTypeObject(
         /// Don't log errors to stderr.
         options.set_log_errors(false);
         auto regexp = re2::RE2(regexp_str, options);
-        if (!regexp.error().empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid regexp '{}': {}", regexp_str, regexp.error());
+        if (!regexp.ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Invalid regexp '{}': {}", regexp_str, regexp.error());
     }
 
     for (const auto & [typed_path, type] : typed_paths)
