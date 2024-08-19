@@ -251,7 +251,8 @@ select printf('%%%s %s %d', 'Hello', 'World', 2024);
 
 ## overlay
 
-Replace the string `s` with the string `replace` starting from the 1-based `offset` for `length` bytes. If `length` is omitted or negative, then it defaults to the length of `replace`.
+Replace a part of a string `s` with another string `replace`, starting at 1-based index `offset`. By default, the number of bytes removed from `s` equals the length of `replace`. If `length` (the optional fourth argument) is specified, a different number of bytes is removed.
+
 
 **Syntax**
 
@@ -286,7 +287,7 @@ Result:
 
 ## overlayUTF8
 
-Replace the string `s` with the string `replace` starting from the 1-based `offset` for `length` UTF-8 characters. If `length` is omitted or negative, then it defaults to the length of `replace`.
+Replace a part of a string `s` with another string `replace`, starting at 1-based index `offset`. By default, the number of characters removed from `s` equals the length of `replace`. If `length` (the optional fourth argument) is specified, a different number of characters is removed.
 
 Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 

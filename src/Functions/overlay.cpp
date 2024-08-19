@@ -11,12 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
 namespace
 {
 
@@ -708,8 +702,20 @@ private:
 
 REGISTER_FUNCTION(Overlay)
 {
-    factory.registerFunction<FunctionOverlay<false>>({}, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<FunctionOverlay<true>>({}, FunctionFactory::Case::Sensitive);
-}
+    factory.registerFunction<FunctionOverlay<false>>(
+        {.description = R"(
+Replace a part of a string `s` with another string `replace`, starting at 1-based index `offset`. By default, the number of bytes removed from `s` equals the length of `replace`. If `length` (the optional fourth argument) is specified, a different number of bytes is removed.
+)",
+         .categories{"String"}},
+        FunctionFactory::Case::Insensitive);
 
+    factory.registerFunction<FunctionOverlay<true>>(
+        {.description = R"(
+Replace a part of a string `s` with another string `replace`, starting at 1-based index `offset`. By default, the number of bytes removed from `s` equals the length of `replace`. If `length` (the optional fourth argument) is specified, a different number of bytes is removed.
+
+Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
+)",
+         .categories{"String"}},
+        FunctionFactory::Case::Sensitive);
+}
 }
