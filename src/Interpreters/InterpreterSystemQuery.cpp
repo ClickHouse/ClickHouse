@@ -14,9 +14,6 @@
 #include <Common/HostResolvePool.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
-#include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
-#include <IO/SharedThreadPools.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -67,6 +64,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Common/ThreadFuzzer.h>
+#include <IO/SharedThreadPools.h>
 #include <base/coverage.h>
 #include <csignal>
 #include <algorithm>
