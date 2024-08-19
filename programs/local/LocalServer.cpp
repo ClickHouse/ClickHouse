@@ -143,7 +143,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
     if (fs::exists(config_path))
     {
-        ConfigProcessor config_processor(config_path, false, true);
+        ConfigProcessor config_processor(config_path);
         ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
         getClientConfiguration().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
@@ -367,7 +367,7 @@ std::string LocalServer::getInitialCreateTableQuery()
     else
         table_structure = "(" + table_structure + ")";
 
-    return fmt::format("CREATE TABLE {} {} ENGINE = File({}, {});",
+    return fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {});",
                        table_name, table_structure, data_format, table_file);
 }
 

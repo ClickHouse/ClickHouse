@@ -12,7 +12,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx3;"
 
 
 # NGRAM BF
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 CREATE TABLE bloom_filter_idx
 (
     k UInt64,
@@ -22,7 +22,7 @@ CREATE TABLE bloom_filter_idx
 ORDER BY k
 SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 CREATE TABLE bloom_filter_idx2
 (
     k UInt64,
@@ -109,7 +109,7 @@ $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT count() FROM bloom
 
 
 # TOKEN BF
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 CREATE TABLE bloom_filter_idx3
 (
     k UInt64,
@@ -147,7 +147,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE bloom_filter_idx2"
 $CLICKHOUSE_CLIENT --query="DROP TABLE bloom_filter_idx3"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx_na;"
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 CREATE TABLE bloom_filter_idx_na
 (
     na Array(Array(String)),
@@ -156,7 +156,7 @@ CREATE TABLE bloom_filter_idx_na
 ORDER BY na" 2>&1 | grep -c 'DB::Exception: Unexpected type Array(Array(String)) of bloom filter index'
 
 # NGRAM BF with IPv6
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 CREATE TABLE bloom_filter_ipv6_idx
 (
     foo IPv6,
