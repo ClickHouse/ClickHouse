@@ -8659,24 +8659,33 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
 
 void MergeTreeData::loadPrimaryKeys()
 {
+    // Ensure thread-safety if needed by using a mutex lock
+    std::unique_lock lock(load_primary_key_mutex, std::defer_lock);
+    if (!lock.try_lock())
+        return;
+
     // Define the states of parts that need to be processed
     DataPartStates affordable_states = { MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated, MergeTreeDataPartState::Deleting };
 
+    // Loop through the parts
     for (const auto & data_part : getDataParts(affordable_states))
     {
-        // Skip projection parts, as they do not need primary key loading
+        // Skip projection parts
         if (data_part->isProjectionPart())
             continue;
 
         try
         {
-            // Load primary keys with a lock on the index to avoid concurrent access issues
+            // Lock the index and load the primary key
             const_cast<IMergeTreeDataPart &>(*data_part).loadIndexWithLock();
+
+            // Log successful load (optional)
+            LOG_TEST(log, "Loaded primary key for part {}", data_part->name);
         }
         catch (const Exception & ex)
         {
-            // Handle any errors but allow the loop to continue
-            // (no logging, but this catch block prevents crashes)
+            // Log the error for diagnostics (optional)
+            LOG_ERROR(log, "Failed to load primary key for part {}: {}", data_part->name, ex.what());
         }
     }
 }
