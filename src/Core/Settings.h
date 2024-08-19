@@ -882,7 +882,7 @@ class IColumn;
     M(Bool, use_json_alias_for_old_object_type, false, "When enabled, JSON type alias will create old experimental Object type instead of a new JSON type", 0) \
     M(Bool, allow_create_index_without_type, false, "Allow CREATE INDEX query without TYPE. Query will be ignored. Made for SQL compatibility tests.", 0) \
     M(Bool, create_index_ignore_unique, false, "Ignore UNIQUE keyword in CREATE UNIQUE INDEX. Made for SQL compatibility tests.", 0) \
-    M(Bool, print_pretty_type_names, true, "Print pretty type names in DESCRIBE query and toTypeName() function", 0) \
+    M(Bool, print_pretty_type_names, true, "Print pretty type names in the DESCRIBE query and `toTypeName` function, as well as in the `SHOW CREATE TABLE` query and the `formatQuery` function.", 0) \
     M(Bool, create_table_empty_primary_key_by_default, false, "Allow to create *MergeTree tables with empty primary key when ORDER BY and PRIMARY KEY not specified", 0) \
     M(Bool, allow_named_collection_override_by_default, true, "Allow named collections' fields override by default.", 0) \
     M(SQLSecurityType, default_normal_view_sql_security, SQLSecurityType::INVOKER, "Allows to set a default value for SQL SECURITY option when creating a normal view.", 0) \
