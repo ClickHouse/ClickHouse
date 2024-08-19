@@ -276,7 +276,7 @@ try
 
             chassert(!private_key.empty());
 
-            std::istringstream private_key_stream(private_key);
+            std::istringstream private_key_stream(private_key);  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             private_acme_key = std::make_shared<Poco::Crypto::RSAKey>(nullptr, &private_key_stream, "");
         }
 
@@ -449,8 +449,6 @@ void ACMEClient::authenticate()
 
 std::string ACMEClient::order()
 {
-    // std::string payload = R"({"identifiers":[{"type":"dns","value":"letsencrypt-stg.var1able.network"}]})";
-
     Poco::JSON::Object payload_object;
     auto payload_identifiers = Poco::JSON::Array();
 
