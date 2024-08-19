@@ -198,23 +198,11 @@ ASTPtr ASTCreateUserQuery::clone() const
     if (settings)
         res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
 
-    // If identification (auth method) is missing from query, we should serialize it in the form of `NO_PASSWORD` unless it is alter query
-    if (!alter && authentication_methods.empty())
+    for (const auto & authentication_method : authentication_methods)
     {
-        auto ast = std::make_shared<ASTAuthenticationData>();
-        ast->type = AuthenticationType::NO_PASSWORD;
-
-        res->authentication_methods.push_back(ast);
-        res->children.push_back(ast);
-    }
-    else
-    {
-        for (const auto & authentication_method : authentication_methods)
-        {
-            auto ast_clone = std::static_pointer_cast<ASTAuthenticationData>(authentication_method->clone());
-            res->authentication_methods.push_back(ast_clone);
-            res->children.push_back(ast_clone);
-        }
+        auto ast_clone = std::static_pointer_cast<ASTAuthenticationData>(authentication_method->clone());
+        res->authentication_methods.push_back(ast_clone);
+        res->children.push_back(ast_clone);
     }
 
     return res;
@@ -253,7 +241,15 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     if (new_name)
         formatRenameTo(*new_name, format);
 
-    if (!authentication_methods.empty())
+    if (authentication_methods.empty())
+    {
+        // If identification (auth method) is missing from query, we should serialize it in the form of `NO_PASSWORD` unless it is alter query
+        if (!alter)
+        {
+            format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH no_password" << (format.hilite ? IAST::hilite_none : "");
+        }
+    }
+    else
     {
         if (add_identified_with)
         {
