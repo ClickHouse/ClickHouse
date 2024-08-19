@@ -1,4 +1,3 @@
-SET optimize_trivial_insert_select = 1;
 SET check_query_single_value_result = 0;
 
 DROP TABLE IF EXISTS check_query_test;

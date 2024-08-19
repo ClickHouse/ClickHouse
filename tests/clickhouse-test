@@ -838,6 +838,7 @@ class SettingsRandomizer:
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "trace_profile_events": lambda: random.randint(0, 1),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
+        "optimize_trivial_insert_select": lambda: random.randint(0, 1),
     }
 
     @staticmethod

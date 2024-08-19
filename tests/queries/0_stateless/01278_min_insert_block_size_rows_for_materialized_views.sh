@@ -65,7 +65,7 @@ echo "create table out_01278 as data_01278 Engine=Merge('$CLICKHOUSE_DATABASE', 
 #
 function execute_insert()
 {
-    ${CLICKHOUSE_CLIENT} --max_memory_usage=$TEST_01278_MEMORY --optimize_trivial_insert_select='false' "$@" -q "
+    ${CLICKHOUSE_CLIENT} --max_memory_usage=$TEST_01278_MEMORY "$@" -q "
 insert into data_01278 select
     number,
     reinterpretAsString(number), // s1

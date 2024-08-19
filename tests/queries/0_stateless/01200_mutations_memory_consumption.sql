@@ -1,6 +1,4 @@
 -- Tags: no-debug, no-parallel, long, no-object-storage, no-random-settings, no-random-merge-tree-settings
-SET optimize_trivial_insert_select = 1;
-
 DROP TABLE IF EXISTS table_with_single_pk;
 
 CREATE TABLE table_with_single_pk

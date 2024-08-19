@@ -12,7 +12,6 @@ system stop distributed sends dist_in;
 create table dist_out as data engine=Distributed(test_shard_localhost, currentDatabase(), data);
 
 set prefer_localhost_replica=0;
-SET optimize_trivial_insert_select = 1;
 
 -- due to pushing to MV with aggregation the query needs ~300MiB
 -- but it will be done in background via "system flush distributed"
