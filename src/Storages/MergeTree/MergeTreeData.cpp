@@ -8659,35 +8659,30 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
 
 void MergeTreeData::loadPrimaryKeys()
 {
-    // Ensure thread-safety if needed by using a mutex lock
-    std::unique_lock lock(load_primary_key_mutex, std::defer_lock);
-    if (!lock.try_lock())
-        return;
-
     // Define the states of parts that need to be processed
     DataPartStates affordable_states = { MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated, MergeTreeDataPartState::Deleting };
 
-    // Loop through the parts
+    // Thread pool to process loading in parallel
+    auto & thread_pool = DB::getActivePartsLoadingThreadPool().get();
+
     for (const auto & data_part : getDataParts(affordable_states))
     {
-        // Skip projection parts
+        // Skip projection parts, as they do not need primary key loading
         if (data_part->isProjectionPart())
             continue;
 
-        try
+        // Check if the index is already loaded to avoid redundant loading
+        if (!data_part->isIndexLoaded())
         {
-            // Lock the index and load the primary key
-            const_cast<IMergeTreeDataPart &>(*data_part).loadIndexWithLock();
-
-            // Log successful load (optional)
-            LOG_TEST(log, "Loaded primary key for part {}", data_part->name);
-        }
-        catch (const Exception & ex)
-        {
-            // Log the error for diagnostics (optional)
-            LOG_ERROR(log, "Failed to load primary key for part {}: {}", data_part->name, ex.what());
+            // Use thread pool to parallelize the work
+            thread_pool.scheduleOrThrowOnError([data_part] {
+                const_cast<IMergeTreeDataPart &>(*data_part).loadIndexWithLock();
+            });
         }
     }
+
+    // Wait for all tasks to finish
+    thread_pool.wait();
 }
 
 
