@@ -25,7 +25,6 @@
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserDescribeCacheQuery.h>
-#include <Parsers/QueryWithOutputSettingsPushDownVisitor.h>
 #include <Parsers/Access/ParserShowAccessEntitiesQuery.h>
 #include <Parsers/Access/ParserShowAccessQuery.h>
 #include <Parsers/Access/ParserShowCreateAccessEntityQuery.h>
@@ -152,37 +151,55 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     }
 
+    /// These two sections are allowed in an arbitrary order.
     ParserKeyword s_format(Keyword::FORMAT);
-
-    if (s_format.ignore(pos, expected))
-    {
-        ParserIdentifier format_p;
-
-        if (!format_p.parse(pos, query_with_output.format, expected))
-            return false;
-        setIdentifierSpecial(query_with_output.format);
-
-        query_with_output.children.push_back(query_with_output.format);
-    }
-
-    // SETTINGS key1 = value1, key2 = value2, ...
     ParserKeyword s_settings(Keyword::SETTINGS);
-    if (!query_with_output.settings_ast && s_settings.ignore(pos, expected))
-    {
-        ParserSetQuery parser_settings(true);
-        if (!parser_settings.parse(pos, query_with_output.settings_ast, expected))
-            return false;
-        query_with_output.children.push_back(query_with_output.settings_ast);
 
-        // SETTINGS after FORMAT is not parsed by the SELECT parser (ParserSelectQuery)
-        // Pass them manually, to apply in InterpreterSelectQuery::initSettings()
-        if (query->as<ASTSelectWithUnionQuery>())
+    /** Why: let's take the following example:
+      * SELECT 1 UNION ALL SELECT 2 FORMAT TSV
+      * Each subquery can be put in parentheses and have its own settings:
+      *   (SELECT 1 SETTINGS a=b) UNION ALL (SELECT 2 SETTINGS c=d) FORMAT TSV
+      * And the whole query can have settings:
+      *   (SELECT 1 SETTINGS a=b) UNION ALL (SELECT 2 SETTINGS c=d) FORMAT TSV SETTINGS e=f
+      * A single query with output is parsed in the same way as the UNION ALL chain:
+      *   SELECT 1 SETTINGS a=b FORMAT TSV SETTINGS e=f
+      * So while these forms have a slightly different meaning, they both exist:
+      *   SELECT 1 SETTINGS a=b FORMAT TSV
+      *   SELECT 1 FORMAT TSV SETTINGS e=f
+      * And due to this effect, the users expect that the FORMAT and SETTINGS may go in an arbitrary order.
+      * But while this work:
+      *   (SELECT 1) UNION ALL (SELECT 2) FORMAT TSV SETTINGS d=f
+      * This does not work automatically, unless we explicitly allow different orders:
+      *   (SELECT 1) UNION ALL (SELECT 2) SETTINGS d=f FORMAT TSV
+      * Inevitably, we also allow this:
+      *   SELECT 1 SETTINGS a=b SETTINGS d=f FORMAT TSV
+      *   ^^^^^^^^^^^^^^^^^^^^^
+      * Because this part is consumed into ASTSelectWithUnionQuery
+      * and the rest into ASTQueryWithOutput.
+      */
+
+    for (size_t i = 0; i < 2; ++i)
+    {
+        if (!query_with_output.format && s_format.ignore(pos, expected))
         {
-            auto settings = query_with_output.settings_ast->clone();
-            assert_cast<ASTSetQuery *>(settings.get())->print_in_format = false;
-            QueryWithOutputSettingsPushDownVisitor::Data data{settings};
-            QueryWithOutputSettingsPushDownVisitor(data).visit(query);
+            ParserIdentifier format_p;
+
+            if (!format_p.parse(pos, query_with_output.format, expected))
+                return false;
+            setIdentifierSpecial(query_with_output.format);
+
+            query_with_output.children.push_back(query_with_output.format);
         }
+        else if (!query_with_output.settings_ast && s_settings.ignore(pos, expected))
+        {
+            // SETTINGS key1 = value1, key2 = value2, ...
+            ParserSetQuery parser_settings(true);
+            if (!parser_settings.parse(pos, query_with_output.settings_ast, expected))
+                return false;
+            query_with_output.children.push_back(query_with_output.settings_ast);
+        }
+        else
+            break;
     }
 
     node = std::move(query);

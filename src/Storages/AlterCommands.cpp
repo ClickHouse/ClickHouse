@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -110,7 +111,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.comment)
         {
             const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.comment);
-            command.comment = ast_comment.value.get<String>();
+            command.comment = ast_comment.value.safeGet<String>();
         }
 
         if (ast_col_decl.codec)
@@ -168,7 +169,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.comment)
         {
             const auto & ast_comment = ast_col_decl.comment->as<ASTLiteral &>();
-            command.comment.emplace(ast_comment.value.get<String>());
+            command.comment.emplace(ast_comment.value.safeGet<String>());
         }
 
         if (ast_col_decl.ttl)
@@ -211,7 +212,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.type = COMMENT_COLUMN;
         command.column_name = getIdentifierName(command_ast->column);
         const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
-        command.comment = ast_comment.value.get<String>();
+        command.comment = ast_comment.value.safeGet<String>();
         command.if_exists = command_ast->if_exists;
         return command;
     }
@@ -221,7 +222,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.type = COMMENT_TABLE;
         const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
-        command.comment = ast_comment.value.get<String>();
+        command.comment = ast_comment.value.safeGet<String>();
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)
@@ -1403,13 +1404,21 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 
-                bool new_type_has_object = command.data_type->hasDynamicSubcolumnsDeprecated();
-                bool old_type_has_object = old_data_type->hasDynamicSubcolumnsDeprecated();
+                bool new_type_has_deprecated_object = command.data_type->hasDynamicSubcolumnsDeprecated();
+                bool old_type_has_deprecated_object = old_data_type->hasDynamicSubcolumnsDeprecated();
 
-                if (new_type_has_object || old_type_has_object)
+                if (new_type_has_deprecated_object || old_type_has_deprecated_object)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "The change of data type {} of column {} to {} is not allowed. It has known bugs",
+                        old_data_type->getName(), backQuote(column_name), command.data_type->getName());
+
+                bool has_object_type = isObject(command.data_type);
+                command.data_type->forEachChild([&](const IDataType & type){ has_object_type |= isObject(type); });
+                if (has_object_type)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The change of data type {} of column {} to {} is not supported.",
                         old_data_type->getName(), backQuote(column_name), command.data_type->getName());
             }
 

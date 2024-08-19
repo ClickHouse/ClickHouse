@@ -1,0 +1,63 @@
+-- Tags: no-fasttest, long, no-tsan, no-asan, no-msan, no-ubsan
+
+set allow_experimental_json_type = 1;
+
+drop table if exists test;
+
+{% for create_command in ['create table test (id UInt64, json JSON(max_dynamic_paths=4)) engine=MergeTree order by id settings min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=10000000000;',
+                          'create table test (id UInt64, json JSON(max_dynamic_paths=4)) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1;',
+                          'create table test (id UInt64, json JSON(max_dynamic_paths=4)) engine=MergeTree order by id settings min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=10000000000, vertical_merge_algorithm_min_rows_to_activate=1, vertical_merge_algorithm_min_columns_to_activate=1;',
+                          'create table test (id UInt64, json JSON(max_dynamic_paths=4)) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1, vertical_merge_algorithm_min_rows_to_activate=1, vertical_merge_algorithm_min_columns_to_activate=1;'] -%}
+
+select '{{ create_command }}';
+
+{{ create_command }}
+
+system stop merges test;
+insert into test select number, toJSONString(map('a', number)) from numbers(100000);
+insert into test select number, toJSONString(map('b', arrayMap(x -> map('c', x), range(number % 5 + 1)))) from numbers(100000);
+insert into test select number, toJSONString(map('b', arrayMap(x -> map('d', x), range(number % 5 + 1)))) from numbers(50000);
+
+select 'Dynamic paths';
+select count(), arrayJoin(JSONDynamicPaths(arrayJoin(json.b[]))) as path from test group by path order by count() desc, path;
+select 'Shared data paths';
+select count(), arrayJoin(JSONSharedDataPaths(arrayJoin(json.b[]))) as path from test group by path order by count() desc, path;
+system start merges test;
+optimize table test final;
+select 'Dynamic paths';
+select count(), arrayJoin(JSONDynamicPaths(arrayJoin(json.b[]))) as path from test group by path order by count() desc, path;
+select 'Shared data paths';
+select count(), arrayJoin(JSONSharedDataPaths(arrayJoin(json.b[]))) as path from test group by path order by count() desc, path;
+
+system stop merges test;
+insert into test select number, toJSONString(map('b', arrayMap(x -> map('e', x), range(number % 5 + 1)))) from numbers(50000);
+insert into test select number, toJSONString(map('b', arrayMap(x -> map('f', x), range(number % 5 + 1)))) from numbers(200000);
+
+select 'Dynamic paths';
+select count(), arrayJoin(JSONDynamicPaths(arrayJoin(json.b[]))) as path from test group by path order by count() desc, path;
+select 'Shared data paths';
+select count(), arrayJoin(JSONSharedDataPaths(arrayJoin(json.b[]))) as path from test group by path order by count() desc, path;
+system start merges test;
+optimize table test final;
+select 'Dynamic paths';
+select count(), arrayJoin(JSONDynamicPaths(arrayJoin(json.b[]))) as path from test group by path order by count() desc, path;
+select 'Shared data paths';
+select count(), arrayJoin(JSONSharedDataPaths(arrayJoin(json.b[]))) as path from test group by path order by count() desc, path;
+
+system stop merges test;
+insert into test select number, toJSONString(map('b', arrayMap(x -> map('c', x), range(number % 5 + 1)))) from numbers(150000);
+
+select 'Dynamic paths';
+select count(), arrayJoin(JSONDynamicPaths(arrayJoin(json.b[]))) as path from test group by path order by count() desc, path;
+select 'Shared data paths';
+select count(), arrayJoin(JSONSharedDataPaths(arrayJoin(json.b[]))) as path from test group by path order by count() desc, path;
+system start merges test;
+optimize table test final;
+select 'Dynamic paths';
+select count(), arrayJoin(JSONDynamicPaths(arrayJoin(json.b[]))) as path from test group by path order by count() desc, path;
+select 'Shared data paths';
+select count(), arrayJoin(JSONSharedDataPaths(arrayJoin(json.b[]))) as path from test group by path order by count() desc, path;
+
+drop table test;
+
+{% endfor -%}

@@ -83,6 +83,7 @@ public:
         const Block & block_with_columns_to_add,
         const MapsTemplateVector & maps_,
         bool is_join_get = false);
+
 private:
     template <typename KeyGetter, bool is_asof_join>
     static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes);
@@ -128,7 +129,7 @@ private:
     template <typename AddedColumns>
     static ColumnPtr buildAdditionalFilter(
         size_t left_start_row,
-        const std::vector<RowRef> & selected_rows,
+        const std::vector<const RowRef *> & selected_rows,
         const std::vector<size_t> & row_replicate_offset,
         AddedColumns & added_columns);
 
