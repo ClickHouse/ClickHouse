@@ -12,9 +12,6 @@ dmesg --clear
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
-MAX_RUN_TIME=${MAX_RUN_TIME:-9000}
-MAX_RUN_TIME=$((MAX_RUN_TIME == 0 ? 9000 : MAX_RUN_TIME))
-
 USE_DATABASE_REPLICATED=${USE_DATABASE_REPLICATED:=0}
 USE_SHARED_CATALOG=${USE_SHARED_CATALOG:=0}
 
@@ -308,8 +305,6 @@ function run_tests()
 
     try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
 
-    TIMEOUT=$((MAX_RUN_TIME - 800 > 8400 ? 8400 : MAX_RUN_TIME - 800))
-    START_TIME=${SECONDS}
     set +e
 
     TEST_ARGS=(
@@ -324,32 +319,22 @@ function run_tests()
         --test-runs "$NUM_TRIES"
         "${ADDITIONAL_OPTIONS[@]}"
     )
-    timeout --preserve-status --signal TERM --kill-after 60m ${TIMEOUT}s clickhouse-test "${TEST_ARGS[@]}" 2>&1 \
+    clickhouse-test "${TEST_ARGS[@]}" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
         | tee -a test_output/test_result.txt
     set -e
-    DURATION=$((SECONDS - START_TIME))
-
-    echo "Elapsed ${DURATION} seconds."
-    if [[ $DURATION -ge $TIMEOUT ]]
-    then
-        echo "It looks like the command is terminated by the timeout, which is ${TIMEOUT} seconds."
-    fi
 }
 
 export -f run_tests
 
-
-# This should be enough to setup job and collect artifacts
-TIMEOUT=$((MAX_RUN_TIME - 700))
 if [ "$NUM_TRIES" -gt "1" ]; then
     # We don't run tests with Ordinary database in PRs, only in master.
     # So run new/changed tests with Ordinary at least once in flaky check.
-    timeout_with_logging "$TIMEOUT" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
+    NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests \
       | sed 's/All tests have finished/Redacted: a message about tests finish is deleted/' | sed 's/No tests were run/Redacted: a message about no tests run is deleted/' ||:
 fi
 
-timeout_with_logging "$TIMEOUT" bash -c run_tests ||:
+run_tests ||:
 
 echo "Files in current directory"
 ls -la ./
@@ -391,8 +376,8 @@ done
 # wait for minio to flush its batch if it has any
 sleep 1
 clickhouse-client -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
-clickhouse-client -q "SELECT log FROM minio_audit_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow"
-clickhouse-client -q "SELECT log FROM minio_server_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow"
+clickhouse-client --max_block_size 8192 --max_memory_usage 10G --max_threads 1 --max_result_bytes 0 --max_result_rows 0 --max_rows_to_read 0 --max_bytes_to_read 0 -q "SELECT log FROM minio_audit_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow"
+clickhouse-client --max_block_size 8192 --max_memory_usage 10G --max_threads 1 --max_result_bytes 0 --max_result_rows 0 --max_rows_to_read 0 --max_bytes_to_read 0 -q "SELECT log FROM minio_server_logs ORDER BY event_time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow"
 
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?

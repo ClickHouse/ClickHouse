@@ -27,6 +27,7 @@
                 <slru_size_ratio>0.3</slru_size_ratio>
                 <keep_free_space_size_ratio>0.15</keep_free_space_size_ratio>
                 <keep_free_space_elements_ratio>0.15</keep_free_space_elements_ratio>
+                <load_metadata_asynchronously>0</load_metadata_asynchronously>
             </s3_cache>
             <s3_cache_02933>
                 <type>cache</type>
@@ -37,6 +38,7 @@
                 <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
                 <background_download_threads>0</background_download_threads>
                 <background_download_queue_size_limit>0</background_download_queue_size_limit>
+                <load_metadata_asynchronously>0</load_metadata_asynchronously>
             </s3_cache_02933>
             <!-- local disks -->
             <local_disk>
