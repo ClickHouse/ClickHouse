@@ -11,7 +11,7 @@ class Context;
 
 /** Implements system table 'projection_parts' which allows to get information about projection parts for tables of MergeTree family.
   */
-class StorageSystemProjectionParts final : public StorageSystemPartsBase
+class StorageSystemProjectionParts : public StorageSystemPartsBase
 {
 public:
     explicit StorageSystemProjectionParts(const StorageID & table_id_);

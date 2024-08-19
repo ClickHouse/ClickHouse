@@ -87,6 +87,7 @@
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
 #include <Storages/System/StorageSystemDroppedTables.h>
 #include <Storages/System/StorageSystemDroppedTablesParts.h>
+#include <Storages/System/StorageSystemDroppedTablesProjectionParts.h>
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemScheduler.h>
@@ -172,6 +173,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache", "Contains information about all cached file schemas.");
     attach<StorageSystemDroppedTables>(context, system_database, "dropped_tables", "Contains a list of tables which were dropped from Atomic databases but not completely removed yet.");
     attachNoDescription<StorageSystemDroppedTablesParts>(context, system_database, "dropped_tables_parts", "Contains parts of system.dropped_tables tables ");
+    attachNoDescription<StorageSystemDroppedTablesProjectionParts>(context, system_database, "dropped_tables_projection_parts", "Contains projection parts of system.dropped_tables tables ");
     attach<StorageSystemScheduler>(context, system_database, "scheduler", "Contains information and status for scheduling nodes residing on the local server.");
     attach<StorageSystemDNSCache>(context, system_database, "dns_cache", "Contains information about cached DNS records.");
 #if defined(__ELF__) && !defined(OS_FREEBSD)
