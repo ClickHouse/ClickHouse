@@ -621,7 +621,7 @@ QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::millis
 
 void QueryCache::clearWithTag(const String & tag)
 {
-    auto remove_with_tag = [tag](const Key & k, const Cache::MappedPtr & _)
+    auto remove_with_tag = [tag](const Key & k, const Cache::MappedPtr &)
     {
       return k.tag == tag;
     };
