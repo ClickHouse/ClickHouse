@@ -2,7 +2,7 @@ drop table if exists data;
 drop table if exists dist;
 
 create table data (key Int) engine=Null();
-create table dist (key Int, value Int) engine=Distributed(system_cluster, currentDatabase(), data, 1) settings background_insert_max_retries=3;
+create table dist (key Int, value Int) engine=Distributed(test_cluster_two_shards, currentDatabase(), data, 1) settings background_insert_max_retries=3;
 
 -- disable send in background to make the test behavior deterministic
 system stop distributed sends dist;
@@ -22,7 +22,7 @@ drop table if exists ephemeral;
 drop table if exists dist;
 
 create table ephemeral (key Int, value Int) engine=MergeTree PARTITION BY key ORDER BY tuple();
-create table dist (key Int, value Int) engine=Distributed(system_cluster, currentDatabase(), ephemeral) settings background_insert_max_retries=3;
+create table dist (key Int, value Int) engine=Distributed(test_cluster_two_shards, currentDatabase(), ephemeral) settings background_insert_max_retries=3;
 system stop distributed sends dist;
 
 set prefer_localhost_replica=0;
@@ -35,4 +35,6 @@ system flush distributed dist; -- { serverError TOO_MANY_PARTS }
 system flush distributed dist; -- { serverError TOO_MANY_PARTS }
 -- second try will success
 system flush distributed dist settings max_partitions_per_insert_block = 100;
+-- subsequent send will not have anything to send
+system flush distributed dist;
 select count() from dist;
