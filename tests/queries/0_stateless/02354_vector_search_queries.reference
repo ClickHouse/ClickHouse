@@ -1,9 +1,7 @@
 10 rows, index_granularity = 8192, GRANULARITY = 1 million --> 1 granule, 1 indexed block
-- ORDER-BY-type
 5	[0,2]	0
 6	[0,2.1]	0.09999990463256836
 7	[0,2.2]	0.20000004768371582
-- ORDER-BY-type, EXPLAIN
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
     Sorting (Sorting for ORDER BY)
@@ -20,11 +18,9 @@ Expression (Projection)
             Parts: 1/1
             Granules: 1/1
 12 rows, index_granularity = 3, GRANULARITY = 2 --> 4 granules, 2 indexed block
-- ORDER-BY-type
 6	[0,2]	0
 7	[0,2.1]	0.09999990463256836
 8	[0,2.2]	0.20000004768371582
-- ORDER-BY-type, EXPLAIN
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
     Sorting (Sorting for ORDER BY)
@@ -41,11 +37,11 @@ Expression (Projection)
             Parts: 1/1
             Granules: 2/4
 Special cases
-- ORDER-BY-type
+-- Non-default metric, M, ef_construction, ef_search
 6	[1,9.3]	0.005731362878640178
 1	[2,3.2]	0.15200169244542905
 7	[5.5,4.7]	0.3503476876550442
-- Special case: setting "max_limit_for_ann_queries"
+-- Setting "max_limit_for_ann_queries"
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
     Sorting (Sorting for ORDER BY)
@@ -56,3 +52,62 @@ Expression (Projection)
             Condition: true
             Parts: 1/1
             Granules: 4/4
+-- Non-default quantization
+1	[2,3.2]	2.3323807824711897
+2	[4.2,3.4]	4.427188573446585
+0	[4.6,2.3]	4.609772130377966
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.tab_f32)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 4/4
+          Skip
+            Name: idx
+            Description: vector_similarity GRANULARITY 2
+            Parts: 1/1
+            Granules: 2/4
+1	[2,3.2]	2.3323807824711897
+2	[4.2,3.4]	4.427188573446585
+0	[4.6,2.3]	4.609772130377966
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.tab_f16)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 4/4
+          Skip
+            Name: idx
+            Description: vector_similarity GRANULARITY 2
+            Parts: 1/1
+            Granules: 2/4
+1	[2,3.2]	2.3323807824711897
+2	[4.2,3.4]	4.427188573446585
+0	[4.6,2.3]	4.609772130377966
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.tab_i8)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 4/4
+          Skip
+            Name: idx
+            Description: vector_similarity GRANULARITY 2
+            Parts: 1/1
+            Granules: 2/4
+-- Index on Array(Float64) column
+6	[0,2]	0
+7	[0,2.1]	0.10000000000000009
+8	[0,2.2]	0.20000000000000018

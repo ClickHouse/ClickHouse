@@ -1277,6 +1277,11 @@ void ColumnVariant::prepareForSquashing(const Columns & source_columns)
     }
 }
 
+size_t ColumnVariant::capacity() const
+{
+    return local_discriminators->capacity();
+}
+
 void ColumnVariant::ensureOwnership()
 {
     const size_t num_variants = variants.size();

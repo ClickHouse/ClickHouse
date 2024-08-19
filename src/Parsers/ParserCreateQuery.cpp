@@ -53,40 +53,6 @@ ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
 
 }
 
-
-bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserToken open(TokenType::OpeningRoundBracket);
-    ParserToken close(TokenType::ClosingRoundBracket);
-    ParserIdentifier name_p;
-    ParserNameTypePairList columns_p;
-
-    ASTPtr name;
-    ASTPtr columns;
-
-    /// For now `name == 'Nested'`, probably alternative nested data structures will appear
-    if (!name_p.parse(pos, name, expected))
-        return false;
-
-    if (!open.ignore(pos, expected))
-        return false;
-
-    if (!columns_p.parse(pos, columns, expected))
-        return false;
-
-    if (!close.ignore(pos, expected))
-        return false;
-
-    auto func = std::make_shared<ASTDataType>();
-    tryGetIdentifierNameInto(name, func->name);
-
-    func->arguments = columns;
-    func->children.push_back(columns);
-    node = func;
-
-    return true;
-}
-
 bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserToken s_eq(TokenType::Equals);

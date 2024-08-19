@@ -218,7 +218,8 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
     size_t limit,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state,
-    std::unordered_map<String, size_t> & variants_statistics) const
+    std::unordered_map<String, size_t> & variants_statistics,
+    size_t & total_size_of_variants) const
 {
     const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
     if (const size_t size = col.size(); limit == 0 || offset + limit > size)
@@ -265,6 +266,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
         /// We can use the same offset/limit as for whole Variant column
         variants[non_empty_global_discr]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(non_empty_global_discr), offset, limit, settings, variant_state->variant_states[non_empty_global_discr]);
         variants_statistics[variant_names[non_empty_global_discr]] += limit;
+        total_size_of_variants += limit;
         settings.path.pop_back();
         settings.path.pop_back();
         return;
@@ -315,7 +317,9 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
         {
             addVariantElementToPath(settings.path, i);
             variants[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), 0, 0, settings, variant_state->variant_states[i]);
-            variants_statistics[variant_names[i]] += col.getVariantByGlobalDiscriminator(i).size();
+            size_t variant_size = col.getVariantByGlobalDiscriminator(i).size();
+            variants_statistics[variant_names[i]] += variant_size;
+            total_size_of_variants += variant_size;
             settings.path.pop_back();
         }
         settings.path.pop_back();
@@ -386,6 +390,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
                 settings,
                 variant_state->variant_states[i]);
             variants_statistics[variant_names[i]] += variant_offsets_and_limits[i].second;
+            total_size_of_variants += variant_offsets_and_limits[i].second;
             settings.path.pop_back();
         }
     }
@@ -400,7 +405,8 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
     DB::ISerialization::SerializeBinaryBulkStatePtr & state) const
 {
     std::unordered_map<String, size_t> tmp_statistics;
-    serializeBinaryBulkWithMultipleStreamsAndUpdateVariantStatistics(column, offset, limit, settings, state, tmp_statistics);
+    size_t tmp_size;
+    serializeBinaryBulkWithMultipleStreamsAndUpdateVariantStatistics(column, offset, limit, settings, state, tmp_statistics, tmp_size);
 }
 
 void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
@@ -1066,6 +1072,16 @@ void SerializationVariant::serializeTextJSON(const IColumn & column, size_t row_
         SerializationNullable::serializeNullJSON(ostr);
     else
         variants[global_discr]->serializeTextJSON(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr, settings);
+}
+
+void SerializationVariant::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
+{
+    const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
+    auto global_discr = col.globalDiscriminatorAt(row_num);
+    if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+        SerializationNullable::serializeNullJSON(ostr);
+    else
+        variants[global_discr]->serializeTextJSONPretty(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr, settings, indent);
 }
 
 bool SerializationVariant::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
