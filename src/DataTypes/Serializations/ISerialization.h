@@ -241,6 +241,7 @@ public:
     {
         SubstreamPath path;
         bool position_independent_encoding = true;
+        bool enumerate_dynamic_streams = true;
     };
 
     virtual void enumerateStreams(

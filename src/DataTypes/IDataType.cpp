@@ -150,6 +150,7 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
 
     ISerialization::EnumerateStreamsSettings settings;
     settings.position_independent_encoding = false;
+    settings.enumerate_dynamic_streams = false;
     data.serialization->enumerateStreams(settings, callback_with_data, data);
 
     if (!res && data.type->hasDynamicSubcolumnsData())

@@ -130,7 +130,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
     }
 
     /// If column or deserialization state was provided, iterate over dynamic paths,
-    if (column_object || structure_state)
+    if (settings.enumerate_dynamic_streams && (column_object || structure_state))
     {
         /// Enumerate dynamic paths in sorted order for consistency.
         const auto * dynamic_paths = column_object ? &column_object->getDynamicPaths() : nullptr;
