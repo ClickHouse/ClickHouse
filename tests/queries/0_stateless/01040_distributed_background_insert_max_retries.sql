@@ -22,13 +22,13 @@ drop table if exists ephemeral;
 drop table if exists dist;
 
 create table ephemeral (key Int, value Int) engine=MergeTree PARTITION BY key ORDER BY tuple();
-create table dist (key Int, value Int) engine=Distributed(test_cluster_two_shards, currentDatabase(), ephemeral) settings background_insert_max_retries=3;
+create table dist (key Int, value Int) engine=Distributed(test_cluster_two_shards, currentDatabase(), ephemeral, rand()) settings background_insert_max_retries=3;
 system stop distributed sends dist;
 
 set prefer_localhost_replica=0;
 set max_partitions_per_insert_block = 1;
 
-insert into dist values (1, 1),(2,2),(3,3);
+insert into dist values (1, 1),(2, 2),(3, 3);
 -- first try will get an error
 system flush distributed dist; -- { serverError TOO_MANY_PARTS }
 -- second try will get an error
