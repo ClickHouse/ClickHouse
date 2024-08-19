@@ -58,6 +58,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
@@ -73,9 +74,11 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <string_view>
 #include <unordered_map>
 
 #include <Common/config_version.h>
+#include <base/find_symbols.h>
 #include "config.h"
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
@@ -329,7 +332,11 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     {
         output_stream << std::endl;
         WriteBufferFromOStream res_buf(output_stream, 4096);
-        formatAST(*res, res_buf);
+        IAST::FormatSettings format_settings(res_buf, /* one_line */ false);
+        format_settings.hilite = true;
+        format_settings.show_secrets = true;
+        format_settings.print_pretty_type_names = true;
+        res->format(format_settings);
         res_buf.finalize();
         output_stream << std::endl << std::endl;
     }
@@ -914,6 +921,8 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     }
     catch (Exception & e)
     {
+        if (server_exception)
+            server_exception->rethrow();
         if (!is_interactive)
             e.addMessage("(in query: {})", full_query);
         throw;
@@ -1032,19 +1041,28 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             query_interrupt_handler.start(signals_before_stop);
             SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
-            connection->sendQuery(
-                connection_parameters.timeouts,
-                query,
-                query_parameters,
-                client_context->getCurrentQueryId(),
-                query_processing_stage,
-                &client_context->getSettingsRef(),
-                &client_context->getClientInfo(),
-                true,
-                [&](const Progress & progress) { onProgress(progress); });
+            try {
+                connection->sendQuery(
+                    connection_parameters.timeouts,
+                    query,
+                    query_parameters,
+                    client_context->getCurrentQueryId(),
+                    query_processing_stage,
+                    &client_context->getSettingsRef(),
+                    &client_context->getClientInfo(),
+                    true,
+                    [&](const Progress & progress) { onProgress(progress); });
 
-            if (send_external_tables)
-                sendExternalTables(parsed_query);
+                if (send_external_tables)
+                    sendExternalTables(parsed_query);
+            }
+            catch (const NetException &)
+            {
+                // We still want to attempt to process whatever we already received or can receive (socket receive buffer can be not empty)
+                receiveResult(parsed_query, signals_before_stop, settings.partial_result_on_first_cancel);
+                throw;
+            }
+
             receiveResult(parsed_query, signals_before_stop, settings.partial_result_on_first_cancel);
 
             break;
@@ -1591,14 +1609,14 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             auto metadata = storage->getInMemoryMetadataPtr();
             QueryPlan plan;
             storage->read(
-                    plan,
-                    sample.getNames(),
-                    storage->getStorageSnapshot(metadata, client_context),
-                    query_info,
-                    client_context,
-                    {},
-                    client_context->getSettingsRef().max_block_size,
-                    getNumberOfPhysicalCPUCores());
+                plan,
+                sample.getNames(),
+                storage->getStorageSnapshot(metadata, client_context),
+                query_info,
+                client_context,
+                {},
+                client_context->getSettingsRef().max_block_size,
+                getNumberOfPhysicalCPUCores());
 
             auto builder = plan.buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(client_context),
@@ -1875,48 +1893,19 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     profile_events.watch.restart();
 
     {
-        /// Temporarily apply query settings to context.
-        std::optional<Settings> old_settings;
-        SCOPE_EXIT_SAFE({
-            if (old_settings)
-                client_context->setSettings(*old_settings);
+        /// Temporarily apply query settings to the context.
+        Settings old_settings = client_context->getSettingsCopy();
+        SCOPE_EXIT_SAFE(
+        {
+            client_context->setSettings(old_settings);
         });
-
-        auto apply_query_settings = [&](const IAST & settings_ast)
-        {
-            if (!old_settings)
-                old_settings.emplace(client_context->getSettingsRef());
-            client_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
-            client_context->resetSettingsToDefaultValue(settings_ast.as<ASTSetQuery>()->default_settings);
-        };
-
-        const auto * insert = parsed_query->as<ASTInsertQuery>();
-        if (const auto * select = parsed_query->as<ASTSelectQuery>(); select && select->settings())
-            apply_query_settings(*select->settings());
-        else if (const auto * select_with_union = parsed_query->as<ASTSelectWithUnionQuery>())
-        {
-            const ASTs & children = select_with_union->list_of_selects->children;
-            if (!children.empty())
-            {
-                // On the client it is enough to apply settings only for the
-                // last SELECT, since the only thing that is important to apply
-                // on the client is format settings.
-                const auto * last_select = children.back()->as<ASTSelectQuery>();
-                if (last_select && last_select->settings())
-                {
-                    apply_query_settings(*last_select->settings());
-                }
-            }
-        }
-        else if (const auto * query_with_output = parsed_query->as<ASTQueryWithOutput>(); query_with_output && query_with_output->settings_ast)
-            apply_query_settings(*query_with_output->settings_ast);
-        else if (insert && insert->settings_ast)
-            apply_query_settings(*insert->settings_ast);
+        InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
 
         if (!connection->checkConnected(connection_parameters.timeouts))
             connect();
 
         ASTPtr input_function;
+        const auto * insert = parsed_query->as<ASTInsertQuery>();
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
