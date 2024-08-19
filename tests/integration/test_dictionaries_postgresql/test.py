@@ -582,7 +582,9 @@ def test_named_collection_from_ddl(started_cluster):
         LAYOUT(HASHED());
     """
     )
-    assert "Unexpected key `dbbb`" in node1.query_and_get_error("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))")
+    assert "Unexpected key `dbbb`" in node1.query_and_get_error(
+        "SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))"
+    )
 
 
 if __name__ == "__main__":
