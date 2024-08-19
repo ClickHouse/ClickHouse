@@ -99,7 +99,7 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
     size_t columns_count, const IDataPartStorage & data_part_storage_)
 {
     if (!index_granularity_info_.mark_type.adaptive)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeDataPartCompact cannot be created with non-adaptive granulary.");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeDataPartCompact cannot be created with non-adaptive granularity.");
 
     auto marks_file_path = index_granularity_info_.getMarksFilePath("data");
 
