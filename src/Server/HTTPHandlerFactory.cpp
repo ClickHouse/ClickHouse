@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace

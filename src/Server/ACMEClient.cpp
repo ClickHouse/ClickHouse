@@ -40,6 +40,11 @@
 #include "base/sleep.h"
 
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace DB
 {
 
@@ -221,7 +226,6 @@ catch (...)
 }
 
 
-
 void ACMEClient::getDirectory()
 {
     LOG_DEBUG(log, "Requesting ACME directory from {}", "https://acme-staging-v02.api.letsencrypt.org/directory");
@@ -301,7 +305,8 @@ std::string formProtectedData(const std::string & jwk, const std::string & nonce
     return base64Encode(protected_data, /*url_encoding*/ true, /*no_padding*/ true);
 }
 
-std::string ACMEClient::doJWSRequest(const std::string & url, const std::string & payload, std::shared_ptr<Poco::Net::HTTPResponse> response)
+std::string
+ACMEClient::doJWSRequest(const std::string & url, const std::string & payload, std::shared_ptr<Poco::Net::HTTPResponse> response)
 {
     const auto nonce = requestNonce();
 
