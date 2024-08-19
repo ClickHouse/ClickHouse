@@ -1,22 +1,5 @@
 Negative test of overlay
-Positive test 1 with various combinations of const/non-const columns
-Spark ANSI SQL	Spark ANSI SQL和CH
-Spark ANSI SQL	Spark ANSI SQL和CH
-Spark ANSI SQL	Spark ANSI SQL和CH
-Spark ANSI SQL	Spark ANSI SQL和CH
-Spark ANSI SQL	Spark ANSI SQL和CH
-Spark ANSI SQL	Spark ANSI SQL和CH
-Spark ANSI SQL	Spark ANSI SQL和CH
-Spark ANSI SQL	Spark ANSI SQL和CH
-Spark ANSI SQL	Spark ANSI SQL和CH
-Spark ANSI SQL	Spark ANSI SQL和CH
-Spark ANSI SQL	Spark ANSI SQL和CH
-Spark ANSI SQL	Spark ANSI SQL和CH
-Spark ANSI SQL	Spark ANSI SQL和CH
-Spark ANSI SQL	Spark ANSI SQL和CH
-Spark ANSI SQL	Spark ANSI SQL和CH
-Spark ANSI SQL	Spark ANSI SQL和CH
-Positive test 2 with various combinations of const/non-const columns
+Test with 3 arguments and various combinations of const/non-const columns
 Spark_SQL	Spark_SQL和CH
 Spark_SQL	Spark_SQL和CH
 Spark_SQL	Spark_SQL和CH
@@ -25,16 +8,7 @@ Spark_SQL	Spark_SQL和CH
 Spark_SQL	Spark_SQL和CH
 Spark_SQL	Spark_SQL和CH
 Spark_SQL	Spark_SQL和CH
-Positive test 3 with various combinations of const/non-const columns
-Spark CORE	Spark CORECH
-Spark CORE	Spark CORECH
-Spark CORE	Spark CORECH
-Spark CORE	Spark CORECH
-Spark CORE	Spark CORECH
-Spark CORE	Spark CORECH
-Spark CORE	Spark CORECH
-Spark CORE	Spark CORECH
-Positive test 4 with various combinations of const/non-const columns
+Test with 4 arguments and various combinations of const/non-const columns
 Spark ANSI SQL	Spark ANSI SQL和CH
 Spark ANSI SQL	Spark ANSI SQL和CH
 Spark ANSI SQL	Spark ANSI SQL和CH
@@ -47,16 +21,48 @@ Spark ANSI SQL	Spark ANSI SQL和CH
 Spark ANSI SQL	Spark ANSI SQL和CH
 Spark ANSI SQL	Spark ANSI SQL和CH
 Spark ANSI SQL	Spark ANSI SQL和CH
-Positive test 5 with various combinations of const/non-const columns
-Structured SQL	Structured SQL和CH
-Structured SQL	Structured SQL和CH
-Structured SQL	Structured SQL和CH
-Structured SQL	Structured SQL和CH
-Structured SQL	Structured SQL和CH
-Structured SQL	Structured SQL和CH
-Structured SQL	Structured SQL和CH
-Structured SQL	Structured SQL和CH
-Structured SQL	Structured SQL和CH
-Structured SQL	Structured SQL和CH
-Structured SQL	Structured SQL和CH
-Structured SQL	Structured SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Test with different offset values
+-12	_park SQL	_park SQL和CH
+-11	_park SQL	S_ark SQL和CH
+-10	_park SQL	Sp_rk SQL和CH
+-9	_park SQL	Spa_k SQL和CH
+-8	S_ark SQL	Spar_ SQL和CH
+-7	Sp_rk SQL	Spark_SQL和CH
+-6	Spa_k SQL	Spark _QL和CH
+-5	Spar_ SQL	Spark S_L和CH
+-4	Spark_SQL	Spark SQ_和CH
+-3	Spark _QL	Spark SQL_CH
+-2	Spark S_L	Spark SQL和_H
+-1	Spark SQ_	Spark SQL和C_
+0	Spark SQL_	Spark SQL和CH_
+1	_park SQL	_park SQL和CH
+2	S_ark SQL	S_ark SQL和CH
+3	Sp_rk SQL	Sp_rk SQL和CH
+4	Spa_k SQL	Spa_k SQL和CH
+5	Spar_ SQL	Spar_ SQL和CH
+6	Spark_SQL	Spark_SQL和CH
+7	Spark _QL	Spark _QL和CH
+8	Spark S_L	Spark S_L和CH
+9	Spark SQ_	Spark SQ_和CH
+10	Spark SQL_	Spark SQL_CH
+11	Spark SQL_	Spark SQL和_H
+12	Spark SQL_	Spark SQL和C_
+13	Spark SQL_	Spark SQL和CH_
+Test with different length values
+-1	Spark ANSI 	Spark ANSI H
+0	Spark ANSI SQL	Spark ANSI SQL和CH
+1	Spark ANSI QL	Spark ANSI QL和CH
+2	Spark ANSI L	Spark ANSI L和CH
+3	Spark ANSI 	Spark ANSI 和CH
+4	Spark ANSI 	Spark ANSI CH
+5	Spark ANSI 	Spark ANSI H
+6	Spark ANSI 	Spark ANSI 
+Test with different input and replace values
+_	_
+Spark SQL	Spark SQL和CH
+ANSI 	ANSI 
+Spark SQL	Spark SQL和CH
