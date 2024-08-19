@@ -7,9 +7,10 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/Settings.h>
 #include <IO/FileEncryptionCommon.h>
-#include <IO/WriteBufferFromEncryptedFile.h>
-#include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -129,6 +130,11 @@ public:
         ReadBufferFromFile in(getPath(file_name));
         std::string data;
         readStringUntilEOF(data, in);
+        return readHook(data);
+    }
+
+    virtual std::string readHook(const std::string & data) const
+    {
         return data;
     }
 
@@ -145,8 +151,9 @@ public:
         fs::create_directories(root_path);
 
         auto tmp_path = getPath(file_name + ".tmp");
-        WriteBufferFromFile out(tmp_path, data.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(data, out);
+        auto write_data = writeHook(data);
+        WriteBufferFromFile out(tmp_path, write_data.size(), O_WRONLY | O_CREAT | O_EXCL);
+        writeString(write_data, out);
 
         out.next();
         if (getContext()->getSettingsRef().fsync_metadata)
@@ -154,6 +161,11 @@ public:
         out.close();
 
         fs::rename(tmp_path, getPath(file_name));
+    }
+
+    virtual std::string writeHook(const std::string & data) const
+    {
+        return data;
     }
 
     void remove(const std::string & file_name) override
@@ -198,99 +210,7 @@ private:
     }
 };
 
-class NamedCollectionsMetadataStorage::LocalStorageEncrypted : public NamedCollectionsMetadataStorage::LocalStorage
-{
-public:
-    LocalStorageEncrypted(ContextPtr context_, const std::string & path_)
-        : NamedCollectionsMetadataStorage::LocalStorage(context_, path_)
-    {
-        const auto & config = getContext()->getConfigRef();
-        auto key_hex = config.getRawString("named_collections_storage.key_hex", "");
-        try
-        {
-            key = boost::algorithm::unhex(key_hex);
-            key_fingerprint = FileEncryption::calculateKeyFingerprint(key);
-        }
-        catch (const std::exception &)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read key_hex, check for valid characters [0-9a-fA-F] and length");
-        }
-
-        algorithm = FileEncryption::parseAlgorithmFromString(config.getString("named_collections_storage.algorithm", "aes_128_ctr"));
-    }
-
-    std::string read(const std::string & file_name) const override
-    {
-        ReadBufferFromFile in(getPath(file_name));
-        Memory<> encrypted_buffer(in.getFileSize());
-
-        FileEncryption::Header header;
-        try
-        {
-            header.read(in);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("While reading the header of encrypted file " + quoteString(file_name));
-            throw;
-        }
-
-        size_t bytes_read = 0;
-        while (bytes_read < encrypted_buffer.size() && !in.eof())
-        {
-            bytes_read += in.read(encrypted_buffer.data() + bytes_read, encrypted_buffer.size() - bytes_read);
-        }
-
-        std::string decrypted_buffer;
-        decrypted_buffer.resize(bytes_read);
-        FileEncryption::Encryptor encryptor(header.algorithm, key, header.init_vector);
-        encryptor.decrypt(encrypted_buffer.data(), bytes_read, decrypted_buffer.data());
-
-        LOG_DEBUG(getLogger("PMO"), "Read named collection {}: {}", file_name, decrypted_buffer);
-        return decrypted_buffer;
-    }
-
-    void write(const std::string & file_name, const std::string & data, bool replace) override
-    {
-        if (!replace && fs::exists(file_name))
-        {
-            throw Exception(
-                ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
-                "Metadata file {} for named collection already exists",
-                file_name);
-        }
-
-        fs::create_directories(root_path);
-
-        auto tmp_path = getPath(file_name + ".tmp");
-
-        auto out = std::make_unique<WriteBufferFromFile>(tmp_path, data.size(), O_WRONLY | O_CREAT | O_EXCL);
-        FileEncryption::Header header{
-            .algorithm = algorithm,
-            .key_fingerprint = key_fingerprint,
-            .init_vector = FileEncryption::InitVector::random()
-        };
-        WriteBufferFromEncryptedFile out_encrypted(data.size(), std::move(out), key, header);
-        writeString(data, out_encrypted);
-
-        out_encrypted.next();
-        if (getContext()->getSettingsRef().fsync_metadata)
-            out_encrypted.sync();
-
-        LOG_DEBUG(getLogger("PMO"), "Wrote named collection {}: {} in plain text, encrypted {}", file_name, data, out_encrypted.buffer());
-
-        fs::rename(tmp_path, getPath(file_name));
-    }
-
-private:
-    std::string key;
-    UInt128 key_fingerprint;
-    FileEncryption::Algorithm algorithm;
-};
-
-
-
-class NamedCollectionsMetadataStorage::ZooKeeperStorage : public INamedCollectionsStorage, private WithContext
+class NamedCollectionsMetadataStorage::ZooKeeperStorage : public INamedCollectionsStorage, protected WithContext
 {
 private:
     std::string root_path;
@@ -370,18 +290,25 @@ public:
 
     std::string read(const std::string & file_name) const override
     {
-        return getClient()->get(getPath(file_name));
+        auto data = getClient()->get(getPath(file_name));
+        return readHook(data);
+    }
+
+    virtual std::string readHook(const std::string & data) const
+    {
+        return data;
     }
 
     void write(const std::string & file_name, const std::string & data, bool replace) override
     {
+        auto write_data = writeHook(data);
         if (replace)
         {
-            getClient()->createOrUpdate(getPath(file_name), data, zkutil::CreateMode::Persistent);
+            getClient()->createOrUpdate(getPath(file_name), write_data, zkutil::CreateMode::Persistent);
         }
         else
         {
-            auto code = getClient()->tryCreate(getPath(file_name), data, zkutil::CreateMode::Persistent);
+            auto code = getClient()->tryCreate(getPath(file_name), write_data, zkutil::CreateMode::Persistent);
 
             if (code == Coordination::Error::ZNODEEXISTS)
             {
@@ -391,6 +318,11 @@ public:
                     file_name);
             }
         }
+    }
+
+    virtual std::string writeHook(const std::string & data) const
+    {
+        return data;
     }
 
     void remove(const std::string & file_name) override
@@ -427,6 +359,89 @@ private:
 
         return fs::path(root_path) / file_name_as_path;
     }
+};
+
+template <typename BaseMetadataStorage>
+class NamedCollectionsMetadataStorageEncrypted : public BaseMetadataStorage
+{
+public:
+    NamedCollectionsMetadataStorageEncrypted(ContextPtr context_, const std::string & path_)
+        : BaseMetadataStorage(context_, path_)
+    {
+        const auto & config = BaseMetadataStorage::getContext()->getConfigRef();
+        auto key_hex = config.getRawString("named_collections_storage.key_hex", "");
+        try
+        {
+            key = boost::algorithm::unhex(key_hex);
+            key_fingerprint = FileEncryption::calculateKeyFingerprint(key);
+        }
+        catch (const std::exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read key_hex, check for valid characters [0-9a-fA-F] and length");
+        }
+
+        algorithm = FileEncryption::parseAlgorithmFromString(config.getString("named_collections_storage.algorithm", "aes_128_ctr"));
+    }
+
+    std::string readHook(const std::string & data) const override
+    {
+        ReadBufferFromString in(data);
+        Memory<> encrypted_buffer(data.length());
+
+        FileEncryption::Header header;
+        try
+        {
+            header.read(in);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("While reading the header of encrypted data");
+            throw;
+        }
+
+        size_t bytes_read = 0;
+        while (bytes_read < encrypted_buffer.size() && !in.eof())
+        {
+            bytes_read += in.read(encrypted_buffer.data() + bytes_read, encrypted_buffer.size() - bytes_read);
+        }
+
+        std::string decrypted_buffer;
+        decrypted_buffer.resize(bytes_read);
+        FileEncryption::Encryptor encryptor(header.algorithm, key, header.init_vector);
+        encryptor.decrypt(encrypted_buffer.data(), bytes_read, decrypted_buffer.data());
+
+        return decrypted_buffer;
+    }
+
+    std::string writeHook(const std::string & data) const override
+    {
+        FileEncryption::Header header{
+            .algorithm = algorithm,
+            .key_fingerprint = key_fingerprint,
+            .init_vector = FileEncryption::InitVector::random()
+        };
+
+        FileEncryption::Encryptor encryptor(header.algorithm, key, header.init_vector);
+        WriteBufferFromOwnString out;
+        header.write(out);
+        encryptor.encrypt(data.data(), data.size(), out);
+        return std::string(out.str());
+    }
+
+private:
+    std::string key;
+    UInt128 key_fingerprint;
+    FileEncryption::Algorithm algorithm;
+};
+
+class NamedCollectionsMetadataStorage::LocalStorageEncrypted : public NamedCollectionsMetadataStorageEncrypted<NamedCollectionsMetadataStorage::LocalStorage>
+{
+    using NamedCollectionsMetadataStorageEncrypted<NamedCollectionsMetadataStorage::LocalStorage>::NamedCollectionsMetadataStorageEncrypted;
+};
+
+class NamedCollectionsMetadataStorage::ZooKeeperStorageEncrypted : public NamedCollectionsMetadataStorageEncrypted<NamedCollectionsMetadataStorage::ZooKeeperStorage>
+{
+    using NamedCollectionsMetadataStorageEncrypted<NamedCollectionsMetadataStorage::ZooKeeperStorage>::NamedCollectionsMetadataStorageEncrypted;
 };
 
 NamedCollectionsMetadataStorage::NamedCollectionsMetadataStorage(
@@ -600,7 +615,6 @@ std::unique_ptr<NamedCollectionsMetadataStorage> NamedCollectionsMetadataStorage
                   "Using local storage for named collections at path: {}", path);
 
         std::unique_ptr<INamedCollectionsStorage> local_storage;
-
         if (storage_type == "local")
             local_storage = std::make_unique<NamedCollectionsMetadataStorage::LocalStorage>(context_, path);
         else if (storage_type == "local_encrypted")
@@ -609,10 +623,15 @@ std::unique_ptr<NamedCollectionsMetadataStorage> NamedCollectionsMetadataStorage
         return std::unique_ptr<NamedCollectionsMetadataStorage>(
             new NamedCollectionsMetadataStorage(std::move(local_storage), context_));
     }
-    if (storage_type == "zookeeper" || storage_type == "keeper")
+    if (storage_type == "zookeeper" || storage_type == "keeper" || storage_type == "zookeeper_encrypted" || storage_type == "keeper_encrypted")
     {
         const auto path = config.getString(named_collections_storage_config_path + ".path");
-        auto zk_storage = std::make_unique<NamedCollectionsMetadataStorage::ZooKeeperStorage>(context_, path);
+
+        std::unique_ptr<INamedCollectionsStorage> zk_storage;
+        if (storage_type == "zookeeper" || storage_type == "keeper")
+            zk_storage = std::make_unique<NamedCollectionsMetadataStorage::ZooKeeperStorage>(context_, path);
+        else if (storage_type == "zookeeper_encrypted" || storage_type == "keeper_encrypted")
+            zk_storage = std::make_unique<NamedCollectionsMetadataStorage::ZooKeeperStorageEncrypted>(context_, path);
 
         LOG_TRACE(getLogger("NamedCollectionsMetadataStorage"),
                   "Using zookeeper storage for named collections at path: {}", path);

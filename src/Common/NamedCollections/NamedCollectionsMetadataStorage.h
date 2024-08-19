@@ -37,7 +37,7 @@ private:
     class LocalStorage;
     class LocalStorageEncrypted;
     class ZooKeeperStorage;
-    class ZooKeeperEncrypted;
+    class ZooKeeperStorageEncrypted;
 
     std::shared_ptr<INamedCollectionsStorage> storage;
 
