@@ -391,6 +391,8 @@ IsValid
 JBOD
 JOINed
 JOINs
+JSONAllPaths
+JSONAllPathsWithTypes
 JSONArrayLength
 JSONAsObject
 JSONAsString
@@ -405,6 +407,8 @@ JSONCompactStrings
 JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
+JSONDynamicPaths
+JSONDynamicPathsWithTypes
 JSONEachRow
 JSONEachRowWithProgress
 JSONExtract
@@ -424,6 +428,8 @@ JSONObjectEachRow
 JSONStrings
 JSONStringsEachRow
 JSONStringsEachRowWithProgress
+JSONSharedDataPaths
+JSONSharedDataPathsWithTypes
 JSONType
 JSONs
 Jaeger
@@ -1702,6 +1708,8 @@ getOSKernelVersion
 getServerPort
 getSetting
 getSizeOfEnumType
+getSubcolumn
+getTypeSerializationStreams
 getblockinfo
 getevents
 ghcnd
@@ -2115,11 +2123,14 @@ namenode
 namepassword
 nameprofile
 namequota
+namespace
 namespaces
 natively
 nats
+ness
 nestjs
 netloc
+newjson
 ngram
 ngramDistance
 ngramDistanceCaseInsensitive
