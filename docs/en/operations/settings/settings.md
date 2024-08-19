@@ -1800,6 +1800,17 @@ Possible values:
 
 Default value: `0`.
 
+## query_cache_tag {#query-cache-tag}
+
+A string which acts as a label for [query cache](../query-cache.md) entries.
+The same queries with different tags are considered different by the query cache.
+
+Possible values:
+
+- Any string
+
+Default value: `''`
+
 ## query_cache_max_size_in_bytes {#query-cache-max-size-in-bytes}
 
 The maximum amount of memory (in bytes) the current user may allocate in the [query cache](../query-cache.md). 0 means unlimited.
@@ -5609,6 +5620,19 @@ Minimal size of block to compress in CROSS JOIN. Zero value means - disable this
 
 Default value: `1GiB`.
 
+## use_json_alias_for_old_object_type
+
+When enabled, `JSON` data type alias will be used to create an old [Object('json')](../../sql-reference/data-types/json.md) type instead of the new [JSON](../../sql-reference/data-types/newjson.md) type.
+This setting requires server restart to take effect when changed.
+
+Default value: `false`.
+
+## type_json_skip_duplicated_paths
+
+When enabled, ClickHouse will skip duplicated paths during parsing of [JSON](../../sql-reference/data-types/newjson.md) object. Only the value of the first occurrence of each path will be inserted.
+
+Default value: `false`
+
 ## restore_replace_external_engines_to_null
 
 For testing purposes. Replaces all external engines to Null to not initiate external connections.
@@ -5624,5 +5648,28 @@ Default value: `False`
 ## disable_insertion_and_mutation
 
 Disable all insert and mutations (alter table update / alter table delete / alter table drop partition). Set to true, can make this node focus on reading queries.
+
+Default value: `false`.
+
+## use_hive_partitioning
+
+When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](../../engines/table-engines/special/file.md#hive-style-partitioning)/[S3](../../engines/table-engines/integrations/s3.md#hive-style-partitioning)/[URL](../../engines/table-engines/special/url.md#hive-style-partitioning)/[HDFS](../../engines/table-engines/integrations/hdfs.md#hive-style-partitioning)/[AzureBlobStorage](../../engines/table-engines/integrations/azureBlobStorage.md#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
+
+Default value: `false`.
+
+## allow_experimental_time_series_table {#allow-experimental-time-series-table}
+
+Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.
+
+Possible values:
+
+- 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
+- 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
+
+Default value: `0`.
+
+## create_if_not_exists
+
+Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
 
 Default value: `false`.

@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -748,11 +748,11 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
         UInt64 pos;
         if (constant_node->getValue().getType() == Field::Types::UInt64)
         {
-            pos = constant_node->getValue().get<UInt64>();
+            pos = constant_node->getValue().safeGet<UInt64>();
         }
         else // Int64
         {
-            auto value = constant_node->getValue().get<Int64>();
+            auto value = constant_node->getValue().safeGet<Int64>();
             if (value > 0)
                 pos = value;
             else
