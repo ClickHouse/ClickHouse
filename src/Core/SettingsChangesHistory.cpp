@@ -75,6 +75,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.8",
         {
+            {"distributed_background_insert_max_retries", 0, 0, "New setting."},
             {"rows_before_aggregation", true, true, "Provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation"},
             {"restore_replace_external_table_functions_to_null", false, false, "New setting."},
             {"restore_replace_external_engines_to_null", false, false, "New setting."},
@@ -86,8 +87,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"query_cache_tag", "", "", "New setting for labeling query cache settings."},
             {"allow_experimental_time_series_table", false, false, "Added new setting to allow the TimeSeries table engine"},
             {"enable_analyzer", 1, 1, "Added an alias to a setting `allow_experimental_analyzer`."},
-            {"optimize_functions_to_subcolumns", false, true, "Enabled settings by default"},
-            {"distributed_background_insert_max_retries", 0, 0, "New setting."}
+            {"optimize_functions_to_subcolumns", false, true, "Enabled settings by default"}
         }
     },
     {"24.7",
