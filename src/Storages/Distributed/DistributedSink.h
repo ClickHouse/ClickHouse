@@ -5,15 +5,16 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Core/Block.h>
+#include <Core/Settings.h>
 #include <Common/PODArray.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadPool.h>
-#include <Interpreters/Cluster.h>
-#include <Core/Settings.h>
 #include <atomic>
 #include <memory>
 #include <chrono>
 #include <optional>
+#include <Interpreters/Cluster.h>
+
 
 namespace Poco
 {
@@ -53,8 +54,7 @@ public:
     void onFinish() override;
 
 private:
-
-    void onCancel() override;
+    void onCancel() noexcept override;
 
     IColumn::Selector createSelector(const Block & source_block) const;
 
@@ -114,7 +114,7 @@ private:
     std::optional<ThreadPool> pool;
     ThrottlerPtr throttler;
 
-    size_t max_retries; // Declare max_retries
+    size_t max_retries;
     std::mutex execution_mutex;
 
     struct JobReplica
@@ -155,9 +155,6 @@ private:
     std::atomic<unsigned> finished_jobs_count{0};
 
     LoggerPtr log;
-
-    // Helper methods for reconnection logic
-    bool reconnectAndResend(JobReplica & job, const Block & shard_block);
 };
 
 }
