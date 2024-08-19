@@ -20,10 +20,10 @@ INSERT INTO tp SELECT number%3, 2 FROM numbers(3);
 OPTIMIZE TABLE tp FINAL;
 
 SELECT type,sum(eventcnt) FROM tp GROUP BY type ORDER BY type
-SETTINGS allow_experimental_projection_optimization = 0, force_optimize_projection = 0;
+SETTINGS optimize_use_projections = 0, force_optimize_projection = 0;
 
 SELECT type,sum(eventcnt) FROM tp GROUP BY type ORDER BY type
-SETTINGS allow_experimental_projection_optimization = 1, force_optimize_projection = 1;
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
 
 SELECT 'CollapsingMergeTree';
@@ -50,10 +50,10 @@ INSERT INTO tp SELECT number % 3, 2, 1 FROM numbers(3);
 OPTIMIZE TABLE tp FINAL;
 
 SELECT type,sum(eventcnt) FROM tp GROUP BY type ORDER BY type
-SETTINGS allow_experimental_projection_optimization = 0, force_optimize_projection = 0;
+SETTINGS optimize_use_projections = 0, force_optimize_projection = 0;
 
 SELECT type,sum(eventcnt) FROM tp GROUP BY type ORDER BY type
-SETTINGS allow_experimental_projection_optimization = 1, force_optimize_projection = 1;
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
 -- Actually we don't need to test all 3 engines Replacing/Collapsing/VersionedCollapsing,
 -- Because they share the same logic of 'reduce number of rows during merges'
@@ -82,10 +82,10 @@ INSERT INTO tp SELECT number % 3, 1, 1, 0 FROM numbers(3);
 OPTIMIZE TABLE tp FINAL;
 
 SELECT type,sum(eventcnt) FROM tp GROUP BY type ORDER BY type
-SETTINGS allow_experimental_projection_optimization = 0, force_optimize_projection = 0;
+SETTINGS optimize_use_projections = 0, force_optimize_projection = 0;
 
 SELECT type,sum(eventcnt) FROM tp GROUP BY type ORDER BY type
-SETTINGS allow_experimental_projection_optimization = 1, force_optimize_projection = 1;
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
 SELECT 'DEDUPLICATE ON MergeTree';
 DROP TABLE IF EXISTS tp;
@@ -109,8 +109,8 @@ INSERT INTO tp SELECT number % 3, 2 FROM numbers(3);
 OPTIMIZE TABLE tp FINAL DEDUPLICATE BY type;
 
 SELECT type,sum(eventcnt) FROM tp GROUP BY type ORDER BY type
-SETTINGS allow_experimental_projection_optimization = 0, force_optimize_projection = 0;
+SETTINGS optimize_use_projections = 0, force_optimize_projection = 0;
 
 SELECT type,sum(eventcnt) FROM tp GROUP BY type ORDER BY type
-SETTINGS allow_experimental_projection_optimization = 1, force_optimize_projection = 1;
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
