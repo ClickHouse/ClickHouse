@@ -276,6 +276,9 @@ public:
 
     const String & getName() const { return name; }
 
+    // New method to get a connection with retries
+    ConnectionPoolWithFailover::Entry getConnectionWithRetries(size_t shard_index, size_t replica_index, const Settings & settings, size_t max_retries = 3, const QualifiedTableName & query_context = QualifiedTableName());
+
 private:
     SlotToShard slot_to_shard;
 
@@ -284,6 +287,9 @@ public:
 
 private:
     void initMisc();
+
+    // Add a logger instance
+    LoggerPtr log = getLogger("Cluster");
 
     /// For getClusterWithMultipleShards implementation.
     struct SubclusterTag {};
