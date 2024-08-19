@@ -67,7 +67,7 @@ def test_mann_whitney():
 
 def test_mann_whitney_skew():
     rvs1 = [1]
-    rvs2 = [0,2,4]
+    rvs2 = [0, 2, 4]
     s, p = stats.mannwhitneyu(rvs1, rvs2, alternative="two-sided")
     test_and_check("mannWhitneyUTest", rvs1, rvs2, s, p)
     test_and_check("mannWhitneyUTest('two-sided')", rvs1, rvs2, s, p)
