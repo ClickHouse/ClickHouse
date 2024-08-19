@@ -18,13 +18,15 @@
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 
+#include "config.h"
+
 #if USE_SIMDJSON
-#include <Common/JSONParsers/SimdJSONParser.h>
+#  include <Common/JSONParsers/SimdJSONParser.h>
+#elif USE_RAPIDJSON
+#  include <Common/JSONParsers/RapidJSONParser.h>
+#else
+#  include <Common/JSONParsers/DummyJSONParser.h>
 #endif
-#if USE_RAPIDJSON
-#include <Common/JSONParsers/RapidJSONParser.h>
-#endif
-#include <Common/JSONParsers/DummyJSONParser.h>
 
 namespace DB
 {
@@ -105,7 +107,7 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
     switch (schema_format)
     {
         case SchemaFormat::JSON:
-#ifdef USE_SIMDJSON
+#if USE_SIMDJSON
             return std::make_shared<SerializationJSON<SimdJSONParser>>(
                 std::move(typed_path_serializations),
                 paths_to_skip,

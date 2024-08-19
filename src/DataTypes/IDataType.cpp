@@ -8,7 +8,6 @@
 #include <Common/quoteString.h>
 
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeCustom.h>
