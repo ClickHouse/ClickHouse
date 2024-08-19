@@ -372,7 +372,7 @@ std::string LocalServer::getInitialCreateTableQuery()
     else
         table_structure = "(" + table_structure + ")";
 
-    return fmt::format("CREATE TABLE {} {} ENGINE = File({}, {});",
+    return fmt::format("CREATE TEMPORARY TABLE {} {} ENGINE = File({}, {});",
                        table_name, table_structure, data_format, table_file);
 }
 
