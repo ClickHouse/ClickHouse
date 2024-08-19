@@ -536,10 +536,10 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ASTPtr valid_until;
     String cluster;
     String storage_name;
-    std::optional<bool> reset_authentication_methods_to_new;
+    bool reset_authentication_methods_to_new = false;
 
     bool parsed_identified_with = false;
-    bool parsed_add_new_method = false;
+    bool parsed_add_identified_with = false;
 
     while (true)
     {
@@ -549,20 +549,20 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
             if (!parsed_identified_with)
             {
-                parsed_add_new_method = parseAddIdentifiedWith(pos, expected, auth_data);
+                parsed_add_identified_with = parseAddIdentifiedWith(pos, expected, auth_data);
 
-                if (parsed_add_new_method && !alter)
+                if (parsed_add_identified_with && !alter)
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Create user query is not allowed to have ADD IDENTIFIED, remove the ADD keyword.");
                 }
             }
         }
 
-        if (!reset_authentication_methods_to_new.has_value())
+        if (!reset_authentication_methods_to_new)
         {
             reset_authentication_methods_to_new = parseResetAuthenticationMethods(pos, expected);
 
-            if (reset_authentication_methods_to_new.value() && !alter)
+            if (reset_authentication_methods_to_new && !alter)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "RESET AUTHENTICATION METHODS TO NEW can only be used on ALTER statement");
             }
@@ -645,7 +645,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "NO_PASSWORD Authentication method cannot co-exist with other authentication methods");
     }
 
-    if (has_no_password_authentication_method && parsed_add_new_method)
+    if (has_no_password_authentication_method && parsed_add_identified_with)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The authentication method 'no_password' cannot be used with the ADD keyword. "
                                                    "Use 'ALTER USER xyz IDENTIFIED WITH no_password' to replace existing authentication methods");
@@ -685,7 +685,8 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->default_database = std::move(default_database);
     query->valid_until = std::move(valid_until);
     query->storage_name = std::move(storage_name);
-    query->reset_authentication_methods_to_new = reset_authentication_methods_to_new.value_or(false);
+    query->reset_authentication_methods_to_new = reset_authentication_methods_to_new;
+    query->add_identified_with = parsed_add_identified_with;
     query->replace_authentication_methods = parsed_identified_with || has_no_password_authentication_method;
 
     for (const auto & authentication_method : query->authentication_methods)

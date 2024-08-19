@@ -21,8 +21,6 @@ namespace
 
     void formatAuthenticationData(const std::vector<std::shared_ptr<ASTAuthenticationData>> & authentication_methods, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED" << (settings.hilite ? IAST::hilite_none : "");
-
         // safe because this method is only called if authentication_methods.size > 1
         // if the first type is present, include the `WITH` keyword
         if (authentication_methods[0]->type)
@@ -200,7 +198,8 @@ ASTPtr ASTCreateUserQuery::clone() const
     if (settings)
         res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
 
-    if (authentication_methods.empty())
+    // If identification (auth method) is missing from query, we should serialize it in the form of `NO_PASSWORD` unless it is alter query
+    if (!alter && authentication_methods.empty())
     {
         auto ast = std::make_shared<ASTAuthenticationData>();
         ast->type = AuthenticationType::NO_PASSWORD;
@@ -255,7 +254,15 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
         formatRenameTo(*new_name, format);
 
     if (!authentication_methods.empty())
+    {
+        if (add_identified_with)
+        {
+            format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " ADD" << (format.hilite ? IAST::hilite_none : "");
+        }
+
+        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED" << (format.hilite ? IAST::hilite_none : "");
         formatAuthenticationData(authentication_methods, format);
+    }
 
     if (valid_until)
         formatValidUntil(*valid_until, format);
@@ -278,6 +285,9 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
 
     if (grantees)
         formatGrantees(*grantees, format);
+
+    if (reset_authentication_methods_to_new)
+        format.ostr << (format.hilite ? hilite_keyword : "") << " RESET AUTHENTICATION METHODS TO NEW" << (format.hilite ? hilite_none : "");
 }
 
 }
