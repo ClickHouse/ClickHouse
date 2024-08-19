@@ -32,16 +32,16 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric DistributedSend;
-    extern const Metric DistributedFilesToInsert;
-    extern const Metric BrokenDistributedFilesToInsert;
-    extern const Metric DistributedBytesToInsert;
-    extern const Metric BrokenDistributedBytesToInsert;
+extern const Metric DistributedSend;
+extern const Metric DistributedFilesToInsert;
+extern const Metric BrokenDistributedFilesToInsert;
+extern const Metric DistributedBytesToInsert;
+extern const Metric BrokenDistributedBytesToInsert;
 }
 
 namespace ProfileEvents
 {
-    extern const Event DistributedAsyncInsertionFailures;
+extern const Event DistributedAsyncInsertionFailures;
 }
 
 namespace fs = std::filesystem;
@@ -51,8 +51,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_FILE_NAME;
-    extern const int LOGICAL_ERROR;
+extern const int INCORRECT_FILE_NAME;
+extern const int LOGICAL_ERROR;
 }
 
 
@@ -288,9 +288,9 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
 
     const auto & settings = storage.getContext()->getSettingsRef();
     return std::make_shared<ConnectionPoolWithFailover>(std::move(pools),
-        settings.load_balancing,
-        settings.distributed_replica_error_half_life.totalSeconds(),
-        settings.distributed_replica_error_cap);
+                                                        settings.load_balancing,
+                                                        settings.distributed_replica_error_half_life.totalSeconds(),
+                                                        settings.distributed_replica_error_cap);
 }
 
 bool DistributedAsyncInsertDirectoryQueue::hasPendingFiles() const
@@ -366,15 +366,17 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
     }
 }
 
-void DistributedAsyncInsertDirectoryQueue::setFilesRetryNum(const std::string & file_path)
+void DistributedAsyncInsertDirectoryQueue::incrementFilesRetryNum(const std::string & file_path)
 {
     if (max_retries != 0)
     {
         auto it = files_retry.find(file_path);
         if (it != files_retry.end())
-            it->second += 1;
+            it->second++;
         else
-            it->second = 1;
+            files_retry.insert(std::make_pair(file_path, 1));
+
+        LOG_INFO(log, "distributed file {} send failed, may be broken, retry {}, max_retries {},", file_path, files_retry[file_path], max_retries);
     }
 }
 
@@ -436,15 +438,15 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
         auto connection = std::move(result.entry);
 
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
-            file_path,
-            connection->getDescription(),
-            formatReadableQuantity(distributed_header.rows),
-            formatReadableSizeWithBinarySuffix(distributed_header.bytes));
+                  file_path,
+                  connection->getDescription(),
+                  formatReadableQuantity(distributed_header.rows),
+                  formatReadableSizeWithBinarySuffix(distributed_header.bytes));
 
         RemoteInserter remote{*connection, timeouts,
-            distributed_header.insert_query,
-            insert_settings,
-            distributed_header.client_info};
+                              distributed_header.insert_query,
+                              insert_settings,
+                              distributed_header.client_info};
         bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
         writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
         remote.onFinish();
@@ -454,15 +456,13 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
         if (thread_trace_context)
             thread_trace_context->root_span.addAttribute(std::current_exception());
 
-        setFilesRetryNum(file_path);
-        if (max_retries != 0)
-            LOG_INFO(log, "distributed file {} send failed, may be broken, retry {}, max_retries {},", file_path, files_retry[file_path], max_retries);
+        incrementFilesRetryNum(file_path);
 
         e.addMessage(fmt::format("While sending {}", file_path));
         if (isDistributedSendBroken(e.code(), e.isRemoteException()) || (max_retries != 0 && files_retry[file_path] == max_retries))
         {
             markAsBroken(file_path);
-            if (files_retry.contains(file_path))
+            if (const auto it = files_retry.find(file_path); it != files_retry.end())
                 files_retry.erase(file_path);
             file_path.clear();
         }
@@ -500,8 +500,8 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
     bool operator==(const BatchHeader & other) const
     {
         return std::tie(settings, query, client_info.query_kind) ==
-               std::tie(other.settings, other.query, other.client_info.query_kind) &&
-               blocksHaveEqualStructure(header, other.header);
+            std::tie(other.settings, other.query, other.client_info.query_kind) &&
+            blocksHaveEqualStructure(header, other.header);
     }
 
     struct Hash
@@ -622,14 +622,12 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
             }
             catch (const Exception & e)
             {
-                setFilesRetryNum(file_path);
-                if (max_retries != 0)
-                    LOG_INFO(log, "distributed file {} send failed, may be broken, retry {}, max_retries {},", file_path, files_retry[file_path], max_retries);
+                incrementFilesRetryNum(file_path);
 
                 if (isDistributedSendBroken(e.code(), e.isRemoteException()) || (max_retries != 0 && files_retry[file_path] == max_retries))
                 {
                     markAsBroken(file_path);
-                    if (files_retry.contains(file_path))
+                    if (const auto it = files_retry.find(file_path); it != files_retry.end())
                         files_retry.erase(file_path);
                     tryLogCurrentException(log, "File is marked broken due to");
                     continue;

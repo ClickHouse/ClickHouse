@@ -99,7 +99,7 @@ private:
 
     void addFile(const std::string & file_path);
     void initializeFilesFromDisk();
-    void setFilesRetryNum(const std::string & file_path);
+    void incrementFilesRetryNum(const std::string & file_path);
     void processFiles(const SettingsChanges & settings_changes = {});
     void processFile(std::string & file_path, const SettingsChanges & settings_changes);
     void processFilesWithBatching(const SettingsChanges & settings_changes);
