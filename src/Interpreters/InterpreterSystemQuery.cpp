@@ -366,7 +366,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::DROP_SKIPPING_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_SKIPPING_INDEX_CACHE);
-            system_context->clearSecondaryIndexCache();
+            system_context->clearSkippingIndexCache();
             break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);

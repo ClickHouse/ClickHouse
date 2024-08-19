@@ -31,6 +31,7 @@
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/SkippingIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <IO/S3Settings.h>
@@ -297,6 +298,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable OnceFlag prefetch_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> prefetch_threadpool;    /// Threadpool for loading marks cache.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
+    mutable SkippingIndexCachePtr skipping_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
     mutable QueryCachePtr query_cache TSA_GUARDED_BY(mutex);                          /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
@@ -3196,6 +3198,41 @@ void Context::clearMMappedFileCache() const
 
     if (shared->mmap_cache)
         shared->mmap_cache->clear();
+}
+
+void Context::setSkippingIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->skipping_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Skipping index cache has been already created.");
+
+    shared->skipping_index_cache = std::make_shared<SkippingIndexCache>(cache_policy, max_size_in_bytes, max_count, size_ratio);
+}
+
+void Context::updateSkippingIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->skipping_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Skipping index cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("skipping_index_cache_size", DEFAULT_SKIPPING_INDEX_CACHE_MAX_SIZE);
+    shared->skipping_index_cache->setMaxSizeInBytes(max_size_in_bytes);
+}
+
+SkippingIndexCachePtr Context::getSkippingIndexCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->skipping_index_cache;
+}
+
+void Context::clearSkippingIndexCache() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->skipping_index_cache)
+        shared->skipping_index_cache->clear();
 }
 
 void Context::setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
