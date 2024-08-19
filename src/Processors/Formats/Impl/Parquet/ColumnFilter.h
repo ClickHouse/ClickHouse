@@ -270,7 +270,7 @@ protected:
         , upper_unbounded(upper_unbounded_)
         , upper_exclusive(upper_exclusive_)
     {
-        if (!lower_unbounded && !upper_unbounded)
+        if (lower_unbounded && upper_unbounded)
         {
             throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "A range filter must have a lower or upper bound");
         }
@@ -307,19 +307,19 @@ public:
         ColumnFilterPtr filter = nullptr;
         if (func_name == "less")
         {
-            filter = std::make_shared<FloatRangeFilter<T>>(0, true, false, value, false, false, false);
+            filter = std::make_shared<FloatRangeFilter<T>>(-std::numeric_limits<T>::infinity(), true, false, value, false, false, false);
         }
         else if (func_name == "greater")
         {
-            filter = std::make_shared<FloatRangeFilter<T>>(value, false, false, 0, true, false, false);
+            filter = std::make_shared<FloatRangeFilter<T>>(value, false, false, std::numeric_limits<T>::infinity(), true, false, false);
         }
         else if (func_name == "lessOrEquals")
         {
-            filter = std::make_shared<FloatRangeFilter<T>>(0, true, true, value, false, false, false);
+            filter = std::make_shared<FloatRangeFilter<T>>(-std::numeric_limits<T>::infinity(), true, true, value, false, false, false);
         }
         else if (func_name == "greaterOrEquals")
         {
-            filter = std::make_shared<FloatRangeFilter<T>>(value, false, false, 0, true, true, false);
+            filter = std::make_shared<FloatRangeFilter<T>>(value, false, false, std::numeric_limits<T>::infinity(), true, true, false);
         }
         if (filter)
             return std::make_optional(std::make_pair(name, filter));

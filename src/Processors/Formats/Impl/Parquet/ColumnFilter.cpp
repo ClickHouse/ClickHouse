@@ -52,9 +52,11 @@ void FilterHelper::filterPlainFixedData(const T* src, PaddedPODArray<T> & dst, c
             continue;
         else if (xsimd::all(mask))
         {
-            dst.resize(dst.size() + increment);
+            auto old_size = dst.size();
+            auto * start = dst.data() + old_size;
+            dst.resize( old_size + increment);
             batch_type data = batch_type::load_unaligned(src + rows);
-            data.store_unaligned(dst.data() + rows);
+            data.store_unaligned(start);
         }
         else
         {
@@ -121,9 +123,12 @@ void FilterHelper::filterDictFixedData(const PaddedPODArray<T> & dict, PaddedPOD
             continue;
         else if (xsimd::all(mask))
         {
-            dst.resize(dst.size() + increment);
+            auto old_size = dst.size();
+            auto * start = dst.data() + old_size;
+            dst.resize( old_size + increment);
             idx_batch_type idx_batch = idx_batch_type::load_unaligned(idx.data() + rows);
-            batch_type::gather(dict.data(), idx_batch).store_unaligned(dst.data() + rows);
+            auto batch = batch_type::gather(dict.data(), idx_batch);
+            batch.store_unaligned(start);
         }
         else
         {

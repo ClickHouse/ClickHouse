@@ -428,6 +428,10 @@ void NumberDictionaryReader<DataType>::computeRowSet(OptionalRowSet & row_set, s
             {
                 if constexpr (std::is_same_v<typename DataType::FieldType, Int64>)
                     cache.set(idx, scan_spec.filter->testInt64(dict[idx]));
+                else if constexpr (std::is_same_v<typename DataType::FieldType, Float32>)
+                    cache.set(idx, scan_spec.filter->testFloat32(dict[idx]));
+                else if constexpr (std::is_same_v<typename DataType::FieldType, Float64>)
+                    cache.set(idx, scan_spec.filter->testFloat64(dict[idx]));
                 else
                     throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported type");
             }
