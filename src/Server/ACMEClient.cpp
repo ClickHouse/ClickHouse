@@ -76,7 +76,6 @@ std::string generateCSR(std::vector<std::string> domain_names)
     if (domain_names.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No domain names provided");
 
-    // std::string name = "letsencrypt-stg.var1able.network";
     auto name = domain_names.front();
 
     auto bits = 4096;
@@ -171,13 +170,6 @@ std::string generateCSR(std::vector<std::string> domain_names)
 std::string generatePrivateKeyInPEM()
 {
     auto key = Poco::Crypto::RSAKey(Poco::Crypto::RSAKey::KL_4096, Poco::Crypto::RSAKey::EXP_LARGE);
-
-    // EVP_PKEY * pkey = EVP_PKEY_new();
-    // if (EVP_PKEY_assign_RSA(pkey, key.impl()->getRSA()) != 1)
-    // {
-    //     EVP_PKEY_free(pkey);
-    //     throw Exception(ErrorCodes::OPENSSL_ERROR, "Error converting RSA key to an EVP_PKEY structure: {}", getOpenSSLErrors());
-    // }
 
     BIO * key_bio(BIO_new(BIO_s_mem()));
     if (PEM_write_bio_RSAPrivateKey(key_bio, key.impl()->getRSA(), nullptr, nullptr, 0, nullptr, nullptr) != 1)
@@ -546,7 +538,7 @@ void ACMEClient::processAuthorization(const std::string & auth_url)
 
 void ACMEClient::finalizeOrder(const std::string & finalize_url)
 {
-    std::string csr = generateCSR( { "letsencrypt-stg.var1able.network" } );
+    std::string csr = generateCSR(domains);
     auto payload = R"({"csr":")" + csr + R"("})";
 
     auto http_response = std::make_shared<Poco::Net::HTTPResponse>();
