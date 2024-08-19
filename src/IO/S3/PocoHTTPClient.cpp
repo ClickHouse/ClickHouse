@@ -342,8 +342,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
     auto ch_attempt = extractAttemptFromInfo(getOrEmpty(request.GetHeaders(), "clickhouse-request"));
     bool first_attempt = ch_attempt == "1" && sdk_attempt == "1";
 
-    //if (enable_s3_requests_logging)
-    LOG_TEST(log, "Make request to: {}, aws sdk attempt: {}, clickhouse attempt: {}", uri, sdk_attempt, ch_attempt);
+    if (enable_s3_requests_logging)
+        LOG_TEST(log, "Make request to: {}, aws sdk attempt: {}, clickhouse attempt: {}", uri, sdk_attempt, ch_attempt);
 
     switch (request.GetMethod())
     {
