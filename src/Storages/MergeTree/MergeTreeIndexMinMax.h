@@ -23,6 +23,8 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
 
     bool empty() const override { return hyperrectangle.empty(); }
 
+    size_t memoryUsageBytes() const override { return hyperrectangle.capacity() * sizeof(Range); }
+
     const String index_name;
     const Block index_sample_block;
 

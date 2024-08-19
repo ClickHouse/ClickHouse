@@ -85,6 +85,14 @@ bool MergeTreeIndexGranuleBloomFilter::empty() const
     return !total_rows;
 }
 
+size_t MergeTreeIndexGranuleBloomFilter::memoryUsageBytes() const
+{
+    size_t sum = 0;
+    for (const auto & bloom_filter : bloom_filters)
+        sum += bloom_filter->memoryUsageBytes();
+    return sum;
+}
+
 void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
     if (version != 1)
