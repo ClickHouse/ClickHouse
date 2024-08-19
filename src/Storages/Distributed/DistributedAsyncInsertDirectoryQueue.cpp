@@ -444,9 +444,9 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
             formatReadableSizeWithBinarySuffix(distributed_header.bytes));
 
         RemoteInserter remote{*connection, timeouts,
-             distributed_header.insert_query,
-             insert_settings,
-             distributed_header.client_info};
+            distributed_header.insert_query,
+            insert_settings,
+            distributed_header.client_info};
         bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
         writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
         remote.onFinish();
@@ -500,8 +500,8 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
     bool operator==(const BatchHeader & other) const
     {
         return std::tie(settings, query, client_info.query_kind) ==
-          std::tie(other.settings, other.query, other.client_info.query_kind) &&
-          blocksHaveEqualStructure(header, other.header);
+               std::tie(other.settings, other.query, other.client_info.query_kind) &&
+               blocksHaveEqualStructure(header, other.header);
     }
 
     struct Hash
