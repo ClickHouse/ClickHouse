@@ -4,9 +4,6 @@
 source /setup_export_logs.sh
 set -e -x
 
-MAX_RUN_TIME=${MAX_RUN_TIME:-3600}
-MAX_RUN_TIME=$((MAX_RUN_TIME == 0 ? 3600 : MAX_RUN_TIME))
-
 # Choose random timezone for this test run
 TZ="$(rg -v '#' /usr/share/zoneinfo/zone.tab | awk '{print $3}' | shuf | head -n1)"
 echo "Choosen random timezone $TZ"
@@ -123,9 +120,6 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
 
     clickhouse-client --query "DROP TABLE datasets.hits_v1"
     clickhouse-client --query "DROP TABLE datasets.visits_v1"
-
-    MAX_RUN_TIME=$((MAX_RUN_TIME < 9000 ? MAX_RUN_TIME : 9000))  # min(MAX_RUN_TIME, 2.5 hours)
-    MAX_RUN_TIME=$((MAX_RUN_TIME != 0 ? MAX_RUN_TIME : 9000))    # set to 2.5 hours if 0 (unlimited)
 else
     clickhouse-client --query "CREATE DATABASE test"
     clickhouse-client --query "SHOW TABLES FROM test"
@@ -258,24 +252,7 @@ function run_tests()
 
 export -f run_tests
 
-function timeout_with_logging() {
-    local exit_code=0
-
-    timeout -s TERM --preserve-status "${@}" || exit_code="${?}"
-
-    echo "Checking if it is a timeout. The code 124 will indicate a timeout."
-    if [[ "${exit_code}" -eq "124" ]]
-    then
-        echo "The command 'timeout ${*}' has been killed by timeout."
-    else
-        echo "No, it isn't a timeout."
-    fi
-
-    return $exit_code
-}
-
-TIMEOUT=$((MAX_RUN_TIME - 700))
-timeout_with_logging "$TIMEOUT" bash -c run_tests ||:
+run_tests ||:
 
 echo "Files in current directory"
 ls -la ./
