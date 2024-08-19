@@ -33,5 +33,3 @@ optimize table test final;
 select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d);
 
 drop table test;
-
-select 1;
