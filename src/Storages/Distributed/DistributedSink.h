@@ -54,7 +54,6 @@ public:
     void onFinish() override;
 
 private:
-    bool reconnectAndResend(JobReplica & job, const Block & shard_block);
     void onCancel() noexcept override;
 
     IColumn::Selector createSelector(const Block & source_block) const;
@@ -156,6 +155,7 @@ private:
     std::atomic<unsigned> finished_jobs_count{0};
 
     LoggerPtr log;
+    bool reconnectAndResend(JobReplica & job, const Block & shard_block);
 };
 
 }
