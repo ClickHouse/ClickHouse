@@ -1,5 +1,6 @@
 -- Tags: shard
 set session_timezone = 'UTC'; -- don't randomize the session timezone
+SET allow_experimental_analyzer = 1;
 
 select *, (select toDateTime64(0, 3)) from remote('127.0.0.1', system.one) settings prefer_localhost_replica=0;
 select *, (select toDateTime64(5, 3)) from remote('127.0.0.1', system.one) settings prefer_localhost_replica=0;
@@ -38,3 +39,6 @@ select count(*) from distr_03222_dt64 where dt < (select toDateTime64('2004-07-2
 drop table if exists shard_0.dt64_03222;
 drop table if exists shard_1.dt64_03222;
 drop table if exists distr_03222_dt64;
+
+drop database shard_0;
+drop database shard_1;
