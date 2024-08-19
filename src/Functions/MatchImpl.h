@@ -127,17 +127,17 @@ struct MatchImpl
         const String & needle,
         [[maybe_unused]] const ColumnPtr & start_pos_,
         PaddedPODArray<UInt8> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        [[maybe_unused]] ColumnUInt8 * res_null,
+        size_t input_rows_count)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
+        chassert(!res_null);
 
-        const size_t haystack_size = haystack_offsets.size();
+        chassert(res.size() == haystack_offsets.size());
+        chassert(res.size() == input_rows_count);
+        chassert(start_pos_ == nullptr);
 
-        assert(haystack_size == res.size());
-        assert(start_pos_ == nullptr);
-
-        if (haystack_offsets.empty())
+        if (input_rows_count == 0)
             return;
 
         /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
@@ -202,11 +202,11 @@ struct MatchImpl
         if (required_substring.empty())
         {
             if (!regexp.getRE2()) /// An empty regexp. Always matches.
-                memset(res.data(), !negate, haystack_size * sizeof(res[0]));
+                memset(res.data(), !negate, input_rows_count * sizeof(res[0]));
             else
             {
                 size_t prev_offset = 0;
-                for (size_t i = 0; i < haystack_size; ++i)
+                for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     const bool match = regexp.getRE2()->Match(
                             {reinterpret_cast<const char *>(&haystack_data[prev_offset]), haystack_offsets[i] - prev_offset - 1},
@@ -291,16 +291,16 @@ struct MatchImpl
         size_t N,
         const String & needle,
         PaddedPODArray<UInt8> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        [[maybe_unused]] ColumnUInt8 * res_null,
+        size_t input_rows_count)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
+        chassert(!res_null);
 
-        const size_t haystack_size = haystack.size() / N;
+        chassert(res.size() == haystack.size() / N);
+        chassert(res.size() == input_rows_count);
 
-        assert(haystack_size == res.size());
-
-        if (haystack.empty())
+        if (input_rows_count == 0)
             return;
 
         /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
@@ -370,11 +370,11 @@ struct MatchImpl
         if (required_substring.empty())
         {
             if (!regexp.getRE2()) /// An empty regexp. Always matches.
-                memset(res.data(), !negate, haystack_size * sizeof(res[0]));
+                memset(res.data(), !negate, input_rows_count * sizeof(res[0]));
             else
             {
                 size_t offset = 0;
-                for (size_t i = 0; i < haystack_size; ++i)
+                for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     const bool match = regexp.getRE2()->Match(
                             {reinterpret_cast<const char *>(&haystack[offset]), N},
@@ -464,18 +464,18 @@ struct MatchImpl
         const ColumnString::Offsets & needle_offset,
         [[maybe_unused]] const ColumnPtr & start_pos_,
         PaddedPODArray<UInt8> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        [[maybe_unused]] ColumnUInt8 * res_null,
+        size_t input_rows_count)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
+        chassert(!res_null);
 
-        const size_t haystack_size = haystack_offsets.size();
+        chassert(haystack_offsets.size() == needle_offset.size());
+        chassert(res.size() == haystack_offsets.size());
+        chassert(res.size() == input_rows_count);
+        chassert(start_pos_ == nullptr);
 
-        assert(haystack_size == needle_offset.size());
-        assert(haystack_size == res.size());
-        assert(start_pos_ == nullptr);
-
-        if (haystack_offsets.empty())
+        if (input_rows_count == 0)
             return;
 
         String required_substr;
@@ -488,7 +488,7 @@ struct MatchImpl
         Regexps::LocalCacheTable cache;
         Regexps::RegexpPtr regexp;
 
-        for (size_t i = 0; i < haystack_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
             const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
@@ -573,16 +573,16 @@ struct MatchImpl
         const ColumnString::Offsets & needle_offset,
         [[maybe_unused]] const ColumnPtr & start_pos_,
         PaddedPODArray<UInt8> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        [[maybe_unused]] ColumnUInt8 * res_null,
+        size_t input_rows_count)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
+        chassert(!res_null);
 
-        const size_t haystack_size = haystack.size()/N;
-
-        assert(haystack_size == needle_offset.size());
-        assert(haystack_size == res.size());
-        assert(start_pos_ == nullptr);
+        chassert(res.size() == input_rows_count);
+        chassert(res.size() == haystack.size() / N);
+        chassert(res.size() == needle_offset.size());
+        chassert(start_pos_ == nullptr);
 
         if (haystack.empty())
             return;
@@ -597,7 +597,7 @@ struct MatchImpl
         Regexps::LocalCacheTable cache;
         Regexps::RegexpPtr regexp;
 
-        for (size_t i = 0; i < haystack_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * const cur_haystack_data = &haystack[prev_haystack_offset];
             const size_t cur_haystack_length = N;

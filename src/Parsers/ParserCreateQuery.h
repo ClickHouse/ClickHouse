@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -13,17 +14,9 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Poco/String.h>
 
+
 namespace DB
 {
-
-/** A nested table. For example, Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
-  */
-class ParserNestedTable : public IParserBase
-{
-protected:
-    const char * getName() const override { return "nested table"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
 
 /** Parses sql security option. DEFINER = user_name SQL SECURITY DEFINER
  */
@@ -101,17 +94,15 @@ class IParserColumnDeclaration : public IParserBase
 {
 public:
     explicit IParserColumnDeclaration(bool require_type_ = true, bool allow_null_modifiers_ = false, bool check_keywords_after_name_ = false)
-    : require_type(require_type_)
-    , allow_null_modifiers(allow_null_modifiers_)
-    , check_keywords_after_name(check_keywords_after_name_)
+        : require_type(require_type_)
+        , allow_null_modifiers(allow_null_modifiers_)
+        , check_keywords_after_name(check_keywords_after_name_)
     {
     }
 
     void enableCheckTypeKeyword() { check_type_keyword = true; }
 
 protected:
-    using ASTDeclarePtr = std::shared_ptr<ASTColumnDeclaration>;
-
     const char * getName() const  override{ return "column declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -270,9 +261,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             auto default_function = std::make_shared<ASTFunction>();
             default_function->name = "defaultValueOfTypeName";
             default_function->arguments = std::make_shared<ASTExpressionList>();
-            // Ephemeral columns don't really have secrets but we need to format
-            // into a String, hence the strange call
-            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(type->as<ASTFunction>()->formatForLogging()));
+            /// Ephemeral columns don't really have secrets but we need to format into a String, hence the strange call
+            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(type->as<ASTDataType>()->formatForLogging()));
             default_expression = default_function;
         }
 

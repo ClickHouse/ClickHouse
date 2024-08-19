@@ -41,7 +41,7 @@ export FASTTEST_WORKSPACE
 export FASTTEST_SOURCE
 export FASTTEST_BUILD
 export FASTTEST_DATA
-export FASTTEST_OUT
+export FASTTEST_OUTPUT
 export PATH
 
 function ccache_status
@@ -256,19 +256,6 @@ function configure
     rm -f "$FASTTEST_DATA/config.d/secure_ports.xml"
 }
 
-function timeout_with_logging() {
-    local exit_code=0
-
-    timeout -s TERM --preserve-status "${@}" || exit_code="${?}"
-
-    if [[ "${exit_code}" -eq "124" ]]
-    then
-      echo "The command 'timeout ${*}' has been killed by timeout"
-    fi
-
-    return $exit_code
-}
-
 function run_tests
 {
     clickhouse-server --version
@@ -337,7 +324,7 @@ case "$stage" in
     configure 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/install_log.txt"
     ;&
 "run_tests")
-    timeout_with_logging 35m bash -c run_tests ||:
+    run_tests ||:
     /process_functional_tests_result.py --in-results-dir "$FASTTEST_OUTPUT/" \
         --out-results-file "$FASTTEST_OUTPUT/test_results.tsv" \
         --out-status-file "$FASTTEST_OUTPUT/check_status.tsv" || echo -e "failure\tCannot parse results" > "$FASTTEST_OUTPUT/check_status.tsv"
