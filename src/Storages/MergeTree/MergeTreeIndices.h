@@ -61,6 +61,7 @@ struct IMergeTreeIndexGranule
 
     virtual bool empty() const = 0;
 
+    /// The in-memory size of the granule. Not expected to be 100% accurate.
     virtual size_t memoryUsageBytes() const = 0;
 };
 

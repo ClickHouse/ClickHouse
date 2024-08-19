@@ -18,6 +18,7 @@ public:
         const MarkRanges & all_mark_ranges_,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
+        SkippingIndexCache * skipping_index_cache,
         MergeTreeReaderSettings settings);
     ~MergeTreeIndexReader();
 

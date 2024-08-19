@@ -651,6 +651,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     {
         auto mark_cache = context->getIndexMarkCache();
         auto uncompressed_cache = context->getIndexUncompressedCache();
+        auto skipping_index_cache = context->getSkippingIndexCache();
 
         auto process_part = [&](size_t part_index)
         {
@@ -706,6 +707,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     reader_settings,
                     mark_cache.get(),
                     uncompressed_cache.get(),
+                    skipping_index_cache.get(),
                     log);
 
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -727,7 +729,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     indices_and_condition.indices, indices_and_condition.condition,
                     part, ranges.ranges,
                     settings, reader_settings,
-                    mark_cache.get(), uncompressed_cache.get(), log);
+                    mark_cache.get(), uncompressed_cache.get(), skipping_index_cache.get(), log);
 
                 stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -1345,6 +1347,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
+    SkippingIndexCache * skipping_index_cache,
     LoggerPtr log)
 {
     if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
@@ -1381,6 +1384,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         index_ranges,
         mark_cache,
         uncompressed_cache,
+        skipping_index_cache,
         reader_settings);
 
     MarkRanges res;
@@ -1461,6 +1465,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
+    SkippingIndexCache * skipping_index_cache,
     LoggerPtr log)
 {
     for (const auto & index_helper : indices)
@@ -1495,6 +1500,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
                 ranges,
                 mark_cache,
                 uncompressed_cache,
+                skipping_index_cache,
                 reader_settings));
     }
 
