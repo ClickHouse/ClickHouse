@@ -570,10 +570,11 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
     std::unique_ptr<ParquetBloomFilterCondition> parquet_bloom_filter_condition;
 
-    const auto filtering_columns = key_condition->getFilteringColumnNames();
+    std::unordered_set<std::string> filtering_columns;
 
     if (format_settings.parquet.bloom_filter_push_down && key_condition)
     {
+        filtering_columns = key_condition->getFilteringColumnNames();
         const auto parquet_conditions = createConditionsFromRpn(bf_reader, getPort().getHeader(), column_name_to_index, key_condition, filtering_columns);
         parquet_bloom_filter_condition = std::make_unique<ParquetBloomFilterCondition>(parquet_conditions);
     }
