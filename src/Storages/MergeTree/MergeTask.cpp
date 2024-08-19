@@ -560,7 +560,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         for (const auto & part : global_ctx->future_part->parts)
         {
             auto it = part->getProjectionParts().find(projection.name);
-            if (it != part->getProjectionParts().end())
+            if (it != part->getProjectionParts().end() && !it->second->is_broken)
                 projection_parts.push_back(it->second);
         }
         if (projection_parts.size() == global_ctx->future_part->parts.size())
@@ -568,14 +568,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             global_ctx->projections_to_merge.push_back(&projection);
             global_ctx->projections_to_merge_parts[projection.name].assign(projection_parts.begin(), projection_parts.end());
         }
-        else if (projection_parts.empty())
-        {
-            LOG_DEBUG(ctx->log, "Projection {} will not be merged or rebuilt because all parts don't have it", projection.name);
-        }
         else
         {
-            LOG_DEBUG(ctx->log, "Projection {} will be rebuilt because some parts don't have it", projection.name);
-            global_ctx->projections_to_rebuild.push_back(&projection);
+            chassert(projection_parts.size() < global_ctx->future_part->parts.size());
+            LOG_DEBUG(ctx->log, "Projection {} is not merged because some parts don't have it", projection.name);
+            continue;
         }
     }
 

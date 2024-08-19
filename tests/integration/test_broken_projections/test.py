@@ -191,7 +191,7 @@ def optimize(node, table, final, no_wait):
     if final:
         query += " FINAL"
     if no_wait:
-        query += " SETTINGS alter_sync=2"
+        query += " SETTINGS alter_sync=0"
     node.query(query)
 
 
