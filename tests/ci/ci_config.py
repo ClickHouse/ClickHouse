@@ -87,7 +87,8 @@ class CI:
                 package_type="deb",
                 static_binary_name="aarch64",
                 additional_pkgs=True,
-            )
+            ),
+            runner_type=Runners.BUILDER_ARM,
         ),
         BuildNames.PACKAGE_ASAN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
