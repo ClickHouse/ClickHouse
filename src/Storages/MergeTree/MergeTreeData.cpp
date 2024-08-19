@@ -8665,6 +8665,9 @@ void MergeTreeData::loadPrimaryKeys()
     // Thread pool to process loading in parallel
     auto & thread_pool = DB::getActivePartsLoadingThreadPool().get();
 
+    // Mutex to protect shared data access
+    std::mutex mutex;
+
     for (const auto & data_part : getDataParts(affordable_states))
     {
         // Skip projection parts, as they do not need primary key loading
@@ -8675,7 +8678,9 @@ void MergeTreeData::loadPrimaryKeys()
         if (!data_part->isIndexLoaded())
         {
             // Use thread pool to parallelize the work
-            thread_pool.scheduleOrThrowOnError([data_part] {
+            thread_pool.scheduleOrThrowOnError([&mutex, data_part] {
+                // Lock the mutex before loading index to prevent data races
+                std::lock_guard<std::mutex> lock(mutex);
                 const_cast<IMergeTreeDataPart &>(*data_part).loadIndexWithLock();
             });
         }
