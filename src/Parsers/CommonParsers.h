@@ -371,6 +371,7 @@ namespace DB
     MR_MACROS(POPULATE, "POPULATE") \
     MR_MACROS(PRECEDING, "PRECEDING") \
     MR_MACROS(PRECISION, "PRECISION") \
+    MR_MACROS(PREFIX, "PREFIX") \
     MR_MACROS(PREWHERE, "PREWHERE") \
     MR_MACROS(PRIMARY_KEY, "PRIMARY KEY") \
     MR_MACROS(PRIMARY, "PRIMARY") \
@@ -449,6 +450,7 @@ namespace DB
     MR_MACROS(SHOW, "SHOW") \
     MR_MACROS(SIGNED, "SIGNED") \
     MR_MACROS(SIMPLE, "SIMPLE") \
+    MR_MACROS(SKIP, "SKIP") \
     MR_MACROS(SOURCE, "SOURCE") \
     MR_MACROS(SPATIAL, "SPATIAL") \
     MR_MACROS(SQL_SECURITY, "SQL SECURITY") \
@@ -641,6 +643,32 @@ protected:
     }
 };
 
+class ParserTokenSequence : public IParserBase
+{
+private:
+    std::vector<TokenType> token_types;
+public:
+    ParserTokenSequence(const std::vector<TokenType> & token_types_) : token_types(token_types_) {} /// NOLINT
+
+protected:
+    const char * getName() const override { return "token sequence"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected) override
+    {
+        for (auto token_type : token_types)
+        {
+            if (pos->type != token_type)
+            {
+                expected.add(pos, getTokenName(token_type));
+                return false;
+            }
+
+            ++pos;
+        }
+
+        return true;
+    }
+};
 
 // Parser always returns true and do nothing.
 class ParserNothing : public IParserBase

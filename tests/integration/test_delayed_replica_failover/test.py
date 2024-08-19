@@ -20,21 +20,30 @@ node_1_2 = cluster.add_instance("node_1_2", with_zookeeper=True)
 node_2_1 = cluster.add_instance("node_2_1", with_zookeeper=True)
 node_2_2 = cluster.add_instance("node_2_2", with_zookeeper=True)
 
+# For test to be runnable multiple times
+seqno = 0
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
+        yield cluster
+    finally:
+        cluster.shutdown()
 
+
+@pytest.fixture(scope="function", autouse=True)
+def create_tables():
+    global seqno
+    try:
+        seqno += 1
         for shard in (1, 2):
             for replica in (1, 2):
                 node = cluster.instances["node_{}_{}".format(shard, replica)]
                 node.query(
-                    """
-CREATE TABLE replicated (d Date, x UInt32) ENGINE =
-    ReplicatedMergeTree('/clickhouse/tables/{shard}/replicated', '{instance}') PARTITION BY toYYYYMM(d) ORDER BY d""".format(
-                        shard=shard, instance=node.name
-                    )
+                    f"CREATE TABLE replicated (d Date, x UInt32) ENGINE = "
+                    f"ReplicatedMergeTree('/clickhouse/tables/{shard}/replicated_{seqno}', '{node.name}') PARTITION BY toYYYYMM(d) ORDER BY d"
                 )
 
         node_1_1.query(
@@ -42,10 +51,15 @@ CREATE TABLE replicated (d Date, x UInt32) ENGINE =
             "Distributed('test_cluster', 'default', 'replicated')"
         )
 
-        yield cluster
+        yield
 
     finally:
-        cluster.shutdown()
+        node_1_1.query("DROP TABLE distributed")
+
+        node_1_1.query("DROP TABLE replicated")
+        node_1_2.query("DROP TABLE replicated")
+        node_2_1.query("DROP TABLE replicated")
+        node_2_2.query("DROP TABLE replicated")
 
 
 def test(started_cluster):
@@ -101,7 +115,9 @@ SELECT sum(x) FROM distributed WITH TOTALS SETTINGS
         # allow pings to zookeeper to timeout (must be greater than ZK session timeout).
         for _ in range(30):
             try:
-                node_2_2.query("SELECT * FROM system.zookeeper where path = '/'")
+                node_2_2.query(
+                    "SELECT * FROM system.zookeeper where path = '/' SETTINGS insert_keeper_max_retries = 0"
+                )
                 time.sleep(0.5)
             except:
                 break
@@ -120,7 +136,7 @@ SELECT sum(x) FROM distributed SETTINGS
             == "3"
         )
 
-        # Regression for skip_unavailable_shards in conjunction with skip_unavailable_shards
+        # Prefer fallback_to_stale_replicas over skip_unavailable_shards
         assert (
             instance_with_dist_table.query(
                 """

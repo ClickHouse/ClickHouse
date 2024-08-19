@@ -167,6 +167,11 @@ class GH:
         latest_branch = Shell.get_output(
             'gh pr list --label release --repo ClickHouse/ClickHouse --search "sort:created" -L1 --json headRefName'
         )
+        if latest_branch:
+            latest_branch = json.loads(latest_branch)[0]["headRefName"]
+        print(
+            f"Latest branch [{latest_branch}], release branch [{branch}], release latest [{latest_branch == branch}]"
+        )
         return latest_branch == branch
 
 
