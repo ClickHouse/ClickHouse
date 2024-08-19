@@ -44,7 +44,7 @@ namespace ErrorCodes
 namespace zkutil
 {
 
-/// Preferred size of multi() command (in number of ops)
+/// Preferred size of multi command (in the number of operations)
 constexpr size_t MULTI_BATCH_SIZE = 100;
 
 struct ShuffleHost
@@ -620,7 +620,7 @@ public:
 
     void setServerCompletelyStarted();
 
-    Int8 getConnectedHostIdx() const;
+    std::optional<int8_t> getConnectedHostIdx() const;
     String getConnectedHostPort() const;
     int32_t getConnectionXid() const;
 

@@ -65,12 +65,11 @@ ENV TZ=Europe/Amsterdam
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV NUM_TRIES=1
-ENV MAX_RUN_TIME=0
 
 # Unrelated to vars in setup_minio.sh, but should be the same there
 # to have the same binaries for local running scenario
-ARG MINIO_SERVER_VERSION=2022-01-03T18-22-58Z
-ARG MINIO_CLIENT_VERSION=2022-01-05T23-52-51Z
+ARG MINIO_SERVER_VERSION=2024-08-03T04-33-23Z
+ARG MINIO_CLIENT_VERSION=2024-07-31T15-58-33Z
 ARG TARGETARCH
 
 # Download Minio-related binaries

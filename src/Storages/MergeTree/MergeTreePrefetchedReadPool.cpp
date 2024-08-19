@@ -329,7 +329,7 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
             part_stat.sum_marks += range.end - range.begin;
 
         const auto & columns = settings.merge_tree_determine_task_size_by_prewhere_columns && prewhere_info
-            ? prewhere_info->prewhere_actions->getRequiredColumnsNames()
+            ? prewhere_info->prewhere_actions.getRequiredColumnsNames()
             : column_names;
 
         part_stat.approx_size_of_mark = getApproximateSizeOfGranule(*read_info.data_part, columns);
@@ -379,7 +379,6 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
     for (const auto & part : per_part_statistics)
         total_size_approx += part.sum_marks * part.approx_size_of_mark;
 
-    size_t min_prefetch_step_marks = pool_settings.min_marks_for_concurrent_read;
     for (size_t i = 0; i < per_part_infos.size(); ++i)
     {
         auto & part_stat = per_part_statistics[i];
@@ -394,29 +393,11 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
                 1, static_cast<size_t>(std::round(static_cast<double>(settings.filesystem_prefetch_step_bytes) / part_stat.approx_size_of_mark)));
         }
 
-        /// This limit is important to avoid spikes of slow aws getObject requests when parallelizing within one file.
-        /// (The default is taken from here https://docs.aws.amazon.com/whitepapers/latest/s3-optimizing-performance-best-practices/use-byte-range-fetches.html).
-        if (part_stat.approx_size_of_mark
-            && settings.filesystem_prefetch_min_bytes_for_single_read_task
-            && part_stat.approx_size_of_mark < settings.filesystem_prefetch_min_bytes_for_single_read_task)
-        {
-            const size_t min_prefetch_step_marks_by_total_cols = static_cast<size_t>(
-                std::ceil(static_cast<double>(settings.filesystem_prefetch_min_bytes_for_single_read_task) / part_stat.approx_size_of_mark));
+        part_stat.prefetch_step_marks = std::max(part_stat.prefetch_step_marks, per_part_infos[i]->min_marks_per_task);
 
-            /// At least one task to start working on it right now and another one to prefetch in the meantime.
-            const size_t new_min_prefetch_step_marks = std::min<size_t>(min_prefetch_step_marks_by_total_cols, sum_marks / threads / 2);
-            if (min_prefetch_step_marks < new_min_prefetch_step_marks)
-            {
-                LOG_DEBUG(log, "Increasing min prefetch step from {} to {}", min_prefetch_step_marks, new_min_prefetch_step_marks);
-                min_prefetch_step_marks = new_min_prefetch_step_marks;
-            }
-        }
-
-        if (part_stat.prefetch_step_marks < min_prefetch_step_marks)
-        {
-            LOG_DEBUG(log, "Increasing prefetch step from {} to {}", part_stat.prefetch_step_marks, min_prefetch_step_marks);
-            part_stat.prefetch_step_marks = min_prefetch_step_marks;
-        }
+        if (part_stat.prefetch_step_marks == 0)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
 
         LOG_DEBUG(
             log,
@@ -433,11 +414,10 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
 
     LOG_DEBUG(
         log,
-        "Sum marks: {}, threads: {}, min_marks_per_thread: {}, min prefetch step marks: {}, prefetches limit: {}, total_size_approx: {}",
+        "Sum marks: {}, threads: {}, min_marks_per_thread: {}, prefetches limit: {}, total_size_approx: {}",
         sum_marks,
         threads,
         min_marks_per_thread,
-        min_prefetch_step_marks,
         settings.filesystem_prefetches_limit,
         total_size_approx);
 

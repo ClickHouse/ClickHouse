@@ -32,6 +32,7 @@ struct FileCacheSettings
     size_t background_download_queue_size_limit = FILECACHE_DEFAULT_BACKGROUND_DOWNLOAD_QUEUE_SIZE_LIMIT;
 
     size_t load_metadata_threads = FILECACHE_DEFAULT_LOAD_METADATA_THREADS;
+    bool load_metadata_asynchronously = false;
 
     bool write_cache_per_user_id_directory = false;
 

@@ -56,25 +56,21 @@ void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
         getNestedColumn().updateHashWithValue(n, hash);
 }
 
-void ColumnNullable::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnNullable::getWeakHash32() const
 {
     auto s = size();
 
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
-
-    WeakHash32 old_hash = hash;
-    nested_column->updateWeakHash32(hash);
+    WeakHash32 hash = nested_column->getWeakHash32();
 
     const auto & null_map_data = getNullMapData();
     auto & hash_data = hash.getData();
-    auto & old_hash_data = old_hash.getData();
 
-    /// Use old data for nulls.
+    /// Use default for nulls.
     for (size_t row = 0; row < s; ++row)
         if (null_map_data[row])
-            hash_data[row] = old_hash_data[row];
+            hash_data[row] = WeakHash32::kDefaultInitialValue;
+
+    return hash;
 }
 
 void ColumnNullable::updateHashFast(SipHash & hash) const
@@ -221,7 +217,7 @@ const char * ColumnNullable::skipSerializedInArena(const char * pos) const
     return pos;
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else
 void ColumnNullable::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -262,7 +258,7 @@ bool ColumnNullable::tryInsert(const Field & x)
     return true;
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnNullable::insertFrom(const IColumn & src, size_t n)
 #else
 void ColumnNullable::doInsertFrom(const IColumn & src, size_t n)
@@ -274,7 +270,7 @@ void ColumnNullable::doInsertFrom(const IColumn & src, size_t n)
 }
 
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnNullable::insertManyFrom(const IColumn & src, size_t position, size_t length)
 #else
 void ColumnNullable::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
@@ -414,7 +410,7 @@ int ColumnNullable::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int 
     return getNestedColumn().compareAt(n, m, nested_rhs, null_direction_hint);
 }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
 #else
 int ColumnNullable::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
@@ -708,6 +704,27 @@ void ColumnNullable::reserve(size_t n)
 {
     getNestedColumn().reserve(n);
     getNullMapData().reserve(n);
+}
+
+size_t ColumnNullable::capacity() const
+{
+    return getNullMapData().capacity();
+}
+
+void ColumnNullable::prepareForSquashing(const Columns & source_columns)
+{
+    size_t new_size = size();
+    Columns nested_source_columns;
+    nested_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+    {
+        const auto & source_nullable_column = assert_cast<const ColumnNullable &>(*source_column);
+        new_size += source_nullable_column.size();
+        nested_source_columns.push_back(source_nullable_column.getNestedColumnPtr());
+    }
+
+    nested_column->prepareForSquashing(nested_source_columns);
+    getNullMapData().reserve(new_size);
 }
 
 void ColumnNullable::shrinkToFit()

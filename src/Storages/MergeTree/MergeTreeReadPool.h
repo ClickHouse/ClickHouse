@@ -73,7 +73,6 @@ private:
     void fillPerThreadInfo(size_t threads, size_t sum_marks);
 
     mutable std::mutex mutex;
-    size_t min_marks_for_concurrent_read = 0;
 
     /// State to track numbers of slow reads.
     struct BackoffState

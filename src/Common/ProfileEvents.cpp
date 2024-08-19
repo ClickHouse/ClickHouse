@@ -193,8 +193,10 @@
     M(ReplicaPartialShutdown, "How many times Replicated table has to deinitialize its state due to session expiration in ZooKeeper. The state is reinitialized every time when ZooKeeper is available again.", ValueType::Number) \
     \
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.", ValueType::Number) \
+    M(SelectedPartsTotal, "Number of total data parts before selecting which ones to read from a MergeTree table.", ValueType::Number) \
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.", ValueType::Number) \
     M(SelectedMarks, "Number of marks (index granules) selected to read from a MergeTree table.", ValueType::Number) \
+    M(SelectedMarksTotal, "Number of total marks (index granules) before selecting which ones to read from a MergeTree table.", ValueType::Number) \
     M(SelectedRows, "Number of rows SELECTed from all tables.", ValueType::Number) \
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.", ValueType::Bytes) \
     M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).", ValueType::Number) \
@@ -207,15 +209,41 @@
     \
     M(Merge, "Number of launched background merges.", ValueType::Number) \
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.", ValueType::Number) \
+    M(MergedColumns, "Number of columns merged during the horizontal stage of merges.", ValueType::Number) \
+    M(GatheredColumns, "Number of columns gathered during the vertical stage of merges.", ValueType::Number) \
     M(MergedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for background merges. This is the number before merge.", ValueType::Bytes) \
-    M(MergesTimeMilliseconds, "Total time spent for background merges.", ValueType::Milliseconds) \
-    \
     M(MergeTreeDataWriterRows, "Number of rows INSERTed to MergeTree tables.", ValueType::Number) \
     M(MergeTreeDataWriterUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) INSERTed to MergeTree tables.", ValueType::Bytes) \
     M(MergeTreeDataWriterCompressedBytes, "Bytes written to filesystem for data INSERTed to MergeTree tables.", ValueType::Bytes) \
     M(MergeTreeDataWriterBlocks, "Number of blocks INSERTed to MergeTree tables. Each block forms a data part of level zero.", ValueType::Number) \
     M(MergeTreeDataWriterBlocksAlreadySorted, "Number of blocks INSERTed to MergeTree tables that appeared to be already sorted.", ValueType::Number) \
     \
+    M(MergeTotalMilliseconds, "Total time spent for background merges", ValueType::Milliseconds) \
+    M(MergeExecuteMilliseconds, "Total busy time spent for execution of background merges", ValueType::Milliseconds) \
+    M(MergeHorizontalStageTotalMilliseconds, "Total time spent for horizontal stage of background merges", ValueType::Milliseconds) \
+    M(MergeHorizontalStageExecuteMilliseconds, "Total busy time spent for execution of horizontal stage of background merges", ValueType::Milliseconds) \
+    M(MergeVerticalStageTotalMilliseconds, "Total time spent for vertical stage of background merges", ValueType::Milliseconds) \
+    M(MergeVerticalStageExecuteMilliseconds, "Total busy time spent for execution of vertical stage of background merges", ValueType::Milliseconds) \
+    M(MergeProjectionStageTotalMilliseconds, "Total time spent for projection stage of background merges", ValueType::Milliseconds) \
+    M(MergeProjectionStageExecuteMilliseconds, "Total busy time spent for execution of projection stage of background merges", ValueType::Milliseconds) \
+    \
+    M(MergingSortedMilliseconds, "Total time spent while merging sorted columns", ValueType::Milliseconds) \
+    M(AggregatingSortedMilliseconds, "Total time spent while aggregating sorted columns", ValueType::Milliseconds) \
+    M(CollapsingSortedMilliseconds, "Total time spent while collapsing sorted columns", ValueType::Milliseconds) \
+    M(ReplacingSortedMilliseconds, "Total time spent while replacing sorted columns", ValueType::Milliseconds) \
+    M(SummingSortedMilliseconds, "Total time spent while summing sorted columns", ValueType::Milliseconds) \
+    M(VersionedCollapsingSortedMilliseconds, "Total time spent while version collapsing sorted columns", ValueType::Milliseconds) \
+    M(GatheringColumnMilliseconds, "Total time spent while gathering columns for vertical merge", ValueType::Milliseconds) \
+    \
+    M(MutationTotalParts, "Number of total parts for which mutations tried to be applied", ValueType::Number) \
+    M(MutationUntouchedParts, "Number of total parts for which mutations tried to be applied but which was completely skipped according to predicate", ValueType::Number) \
+    M(MutatedRows, "Rows read for mutations. This is the number of rows before mutation", ValueType::Number) \
+    M(MutatedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for mutations. This is the number before mutation.", ValueType::Bytes) \
+    M(MutationTotalMilliseconds, "Total time spent for mutations.", ValueType::Milliseconds) \
+    M(MutationExecuteMilliseconds, "Total busy time spent for execution of mutations.", ValueType::Milliseconds) \
+    M(MutationAllPartColumns, "Number of times when task to mutate all columns in part was created", ValueType::Number) \
+    M(MutationSomePartColumns, "Number of times when task to mutate some columns in part was created", ValueType::Number) \
+    M(MutateTaskProjectionsCalculationMicroseconds, "Time spent calculating projections in mutations", ValueType::Milliseconds) \
     M(MergeTreeDataWriterSkipIndicesCalculationMicroseconds, "Time spent calculating skip indices", ValueType::Microseconds) \
     M(MergeTreeDataWriterStatisticsCalculationMicroseconds, "Time spent calculating statistics", ValueType::Microseconds) \
     M(MergeTreeDataWriterSortingBlocksMicroseconds, "Time spent sorting blocks", ValueType::Microseconds) \
@@ -223,7 +251,6 @@
     M(MergeTreeDataWriterProjectionsCalculationMicroseconds, "Time spent calculating projections", ValueType::Microseconds) \
     M(MergeTreeDataProjectionWriterSortingBlocksMicroseconds, "Time spent sorting blocks (for projection it might be a key different from table's sorting key)", ValueType::Microseconds) \
     M(MergeTreeDataProjectionWriterMergingBlocksMicroseconds, "Time spent merging blocks", ValueType::Microseconds) \
-    M(MutateTaskProjectionsCalculationMicroseconds, "Time spent calculating projections", ValueType::Microseconds) \
     \
     M(InsertedWideParts, "Number of parts inserted in Wide format.", ValueType::Number) \
     M(InsertedCompactParts, "Number of parts inserted in Compact format.", ValueType::Number) \
@@ -457,6 +484,7 @@ The server successfully detected this situation and will download merged part fr
     M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.", ValueType::Number) \
     M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.", ValueType::Number) \
     M(AzureGetProperties, "Number of Azure blob storage API GetProperties calls.", ValueType::Number) \
+    M(AzureCreateContainer, "Number of Azure blob storage API CreateContainer calls.", ValueType::Number) \
     \
     M(DiskAzureGetObject, "Number of Disk Azure API GetObject calls.", ValueType::Number) \
     M(DiskAzureUpload, "Number of Disk Azure blob storage API Upload calls", ValueType::Number) \
@@ -466,6 +494,7 @@ The server successfully detected this situation and will download merged part fr
     M(DiskAzureListObjects, "Number of Disk Azure blob storage API ListObjects calls.", ValueType::Number) \
     M(DiskAzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.", ValueType::Number) \
     M(DiskAzureGetProperties, "Number of Disk Azure blob storage API GetProperties calls.", ValueType::Number) \
+    M(DiskAzureCreateContainer, "Number of Disk Azure blob storage API CreateContainer calls.", ValueType::Number) \
     \
     M(ReadBufferFromAzureMicroseconds, "Time spent on reading from Azure.", ValueType::Microseconds) \
     M(ReadBufferFromAzureInitMicroseconds, "Time spent initializing connection to Azure.", ValueType::Microseconds) \

@@ -9,5 +9,6 @@
     </storage_configuration>
     <backups>
         <allowed_disk>backups</allowed_disk>
+        <test_randomize_order>true</test_randomize_order>
     </backups>
 </clickhouse>

@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <array>
 
 #include <boost/core/noncopyable.hpp>
 
@@ -19,6 +20,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
+#include <Interpreters/TableJoin.h>
 
 namespace Poco { class Logger; }
 
@@ -35,57 +37,28 @@ using FullMergeJoinCursorPtr = std::unique_ptr<FullMergeJoinCursor>;
 /// Used instead of storing previous block
 struct JoinKeyRow
 {
-    std::vector<ColumnPtr> row;
-
     JoinKeyRow() = default;
 
-    explicit JoinKeyRow(const SortCursorImpl & impl_, size_t pos)
-    {
-        row.reserve(impl_.sort_columns.size());
-        for (const auto & col : impl_.sort_columns)
-        {
-            auto new_col = col->cloneEmpty();
-            new_col->insertFrom(*col, pos);
-            row.push_back(std::move(new_col));
-        }
-    }
+    JoinKeyRow(const FullMergeJoinCursor & cursor, size_t pos);
 
-    void reset()
-    {
-        row.clear();
-    }
+    bool equals(const FullMergeJoinCursor & cursor) const;
+    bool asofMatch(const FullMergeJoinCursor & cursor, ASOFJoinInequality asof_inequality) const;
 
-    bool equals(const SortCursorImpl & impl) const
-    {
-        if (row.empty())
-            return false;
+    void reset();
 
-        assert(this->row.size() == impl.sort_columns_size);
-        for (size_t i = 0; i < impl.sort_columns_size; ++i)
-        {
-            int cmp = this->row[i]->compareAt(0, impl.getRow(), *impl.sort_columns[i], impl.desc[i].nulls_direction);
-            if (cmp != 0)
-                return false;
-        }
-        return true;
-    }
+    std::vector<ColumnPtr> row;
 };
 
 /// Remembers previous key if it was joined in previous block
 class AnyJoinState : boost::noncopyable
 {
 public:
-    AnyJoinState() = default;
+    void set(size_t source_num, const FullMergeJoinCursor & cursor);
+    void setValue(Chunk value_);
 
-    void set(size_t source_num, const SortCursorImpl & cursor)
-    {
-        assert(cursor.rows);
-        keys[source_num] = JoinKeyRow(cursor, cursor.rows - 1);
-    }
+    void reset(size_t source_num);
 
-    void setValue(Chunk value_) { value = std::move(value_); }
-
-    bool empty() const { return keys[0].row.empty() && keys[1].row.empty(); }
+    bool empty() const;
 
     /// current keys
     JoinKeyRow keys[2];
@@ -118,8 +91,8 @@ public:
         Chunk chunk;
     };
 
-    AllJoinState(const SortCursorImpl & lcursor, size_t lpos,
-                 const SortCursorImpl & rcursor, size_t rpos)
+    AllJoinState(const FullMergeJoinCursor & lcursor, size_t lpos,
+                 const FullMergeJoinCursor & rcursor, size_t rpos)
         : keys{JoinKeyRow(lcursor, lpos), JoinKeyRow(rcursor, rpos)}
     {
     }
@@ -187,13 +160,32 @@ private:
     size_t ridx = 0;
 };
 
+
+class AsofJoinState : boost::noncopyable
+{
+public:
+    void set(const FullMergeJoinCursor & rcursor, size_t rpos);
+    void reset();
+
+    bool hasMatch(const FullMergeJoinCursor & cursor, ASOFJoinInequality asof_inequality) const
+    {
+        if (value.empty())
+            return false;
+        return key.asofMatch(cursor, asof_inequality);
+    }
+
+    JoinKeyRow key;
+    Chunk value;
+    size_t value_row = 0;
+};
+
 /*
  * Wrapper for SortCursorImpl
  */
 class FullMergeJoinCursor : boost::noncopyable
 {
 public:
-    explicit FullMergeJoinCursor(const Block & sample_block_, const SortDescription & description_);
+    explicit FullMergeJoinCursor(const Block & sample_block_, const SortDescription & description_, bool is_asof = false);
 
     bool fullyCompleted() const;
     void setChunk(Chunk && chunk);
@@ -203,10 +195,22 @@ public:
     SortCursorImpl * operator-> () { return &cursor; }
     const SortCursorImpl * operator-> () const { return &cursor; }
 
+    SortCursorImpl & operator* () { return cursor; }
+    const SortCursorImpl & operator* () const { return cursor; }
+
     SortCursorImpl cursor;
 
     const Block & sampleBlock() const { return sample_block; }
     Columns sampleColumns() const { return sample_block.getColumns(); }
+
+    const IColumn * getAsofColumn() const
+    {
+        if (!asof_column_position)
+            return nullptr;
+        return cursor.all_columns[*asof_column_position];
+    }
+
+    String dump() const;
 
 private:
     Block sample_block;
@@ -214,6 +218,8 @@ private:
 
     Chunk current_chunk;
     bool recieved_all_blocks = false;
+
+    std::optional<size_t> asof_column_position;
 };
 
 /*
@@ -223,22 +229,35 @@ private:
 class MergeJoinAlgorithm final : public IMergingAlgorithm
 {
 public:
-    explicit MergeJoinAlgorithm(JoinPtr table_join, const Blocks & input_headers, size_t max_block_size_);
+    MergeJoinAlgorithm(JoinKind kind_,
+                       JoinStrictness strictness_,
+                       const TableJoin::JoinOnClause & on_clause_,
+                       const Blocks & input_headers,
+                       size_t max_block_size_);
+
+    MergeJoinAlgorithm(JoinPtr join_ptr, const Blocks & input_headers, size_t max_block_size_);
 
     const char * getName() const override { return "MergeJoinAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
+    void setAsofInequality(ASOFJoinInequality asof_inequality_);
+
     void logElapsed(double seconds);
+    MergedStats getMergedStats() const override;
 
 private:
     std::optional<Status> handleAnyJoinState();
-    Status anyJoin(JoinKind kind);
+    Status anyJoin();
 
     std::optional<Status> handleAllJoinState();
-    Status allJoin(JoinKind kind);
+    Status allJoin();
 
+    std::optional<Status> handleAsofJoinState();
+    Status asofJoin();
+
+    MutableColumns getEmptyResultColumns() const;
     Chunk createBlockWithDefaults(size_t source_num);
     Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const;
 
@@ -246,12 +265,15 @@ private:
     std::unordered_map<size_t, size_t> left_to_right_key_remap;
 
     std::array<FullMergeJoinCursorPtr, 2> cursors;
+    ASOFJoinInequality asof_inequality = ASOFJoinInequality::None;
 
-    /// Keep some state to make connection between data in different blocks
+    /// Keep some state to make handle data from different blocks
     AnyJoinState any_join_state;
     std::unique_ptr<AllJoinState> all_join_state;
+    AsofJoinState asof_join_state;
 
-    JoinPtr table_join;
+    JoinKind kind;
+    JoinStrictness strictness;
 
     size_t max_block_size;
     int null_direction_hint = 1;
@@ -260,6 +282,7 @@ private:
     {
         size_t num_blocks[2] = {0, 0};
         size_t num_rows[2] = {0, 0};
+        size_t num_bytes[2] = {0, 0};
 
         size_t max_blocks_loaded = 0;
     };
@@ -281,12 +304,21 @@ public:
         size_t max_block_size,
         UInt64 limit_hint = 0);
 
+    MergeJoinTransform(
+        JoinKind kind_,
+        JoinStrictness strictness_,
+        const TableJoin::JoinOnClause & on_clause_,
+        const Blocks & input_headers,
+        const Block & output_header,
+        size_t max_block_size,
+        UInt64 limit_hint_ = 0);
+
     String getName() const override { return "MergeJoinTransform"; }
+
+    void setAsofInequality(ASOFJoinInequality asof_inequality_) { algorithm.setAsofInequality(asof_inequality_); }
 
 protected:
     void onFinish() override;
-
-    LoggerPtr log;
 };
 
 }

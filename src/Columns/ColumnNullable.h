@@ -69,7 +69,7 @@ public:
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -77,7 +77,7 @@ public:
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src, size_t n) override;
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #else
@@ -100,7 +100,7 @@ public:
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
 #else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
@@ -125,6 +125,8 @@ public:
                         size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
     size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const override;
     void reserve(size_t n) override;
+    size_t capacity() const override;
+    void prepareForSquashing(const Columns & source_columns) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
@@ -133,7 +135,7 @@ public:
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max) const override;
     // Special function for nullable minmax index

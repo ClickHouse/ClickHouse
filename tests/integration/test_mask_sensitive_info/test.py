@@ -13,6 +13,7 @@ node = cluster.add_instance(
     with_zookeeper=True,
     with_azurite=True,
 )
+base_search_query = "SELECT COUNT() FROM system.query_log WHERE query LIKE "
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -35,7 +36,7 @@ def check_logs(must_contain=[], must_not_contain=[]):
             .replace("]", "\\]")
             .replace("*", "\\*")
         )
-        assert node.contains_in_log(escaped_str)
+        assert node.contains_in_log(escaped_str, exclusion_substring=base_search_query)
 
     for str in must_not_contain:
         escaped_str = (
@@ -44,7 +45,9 @@ def check_logs(must_contain=[], must_not_contain=[]):
             .replace("]", "\\]")
             .replace("*", "\\*")
         )
-        assert not node.contains_in_log(escaped_str)
+        assert not node.contains_in_log(
+            escaped_str, exclusion_substring=base_search_query
+        )
 
     for str in must_contain:
         escaped_str = str.replace("'", "\\'")
@@ -60,7 +63,7 @@ def system_query_log_contains_search_pattern(search_pattern):
     return (
         int(
             node.query(
-                f"SELECT COUNT() FROM system.query_log WHERE query LIKE '%{search_pattern}%'"
+                f"{base_search_query}'%{search_pattern}%' AND query NOT LIKE '{base_search_query}%'"
             ).strip()
         )
         >= 1
@@ -104,7 +107,6 @@ def test_create_alter_user():
         ],
         must_not_contain=[
             password,
-            "IDENTIFIED BY",
             "IDENTIFIED BY",
             "IDENTIFIED WITH plaintext_password BY",
         ],
@@ -200,6 +202,10 @@ def test_create_table():
         f"S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip') settings mode = 'ordered'",
         f"S3Queue('http://minio1:9001/root/data/', 'minio', '{password}', 'CSV') settings mode = 'ordered'",
         f"S3Queue('http://minio1:9001/root/data/', 'minio', '{password}', 'CSV', 'gzip') settings mode = 'ordered'",
+        (
+            f"Iceberg('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
+            "DNS_ERROR",
+        ),
     ]
 
     def make_test_case(i):
@@ -264,6 +270,7 @@ def test_create_table():
             # due to sensitive data substituion the query will be normalized, so not "settings" but "SETTINGS"
             "CREATE TABLE table19 (`x` int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'minio', '[HIDDEN]', 'CSV') SETTINGS mode = 'ordered'",
             "CREATE TABLE table20 (`x` int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'minio', '[HIDDEN]', 'CSV', 'gzip') SETTINGS mode = 'ordered'",
+            "CREATE TABLE table21 (`x` int) ENGINE = Iceberg('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )
@@ -366,10 +373,7 @@ def test_table_functions():
         f"remoteSecure(named_collection_6, addresses_expr = '127.{{2..11}}', database = 'default', table = 'remote_table', user = 'remote_user', password = '{password}')",
         f"s3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV')",
         f"s3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '{password}')",
-        (
-            f"deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
-            "DNS_ERROR",
-        ),
+        f"deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
         f"azureBlobStorage('{azure_conn_string}', 'cont', 'test_simple.csv', 'CSV')",
         f"azureBlobStorage('{azure_conn_string}', 'cont', 'test_simple_1.csv', 'CSV', 'none')",
         f"azureBlobStorage('{azure_conn_string}', 'cont', 'test_simple_2.csv', 'CSV', 'none', 'auto')",
@@ -388,6 +392,7 @@ def test_table_functions():
         f"azureBlobStorageCluster('test_shard_localhost', '{azure_storage_account_url}', 'cont', 'test_simple_15.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
         f"azureBlobStorageCluster('test_shard_localhost', named_collection_2, connection_string = '{azure_conn_string}', container = 'cont', blob_path = 'test_simple_16.csv', format = 'CSV')",
         f"azureBlobStorageCluster('test_shard_localhost', named_collection_2, storage_account_url = '{azure_storage_account_url}', container = 'cont', blob_path = 'test_simple_17.csv', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
+        f"iceberg('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
     ]
 
     def make_test_case(i):
@@ -479,6 +484,7 @@ def test_table_functions():
             f"CREATE TABLE tablefunc48 (`x` int) AS azureBlobStorageCluster('test_shard_localhost', '{azure_storage_account_url}', 'cont', 'test_simple_15.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
             f"CREATE TABLE tablefunc49 (x int) AS azureBlobStorageCluster('test_shard_localhost', named_collection_2, connection_string = '{azure_conn_string}', container = 'cont', blob_path = 'test_simple_16.csv', format = 'CSV')",
             f"CREATE TABLE tablefunc50 (`x` int) AS azureBlobStorageCluster('test_shard_localhost', named_collection_2, storage_account_url = '{azure_storage_account_url}', container = 'cont', blob_path = 'test_simple_17.csv', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
+            "CREATE TABLE tablefunc51 (`x` int) AS iceberg('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )
