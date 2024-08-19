@@ -83,7 +83,7 @@ void ACMERequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerRe
         *response.send() << "Not found.\n";
     }
 
-    handle(server, request, response, challenge);
+    handle(request, response, { challenge });
 }
 
 void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)

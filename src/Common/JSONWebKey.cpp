@@ -1,7 +1,6 @@
 #include <Common/JSONWebKey.h>
 
 #include <fmt/format.h>
-#include <Poco/Crypto/RSAKey.h>
 #include <Common/Base64.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
