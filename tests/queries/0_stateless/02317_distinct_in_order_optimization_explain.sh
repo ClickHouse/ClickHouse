@@ -75,7 +75,7 @@ echo "-- enabled, distinct columns contains constant columns, non-const columns 
 $CLICKHOUSE_CLIENT --read_in_order_two_level_merge_threshold=2 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct 1, b, a from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
 echo "-- enabled, only part of distinct columns form prefix of sorting key"
 
-$CLICKHOUSE_CLIENT --max_threads=0 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, c from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER
+$CLICKHOUSE_CLIENT --max_threads=0 -q "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, c from distinct_in_order_explain" | eval $FIND_READING_IN_ORDER | tail -n 1
 
 echo "=== disable new analyzer ==="
 DISABLE_ANALYZER="set enable_analyzer=0"
