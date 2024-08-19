@@ -54,6 +54,7 @@ public:
     void onFinish() override;
 
 private:
+    bool reconnectAndResend(JobReplica & job, const Block & shard_block);
     void onCancel() noexcept override;
 
     IColumn::Selector createSelector(const Block & source_block) const;
