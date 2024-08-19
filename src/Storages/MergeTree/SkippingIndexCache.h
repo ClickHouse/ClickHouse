@@ -1,64 +1,68 @@
 #pragma once
 
+#include <Common/CacheBase.h>
+#include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace ProfileEvents
 {
-    extern const Event SecondaryIndexCacheMisses;
-    extern const Event SecondaryIndexCacheHits;
-    extern const Event SecondaryIndexCacheBytesEvicted;
+    extern const Event SkippingIndexCacheMisses;
+    extern const Event SkippingIndexCacheHits;
+    extern const Event SkippingIndexCacheBytesEvicted;
 }
 
 namespace CurrentMetrics
 {
-    extern const Metric SecondaryIndexCacheSize;
+    extern const Metric SkippingIndexCacheSize;
 }
 
 namespace DB
 {
 
-struct SecondaryIndexCacheCell
+struct SkippingIndexCacheCell
 {
-    MergeTreeIndexGranulePtr granule;
-
-    size_t memory_bytes;
-
     static constexpr size_t ENTRY_OVERHEAD_BYTES_GUESS = 200;
 
-    SecondaryIndexCacheCell(MergeTreeIndexGranulePtr g)
+    MergeTreeIndexGranulePtr granule;
+    size_t memory_bytes;
+
+    explicit SkippingIndexCacheCell(MergeTreeIndexGranulePtr g)
         : granule(std::move(g))
-        , memory_bytes(0)
         /// , memory_bytes(granule->memoryUsageBytes() + ENTRY_OVERHEAD_BYTES_GUESS)
+        , memory_bytes(0)
     {
-        CurrentMetrics::add(CurrentMetrics::SecondaryIndexCacheSize, memory_bytes);
+        CurrentMetrics::add(CurrentMetrics::SkippingIndexCacheSize, memory_bytes);
     }
 
-    ~SecondaryIndexCacheCell()
+    ~SkippingIndexCacheCell()
     {
-        CurrentMetrics::sub(CurrentMetrics::SecondaryIndexCacheSize, memory_bytes);
+        CurrentMetrics::sub(CurrentMetrics::SkippingIndexCacheSize, memory_bytes);
     }
 
-    SecondaryIndexCacheCell(const SecondaryIndexCacheCell &) = delete;
-    SecondaryIndexCacheCell & operator=(const SecondaryIndexCacheCell &) = delete;
+    SkippingIndexCacheCell(const SkippingIndexCacheCell &) = delete;
+    SkippingIndexCacheCell & operator=(const SkippingIndexCacheCell &) = delete;
 };
 
-struct SecondaryIndexCacheWeightFunction
+
+struct SkippingIndexCacheWeightFunction
 {
-    size_t operator()(const SecondaryIndexCacheCell & x) const
+    size_t operator()(const SkippingIndexCacheCell & cell) const
     {
-        return x.memory_bytes;
+        return cell.memory_bytes;
     }
 };
 
 
-/// Cache of deserialized index granules.
-class SecondaryIndexCache : public CacheBase<UInt128, SecondaryIndexCacheCell, UInt128TrivialHash, SecondaryIndexCacheWeightFunction>
+/// Cache of deserialized skipping index granules.
+class SkippingIndexCache : public CacheBase<UInt128, SkippingIndexCacheCell, UInt128TrivialHash, SkippingIndexCacheWeightFunction>
 {
 public:
-    using Base = CacheBase<UInt128, SecondaryIndexCacheCell, UInt128TrivialHash, SecondaryIndexCacheWeightFunction>;
+    using Base = CacheBase<UInt128, SkippingIndexCacheCell, UInt128TrivialHash, SkippingIndexCacheWeightFunction>;
 
-    SecondaryIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
-        : Base(cache_policy, max_size_in_bytes, max_count, size_ratio) {}
+    SkippingIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
+        : Base(cache_policy, max_size_in_bytes, max_count, size_ratio)
+    {}
 
     static UInt128 hash(const String & path_to_data_part, const String & index_name, size_t index_mark)
     {
@@ -73,16 +77,16 @@ public:
     template <typename LoadFunc>
     MergeTreeIndexGranulePtr getOrSet(const Key & key, LoadFunc && load)
     {
-        auto wrapped_load = [&]() -> std::shared_ptr<SecondaryIndexCacheCell> {
+        auto wrapped_load = [&]() -> std::shared_ptr<SkippingIndexCacheCell> {
             MergeTreeIndexGranulePtr granule = load();
-            return std::make_shared<SecondaryIndexCacheCell>(std::move(granule));
+            return std::make_shared<SkippingIndexCacheCell>(std::move(granule));
         };
-        auto result = Base::getOrSet(key, wrapped_load);
 
+        auto result = Base::getOrSet(key, wrapped_load);
         if (result.second)
-            ProfileEvents::increment(ProfileEvents::SecondaryIndexCacheMisses);
+            ProfileEvents::increment(ProfileEvents::SkippingIndexCacheMisses);
         else
-            ProfileEvents::increment(ProfileEvents::SecondaryIndexCacheHits);
+            ProfileEvents::increment(ProfileEvents::SkippingIndexCacheHits);
 
         return result.first->granule;
     }
@@ -90,10 +94,10 @@ public:
 private:
     void onRemoveOverflowWeightLoss(size_t weight_loss) override
     {
-        ProfileEvents::increment(ProfileEvents::SecondaryIndexCacheBytesEvicted, weight_loss);
+        ProfileEvents::increment(ProfileEvents::SkippingIndexCacheBytesEvicted, weight_loss);
     }
 };
 
-using SecondaryIndexCachePtr = std::shared_ptr<SecondaryIndexCache>;
+using SkippingIndexCachePtr = std::shared_ptr<SkippingIndexCache>;
 
 }

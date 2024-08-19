@@ -23,6 +23,8 @@ public:
 
     bool empty() const override { return is_empty; }
 
+    size_t memoryUsageBytes() const override { return sizeof(*this); }
+
     ~MergeTreeIndexGranuleHypothesis() override = default;
 
     const String & index_name;
