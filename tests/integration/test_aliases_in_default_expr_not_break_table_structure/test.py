@@ -5,10 +5,14 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["config/storage_conf.xml", "config/enable_keeper.xml", "config/users.xml"],
+    main_configs=[
+        "config/storage_conf.xml",
+        "config/enable_keeper.xml",
+        "config/users.xml",
+    ],
     stay_alive=True,
     with_minio=True,
-    macros={"shard": 1, "replica": 1}
+    macros={"shard": 1, "replica": 1},
 )
 
 
