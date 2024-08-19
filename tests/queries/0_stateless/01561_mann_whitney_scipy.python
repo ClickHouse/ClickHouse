@@ -17,11 +17,6 @@ def test_and_check(name, a, b, t_stat, p_value):
     client.query(
         "CREATE TABLE mann_whitney (left Float64, right UInt8) ENGINE = Memory;"
     )
-    #client.query(
-    #    "INSERT INTO mann_whitney VALUES {};".format(
-    #        ", ".join(["({},{}), ({},{})".format(i, 0, j, 1) for i, j in zip(a, b)])
-    #    )
-    #)
     client.query(
         "INSERT INTO mann_whitney VALUES {};".format(
             ", ".join(["({},{})".format(i, 0) for i in a])
