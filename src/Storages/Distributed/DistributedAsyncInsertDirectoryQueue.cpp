@@ -32,16 +32,16 @@
 
 namespace CurrentMetrics
 {
-extern const Metric DistributedSend;
-extern const Metric DistributedFilesToInsert;
-extern const Metric BrokenDistributedFilesToInsert;
-extern const Metric DistributedBytesToInsert;
-extern const Metric BrokenDistributedBytesToInsert;
+    extern const Metric DistributedSend;
+    extern const Metric DistributedFilesToInsert;
+    extern const Metric BrokenDistributedFilesToInsert;
+    extern const Metric DistributedBytesToInsert;
+    extern const Metric BrokenDistributedBytesToInsert;
 }
 
 namespace ProfileEvents
 {
-extern const Event DistributedAsyncInsertionFailures;
+    extern const Event DistributedAsyncInsertionFailures;
 }
 
 namespace fs = std::filesystem;
@@ -51,8 +51,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int INCORRECT_FILE_NAME;
-extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_FILE_NAME;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -288,9 +288,9 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(c
 
     const auto & settings = storage.getContext()->getSettingsRef();
     return std::make_shared<ConnectionPoolWithFailover>(std::move(pools),
-                                                        settings.load_balancing,
-                                                        settings.distributed_replica_error_half_life.totalSeconds(),
-                                                        settings.distributed_replica_error_cap);
+        settings.load_balancing,
+        settings.distributed_replica_error_half_life.totalSeconds(),
+        settings.distributed_replica_error_cap);
 }
 
 bool DistributedAsyncInsertDirectoryQueue::hasPendingFiles() const
@@ -438,15 +438,15 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
         auto connection = std::move(result.entry);
 
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
-                  file_path,
-                  connection->getDescription(),
-                  formatReadableQuantity(distributed_header.rows),
-                  formatReadableSizeWithBinarySuffix(distributed_header.bytes));
+            file_path,
+            connection->getDescription(),
+            formatReadableQuantity(distributed_header.rows),
+            formatReadableSizeWithBinarySuffix(distributed_header.bytes));
 
         RemoteInserter remote{*connection, timeouts,
-                              distributed_header.insert_query,
-                              insert_settings,
-                              distributed_header.client_info};
+             distributed_header.insert_query,
+             insert_settings,
+             distributed_header.client_info};
         bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
         writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
         remote.onFinish();
@@ -500,8 +500,8 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
     bool operator==(const BatchHeader & other) const
     {
         return std::tie(settings, query, client_info.query_kind) ==
-            std::tie(other.settings, other.query, other.client_info.query_kind) &&
-            blocksHaveEqualStructure(header, other.header);
+          std::tie(other.settings, other.query, other.client_info.query_kind) &&
+          blocksHaveEqualStructure(header, other.header);
     }
 
     struct Hash
