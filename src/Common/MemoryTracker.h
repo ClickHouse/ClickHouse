@@ -9,7 +9,6 @@
 #include <Common/AllocationTrace.h>
 #include <Common/Stopwatch.h>
 
-
 #if !defined(NDEBUG)
 #define MEMORY_TRACKER_DEBUG_CHECKS
 #endif
