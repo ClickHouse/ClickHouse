@@ -1,5 +1,4 @@
 import argparse
-import copy
 import dataclasses
 import json
 import os
@@ -77,8 +76,10 @@ class AutoReleaseInfo:
             print(json.dumps(dataclasses.asdict(self), indent=2), file=f)
 
         # dump file for GH action matrix that is similar to the file above but with dropped not ready release branches
-        params = copy.deepcopy(self)
-        params.releases = [release for release in params.releases if release.ready]
+        params = dataclasses.asdict(self)
+        params["releases"] = [
+            release for release in params["releases"] if release["ready"]
+        ]
         with open(AUTORELEASE_MATRIX_PARAMS, "w", encoding="utf-8") as f:
             print(json.dumps(params, indent=2), file=f)
 
@@ -110,7 +111,6 @@ def _prepare(token):
         refs = list(repo.get_git_matching_refs(f"tags/v{pr.head.ref}"))
         assert refs
 
-        refs.sort(key=lambda ref: ref.ref)
         latest_release_tag_ref = refs[-1]
         latest_release_tag = repo.get_git_tag(latest_release_tag_ref.object.sha)
 
@@ -118,6 +118,10 @@ def _prepare(token):
             f"git rev-list --first-parent {latest_release_tag.tag}..origin/{pr.head.ref}",
         ).split("\n")
         commit_num = len(commits)
+        if latest_release_tag.tag.endswith("new"):
+            print("It's a new release branch - skip auto release for it")
+            continue
+
         print(
             f"Previous release [{latest_release_tag.tag}] was [{commit_num}] commits ago, date [{latest_release_tag.tagger.date}]"
         )
@@ -141,17 +145,33 @@ def _prepare(token):
                 commits_to_branch_head += 1
                 continue
 
-            commit_ci_status = CI.GH.get_commit_status_by_name(
-                token=token,
-                commit_sha=commit,
-                # handle old name for old releases
-                status_name=(CI.JobNames.BUILD_CHECK, "ClickHouse build check"),
-            )
+            # TODO: switch to check if CI is entirely green
+            statuses = [
+                CI.GH.get_commit_status_by_name(
+                    token=token,
+                    commit_sha=commit,
+                    # handle old name for old releases
+                    status_name=(CI.JobNames.BUILD_CHECK, "ClickHouse build check"),
+                ),
+                CI.GH.get_commit_status_by_name(
+                    token=token,
+                    commit_sha=commit,
+                    # handle old name for old releases
+                    status_name=CI.JobNames.STATELESS_TEST_RELEASE,
+                ),
+                CI.GH.get_commit_status_by_name(
+                    token=token,
+                    commit_sha=commit,
+                    # handle old name for old releases
+                    status_name=CI.JobNames.STATEFUL_TEST_RELEASE,
+                ),
+            ]
             commit_sha = commit
-            if commit_ci_status == SUCCESS:
+            if any(status == SUCCESS for status in statuses):
+                commit_ci_status = SUCCESS
                 break
 
-            print(f"CI status [{commit_ci_status}] - skip")
+            print(f"CI status [{statuses}] - skip")
             commits_to_branch_head += 1
 
         ready = False

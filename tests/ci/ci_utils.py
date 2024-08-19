@@ -118,7 +118,7 @@ class GH:
                 statuses = response.json()
                 for status in statuses:
                     if status["context"] in status_name:
-                        return status["state"]
+                        return status["state"]  # type: ignore
 
                 # Check if there is a next page
                 url = response.links.get("next", {}).get("url")
