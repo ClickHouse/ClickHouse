@@ -256,6 +256,8 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->dictionary, dictionary->clone());
     }
 
+    if (refresh_strategy)
+        res->set(res->refresh_strategy, refresh_strategy->clone());
     if (as_table_function)
         res->set(res->as_table_function, as_table_function->clone());
     if (comment)
@@ -482,6 +484,13 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (auto to_storage = getTargetInnerEngine(ViewTarget::To))
         to_storage->formatImpl(settings, state, frame);
+
+    if (targets)
+    {
+        targets->formatTarget(ViewTarget::Data, settings, state, frame);
+        targets->formatTarget(ViewTarget::Tags, settings, state, frame);
+        targets->formatTarget(ViewTarget::Metrics, settings, state, frame);
+    }
 
     if (dictionary)
         dictionary->formatImpl(settings, state, frame);

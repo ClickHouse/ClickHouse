@@ -557,6 +557,26 @@ void ColumnString::reserve(size_t n)
     offsets.reserve_exact(n);
 }
 
+size_t ColumnString::capacity() const
+{
+    return offsets.capacity();
+}
+
+void ColumnString::prepareForSquashing(const Columns & source_columns)
+{
+    size_t new_size = size();
+    size_t new_chars_size = chars.size();
+    for (const auto & source_column : source_columns)
+    {
+        const auto & source_string_column = assert_cast<const ColumnString &>(*source_column);
+        new_size += source_string_column.size();
+        new_chars_size += source_string_column.chars.size();
+    }
+
+    offsets.reserve_exact(new_size);
+    chars.reserve_exact(new_chars_size);
+}
+
 void ColumnString::shrinkToFit()
 {
     chars.shrink_to_fit();

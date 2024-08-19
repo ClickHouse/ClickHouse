@@ -6,7 +6,7 @@ DROP TABLE IF EXISTS t_map;
 
 SET allow_experimental_object_type = 1;
 
-CREATE TABLE t_json(id UInt64, obj JSON) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_json(id UInt64, obj Object('json')) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t_map(id UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO t_map

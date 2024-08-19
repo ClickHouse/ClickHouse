@@ -105,8 +105,8 @@ protected:
 
         while (rows_count < max_block_size && db_table_num < total_tables)
         {
-            const std::string database_name = (*databases)[db_table_num].get<std::string>();
-            const std::string table_name = (*tables)[db_table_num].get<std::string>();
+            const std::string database_name = (*databases)[db_table_num].safeGet<std::string>();
+            const std::string table_name = (*tables)[db_table_num].safeGet<std::string>();
             ++db_table_num;
 
             ColumnsDescription columns;
@@ -437,7 +437,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 
         for (size_t i = 0; i < num_databases; ++i)
         {
-            const std::string database_name = (*database_column)[i].get<std::string>();
+            const std::string database_name = (*database_column)[i].safeGet<std::string>();
             if (database_name.empty())
             {
                 for (auto & [table_name, table] : external_tables)

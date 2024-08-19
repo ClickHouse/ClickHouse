@@ -19,7 +19,6 @@ from env_helper import TEMP_PATH
 from git_helper import git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
 from s3_helper import S3Helper
-from get_robot_token import get_best_robot_token
 from ci_utils import Shell
 from version_helper import (
     FILE_WITH_VERSION_PATH,
@@ -115,7 +114,6 @@ def get_descriptions(prs: PullRequests) -> Dict[str, List[Description]]:
         # pylint: enable=protected-access
         if repo_name not in repos:
             repos[repo_name] = pr.base.repo
-        in_changelog = False
         merge_commit = pr.merge_commit_sha
         if merge_commit is None:
             logging.warning("PR %s does not have merge-commit, skipping", pr.number)
@@ -173,7 +171,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--gh-user-or-token",
         help="user name or GH token to authenticate",
-        default=get_best_robot_token(),
     )
     parser.add_argument(
         "--gh-password",
@@ -291,7 +288,7 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
     # Normalize bug fixes
     if (
         re.match(
-            r"(?i)bug\Wfix",
+            r".*(?i)bug\Wfix",
             category,
         )
         # Map "Critical Bug Fix" to "Bug fix" category for changelog
