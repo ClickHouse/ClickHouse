@@ -2,13 +2,16 @@
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/Utils.h>
@@ -32,7 +35,7 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
-void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata)
+void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context)
 {
     auto & ast_create_query = query->as<ASTCreateQuery &>();
 
@@ -115,6 +118,21 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         ast_create_query.reset(ast_create_query.comment);
     else
         ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(metadata.comment));
+
+    /// Validate the new create query is valid
+    const auto new_create_query = serializeAST(*query);
+    ParserCreateQuery parser;
+    /// Parse the query to make sure it has a valid syntax
+    ASTPtr new_create_query_ast = parseQuery(
+        parser,
+        new_create_query.data(),
+        new_create_query.data() + new_create_query.size(),
+        "after altering table ",
+        0,
+        context->getSettingsRef().max_parser_depth,
+        context->getSettingsRef().max_parser_backtracks);
+    /// Analyze the query to catch common semantical issues
+    TreeRewriter(context).analyze(new_create_query_ast, {});
 }
 
 
@@ -426,7 +444,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseWithOwnTablesBase::getTablesF
             create->setTable(it->name());
         }
 
-        storage->adjustCreateQueryForBackup(create_table_query);
+        storage->adjustCreateQueryForBackup(create_table_query, local_context);
         res.emplace_back(create_table_query, storage);
     }
 

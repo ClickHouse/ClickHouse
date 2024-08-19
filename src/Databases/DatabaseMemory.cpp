@@ -151,7 +151,7 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
     if (it == create_queries.end() || !it->second)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
 
-    applyMetadataChangesToCreateQuery(it->second, metadata);
+    applyMetadataChangesToCreateQuery(it->second, metadata, local_context);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second, local_context->getCurrentDatabase());
@@ -204,7 +204,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
         }
 
         chassert(storage);
-        storage->adjustCreateQueryForBackup(create_table_query);
+        storage->adjustCreateQueryForBackup(create_table_query, local_context);
         res.emplace_back(create_table_query, storage);
     }
 
