@@ -364,14 +364,15 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
     }
 }
 
-void DistributedAsyncInsertDirectoryQueue::getFilesRetry(const std::string & file_path)
+void DistributedAsyncInsertDirectoryQueue::setFilesRetryNum(const std::string & file_path)
 {
     if (max_retries != 0)
     {
-        if (files_retry.contains(file_path))
-            files_retry[file_path] += 1;
+        auto it = files_retry.find(file_path);
+        if (it != files_retry.end())
+            it->second += 1;
         else
-            files_retry[file_path] = 1;
+            it->second = 1;
     }
 }
 
@@ -451,7 +452,7 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
         if (thread_trace_context)
             thread_trace_context->root_span.addAttribute(std::current_exception());
 
-        getFilesRetry(file_path);
+        setFilesRetryNum(file_path);
         if (max_retries != 0)
             LOG_INFO(log, "distributed file {} send failed, may be broken, retry {}, max_retries {},", file_path, files_retry[file_path], max_retries);
 
@@ -619,9 +620,15 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
             }
             catch (const Exception & e)
             {
-                if (isDistributedSendBroken(e.code(), e.isRemoteException()))
+                setFilesRetryNum(file_path);
+                if (max_retries != 0)
+                    LOG_INFO(log, "distributed file {} send failed, may be broken, retry {}, max_retries {},", file_path, files_retry[file_path], max_retries);
+
+                if (isDistributedSendBroken(e.code(), e.isRemoteException()) || (max_retries != 0 && files_retry[file_path] == max_retries))
                 {
                     markAsBroken(file_path);
+                    if (files_retry.contains(file_path))
+                        files_retry.erase(file_path);
                     tryLogCurrentException(log, "File is marked broken due to");
                     continue;
                 }

@@ -2673,12 +2673,7 @@ Default value: 30000 milliseconds (30 seconds).
 
 ## distributed_background_insert_max_retries {#distributed_background_insert_max_retries}
 
-Maximum the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send files retries.
-
-Possible values:
-
-- 1 — Enabled.
-- 0 — Disabled.
+Controls how many times the [Distributed](../../engines/table-engines/special/distributed.md) table engine retries to send files. `0` means no retries.
 
 Default value: 0.
 
