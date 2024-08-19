@@ -17,13 +17,13 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-using namespace GatherUtils;
-
 namespace
 {
 
 /// If 'is_utf8' - measure offset and length in code points instead of bytes.
-/// Syntax: overlay(input, replace, offset[, length])
+/// Syntax:
+/// - overlay(input, replace, offset[, length])
+/// - overlayUTF8(input, replace, offset[, length]) - measure offset and length in code points instead of bytes
 template <bool is_utf8>
 class FunctionOverlay : public IFunction
 {
@@ -37,63 +37,39 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const size_t number_of_arguments = arguments.size();
-        if (number_of_arguments < 3 || number_of_arguments > 4)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: "
-                "passed {}, should be 3 or 4",
-                getName(),
-                number_of_arguments);
+        FunctionArgumentDescriptors mandatory_args{
+            {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"replace", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "(U)Int8/16/32/64"},
+        };
 
-        /// first argument is string
-        if (!isString(arguments[0]))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected String",
-                arguments[0]->getName(),
-                getName());
+        FunctionArgumentDescriptors optional_args{
+            {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "(U)Int8/16/32/64"},
+        };
 
-        /// second argument is string
-        if (!isString(arguments[1]))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {}, expected String",
-                arguments[1]->getName(),
-                getName());
-
-        if (!isNativeNumber(arguments[2]))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of third argument of function {}, expected (U)Int8|16|32|64",
-                arguments[2]->getName(),
-                getName());
-
-        if (number_of_arguments == 4 && !isNativeNumber(arguments[3]))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {}, expected (U)Int8|16|32|64",
-                arguments[3]->getName(),
-                getName());
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        if (input_rows_count == 0)
+            return ColumnString::create();
+
         const size_t number_of_arguments = arguments.size();
-        bool three_args = number_of_arguments == 3;
+        bool has_three_args = number_of_arguments == 3;
 
         ColumnPtr column_offset = arguments[2].column;
         ColumnPtr column_length;
-        if (!three_args)
+        if (!has_three_args)
             column_length = arguments[3].column;
 
         const ColumnConst * column_offset_const = checkAndGetColumn<ColumnConst>(column_offset.get());
         const ColumnConst * column_length_const = nullptr;
-        if (!three_args)
+        if (!has_three_args)
             column_length_const = checkAndGetColumn<ColumnConst>(column_length.get());
 
         bool offset_is_const = false;
@@ -126,7 +102,7 @@ public:
         if (column_input_const)
         {
             StringRef input = column_input_const->getDataAt(0);
-            res_data.reserve(input.size * input_rows_count);
+            res_data.reserve((input.size + 1) * input_rows_count);
         }
         else
         {
@@ -135,8 +111,8 @@ public:
 
         const auto * column_replace_const = checkAndGetColumn<ColumnConst>(column_replace.get());
         const auto * column_replace_string = checkAndGetColumn<ColumnString>(column_replace.get());
-        bool input_is_const = column_input_const != nullptr;
-        bool replace_is_const = column_replace_const != nullptr;
+        bool input_is_const = (column_input_const != nullptr);
+        bool replace_is_const = (column_replace_const != nullptr);
 
 #define OVERLAY_EXECUTE_CASE(THREE_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST) \
     if (input_is_const && replace_is_const) \
@@ -150,8 +126,9 @@ public:
             length, \
             res_data, \
             res_offsets); \
-    else if (input_is_const) \
+    else if (input_is_const && !replace_is_const) \
         constantVector<THREE_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST>( \
+            input_rows_count, \
             column_input_const->getDataAt(0), \
             column_replace_string->getChars(), \
             column_replace_string->getOffsets(), \
@@ -161,8 +138,9 @@ public:
             length, \
             res_data, \
             res_offsets); \
-    else if (replace_is_const) \
+    else if (!input_is_const && replace_is_const) \
         vectorConstant<THREE_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST>( \
+            input_rows_count, \
             column_input_string->getChars(), \
             column_input_string->getOffsets(), \
             column_replace_const->getDataAt(0), \
@@ -174,6 +152,7 @@ public:
             res_offsets); \
     else \
         vectorVector<THREE_ARGS, OFFSET_IS_CONST, LENGTH_IS_CONST>( \
+            input_rows_count, \
             column_input_string->getChars(), \
             column_input_string->getOffsets(), \
             column_replace_string->getChars(), \
@@ -185,7 +164,7 @@ public:
             res_data, \
             res_offsets);
 
-        if (three_args)
+        if (has_three_args)
         {
             if (offset_is_const)
             {
@@ -251,7 +230,7 @@ private:
             return bytes;
     }
 
-    template <bool three_args, bool offset_is_const, bool length_is_const>
+    template <bool has_three_args, bool offset_is_const, bool length_is_const>
     void constantConstant(
         size_t rows,
         const StringRef & input,
@@ -263,7 +242,7 @@ private:
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets) const
     {
-        if (!three_args && length_is_const && const_length < 0)
+        if (!has_three_args && length_is_const && const_length < 0)
         {
             constantConstant<true, offset_is_const, false>(
                 rows, input, replace, column_offset, column_length, const_offset, -1, res_data, res_offsets);
@@ -277,12 +256,12 @@ private:
 
         size_t replace_size = getSliceSize(reinterpret_cast<const UInt8 *>(replace.data), replace.size);
         size_t valid_length = 0; // not negative
-        if constexpr (!three_args && length_is_const)
+        if constexpr (!has_three_args && length_is_const)
         {
             assert(const_length >= 0);
             valid_length = const_length;
         }
-        else if constexpr (three_args)
+        else if constexpr (has_three_args)
         {
             valid_length = replace_size;
         }
@@ -300,7 +279,7 @@ private:
                 valid_offset = getValidOffset(offset, input_size);
             }
 
-            if constexpr (!three_args && !length_is_const)
+            if constexpr (!has_three_args && !length_is_const)
             {
                 length = column_length->getInt(i);
                 valid_length = length >= 0 ? length : replace_size;
@@ -331,10 +310,10 @@ private:
             }
             else
             {
-                const auto * prefix_end = UTF8StringSource::skipCodePointsForward(input_begin, prefix_size, input_end);
+                const auto * prefix_end = GatherUtils::UTF8StringSource::skipCodePointsForward(input_begin, prefix_size, input_end);
                 size_t prefix_bytes = prefix_end > input_end ? input.size : prefix_end - input_begin;
 
-                const auto * suffix_begin = UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
+                const auto * suffix_begin = GatherUtils::UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
                 size_t suffix_bytes = input_end - suffix_begin;
 
                 size_t new_res_size = res_data.size() + prefix_bytes + replace.size + suffix_bytes + 1; /// +1 for zero terminator
@@ -363,8 +342,9 @@ private:
         }
     }
 
-    template <bool three_args, bool offset_is_const, bool length_is_const>
+    template <bool has_three_args, bool offset_is_const, bool length_is_const>
     void vectorConstant(
+        size_t rows,
         const ColumnString::Chars & input_data,
         const ColumnString::Offsets & input_offsets,
         const StringRef & replace,
@@ -375,27 +355,26 @@ private:
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets) const
     {
-        if (!three_args && length_is_const && const_length < 0)
+        if (!has_three_args && length_is_const && const_length < 0)
         {
             vectorConstant<true, offset_is_const, false>(
-                input_data, input_offsets, replace, column_offset, column_length, const_offset, -1, res_data, res_offsets);
+                rows, input_data, input_offsets, replace, column_offset, column_length, const_offset, -1, res_data, res_offsets);
             return;
         }
 
         size_t replace_size = getSliceSize(reinterpret_cast<const UInt8 *>(replace.data), replace.size);
         Int64 length = 0; // maybe negative
         size_t valid_length = 0; // not negative
-        if constexpr (!three_args && length_is_const)
+        if constexpr (!has_three_args && length_is_const)
         {
             assert(const_length >= 0);
             valid_length = const_length;
         }
-        else if constexpr (three_args)
+        else if constexpr (has_three_args)
         {
             valid_length = replace_size;
         }
 
-        size_t rows = input_offsets.size();
         Int64 offset = 0; // start from 1, maybe negative
         size_t valid_offset = 0; // start from 0, not negative
         size_t res_offset = 0;
@@ -415,7 +394,7 @@ private:
                 valid_offset = getValidOffset(offset, input_size);
             }
 
-            if constexpr (!three_args && !length_is_const)
+            if constexpr (!has_three_args && !length_is_const)
             {
                 length = column_length->getInt(i);
                 valid_length = length >= 0 ? length : replace_size;
@@ -449,9 +428,9 @@ private:
             {
                 const auto * input_begin = &input_data[input_offset];
                 const auto * input_end = &input_data[input_offset + input_bytes];
-                const auto * prefix_end = UTF8StringSource::skipCodePointsForward(input_begin, prefix_size, input_end);
+                const auto * prefix_end = GatherUtils::UTF8StringSource::skipCodePointsForward(input_begin, prefix_size, input_end);
                 size_t prefix_bytes = prefix_end > input_end ? input_bytes : prefix_end - input_begin;
-                const auto * suffix_begin = UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
+                const auto * suffix_begin = GatherUtils::UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
                 size_t suffix_bytes = input_end - suffix_begin;
 
                 size_t new_res_size = res_data.size() + prefix_bytes + replace.size + suffix_bytes + 1; /// +1 for zero terminator
@@ -480,8 +459,9 @@ private:
         }
     }
 
-    template <bool three_args, bool offset_is_const, bool length_is_const>
+    template <bool has_three_args, bool offset_is_const, bool length_is_const>
     void constantVector(
+        size_t rows,
         const StringRef & input,
         const ColumnString::Chars & replace_data,
         const ColumnString::Offsets & replace_offsets,
@@ -492,10 +472,10 @@ private:
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets) const
     {
-        if (!three_args && length_is_const && const_length < 0)
+        if (!has_three_args && length_is_const && const_length < 0)
         {
             constantVector<true, offset_is_const, false>(
-                input, replace_data, replace_offsets, column_offset, column_length, const_offset, -1, res_data, res_offsets);
+                rows, input, replace_data, replace_offsets, column_offset, column_length, const_offset, -1, res_data, res_offsets);
             return;
         }
 
@@ -506,13 +486,12 @@ private:
 
         Int64 length = 0; // maybe negative
         size_t valid_length = 0; // not negative
-        if constexpr (!three_args && length_is_const)
+        if constexpr (!has_three_args && length_is_const)
         {
             assert(const_length >= 0);
             valid_length = const_length;
         }
 
-        size_t rows = replace_offsets.size();
         const auto * input_begin = reinterpret_cast<const UInt8 *>(input.data);
         const auto * input_end = reinterpret_cast<const UInt8 *>(input.data + input.size);
         Int64 offset = 0; // start from 1, maybe negative
@@ -529,7 +508,7 @@ private:
                 valid_offset = getValidOffset(offset, input_size);
             }
 
-            if constexpr (three_args)
+            if constexpr (has_three_args)
             {
                 valid_length = replace_size;
             }
@@ -564,9 +543,9 @@ private:
             }
             else
             {
-                const auto * prefix_end = UTF8StringSource::skipCodePointsForward(input_begin, prefix_size, input_end);
+                const auto * prefix_end = GatherUtils::UTF8StringSource::skipCodePointsForward(input_begin, prefix_size, input_end);
                 size_t prefix_bytes = prefix_end > input_end ? input.size : prefix_end - input_begin;
-                const auto * suffix_begin = UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
+                const auto * suffix_begin = GatherUtils::UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
                 size_t suffix_bytes = input_end - suffix_begin;
                 size_t new_res_size = res_data.size() + prefix_bytes + replace_bytes + suffix_bytes + 1; /// +1 for zero terminator
                 res_data.resize(new_res_size);
@@ -594,8 +573,9 @@ private:
         }
     }
 
-    template <bool three_args, bool offset_is_const, bool length_is_const>
+    template <bool has_three_args, bool offset_is_const, bool length_is_const>
     void vectorVector(
+        size_t rows,
         const ColumnString::Chars & input_data,
         const ColumnString::Offsets & input_offsets,
         const ColumnString::Chars & replace_data,
@@ -607,9 +587,10 @@ private:
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets) const
     {
-        if (!three_args && length_is_const && const_length < 0)
+        if (!has_three_args && length_is_const && const_length < 0)
         {
             vectorVector<true, offset_is_const, false>(
+                rows,
                 input_data,
                 input_offsets,
                 replace_data,
@@ -625,13 +606,12 @@ private:
 
         Int64 length = 0; // maybe negative
         size_t valid_length = 0; // not negative
-        if constexpr (!three_args && length_is_const)
+        if constexpr (!has_three_args && length_is_const)
         {
             assert(const_length >= 0);
             valid_length = const_length;
         }
 
-        size_t rows = input_offsets.size();
         Int64 offset = 0; // start from 1, maybe negative
         size_t valid_offset = 0; // start from 0, not negative
         size_t res_offset = 0;
@@ -655,7 +635,7 @@ private:
                 valid_offset = getValidOffset(offset, input_size);
             }
 
-            if constexpr (three_args)
+            if constexpr (has_three_args)
             {
                 valid_length = replace_size;
             }
@@ -693,9 +673,9 @@ private:
             {
                 const auto * input_begin = &input_data[input_offset];
                 const auto * input_end = &input_data[input_offset + input_bytes];
-                const auto * prefix_end = UTF8StringSource::skipCodePointsForward(input_begin, prefix_size, input_end);
+                const auto * prefix_end = GatherUtils::UTF8StringSource::skipCodePointsForward(input_begin, prefix_size, input_end);
                 size_t prefix_bytes = prefix_end > input_end ? input_bytes : prefix_end - input_begin;
-                const auto * suffix_begin = UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
+                const auto * suffix_begin = GatherUtils::UTF8StringSource::skipCodePointsBackward(input_end, suffix_size, input_begin);
                 size_t suffix_bytes = input_end - suffix_begin;
                 size_t new_res_size = res_data.size() + prefix_bytes + replace_bytes + suffix_bytes + 1; /// +1 for zero terminator
                 res_data.resize(new_res_size);
