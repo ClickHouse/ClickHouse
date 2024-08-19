@@ -135,8 +135,11 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
     else
     {
         CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
-        file_segments = cache->getOrSet(cache_key, file_offset_of_buffer_end, size, file_size.value(), create_settings, settings.filesystem_cache_segments_batch_size, user);
+        file_segments = cache->getOrSet(
+            cache_key, file_offset_of_buffer_end, size, file_size.value(),
+            create_settings, settings.filesystem_cache_segments_batch_size, user);
     }
+
     return !file_segments->empty();
 }
 
@@ -158,8 +161,8 @@ void CachedOnDiskReadBufferFromFile::initialize()
 
     LOG_TEST(
         log,
-        "Having {} file segments to read: {}, current offset: {}",
-        file_segments->size(), file_segments->toString(), file_offset_of_buffer_end);
+        "Having {} file segments to read: {}, current read range: [{}, {})",
+        file_segments->size(), file_segments->toString(), file_offset_of_buffer_end, read_until_position);
 
     initialized = true;
 }
@@ -642,8 +645,9 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
 
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, current_impl_buffer_size);
 
+            std::string failure_reason;
             bool continue_predownload = file_segment.reserve(
-                current_predownload_size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds);
+                current_predownload_size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, failure_reason);
             if (continue_predownload)
             {
                 LOG_TEST(log, "Left to predownload: {}, buffer size: {}", bytes_to_predownload, current_impl_buffer_size);
@@ -999,7 +1003,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         {
             chassert(file_offset_of_buffer_end + size - 1 <= file_segment.range().right);
 
-            bool success = file_segment.reserve(size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds);
+            std::string failure_reason;
+            bool success = file_segment.reserve(size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, failure_reason);
             if (success)
             {
                 chassert(file_segment.getCurrentWriteOffset() == static_cast<size_t>(implementation_buffer->getPosition()));
@@ -1025,7 +1030,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                     LOG_TRACE(log, "Bypassing cache because writeCache method failed");
             }
             else
-                LOG_TRACE(log, "No space left in cache to reserve {} bytes, will continue without cache download", size);
+                LOG_TRACE(log, "No space left in cache to reserve {} bytes, reason: {}, "
+                          "will continue without cache download", size, failure_reason);
 
             if (!success)
             {
@@ -1043,6 +1049,10 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         if (file_segments->size() == 1)
         {
             size_t remaining_size_to_read = std::min(current_read_range.right, read_until_position - 1) - file_offset_of_buffer_end + 1;
+
+            LOG_TEST(log, "Remaining size to read: {}, read: {}. Resizing buffer to {}",
+                     remaining_size_to_read, size, nextimpl_working_buffer_offset + std::min(size, remaining_size_to_read));
+
             size = std::min(size, remaining_size_to_read);
             chassert(implementation_buffer->buffer().size() >= nextimpl_working_buffer_offset + size);
             implementation_buffer->buffer().resize(nextimpl_working_buffer_offset + size);
@@ -1055,8 +1065,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         chassert(
             file_offset_of_buffer_end <= read_until_position,
-            fmt::format("Expected {} <= {} (size: {}, read range: {})",
-                        file_offset_of_buffer_end, read_until_position, size, current_read_range.toString()));
+            fmt::format("Expected {} <= {} (size: {}, read range: {}, hold file segments: {} ({}))",
+                        file_offset_of_buffer_end, read_until_position, size, current_read_range.toString(), file_segments->size(), file_segments->toString(true)));
     }
 
     swap(*implementation_buffer);

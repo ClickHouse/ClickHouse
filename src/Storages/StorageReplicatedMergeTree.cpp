@@ -800,7 +800,8 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     {
         auto res = future.get();
         if (res.error != Coordination::Error::ZOK && res.error != Coordination::Error::ZNODEEXISTS)
-            throw Coordination::Exception(res.error, "Failed to create new nodes {} at {}", res.path_created, zookeeper_path);
+            throw Coordination::Exception(res.error, "Failed to create new nodes {} at {} with error {}",
+                res.path_created, zookeeper_path, Coordination::errorMessage(res.error));
     }
 }
 
@@ -5193,17 +5194,16 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
 
         startBeingLeader();
 
-        /// Activate replica in a separate thread if we are not calling from attach thread
-        restarting_thread.start(/*schedule=*/!from_attach_thread);
-
         if (from_attach_thread)
         {
             LOG_TRACE(log, "Trying to startup table from right now");
-            /// Try activating replica in current thread.
+            /// Try activating replica in the current thread.
             restarting_thread.run();
+            restarting_thread.start(false);
         }
         else
         {
+            restarting_thread.start(true);
             /// Wait while restarting_thread finishing initialization.
             /// NOTE It does not mean that replication is actually started after receiving this event.
             /// It only means that an attempt to startup replication was made.
@@ -5224,7 +5224,7 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
         session_expired_callback_handler = EventNotifier::instance().subscribe(Coordination::Error::ZSESSIONEXPIRED, [this]()
         {
             LOG_TEST(log, "Received event for expired session. Waking up restarting thread");
-            restarting_thread.start();
+            restarting_thread.start(true);
         });
 
         startBackgroundMovesIfNeeded();
@@ -5292,7 +5292,6 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
             attach_thread->shutdown();
             LOG_TRACE(log, "The attach thread is shutdown");
         }
-
 
         restarting_thread.shutdown(/* part_of_full_shutdown */true);
         /// Explicitly set the event, because the restarting thread will not set it again
@@ -5704,7 +5703,8 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
         {
             auto connection = std::make_shared<Connection>(
                 node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, SSHKey(), /*jwt*/"", node.quota_key, node.cluster, node.cluster_secret,
+                node.user, node.password, node.proto_send_chunked, node.proto_recv_chunked,
+                SSHKey(), /*jwt*/"", node.quota_key, node.cluster, node.cluster_secret,
                 "ParallelInsertSelectInititiator",
                 node.compression,
                 node.secure
@@ -5794,10 +5794,12 @@ bool StorageReplicatedMergeTree::optimize(
     if (!is_leader)
         throw Exception(ErrorCodes::NOT_A_LEADER, "OPTIMIZE cannot be done on this replica because it is not a leader");
 
-    if (deduplicate && getInMemoryMetadataPtr()->hasProjections())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+    if (deduplicate && getInMemoryMetadataPtr()->hasProjections()
+        && getSettings()->deduplicate_merge_projection_mode == DeduplicateMergeProjectionMode::THROW)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
-                    "User should drop all the projections manually before running the query",
+                    "User should drop all the projections manually before running the query, "
+                    "or consider drop or rebuild option of deduplicate_merge_projection_mode",
                     getStorageID().getTableName());
 
     if (cleanup)
@@ -6338,7 +6340,7 @@ void StorageReplicatedMergeTree::alter(
                                 "Metadata on replica is not up to date with common metadata in Zookeeper. "
                                 "It means that this replica still not applied some of previous alters."
                                 " Probably too many alters executing concurrently (highly not recommended). "
-                                "You can retry this error");
+                                "You can retry the query");
 
             /// Cannot retry automatically, because some zookeeper ops were lost on the first attempt. Will retry on DDLWorker-level.
             if (query_context->getZooKeeperMetadataTransaction())

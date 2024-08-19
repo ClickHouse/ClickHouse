@@ -68,13 +68,19 @@ const WithRetries::KeeperSettings & WithRetries::getKeeperSettings() const
 
 WithRetries::FaultyKeeper WithRetries::getFaultyZooKeeper() const
 {
-    /// We need to create new instance of ZooKeeperWithFaultInjection each time a copy a pointer to ZooKeeper client there
+    zkutil::ZooKeeperPtr current_zookeeper;
+    {
+        std::lock_guard lock(zookeeper_mutex);
+        current_zookeeper = zookeeper;
+    }
+
+    /// We need to create new instance of ZooKeeperWithFaultInjection each time and copy a pointer to ZooKeeper client there
     /// The reason is that ZooKeeperWithFaultInjection may reset the underlying pointer and there could be a race condition
     /// when the same object is used from multiple threads.
     auto faulty_zookeeper = ZooKeeperWithFaultInjection::createInstance(
         settings.keeper_fault_injection_probability,
         settings.keeper_fault_injection_seed,
-        zookeeper,
+        current_zookeeper,
         log->name(),
         log);
 
