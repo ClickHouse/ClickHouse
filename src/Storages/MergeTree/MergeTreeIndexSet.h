@@ -31,6 +31,8 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
     size_t size() const { return block.rows(); }
     bool empty() const override { return !size(); }
 
+    size_t memoryUsageBytes() const override { return block.bytes(); }
+
     ~MergeTreeIndexGranuleSet() override = default;
 
     const String index_name;
