@@ -332,8 +332,11 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 const auto * literal = arguments->children[0]->as<ASTLiteral>();
                 const auto * function = arguments->children[0]->as<ASTFunction>();
                 const auto * subquery = arguments->children[0]->as<ASTSubquery>();
-                bool is_tuple = literal && literal->value.getType() == Field::Types::Tuple;
-                bool is_array = literal && literal->value.getType() == Field::Types::Array;
+                bool is_tuple = (literal && literal->value.getType() == Field::Types::Tuple)
+                             || (function && function->name == "tuple" && function->arguments && function->arguments->children.size() > 1);
+                bool is_array = (literal && literal->value.getType() == Field::Types::Array)
+                             || (function && function->name == "array");
+
                 /// Do not add parentheses for tuple and array literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`, `-[1]` -> `-([1])`
                 bool literal_need_parens = literal && !is_tuple && !is_array;
 
