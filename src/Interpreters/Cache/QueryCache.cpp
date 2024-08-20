@@ -619,19 +619,18 @@ QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::millis
     return Writer(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
 
-void QueryCache::clearWithTag(const String & tag)
+void QueryCache::clear(const std::optional<String> & tag)
 {
-    auto remove_with_tag = [tag](const Key & k, const Cache::MappedPtr &)
+    if (tag)
     {
-      return k.tag == tag;
-    };
-    cache.removeWithPredicate(remove_with_tag);
-    std::lock_guard lock(mutex);
-}
+        auto predicate = [tag](const Key & key, const Cache::MappedPtr &) { return key.tag == tag.value(); };
+        cache.remove(predicate);
+    }
+    else
+    {
+        cache.clear();
+    }
 
-void QueryCache::clear()
-{
-    cache.clear();
     std::lock_guard lock(mutex);
     times_executed.clear();
 }

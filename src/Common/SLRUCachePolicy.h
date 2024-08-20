@@ -95,7 +95,7 @@ public:
         cells.erase(it);
     }
 
-    void removeWithPredicate(std::function<bool(const Key&, const MappedPtr&)> predicate) override
+    void remove(std::function<bool(const Key &, const MappedPtr &)> predicate) override
     {
         for (auto it = cells.begin(); it != cells.end();)
         {

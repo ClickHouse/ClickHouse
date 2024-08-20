@@ -136,7 +136,13 @@ The compiled expression cache is enabled/disabled with the query/user/profile-le
 
 ## DROP QUERY CACHE
 
+```sql
+SYSTEM DROP QUERY CACHE;
+SYSTEM DROP QUERY CACHE TAG '<tag>'
+````
+
 Clears the [query cache](../../operations/query-cache.md).
+If a tag is specified, only query cache entries with the specified tag are deleted.
 
 ## DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
 

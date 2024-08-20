@@ -129,8 +129,9 @@ public:
     String storage_policy;
     String volume;
     String disk;
-    String query_cache_tag;
     UInt64 seconds{};
+
+    std::optional<String> query_cache_tag;
 
     String filesystem_cache_name;
     std::string key_to_drop;
