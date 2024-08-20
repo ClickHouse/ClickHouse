@@ -304,7 +304,7 @@ struct ScatteredBlock : private boost::noncopyable
         for (size_t pos : right_keys_to_replicate)
             columns[pos] = columns[pos]->replicate(offsets);
 
-        block.setColumns(std::move(columns));
+        block.setColumns(columns);
         selector = Selector(block.rows());
     }
 
