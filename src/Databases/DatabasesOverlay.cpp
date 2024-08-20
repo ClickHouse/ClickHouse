@@ -14,6 +14,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_TABLE;
 }
 
 DatabasesOverlay::DatabasesOverlay(const String & name_, ContextPtr context_)
@@ -124,6 +126,39 @@ StoragePtr DatabasesOverlay::detachTable(ContextPtr context_, const String & tab
         getEngineName());
 }
 
+void DatabasesOverlay::renameTable(
+    ContextPtr current_context,
+    const String & name,
+    IDatabase & to_database,
+    const String & to_name,
+    bool exchange,
+    bool dictionary)
+{
+    for (auto & db : databases)
+    {
+        if (db->isTableExist(name, current_context))
+        {
+            if (DatabasesOverlay * to_overlay_database = typeid_cast<DatabasesOverlay *>(&to_database))
+            {
+                /// Renaming from Overlay database inside itself or into another Overlay database.
+                /// Just use the first database in the overlay as a destination.
+                if (to_overlay_database->databases.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The destination Overlay database {} does not have any members", to_database.getDatabaseName());
+
+                db->renameTable(current_context, name, *to_overlay_database->databases[0], to_name, exchange, dictionary);
+            }
+            else
+            {
+                /// Renaming into a different type of database. E.g. from Overlay on top of Atomic database into just Atomic database.
+                db->renameTable(current_context, name, to_database, to_name, exchange, dictionary);
+            }
+
+            return;
+        }
+    }
+    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuote(getDatabaseName()), backQuote(name));
+}
+
 ASTPtr DatabasesOverlay::getCreateTableQueryImpl(const String & name, ContextPtr context_, bool throw_on_error) const
 {
     ASTPtr result = nullptr;
@@ -173,6 +208,18 @@ String DatabasesOverlay::getTableDataPath(const ASTCreateQuery & query) const
     {
         result = db->getTableDataPath(query);
         if (!result.empty())
+            break;
+    }
+    return result;
+}
+
+UUID DatabasesOverlay::getUUID() const
+{
+    UUID result = UUIDHelpers::Nil;
+    for (const auto & db : databases)
+    {
+        result = db->getUUID();
+        if (result != UUIDHelpers::Nil)
             break;
     }
     return result;
