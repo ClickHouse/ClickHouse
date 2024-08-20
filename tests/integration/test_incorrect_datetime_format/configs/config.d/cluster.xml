@@ -3,8 +3,7 @@
         <test_cluster>
             <shard>
                 <replica>
-                    <host>node1</host>
-                    <port>9000</port>
+                    <host>node</host>
                 </replica>
             </shard>
         </test_cluster>

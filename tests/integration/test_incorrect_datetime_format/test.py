@@ -28,14 +28,6 @@ def test_incorrect_datetime_format(cluster):
 
     node = cluster.instances["node"]
 
-    table_name = "test_delete_race_leftovers"
-    additional_settings = {
-        # use another disk not to interfere with other tests
-        "storage_policy": "one_disk",
-        # always remove parts in parallel
-        "concurrent_part_removal_threshold": 1,
-    }
-
     node.query("""
         CREATE TABLE tab
         (
