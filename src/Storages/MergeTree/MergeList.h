@@ -66,6 +66,8 @@ struct Settings;
 
 struct MergeListElement : boost::noncopyable
 {
+    static const MergeTreePartInfo FAKE_RESULT_PART_FOR_PROJECTION;
+
     const StorageID table_id;
     std::string partition_id;
     std::string partition;

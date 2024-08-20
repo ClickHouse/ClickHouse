@@ -15,6 +15,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+const MergeTreePartInfo MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION = {"all", 0, 0, 0};
+
 MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, const ContextPtr & context)
     : table_id{table_id_}
     , partition_id{future_part->part_info.partition_id}
@@ -30,12 +32,18 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
     if (result_part_name != result_part_info.getPartNameV1())
         format_version = MERGE_TREE_DATA_OLD_FORMAT_VERSION;
 
+    /// FIXME why do we need a merge list element for projection parts at all?
+    bool skip_sanity_checks = future_part->part_info == FAKE_RESULT_PART_FOR_PROJECTION;
+
     size_t normal_parts_count = 0;
     for (const auto & source_part : future_part->parts)
     {
-        normal_parts_count += !source_part->getParentPart();
-        if (!source_part->getParentPart() && !result_part_info.contains(MergeTreePartInfo::fromPartName(source_part->name, format_version)))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source part {} is not covered by result part {}", source_part->name, result_part_info.getPartNameV1());
+        if (!skip_sanity_checks && !source_part->getParentPart())
+        {
+            ++normal_parts_count;
+            if (!result_part_info.contains(MergeTreePartInfo::fromPartName(source_part->name, format_version)))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source part {} is not covered by result part {}", source_part->name, result_part_info.getPartNameV1());
+        }
 
         source_part_names.emplace_back(source_part->name);
         source_part_paths.emplace_back(source_part->getDataPartStorage().getFullPath());
@@ -56,8 +64,9 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         part->partition.serializeText(part->storage, out, {});
     }
 
-    if (is_mutation && normal_parts_count != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} source parts for mutation {}", future_part->parts.size(), result_part_info.getPartNameV1());
+    if (!skip_sanity_checks && is_mutation && normal_parts_count != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} source parts for mutation {}: {}", future_part->parts.size(),
+                        result_part_info.getPartNameV1(), fmt::join(source_part_names, ", "));
 
     thread_group = ThreadGroup::createForBackgroundProcess(context);
 }
