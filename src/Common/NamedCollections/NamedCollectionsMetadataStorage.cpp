@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static const std::string named_collections_storage_config_path = "named_collections_storage";
@@ -361,6 +362,8 @@ private:
     }
 };
 
+#if USE_SSL
+
 template <typename BaseMetadataStorage>
 class NamedCollectionsMetadataStorageEncrypted : public BaseMetadataStorage
 {
@@ -443,6 +446,8 @@ class NamedCollectionsMetadataStorage::ZooKeeperStorageEncrypted : public NamedC
 {
     using NamedCollectionsMetadataStorageEncrypted<NamedCollectionsMetadataStorage::ZooKeeperStorage>::NamedCollectionsMetadataStorageEncrypted;
 };
+
+#endif
 
 NamedCollectionsMetadataStorage::NamedCollectionsMetadataStorage(
     std::shared_ptr<INamedCollectionsStorage> storage_,
@@ -618,7 +623,13 @@ std::unique_ptr<NamedCollectionsMetadataStorage> NamedCollectionsMetadataStorage
         if (storage_type == "local")
             local_storage = std::make_unique<NamedCollectionsMetadataStorage::LocalStorage>(context_, path);
         else if (storage_type == "local_encrypted")
+        {
+#if USE_SSL
             local_storage = std::make_unique<NamedCollectionsMetadataStorage::LocalStorageEncrypted>(context_, path);
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Named collections encryption requires building with SSL support");
+#endif
+        }
 
         return std::unique_ptr<NamedCollectionsMetadataStorage>(
             new NamedCollectionsMetadataStorage(std::move(local_storage), context_));
@@ -631,7 +642,13 @@ std::unique_ptr<NamedCollectionsMetadataStorage> NamedCollectionsMetadataStorage
         if (!storage_type.ends_with("_encrypted"))
             zk_storage = std::make_unique<NamedCollectionsMetadataStorage::ZooKeeperStorage>(context_, path);
         else
+        {
+#if USE_SSL
             zk_storage = std::make_unique<NamedCollectionsMetadataStorage::ZooKeeperStorageEncrypted>(context_, path);
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Named collections encryption requires building with SSL support");
+#endif
+        }
 
         LOG_TRACE(getLogger("NamedCollectionsMetadataStorage"),
                   "Using zookeeper storage for named collections at path: {}", path);
