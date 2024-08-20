@@ -269,15 +269,15 @@ namespace
             auto scheme = config.getString(http_auth_config + ".scheme");
             user->authentication_methods.back().setHTTPAuthenticationScheme(parseHTTPAuthenticationScheme(scheme));
         }
-        else
-        {
-            user->authentication_methods.emplace_back();
-        }
         else if (has_jwt)
         {
             if (!allow_jwt)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "JWT auth not allowed because JWT not configured");
-            user->auth_data = AuthenticationData{AuthenticationType::JWT};
+            user->authentication_methods.emplace_back(AuthenticationData{AuthenticationType::JWT});
+        }
+        else
+        {
+            user->authentication_methods.emplace_back();
         }
 
         for (const auto & authentication_method : user->authentication_methods)

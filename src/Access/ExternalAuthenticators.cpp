@@ -655,6 +655,7 @@ bool ExternalAuthenticators::checkJWTCredentials(const String &claims, const JWT
 
     const auto token = String(credentials.getToken());
     const auto &user_name = credentials.getUserName();
+
     for (const auto &it : jwt_verifiers)
     {
         if (it.second->verify(claims, token, settings))
