@@ -37,6 +37,7 @@
 * Add a query `ALTER TABLE ... DROP DETACHED PARTITION ALL` to drop all detached partitions. [#67885](https://github.com/ClickHouse/ClickHouse/pull/67885) ([Duc Canh Le](https://github.com/canhld94)).
 * Add the `rows_before_aggregation_at_least` statistic to the query response when a new setting, `rows_before_aggregation` is enabled. This statistic represents the number of rows read before aggregation. In the context of a distributed query, when using the `group by` or `max` aggregation function without a `limit`, `rows_before_aggregation_at_least` can reflect the number of rows hit by the query. [#66084](https://github.com/ClickHouse/ClickHouse/pull/66084) ([morning-color](https://github.com/morning-color)).
 * Support `OPTIMIZE` query on `Join` tables to reduce their memory footprint. [#67883](https://github.com/ClickHouse/ClickHouse/pull/67883) ([Duc Canh Le](https://github.com/canhld94)).
+* Allow run query instantly in play if you add `&run=1` in the URL [#66457](https://github.com/ClickHouse/ClickHouse/pull/66457) ([Aleksandr Musorin](https://github.com/AVMusorin)).
 
 #### Experimental Feature
 * Implement a new `JSON` data type. [#66444](https://github.com/ClickHouse/ClickHouse/pull/66444) ([Kruglov Pavel](https://github.com/Avogar)).
@@ -82,7 +83,6 @@
 * Added profile events for merges and mutations for better introspection. [#68015](https://github.com/ClickHouse/ClickHouse/pull/68015) ([Anton Popov](https://github.com/CurtizJ)).
 * Fix settings and `current_database` in `system.processes` for async BACKUP/RESTORE. [#68163](https://github.com/ClickHouse/ClickHouse/pull/68163) ([Azat Khuzhin](https://github.com/azat)).
 * Remove unnecessary logs for non-replicated `MergeTree`. [#68238](https://github.com/ClickHouse/ClickHouse/pull/68238) ([Daniil Ivanik](https://github.com/divanik)).
-* Allow run query instantly in play if you add `&run=1` in the URL [#66457](https://github.com/ClickHouse/ClickHouse/pull/66457) ([Aleksandr Musorin](https://github.com/AVMusorin)).
 
 #### Build/Testing/Packaging Improvement
 * Integration tests flaky check will not run each test case multiple times to find more issues in tests and make them more reliable. It is using `pytest-repeat` library to run test case multiple times for the same environment. It is important to cleanup tables and other entities in the end of a test case to pass. Repeating works much faster than several pytest runs as it starts necessary containers only once. [#66986](https://github.com/ClickHouse/ClickHouse/pull/66986) ([Ilya Yatsishin](https://github.com/qoega)).
@@ -118,7 +118,7 @@
 * Correct behavior of `ORDER BY all` with disabled `enable_order_by_all` and parallel replicas (distributed queries as well). [#67153](https://github.com/ClickHouse/ClickHouse/pull/67153) ([Igor Nikonov](https://github.com/devcrafter)).
 * Fix wrong usage of input_format_max_bytes_to_read_for_schema_inference in schema cache. [#67157](https://github.com/ClickHouse/ClickHouse/pull/67157) ([Kruglov Pavel](https://github.com/Avogar)).
 * Fix the memory leak for count distinct, when exception issued during group by single nullable key. [#67171](https://github.com/ClickHouse/ClickHouse/pull/67171) ([Jet He](https://github.com/compasses)).
-* This closes [#67156](https://github.com/ClickHouse/ClickHouse/issues/67156). This closes [#66447](https://github.com/ClickHouse/ClickHouse/issues/66447). The bug was introduced in https://github.com/ClickHouse/ClickHouse/pull/62907. [#67178](https://github.com/ClickHouse/ClickHouse/pull/67178) ([Maksim Kita](https://github.com/kitaisreal)).
+* Fix an error in optimization which converts OUTER JOIN to INNER JOIN. This closes [#67156](https://github.com/ClickHouse/ClickHouse/issues/67156). This closes [#66447](https://github.com/ClickHouse/ClickHouse/issues/66447). The bug was introduced in https://github.com/ClickHouse/ClickHouse/pull/62907. [#67178](https://github.com/ClickHouse/ClickHouse/pull/67178) ([Maksim Kita](https://github.com/kitaisreal)).
 * Fix error `Conversion from AggregateFunction(name, Type) to AggregateFunction(name, Nullable(Type)) is not supported`. The bug was caused by the `optimize_rewrite_aggregate_function_with_if` optimization. Fixes [#67112](https://github.com/ClickHouse/ClickHouse/issues/67112). [#67229](https://github.com/ClickHouse/ClickHouse/pull/67229) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * Fix hung query when using empty tuple as lhs of function IN. [#67295](https://github.com/ClickHouse/ClickHouse/pull/67295) ([Duc Canh Le](https://github.com/canhld94)).
 * It was possible to create a very deep nested JSON data that triggered stack overflow while skipping unknown fields. This closes [#67292](https://github.com/ClickHouse/ClickHouse/issues/67292). [#67324](https://github.com/ClickHouse/ClickHouse/pull/67324) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -154,8 +154,8 @@
 * Fixed skipping of untouched parts in mutations with new analyzer. Previously with enabled analyzer data in part could be rewritten by mutation even if mutation doesn't affect this part according to predicate. [#68052](https://github.com/ClickHouse/ClickHouse/pull/68052) ([Anton Popov](https://github.com/CurtizJ)).
 * Removes an incorrect optimization to remove sorting in subqueries that use `OFFSET`. Fixes [#67906](https://github.com/ClickHouse/ClickHouse/issues/67906). [#68099](https://github.com/ClickHouse/ClickHouse/pull/68099) ([Graham Campbell](https://github.com/GrahamCampbell)).
 * Attempt to fix `Block structure mismatch in AggregatingStep stream: different types` for aggregate projection optimization. [#68107](https://github.com/ClickHouse/ClickHouse/pull/68107) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
-* Backported in [#68343](https://github.com/ClickHouse/ClickHouse/issues/68343): Try fix postgres crash when query is cancelled. [#68288](https://github.com/ClickHouse/ClickHouse/pull/68288) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Backported in [#68400](https://github.com/ClickHouse/ClickHouse/issues/68400): Fix missing sync replica mode in query `SYSTEM SYNC REPLICA`. [#68326](https://github.com/ClickHouse/ClickHouse/pull/68326) ([Duc Canh Le](https://github.com/canhld94)).
+* Try fix postgres crash when query is cancelled. [#68288](https://github.com/ClickHouse/ClickHouse/pull/68288) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Fix missing sync replica mode in query `SYSTEM SYNC REPLICA`. [#68326](https://github.com/ClickHouse/ClickHouse/pull/68326) ([Duc Canh Le](https://github.com/canhld94)).
 
 
 ### <a id="247"></a> ClickHouse release 24.7, 2024-07-30
