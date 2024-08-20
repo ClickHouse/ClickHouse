@@ -6,7 +6,6 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=[
-        "config/storage_conf.xml",
         "config/enable_keeper.xml",
         "config/users.xml",
     ],
@@ -53,7 +52,6 @@ def test_aliases_in_default_expr_not_break_table_structure(start_cluster, engine
         )
         ENGINE = {engine}
         ORDER BY col1
-        SETTINGS index_granularity = 8192
         """
     )
 
