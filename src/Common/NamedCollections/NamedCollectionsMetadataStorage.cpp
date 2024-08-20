@@ -628,9 +628,9 @@ std::unique_ptr<NamedCollectionsMetadataStorage> NamedCollectionsMetadataStorage
         const auto path = config.getString(named_collections_storage_config_path + ".path");
 
         std::unique_ptr<INamedCollectionsStorage> zk_storage;
-        if (storage_type == "zookeeper" || storage_type == "keeper")
+        if (!storage_type.ends_with("_encrypted"))
             zk_storage = std::make_unique<NamedCollectionsMetadataStorage::ZooKeeperStorage>(context_, path);
-        else if (storage_type == "zookeeper_encrypted" || storage_type == "keeper_encrypted")
+        else
             zk_storage = std::make_unique<NamedCollectionsMetadataStorage::ZooKeeperStorageEncrypted>(context_, path);
 
         LOG_TRACE(getLogger("NamedCollectionsMetadataStorage"),
