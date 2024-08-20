@@ -487,7 +487,8 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
         create_query->create_or_replace = true;
         create_query->replace_table = true;
         /// Use UUID to ensure that the INSERT below inserts into the exact table we created, even if another replica replaced it.
-        create_query->generateRandomUUIDs();
+        create_query->uuid = UUIDHelpers::generateV4();
+        create_query->has_uuid = true;
 
         InterpreterCreateQuery create_interpreter(create_query, refresh_context);
         create_interpreter.setInternal(true);

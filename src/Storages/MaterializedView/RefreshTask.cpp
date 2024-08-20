@@ -70,7 +70,6 @@ RefreshTask::RefreshTask(
         }
         else
         {
-            /// TODO: Allow this to fail if LoadingStrictnessLevel >= SECONDARY_CREATE.
             zookeeper->createAncestors(coordination.path);
             /// Create coordination znodes if they don't exist. Register this replica, throwing if already exists.
             Coordination::Requests ops;

@@ -166,7 +166,7 @@ private:
         };
 
         CoordinationZnode root_znode;
-        bool running_znode_exists;
+        bool running_znode_exists = false;
         std::shared_ptr<WatchState> watches = std::make_shared<WatchState>();
 
         /// Whether we use Keeper to coordinate refresh across replicas. If false, we don't write to Keeper,

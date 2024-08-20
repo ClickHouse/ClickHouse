@@ -128,7 +128,7 @@ $CLICKHOUSE_CLIENT -nq "system wait view h2; -- { serverError REFRESH_FAILED }"
 $CLICKHOUSE_CLIENT -nq "
     select '<31.5: will retry>', exception != '', retry > 0 from refreshes;
     create table src2 empty as src;
-    insert into src2 values (1)
+    insert into src2 values (1);
     exchange tables src and src2;
     drop table src2;"
 while [ "`$CLICKHOUSE_CLIENT -nq "select status, retry from refreshes -- $LINENO" | xargs`" != 'Scheduled 0' ]
