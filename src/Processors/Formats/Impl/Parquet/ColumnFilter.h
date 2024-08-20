@@ -1,12 +1,12 @@
 #pragma once
 #include <iostream>
 #include <unordered_set>
+#include <Columns/ColumnsCommon.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <base/types.h>
 #include <boost/dynamic_bitset.hpp>
 #include <Common/Exception.h>
-#include <Columns/ColumnsCommon.h>
 
 
 namespace DB
@@ -29,8 +29,9 @@ public:
     bool any() const;
     void setAllTrue() { mask.resize(max_rows, true); }
     void setAllFalse() { mask.resize(max_rows, false); }
-    PaddedPODArray<bool>& maskReference() { return mask; }
-    const PaddedPODArray<bool>& maskReference() const { return mask; }
+    PaddedPODArray<bool> & maskReference() { return mask; }
+    const PaddedPODArray<bool> & maskReference() const { return mask; }
+
 private:
     size_t max_rows = 0;
     PaddedPODArray<bool> mask;
@@ -63,12 +64,17 @@ class FilterHelper
 {
 public:
     template <typename T>
-    static void filterPlainFixedData(const T* src, PaddedPODArray<T> & dst, const RowSet & row_set, size_t rows_to_read);
+    static void filterPlainFixedData(const T * src, PaddedPODArray<T> & dst, const RowSet & row_set, size_t rows_to_read);
     template <typename T>
-    static void gatherDictFixedValue(
-        const PaddedPODArray<T> & dict, PaddedPODArray<T> & dst, const PaddedPODArray<Int32> & idx, size_t rows_to_read);
+    static void
+    gatherDictFixedValue(const PaddedPODArray<T> & dict, PaddedPODArray<T> & dst, const PaddedPODArray<Int32> & idx, size_t rows_to_read);
     template <typename T>
-    static void filterDictFixedData(const PaddedPODArray<T> & dict, PaddedPODArray<T> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read);
+    static void filterDictFixedData(
+        const PaddedPODArray<T> & dict,
+        PaddedPODArray<T> & dst,
+        const PaddedPODArray<Int32> & idx,
+        const RowSet & row_set,
+        size_t rows_to_read);
 };
 
 class ColumnFilter
@@ -82,6 +88,8 @@ public:
     virtual bool testNull() const { return null_allowed; }
     virtual bool testNotNull() const { return true; }
     virtual bool testInt64(Int64) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testInt64 not implemented"); }
+    virtual bool testInt32(Int32) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testInt32 not implemented"); }
+    virtual bool testInt16(Int16) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testInt16 not implemented"); }
     virtual bool testFloat32(Float32) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testFloat32 not implemented"); }
     virtual bool testFloat64(Float64) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testFloat64 not implemented"); }
     virtual bool testBool(bool) const { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testBool not implemented"); }
@@ -106,20 +114,35 @@ public:
         }
     }
 
+    virtual void testInt32Values(RowSet & row_set, size_t offset, size_t len, const Int32 * data) const
+    {
+        for (size_t i = offset; i < offset + len; ++i)
+        {
+            row_set.set(i, testInt32(data[i]));
+        }
+    }
+
+    virtual void testInt16Values(RowSet & row_set, size_t offset, size_t len, const Int16 * data) const
+    {
+        for (size_t i = offset; i < offset + len; ++i)
+        {
+            row_set.set(i, testInt16(data[i]));
+        }
+    }
+
+
     virtual ColumnFilterPtr merge(const ColumnFilter * /*filter*/) const
     {
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "merge not implemented");
     }
 
-    virtual ColumnFilterPtr clone(std::optional<bool> nullAllowed = std::nullopt) const = 0;
+    virtual ColumnFilterPtr clone(std::optional<bool> nullAllowed) const = 0;
 
     virtual String toString() const
     {
-        return fmt::format(
-            "Filter({}, {})",
-            magic_enum::enum_name(kind()),
-            null_allowed ? "null allowed" : "null not allowed");
+        return fmt::format("Filter({}, {})", magic_enum::enum_name(kind()), null_allowed ? "null allowed" : "null not allowed");
     }
+
 protected:
     ColumnFilterKind kind_;
     bool null_allowed;
@@ -183,13 +206,24 @@ class Int64RangeFilter : public ColumnFilter
 public:
     static OptionalFilter create(const ActionsDAG::Node & node);
     explicit Int64RangeFilter(const Int64 min_, const Int64 max_, bool null_allowed_)
-        : ColumnFilter(Int64Range, null_allowed_), max(max_), min(min_), is_single_value(max == min)
+        : ColumnFilter(Int64Range, null_allowed_)
+        , max(max_)
+        , min(min_)
+        , lower32(static_cast<Int32>(std::max<Int64>(min, std::numeric_limits<int32_t>::min())))
+        , upper32(static_cast<Int32>(std::min<Int64>(max, std::numeric_limits<int32_t>::max())))
+        , lower16(static_cast<Int16>(std::max<Int64>(min, std::numeric_limits<int16_t>::min())))
+        , upper16(static_cast<Int16>(std::min<Int64>(max, std::numeric_limits<int16_t>::max())))
+        , is_single_value(max == min)
     {
     }
     ~Int64RangeFilter() override = default;
     bool testInt64(Int64 int64) const override { return int64 >= min && int64 <= max; }
+    bool testInt32(Int32 int32) const override { return int32 >= min && int32 <= max; }
+    bool testInt16(Int16 int16) const override { return int16 >= min && int16 <= max; }
     bool testInt64Range(Int64 lower, Int64 upper) const override { return min >= lower && max <= upper; }
     void testInt64Values(RowSet & row_set, size_t offset, size_t len, const Int64 * data) const override;
+    void testInt32Values(RowSet & row_set, size_t offset, size_t len, const Int32 * data) const override;
+    void testInt16Values(RowSet & row_set, size_t offset, size_t len, const Int16 * data) const override;
     ColumnFilterPtr merge(const ColumnFilter * filter) const override;
     ColumnFilterPtr clone(std::optional<bool> null_allowed_) const override
     {
@@ -201,8 +235,15 @@ public:
     }
 
 private:
+    template<class T>
+    void testIntValues(RowSet & row_set, size_t offset, size_t len, const T * data) const;
+
     const Int64 max;
     const Int64 min;
+    const int32_t lower32;
+    const int32_t upper32;
+    const int16_t lower16;
+    const int16_t upper16;
     bool is_single_value [[maybe_unused]];
 };
 class ByteValuesFilter : public ColumnFilter
@@ -233,10 +274,7 @@ public:
         return std::make_shared<ByteValuesFilter>(*this, null_allowed_.value_or(null_allowed));
     }
 
-    String toString() const override
-    {
-        return "ByteValuesFilter(" + lower + ", " + upper + ")";
-    }
+    String toString() const override { return "ByteValuesFilter(" + lower + ", " + upper + ")"; }
 
 private:
     String lower;

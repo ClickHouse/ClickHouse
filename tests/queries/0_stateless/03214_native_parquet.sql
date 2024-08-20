@@ -1,6 +1,6 @@
 drop table if exists test_native_parquet;
-create table test_native_parquet (a Int32, b Int64, c Float32, d Float64, s String) engine=File(Parquet) settings input_format_parquet_use_native_reader=true;
-insert into test_native_parquet select number, number+1, 0.1*number, 0.2*number, toString(number) from numbers(10000);
+create table test_native_parquet (a Int32, b Int64, c Float32, d Float64, s String, dat Date32, time DateTime64) engine=File(Parquet) settings input_format_parquet_use_native_reader=true;
+insert into test_native_parquet select number, number+1, 0.1*number, 0.2*number, toString(number), number, now64() + number from numbers(10000);
 
 select * from test_native_parquet where a < 10;
 select * from test_native_parquet where a <= 10;

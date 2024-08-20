@@ -1,4 +1,5 @@
 #include "ColumnFilter.h"
+#include <base/Decimal.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/Set.h>
 #include <Processors/Formats/Impl/Parquet/xsimd_wrapper.h>
@@ -15,26 +16,33 @@ extern const int LOGICAL_ERROR;
 template<class T>
 struct PhysicTypeTraits
 {
-    using simd_type = xsimd::batch<T>;
-    using simd_bool_type = xsimd::batch_bool<T>;
-    using simd_idx_type = xsimd::batch<T>;
-    using idx_type = T;
+    using simd_internal_type = T;
+    using simd_type = xsimd::batch<simd_internal_type>;
+    using simd_bool_type = xsimd::batch_bool<simd_internal_type>;
+    using simd_idx_type = xsimd::batch<simd_internal_type>;
 };
 template struct PhysicTypeTraits<Int32>;
 template struct PhysicTypeTraits<Int64>;
 template<> struct PhysicTypeTraits<Float32>
 {
-    using simd_type = xsimd::batch<Float32>;
-    using simd_bool_type = xsimd::batch_bool<Float32>;
+    using simd_internal_type = Float32;
+    using simd_type = xsimd::batch<simd_internal_type>;
+    using simd_bool_type = xsimd::batch_bool<simd_internal_type>;
     using simd_idx_type = xsimd::batch<Int32>;
-    using idx_type = Int32;
 };
 template<> struct PhysicTypeTraits<Float64>
 {
-    using simd_type = xsimd::batch<Float64>;
-    using simd_bool_type = xsimd::batch_bool<Float64>;
+    using simd_internal_type = Float64;
+    using simd_type = xsimd::batch<simd_internal_type>;
+    using simd_bool_type = xsimd::batch_bool<simd_internal_type>;
     using simd_idx_type = xsimd::batch<Int64>;
-    using idx_type = Int64;
+};
+template<> struct PhysicTypeTraits<DateTime64>
+{
+    using simd_internal_type = Int64;
+    using simd_type = xsimd::batch<simd_internal_type>;
+    using simd_bool_type = xsimd::batch_bool<simd_internal_type>;
+    using simd_idx_type = xsimd::batch<simd_internal_type>;
 };
 
 template <typename T>
@@ -76,6 +84,7 @@ template void FilterHelper::filterPlainFixedData<Int32>(Int32 const*, DB::Padded
 template void FilterHelper::filterPlainFixedData<Int64>(const Int64* src, PaddedPODArray<Int64> & dst, const RowSet & row_set, size_t rows_to_read);
 template void FilterHelper::filterPlainFixedData<Float32>(const Float32* src, PaddedPODArray<Float32> & dst, const RowSet & row_set, size_t rows_to_read);
 template void FilterHelper::filterPlainFixedData<Float64>(const Float64* src, PaddedPODArray<Float64> & dst, const RowSet & row_set, size_t rows_to_read);
+template void FilterHelper::filterPlainFixedData<DateTime64>(const DateTime64* src, PaddedPODArray<DateTime64> & dst, const RowSet & row_set, size_t rows_to_read);
 
 template <typename T>
 void FilterHelper::gatherDictFixedValue(
@@ -83,6 +92,7 @@ void FilterHelper::gatherDictFixedValue(
 {
     using batch_type = PhysicTypeTraits<T>::simd_type;
     using idx_batch_type = PhysicTypeTraits<T>::simd_idx_type;
+    using simd_internal_type = PhysicTypeTraits<T>::simd_internal_type;
     auto increment = batch_type::size;
     auto num_batched = rows_to_read / increment;
     dst.resize(dst.size() + (num_batched * increment));
@@ -90,7 +100,7 @@ void FilterHelper::gatherDictFixedValue(
     {
         auto rows = i * increment;
         idx_batch_type idx_batch = idx_batch_type::load_unaligned(idx.data() + rows);
-        batch_type::gather(dict.data(), idx_batch).store_aligned(dst.data() + rows);
+        batch_type::gather(reinterpret_cast<const simd_internal_type *>(dict.data()), idx_batch).store_aligned(reinterpret_cast<simd_internal_type *>(dst.data() + rows));
     }
     for (size_t i = num_batched * increment; i < rows_to_read; ++i)
     {
@@ -106,6 +116,8 @@ template void FilterHelper::gatherDictFixedValue(
     const PaddedPODArray<Float32> & dict, PaddedPODArray<Float32> & data, const PaddedPODArray<Int32> & idx, size_t rows_to_read);
 template void FilterHelper::gatherDictFixedValue(
     const PaddedPODArray<Float64> & dict, PaddedPODArray<Float64> & data, const PaddedPODArray<Int32> & idx, size_t rows_to_read);
+template void FilterHelper::gatherDictFixedValue(
+    const PaddedPODArray<DateTime64> & dict, PaddedPODArray<DateTime64> & data, const PaddedPODArray<Int32> & idx, size_t rows_to_read);
 
 template <typename T>
 void FilterHelper::filterDictFixedData(const PaddedPODArray<T> & dict, PaddedPODArray<T> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read)
@@ -113,6 +125,7 @@ void FilterHelper::filterDictFixedData(const PaddedPODArray<T> & dict, PaddedPOD
     using batch_type = PhysicTypeTraits<T>::simd_type;
     using bool_type = PhysicTypeTraits<T>::simd_bool_type;
     using idx_batch_type = PhysicTypeTraits<T>::simd_idx_type;
+    using simd_internal_type = PhysicTypeTraits<T>::simd_internal_type;
     auto increment = batch_type::size;
     auto num_batched = rows_to_read / increment;
     for (size_t i = 0; i < num_batched; ++i)
@@ -127,8 +140,8 @@ void FilterHelper::filterDictFixedData(const PaddedPODArray<T> & dict, PaddedPOD
             auto * start = dst.data() + old_size;
             dst.resize( old_size + increment);
             idx_batch_type idx_batch = idx_batch_type::load_unaligned(idx.data() + rows);
-            auto batch = batch_type::gather(dict.data(), idx_batch);
-            batch.store_unaligned(start);
+            auto batch = batch_type::gather(reinterpret_cast<const simd_internal_type *>(dict.data()), idx_batch);
+            batch.store_unaligned(reinterpret_cast<simd_internal_type *>(start));
         }
         else
         {
@@ -148,14 +161,19 @@ template void FilterHelper::filterDictFixedData(const PaddedPODArray<Int32> & di
 template void FilterHelper::filterDictFixedData(const PaddedPODArray<Int64> & dict, PaddedPODArray<Int64> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read);
 template void FilterHelper::filterDictFixedData(const PaddedPODArray<Float32> & dict, PaddedPODArray<Float32> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read);
 template void FilterHelper::filterDictFixedData(const PaddedPODArray<Float64> & dict, PaddedPODArray<Float64> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read);
+template void FilterHelper::filterDictFixedData(const PaddedPODArray<DateTime64> & dict, PaddedPODArray<DateTime64> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read);
 
-void Int64RangeFilter::testInt64Values(DB::RowSet & row_set, size_t offset, size_t len, const Int64 * data) const
+template<class T>
+void Int64RangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len, const T * data) const
 {
-    using batch_type = xsimd::batch<Int64>;
+    using batch_type = xsimd::batch<T>;
+    using bool_type = xsimd::batch_bool<T>;
     auto increment = batch_type::size;
     auto num_batched = len / increment;
     batch_type min_batch = batch_type::broadcast(min);
-    batch_type max_batch = batch_type::broadcast(max);
+    batch_type max_batch;
+    if (!is_single_value)
+        max_batch = batch_type::broadcast(max);
     bool aligned = offset % increment == 0;
     for (size_t i = 0; i < num_batched; ++i)
     {
@@ -165,14 +183,57 @@ void Int64RangeFilter::testInt64Values(DB::RowSet & row_set, size_t offset, size
             value = batch_type::load_aligned(data + rows);
         else
             value = batch_type::load_unaligned(data + rows);
-        auto mask = (value >= min_batch) && (value <= max_batch);
+        bool_type mask;
+        if (is_single_value)
+        {
+            if constexpr (std::is_same_v<T, Int32>)
+            {
+                if unlikely(lower32 != min)
+                    mask = bool_type(false);
+                else
+                    mask = value == min_batch;
+            }
+            else if constexpr (std::is_same_v<T, Int16>)
+            {
+                if unlikely(lower16 != min)
+                    mask = bool_type(false);
+                else
+                    mask = value == min_batch;
+            }
+            else
+            {
+                mask = value == min_batch;
+            }
+        }
+        else
+            mask = (value >= min_batch) && (value <= max_batch);
         if (aligned)
             mask.store_aligned(row_set.maskReference().data() + rows);
+        else
+            mask.store_unaligned(row_set.maskReference().data() + rows);
     }
     for (size_t i = offset + (num_batched * increment); i < offset + len ; ++i)
     {
         row_set.maskReference()[i] = data[i] >= min & data[i] <= max;
     }
+}
+
+template void Int64RangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len, const Int64 * data) const;
+template void Int64RangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len, const Int32 * data) const;
+template void Int64RangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len, const Int16 * data) const;
+
+void Int64RangeFilter::testInt64Values(DB::RowSet & row_set, size_t offset, size_t len, const Int64 * data) const
+{
+    testIntValues(row_set, offset, len, data);
+}
+
+void Int64RangeFilter::testInt32Values(RowSet & row_set, size_t offset, size_t len, const Int32 * data) const
+{
+    testIntValues(row_set, offset, len, data);
+}
+void Int64RangeFilter::testInt16Values(RowSet & row_set, size_t offset, size_t len, const Int16 * data) const
+{
+    testIntValues(row_set, offset, len, data);
 }
 
 bool isFunctionNode(const ActionsDAG::Node & node)
@@ -236,7 +297,7 @@ OptionalFilter Int64RangeFilter::create(const ActionsDAG::Node & node)
         return std::nullopt;
     const auto * input_node = getInputNode(node);
     auto name = input_node->result_name;
-    if (!isInt64(input_node->result_type))
+    if (!isInt64(input_node->result_type) && !isInt32(input_node->result_type) && !isInt16(input_node->result_type))
         return std::nullopt;
     auto constant_nodes = getConstantNode(node);
     auto func_name = node.function_base->getName();

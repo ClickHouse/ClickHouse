@@ -3,6 +3,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Processors/Formats/Impl/Parquet/ParquetReader.h>
 #include <Common/assert_cast.h>
 
@@ -299,13 +301,17 @@ void computeRowSetPlain(const T * start, OptionalRowSet & row_set, const ColumnF
 {
     if (filter)
     {
-        if constexpr (std::is_same_v<T, Int64>)
+        if (row_set.has_value())
         {
-            if (row_set.has_value())
+            if constexpr (std::is_same_v<T, Int64>)
                 filter->testInt64Values(row_set.value(), 0, rows_to_read, start);
+            else if constexpr (std::is_same_v<T, Int32>)
+                filter->testInt32Values(row_set.value(), 0, rows_to_read, start);
+            else if constexpr (std::is_same_v<T, Int16>)
+                filter->testInt16Values(row_set.value(), 0, rows_to_read, start);
+            else
+                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported type");
         }
-        else
-            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported type");
     }
 }
 
@@ -381,18 +387,18 @@ void NumberColumnDirectReader<DataType>::computeRowSetSpace(OptionalRowSet & row
 template <typename DataType>
 MutableColumnPtr NumberColumnDirectReader<DataType>::createColumn()
 {
-    return DataType::ColumnType::create();
+    return datatype->createColumn();
 }
 
 template <typename DataType>
-NumberColumnDirectReader<DataType>::NumberColumnDirectReader(std::unique_ptr<LazyPageReader> page_reader_, ScanSpec scan_spec_)
-    : SelectiveColumnReader(std::move(page_reader_), scan_spec_)
+NumberColumnDirectReader<DataType>::NumberColumnDirectReader(std::unique_ptr<LazyPageReader> page_reader_, ScanSpec scan_spec_, DataTypePtr datatype_)
+    : SelectiveColumnReader(std::move(page_reader_), scan_spec_), datatype(datatype_)
 {
 }
 
 template <typename DataType>
-NumberDictionaryReader<DataType>::NumberDictionaryReader(std::unique_ptr<LazyPageReader> page_reader_, ScanSpec scan_spec_)
-    : SelectiveColumnReader(std::move(page_reader_), scan_spec_)
+NumberDictionaryReader<DataType>::NumberDictionaryReader(std::unique_ptr<LazyPageReader> page_reader_, ScanSpec scan_spec_, DataTypePtr datatype_)
+    : SelectiveColumnReader(std::move(page_reader_), scan_spec_), datatype(datatype_)
 {
 }
 
@@ -428,6 +434,10 @@ void NumberDictionaryReader<DataType>::computeRowSet(OptionalRowSet & row_set, s
             {
                 if constexpr (std::is_same_v<typename DataType::FieldType, Int64>)
                     cache.set(idx, scan_spec.filter->testInt64(dict[idx]));
+                else if constexpr (std::is_same_v<typename DataType::FieldType, Int32>)
+                    cache.set(idx, scan_spec.filter->testInt32(dict[idx]));
+                else if constexpr (std::is_same_v<typename DataType::FieldType, Int16>)
+                    cache.set(idx, scan_spec.filter->testInt16(dict[idx]));
                 else if constexpr (std::is_same_v<typename DataType::FieldType, Float32>)
                     cache.set(idx, scan_spec.filter->testFloat32(dict[idx]));
                 else if constexpr (std::is_same_v<typename DataType::FieldType, Float64>)
@@ -669,11 +679,35 @@ void OptionalColumnReader::skipPageIfNeed()
     child->state.lazy_skip_rows = 0;
 }
 
-bool isLogicalTypeIntOrNull(parquet::LogicalType::Type::type type)
+static bool isLogicalTypeIntOrNull(parquet::LogicalType::Type::type type)
 {
     return type == parquet::LogicalType::Type::INT || type == parquet::LogicalType::Type::NONE;
 }
 
+static bool isLogicalTypeDate(parquet::LogicalType::Type::type type)
+{
+    return type == parquet::LogicalType::Type::DATE;
+}
+
+static bool isLogicalTypeDateTime(parquet::LogicalType::Type::type type)
+{
+    return type == parquet::LogicalType::Type::TIMESTAMP;
+}
+
+static UInt32 getScaleFromLogicalTimestamp(parquet::LogicalType::TimeUnit::unit tm_unit)
+{
+    switch (tm_unit)
+    {
+        case parquet::LogicalType::TimeUnit::MILLIS:
+            return 3;
+        case parquet::LogicalType::TimeUnit::MICROS:
+            return 6;
+        case parquet::LogicalType::TimeUnit::NANOS:
+            return 9;
+        default:
+            throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, ", invalid timestamp unit: {}", tm_unit);
+    }
+}
 
 SelectiveColumnReaderPtr SelectiveColumnReaderFactory::createLeafColumnReader(
     const parquet::ColumnChunkMetaData & column_metadata,
@@ -684,31 +718,52 @@ SelectiveColumnReaderPtr SelectiveColumnReaderFactory::createLeafColumnReader(
     ScanSpec scan_spec{.column_name = column_desc->name(), .column_desc = column_desc, .filter = filter};
     if (column_desc->physical_type() == parquet::Type::INT64 && isLogicalTypeIntOrNull(column_desc->logical_type()->type()))
     {
+        auto type_int64 = std::make_shared<DataTypeInt64>();
         if (!column_metadata.has_dictionary_page())
-            return std::make_shared<NumberColumnDirectReader<DataTypeInt64>>(std::move(page_reader), scan_spec);
+            return std::make_shared<NumberColumnDirectReader<DataTypeInt64>>(std::move(page_reader), scan_spec, type_int64);
         else
-            return std::make_shared<NumberDictionaryReader<DataTypeInt64>>(std::move(page_reader), scan_spec);
+            return std::make_shared<NumberDictionaryReader<DataTypeInt64>>(std::move(page_reader), scan_spec, type_int64);
     }
     if (column_desc->physical_type() == parquet::Type::INT32 && isLogicalTypeIntOrNull(column_desc->logical_type()->type()))
     {
+        auto type_int32 = std::make_shared<DataTypeInt32>();
         if (!column_metadata.has_dictionary_page())
-            return std::make_shared<NumberColumnDirectReader<DataTypeInt32>>(std::move(page_reader), scan_spec);
+            return std::make_shared<NumberColumnDirectReader<DataTypeInt32>>(std::move(page_reader), scan_spec, type_int32);
         else
-            return std::make_shared<NumberDictionaryReader<DataTypeInt32>>(std::move(page_reader), scan_spec);
+            return std::make_shared<NumberDictionaryReader<DataTypeInt32>>(std::move(page_reader), scan_spec, type_int32);
+    }
+    if (column_desc->physical_type() == parquet::Type::INT32 && isLogicalTypeDate(column_desc->logical_type()->type()))
+    {
+        auto type_date32 = std::make_shared<DataTypeDate32>();
+        if (!column_metadata.has_dictionary_page())
+            return std::make_shared<NumberColumnDirectReader<DataTypeDate32>>(std::move(page_reader), scan_spec, type_date32);
+        else
+            return std::make_shared<NumberDictionaryReader<DataTypeDate32>>(std::move(page_reader), scan_spec, type_date32);
+    }
+    if (column_desc->physical_type() == parquet::Type::INT64 && isLogicalTypeDateTime(column_desc->logical_type()->type()))
+    {
+        const auto & tm_type = dynamic_cast<const parquet::TimestampLogicalType &>(*column_desc->logical_type());
+        auto type_datetime64 = std::make_shared<DataTypeDateTime64>(getScaleFromLogicalTimestamp(tm_type.time_unit()));
+        if (!column_metadata.has_dictionary_page())
+            return std::make_shared<NumberColumnDirectReader<DataTypeDateTime64>>(std::move(page_reader), scan_spec, type_datetime64);
+        else
+            return std::make_shared<NumberDictionaryReader<DataTypeDateTime64>>(std::move(page_reader), scan_spec, type_datetime64);
     }
     else if (column_desc->physical_type() == parquet::Type::FLOAT)
     {
+        auto type_float32 = std::make_shared<DataTypeFloat32>();
         if (!column_metadata.has_dictionary_page())
-            return std::make_shared<NumberColumnDirectReader<DataTypeFloat32>>(std::move(page_reader), scan_spec);
+            return std::make_shared<NumberColumnDirectReader<DataTypeFloat32>>(std::move(page_reader), scan_spec, type_float32);
         else
-            return std::make_shared<NumberDictionaryReader<DataTypeFloat32>>(std::move(page_reader), scan_spec);
+            return std::make_shared<NumberDictionaryReader<DataTypeFloat32>>(std::move(page_reader), scan_spec, type_float32);
     }
     else if (column_desc->physical_type() == parquet::Type::DOUBLE)
     {
+        auto type_float64 = std::make_shared<DataTypeFloat64>();
         if (!column_metadata.has_dictionary_page())
-            return std::make_shared<NumberColumnDirectReader<DataTypeFloat64>>(std::move(page_reader), scan_spec);
+            return std::make_shared<NumberColumnDirectReader<DataTypeFloat64>>(std::move(page_reader), scan_spec, type_float64);
         else
-            return std::make_shared<NumberDictionaryReader<DataTypeFloat64>>(std::move(page_reader), scan_spec);
+            return std::make_shared<NumberDictionaryReader<DataTypeFloat64>>(std::move(page_reader), scan_spec, type_float64);
     }
     else if (column_desc->physical_type() == parquet::Type::BYTE_ARRAY)
     {
@@ -733,11 +788,15 @@ template class NumberColumnDirectReader<DataTypeInt32>;
 template class NumberColumnDirectReader<DataTypeInt64>;
 template class NumberColumnDirectReader<DataTypeFloat32>;
 template class NumberColumnDirectReader<DataTypeFloat64>;
+template class NumberColumnDirectReader<DataTypeDate32>;
+template class NumberColumnDirectReader<DataTypeDateTime64>;
 
 template class NumberDictionaryReader<DataTypeInt32>;
 template class NumberDictionaryReader<DataTypeInt64>;
 template class NumberDictionaryReader<DataTypeFloat32>;
 template class NumberDictionaryReader<DataTypeFloat64>;
+template class NumberDictionaryReader<DataTypeDate32>;
+template class NumberDictionaryReader<DataTypeDateTime64>;
 
 Int32 loadLength(const uint8_t * data)
 {

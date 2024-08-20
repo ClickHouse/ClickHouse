@@ -395,7 +395,7 @@ template <typename DataType>
 class NumberColumnDirectReader : public SelectiveColumnReader
 {
 public:
-    NumberColumnDirectReader(std::unique_ptr<LazyPageReader> page_reader_, ScanSpec scan_spec_);
+    NumberColumnDirectReader(std::unique_ptr<LazyPageReader> page_reader_, ScanSpec scan_spec_, DataTypePtr datatype_);
     ~NumberColumnDirectReader() override = default;
     MutableColumnPtr createColumn() override;
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
@@ -404,19 +404,22 @@ public:
     void readSpace(
         MutableColumnPtr & column, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
+
+private:
+    DataTypePtr datatype;
 };
 
 template <typename DataType>
 class NumberDictionaryReader : public SelectiveColumnReader
 {
 public:
-    NumberDictionaryReader(std::unique_ptr<LazyPageReader> page_reader_, ScanSpec scan_spec_);
+    NumberDictionaryReader(std::unique_ptr<LazyPageReader> page_reader_, ScanSpec scan_spec_, DataTypePtr datatype_);
     ~NumberDictionaryReader() override = default;
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
     void computeRowSetSpace(OptionalRowSet & set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
     void read(MutableColumnPtr & column, const OptionalRowSet & row_set, size_t rows_to_read) override;
     void readSpace(MutableColumnPtr & ptr, const OptionalRowSet & set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t size) override;
-    MutableColumnPtr createColumn() override { return DataType::ColumnType::create(); }
+    MutableColumnPtr createColumn() override { return datatype->createColumn(); }
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
 
 protected:
@@ -435,6 +438,7 @@ protected:
     void downgradeToPlain() override;
 
 private:
+    DataTypePtr datatype;
     arrow::util::RleDecoder idx_decoder;
     std::unique_ptr<DictDecoder> dict_decoder;
     PaddedPODArray<typename DataType::FieldType> dict;
