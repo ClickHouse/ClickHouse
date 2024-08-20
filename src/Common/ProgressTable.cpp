@@ -202,7 +202,7 @@ void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message, bool sho
     }
     const auto & event_name_to_event = getEventNameToEvent();
 
-    size_t terminal_width = getTerminalWidth();
+    size_t terminal_width = getTerminalWidth(in_fd, err_fd);
     if (terminal_width < column_event_name_width + COLUMN_VALUE_WIDTH + COLUMN_PROGRESS_WIDTH)
         return;
 
@@ -269,25 +269,25 @@ void ProgressTable::writeFinalTable()
     std::lock_guard lock{mutex};
     const auto & event_name_to_event = getEventNameToEvent();
 
-    size_t terminal_width = getTerminalWidth();
+    size_t terminal_width = getTerminalWidth(in_fd, err_fd);
     if (terminal_width < column_event_name_width + COLUMN_VALUE_WIDTH)
         return;
 
     if (metrics.empty())
         return;
 
-    std::cout << "\n";
-    writeWithWidth(std::cout, COLUMN_EVENT_NAME, column_event_name_width);
-    writeWithWidth(std::cout, COLUMN_VALUE, COLUMN_VALUE_WIDTH);
+    output_stream << "\n";
+    writeWithWidth(output_stream, COLUMN_EVENT_NAME, column_event_name_width);
+    writeWithWidth(output_stream, COLUMN_VALUE, COLUMN_VALUE_WIDTH);
 
     for (auto & [name, per_host_info] : metrics)
     {
-        std::cout << "\n";
-        writeWithWidth(std::cout, name, column_event_name_width);
+        output_stream << "\n";
+        writeWithWidth(output_stream, name, column_event_name_width);
 
         auto value = per_host_info.getSummaryValue();
         auto value_type = getValueType(event_name_to_event.at(name));
-        writeWithWidth(std::cout, formatReadableValue(value_type, value), COLUMN_VALUE_WIDTH);
+        writeWithWidth(output_stream, formatReadableValue(value_type, value), COLUMN_VALUE_WIDTH);
     }
 }
 

@@ -7,7 +7,9 @@
 
 #include <map>
 #include <mutex>
+#include <ostream>
 #include <string_view>
+#include <unistd.h>
 #include <unordered_map>
 
 namespace DB
@@ -19,6 +21,15 @@ class Block;
 class ProgressTable
 {
 public:
+    explicit ProgressTable(
+            std::ostream & output_stream_ = std::cout,
+            int in_fd_ = STDIN_FILENO,
+            int err_fd_ = STDERR_FILENO)
+        : output_stream(output_stream_)
+        , in_fd(in_fd_)
+        , err_fd(err_fd_)
+    {}
+
     /// Write progress table with metrics.
     void writeTable(WriteBufferFromFileDescriptor & message, bool show_table);
     void clearTableOutput(WriteBufferFromFileDescriptor & message);
@@ -104,6 +115,10 @@ private:
     static constexpr size_t COLUMN_VALUE_WIDTH = 20;
     static constexpr size_t COLUMN_PROGRESS_WIDTH = 20;
     static constexpr size_t COLUMN_DOCUMENTATION_WIDTH = 100;
+
+    std::ostream & output_stream;
+    int in_fd;
+    int err_fd;
 };
 
 }

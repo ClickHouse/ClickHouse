@@ -275,6 +275,7 @@ ClientBase::ClientBase(
     : std_in(in_fd_)
     , std_out(out_fd_)
     , progress_indication(output_stream_, in_fd_, err_fd_)
+    , progress_table(output_stream_, in_fd_, err_fd_)
     , in_fd(in_fd_)
     , out_fd(out_fd_)
     , err_fd(err_fd_)
