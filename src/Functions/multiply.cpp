@@ -14,7 +14,7 @@ struct MultiplyImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
+    static NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)
         {
@@ -29,7 +29,7 @@ struct MultiplyImpl
 
     /// Apply operation and check overflow. It's used for Decimal operations. @returns true if overflowed, false otherwise.
     template <typename Result = ResultType>
-    static inline bool apply(A a, B b, Result & c)
+    static bool apply(A a, B b, Result & c)
     {
         if constexpr (std::is_same_v<Result, float> || std::is_same_v<Result, double>)
         {
@@ -43,7 +43,7 @@ struct MultiplyImpl
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = true;
 
-    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
     {
         return left->getType()->isIntegerTy() ? b.CreateMul(left, right) : b.CreateFMul(left, right);
     }

@@ -238,7 +238,7 @@ public:
         if (params[0].getType() != Field::Types::String)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require first parameter to be a String", getName());
 
-        const auto & param = params[0].get<String>();
+        const auto & param = params[0].safeGet<String>();
         if (param == "two-sided")
             alternative = Alternative::TwoSided;
         else if (param == "less")
@@ -255,7 +255,7 @@ public:
         if (params[1].getType() != Field::Types::String)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require second parameter to be a String", getName());
 
-        method = params[1].get<String>();
+        method = params[1].safeGet<String>();
         if (method != "auto" && method != "exact" && method != "asymp" && method != "asymptotic")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown method in aggregate function {}. "
                     "It must be one of: 'auto', 'exact', 'asymp' (or 'asymptotic')", getName());
@@ -350,7 +350,7 @@ AggregateFunctionPtr createAggregateFunctionKolmogorovSmirnovTest(
 
 void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("kolmogorovSmirnovTest", createAggregateFunctionKolmogorovSmirnovTest, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("kolmogorovSmirnovTest", createAggregateFunctionKolmogorovSmirnovTest, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

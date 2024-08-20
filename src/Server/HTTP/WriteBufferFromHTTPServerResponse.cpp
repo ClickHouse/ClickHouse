@@ -30,7 +30,7 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
         if (add_cors_header)
             response.set("Access-Control-Allow-Origin", "*");
 
-        setResponseDefaultHeaders(response, keep_alive_timeout);
+        setResponseDefaultHeaders(response);
 
         std::stringstream header; //STYLE_CHECK_ALLOW_STD_STRING_STREAM
         response.beginWrite(header);
@@ -119,12 +119,10 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     HTTPServerResponse & response_,
     bool is_http_method_head_,
-    UInt64 keep_alive_timeout_,
     const ProfileEvents::Event & write_event_)
     : HTTPWriteBuffer(response_.getSocket(), write_event_)
     , response(response_)
     , is_http_method_head(is_http_method_head_)
-    , keep_alive_timeout(keep_alive_timeout_)
 {
 }
 
@@ -162,7 +160,8 @@ WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
 {
     try
     {
-        finalize();
+        if (!canceled)
+            finalize();
     }
     catch (...)
     {

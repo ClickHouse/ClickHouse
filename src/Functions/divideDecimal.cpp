@@ -18,7 +18,7 @@ struct DivideDecimalsImpl
     static constexpr auto name = "divideDecimal";
 
     template <typename FirstType, typename SecondType>
-    static inline Decimal256
+    static Decimal256
     execute(FirstType a, SecondType b, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale)
     {
         if (b.value == 0)

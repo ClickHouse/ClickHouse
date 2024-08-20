@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import logging
-import os.path as p
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, ArgumentTypeError
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Literal, Optional, Set, Tuple, Union
 
 from git_helper import TWEAK, Git, get_tags, git_runner, removeprefix
@@ -22,7 +22,7 @@ VERSIONS = Dict[str, Union[int, str]]
 
 VERSIONS_TEMPLATE = """# This variables autochanged by tests/ci/version_helper.py:
 
-# NOTE: has nothing common with DBMS_TCP_PROTOCOL_VERSION,
+# NOTE: VERSION_REVISION has nothing common with DBMS_TCP_PROTOCOL_VERSION,
 # only DBMS_TCP_PROTOCOL_VERSION should be incremented on protocol changes.
 SET(VERSION_REVISION {revision})
 SET(VERSION_MAJOR {major})
@@ -47,7 +47,7 @@ class ClickHouseVersion:
         patch: Union[int, str],
         revision: Union[int, str],
         git: Optional[Git],
-        tweak: Optional[str] = None,
+        tweak: Optional[Union[int, str]] = None,
     ):
         self._major = int(major)
         self._minor = int(minor)
@@ -72,6 +72,29 @@ class ClickHouseVersion:
             return self.patch_update()
         raise KeyError(f"wrong part {part} is used")
 
+    def bump(self) -> "ClickHouseVersion":
+        if self.minor < 12:
+            self._minor += 1
+            self._revision += 1
+            self._patch = 1
+            self._tweak = 1
+        else:
+            self._major += 1
+            self._revision += 1
+            self._patch = 1
+            self._tweak = 1
+        return self
+
+    def bump_patch(self) -> "ClickHouseVersion":
+        self._revision += 1
+        self._patch += 1
+        self._tweak = 1
+        return self
+
+    def reset_tweak(self) -> "ClickHouseVersion":
+        self._tweak = 1
+        return self
+
     def major_update(self) -> "ClickHouseVersion":
         if self._git is not None:
             self._git.update()
@@ -91,13 +114,6 @@ class ClickHouseVersion:
             self.major, self.minor, self.patch + 1, self.revision, self._git
         )
 
-    def reset_tweak(self) -> "ClickHouseVersion":
-        if self._git is not None:
-            self._git.update()
-        return ClickHouseVersion(
-            self.major, self.minor, self.patch, self.revision, self._git, "1"
-        )
-
     @property
     def major(self) -> int:
         return self._major
@@ -113,6 +129,10 @@ class ClickHouseVersion:
     @property
     def tweak(self) -> int:
         return self._tweak
+
+    @tweak.setter
+    def tweak(self, tweak: int) -> None:
+        self._tweak = tweak
 
     @property
     def revision(self) -> int:
@@ -144,6 +164,11 @@ class ClickHouseVersion:
         """our X.3 and X.8 are LTS"""
         return self.minor % 5 == 3
 
+    def get_stable_release_type(self) -> str:
+        if self.is_lts:
+            return VersionType.LTS
+        return VersionType.STABLE
+
     def as_dict(self) -> VERSIONS:
         return {
             "revision": self.revision,
@@ -164,6 +189,7 @@ class ClickHouseVersion:
             raise ValueError(f"version type {version_type} not in {VersionType.VALID}")
         self._description = version_type
         self._describe = f"v{self.string}-{version_type}"
+        return self
 
     def copy(self) -> "ClickHouseVersion":
         copy = ClickHouseVersion(
@@ -172,7 +198,7 @@ class ClickHouseVersion:
             self.patch,
             self.revision,
             self._git,
-            str(self.tweak),
+            self.tweak,
         )
         try:
             copy.with_description(self.description)
@@ -190,7 +216,9 @@ class ClickHouseVersion:
             and self.tweak == other.tweak
         )
 
-    def __lt__(self, other: "ClickHouseVersion") -> bool:
+    def __lt__(self, other: Any) -> bool:
+        if not isinstance(self, type(other)):
+            return NotImplemented
         for part in ("major", "minor", "patch", "tweak"):
             if getattr(self, part) < getattr(other, part):
                 return True
@@ -220,10 +248,11 @@ ClickHouseVersions = List[ClickHouseVersion]
 
 class VersionType:
     LTS = "lts"
+    NEW = "new"
     PRESTABLE = "prestable"
     STABLE = "stable"
     TESTING = "testing"
-    VALID = (TESTING, PRESTABLE, STABLE, LTS)
+    VALID = (NEW, TESTING, PRESTABLE, STABLE, LTS)
 
 
 def validate_version(version: str) -> None:
@@ -234,43 +263,56 @@ def validate_version(version: str) -> None:
         int(part)
 
 
-def get_abs_path(path: str) -> str:
-    return p.abspath(p.join(git_runner.cwd, path))
+def get_abs_path(path: Union[Path, str]) -> Path:
+    return (Path(git_runner.cwd) / path).absolute()
 
 
-def read_versions(versions_path: str = FILE_WITH_VERSION_PATH) -> VERSIONS:
+def read_versions(versions_path: Union[Path, str] = FILE_WITH_VERSION_PATH) -> VERSIONS:
     versions = {}
-    path_to_file = get_abs_path(versions_path)
-    with open(path_to_file, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line.startswith("SET("):
-                continue
+    for line in get_abs_path(versions_path).read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line.startswith("SET("):
+            continue
 
-            value = 0  # type: Union[int, str]
-            name, value = line[4:-1].split(maxsplit=1)
-            name = removeprefix(name, "VERSION_").lower()
-            try:
-                value = int(value)
-            except ValueError:
-                pass
-            versions[name] = value
+        value = 0  # type: Union[int, str]
+        name, value = line[4:-1].split(maxsplit=1)
+        name = removeprefix(name, "VERSION_").lower()
+        try:
+            value = int(value)
+        except ValueError:
+            pass
+        versions[name] = value
 
     return versions
 
 
 def get_version_from_repo(
-    versions_path: str = FILE_WITH_VERSION_PATH,
+    versions_path: Union[Path, str] = FILE_WITH_VERSION_PATH,
     git: Optional[Git] = None,
 ) -> ClickHouseVersion:
+    """Get a ClickHouseVersion from FILE_WITH_VERSION_PATH. When the `git` parameter is
+    present, a proper `tweak` version part is calculated for case if the latest tag has
+    a `new` type and greater than version in `FILE_WITH_VERSION_PATH`"""
     versions = read_versions(versions_path)
-    return ClickHouseVersion(
+    cmake_version = ClickHouseVersion(
         versions["major"],
         versions["minor"],
         versions["patch"],
         versions["revision"],
         git,
     )
+    # Since 24.5 we have tags like v24.6.1.1-new, and we must check if the release
+    # branch already has it's own commit. It's necessary for a proper tweak version
+    if git is not None and git.latest_tag:
+        version_from_tag = get_version_from_tag(git.latest_tag)
+        if (
+            version_from_tag.description == VersionType.NEW
+            and cmake_version < version_from_tag
+        ):
+            # We are in a new release branch without existing release.
+            # We should change the tweak version to a `tweak_to_new`
+            cmake_version.tweak = git.tweak_to_new
+    return cmake_version
 
 
 def get_version_from_string(
@@ -350,15 +392,15 @@ def get_supported_versions(
 
 def update_cmake_version(
     version: ClickHouseVersion,
-    versions_path: str = FILE_WITH_VERSION_PATH,
+    versions_path: Union[Path, str] = FILE_WITH_VERSION_PATH,
 ) -> None:
-    path_to_file = get_abs_path(versions_path)
-    with open(path_to_file, "w", encoding="utf-8") as f:
-        f.write(VERSIONS_TEMPLATE.format_map(version.as_dict()))
+    get_abs_path(versions_path).write_text(
+        VERSIONS_TEMPLATE.format_map(version.as_dict()), encoding="utf-8"
+    )
 
 
 def update_contributors(
-    relative_contributors_path: str = GENERATED_CONTRIBUTORS,
+    relative_contributors_path: Union[Path, str] = GENERATED_CONTRIBUTORS,
     force: bool = False,
     raise_error: bool = False,
 ) -> None:
@@ -378,13 +420,11 @@ def update_contributors(
     )
     contributors = [f'    "{c}",' for c in contributors]
 
-    executer = p.relpath(p.realpath(__file__), git_runner.cwd)
+    executer = Path(__file__).relative_to(git_runner.cwd)
     content = CONTRIBUTORS_TEMPLATE.format(
         executer=executer, contributors="\n".join(contributors)
     )
-    contributors_path = get_abs_path(relative_contributors_path)
-    with open(contributors_path, "w", encoding="utf-8") as cfd:
-        cfd.write(content)
+    get_abs_path(relative_contributors_path).write_text(content, encoding="utf-8")
 
 
 def update_version_local(version, version_type="testing"):

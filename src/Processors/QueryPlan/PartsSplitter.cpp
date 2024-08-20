@@ -49,7 +49,7 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
         case TypeIndex::Float32:
         case TypeIndex::Float64:
         case TypeIndex::Nullable:
-        case TypeIndex::Object:
+        case TypeIndex::ObjectDeprecated:
             return false;
         case TypeIndex::Array:
         {
@@ -624,14 +624,11 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
     }
 
     /// Process parts ranges with undefined value at end mark
-    bool is_intersecting = part_index_start_to_range.size() > 1;
+    /// The last parts ranges could be non-intersect only if: (1) there is only one part range left, (2) it belongs to a non-L0 part,
+    /// and (3) the begin value of this range is larger than the largest end value of all previous ranges. This is too complicated
+    /// to check, so we just add the last part ranges to the intersecting ranges.
     for (const auto & [part_range_index, mark_range] : part_index_start_to_range)
-    {
-        if (is_intersecting)
-            add_intersecting_range(part_range_index.part_index, mark_range);
-        else
-            add_non_intersecting_range(part_range_index.part_index, mark_range);
-    }
+        add_intersecting_range(part_range_index.part_index, mark_range);
 
     auto && non_intersecting_ranges_in_data_parts = std::move(non_intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());
     auto && intersecting_ranges_in_data_parts = std::move(intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());
@@ -946,7 +943,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
         auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
         auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
-        reorderColumns(*actions, result.merging_pipes[i].getHeader(), filter_function->getColumnName());
+        reorderColumns(actions, result.merging_pipes[i].getHeader(), filter_function->getColumnName());
         ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
         auto description = fmt::format(
             "filter values in ({}, {}]", i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");

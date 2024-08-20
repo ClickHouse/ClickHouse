@@ -44,6 +44,7 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
 
+#include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
@@ -103,7 +104,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
-    extern const int INCORRECT_DATA;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
@@ -223,6 +223,17 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
 }
 
 static void
+addPrivilegesInfoToQueryLogElement(QueryLogElement & element, const ContextPtr context_ptr)
+{
+    const auto & privileges_info = context_ptr->getQueryPrivilegesInfo();
+    {
+        std::lock_guard lock(privileges_info.mutex);
+        element.used_privileges = privileges_info.used_privileges;
+        element.missing_privileges = privileges_info.missing_privileges;
+    }
+}
+
+static void
 addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr)
 {
     const auto time_now = std::chrono::system_clock::now();
@@ -287,6 +298,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     }
 
     element.async_read_counters = context_ptr->getAsyncReadCounters();
+    addPrivilegesInfoToQueryLogElement(element, context_ptr);
 }
 
 
@@ -463,10 +475,9 @@ void logQueryFinish(
 
                     processor_elem.processor_name = processor->getName();
 
-                    /// NOTE: convert this to UInt64
-                    processor_elem.elapsed_us = static_cast<UInt32>(processor->getElapsedUs());
-                    processor_elem.input_wait_elapsed_us = static_cast<UInt32>(processor->getInputWaitElapsedUs());
-                    processor_elem.output_wait_elapsed_us = static_cast<UInt32>(processor->getOutputWaitElapsedUs());
+                    processor_elem.elapsed_us = static_cast<UInt64>(processor->getElapsedNs() / 1000U);
+                    processor_elem.input_wait_elapsed_us = static_cast<UInt64>(processor->getInputWaitElapsedNs() / 1000U);
+                    processor_elem.output_wait_elapsed_us = static_cast<UInt64>(processor->getOutputWaitElapsedNs() / 1000U);
 
                     auto stats = processor->getProcessorDataStats();
                     processor_elem.input_rows = stats.input_rows;
@@ -602,6 +613,8 @@ void logExceptionBeforeStart(
             elem.formatted_query = queryToString(ast);
     }
 
+    addPrivilegesInfoToQueryLogElement(elem, context);
+
     // We don't calculate databases, tables and columns when the query isn't able to start
 
     elem.exception_code = getCurrentExceptionCode();
@@ -676,6 +689,12 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
             {
                 if (top_level != value->safeGet<bool>())
                     throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'allow_experimental_analyzer' is changed in the subquery. Top level value: {}", top_level);
+            }
+
+            if (auto * value = set_query->changes.tryGet("enable_analyzer"))
+            {
+                if (top_level != value->safeGet<bool>())
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'enable_analyzer' is changed in the subquery. Top level value: {}", top_level);
             }
         }
 
@@ -767,7 +786,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Verify that AST formatting is consistent:
             /// If you format AST, parse it back, and format it again, you get the same string.
 
-            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true);
+            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true, false);
 
             /// The query can become more verbose after formatting, so:
             size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
@@ -783,17 +802,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             catch (const Exception & e)
             {
                 if (e.code() == ErrorCodes::SYNTAX_ERROR)
-                    /// Don't print the original query text because it may contain sensitive data.
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting: the query:\n{}\ncannot parse.",
-                        formatted1);
+                        "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
+                        formatted1, std::string_view(begin, end-begin));
                 else
                     throw;
             }
 
             chassert(ast2);
 
-            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true);
+            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true, false);
 
             if (formatted1 != formatted2)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -1035,14 +1053,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// In case when the client had to retry some mini-INSERTs then they will be properly deduplicated
             /// by the source tables. This functionality is controlled by a setting `async_insert_deduplicate`.
             /// But then they will be glued together into a block and pushed through a chain of Materialized Views if any.
-            /// The process of forming such blocks is not deteministic so each time we retry mini-INSERTs the resulting
+            /// The process of forming such blocks is not deterministic so each time we retry mini-INSERTs the resulting
             /// block may be concatenated differently.
             /// That's why deduplication in dependent Materialized Views doesn't make sense in presence of async INSERTs.
             if (settings.throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert &&
                 settings.deduplicate_blocks_in_dependent_materialized_views)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Deduplication is dependent materialized view cannot work together with async inserts. "\
-                        "Please disable eiher `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
+                        "Deduplication in dependent materialized view cannot work together with async inserts. "\
+                        "Please disable either `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
 
             quota = context->getQuota();
             if (quota)
@@ -1094,6 +1112,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
         QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
 
+        /// If the query runs with "use_query_cache = 1", we first probe if the query cache already contains the query result (if yes:
+        /// return result from cache). If doesn't, we execute the query normally and write the result into the query cache. Both steps use a
+        /// hash of the AST, the current database and the settings as cache key. Unfortunately, the settings are in some places internally
+        /// modified between steps 1 and 2 (= during query execution) - this is silly but hard to forbid. As a result, the hashes no longer
+        /// match and the cache is rendered ineffective. Therefore make a copy of the settings and use it for steps 1 and 2.
+        std::optional<Settings> settings_copy;
+        if (can_use_query_cache)
+            settings_copy = settings;
+
         if (!async_insert)
         {
             /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then set
@@ -1102,7 +1129,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings.enable_reads_from_query_cache)
                 {
-                    QueryCache::Key key(ast, context->getUserID(), context->getCurrentRoles());
+                    QueryCache::Key key(ast, context->getCurrentDatabase(), *settings_copy, context->getUserID(), context->getCurrentRoles());
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1186,7 +1213,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
 
                 if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(&*interpreter))
+                {
                     create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
+                }
 
                 {
                     std::unique_ptr<OpenTelemetry::SpanHolder> span;
@@ -1225,7 +1254,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             && (!ast_contains_system_tables || system_table_handling == QueryCacheSystemTableHandling::Save))
                         {
                             QueryCache::Key key(
-                                ast, res.pipeline.getHeader(),
+                                ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getHeader(),
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings.query_cache_share_between_users,
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
@@ -1252,37 +1281,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             }
                         }
                     }
-
                 }
             }
-        }
-        // Here we check if our our projections contain force_optimize_projection_name
-        if (!settings.force_optimize_projection_name.value.empty())
-        {
-            bool found = false;
-            std::set<std::string> projections;
-            {
-                const auto & access_info = context->getQueryAccessInfo();
-                std::lock_guard lock(access_info.mutex);
-                projections = access_info.projections;
-            }
-
-            for (const auto &projection : projections)
-            {
-                // projection value has structure like: <db_name>.<table_name>.<projection_name>
-                // We need to get only the projection name
-                size_t last_dot_pos = projection.find_last_of('.');
-                std::string projection_name = (last_dot_pos != std::string::npos) ? projection.substr(last_dot_pos + 1) : projection;
-                if (settings.force_optimize_projection_name.value == projection_name)
-                {
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Projection {} is specified in setting force_optimize_projection_name but not used",
-                                settings.force_optimize_projection_name.value);
         }
 
         if (process_list_entry)
@@ -1421,7 +1421,16 @@ void executeQuery(
     const char * begin;
     const char * end;
 
-    istr.nextIfAtEnd();
+    try
+    {
+        istr.nextIfAtEnd();
+    }
+    catch (...)
+    {
+        /// If buffer contains invalid data and we failed to decompress, we still want to have some information about the query in the log.
+        logQuery("<cannot parse>", context, /* internal = */ false, QueryProcessingStage::Complete);
+        throw;
+    }
 
     size_t max_query_size = context->getSettingsRef().max_query_size;
 

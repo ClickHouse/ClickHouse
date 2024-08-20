@@ -13,19 +13,19 @@ af	full_text
 1
 Test full_text()
 af	full_text
-101	Alick a01
-106	Alick a06
-111	Alick b01
-116	Alick b06
-101	Alick a01
-106	Alick a06
+101	x Alick a01 y
+106	x Alick a06 y
+111	x Alick b01 y
+116	x Alick b06 y
+101	x Alick a01 y
+106	x Alick a06 y
 1
-101	Alick a01
-111	Alick b01
+101	x Alick a01 y
+111	x Alick b01 y
 1
 Test on array columns
 af	full_text
-3	['Click a03','Click b03']
+3	['x Click a03 y','x Click b03 y']
 1
 Test on map columns
 af	full_text

@@ -51,11 +51,11 @@ static DataTypePtr create(const ASTPtr & arguments)
                         "FixedString data type family must have exactly one argument - size in bytes");
 
     const auto * argument = arguments->children[0]->as<ASTLiteral>();
-    if (!argument || argument->value.getType() != Field::Types::UInt64 || argument->value.get<UInt64>() == 0)
+    if (!argument || argument->value.getType() != Field::Types::UInt64 || argument->value.safeGet<UInt64>() == 0)
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
                         "FixedString data type family must have a number (positive integer) as its argument");
 
-    return std::make_shared<DataTypeFixedString>(argument->value.get<UInt64>());
+    return std::make_shared<DataTypeFixedString>(argument->value.safeGet<UInt64>());
 }
 
 
@@ -64,7 +64,7 @@ void registerDataTypeFixedString(DataTypeFactory & factory)
     factory.registerDataType("FixedString", create);
 
     /// Compatibility alias.
-    factory.registerAlias("BINARY", "FixedString", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BINARY", "FixedString", DataTypeFactory::Case::Insensitive);
 }
 
 }

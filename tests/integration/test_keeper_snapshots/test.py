@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-#!/usr/bin/env python3
 import pytest
 from helpers.cluster import ClickHouseCluster
 import helpers.keeper_utils as keeper_utils
@@ -17,7 +16,6 @@ node = cluster.add_instance(
     "node",
     main_configs=["configs/enable_keeper.xml"],
     stay_alive=True,
-    with_zookeeper=True,
 )
 
 
@@ -191,7 +189,7 @@ def test_invalid_snapshot(started_cluster):
                 f"/var/lib/clickhouse/coordination/snapshots/{last_snapshot}",
             ]
         )
-        node.start_clickhouse(expected_to_fail=True)
+        node.start_clickhouse(start_wait_sec=120, expected_to_fail=True)
         assert node.contains_in_log(
             "Aborting because of failure to load from latest snapshot with index"
         )
@@ -209,5 +207,48 @@ def test_invalid_snapshot(started_cluster):
             if node_zk is not None:
                 node_zk.stop()
                 node_zk.close()
+        except:
+            pass
+
+
+def test_snapshot_size(started_cluster):
+    keeper_utils.wait_until_connected(started_cluster, node)
+    node_zk = None
+    try:
+        node_zk = get_connection_zk("node")
+
+        node_zk.create("/test_state_size", b"somevalue")
+        strs = []
+        for i in range(100):
+            strs.append(random_string(123).encode())
+            node_zk.create("/test_state_size/node" + str(i), strs[i])
+
+        node_zk.stop()
+        node_zk.close()
+
+        keeper_utils.send_4lw_cmd(started_cluster, node, "csnp")
+        node.wait_for_log_line("Created persistent snapshot")
+
+        def get_snapshot_size():
+            return int(
+                next(
+                    filter(
+                        lambda line: "zk_latest_snapshot_size" in line,
+                        keeper_utils.send_4lw_cmd(started_cluster, node, "mntr").split(
+                            "\n"
+                        ),
+                    )
+                ).split("\t")[1]
+            )
+
+        assert get_snapshot_size() != 0
+        restart_clickhouse()
+        assert get_snapshot_size() != 0
+    finally:
+        try:
+            if node_zk is not None:
+                node_zk.stop()
+                node_zk.close()
+
         except:
             pass

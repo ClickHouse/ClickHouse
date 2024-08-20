@@ -1,6 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Common/StringUtils.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -149,7 +150,7 @@ public:
         {
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
             {
-                bool all_ascii = UTF8::isAllASCII(col->getChars().data(), col->getChars().size());
+                bool all_ascii = isAllASCII(col->getChars().data(), col->getChars().size());
                 if (all_ascii)
                     return executeForSource(column_offset, column_length, column_offset_const, column_length_const, offset, length, StringSource(*col), input_rows_count);
                 else
@@ -159,7 +160,7 @@ public:
             if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
             {
                 StringRef str_ref = col_const->getDataAt(0);
-                bool all_ascii = UTF8::isAllASCII(reinterpret_cast<const UInt8 *>(str_ref.data), str_ref.size);
+                bool all_ascii = isAllASCII(reinterpret_cast<const UInt8 *>(str_ref.data), str_ref.size);
                 if (all_ascii)
                     return executeForSource(column_offset, column_length, column_offset_const, column_length_const, offset, length, ConstSource<StringSource>(*col_const), input_rows_count);
                 else
@@ -200,12 +201,12 @@ public:
 
 REGISTER_FUNCTION(Substring)
 {
-    factory.registerFunction<FunctionSubstring<false>>({}, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("substr", "substring", FunctionFactory::CaseInsensitive); // MySQL alias
-    factory.registerAlias("mid", "substring", FunctionFactory::CaseInsensitive); /// MySQL alias
-    factory.registerAlias("byteSlice", "substring", FunctionFactory::CaseInsensitive); /// resembles PostgreSQL's get_byte function, similar to ClickHouse's bitSlice
+    factory.registerFunction<FunctionSubstring<false>>({}, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("substr", "substring", FunctionFactory::Case::Insensitive); // MySQL alias
+    factory.registerAlias("mid", "substring", FunctionFactory::Case::Insensitive); /// MySQL alias
+    factory.registerAlias("byteSlice", "substring", FunctionFactory::Case::Insensitive); /// resembles PostgreSQL's get_byte function, similar to ClickHouse's bitSlice
 
-    factory.registerFunction<FunctionSubstring<true>>({}, FunctionFactory::CaseSensitive);
+    factory.registerFunction<FunctionSubstring<true>>();
 }
 
 }

@@ -34,11 +34,23 @@ MultipleAccessStorage::MultipleAccessStorage(const String & storage_name_)
 
 MultipleAccessStorage::~MultipleAccessStorage()
 {
-    /// It's better to remove the storages in the reverse order because they could depend on each other somehow.
+    try
+    {
+        MultipleAccessStorage::shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void MultipleAccessStorage::shutdown()
+{
+    /// It's better to shutdown the storages in the reverse order because they could depend on each other somehow.
     const auto storages = getStoragesPtr();
     for (const auto & storage : *storages | boost::adaptors::reversed)
     {
-        removeStorage(storage);
+        storage->shutdown();
     }
 }
 
@@ -70,6 +82,16 @@ void MultipleAccessStorage::removeStorage(const StoragePtr & storage_to_remove)
     new_storages->erase(new_storages->begin() + index);
     nested_storages = new_storages;
     ids_cache.clear();
+}
+
+void MultipleAccessStorage::removeAllStorages()
+{
+    /// It's better to remove the storages in the reverse order because they could depend on each other somehow.
+    const auto storages = getStoragesPtr();
+    for (const auto & storage : *storages | boost::adaptors::reversed)
+    {
+        removeStorage(storage);
+    }
 }
 
 std::vector<StoragePtr> MultipleAccessStorage::getStorages()

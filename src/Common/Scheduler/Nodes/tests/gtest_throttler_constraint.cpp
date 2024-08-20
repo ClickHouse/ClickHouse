@@ -5,14 +5,14 @@
 
 #include <Common/Scheduler/Nodes/FairPolicy.h>
 #include <Common/Scheduler/Nodes/ThrottlerConstraint.h>
-#include "Common/Scheduler/ISchedulerNode.h"
-#include "Common/Scheduler/ResourceRequest.h"
 
 using namespace DB;
 
 using ResourceTest = ResourceTestClass;
 
-TEST(SchedulerThrottlerConstraint, LeakyBucketConstraint)
+/// Tests disabled because of leaks in the test themselves: https://github.com/ClickHouse/ClickHouse/issues/67678
+
+TEST(DISABLED_SchedulerThrottlerConstraint, LeakyBucketConstraint)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -42,7 +42,7 @@ TEST(SchedulerThrottlerConstraint, LeakyBucketConstraint)
     t.consumed("A", 10);
 }
 
-TEST(SchedulerThrottlerConstraint, Unlimited)
+TEST(DISABLED_SchedulerThrottlerConstraint, Unlimited)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -59,7 +59,7 @@ TEST(SchedulerThrottlerConstraint, Unlimited)
     }
 }
 
-TEST(SchedulerThrottlerConstraint, Pacing)
+TEST(DISABLED_SchedulerThrottlerConstraint, Pacing)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -79,7 +79,7 @@ TEST(SchedulerThrottlerConstraint, Pacing)
     }
 }
 
-TEST(SchedulerThrottlerConstraint, BucketFilling)
+TEST(DISABLED_SchedulerThrottlerConstraint, BucketFilling)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -113,7 +113,7 @@ TEST(SchedulerThrottlerConstraint, BucketFilling)
     t.consumed("A", 3);
 }
 
-TEST(SchedulerThrottlerConstraint, PeekAndAvgLimits)
+TEST(DISABLED_SchedulerThrottlerConstraint, PeekAndAvgLimits)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -141,7 +141,7 @@ TEST(SchedulerThrottlerConstraint, PeekAndAvgLimits)
     }
 }
 
-TEST(SchedulerThrottlerConstraint, ThrottlerAndFairness)
+TEST(DISABLED_SchedulerThrottlerConstraint, ThrottlerAndFairness)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();

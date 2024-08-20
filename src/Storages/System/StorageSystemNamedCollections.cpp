@@ -9,7 +9,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnMap.h>
-#include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 
 namespace DB
@@ -33,7 +33,7 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
 {
     const auto & access = context->getAccess();
 
-    NamedCollectionUtils::loadIfNot();
+    NamedCollectionFactory::instance().loadIfNot();
 
     auto collections = NamedCollectionFactory::instance().getAll();
     for (const auto & [name, collection] : collections)

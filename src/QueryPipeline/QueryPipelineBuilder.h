@@ -193,7 +193,7 @@ public:
         return concurrency_control;
     }
 
-    void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
+    void addResources(QueryPlanResourceHolder resources_) { resources.append(std::move(resources_)); }
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
     void addContext(ContextPtr context) { resources.interpreter_context.emplace_back(std::move(context)); }
 

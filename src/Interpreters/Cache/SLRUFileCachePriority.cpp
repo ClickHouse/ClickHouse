@@ -256,7 +256,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     return true;
 }
 
-bool SLRUFileCachePriority::collectCandidatesForEviction(
+IFileCachePriority::CollectStatus SLRUFileCachePriority::collectCandidatesForEviction(
     size_t desired_size,
     size_t desired_elements_count,
     size_t max_candidates_to_evict,
@@ -268,7 +268,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     const auto desired_probationary_elements_num = getRatio(desired_elements_count, 1 - size_ratio);
 
     FileCacheReserveStat probationary_stat;
-    const bool probationary_limit_satisfied = probationary_queue.collectCandidatesForEviction(
+    const auto probationary_desired_size_status = probationary_queue.collectCandidatesForEviction(
         desired_probationary_size, desired_probationary_elements_num,
         max_candidates_to_evict, probationary_stat, res, lock);
 
@@ -285,14 +285,14 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     chassert(!max_candidates_to_evict || res.size() <= max_candidates_to_evict);
     chassert(res.size() == stat.total_stat.releasable_count);
 
-    if (max_candidates_to_evict && res.size() >= max_candidates_to_evict)
-        return probationary_limit_satisfied;
+    if (probationary_desired_size_status == CollectStatus::REACHED_MAX_CANDIDATES_LIMIT)
+        return probationary_desired_size_status;
 
     const auto desired_protected_size = getRatio(desired_size, size_ratio);
     const auto desired_protected_elements_num = getRatio(desired_elements_count, size_ratio);
 
     FileCacheReserveStat protected_stat;
-    const bool protected_limit_satisfied = protected_queue.collectCandidatesForEviction(
+    const auto protected_desired_size_status = protected_queue.collectCandidatesForEviction(
         desired_protected_size, desired_protected_elements_num,
         max_candidates_to_evict - res.size(), protected_stat, res, lock);
 
@@ -306,7 +306,10 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
              desired_protected_size, desired_protected_elements_num,
              protected_queue.getStateInfoForLog(lock));
 
-    return probationary_limit_satisfied && protected_limit_satisfied;
+    if (probationary_desired_size_status == CollectStatus::SUCCESS)
+        return protected_desired_size_status;
+    else
+        return probationary_desired_size_status;
 }
 
 void SLRUFileCachePriority::downgrade(IteratorPtr iterator, const CachePriorityGuard::Lock & lock)
@@ -325,7 +328,7 @@ void SLRUFileCachePriority::downgrade(IteratorPtr iterator, const CachePriorityG
                         candidate_it->getEntry()->toString());
     }
 
-    const size_t entry_size = candidate_it->entry->size;
+    const size_t entry_size = candidate_it->getEntry()->size;
     if (!probationary_queue.canFit(entry_size, 1, lock))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -483,7 +486,10 @@ SLRUFileCachePriority::SLRUIterator::SLRUIterator(
 
 SLRUFileCachePriority::EntryPtr SLRUFileCachePriority::SLRUIterator::getEntry() const
 {
-    return entry;
+    auto entry_ptr = entry.lock();
+    if (!entry_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Entry pointer expired");
+    return entry_ptr;
 }
 
 size_t SLRUFileCachePriority::SLRUIterator::increasePriority(const CachePriorityGuard::Lock & lock)

@@ -19,7 +19,6 @@ using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
 /// Return false if the data isn't going to be changed by mutations.
 bool isStorageTouchedByMutations(
-    MergeTreeData & storage,
     MergeTreeData::DataPartPtr source_part,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
@@ -102,7 +101,7 @@ public:
         enum MutationKindEnum
         {
             MUTATE_UNKNOWN,
-            MUTATE_INDEX_STATISTIC_PROJECTION,
+            MUTATE_INDEX_STATISTICS_PROJECTION,
             MUTATE_OTHER,
         } mutation_kind = MUTATE_UNKNOWN;
 

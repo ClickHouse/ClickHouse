@@ -34,6 +34,7 @@ With 2023-11-14 05:50:12.123
 With hallo
 With [\'foo\',\'bar\']
 With {"foo":"bar"}
+With {"foo":"bar"}
 With (42,\'foo\')
 With {42:\'foo\'}
 With 122.233.64.201
@@ -72,3 +73,6 @@ foo
 \N
 \N
 Testing the alias
+-- Empty argument tests
+
+String

@@ -78,25 +78,30 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
 
     std::unique_ptr<ReadBufferFromFileBase> buf;
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     if (with_file_cache)
     {
-        auto cache_key = settings.remote_fs_cache->createKeyForPath(object_path);
-        buf = std::make_unique<CachedOnDiskReadBufferFromFile>(
-            object_path,
-            cache_key,
-            settings.remote_fs_cache,
-            FileCache::getCommonUser(),
-            [=, this]() { return read_buffer_creator(/* restricted_seek */true, object); },
-            settings,
-            query_id,
-            object.bytes_size,
-            /* allow_seeks */false,
-            /* use_external_buffer */true,
-            /* read_until_position */std::nullopt,
-            cache_log);
+        if (settings.remote_fs_cache->isInitialized())
+        {
+            auto cache_key = settings.remote_fs_cache->createKeyForPath(object_path);
+            buf = std::make_unique<CachedOnDiskReadBufferFromFile>(
+                object_path,
+                cache_key,
+                settings.remote_fs_cache,
+                FileCache::getCommonUser(),
+                [=, this]() { return read_buffer_creator(/* restricted_seek */true, object); },
+                settings,
+                query_id,
+                object.bytes_size,
+                /* allow_seeks */false,
+                /* use_external_buffer */true,
+                /* read_until_position */std::nullopt,
+                cache_log);
+        }
+        else
+        {
+            settings.remote_fs_cache->throwInitExceptionIfNeeded();
+        }
     }
-#endif
 
     /// Can't wrap CachedOnDiskReadBufferFromFile in CachedInMemoryReadBufferFromFile because the
     /// former doesn't support seeks.

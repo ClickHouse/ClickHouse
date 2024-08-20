@@ -1,11 +1,14 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/typeid_cast.h>
@@ -14,7 +17,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
 
-#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Interpreters/Context.h>
@@ -32,7 +34,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_STORAGE;
     extern const int NO_REPLICA_NAME_GIVEN;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
-    extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -111,16 +113,6 @@ static ColumnsDescription getColumnsDescriptionFromZookeeper(const String & raw_
 
     Coordination::Stat columns_stat;
     return ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns", &columns_stat));
-}
-
-static void verifySortingKey(const KeyDescription & sorting_key)
-{
-    /// Aggregate functions already forbidden, but SimpleAggregateFunction are not
-    for (const auto & data_type : sorting_key.data_types)
-    {
-        if (dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(data_type->getCustomName()))
-            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY, "Column with type {} is not allowed in key expression", data_type->getCustomName()->getName());
-    }
 }
 
 /// Returns whether a new syntax is used to define a table engine, i.e. MergeTree() PRIMARY KEY ... PARTITION BY ... SETTINGS ...
@@ -600,7 +592,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             if (ast->value.getType() != Field::Types::String)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, format_str, error_msg);
 
-            graphite_config_name = ast->value.get<String>();
+            graphite_config_name = ast->value.safeGet<String>();
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, format_str, error_msg);
@@ -678,8 +670,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// column if sorting key will be changed.
         metadata.sorting_key = KeyDescription::getSortingKeyFromAST(
             args.storage_def->order_by->ptr(), metadata.columns, context, merging_param_key_arg);
-        if (!local_settings.allow_suspicious_primary_key)
-            verifySortingKey(metadata.sorting_key);
+        if (!local_settings.allow_suspicious_primary_key && args.mode <= LoadingStrictnessLevel::CREATE)
+            MergeTreeData::verifySortingKey(metadata.sorting_key);
 
         /// If primary key explicitly defined, than get it from AST
         if (args.storage_def->primary_key)
@@ -792,8 +784,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// column if sorting key will be changed.
         metadata.sorting_key
             = KeyDescription::getSortingKeyFromAST(engine_args[arg_num], metadata.columns, context, merging_param_key_arg);
-        if (!local_settings.allow_suspicious_primary_key)
-            verifySortingKey(metadata.sorting_key);
+        if (!local_settings.allow_suspicious_primary_key && args.mode <= LoadingStrictnessLevel::CREATE)
+            MergeTreeData::verifySortingKey(metadata.sorting_key);
 
         /// In old syntax primary_key always equals to sorting key.
         metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, context);
@@ -836,6 +828,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             if (isFloat(data_types[i]))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Floating point partition key is not supported: {}", metadata.partition_key.column_names[i]);
+    }
+
+    if (metadata.hasProjections() && args.mode == LoadingStrictnessLevel::CREATE)
+    {
+        /// Now let's handle the merge tree family. Note we only handle in the mode of CREATE due to backward compatibility.
+        /// Otherwise, it would fail to start in the case of existing projections with special mergetree.
+        if (merging_params.mode != MergeTreeData::MergingParams::Mode::Ordinary
+            && storage_settings->deduplicate_merge_projection_mode == DeduplicateMergeProjectionMode::THROW)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Projection is fully supported in {}MergeTree with deduplicate_merge_projection_mode = throw. "
+                "Use 'drop' or 'rebuild' option of deduplicate_merge_projection_mode.",
+                merging_params.getModeName());
     }
 
     if (arg_num != arg_cnt)

@@ -26,12 +26,7 @@ struct ParallelReadingExtension
 {
     MergeTreeAllRangesCallback all_callback;
     MergeTreeReadTaskCallback callback;
-    size_t count_participating_replicas{0};
     size_t number_of_current_replica{0};
-    /// This is needed to estimate the number of bytes
-    /// between a pair of marks to perform one request
-    /// over the network for a 1Gb of data.
-    Names columns_to_read;
 };
 
 /// Base class for MergeTreeThreadSelectAlgorithm and MergeTreeSelectAlgorithm
@@ -54,7 +49,7 @@ public:
 
     ChunkAndProgress read();
 
-    void cancel() { is_cancelled = true; }
+    void cancel() noexcept { is_cancelled = true; }
 
     const MergeTreeReaderSettings & getSettings() const { return reader_settings; }
 

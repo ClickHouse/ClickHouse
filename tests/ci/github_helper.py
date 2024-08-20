@@ -6,9 +6,10 @@ from datetime import date, datetime, timedelta
 from os import path as p
 from pathlib import Path
 from time import sleep
-from typing import List, Optional, Tuple, Union
+from typing import Any, Callable, List, Optional, Tuple, Union
 
 import github
+import requests
 
 # explicit reimport
 # pylint: disable=useless-import-alias
@@ -48,38 +49,43 @@ class GitHub(github.Github):
         """Wrapper around search method with throttling and splitting by date.
 
         We split only by the first"""
-        splittable = False
+        splittable_arg = ""
+        splittable_value = []
         for arg, value in kwargs.items():
             if arg in ["closed", "created", "merged", "updated"]:
                 if hasattr(value, "__iter__") and not isinstance(value, str):
-                    assert [True for v in value if isinstance(v, (date, datetime))]
+                    assert all(True for v in value if isinstance(v, (date, datetime)))
                     assert len(value) == 2
                     kwargs[arg] = f"{value[0].isoformat()}..{value[1].isoformat()}"
-                    if not splittable:
+                    if not splittable_arg:
                         # We split only by the first met splittable argument
-                        preserved_arg = arg
-                        preserved_value = value
                         middle_value = value[0] + (value[1] - value[0]) / 2
-                        splittable = middle_value not in value
+                        if middle_value in value:
+                            # When the middle value in itareble value, we can't use it
+                            # to split by dates later
+                            continue
+                        splittable_arg = arg
+                        splittable_value = value
                     continue
                 assert isinstance(value, (date, datetime, str))
 
         inter_result = []  # type: Issues
+        exception = RateLimitExceededException(0)
         for i in range(self.retries):
             try:
                 logger.debug("Search issues, args=%s, kwargs=%s", args, kwargs)
                 result = super().search_issues(*args, **kwargs)
-                if result.totalCount == 1000 and splittable:
+                if result.totalCount == 1000 and splittable_arg:
                     # The hard limit is 1000. If it's splittable, then we make
                     # two subrequests requests with less time frames
                     logger.debug(
                         "The search result contain exactly 1000 results, "
                         "splitting %s=%s by middle point %s",
-                        preserved_arg,
-                        kwargs[preserved_arg],
+                        splittable_arg,
+                        kwargs[splittable_arg],
                         middle_value,
                     )
-                    kwargs[preserved_arg] = [preserved_value[0], middle_value]
+                    kwargs[splittable_arg] = [splittable_value[0], middle_value]
                     inter_result.extend(self.search_issues(*args, **kwargs))
                     if isinstance(middle_value, date):
                         # When middle_value is a date, 2022-01-01..2022-01-03
@@ -87,9 +93,10 @@ class GitHub(github.Github):
                         # 2022-01-02..2022-01-03, so we have results for
                         # 2022-01-02 twicely. We split it to
                         # 2022-01-01..2022-01-02 and 2022-01-03..2022-01-03.
-                        # 2022-01-01..2022-01-02 aren't split, see splittable
+                        # 2022-01-01..2022-01-02 aren't split, see splittable_arg
+                        # definition above for kwargs.items
                         middle_value += timedelta(days=1)
-                    kwargs[preserved_arg] = [middle_value, preserved_value[1]]
+                    kwargs[splittable_arg] = [middle_value, splittable_value[1]]
                     inter_result.extend(self.search_issues(*args, **kwargs))
                     return inter_result
 
@@ -103,12 +110,15 @@ class GitHub(github.Github):
         raise exception
 
     # pylint: enable=signature-differs
-    def get_pulls_from_search(self, *args, **kwargs) -> PullRequests:  # type: ignore
+    def get_pulls_from_search(self, *args: Any, **kwargs: Any) -> PullRequests:
         """The search api returns actually issues, so we need to fetch PullRequests"""
+        progress_func = kwargs.pop(
+            "progress_func", lambda x: x
+        )  # type: Callable[[Issues], Issues]
         issues = self.search_issues(*args, **kwargs)
         repos = {}
         prs = []  # type: PullRequests
-        for issue in issues:
+        for issue in progress_func(issues):
             # See https://github.com/PyGithub/PyGithub/issues/2202,
             # obj._rawData doesn't spend additional API requests
             # pylint: disable=protected-access
@@ -260,3 +270,17 @@ class GitHub(github.Github):
     def retries(self, value: int) -> None:
         assert isinstance(value, int)
         self._retries = value
+
+    # static methods not using pygithub
+    @staticmethod
+    def cancel_wf(repo, run_id, token, strict=False):
+        headers = {"Authorization": f"token {token}"}
+        url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/cancel"
+        try:
+            response = requests.post(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            print(f"NOTE: Workflow [{run_id}] has been cancelled")
+        except Exception as ex:
+            print("ERROR: Got exception executing wf cancel request", ex)
+            if strict:
+                raise ex

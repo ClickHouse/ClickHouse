@@ -11,7 +11,7 @@
 namespace DB
 {
 
-ActionsChainStep::ActionsChainStep(ActionsDAGPtr actions_,
+ActionsChainStep::ActionsChainStep(ActionsAndProjectInputsFlagPtr actions_,
     bool use_actions_nodes_as_output_columns_,
     ColumnsWithTypeAndName additional_output_columns_)
     : actions(std::move(actions_))
@@ -28,12 +28,12 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
     auto child_input_columns_copy = child_input_columns;
 
     std::unordered_set<std::string_view> output_nodes_names;
-    output_nodes_names.reserve(actions->getOutputs().size());
+    output_nodes_names.reserve(actions->dag.getOutputs().size());
 
-    for (auto & output_node : actions->getOutputs())
+    for (auto & output_node : actions->dag.getOutputs())
         output_nodes_names.insert(output_node->result_name);
 
-    for (const auto & node : actions->getNodes())
+    for (const auto & node : actions->dag.getNodes())
     {
         auto it = child_input_columns_copy.find(node.result_name);
         if (it == child_input_columns_copy.end())
@@ -45,20 +45,20 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
         if (output_nodes_names.contains(node.result_name))
             continue;
 
-        actions->getOutputs().push_back(&node);
+        actions->dag.getOutputs().push_back(&node);
         output_nodes_names.insert(node.result_name);
     }
 
-    actions->removeUnusedActions();
+    actions->dag.removeUnusedActions();
     /// TODO: Analyzer fix ActionsDAG input and constant nodes with same name
-    actions->projectInput();
+    actions->project_input = true;
     initialize();
 }
 
 void ActionsChainStep::dump(WriteBuffer & buffer) const
 {
     buffer << "DAG" << '\n';
-    buffer << actions->dumpDAG();
+    buffer << actions->dag.dumpDAG();
 
     if (!available_output_columns.empty())
     {
@@ -84,7 +84,7 @@ String ActionsChainStep::dump() const
 
 void ActionsChainStep::initialize()
 {
-    auto required_columns_names = actions->getRequiredColumnsNames();
+    auto required_columns_names = actions->dag.getRequiredColumnsNames();
     input_columns_names = NameSet(required_columns_names.begin(), required_columns_names.end());
 
     available_output_columns.clear();
@@ -93,7 +93,7 @@ void ActionsChainStep::initialize()
     {
         std::unordered_set<std::string_view> available_output_columns_names;
 
-        for (const auto & node : actions->getNodes())
+        for (const auto & node : actions->dag.getNodes())
         {
             if (available_output_columns_names.contains(node.result_name))
                 continue;
