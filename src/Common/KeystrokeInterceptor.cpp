@@ -2,7 +2,6 @@
 #include <memory>
 #include <Common/KeystrokeInterceptor.h>
 
-#include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -43,9 +42,6 @@ void KeystrokeInterceptor::startIntercept()
     raw.c_cc[VTIME] = 1;
     tcsetattr(fd, TCSAFLUSH, &raw);
 
-    int flags = fcntl(fd, F_GETFL, 0);
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-
     intercept_thread = std::make_unique<std::thread>(&KeystrokeInterceptor::run, this, callbacks);
 }
 
@@ -60,10 +56,6 @@ void KeystrokeInterceptor::stopIntercept()
         intercept_thread->join();
         intercept_thread.reset();
     }
-
-    /// TODO: process errors.
-    int flags = fcntl(fd, F_GETFL, 0);
-    fcntl(fd, F_SETFL, flags | ~O_NONBLOCK);
 
     /// Reset original terminal mode.
     tcsetattr(fd, TCSAFLUSH, orig_termios.get());
