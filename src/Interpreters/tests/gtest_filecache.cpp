@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <numeric>
 #include <thread>
+#include <chrono>
 
 #include <Core/ServerUUID.h>
 #include <Common/iota.h>
@@ -42,6 +43,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/scope_guard.h>
 
+using namespace std::chrono_literals;
 namespace fs = std::filesystem;
 using namespace DB;
 
@@ -360,8 +362,10 @@ TEST_F(FileCacheTest, LRUPolicy)
     settings.max_size = 30;
     settings.max_elements = 5;
     settings.boundary_alignment = 1;
+    settings.load_metadata_asynchronously = false;
 
     const size_t file_size = INT_MAX; // the value doesn't really matter because boundary_alignment == 1.
+
 
     const auto user = FileCache::getCommonUser();
     {
@@ -817,6 +821,7 @@ TEST_F(FileCacheTest, writeBuffer)
     settings.max_elements = 5;
     settings.max_file_segment_size = 5;
     settings.base_path = cache_base_path;
+    settings.load_metadata_asynchronously = false;
 
     FileCache cache("6", settings);
     cache.initialize();
@@ -948,6 +953,7 @@ TEST_F(FileCacheTest, temporaryData)
     settings.max_size = 10_KiB;
     settings.max_file_segment_size = 1_KiB;
     settings.base_path = cache_base_path;
+    settings.load_metadata_asynchronously = false;
 
     DB::FileCache file_cache("7", settings);
     file_cache.initialize();
@@ -1076,6 +1082,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     settings.max_size = 30;
     settings.max_elements = 10;
     settings.boundary_alignment = 1;
+    settings.load_metadata_asynchronously = false;
 
     ReadSettings read_settings;
     read_settings.enable_filesystem_cache = true;
@@ -1095,6 +1102,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
 
     auto cache = std::make_shared<DB::FileCache>("8", settings);
     cache->initialize();
+
     auto key = cache->createKeyForPath(file_path);
     const auto user = FileCache::getCommonUser();
 
@@ -1135,6 +1143,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         settings.max_size = 10_KiB;
         settings.max_file_segment_size = 1_KiB;
         settings.base_path = cache_base_path;
+        settings.load_metadata_asynchronously = false;
 
         DB::FileCache file_cache("cache", settings);
         file_cache.initialize();
@@ -1198,6 +1207,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
     settings.max_size = 40;
     settings.max_elements = 6;
     settings.boundary_alignment = 1;
+    settings.load_metadata_asynchronously = false;
 
     settings.cache_policy = "SLRU";
     settings.slru_size_ratio = 0.5;
@@ -1310,6 +1320,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
         settings2.boundary_alignment = 1;
         settings2.cache_policy = "SLRU";
         settings2.slru_size_ratio = 0.5;
+        settings.load_metadata_asynchronously = false;
 
         auto cache = std::make_shared<DB::FileCache>("slru_2", settings2);
         cache->initialize();

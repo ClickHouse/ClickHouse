@@ -21,6 +21,7 @@ ColumnsDescription StorageSystemFilesystemCacheSettings::getColumnsDescription()
         {"path", std::make_shared<DataTypeString>(), "Cache directory"},
         {"max_size", std::make_shared<DataTypeUInt64>(), "Cache size limit by the number of bytes"},
         {"max_elements", std::make_shared<DataTypeUInt64>(), "Cache size limit by the number of elements"},
+        {"is_initialized", std::make_shared<DataTypeUInt8>(), "Whether the cache is initialized and ready to be used"},
         {"current_size", std::make_shared<DataTypeUInt64>(), "Current cache size by the number of bytes"},
         {"current_elements", std::make_shared<DataTypeUInt64>(), "Current cache size by the number of elements"},
         {"max_file_segment_size", std::make_shared<DataTypeUInt64>(), "Maximum allowed file segment size"},
@@ -56,6 +57,7 @@ void StorageSystemFilesystemCacheSettings::fillData(
         res_columns[i++]->insert(settings.base_path);
         res_columns[i++]->insert(settings.max_size);
         res_columns[i++]->insert(settings.max_elements);
+        res_columns[i++]->insert(cache->isInitialized());
         res_columns[i++]->insert(cache->getUsedCacheSize());
         res_columns[i++]->insert(cache->getFileSegmentsNum());
         res_columns[i++]->insert(settings.max_file_segment_size);
