@@ -660,6 +660,11 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     }
 
+    if (reset_authentication_methods_to_new && !auth_data.empty())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "RESET AUTHENTICATION METHODS TO NEW cannot be used along with [ADD] IDENTIFIED clauses");
+    }
+
     if (!alter && !hosts)
     {
         String common_host_pattern;

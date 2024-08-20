@@ -152,6 +152,9 @@ function test
   echo "ADD NOT IDENTIFIED should result in syntax error"
   ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} $1 ADD NOT IDENTIFIED" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
 
+  echo "RESET AUTHENTICATION METHODS TO NEW cannot be used along with [ADD] IDENTIFIED clauses"
+  ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} $1 IDENTIFIED WITH plaintext_password by '1' RESET AUTHENTICATION METHODS TO NEW" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
+
   ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"
 
 }

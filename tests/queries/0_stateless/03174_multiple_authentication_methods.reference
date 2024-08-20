@@ -55,6 +55,8 @@ RESET AUTHENTICATION METHODS TO NEW can only be used on alter statement
 BAD_ARGUMENTS
 ADD NOT IDENTIFIED should result in syntax error
 SYNTAX_ERROR
+RESET AUTHENTICATION METHODS TO NEW cannot be used along with [ADD] IDENTIFIED clauses
+BAD_ARGUMENTS
 localhost	9000	0		0	0
 localhost	9000	0		0	0
 Basic authentication after user creation
@@ -130,3 +132,5 @@ RESET AUTHENTICATION METHODS TO NEW can only be used on alter statement
 BAD_ARGUMENTS
 ADD NOT IDENTIFIED should result in syntax error
 SYNTAX_ERROR
+RESET AUTHENTICATION METHODS TO NEW cannot be used along with [ADD] IDENTIFIED clauses
+BAD_ARGUMENTS
