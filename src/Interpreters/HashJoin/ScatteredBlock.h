@@ -251,9 +251,7 @@ struct ScatteredBlock : private boost::noncopyable
     /// Applies selector to block in place
     void filterBySelector()
     {
-        chassert(block);
-
-        if (!wasScattered())
+        if (!block || !wasScattered())
             return;
 
         if (selector.isContinuousRange())
