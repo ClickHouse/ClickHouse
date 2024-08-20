@@ -50,7 +50,7 @@ ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
 
 def test_authentication_pass():
     assert instance.query(
-        "select currentUser()", user="janedoe", password="qwerty"
+        "SELECT currentUser()", user="janedoe", password="qwerty"
     ) == TSV([["janedoe"]])
 
 
