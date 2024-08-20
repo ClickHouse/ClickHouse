@@ -333,14 +333,16 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 const auto * function = arguments->children[0]->as<ASTFunction>();
                 const auto * subquery = arguments->children[0]->as<ASTSubquery>();
                 bool is_tuple = literal && literal->value.getType() == Field::Types::Tuple;
-                /// Do not add parentheses for tuple literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`
-                bool literal_need_parens = literal && !is_tuple;
+                bool is_array = literal && literal->value.getType() == Field::Types::Array;
+                /// Do not add parentheses for tuple and array literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`, `-[1]` -> `-([1])`
+                bool literal_need_parens = literal && !is_tuple && !is_array;
 
                 /// Negate always requires parentheses, otherwise -(-1) will be printed as --1
-                /// Also extra parentheses are needed for subqueries, because NOT can be parsed as a function:
+                /// Also extra parentheses are needed for subqueries ans tuple, because NOT can be parsed as a function:
                 /// not(SELECT 1) cannot be parsed, while not((SELECT 1)) can.
+                /// not((1, 2, 3)) is a function of one argument, while not(1, 2, 3) is a function of three arguments.
                 bool inside_parens = (name == "negate" && (literal_need_parens || (function && function->name == "negate")))
-                    || (subquery && name == "not");
+                    || (subquery && name == "not") || (is_tuple && name == "not");
 
                 /// We DO need parentheses around a single literal
                 /// For example, SELECT (NOT 0) + (NOT 0) cannot be transformed into SELECT NOT 0 + NOT 0, since

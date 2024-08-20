@@ -5,3 +5,6 @@ create table a (`value2` Enum8('Hello' = 1, equals(`Null`, 'World', 2), '!' = 3)
 
 create table a (x Int8) engine Memory;
 create table b empty as a;
+
+SELECT NOT ((1, 1, 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT -[(1)]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
