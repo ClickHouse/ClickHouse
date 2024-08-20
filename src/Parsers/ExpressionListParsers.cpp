@@ -1668,9 +1668,10 @@ public:
                     return false;
 
                 /// Skip replaceRegex if trying to TRIM an empty string to avoid exception
-                if (char_override && elements[0]->getID() == "Literal_''") {
+                ASTLiteral * ast_literal = typeid_cast<ASTLiteral *>(elements[0].get());
+                if (ast_literal && ast_literal->value.safeGet<String>().empty()) {
                     char_override = false;
-                }
+               }
 
                 to_remove = makeASTFunction("regexpQuoteMeta", elements[0]);
                 elements.clear();
