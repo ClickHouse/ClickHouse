@@ -85,6 +85,7 @@ static size_t calculateMinMarksPerTask(
             min_marks_per_task = heuristic_min_marks;
         }
     }
+
     LOG_TEST(&Poco::Logger::get("MergeTreeReadPoolBase"), "Will use min_marks_per_task={}", min_marks_per_task);
     return min_marks_per_task;
 }

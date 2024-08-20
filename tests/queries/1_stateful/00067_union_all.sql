@@ -10,4 +10,5 @@ UNION ALL
 	ORDER BY id DESC
 	LIMIT 10
 )
-ORDER BY id, event;
+ORDER BY id, event
+SETTINGS max_rows_to_read = 40_000_000;
