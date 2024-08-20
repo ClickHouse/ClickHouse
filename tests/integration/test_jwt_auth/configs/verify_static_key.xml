@@ -1,0 +1,9 @@
+<clickhouse>
+    <jwt_verifiers>
+        <single_key_validator>
+            <algo>hs256</algo>
+            <single_key>my_secret</single_key>
+            <single_key_in_base64>false</single_key_in_base64>
+        </single_key_validator>
+    </jwt_verifiers>
+</clickhouse>

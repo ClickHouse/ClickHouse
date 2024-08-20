@@ -111,9 +111,8 @@ String extractSubjectFromToken(const String& token)
     }
     catch (...)
     {
-        tryLogCurrentException(getLogger("JWTAuth"), "Failed to validate jwt");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to validate jwt");
     }
-    return "";
 }
 }
 

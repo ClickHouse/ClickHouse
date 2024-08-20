@@ -8,8 +8,8 @@ import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.m
 
 Existing and properly configured ClickHouse users can be authenticated via JWT.
 
-Currently, JWT can only be used as an external authenticator for existing users, which are defined in `users.xml` or in local access control paths. 
-
+Currently, JWT can only be used as an external authenticator for existing users, which are defined in `users.xml` or in local access control paths.  
+JWT shall contain the name of the ClickHouse user under "sub" claim.  
 The username will be extracted from the JWT after validating the token expiration and against the signature. Signature can be validated by:
 - static public key
 - static JWKS
@@ -76,7 +76,7 @@ To enable JWT validators, one should include `jwt_verifiers` section in `config.
 - `static_jwks_file` - path to file with JWKS
 
 :::note
-Supported only RS* family algorithms
+Only RS* family algorithms are supported
 :::
 
 :::note
@@ -158,7 +158,7 @@ In this sample payload must contains "view-profile" in array on path resource_ac
 ```
 
 :::note
-Note that HTTP authentication cannot be used alongside with any other authentication mechanism. The presence of any other sections like `password` alongside `http_authentication` will force ClickHouse to shutdown.
+Note that JWT authentication cannot be used alongside with any other authentication mechanism. The presence of any other sections like `password` alongside `jwt` will force ClickHouse to shutdown.
 :::
 
 ### Enabling JWT authentication using SQL {#enabling-jwt-auth-using-sql}
