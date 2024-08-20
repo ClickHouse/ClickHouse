@@ -78,13 +78,21 @@ def check_encrypted_content(node, zk=None):
     )
 
     # Check that the underlying storage is encrypted
-    content = zk.get(ZK_PATH + "/collection2.sql")[0] if zk is not None else open(f"{node.path}/database/named_collections/collection2.sql", "rb").read()
+    content = (
+        zk.get(ZK_PATH + "/collection2.sql")[0]
+        if zk is not None
+        else open(
+            f"{node.path}/database/named_collections/collection2.sql", "rb"
+        ).read()
+    )
 
-    assert content[0:3] == b"ENC"  # file signature (aka magic number) of the encrypted file
+    assert (
+        content[0:3] == b"ENC"
+    )  # file signature (aka magic number) of the encrypted file
     assert b"key1" not in content
     assert b"1234" not in content
     assert b"key2" not in content
-    assert B"value2" not in content
+    assert b"value2" not in content
 
 
 def test_local_storage_encrypted(cluster):

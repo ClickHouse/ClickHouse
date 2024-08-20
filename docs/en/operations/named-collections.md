@@ -77,7 +77,7 @@ Named collections can either be stored on local disk or in ZooKeeper/Keeper. By 
 They can also be stored using encryption with the same algorithms used for [disk encryption](storing-data#encrypted-virtual-file-system),
 where `aes_128_ctr` is used by default.
 
-To configure named collections storage you need to speficy a `type`. This can be either `local` or `keeper`/`zookeeper`. For encrypted storage,
+To configure named collections storage you need to specify a `type`. This can be either `local` or `keeper`/`zookeeper`. For encrypted storage,
 you can use `local_encrypted` or `keeper_encrypted`/`zookeeper_encrypted`.
 
 To use ZooKeeper/Keeper we also need to set up a `path` (path in ZooKeeper/Keeper, where named collections will be stored) to
