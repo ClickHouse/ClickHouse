@@ -85,6 +85,28 @@ void IRowInputFormat::logError()
     errors_logger->logError(InputFormatErrorsLogger::ErrorEntry{now_time, total_rows, diagnostic, raw_data});
 }
 
+bool IRowInputFormat::overPreferredBlockSizeLimit(const MutableColumns & columns) const
+{
+    if (params.preferred_block_size_bytes || params.preferred_max_column_in_block_size_bytes)
+    {
+        size_t block_size_bytes = 0;
+        size_t max_column_in_block_size_bytes = 0;
+        for (const auto & column : columns)
+        {
+            block_size_bytes += column->byteSize();
+            max_column_in_block_size_bytes = std::max(max_column_in_block_size_bytes, column->byteSize());
+
+            if (params.preferred_block_size_bytes && block_size_bytes >= params.preferred_block_size_bytes)
+                return true;
+
+            if (params.preferred_max_column_in_block_size_bytes && max_column_in_block_size_bytes >= params.preferred_max_column_in_block_size_bytes)
+                return true;
+        }
+    }
+
+    return false;
+}
+
 Chunk IRowInputFormat::read()
 {
     if (total_rows == 0)
@@ -107,8 +129,13 @@ Chunk IRowInputFormat::read()
 
     block_missing_values.clear();
 
+    auto chunk_offset = [&]() -> size_t
+    {
+        return getDataOffsetMaybeCompressed(getReadBuffer()) + getReadBuffer().offset();
+    };
+
     size_t num_rows = 0;
-    size_t chunk_start_offset = getDataOffsetMaybeCompressed(getReadBuffer());
+    size_t chunk_start_offset = chunk_offset();
     try
     {
         if (need_only_count && supportsCountRows())
@@ -120,7 +147,7 @@ Chunk IRowInputFormat::read()
                 return {};
             }
             total_rows += num_rows;
-            approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(getReadBuffer()) - chunk_start_offset;
+            approx_bytes_read_for_chunk = chunk_offset() - chunk_start_offset;
             return getChunkForCount(num_rows);
         }
 
@@ -157,6 +184,9 @@ Chunk IRowInputFormat::read()
                 /// The case when there is no columns. Just count rows.
                 if (columns.empty())
                     ++num_rows;
+
+                if (overPreferredBlockSizeLimit(columns))
+                    break;
             }
             catch (Exception & e)
             {
@@ -244,7 +274,7 @@ Chunk IRowInputFormat::read()
         column->finalize();
 
     Chunk chunk(std::move(columns), num_rows);
-    approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(getReadBuffer()) - chunk_start_offset;
+    approx_bytes_read_for_chunk = chunk_offset() - chunk_start_offset;
     return chunk;
 }
 

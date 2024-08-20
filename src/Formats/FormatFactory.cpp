@@ -330,6 +330,8 @@ InputFormatPtr FormatFactory::getInput(
 
     RowInputFormatParams row_input_format_params;
     row_input_format_params.max_block_size = max_block_size;
+    row_input_format_params.preferred_block_size_bytes = settings.preferred_block_size_bytes;
+    row_input_format_params.preferred_max_column_in_block_size_bytes = settings.preferred_max_column_in_block_size_bytes;
     row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
     row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
     row_input_format_params.max_execution_time = settings.max_execution_time;

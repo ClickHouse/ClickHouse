@@ -753,7 +753,13 @@ Default value: `65,409`
 
 Used for the same purpose as `max_block_size`, but it sets the recommended block size in bytes by adapting it to the number of rows in the block.
 However, the block size cannot be more than `max_block_size` rows.
-By default: 1,000,000. It only works when reading from MergeTree engines.
+By default: 1,000,000. It works when reading from MergeTree engines and reading contents from row input formats.
+
+## preferred_max_column_in_block_size_bytes {#preferred-max-column-in-block-size_bytes}
+
+Limit on max column size in block while reading. Helps to decrease cache misses count. Should be close to L2 cache size.
+However, the column size in block cannot be more than `max_block_size` rows.
+By default: 0 - Disabled. It works when reading from MergeTree engines and reading contents from row input formats.
 
 ## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
 

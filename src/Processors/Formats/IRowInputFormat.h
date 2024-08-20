@@ -23,6 +23,8 @@ struct RowReadExtension
 struct RowInputFormatParams
 {
     size_t max_block_size = 0;
+    UInt64 preferred_block_size_bytes = 0;
+    UInt64 preferred_max_column_in_block_size_bytes = 0;
 
     UInt64 allow_errors_num = 0;
     Float64 allow_errors_ratio = 0;
@@ -76,6 +78,8 @@ protected:
     virtual std::pair<std::string, std::string> getDiagnosticAndRawData() { return std::make_pair("", ""); }
 
     void logError();
+
+    bool overPreferredBlockSizeLimit(const MutableColumns & columns) const;
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
