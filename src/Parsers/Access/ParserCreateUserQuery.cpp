@@ -650,12 +650,12 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (has_no_password_authentication_method && auth_data.size() > 1)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "NO_PASSWORD Authentication method cannot co-exist with other authentication methods");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Authentication method 'no_password' cannot co-exist with other authentication methods.");
     }
 
     if (has_no_password_authentication_method && parsed_add_identified_with)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The authentication method 'no_password' cannot be used with the ADD keyword. "
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Authentication method 'no_password' cannot co-exist with other authentication methods. "
                                                    "Use 'ALTER USER xyz IDENTIFIED WITH no_password' to replace existing authentication methods");
 
     }
