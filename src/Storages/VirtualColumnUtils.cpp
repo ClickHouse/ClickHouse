@@ -136,14 +136,15 @@ std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(
 
     std::unordered_map<std::string, std::string> key_values;
     std::string key, value;
-    std::unordered_set<String> used_keys;
+    std::unordered_map<std::string, std::string> used_keys;
     while (RE2::FindAndConsume(&input_piece, pattern, &key, &value))
     {
-        if (used_keys.contains(key))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {}, only unique keys are allowed", path, key);
-        used_keys.insert(key);
+        auto it = used_keys.find(key);
+        if (it != used_keys.end() && it->second != value)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed", path, key);
+        used_keys.insert({key, value});
 
-        auto col_name = "_" + key;
+        auto col_name = key;
         while (storage_columns.has(col_name))
             col_name = "_" + col_name;
         key_values[col_name] = value;
