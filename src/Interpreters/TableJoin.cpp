@@ -116,6 +116,8 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
     , temporary_files_codec(settings.temporary_files_codec)
     , output_by_rowlist_perkey_rows_threshold(settings.join_output_by_rowlist_perkey_rows_threshold)
+    , sort_right_perkey_rows_threshold(settings.join_to_sort_perkey_rows_threshold)
+    , sort_right_table_rows_threshold(settings.join_to_sort_table_rows_threshold)
     , max_memory_usage(settings.max_memory_usage)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)

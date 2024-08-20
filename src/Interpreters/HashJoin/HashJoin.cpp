@@ -1422,12 +1422,12 @@ void HashJoin::tryRerangeRightTableData()
     if ((kind != JoinKind::Inner && kind != JoinKind::Left) || strictness != JoinStrictness::All || table_join->getMixedJoinExpression())
         return;
 
-    if (!data || data->sorted || data->blocks.empty() || data->maps.size() > 1)
+    if (!data || data->sorted || data->blocks.empty() || data->maps.size() > 1 || data->rows_to_join > table_join->sortRightTableRowsThreshold() ||  data->avgPerKeyRows() < table_join->sortRightPerkeyRowsThreshold())
         return;
 
     if (data->keys_to_join == 0)
         data->keys_to_join = getTotalRowCount();
-    if (sample_block_with_columns_to_add.columns() == 0 || data->rows_to_join > table_join->sortRightTableRowsThreshold() ||  data->avgPerKeyRows() < table_join->sortRightPerkeyRowsThreshold())
+    if (sample_block_with_columns_to_add.columns() == 0)
     {
         LOG_DEBUG(log, "The joined right table total rows :{}, total keys :{}, columns added:{}",
             data->rows_to_join, data->keys_to_join, sample_block_with_columns_to_add.columns());
