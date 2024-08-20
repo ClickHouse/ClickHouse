@@ -2,6 +2,7 @@ set allow_experimental_variant_type = 1;
 set use_variant_as_common_type = 1;
 set allow_experimental_dynamic_type = 1;
 
+
 drop table if exists test;
 
 {% for engine in ['MergeTree order by id settings min_rows_for_wide_part=1000000000, min_bytes_for_wide_part=10000000000',
