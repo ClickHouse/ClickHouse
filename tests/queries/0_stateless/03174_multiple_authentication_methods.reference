@@ -53,3 +53,5 @@ First auth method can't specify type if WITH keyword is not present
 SYNTAX_ERROR
 RESET AUTHENTICATION METHODS TO NEW can only be used on alter statement
 BAD_ARGUMENTS
+ADD NOT IDENTIFIED should result in syntax error
+SYNTAX_ERROR

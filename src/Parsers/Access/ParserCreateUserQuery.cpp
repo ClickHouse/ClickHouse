@@ -223,14 +223,6 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (ParserKeyword{Keyword::NOT_IDENTIFIED}.ignore(pos, expected))
-            {
-                authentication_methods.emplace_back(std::make_shared<ASTAuthenticationData>());
-                authentication_methods.back()->type = AuthenticationType::NO_PASSWORD;
-
-                return true;
-            }
-
             if (!ParserKeyword{Keyword::IDENTIFIED}.ignore(pos, expected))
                 return false;
 
@@ -266,6 +258,22 @@ namespace
             }
 
             return !authentication_methods.empty();
+        });
+    }
+
+    bool parseIdentifiedOrNotIdentified(IParserBase::Pos & pos, Expected & expected, std::vector<std::shared_ptr<ASTAuthenticationData>> & authentication_methods)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (ParserKeyword{Keyword::NOT_IDENTIFIED}.ignore(pos, expected))
+            {
+                authentication_methods.emplace_back(std::make_shared<ASTAuthenticationData>());
+                authentication_methods.back()->type = AuthenticationType::NO_PASSWORD;
+
+                return true;
+            }
+
+            return parseIdentifiedWith(pos, expected, authentication_methods);
         });
     }
 
@@ -545,7 +553,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     {
         if (auth_data.empty())
         {
-            parsed_identified_with = parseIdentifiedWith(pos, expected, auth_data);
+            parsed_identified_with = parseIdentifiedOrNotIdentified(pos, expected, auth_data);
 
             if (!parsed_identified_with)
             {
