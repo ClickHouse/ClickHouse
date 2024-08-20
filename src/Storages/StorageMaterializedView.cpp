@@ -182,8 +182,9 @@ StorageMaterializedView::StorageMaterializedView(
             String inner_engine;
             if (has_inner_table)
             {
-                if (query.storage && query.storage->engine)
-                    inner_engine = query.storage->engine->name;
+                auto storage = query.getTargetInnerEngine(ViewTarget::To);
+                if (storage && storage->engine)
+                    inner_engine = storage->engine->name;
             }
             else
             {
@@ -195,9 +196,9 @@ StorageMaterializedView::StorageMaterializedView(
             {
                 bool is_replicated_table = inner_engine.starts_with("Replicated") || inner_engine.starts_with("Shared");
                 if (is_replicated_table && !is_replicated_db)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "This combination doesn't work: refreshable materialized view, no APPEND, non-replicated database, replicated table. Each refresh would replace the replicated table locally, but other replicas wouldn't see it. Refusing to create.");
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "This combination doesn't work: refreshable materialized view, no APPEND, non-replicated database, replicated table. Each refresh would replace the replicated table locally, but other replicas wouldn't see it. Refusing to create");
                 if (!is_replicated_table && refresh_coordinated)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "This combination doesn't work: refreshable materialized view, no APPEND, replicated database, non-replicated table. The refresh would be done on one replica, but the table would be replaced on other replicas too (with empty tables). Refusing to create.");
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "This combination doesn't work: refreshable materialized view, no APPEND, replicated database, non-replicated table. The refresh would be done on one replica, but the table would be replaced on other replicas too (with empty tables). Refusing to create");
                 /// Combination (!is_replicated_table && refresh_coordinated && fixed_uuid) is also questionable:
                 /// each refresh would append to a table on one arbitrarily chosen replica. But in principle it can be useful,
                 /// e.g. if SELECTs are done using clusterAllReplicas(). (For the two disallowed cases above, clusterAllReplicas() wouldn't work reliably.)

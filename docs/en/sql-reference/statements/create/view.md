@@ -218,7 +218,7 @@ In `APPEND` mode, coordination can be disabled using `SETTINGS all_replicas = 1`
 
 In non-`APPEND` mode, only coordinated refreshing is supported. For uncoordinated, use `Atomic` database and `CREATE ... ON CLUSTER` query to create refreshable materialized views on all replicas.
 
-The coordination is done through Keeper. The znode path is determined by [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) server setting.
+The coordination is done through Keeper. The znode path is determined by [default_replica_path](../../../operations/server-configuration-parameters/settings.md#default_replica_path) server setting.
 
 ### Dependencies {#refresh-dependencies}
 
