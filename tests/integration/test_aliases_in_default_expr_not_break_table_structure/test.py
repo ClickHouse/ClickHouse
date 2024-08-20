@@ -34,23 +34,15 @@ def test_aliases_in_default_expr_not_break_table_structure(start_cluster, engine
     data = '{"event": {"col1-key": "col1-val", "col2-key": "col2-val"}}'
 
     node.query(
-        """
-        DROP DATABASE IF EXISTS rdb;
-        CREATE DATABASE rdb
-        ENGINE = Replicated('/test/test_recovery_time_metric_db', '{shard}', '{replica}')
-        """
-    )
-
-    node.query(
         f"""
-        DROP TABLE IF EXISTS rdb.t;
-        CREATE TABLE rdb.t
+        DROP TABLE IF EXISTS t;
+        CREATE TABLE t
         (
             `data` String,
             `col1` String DEFAULT JSONExtractString(JSONExtractString(data, 'event') AS event, 'col1-key'),
             `col2` String MATERIALIZED JSONExtractString(JSONExtractString(data, 'event') AS event, 'col2-key')
         )
-        ENGINE = {engine}
+        ENGINE = {engine}('/test/test_aliases_in_default_expr_not_break_table_structure', '{{replica}}')
         ORDER BY col1
         """
     )
@@ -59,9 +51,9 @@ def test_aliases_in_default_expr_not_break_table_structure(start_cluster, engine
 
     node.query(
         f"""
-        INSERT INTO rdb.t (data) VALUES ('{data}');
+        INSERT INTO t (data) VALUES ('{data}');
         """
     )
-    assert node.query("SELECT data FROM rdb.t").strip() == data
-    assert node.query("SELECT col1 FROM rdb.t").strip() == "col1-val"
-    assert node.query("SELECT col2 FROM rdb.t").strip() == "col2-val"
+    assert node.query("SELECT data FROM t").strip() == data
+    assert node.query("SELECT col1 FROM t").strip() == "col1-val"
+    assert node.query("SELECT col2 FROM t").strip() == "col2-val"
