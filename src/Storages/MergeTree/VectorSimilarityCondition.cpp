@@ -24,7 +24,7 @@ namespace
 {
 
 template <typename Literal>
-void extractReferenceVectorFromLiteral(std::vector<Float32> & reference_vector, Literal literal)
+void extractReferenceVectorFromLiteral(std::vector<Float64> & reference_vector, Literal literal)
 {
     Float64 float_element_of_reference_vector;
     Int64 int_element_of_reference_vector;
@@ -72,7 +72,7 @@ UInt64 VectorSimilarityCondition::getLimit() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "No LIMIT section in query, not supported");
 }
 
-std::vector<float> VectorSimilarityCondition::getReferenceVector() const
+std::vector<Float64> VectorSimilarityCondition::getReferenceVector() const
 {
     if (index_is_useful && query_information.has_value())
         return query_information->reference_vector;
