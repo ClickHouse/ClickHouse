@@ -1922,7 +1922,7 @@ try
     auto & access_control = global_context->getAccessControl();
     try
     {
-        access_control.setupFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
+        access_control.setUpFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
     }
     catch (...)
     {
