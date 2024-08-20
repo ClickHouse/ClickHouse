@@ -21,6 +21,7 @@ class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 class RefreshTask;
 using RefreshTaskPtr = std::shared_ptr<RefreshTask>;
+using RefreshTaskList = std::list<RefreshTaskPtr>;
 
 
 /** Implement various SYSTEM queries.

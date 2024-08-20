@@ -187,7 +187,7 @@ StorageMaterializedView::StorageMaterializedView(
             }
             else
             {
-                StoragePtr inner_table = DatabaseCatalog::instance().tryGetTable(query.to_table_id, getContext());
+                StoragePtr inner_table = DatabaseCatalog::instance().tryGetTable(to_table_id, getContext());
                 if (inner_table)
                     inner_engine = inner_table->getName();
             }
@@ -211,7 +211,7 @@ StorageMaterializedView::StorageMaterializedView(
     {
         if (to_inner_uuid != UUIDHelpers::Nil)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "TO INNER UUID is not allowed for materialized views with REFRESH without APPEND");
-        if (query.to_table_id.hasUUID())
+        if (to_table_id.hasUUID())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "explicit UUID is not allowed for target table of materialized view with REFRESH without APPEND");
     }
 
@@ -487,7 +487,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
         create_query->create_or_replace = true;
         create_query->replace_table = true;
         /// Use UUID to ensure that the INSERT below inserts into the exact table we created, even if another replica replaced it.
-        create_query->generateRandomUUID(/* always_generate_new_uuid */ true);
+        create_query->generateRandomUUIDs();
 
         InterpreterCreateQuery create_interpreter(create_query, refresh_context);
         create_interpreter.setInternal(true);

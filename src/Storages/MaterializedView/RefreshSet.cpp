@@ -35,7 +35,7 @@ RefreshSet::Handle::~Handle()
 void RefreshSet::Handle::rename(StorageID new_id)
 {
     std::lock_guard lock(parent_set->mutex);
-    RefreshTaskHolder task = *iter;
+    RefreshTaskPtr task = *iter;
     parent_set->removeDependenciesLocked(task, dependencies);
     parent_set->removeTaskLocked(id, iter);
     id = new_id;
@@ -46,7 +46,7 @@ void RefreshSet::Handle::rename(StorageID new_id)
 void RefreshSet::Handle::changeDependencies(std::vector<StorageID> deps)
 {
     std::lock_guard lock(parent_set->mutex);
-    RefreshTaskHolder task = *iter;
+    RefreshTaskPtr task = *iter;
     parent_set->removeDependenciesLocked(task, dependencies);
     dependencies = std::move(deps);
     parent_set->addDependenciesLocked(task, dependencies);
@@ -78,7 +78,7 @@ void RefreshSet::emplace(StorageID id, const std::vector<StorageID> & dependenci
     task->setRefreshSetHandleUnlock(Handle(this, id, iter, dependencies));
 }
 
-RefreshTaskList::iterator RefreshSet::addTaskLocked(StorageID id, RefreshTaskHolder task)
+RefreshTaskList::iterator RefreshSet::addTaskLocked(StorageID id, RefreshTaskPtr task)
 {
     RefreshTaskList & list = tasks[id];
     list.push_back(task);
@@ -93,13 +93,13 @@ void RefreshSet::removeTaskLocked(StorageID id, RefreshTaskList::iterator iter)
         tasks.erase(it);
 }
 
-void RefreshSet::addDependenciesLocked(RefreshTaskHolder task, const std::vector<StorageID> & dependencies)
+void RefreshSet::addDependenciesLocked(RefreshTaskPtr task, const std::vector<StorageID> & dependencies)
 {
     for (const StorageID & dep : dependencies)
         dependents[dep].insert(task);
 }
 
-void RefreshSet::removeDependenciesLocked(RefreshTaskHolder task, const std::vector<StorageID> & dependencies)
+void RefreshSet::removeDependenciesLocked(RefreshTaskPtr task, const std::vector<StorageID> & dependencies)
 {
     for (const StorageID & dep : dependencies)
     {
@@ -122,7 +122,7 @@ std::vector<RefreshTaskPtr> RefreshSet::getTasks() const
 {
     std::unique_lock lock(mutex);
     std::vector<RefreshTaskPtr> res;
-    for (const auto & [_, list] : tasks_copy)
+    for (const auto & [_, list] : tasks)
         for (const auto & task : list)
             res.push_back(task);
     return res;
@@ -137,7 +137,7 @@ void RefreshSet::notifyDependents(const StorageID & id) const
         if (it == dependents.end())
             return;
         for (const auto & task : it->second)
-            res.push_back(task->second);
+            res.push_back(task);
     }
     for (const RefreshTaskPtr & t : res)
         t->notifyDependencyProgress();

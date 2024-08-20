@@ -273,7 +273,7 @@ void RefreshTask::wait()
             if (storage && storage->getStorageID().uuid == expected_table_uuid)
                 return;
 
-            std::this_thread::sleep_for(std:::chrono::milliseconds(10));
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
             lock.lock();
             /// Re-check last_attempt_succeeded in case another refresh EXCHANGEd the table but failed to write its uuid to keeper.
@@ -629,11 +629,11 @@ void RefreshTask::updateDependenciesIfNeeded(std::unique_lock<std::mutex> & lock
         auto min_ts = std::chrono::sys_seconds::max();
         for (const StorageID & id : deps)
         {
-            auto task = set.getTask(id);
-            if (task)
-                min_ts = std::min(min_ts, task->getNextRefreshTimeslot());
-            else
+            auto tasks = set.findTasks(id);
+            if (tasks.empty())
                 min_ts = {}; // missing table, dependency unsatisfied
+            else
+                min_ts = std::min(min_ts, (*tasks.begin())->getNextRefreshTimeslot());
         }
 
         lock.lock();

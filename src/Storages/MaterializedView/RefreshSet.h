@@ -72,10 +72,10 @@ private:
     TaskMap tasks;
     DependentsMap dependents;
 
-    RefreshTaskList::iterator addTaskLocked(StorageID id, RefreshTaskHolder task);
+    RefreshTaskList::iterator addTaskLocked(StorageID id, RefreshTaskPtr task);
     void removeTaskLocked(StorageID id, RefreshTaskList::iterator iter);
-    void addDependenciesLocked(RefreshTaskHolder task, const std::vector<StorageID> & dependencies);
-    void removeDependenciesLocked(RefreshTaskHolder task, const std::vector<StorageID> & dependencies);
+    void addDependenciesLocked(RefreshTaskPtr task, const std::vector<StorageID> & dependencies);
+    void removeDependenciesLocked(RefreshTaskPtr task, const std::vector<StorageID> & dependencies);
 };
 
 }
