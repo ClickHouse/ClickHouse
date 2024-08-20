@@ -4878,7 +4878,7 @@ toIntervalYear(n)
 
 **Arguments**
 
-- `n` — Number of years. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
+- `n` — Number of years. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -4915,7 +4915,7 @@ toIntervalQuarter(n)
 
 **Arguments**
 
-- `n` — Number of quarters. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
+- `n` — Number of quarters. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -4952,7 +4952,7 @@ toIntervalMonth(n)
 
 **Arguments**
 
-- `n` — Number of months. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
+- `n` — Number of months. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -4989,7 +4989,7 @@ toIntervalWeek(n)
 
 **Arguments**
 
-- `n` — Number of weeks. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
+- `n` — Number of weeks. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -5026,7 +5026,7 @@ toIntervalDay(n)
 
 **Arguments**
 
-- `n` — Number of days. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
+- `n` — Number of days. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -5063,7 +5063,7 @@ toIntervalHour(n)
 
 **Arguments**
 
-- `n` — Number of hours. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
+- `n` — Number of hours. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -5100,7 +5100,7 @@ toIntervalMinute(n)
 
 **Arguments**
 
-- `n` — Number of minutes. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
+- `n` — Number of minutes. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -5137,7 +5137,7 @@ toIntervalSecond(n)
 
 **Arguments**
 
-- `n` — Number of seconds. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
+- `n` — Number of seconds. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -5174,7 +5174,7 @@ toIntervalMillisecond(n)
 
 **Arguments**
 
-- `n` — Number of milliseconds. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
+- `n` — Number of milliseconds. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -5211,7 +5211,7 @@ toIntervalMicrosecond(n)
 
 **Arguments**
 
-- `n` — Number of microseconds. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
+- `n` — Number of microseconds. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -5248,7 +5248,7 @@ toIntervalNanosecond(n)
 
 **Arguments**
 
-- `n` — Number of nanoseconds. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
+- `n` — Number of nanoseconds. Integer numbers or string representations thereof, and float numbers. [(U)Int*](../data-types/int-uint.md)/[Float*](../data-types/float.md)/[String](../data-types/string.md).
 
 **Returned values**
 
