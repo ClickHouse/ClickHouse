@@ -92,3 +92,8 @@ endif()
 
 clickhouse_add_executable (check_pointer_valid check_pointer_valid.cpp)
 target_link_libraries (check_pointer_valid PRIVATE clickhouse_common_io clickhouse_common_config)
+
+if (TARGET ch_contrib::icu)
+    clickhouse_add_executable (utf8_upper_lower utf8_upper_lower.cpp)
+    target_link_libraries (utf8_upper_lower PRIVATE ch_contrib::icu)
+endif ()

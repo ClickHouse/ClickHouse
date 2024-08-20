@@ -5,7 +5,11 @@ set (DEFAULT_LIBS "-nodefaultlibs")
 
 # We need builtins from Clang's RT even without libcxx - for ubsan+int128.
 # See https://bugs.llvm.org/show_bug.cgi?id=16404
-execute_process (COMMAND ${CMAKE_CXX_COMPILER} --target=${CMAKE_CXX_COMPILER_TARGET} --print-libgcc-file-name --rtlib=compiler-rt OUTPUT_VARIABLE BUILTINS_LIBRARY OUTPUT_STRIP_TRAILING_WHITESPACE)
+execute_process (COMMAND
+    ${CMAKE_CXX_COMPILER} --target=${CMAKE_CXX_COMPILER_TARGET} --print-libgcc-file-name --rtlib=compiler-rt
+    OUTPUT_VARIABLE BUILTINS_LIBRARY
+    COMMAND_ERROR_IS_FATAL ANY
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
 
 # Apparently, in clang-19, the UBSan support library for C++ was moved out into ubsan_standalone_cxx.a, so we have to include both.
 if (SANITIZE STREQUAL undefined)
