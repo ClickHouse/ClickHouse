@@ -212,12 +212,6 @@
     M(MergedColumns, "Number of columns merged during the horizontal stage of merges.", ValueType::Number) \
     M(GatheredColumns, "Number of columns gathered during the vertical stage of merges.", ValueType::Number) \
     M(MergedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for background merges. This is the number before merge.", ValueType::Bytes) \
-    M(MergeTreeDataWriterRows, "Number of rows INSERTed to MergeTree tables.", ValueType::Number) \
-    M(MergeTreeDataWriterUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) INSERTed to MergeTree tables.", ValueType::Bytes) \
-    M(MergeTreeDataWriterCompressedBytes, "Bytes written to filesystem for data INSERTed to MergeTree tables.", ValueType::Bytes) \
-    M(MergeTreeDataWriterBlocks, "Number of blocks INSERTed to MergeTree tables. Each block forms a data part of level zero.", ValueType::Number) \
-    M(MergeTreeDataWriterBlocksAlreadySorted, "Number of blocks INSERTed to MergeTree tables that appeared to be already sorted.", ValueType::Number) \
-    \
     M(MergeTotalMilliseconds, "Total time spent for background merges", ValueType::Milliseconds) \
     M(MergeExecuteMilliseconds, "Total busy time spent for execution of background merges", ValueType::Milliseconds) \
     M(MergeHorizontalStageTotalMilliseconds, "Total time spent for horizontal stage of background merges", ValueType::Milliseconds) \
@@ -244,6 +238,13 @@
     M(MutationAllPartColumns, "Number of times when task to mutate all columns in part was created", ValueType::Number) \
     M(MutationSomePartColumns, "Number of times when task to mutate some columns in part was created", ValueType::Number) \
     M(MutateTaskProjectionsCalculationMicroseconds, "Time spent calculating projections in mutations", ValueType::Milliseconds) \
+    \
+    M(MergeTreeDataWriterRows, "Number of rows INSERTed to MergeTree tables.", ValueType::Number) \
+    M(MergeTreeDataWriterUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) INSERTed to MergeTree tables.", ValueType::Bytes) \
+    M(MergeTreeDataWriterCompressedBytes, "Bytes written to filesystem for data INSERTed to MergeTree tables.", ValueType::Bytes) \
+    M(MergeTreeDataWriterBlocks, "Number of blocks INSERTed to MergeTree tables. Each block forms a data part of level zero.", ValueType::Number) \
+    M(MergeTreeDataWriterBlocksAlreadySorted, "Number of blocks INSERTed to MergeTree tables that appeared to be already sorted.", ValueType::Number) \
+    \
     M(MergeTreeDataWriterSkipIndicesCalculationMicroseconds, "Time spent calculating skip indices", ValueType::Microseconds) \
     M(MergeTreeDataWriterStatisticsCalculationMicroseconds, "Time spent calculating statistics", ValueType::Microseconds) \
     M(MergeTreeDataWriterSortingBlocksMicroseconds, "Time spent sorting blocks", ValueType::Microseconds) \
