@@ -1,6 +1,9 @@
 #include <Access/Credentials.h>
 #include <Access/Common/SSLCertificateSubjects.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
+
+#include <jwt-cpp/jwt.h>
 
 namespace DB
 {
@@ -97,4 +100,27 @@ const String & BasicCredentials::getPassword() const
     return password;
 }
 
+namespace
+{
+String extractSubjectFromToken(const String& token)
+{
+    try
+    {
+        auto decoded_jwt = jwt::decode(token);
+        return decoded_jwt.get_subject();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("JWTAuth"), "Failed to validate jwt");
+    }
+    return "";
+}
+}
+
+JWTCredentials::JWTCredentials(const String& token_)
+        : Credentials(extractSubjectFromToken(token_))
+        , token(token_)
+    {
+        is_ready = !user_name.empty();
+    }
 }

@@ -86,6 +86,8 @@ static constexpr auto DBMS_MIN_REVISION_WITH_ROWS_BEFORE_AGGREGATION = 54469;
 /// Packets size header
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS = 54470;
 
+static constexpr auto DBMS_MIN_REVISION_WITH_JWT_AUTHENTICATION = 54470;
+
 /// Version of ClickHouse TCP protocol.
 ///
 /// Should be incremented manually on protocol changes.
