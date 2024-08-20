@@ -2,7 +2,7 @@ drop table if exists data;
 drop table if exists dist;
 
 create table data (key Int) engine=Null();
-create table dist (key Int, value Int) engine=Distributed(test_cluster_two_shards, currentDatabase(), data, 1) settings background_insert_max_retries=3;
+create table dist (key Int, value Int) engine=Distributed(test_shard_localhost, currentDatabase(), data, 1) settings background_insert_max_retries=3;
 
 -- disable send in background to make the test behavior deterministic
 system stop distributed sends dist;
@@ -22,7 +22,7 @@ drop table if exists ephemeral;
 drop table if exists dist;
 
 create table ephemeral (key Int, value Int) engine=MergeTree PARTITION BY key ORDER BY tuple();
-create table dist (key Int, value Int) engine=Distributed(test_cluster_two_shards, currentDatabase(), ephemeral, rand()) settings background_insert_max_retries=3;
+create table dist (key Int, value Int) engine=Distributed(test_shard_localhost, currentDatabase(), ephemeral, rand()) settings background_insert_max_retries=3;
 system stop distributed sends dist;
 
 set prefer_localhost_replica=0;
