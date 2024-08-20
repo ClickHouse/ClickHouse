@@ -51,8 +51,9 @@ if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
     set(OPENSSL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake")
 
     execute_process(
-      COMMAND mkdir -p ${OPENSSL_BUILD_DIR}
-      COMMAND_ECHO STDOUT
+        COMMAND mkdir -p ${OPENSSL_BUILD_DIR}
+        COMMAND_ECHO STDOUT
+        COMMAND_ERROR_IS_FATAL ANY
     )
 
     if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
@@ -89,15 +90,21 @@ if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
             "-DClickHouse_SOURCE_DIR=${ClickHouse_SOURCE_DIR}"
             "${OPENSSL_SOURCE_DIR}"
         WORKING_DIRECTORY "${OPENSSL_BUILD_DIR}"
-        COMMAND_ECHO STDOUT)
+        COMMAND_ECHO STDOUT
+        COMMAND_ERROR_IS_FATAL ANY
+    )
 
     execute_process(
         COMMAND ${CMAKE_COMMAND} --build "${OPENSSL_BUILD_DIR}"
-        COMMAND_ECHO STDOUT)
+        COMMAND_ECHO STDOUT
+        COMMAND_ERROR_IS_FATAL ANY
+    )
 
     execute_process(
         COMMAND ${CMAKE_COMMAND} --install "${OPENSSL_BUILD_DIR}"
-        COMMAND_ECHO STDOUT)
+        COMMAND_ECHO STDOUT
+        COMMAND_ERROR_IS_FATAL ANY
+    )
 
     # It's not important on which file we depend, we just want to specify right order
     add_library(openssl_for_grpc STATIC IMPORTED GLOBAL)
@@ -108,8 +115,9 @@ if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
     set (GRPC_CPP_PLUGIN_BUILD_DIR "${_gRPC_BINARY_DIR}/build")
 
     execute_process(
-      COMMAND mkdir -p ${GRPC_CPP_PLUGIN_BUILD_DIR}
-      COMMAND_ECHO STDOUT
+        COMMAND mkdir -p ${GRPC_CPP_PLUGIN_BUILD_DIR}
+        COMMAND_ECHO STDOUT
+        COMMAND_ERROR_IS_FATAL ANY
     )
 
     set(abseil_source_dir "${ClickHouse_SOURCE_DIR}/contrib/abseil-cpp")
@@ -140,11 +148,15 @@ if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
             "-DgRPC_SSL_PROVIDER=package"
             "${_gRPC_SOURCE_DIR}"
         WORKING_DIRECTORY "${GRPC_CPP_PLUGIN_BUILD_DIR}"
-        COMMAND_ECHO STDOUT)
+        COMMAND_ECHO STDOUT
+        COMMAND_ERROR_IS_FATAL ANY
+    )
 
     execute_process(
         COMMAND ${CMAKE_COMMAND} --build "${GRPC_CPP_PLUGIN_BUILD_DIR}"
-        COMMAND_ECHO STDOUT)
+        COMMAND_ECHO STDOUT
+        COMMAND_ERROR_IS_FATAL ANY
+    )
 
     add_executable(grpc_cpp_plugin IMPORTED GLOBAL)
     set_target_properties (grpc_cpp_plugin PROPERTIES IMPORTED_LOCATION "${GRPC_CPP_PLUGIN_BUILD_DIR}/grpc_cpp_plugin")

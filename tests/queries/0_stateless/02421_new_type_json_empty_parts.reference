@@ -1,0 +1,16 @@
+Collapsing
+0
+0
+DELETE all
+2
+1
+('k1','String')
+('k2','String')
+0
+0
+TTL
+1
+1
+('k2','String')
+0
+0
