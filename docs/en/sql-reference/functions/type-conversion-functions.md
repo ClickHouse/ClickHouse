@@ -4878,7 +4878,7 @@ toIntervalYear(n)
 
 **Arguments**
 
-- `n` — Number of years. Positive integer number. [Int*](../data-types/int-uint.md).
+- `n` — Number of years. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -4890,17 +4890,17 @@ Query:
 
 ``` sql
 WITH
-    toDate('2019-01-01') AS date,
+    toDate('2024-06-15') AS date,
     toIntervalYear(1) AS interval_to_year
-SELECT date + interval_to_year
+SELECT date + interval_to_year AS result
 ```
 
 Result:
 
 ```response
-┌─plus(date, interval_to_year)─┐
-│                   2020-01-01 │
-└──────────────────────────────┘
+┌─────result─┐
+│ 2025-06-15 │
+└────────────┘
 ```
 
 ## toIntervalQuarter
@@ -4915,7 +4915,7 @@ toIntervalQuarter(n)
 
 **Arguments**
 
-- `n` — Number of quarters. Positive integer number. [Int*](../data-types/int-uint.md).
+- `n` — Number of quarters. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -4927,17 +4927,17 @@ Query:
 
 ``` sql
 WITH
-    toDate('2019-01-01') AS date,
+    toDate('2024-06-15') AS date,
     toIntervalQuarter(1) AS interval_to_quarter
-SELECT date + interval_to_quarter
+SELECT date + interval_to_quarter AS result
 ```
 
 Result:
 
 ```response
-┌─plus(date, interval_to_quarter)─┐
-│                      2019-04-01 │
-└─────────────────────────────────┘
+┌─────result─┐
+│ 2024-09-15 │
+└────────────┘
 ```
 
 ## toIntervalMonth
@@ -4952,7 +4952,7 @@ toIntervalMonth(n)
 
 **Arguments**
 
-- `n` — Number of months. Positive integer number. [Int*](../data-types/int-uint.md).
+- `n` — Number of months. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -4964,17 +4964,17 @@ Query:
 
 ``` sql
 WITH
-    toDate('2019-01-01') AS date,
+    toDate('2024-06-15') AS date,
     toIntervalMonth(1) AS interval_to_month
-SELECT date + interval_to_month
+SELECT date + interval_to_month AS result
 ```
 
 Result:
 
 ```response
-┌─plus(date, interval_to_month)─┐
-│                    2019-02-01 │
-└───────────────────────────────┘
+┌─────result─┐
+│ 2024-07-15 │
+└────────────┘
 ```
 
 ## toIntervalWeek
@@ -4989,7 +4989,7 @@ toIntervalWeek(n)
 
 **Arguments**
 
-- `n` — Number of weeks. Positive integer number. [Int*](../data-types/int-uint.md).
+- `n` — Number of weeks. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -5001,17 +5001,17 @@ Query:
 
 ``` sql
 WITH
-    toDate('2019-01-01') AS date,
+    toDate('2024-06-15') AS date,
     toIntervalWeek(1) AS interval_to_week
-SELECT date + interval_to_week
+SELECT date + interval_to_week AS result
 ```
 
 Result:
 
 ```response
-┌─plus(date, interval_to_week)─┐
-│                   2019-01-08 │
-└──────────────────────────────┘
+┌─────result─┐
+│ 2024-06-22 │
+└────────────┘
 ```
 
 ## toIntervalDay
@@ -5026,7 +5026,7 @@ toIntervalDay(n)
 
 **Arguments**
 
-- `n` — Number of days. Positive integer number. [Int*](../data-types/int-uint.md).
+- `n` — Number of days. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -5038,17 +5038,17 @@ Query:
 
 ``` sql
 WITH
-    toDate('2019-01-01') AS date,
+    toDate('2024-06-15') AS date,
     toIntervalDay(5) AS interval_to_days
-SELECT date + interval_to_days
+SELECT date + interval_to_days AS result
 ```
 
 Result:
 
 ```response
-┌─plus(date, interval_to_days)─┐
-│                   2019-01-06 │
-└──────────────────────────────┘
+┌─────result─┐
+│ 2024-06-20 │
+└────────────┘
 ```
 
 ## toIntervalHour
@@ -5063,7 +5063,7 @@ toIntervalHour(n)
 
 **Arguments**
 
-- `n` — Number of hours. Positive integer number. [Int*](../data-types/int-uint.md).
+- `n` — Number of hours. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -5075,17 +5075,17 @@ Query:
 
 ``` sql
 WITH
-    toDate('2019-01-01') AS date,
+    toDate('2024-06-15') AS date,
     toIntervalHour(12) AS interval_to_hours
-SELECT date + interval_to_hours
+SELECT date + interval_to_hours AS result
 ```
 
 Result:
 
 ```response
-┌─plus(date, interval_to_hours)─┐
-│           2019-01-01 12:00:00 │
-└───────────────────────────────┘
+┌──────────────result─┐
+│ 2024-06-15 12:00:00 │
+└─────────────────────┘
 ```
 
 ## toIntervalMinute
@@ -5100,7 +5100,7 @@ toIntervalMinute(n)
 
 **Arguments**
 
-- `n` — Number of minutes. Positive integer number. [Int*](../data-types/int-uint.md).
+- `n` — Number of minutes. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -5112,17 +5112,17 @@ Query:
 
 ``` sql
 WITH
-    toDate('2019-01-01') AS date,
+    toDate('2024-06-15') AS date,
     toIntervalMinute(12) AS interval_to_minutes
-SELECT date + interval_to_minutes
+SELECT date + interval_to_minutes AS result
 ```
 
 Result:
 
 ```response
-┌─plus(date, interval_to_minutes)─┐
-│             2019-01-01 00:12:00 │
-└─────────────────────────────────┘
+┌──────────────result─┐
+│ 2024-06-15 00:12:00 │
+└─────────────────────┘
 ```
 
 ## toIntervalSecond
@@ -5137,7 +5137,7 @@ toIntervalSecond(n)
 
 **Arguments**
 
-- `n` — Number of seconds. Positive integer number. [Int*](../data-types/int-uint.md).
+- `n` — Number of seconds. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -5149,17 +5149,17 @@ Query:
 
 ``` sql
 WITH
-    toDate('2019-01-01') AS date,
+    toDate('2024-06-15') AS date,
     toIntervalSecond(30) AS interval_to_seconds
-SELECT date + interval_to_seconds
+SELECT date + interval_to_seconds AS result
 ```
 
 Result:
 
 ```response
-┌─plus(date, interval_to_seconds)─┐
-│             2019-01-01 00:00:30 │
-└─────────────────────────────────┘
+┌──────────────result─┐
+│ 2024-06-15 00:00:30 │
+└─────────────────────┘
 ```
 
 ## toIntervalMillisecond
@@ -5174,7 +5174,7 @@ toIntervalMillisecond(n)
 
 **Arguments**
 
-- `n` — Number of milliseconds. Positive integer number. [Int*](../data-types/int-uint.md).
+- `n` — Number of milliseconds. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -5186,17 +5186,17 @@ Query:
 
 ``` sql
 WITH
-    toDateTime('2019-01-01') AS date,
+    toDateTime('2024-06-15') AS date,
     toIntervalMillisecond(30) AS interval_to_milliseconds
-SELECT date + interval_to_milliseconds
+SELECT date + interval_to_milliseconds AS result
 ```
 
 Result:
 
 ```response
-┌─plus(date, interval_to_milliseconds)─┐
-│              2019-01-01 00:00:00.030 │
-└──────────────────────────────────────┘
+┌──────────────────result─┐
+│ 2024-06-15 00:00:00.030 │
+└─────────────────────────┘
 ```
 
 ## toIntervalMicrosecond
@@ -5211,7 +5211,7 @@ toIntervalMicrosecond(n)
 
 **Arguments**
 
-- `n` — Number of microseconds. Positive integer number. [Int*](../data-types/int-uint.md).
+- `n` — Number of microseconds. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -5223,17 +5223,17 @@ Query:
 
 ``` sql
 WITH
-    toDateTime('2019-01-01') AS date,
+    toDateTime('2024-06-15') AS date,
     toIntervalMicrosecond(30) AS interval_to_microseconds
-SELECT date + interval_to_microseconds
+SELECT date + interval_to_microseconds AS result
 ```
 
 Result:
 
 ```response
-┌─plus(date, interval_to_microseconds)─┐
-│           2019-01-01 00:00:00.000030 │
-└──────────────────────────────────────┘
+┌─────────────────────result─┐
+│ 2024-06-15 00:00:00.000030 │
+└────────────────────────────┘
 ```
 
 ## toIntervalNanosecond
@@ -5248,7 +5248,7 @@ toIntervalNanosecond(n)
 
 **Arguments**
 
-- `n` — Number of nanoseconds. Positive integer number. [Int*](../data-types/int-uint.md).
+- `n` — Number of nanoseconds. Positive integer number or string representation thereof. [Int*](../data-types/int-uint.md)/[String](../data-types/string.md).
 
 **Returned values**
 
@@ -5260,17 +5260,17 @@ Query:
 
 ``` sql
 WITH
-    toDateTime('2019-01-01') AS date,
+    toDateTime('2024-06-15') AS date,
     toIntervalNanosecond(30) AS interval_to_nanoseconds
-SELECT date + interval_to_nanoseconds
+SELECT date + interval_to_nanoseconds AS result
 ```
 
 Result:
 
 ```response
-┌─plus(date, interval_to_nanoseconds)─┐
-│       2019-01-01 00:00:00.000000030 │
-└─────────────────────────────────────┘
+┌────────────────────────result─┐
+│ 2024-06-15 00:00:00.000000030 │
+└───────────────────────────────┘
 ```
 
 ## parseDateTime
