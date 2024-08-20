@@ -338,7 +338,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 bool literal_need_parens = literal && !is_tuple && !is_array;
 
                 /// Negate always requires parentheses, otherwise -(-1) will be printed as --1
-                /// Also extra parentheses are needed for subqueries ans tuple, because NOT can be parsed as a function:
+                /// Also extra parentheses are needed for subqueries and tuple, because NOT can be parsed as a function:
                 /// not(SELECT 1) cannot be parsed, while not((SELECT 1)) can.
                 /// not((1, 2, 3)) is a function of one argument, while not(1, 2, 3) is a function of three arguments.
                 bool inside_parens = (name == "negate" && (literal_need_parens || (function && function->name == "negate")))
