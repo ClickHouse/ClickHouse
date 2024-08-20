@@ -4,7 +4,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
 #include <DataTypes/ObjectUtils.h>
-#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -16,7 +16,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/NestedUtils.h>
 #include <Storages/StorageSnapshot.h>
-#include <Columns/ColumnObject.h>
+#include <Columns/ColumnObjectDeprecated.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
@@ -135,7 +135,7 @@ Array createEmptyArrayField(size_t num_dimensions)
     for (size_t i = 1; i < num_dimensions; ++i)
     {
         current_array->push_back(Array());
-        current_array = &current_array->back().get<Array &>();
+        current_array = &current_array->back().safeGet<Array &>();
     }
 
     return array;
@@ -180,12 +180,12 @@ static DataTypePtr recreateTupleWithElements(const DataTypeTuple & type_tuple, c
 }
 
 static std::pair<ColumnPtr, DataTypePtr> convertObjectColumnToTuple(
-    const ColumnObject & column_object, const DataTypeObject & type_object)
+    const ColumnObjectDeprecated & column_object, const DataTypeObjectDeprecated & type_object)
 {
     if (!column_object.isFinalized())
     {
         auto finalized = column_object.cloneFinalized();
-        const auto & finalized_object = assert_cast<const ColumnObject &>(*finalized);
+        const auto & finalized_object = assert_cast<const ColumnObjectDeprecated &>(*finalized);
         return convertObjectColumnToTuple(finalized_object, type_object);
     }
 
@@ -211,9 +211,9 @@ static std::pair<ColumnPtr, DataTypePtr> recursivlyConvertDynamicColumnToTuple(
     if (!type->hasDynamicSubcolumnsDeprecated())
         return {column, type};
 
-    if (const auto * type_object = typeid_cast<const DataTypeObject *>(type.get()))
+    if (const auto * type_object = typeid_cast<const DataTypeObjectDeprecated *>(type.get()))
     {
-        const auto & column_object = assert_cast<const ColumnObject &>(*column);
+        const auto & column_object = assert_cast<const ColumnObjectDeprecated &>(*column);
         return convertObjectColumnToTuple(column_object, *type_object);
     }
 
@@ -369,7 +369,7 @@ static DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool che
     for (const auto & [key, subtypes] : subcolumns_types)
     {
         assert(!subtypes.empty());
-        if (key.getPath() == ColumnObject::COLUMN_NAME_DUMMY)
+        if (key.getPath() == ColumnObjectDeprecated::COLUMN_NAME_DUMMY)
             continue;
 
         size_t first_dim = getNumberOfDimensions(*subtypes[0]);
@@ -385,7 +385,7 @@ static DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool che
 
     if (tuple_paths.empty())
     {
-        tuple_paths.emplace_back(ColumnObject::COLUMN_NAME_DUMMY);
+        tuple_paths.emplace_back(ColumnObjectDeprecated::COLUMN_NAME_DUMMY);
         tuple_types.emplace_back(std::make_shared<DataTypeUInt8>());
     }
 
@@ -452,7 +452,7 @@ static DataTypePtr getLeastCommonTypeForDynamicColumnsImpl(
     if (!type_in_storage->hasDynamicSubcolumnsDeprecated())
         return type_in_storage;
 
-    if (isObject(type_in_storage))
+    if (isObjectDeprecated(type_in_storage))
         return getLeastCommonTypeForObject(concrete_types, check_ambiguos_paths);
 
     if (const auto * type_array = typeid_cast<const DataTypeArray *>(type_in_storage.get()))
@@ -494,9 +494,9 @@ DataTypePtr createConcreteEmptyDynamicColumn(const DataTypePtr & type_in_storage
     if (!type_in_storage->hasDynamicSubcolumnsDeprecated())
         return type_in_storage;
 
-    if (isObject(type_in_storage))
+    if (isObjectDeprecated(type_in_storage))
         return std::make_shared<DataTypeTuple>(
-            DataTypes{std::make_shared<DataTypeUInt8>()}, Names{ColumnObject::COLUMN_NAME_DUMMY});
+            DataTypes{std::make_shared<DataTypeUInt8>()}, Names{ColumnObjectDeprecated::COLUMN_NAME_DUMMY});
 
     if (const auto * type_array = typeid_cast<const DataTypeArray *>(type_in_storage.get()))
         return std::make_shared<DataTypeArray>(
@@ -838,7 +838,7 @@ DataTypePtr unflattenTuple(const PathsInData & paths, const DataTypes & tuple_ty
     return unflattenTuple(paths, tuple_types, tuple_columns).second;
 }
 
-std::pair<ColumnPtr, DataTypePtr> unflattenObjectToTuple(const ColumnObject & column)
+std::pair<ColumnPtr, DataTypePtr> unflattenObjectToTuple(const ColumnObjectDeprecated & column)
 {
     const auto & subcolumns = column.getSubcolumns();
 
@@ -846,7 +846,7 @@ std::pair<ColumnPtr, DataTypePtr> unflattenObjectToTuple(const ColumnObject & co
     {
         auto type = std::make_shared<DataTypeTuple>(
             DataTypes{std::make_shared<DataTypeUInt8>()},
-            Names{ColumnObject::COLUMN_NAME_DUMMY});
+            Names{ColumnObjectDeprecated::COLUMN_NAME_DUMMY});
 
         return {type->createColumn()->cloneResized(column.size()), type};
     }

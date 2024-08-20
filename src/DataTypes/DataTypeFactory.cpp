@@ -150,6 +150,12 @@ DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) cons
     return type;
 }
 
+DataTypePtr DataTypeFactory::getCustom(const String & base_name, DataTypeCustomDescPtr customization) const
+{
+    auto type = get(base_name);
+    type->setCustomization(std::move(customization));
+    return type;
+}
 
 void DataTypeFactory::registerDataType(const String & family_name, Value creator, Case case_sensitiveness)
 {
@@ -267,9 +273,10 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);
     registerDataTypeMap(*this);
-    registerDataTypeObject(*this);
+    registerDataTypeObjectDeprecated(*this);
     registerDataTypeVariant(*this);
     registerDataTypeDynamic(*this);
+    registerDataTypeJSON(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()

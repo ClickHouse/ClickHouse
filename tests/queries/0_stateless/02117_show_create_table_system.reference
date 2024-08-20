@@ -510,9 +510,15 @@ CREATE TABLE system.parts
     `rows_where_ttl_info.max` Array(DateTime),
     `projections` Array(String),
     `visible` UInt8,
-    `creation_tid` Tuple(UInt64, UInt64, UUID),
+    `creation_tid` Tuple(
+        UInt64,
+        UInt64,
+        UUID),
     `removal_tid_lock` UInt64,
-    `removal_tid` Tuple(UInt64, UInt64, UUID),
+    `removal_tid` Tuple(
+        UInt64,
+        UInt64,
+        UUID),
     `creation_csn` UInt64,
     `removal_csn` UInt64,
     `has_lightweight_delete` UInt8,
