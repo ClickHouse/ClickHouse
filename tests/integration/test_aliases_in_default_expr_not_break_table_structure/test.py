@@ -1,4 +1,7 @@
 import pytest
+import random
+import string
+
 from helpers.cluster import ClickHouseCluster
 
 
@@ -24,6 +27,11 @@ def start_cluster():
         cluster.shutdown()
 
 
+def randomize_table_name(table_name, random_suffix_length=10):
+    letters = string.ascii_letters + string.digits
+    return f"{table_name}_{''.join(random.choice(letters) for _ in range(random_suffix_length))}"
+
+
 @pytest.mark.parametrize("engine", ["ReplicatedMergeTree"])
 def test_aliases_in_default_expr_not_break_table_structure(start_cluster, engine):
     """
@@ -33,16 +41,18 @@ def test_aliases_in_default_expr_not_break_table_structure(start_cluster, engine
 
     data = '{"event": {"col1-key": "col1-val", "col2-key": "col2-val"}}'
 
+    table_name = randomize_table_name("t")
+
     node.query(
         f"""
-        DROP TABLE IF EXISTS t;
-        CREATE TABLE t
+        DROP TABLE IF EXISTS {table_name};
+        CREATE TABLE {table_name}
         (
             `data` String,
             `col1` String DEFAULT JSONExtractString(JSONExtractString(data, 'event') AS event, 'col1-key'),
             `col2` String MATERIALIZED JSONExtractString(JSONExtractString(data, 'event') AS event, 'col2-key')
         )
-        ENGINE = {engine}('/test/test_aliases_in_default_expr_not_break_table_structure', '{{replica}}')
+        ENGINE = {engine}('/test/{table_name}', '{{replica}}')
         ORDER BY col1
         """
     )
@@ -51,9 +61,11 @@ def test_aliases_in_default_expr_not_break_table_structure(start_cluster, engine
 
     node.query(
         f"""
-        INSERT INTO t (data) VALUES ('{data}');
+        INSERT INTO {table_name} (data) VALUES ('{data}');
         """
     )
-    assert node.query("SELECT data FROM t").strip() == data
-    assert node.query("SELECT col1 FROM t").strip() == "col1-val"
-    assert node.query("SELECT col2 FROM t").strip() == "col2-val"
+    assert node.query(f"SELECT data FROM {table_name}").strip() == data
+    assert node.query(f"SELECT col1 FROM {table_name}").strip() == "col1-val"
+    assert node.query(f"SELECT col2 FROM {table_name}").strip() == "col2-val"
+
+    node.query(f"DROP TABLE {table_name}")
