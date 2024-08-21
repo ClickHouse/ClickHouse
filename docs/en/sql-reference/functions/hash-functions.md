@@ -688,6 +688,36 @@ SELECT kostikConsistentHash(16045690984833335023, 2);
 └───────────────────────────────────────────────┘
 ```
 
+## ripeMD160
+
+**Syntax**
+
+```sql
+ripeMD160('input')
+```
+
+**Parameters**
+
+- `input`: Input string. [String](../data-types/string.md)
+
+**Returned value**
+
+- A [UInt256](../data-types/int-uint.md) hash value of type [FixedString(20)](../data-types/fixedstring.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT hex(ripeMD160('The quick brown fox jumps over the lazy dog'));
+```
+
+```response
+┌─hex(ripeMD160('The quick brown fox jumps over the lazy dog'))─┐
+│ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │
+└───────────────────────────────────────────────────────────────┘
+```
+
 ## murmurHash2_32, murmurHash2_64
 
 Produces a [MurmurHash2](https://github.com/aappleby/smhasher) hash value.
