@@ -1518,14 +1518,14 @@ def test_hive_partitioning_with_one_parameter(cluster):
     )
 
     query = (
-        f"SELECT column1, column2, _file, _path FROM azureBlobStorage(azure_conf2, "
+        f"SELECT column2, _file, _path, column1 FROM azureBlobStorage(azure_conf2, "
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
         f"blob_path='{path}', format='CSV', structure='{table_format}')"
     )
     assert azure_query(
         node, query, settings={"use_hive_partitioning": 1}
     ).splitlines() == [
-        "Elizabeth\tGordon\tsample.csv\t{bucket}/{max_path}".format(
+        "Gordon\tsample.csv\t{bucket}/{max_path}\tElizabeth".format(
             bucket="cont", max_path=path
         )
     ]
@@ -1560,7 +1560,7 @@ def test_hive_partitioning_with_all_parameters(cluster):
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
         f"blob_path='{path}', format='CSV', structure='{table_format}');"
     )
-    pattern = r"DB::Exception: Cannot implement partition by all columns in a file"
+    pattern = r"DB::Exception: Cannot use hive partitioning for file"
 
     with pytest.raises(Exception, match=pattern):
         azure_query(node, query, settings={"use_hive_partitioning": 1})
@@ -1572,7 +1572,7 @@ def test_hive_partitioning_without_setting(cluster):
     table_format = "column1 String, column2 String"
     values_1 = f"('Elizabeth', 'Gordon')"
     values_2 = f"('Emilia', 'Gregor')"
-    path = "a/column1=Elizabeth/column2=Gordon/sample.csv"
+    path = "a/column1=Elizabeth/column2=Gordon/column3=Gordon/sample.csv"
 
     azure_query(
         node,
@@ -1582,7 +1582,7 @@ def test_hive_partitioning_without_setting(cluster):
     )
 
     query = (
-        f"SELECT column1, column2, _file, _path FROM azureBlobStorage(azure_conf2, "
+        f"SELECT column1, column2, _file, _path, column3 FROM azureBlobStorage(azure_conf2, "
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
         f"blob_path='{path}', format='CSV', structure='{table_format}');"
     )
