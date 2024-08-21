@@ -1,3 +1,4 @@
+-- Tags: no-fasttest
 -- Ouput can be verified using: https://emn178.github.io/online-tools/ripemd-160/
 
 SELECT hex(ripeMD160('The quick brown fox jumps over the lazy dog'));
