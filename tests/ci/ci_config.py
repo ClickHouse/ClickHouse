@@ -163,7 +163,7 @@ class CI:
                 tidy=True,
                 comment="clang-tidy is used for static analysis",
             ),
-            timeout=10800,
+            timeout=14400,
         ),
         BuildNames.BINARY_DARWIN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
