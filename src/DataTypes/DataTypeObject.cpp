@@ -35,6 +35,7 @@ namespace ErrorCodes
 {
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 DataTypeObject::DataTypeObject(
@@ -51,6 +52,17 @@ DataTypeObject::DataTypeObject(
     , max_dynamic_paths(max_dynamic_paths_)
     , max_dynamic_types(max_dynamic_types_)
 {
+    /// Check if regular expressions are valid.
+    for (const auto & regexp_str : path_regexps_to_skip)
+    {
+        re2::RE2::Options options;
+        /// Don't log errors to stderr.
+        options.set_log_errors(false);
+        auto regexp = re2::RE2(regexp_str, options);
+        if (!regexp.ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Invalid regexp '{}': {}", regexp_str, regexp.error());
+    }
+
     for (const auto & [typed_path, type] : typed_paths)
     {
         for (const auto & path_to_skip : paths_to_skip)
