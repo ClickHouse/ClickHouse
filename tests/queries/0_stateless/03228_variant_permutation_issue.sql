@@ -8,11 +8,11 @@ INSERT INTO test_new_json_type format JSONEachRow
 {"id":3,"data":{"foo2":"bar"},"version":1}
 ;
 
-SELECT * FROM test_new_json_type FINAL WHERE data.foo2 is not null;
+SELECT * FROM test_new_json_type FINAL WHERE data.foo2 is not null ORDER BY id;
 
 INSERT INTO test_new_json_type SELECT id, '{"foo2":"baz"}' AS _data, version+1 AS _version FROM test_new_json_type where id=2;
 
-SELECT * FROM test_new_json_type FINAL WHERE data.foo2 is not null;
+SELECT * FROM test_new_json_type FINAL WHERE data.foo2 is not null ORDER BY id;
 
 DROP TABLE test_new_json_type;
 
