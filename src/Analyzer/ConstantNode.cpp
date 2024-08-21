@@ -177,9 +177,10 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
           * It could also lead to ambiguous parsing because we don't know if the string literal represents a date or a Decimal64 literal.
           * For this reason, we use a string literal representing a date instead of a Decimal64 literal.
           */
-        if (WhichDataType(constant_value_type->getTypeId()).isDateTime64())
+        const auto & constant_value_end_type = removeNullable(constant_value_type); /// if Nullable
+        if (WhichDataType(constant_value_end_type->getTypeId()).isDateTime64())
         {
-            const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(constant_value_type.get());
+            const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(constant_value_end_type.get());
             DecimalField<Decimal64> decimal_value;
             if (constant_value_literal.tryGet<DecimalField<Decimal64>>(decimal_value))
             {
