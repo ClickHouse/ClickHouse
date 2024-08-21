@@ -156,16 +156,20 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
 
     auto add_virtual = [&](const auto & name, const auto & type)
     {
-        auto local_type = type;
-        if (storage_columns.has(name) && !context->getSettingsRef().use_hive_partitioning)
-            return;
         if (storage_columns.has(name))
         {
-            local_type = storage_columns.get(name).type;
+            if (!context->getSettingsRef().use_hive_partitioning)
+                return;
+
+            if (storage_columns.size() == 1)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot use a file with one column {}, that is ised during hive partitioning", name);
+            auto local_type = storage_columns.get(name).type;
             storage_columns.remove(name);
+            desc.addEphemeral(name, local_type, "");
+            return;
         }
 
-        desc.addEphemeral(name, local_type, "");
+        desc.addEphemeral(name, type, "");
     };
 
     add_virtual("_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
