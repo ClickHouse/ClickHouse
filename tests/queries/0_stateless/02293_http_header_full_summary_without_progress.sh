@@ -20,6 +20,7 @@ then
   echo "Read rows in summary is not zero"
 else
   echo "Read rows in summary is zero!"
+  echo "${CURL_OUTPUT}"
 fi
 
 # Check that the response code is correct too
