@@ -110,6 +110,8 @@ function setup_logs_replication
     # The function is launched in a separate shell instance to not expose the
     # exported values from CLICKHOUSE_CI_LOGS_CREDENTIALS
     set +x
+
+    PORT=${1:-"9000"}
     # disable output
     if ! [ -r "${CLICKHOUSE_CI_LOGS_CREDENTIALS}" ]; then
         echo "File $CLICKHOUSE_CI_LOGS_CREDENTIALS does not exist, do not setup"
@@ -125,16 +127,16 @@ function setup_logs_replication
     __set_connection_args
 
     echo 'Create all configured system logs'
-    clickhouse-client --query "SYSTEM FLUSH LOGS"
+    clickhouse-client --port "$PORT" --query "SYSTEM FLUSH LOGS"
 
-    debug_or_sanitizer_build=$(clickhouse-client -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
+    debug_or_sanitizer_build=$(clickhouse-client --port "$PORT" -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
     echo "Build is debug or sanitizer: $debug_or_sanitizer_build"
 
     # We will pre-create a table system.coverage_log.
     # It is normally created by clickhouse-test rather than the server,
     # so we will create it in advance to make it be picked up by the next commands:
 
-    clickhouse-client --query "
+    clickhouse-client --port "$PORT" --query "
         CREATE TABLE IF NOT EXISTS system.coverage_log
         (
             time DateTime COMMENT 'The time of test run',
@@ -145,7 +147,7 @@ function setup_logs_replication
 
     # For each system log table:
     echo 'Create %_log tables'
-    clickhouse-client --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read -r table
+    clickhouse-client --port "$PORT" --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read -r table
     do
         if [[ "$table" = "trace_log" ]]
         then
@@ -169,7 +171,7 @@ function setup_logs_replication
         fi
 
         # Calculate hash of its structure. Note: 4 is the version of extra columns - increment it if extra columns are changed:
-        hash=$(clickhouse-client --query "
+        hash=$(clickhouse-client --port "$PORT" --query "
             SELECT sipHash64(9, groupArray((name, type)))
             FROM (SELECT name, type FROM system.columns
                 WHERE database = 'system' AND table = '$table'
@@ -177,7 +179,7 @@ function setup_logs_replication
             ")
 
         # Create the destination table with adapted name and structure:
-        statement=$(clickhouse-client --format TSVRaw --query "SHOW CREATE TABLE system.${table}" | sed -r -e '
+        statement=$(clickhouse-client --port "$PORT" --format TSVRaw --query "SHOW CREATE TABLE system.${table}" | sed -r -e '
             s/^\($/('"$EXTRA_COLUMNS_FOR_TABLE"'/;
             s/^ORDER BY (([^\(].+?)|\((.+?)\))$/ORDER BY ('"$EXTRA_ORDER_BY_COLUMNS"', \2\3)/;
             s/^CREATE TABLE system\.\w+_log$/CREATE TABLE IF NOT EXISTS '"$table"'_'"$hash"'/;
@@ -193,7 +195,7 @@ function setup_logs_replication
         echo "Creating table system.${table}_sender" >&2
 
         # Create Distributed table and materialized view to watch on the original table:
-        clickhouse-client --query "
+        clickhouse-client --port "$PORT" --query "
             CREATE TABLE system.${table}_sender
             ENGINE = Distributed(${CLICKHOUSE_CI_LOGS_CLUSTER}, default, ${table}_${hash})
             SETTINGS flush_on_detach=0
@@ -204,7 +206,7 @@ function setup_logs_replication
 
         echo "Creating materialized view system.${table}_watcher" >&2
 
-        clickhouse-client --query "
+        clickhouse-client --port "$PORT" --query "
             CREATE MATERIALIZED VIEW system.${table}_watcher TO system.${table}_sender AS
             SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, *
             FROM system.${table}
@@ -215,9 +217,10 @@ function setup_logs_replication
 function stop_logs_replication
 {
     echo "Detach all logs replication"
-    clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
+    PORT=${1:-"9000"}
+    clickhouse-client --port "$PORT" --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
         tee /dev/stderr
     } | {
-        timeout --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -r -i clickhouse-client --query "drop table {}"
+        timeout --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -r -i clickhouse-client --port "$PORT" --query "drop table {}"
     }
 }
