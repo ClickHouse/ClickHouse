@@ -14,13 +14,14 @@
 #include <xxhash.h>
 
 #include <Common/SipHash.h>
-#include <Common/RipeMD160Hash.h>
 #include <Common/typeid_cast.h>
 #include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
 
 #if USE_SSL
+#    include <openssl/evp.h>
 #    include <openssl/md5.h>
+#    include <openssl/ripemd.h>
 #endif
 
 #include <bit>
@@ -194,12 +195,26 @@ T combineHashesFunc(T t1, T t2)
 struct RipeMD160Impl
 {
     static constexpr auto name = "ripeMD160";
-
     using ReturnType = UInt256;
 
-    static UInt256 apply(const char * begin, size_t size) { return ripeMD160Hash(begin, size); }
+    static UInt256 apply(const char * begin, size_t size)
+    {
+        UInt8 digest[RIPEMD160_DIGEST_LENGTH];
 
-    static UInt256 combineHashes(UInt256 h1, UInt256 h2) { return combineHashesFunc<UInt256, RipeMD160Impl>(h1, h2); }
+        RIPEMD160(reinterpret_cast<const unsigned char *>(begin), size, reinterpret_cast<unsigned char *>(digest));
+
+        std::reverse(digest, digest + RIPEMD160_DIGEST_LENGTH);
+
+        UInt256 res = 0;
+        std::memcpy(&res, digest, RIPEMD160_DIGEST_LENGTH);
+
+        return res;
+    }
+
+    static UInt256 combineHashes(UInt256 h1, UInt256 h2)
+    {
+        return combineHashesFunc<UInt256, RipeMD160Impl>(h1, h2);
+    }
 
     static constexpr bool use_int_hash_for_pods = false;
 };
