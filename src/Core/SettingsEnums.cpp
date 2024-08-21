@@ -148,6 +148,11 @@ IMPLEMENT_SETTING_ENUM(StreamingHandleErrorMode, ErrorCodes::BAD_ARGUMENTS,
     {{"default",      StreamingHandleErrorMode::DEFAULT},
      {"stream",       StreamingHandleErrorMode::STREAM}})
 
+IMPLEMENT_SETTING_ENUM(ExtStreamingHandleErrorMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"default",      ExtStreamingHandleErrorMode::DEFAULT},
+     {"stream",       ExtStreamingHandleErrorMode::STREAM},
+     {"dead_letter_queue", ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE}})
+
 IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS,
     {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
      {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},

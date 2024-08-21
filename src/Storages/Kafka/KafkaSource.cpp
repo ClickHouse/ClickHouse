@@ -7,6 +7,7 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/KafkaDeadLetterQueue.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -52,7 +53,7 @@ KafkaSource::KafkaSource(
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage.getVirtualsHeader())
-    , handle_error_mode(storage.getStreamingHandleErrorMode())
+    , handle_error_mode(storage.getHandleErrorMode())
 {
 }
 
@@ -104,8 +105,6 @@ Chunk KafkaSource::generateImpl()
     // otherwise external iteration will reuse that and logic will became even more fuzzy
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
-    auto put_error_to_stream = handle_error_mode == StreamingHandleErrorMode::STREAM;
-
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
         storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
@@ -114,32 +113,38 @@ Chunk KafkaSource::generateImpl()
     size_t total_rows = 0;
     size_t failed_poll_attempts = 0;
 
-    auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
+    auto on_error = [&, this](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
         ProfileEvents::increment(ProfileEvents::KafkaMessagesFailed);
 
-        if (put_error_to_stream)
+        switch (handle_error_mode)
         {
-            exception_message = e.message();
-            for (size_t i = 0; i < result_columns.size(); ++i)
+        case ExtStreamingHandleErrorMode::STREAM:
+        case ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE:
             {
-                // We could already push some rows to result_columns before exception, we need to fix it.
-                result_columns[i]->rollback(*checkpoints[i]);
+                exception_message = e.message();
+                for (size_t i = 0; i < result_columns.size(); ++i)
+                {
+                    // We could already push some rows to result_columns before exception, we need to fix it.
+                    result_columns[i]->rollback(*checkpoints[i]);
 
-                // all data columns will get default value in case of error
-                result_columns[i]->insertDefault();
+                    // all data columns will get default value in case of error
+                    result_columns[i]->insertDefault();
+                }
+                break;
             }
-
-            return 1;
+        case ExtStreamingHandleErrorMode::DEFAULT:
+            {
+                e.addMessage(
+                    "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
+                    consumer->currentTopic(),
+                    consumer->currentPartition(),
+                    consumer->currentOffset());
+                consumer->setExceptionInfo(e.message());
+                throw std::move(e);
+            }
         }
-
-        e.addMessage(
-            "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
-            consumer->currentTopic(),
-            consumer->currentPartition(),
-            consumer->currentOffset());
-        consumer->setExceptionInfo(e.message());
-        throw std::move(e);
+        return 1;
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
@@ -207,7 +212,7 @@ Chunk KafkaSource::generateImpl()
                 }
                 virtual_columns[6]->insert(headers_names);
                 virtual_columns[7]->insert(headers_values);
-                if (put_error_to_stream)
+                if (handle_error_mode == ExtStreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
                     {
@@ -220,6 +225,22 @@ Chunk KafkaSource::generateImpl()
                         virtual_columns[8]->insertDefault();
                         virtual_columns[9]->insertDefault();
                     }
+                }
+                else if (handle_error_mode == ExtStreamingHandleErrorMode::STREAM && exception_message)
+                {
+                    const auto time_now = std::chrono::system_clock::now();
+                    auto storage_id = storage.getStorageID();
+
+                    auto dead_letter_queue = context->getDeadLetterQueue();
+                    dead_letter_queue->add(
+                        DeadLetterQueueElement{
+                            .event_time = timeInSeconds(time_now),
+                            .event_time_microseconds = timeInMicroseconds(time_now),
+                            .database_name = storage_id.database_name,
+                            .table_name = storage_id.table_name,
+                            .raw_message = consumer->currentPayload(),
+                            .error = exception_message.value(),
+                        });
                 }
             }
 
@@ -236,7 +257,7 @@ Chunk KafkaSource::generateImpl()
         else
         {
             // We came here in case of tombstone (or sometimes zero-length) messages, and it is not something abnormal
-            // TODO: it seems like in case of put_error_to_stream=true we may need to process those differently
+            // TODO: it seems like in case of ExtStreamingHandleErrorMode::STREAM we may need to process those differently
             // currently we just skip them with note in logs.
             consumer->storeLastReadMessageOffset();
             LOG_DEBUG(log, "Parsing of message (topic: {}, partition: {}, offset: {}) return no rows.", consumer->currentTopic(), consumer->currentPartition(), consumer->currentOffset());

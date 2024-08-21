@@ -189,7 +189,8 @@ StorageKafka::StorageKafka(
 {
     kafka_settings->sanityCheck();
 
-    if ((*kafka_settings)[KafkaSetting::kafka_handle_error_mode] == StreamingHandleErrorMode::STREAM)
+    if (auto mode = (*kafka_settings)[KafkaSetting::kafka_handle_error_mode];
+        mode == ExtStreamingHandleErrorMode::STREAM || mode == ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE)
     {
         (*kafka_settings)[KafkaSetting::input_format_allow_errors_num] = 0;
         (*kafka_settings)[KafkaSetting::input_format_allow_errors_ratio] = 0;
@@ -409,7 +410,7 @@ KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
     return ret_consumer_ptr;
 }
 
-StreamingHandleErrorMode StorageKafka::getStreamingHandleErrorMode() const
+ExtStreamingHandleErrorMode StorageKafka::getStreamingHandleErrorMode() const
 {
     return (*kafka_settings)[KafkaSetting::kafka_handle_error_mode];
 }
