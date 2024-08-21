@@ -7,6 +7,7 @@
 /// due to excessive resource consumption.
 namespace DB
 {
+#if USE_SSL
 REGISTER_FUNCTION(HashingRipe)
 {
     factory.registerFunction<FunctionRipeMD160Hash>(FunctionDocumentation{
@@ -18,4 +19,5 @@ REGISTER_FUNCTION(HashingRipe)
         )"}},
         .categories{"Hash"}});
 }
+#endif
 }
