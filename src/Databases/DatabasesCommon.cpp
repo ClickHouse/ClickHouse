@@ -12,15 +12,16 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TTLDescription.h>
 #include <Storages/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-
 
 namespace DB
 {
@@ -33,6 +34,63 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+}
+namespace
+{
+void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
+{
+    /// First validate that the query can be parsed
+    const auto serialized_query = serializeAST(query);
+    ParserCreateQuery parser;
+    ASTPtr new_query_raw = parseQuery(
+        parser,
+        serialized_query.data(),
+        serialized_query.data() + serialized_query.size(),
+        "after altering table ",
+        0,
+        context->getSettingsRef().max_parser_depth,
+        context->getSettingsRef().max_parser_backtracks);
+    const auto & new_query = new_query_raw->as<const ASTCreateQuery &>();
+    /// If there are no columns, then there is nothing much we can do
+    if (!new_query.columns_list || !new_query.columns_list->columns)
+        return;
+
+    const auto & columns = *new_query.columns_list;
+    /// Do some basic sanity checks. Assume it is attach, because the table already exists, so the query will be used to attach the table.
+    const auto columns_desc
+        = InterpreterCreateQuery::getColumnsDescription(*columns.columns, context, LoadingStrictnessLevel::ATTACH, false);
+
+    if (columns.indices)
+    {
+        for (const auto & child : columns.indices->children)
+            IndexDescription::getIndexFromAST(child, columns_desc, context);
+    }
+    if (columns.constraints)
+    {
+        InterpreterCreateQuery::getConstraintsDescription(columns.constraints, columns_desc, context);
+    }
+    if (columns.projections)
+    {
+        for (const auto & child : columns.projections->children)
+            ProjectionDescription::getProjectionFromAST(child, columns_desc, context);
+    }
+    if (!new_query.storage)
+        return;
+    const auto & storage = *new_query.storage;
+
+    std::optional<KeyDescription> primary_key;
+    /// First get the key description from order by, so if there is no primary key we will use that
+    if (storage.order_by)
+        primary_key = KeyDescription::getKeyFromAST(storage.order_by->ptr(), columns_desc, context);
+    if (storage.primary_key)
+        primary_key = KeyDescription::getKeyFromAST(storage.primary_key->ptr(), columns_desc, context);
+    if (storage.partition_by)
+        KeyDescription::getKeyFromAST(storage.partition_by->ptr(), columns_desc, context);
+    if (storage.sample_by)
+        KeyDescription::getKeyFromAST(storage.sample_by->ptr(), columns_desc, context);
+    if (storage.ttl_table && primary_key.has_value())
+        TTLTableDescription::getTTLForTableFromAST(storage.ttl_table->ptr(), columns_desc, context, *primary_key, true);
+}
 }
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context)
@@ -119,20 +177,7 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     else
         ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(metadata.comment));
 
-    /// Validate the new create query is valid
-    const auto new_create_query = serializeAST(*query);
-    ParserCreateQuery parser;
-    /// Parse the query to make sure it has a valid syntax
-    ASTPtr new_create_query_ast = parseQuery(
-        parser,
-        new_create_query.data(),
-        new_create_query.data() + new_create_query.size(),
-        "after altering table ",
-        0,
-        context->getSettingsRef().max_parser_depth,
-        context->getSettingsRef().max_parser_backtracks);
-    /// Analyze the query to catch common semantical issues
-    TreeRewriter(context).analyze(new_create_query_ast, {});
+    validateCreateQuery(ast_create_query, context);
 }
 
 
