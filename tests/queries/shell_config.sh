@@ -3,7 +3,7 @@
 
 # If ClickHouse was built with coverage - dump the coverage information at exit
 # (in other cases this environment variable has no effect)
-export CLICKHOUSE_WRITE_COVERAGE="coverage"
+export CLICKHOUSE_WRITE_COVERAGE=${CLICKHOUSE_WRITE_COVERAGE:="coverage"}
 
 export CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:="test"}
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL:="warning"}

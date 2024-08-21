@@ -1761,8 +1761,11 @@ class TestCase:
                 print("Cannot insert coverage data: ", str(e))
 
             # Check for dumped coverage files
-            file_pattern = "coverage.*"
+            coverage_prefix = os.getenv("CLICKHOUSE_WRITE_COVERAGE", "coverage")
+            file_pattern = coverage_prefix + ".*"
             matching_files = glob.glob(file_pattern)
+            # TODO remove before merge
+            print(result.case_name, coverage_prefix, matching_files)
             for file_path in matching_files:
                 try:
                     body = read_file_as_binary_string(file_path)
@@ -2342,6 +2345,11 @@ class TestSuite:
             else:
                 if not args.no_parallel:
                     self.parallel_tests.append(test_name)
+
+        if args.run_parallel_only:
+            self.sequential_tests = []
+        if args.run_no_parallel_only:
+            self.parallel_tests = []
 
     def is_sequential_test(self, test_name):
         if args.sequential:
@@ -3765,6 +3773,19 @@ def parse_args():
         "--capture-client-stacktrace",
         action="store_true",
         help="Capture stacktraces from clickhouse-client/local on errors",
+    )
+
+    parser.add_argument(
+        "--run-parallel-only",
+        action="store_true",
+        default=False,
+        help="",
+    )
+    parser.add_argument(
+        "--run-no-parallel-only",
+        action="store_true",
+        default=False,
+        help="",
     )
 
     return parser.parse_args()
