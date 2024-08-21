@@ -191,8 +191,27 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             print_identifier(disk);
 
         if (sync_replica_mode != SyncReplicaMode::DEFAULT)
-            settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << magic_enum::enum_name(sync_replica_mode)
-                          << (settings.hilite ? hilite_none : "");
+        {
+            settings.ostr << ' ';
+            print_keyword(magic_enum::enum_name(sync_replica_mode));
+
+            // If the mode is LIGHTWEIGHT and specific source replicas are specified
+            if (sync_replica_mode == SyncReplicaMode::LIGHTWEIGHT && !src_replicas.empty())
+            {
+                settings.ostr << ' ';
+                print_keyword("FROM");
+                settings.ostr << ' ';
+
+                bool first = true;
+                for (const auto & src : src_replicas)
+                {
+                    if (!first)
+                        settings.ostr << ", ";
+                    first = false;
+                    settings.ostr << quoteString(src);
+                }
+            }
+        }
     }
     else if (type == Type::SYNC_DATABASE_REPLICA)
     {
