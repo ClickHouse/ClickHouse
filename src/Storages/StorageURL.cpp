@@ -165,9 +165,9 @@ IStorageURLBase::IStorageURLBase(
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-    setInMemoryMetadata(storage_metadata);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), context_, getSampleURI(uri, context_), format_settings));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_, getSampleURI(uri, context_), format_settings));
+    setInMemoryMetadata(storage_metadata);
 }
 
 
@@ -435,7 +435,7 @@ Chunk StorageURLSource::generate()
                 {
                     .path = curr_uri.getPath(),
                     .size = current_file_size,
-                }, getContext(), columns_description);
+                }, getContext());
             return chunk;
         }
 

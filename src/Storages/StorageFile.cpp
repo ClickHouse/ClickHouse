@@ -1112,9 +1112,9 @@ void StorageFile::setStorageMetadata(CommonArguments args)
 
     storage_metadata.setConstraints(args.constraints);
     storage_metadata.setComment(args.comment);
-    setInMemoryMetadata(storage_metadata);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), args.getContext(), paths.empty() ? "" : paths[0], format_settings));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), paths.empty() ? "" : paths[0], format_settings));
+    setInMemoryMetadata(storage_metadata);
 }
 
 
@@ -1468,7 +1468,7 @@ Chunk StorageFileSource::generate()
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
                     .last_modified = current_file_last_modified
-                }, getContext(), columns_description);
+                }, getContext());
 
             return chunk;
         }
