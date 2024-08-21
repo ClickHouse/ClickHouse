@@ -28,13 +28,17 @@ system stop distributed sends dist;
 set prefer_localhost_replica=0;
 set max_partitions_per_insert_block = 1;
 
-insert into dist values (1, 1),(2, 2),(3, 3);
+insert into dist values (1,1),(2,2),(3,3);
 -- first try will get an error
 system flush distributed dist; -- { serverError TOO_MANY_PARTS }
+select count() from dist;
 -- second try will get an error
 system flush distributed dist; -- { serverError TOO_MANY_PARTS }
+select count() from dist;
 -- second try will success
 system flush distributed dist settings max_partitions_per_insert_block = 100;
+select count() from dist;
 -- subsequent send will not have anything to send
 system flush distributed dist;
 select count() from dist;
+select count() from ephemeral;

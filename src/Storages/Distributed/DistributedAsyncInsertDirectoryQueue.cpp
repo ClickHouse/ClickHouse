@@ -461,9 +461,16 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
         e.addMessage(fmt::format("While sending {}", file_path));
         if (isDistributedSendBroken(e.code(), e.isRemoteException()) || (max_retries != 0 && files_retry[file_path] == max_retries))
         {
-            markAsBroken(file_path);
             if (const auto it = files_retry.find(file_path); it != files_retry.end())
+            {
                 files_retry.erase(file_path);
+                /// file might grow without a limit, need delete.
+                markAsSend(file_path);
+                LOG_TRACE(log, "Finished retry {}, success delete {}", max_retries, file_path);
+            } else
+            {
+                markAsBroken(file_path);
+            }
             file_path.clear();
         }
         throw;
@@ -626,9 +633,16 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
 
                 if (isDistributedSendBroken(e.code(), e.isRemoteException()) || (max_retries != 0 && files_retry[file_path] == max_retries))
                 {
-                    markAsBroken(file_path);
                     if (const auto it = files_retry.find(file_path); it != files_retry.end())
+                    {
                         files_retry.erase(file_path);
+                        /// file might grow without a limit, need delete.
+                        markAsSend(file_path);
+                        LOG_TRACE(log, "Finished retry {}, success delete {}", max_retries, file_path);
+                    } else
+                    {
+                        markAsBroken(file_path);
+                    }
                     tryLogCurrentException(log, "File is marked broken due to");
                     continue;
                 }
