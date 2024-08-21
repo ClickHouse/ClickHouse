@@ -6,7 +6,6 @@
 
 #include <Columns/ColumnString.h>
 #include <Functions/LowerUpperImpl.h>
-#include <base/find_symbols.h>
 #include <unicode/unistr.h>
 #include <Common/StringUtils.h>
 
@@ -43,7 +42,7 @@ struct LowerUpperUTF8Impl
 
         String output;
         size_t curr_offset = 0;
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * data_start = reinterpret_cast<const char *>(&data[offsets[i - 1]]);
             size_t size = offsets[i] - offsets[i - 1];
@@ -57,13 +56,15 @@ struct LowerUpperUTF8Impl
             output.clear();
             input.toUTF8String(output);
 
-            /// For valid UTF-8 input strings, ICU sometimes produces output with extra '\0's at the end. Only the data before the first
+            /// For valid UTF-8 input strings, ICU sometimes produces output with an extra '\0 at the end. Only the data before that
             /// '\0' is valid. It the input is not valid UTF-8, then the behavior of lower/upperUTF8 is undefined by definition. In this
             /// case, the behavior is also reasonable.
-            const char * res_end = find_last_not_symbols_or_null<'\0'>(output.data(), output.data() + output.size());
-            size_t valid_size = res_end ? res_end - output.data() + 1 : 0;
+            size_t valid_size = output.size();
+            if (!output.empty() && output.back() == '\0')
+                --valid_size;
 
             res_data.resize(curr_offset + valid_size + 1);
+
             memcpy(&res_data[curr_offset], output.data(), valid_size);
             res_data[curr_offset + valid_size] = 0;
 
