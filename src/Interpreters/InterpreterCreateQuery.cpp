@@ -5,17 +5,18 @@
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 
-#include <Common/Exception.h>
-#include <Common/StringUtils.h>
-#include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
-#include <Common/Macros.h>
-#include <Common/randomSeed.h>
-#include <Common/atomicRename.h>
-#include <Common/PoolId.h>
-#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Common/Exception.h>
+#include <Common/Macros.h>
+#include <Common/PoolId.h>
+#include <Common/StringUtils.h>
+#include <Common/atomicRename.h>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
+#include <Common/typeid_cast.h>
+#include "Interpreters/TreeRewriter.h"
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
@@ -732,13 +733,18 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 }
 
 
-ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(const ASTExpressionList * constraints)
+ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
+    const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context)
 {
     ASTs constraints_data;
+    const auto column_names_and_types = columns.getAllPhysical();
     if (constraints)
         for (const auto & constraint : constraints->children)
+        {
+            auto clone = constraint->clone();
+            TreeRewriter(local_context).analyze(clone, column_names_and_types);
             constraints_data.push_back(constraint->clone());
-
+        }
     return ConstraintsDescription{constraints_data};
 }
 
@@ -801,7 +807,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 properties.projections.add(std::move(projection));
             }
 
-        properties.constraints = getConstraintsDescription(create.columns_list->constraints);
+        properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
     }
     else if (!create.as_table.empty())
     {
