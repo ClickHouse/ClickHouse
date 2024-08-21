@@ -56,9 +56,9 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
         return;
 
     const auto & columns = *new_query.columns_list;
-    /// Do some basic sanity checks. Assume it is attach, because the table already exists, so the query will be used to attach the table.
+    /// Do some basic sanity checks. Let's enforce strict rules, just like on CREATE, because otherwise the default expressions might not be checked
     const auto columns_desc
-        = InterpreterCreateQuery::getColumnsDescription(*columns.columns, context, LoadingStrictnessLevel::ATTACH, false);
+        = InterpreterCreateQuery::getColumnsDescription(*columns.columns, context, LoadingStrictnessLevel::CREATE, false);
 
     if (columns.indices)
     {
