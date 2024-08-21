@@ -77,64 +77,70 @@ namespace impl
         ColumnPtr key0;
         ColumnPtr key1;
         bool is_const;
-        const ColumnArray::Offsets * offsets{};
+        const ColumnArray::Offsets * offsets = nullptr;
 
         size_t size() const
         {
             assert(key0 && key1);
             assert(key0->size() == key1->size());
-            assert(offsets == nullptr || offsets->size() == key0->size());
-            if (offsets != nullptr)
+            if (offsets != nullptr && !offsets->empty())
                 return offsets->back();
             return key0->size();
         }
+
         SipHashKey getKey(size_t i) const
         {
             if (is_const)
                 i = 0;
+            assert(key0->size() == key1->size());
             if (offsets != nullptr)
             {
-                const auto *const begin = offsets->begin();
+                const auto * const begin = offsets->begin();
                 const auto * upper = std::upper_bound(begin, offsets->end(), i);
-                if (upper == offsets->end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "offset {} not found in function SipHashKeyColumns::getKey", i);
-                i = upper - begin;
+                if (upper != offsets->end())
+                    i = upper - begin;
             }
             const auto & key0data = assert_cast<const ColumnUInt64 &>(*key0).getData();
             const auto & key1data = assert_cast<const ColumnUInt64 &>(*key1).getData();
+            assert(key0->size() > i);
             return {key0data[i], key1data[i]};
         }
     };
 
     static SipHashKeyColumns parseSipHashKeyColumns(const ColumnWithTypeAndName & key)
     {
-        const ColumnTuple * tuple = nullptr;
-        const auto * column = key.column.get();
-        bool is_const = false;
-        if (isColumnConst(*column))
+        const auto * col_key = key.column.get();
+
+        bool is_const;
+        const ColumnTuple * col_key_tuple;
+        if (isColumnConst(*col_key))
         {
             is_const = true;
-            tuple = checkAndGetColumnConstData<ColumnTuple>(column);
+            col_key_tuple = checkAndGetColumnConstData<ColumnTuple>(col_key);
         }
         else
-            tuple = checkAndGetColumn<ColumnTuple>(column);
-        if (!tuple)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "key must be a tuple");
-        if (tuple->tupleSize() != 2)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "wrong tuple size: key must be a tuple of 2 UInt64");
+        {
+            is_const = false;
+            col_key_tuple = checkAndGetColumn<ColumnTuple>(col_key);
+        }
 
-        SipHashKeyColumns ret{tuple->getColumnPtr(0), tuple->getColumnPtr(1), is_const};
-        assert(ret.key0);
-        if (!checkColumn<ColumnUInt64>(*ret.key0))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "first element of the key tuple is not UInt64");
-        assert(ret.key1);
-        if (!checkColumn<ColumnUInt64>(*ret.key1))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "second element of the key tuple is not UInt64");
+        if (!col_key_tuple || col_key_tuple->tupleSize() != 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The key must be of type Tuple(UInt64, UInt64)");
 
-        if (ret.size() == 1)
-            ret.is_const = true;
+        SipHashKeyColumns result{.key0 = col_key_tuple->getColumnPtr(0), .key1 = col_key_tuple->getColumnPtr(1), .is_const = is_const};
 
-        return ret;
+        assert(result.key0);
+        assert(result.key1);
+
+        if (!checkColumn<ColumnUInt64>(*result.key0))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 1st element of the key tuple is not of type UInt64");
+        if (!checkColumn<ColumnUInt64>(*result.key1))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 2nd element of the key tuple is not of type UInt64");
+
+        if (result.size() == 1)
+            result.is_const = true;
+
+        return result;
     }
 }
 
