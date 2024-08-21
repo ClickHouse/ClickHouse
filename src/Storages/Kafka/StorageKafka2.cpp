@@ -125,7 +125,8 @@ StorageKafka2::StorageKafka2(
     if (kafka_settings->kafka_num_consumers > 1 && !thread_per_consumer)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "With multiple consumers, it is required to use `kafka_thread_per_consumer` setting");
 
-    if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
+    if (getHandleKafkaErrorMode() == ExtStreamingHandleErrorMode::STREAM ||
+        getHandleKafkaErrorMode() == ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE)
     {
         kafka_settings->input_format_allow_errors_num = 0;
         kafka_settings->input_format_allow_errors_ratio = 0;
@@ -134,7 +135,7 @@ StorageKafka2::StorageKafka2(
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(StorageKafkaUtils::createVirtuals(kafka_settings->kafka_handle_error_mode));
+    setVirtuals(StorageKafkaUtils::createVirtuals(getHandleKafkaErrorMode()));
 
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
@@ -807,8 +808,6 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
     // otherwise external iteration will reuse that and logic will became even more fuzzy
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
-    auto put_error_to_stream = kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM;
-
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
         getFormatName(), empty_buf, non_virtual_header, modified_context, getMaxBlockSize(), std::nullopt, 1);
@@ -817,36 +816,44 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
     size_t total_rows = 0;
     size_t failed_poll_attempts = 0;
 
-    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
+    auto on_error = [&, this](const MutableColumns & result_columns, Exception & e)
     {
         ProfileEvents::increment(ProfileEvents::KafkaMessagesFailed);
 
-        if (put_error_to_stream)
+        switch (getHandleKafkaErrorMode())
         {
-            exception_message = e.message();
-            for (const auto & column : result_columns)
+        case ExtStreamingHandleErrorMode::STREAM:
             {
-                // read_kafka_message could already push some rows to result_columns
-                // before exception, we need to fix it.
-                auto cur_rows = column->size();
-                if (cur_rows > total_rows)
-                    column->popBack(cur_rows - total_rows);
+                exception_message = e.message();
+                for (const auto & column : result_columns)
+                {
+                    // read_kafka_message could already push some rows to result_columns
+                    // before exception, we need to fix it.
+                    auto cur_rows = column->size();
+                    if (cur_rows > total_rows)
+                        column->popBack(cur_rows - total_rows);
 
-                // all data columns will get default value in case of error
-                column->insertDefault();
+                    // all data columns will get default value in case of error
+                    column->insertDefault();
+                }
+                break;
             }
-
-            return 1;
+        case ExtStreamingHandleErrorMode::DEFAULT:
+            {
+                e.addMessage(
+                    "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
+                    consumer.currentTopic(),
+                    consumer.currentPartition(),
+                    consumer.currentOffset());
+                throw std::move(e);
+            }
+        case ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE:
+            {
+                LOG_DEBUG(log, "Not implemented.");
+                break;
+            }
         }
-        else
-        {
-            e.addMessage(
-                "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
-                consumer.currentTopic(),
-                consumer.currentPartition(),
-                consumer.currentOffset());
-            throw std::move(e);
-        }
+        return 1;
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
@@ -922,7 +929,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                 }
                 virtual_columns[6]->insert(headers_names);
                 virtual_columns[7]->insert(headers_values);
-                if (put_error_to_stream)
+                if (getHandleKafkaErrorMode() == ExtStreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
                     {
@@ -947,7 +954,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
         else
         {
             // We came here in case of tombstone (or sometimes zero-length) messages, and it is not something abnormal
-            // TODO: it seems like in case of put_error_to_stream=true we may need to process those differently
+            // TODO: it seems like in case of ExtStreamingHandleErrorMode::STREAM we may need to process those differently
             // currently we just skip them with note in logs.
             LOG_DEBUG(
                 log,

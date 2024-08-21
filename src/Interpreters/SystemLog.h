@@ -30,6 +30,7 @@
     M(AsynchronousInsertLog, asynchronous_insert_log, "Contains a history for all asynchronous inserts executed on current server.") \
     M(BackupLog,             backup_log,           "Contains logging entries with the information about BACKUP and RESTORE operations.") \
     M(BlobStorageLog,        blob_storage_log,     "Contains logging entries with information about various blob storage operations such as uploads and deletes.") \
+    M(DeadLetterQueue,       dead_letter_queue,    "Contains messages that came from a streaming engine (e.g. Kafka) and were parsed unsuccessfully.") \
 
 
 namespace DB
