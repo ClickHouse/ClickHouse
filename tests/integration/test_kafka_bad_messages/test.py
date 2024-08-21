@@ -14,7 +14,7 @@ if is_arm():
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/kafka.xml"],
+    main_configs=["configs/kafka.xml", "configs/dead_letter_queue.xml"],
     with_kafka=True,
 )
 
@@ -123,8 +123,19 @@ def kafka_cluster():
     finally:
         cluster.shutdown()
 
+def view_test(expected_num_messages):
+    attempt = 0
+    rows = 0
+    while attempt < 500:
+        rows = int(instance.query("SELECT count() FROM view"))
+        if rows == expected_num_messages:
+            break
+        attempt += 1
 
-def test_bad_messages_parsing_stream(kafka_cluster):
+    assert rows == expected_num_messages
+
+
+def bad_messages_parsing_mode(kafka_cluster, handle_error_mode, check_method):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -166,7 +177,7 @@ def test_bad_messages_parsing_stream(kafka_cluster):
                          kafka_topic_list = '{format_name}_err',
                          kafka_group_name = '{format_name}',
                          kafka_format = '{format_name}',
-                         kafka_handle_error_mode='stream';
+                         kafka_handle_error_mode= '{handle_error_mode}';
 
             CREATE MATERIALIZED VIEW view Engine=Log AS
                 SELECT _error FROM kafka WHERE length(_error) != 0 ;
@@ -176,15 +187,7 @@ def test_bad_messages_parsing_stream(kafka_cluster):
         messages = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
         kafka_produce(kafka_cluster, f"{format_name}_err", messages)
 
-        attempt = 0
-        rows = 0
-        while attempt < 500:
-            rows = int(instance.query("SELECT count() FROM view"))
-            if rows == len(messages):
-                break
-            attempt += 1
-
-        assert rows == len(messages)
+        check_method(len(messages))
 
         kafka_delete_topic(admin_client, f"{format_name}_err")
 
@@ -211,7 +214,7 @@ message Message {
                          kafka_topic_list = '{format_name}_err',
                          kafka_group_name = '{format_name}',
                          kafka_format = '{format_name}',
-                         kafka_handle_error_mode='stream',
+                         kafka_handle_error_mode= '{handle_error_mode}',
                          kafka_schema='schema_test_errors:Message';
 
             CREATE MATERIALIZED VIEW view Engine=Log AS
@@ -226,15 +229,7 @@ message Message {
         messages = ["qwertyuiop", "poiuytrewq", "zxcvbnm"]
         kafka_produce(kafka_cluster, f"{format_name}_err", messages)
 
-        attempt = 0
-        rows = 0
-        while attempt < 500:
-            rows = int(instance.query("SELECT count() FROM view"))
-            if rows == len(messages):
-                break
-            attempt += 1
-
-        assert rows == len(messages)
+        check_method(len(messages))
 
         kafka_delete_topic(admin_client, f"{format_name}_err")
 
@@ -260,7 +255,7 @@ struct Message
                          kafka_topic_list = 'CapnProto_err',
                          kafka_group_name = 'CapnProto',
                          kafka_format = 'CapnProto',
-                         kafka_handle_error_mode='stream',
+                         kafka_handle_error_mode= '{handle_error_mode}',
                          kafka_schema='schema_test_errors:Message';
 
             CREATE MATERIALIZED VIEW view Engine=Log AS
@@ -275,18 +270,12 @@ struct Message
     messages = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
     kafka_produce(kafka_cluster, "CapnProto_err", messages)
 
-    attempt = 0
-    rows = 0
-    while attempt < 500:
-        rows = int(instance.query("SELECT count() FROM view"))
-        if rows == len(messages):
-            break
-        attempt += 1
-
-    assert rows == len(messages)
+    check_method(len(messages))
 
     kafka_delete_topic(admin_client, "CapnProto_err")
 
+def test_bad_messages_parsing_stream(kafka_cluster):
+    bad_messages_parsing_mode(kafka_cluster, 'stream', view_test)
 
 def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
     admin_client = KafkaAdminClient(

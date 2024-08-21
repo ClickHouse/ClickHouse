@@ -47,7 +47,7 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
 
 bool checkDependencies(const StorageID & table_id, const ContextPtr& context);
 
-VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
+VirtualColumnsDescription createVirtuals(ExtStreamingHandleErrorMode handle_error_mode);
 }
 }
 
