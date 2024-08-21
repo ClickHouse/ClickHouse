@@ -277,7 +277,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     /// Wake up a free thread to run the new job.
     new_job_or_shutdown.notify_one();
 
-    ProfileEvents::increment( std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
+    ProfileEvents::increment(std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
 
     return static_cast<ReturnType>(true);
 }
