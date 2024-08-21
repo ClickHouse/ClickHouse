@@ -55,6 +55,9 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep expect two input steps");
 
+    if (swap_streams)
+        std::swap(pipelines[0], pipelines[1]);
+
     if (join->pipelineType() == JoinPipelineType::YShaped)
     {
         auto joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
@@ -63,7 +66,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         return joined_pipeline;
     }
 
-    return QueryPipelineBuilder::joinPipelinesRightLeft(
+    auto pipeline = QueryPipelineBuilder::joinPipelinesRightLeft(
         std::move(pipelines[0]),
         std::move(pipelines[1]),
         join,
@@ -72,6 +75,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         max_streams,
         keep_left_read_in_order,
         &processors);
+    return pipeline;
 }
 
 bool JoinStep::allowPushDownToRight() const
@@ -100,10 +104,9 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void JoinStep::updateOutputStream()
 {
-    output_stream = DataStream
-    {
-        .header = JoiningTransform::transformHeader(input_streams[0].header, join),
-    };
+    const auto & header = swap_streams ? input_streams[1].header : input_streams[0].header;
+    const auto & result_header = JoiningTransform::transformHeader(header, join);
+    output_stream = DataStream { .header = result_header };
 }
 
 static ITransformingStep::Traits getStorageJoinTraits()

@@ -56,6 +56,10 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
      {"grace_hash",           JoinAlgorithm::GRACE_HASH}})
 
+IMPLEMENT_SETTING_ENUM(JoinInnerTableSelectionMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"left",       JoinInnerTableSelectionMode::Left},
+     {"right",      JoinInnerTableSelectionMode::Right},
+     {"auto",       JoinInnerTableSelectionMode::Auto}})
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
     {{"before_having",          TotalsMode::BEFORE_HAVING},

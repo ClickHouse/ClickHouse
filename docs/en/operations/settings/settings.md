@@ -5630,6 +5630,10 @@ Minimal size of block to compress in CROSS JOIN. Zero value means - disable this
 
 Default value: `1GiB`.
 
+## query_plan_join_inner_table_selection
+
+Select the side of the join to be the inner table in the query plan. Possible values: 'auto', 'left', 'right'. In `auto` mode, ClickHouse will try to choose the table with the smallest number of rows.
+
 ## use_json_alias_for_old_object_type
 
 When enabled, `JSON` data type alias will be used to create an old [Object('json')](../../sql-reference/data-types/json.md) type instead of the new [JSON](../../sql-reference/data-types/newjson.md) type.
