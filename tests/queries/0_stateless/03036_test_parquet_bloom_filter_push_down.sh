@@ -75,41 +75,41 @@ cp ${DATA_FILE} ${DATA_FILE_USER_PATH}
 
 ${CLICKHOUSE_CLIENT} --query="select count(*) from file('${DATA_FILE_USER_PATH}', Parquet) SETTINGS use_cache_for_count_from_files=false;"
 
-# bloom filter is off, all row groups should be read
-# expect rows_read = select count()
+echo "bloom filter is off, all row groups should be read"
+echo "expect rows_read = select count()"
 ${CLICKHOUSE_CLIENT} --query="select f32, fixed_str, str from file('${DATA_FILE_USER_PATH}', Parquet) where f32=toFloat32(-64.12787) and fixed_str='BYYC' or str='KCGEY' order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=false, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
 
-# bloom filter is on, some row groups should be skipped
-# expect rows_read much less than select count()
+echo "bloom filter is on, some row groups should be skipped"
+echo "expect rows_read much less than select count()"
 ${CLICKHOUSE_CLIENT} --query="select f32, fixed_str, str from file('${DATA_FILE_USER_PATH}', Parquet) where f32=toFloat32(-64.12787) and fixed_str='BYYC' or str='KCGEY' order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
 
-# bloom filter is on, but where predicate contains data from 2 row groups out of 3.
-# Rows read should be less than select count, by greater than previous selects
+echo "bloom filter is on, but where predicate contains data from 2 row groups out of 3."
+echo "Rows read should be less than select count, by greater than previous selects"
 ${CLICKHOUSE_CLIENT} --query="select f32 from file('${DATA_FILE_USER_PATH}', Parquet) where f32=toFloat32(-64.12787) or f32=toFloat32(-95.748695)  order by f32 asc Format JSON SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;" | jq 'del(.meta,.statistics.elapsed)'
 
-# bloom filter is on, but where predicate contains data from all row groups
-# expect rows_read = select count()
+echo "bloom filter is on, but where predicate contains data from all row groups"
+echo "expect rows_read = select count()"
 ${CLICKHOUSE_CLIENT} --query="select f32 from file('${DATA_FILE_USER_PATH}', Parquet) where f32=toFloat32(-64.12787) or f32=toFloat32(-95.748695) or f32=toFloat32(-42.54674) order by f32 asc Format JSON SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;" | jq 'del(.meta,.statistics.elapsed)'
 
-# IN check
+echo "IN check"
 ${CLICKHOUSE_CLIENT} --query="select f32, fixed_str from file('${DATA_FILE_USER_PATH}', Parquet) where f32=toFloat32(-15.910733) and fixed_str in ('BYYC', 'DCXV') order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
 
-# IN check for floats
+echo "IN check for floats"
 ${CLICKHOUSE_CLIENT} --query="select f64 from file('${DATA_FILE_USER_PATH}', Parquet) where f64 in (toFloat64(22.89182051713945), toFloat64(68.62704389505595)) order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
 
-# tuple in case, bf is off.
+echo "tuple in case, bf is off."
 ${CLICKHOUSE_CLIENT} --query="select str, fixed_str from file('${DATA_FILE_USER_PATH}', Parquet) where (str, fixed_str) in ('LYLDL', 'BYYC') order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=false, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
 
-# tuple in case, bf is on.
+echo "tuple in case, bf is on."
 ${CLICKHOUSE_CLIENT} --query="select str, fixed_str from file('${DATA_FILE_USER_PATH}', Parquet) where (str, fixed_str) in ('LYLDL', 'BYYC') order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
 
-# complex tuple in case, bf is off
+echo "complex tuple in case, bf is off"
 ${CLICKHOUSE_CLIENT} --query="select str, fixed_str from file('${DATA_FILE_USER_PATH}', Parquet) where (str, fixed_str) in (('NON1', 'NON1'), ('LYLDL', 'BYYC'), ('NON2', 'NON2')) order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=false, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
 
-# complex tuple in case, bf is on
+echo "complex tuple in case, bf is on"
 ${CLICKHOUSE_CLIENT} --query="select str, fixed_str from file('${DATA_FILE_USER_PATH}', Parquet) where (str, fixed_str) in (('NON1', 'NON1'), ('LYLDL', 'BYYC'), ('NON2', 'NON2')) order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
 
-# complex tuple in case, bf is on. Non existent
+echo "complex tuple in case, bf is on. Non existent"
 ${CLICKHOUSE_CLIENT} --query="select str, fixed_str from file('${DATA_FILE_USER_PATH}', Parquet) where (str, fixed_str) in (('NON1', 'NON1'), ('NON2', 'NON2'), ('NON3', 'NON3')) order by f32 asc FORMAT Json SETTINGS input_format_parquet_bloom_filter_push_down=true, input_format_parquet_filter_push_down=false;"  | jq 'del(.meta,.statistics.elapsed)'
 
 rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/*

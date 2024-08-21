@@ -1,4 +1,6 @@
 3000
+bloom filter is off, all row groups should be read
+expect rows_read = select count()
 {
   "data": [
     {
@@ -18,6 +20,8 @@
     "bytes_read": 99010
   }
 }
+bloom filter is on, some row groups should be skipped
+expect rows_read much less than select count()
 {
   "data": [
     {
@@ -37,6 +41,8 @@
     "bytes_read": 44044
   }
 }
+bloom filter is on, but where predicate contains data from 2 row groups out of 3.
+Rows read should be less than select count, by greater than previous selects
 {
   "data": [
     {
@@ -52,6 +58,8 @@
     "bytes_read": 55026
   }
 }
+bloom filter is on, but where predicate contains data from all row groups
+expect rows_read = select count()
 {
   "data": [
     {
@@ -70,6 +78,7 @@
     "bytes_read": 99010
   }
 }
+IN check
 {
   "data": [
     {
@@ -83,6 +92,7 @@
     "bytes_read": 44044
   }
 }
+IN check for floats
 {
   "data": [
     {
@@ -98,6 +108,7 @@
     "bytes_read": 43984
   }
 }
+tuple in case, bf is off.
 {
   "data": [
     {
@@ -111,6 +122,7 @@
     "bytes_read": 99010
   }
 }
+tuple in case, bf is on.
 {
   "data": [
     {
@@ -124,6 +136,7 @@
     "bytes_read": 44044
   }
 }
+complex tuple in case, bf is off
 {
   "data": [
     {
@@ -137,6 +150,7 @@
     "bytes_read": 99010
   }
 }
+complex tuple in case, bf is on
 {
   "data": [
     {
@@ -150,6 +164,7 @@
     "bytes_read": 44044
   }
 }
+complex tuple in case, bf is on. Non existent
 {
   "data": [],
   "rows": 0,

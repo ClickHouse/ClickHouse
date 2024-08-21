@@ -803,8 +803,7 @@ KeyCondition::KeyCondition(
     const Names & key_column_names_,
     const ExpressionActionsPtr & key_expr_,
     bool single_point_)
-    : key_column_names(key_column_names_)
-    , key_expr(key_expr_)
+    : key_expr(key_expr_)
     , key_subexpr_names(getAllSubexpressionNames(*key_expr))
     , single_point(single_point_)
 {
@@ -2123,45 +2122,6 @@ String KeyCondition::toString() const
         res += rpn[i].toString();
     }
     return res;
-}
-
-std::unordered_set<std::string> KeyCondition::getFilteringColumnNames() const
-{
-    std::unordered_set<std::string> column_names;
-
-    using F = RPNElement::Function;
-
-    for (const auto & element : rpn)
-    {
-        auto function = element.function;
-        bool has_column =
-            function == F::FUNCTION_IN_RANGE
-            || function == F::FUNCTION_NOT_IN_RANGE
-            || function == F::FUNCTION_IN_SET
-            || function == F::FUNCTION_NOT_IN_SET
-            || function == F::FUNCTION_IS_NULL
-            || function == F::FUNCTION_IS_NOT_NULL;
-
-        if (!has_column)
-        {
-            continue;
-        }
-
-        if (!element.set_index)
-        {
-            column_names.insert(key_column_names[element.key_column]);
-            continue;
-        }
-
-        const auto & index_mapping = element.set_index->getIndexesMapping();
-
-        for (const auto & index : index_mapping)
-        {
-            column_names.insert(key_column_names[index.key_index]);
-        }
-    }
-
-    return column_names;
 }
 
 KeyCondition::Description KeyCondition::getDescription() const
