@@ -94,8 +94,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"type_json_skip_duplicated_paths", false, false, "Allow to skip duplicated paths during JSON parsing"},
             {"join_output_by_rowlist_perkey_rows_threshold", 0, 5, "The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join."},
             {"allow_experimental_vector_similarity_index", false, false, "Added new setting to allow experimental vector similarity indexes"},
-            {"input_format_try_infer_datetimes_only_datetime64", true, false, "Allow to infer DateTime instead of DateTime64 in data formats"}
-            {"output_format_json_content_type_header", "", "", "Allow user to set Content-Type header when using JSON output format."},
+            {"input_format_try_infer_datetimes_only_datetime64", true, false, "Allow to infer DateTime instead of DateTime64 in data formats"},
+            {"output_format_json_content_type_header", "", "", "Allow user to set Content-Type header when using JSON output format."}
         }
     },
     {"24.7",
