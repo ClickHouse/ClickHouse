@@ -41,8 +41,6 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual
     {
         return default_cond_equal_factor * rows;
     }
-        return default_cond_equal_factor * rows;
-
     Float64 result = 0;
     Float64 partial_cnt = 0;
     for (const auto & [key, estimator] : part_statistics)
