@@ -1257,8 +1257,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(const NameToArrowColumn & nam
         .format_name = format_name,
         .date_time_overflow_behavior = date_time_overflow_behavior,
         .allow_arrow_null_type = true,
-        .skip_columns_with_unsupported_types = false
-        .allow_inferring_nullable_columns = true;
+        .skip_columns_with_unsupported_types = false,
+        .allow_inferring_nullable_columns = true
     };
 
     Columns columns;
