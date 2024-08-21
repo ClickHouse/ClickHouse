@@ -57,7 +57,7 @@ struct LowerUpperUTF8Impl
             input.toUTF8String(output);
 
             /// For valid UTF-8 input strings, ICU sometimes produces output with an extra '\0 at the end. Only the data before that
-            /// '\0' is valid. It the input is not valid UTF-8, then the behavior of lower/upperUTF8 is undefined by definition. In this
+            /// '\0' is valid. If the input is not valid UTF-8, then the behavior of lower/upperUTF8 is undefined by definition. In this
             /// case, the behavior is also reasonable.
             size_t valid_size = output.size();
             if (!output.empty() && output.back() == '\0')
