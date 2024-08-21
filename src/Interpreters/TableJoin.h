@@ -164,6 +164,9 @@ private:
 
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::GreaterOrEquals;
 
+    NamesAndTypesList columns_from_left_table;
+    NamesAndTypesList result_columns_from_left_table;
+
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
     /// Columns will be added to block by JOIN.
@@ -279,6 +282,7 @@ public:
     }
 
     bool allowParallelHashJoin() const;
+    void swapSides();
 
     bool joinUseNulls() const { return join_use_nulls; }
 
@@ -366,6 +370,9 @@ public:
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
+
+    void setUsedColumn(const NameAndTypePair & joined_column, JoinTableSide side);
+
     void setColumnsAddedByJoin(const NamesAndTypesList & columns_added_by_join_value)
     {
         columns_added_by_join = columns_added_by_join_value;
@@ -396,6 +403,9 @@ public:
         columns_from_joined_table = std::move(columns_from_joined_table_value);
         deduplicateAndQualifyColumnNames(left_table_columns, right_table_prefix);
     }
+
+    void setOutputColumns(NamesAndTypesList left_output_columns, NamesAndTypesList right_output_columns);
+
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
     const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 

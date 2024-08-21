@@ -179,6 +179,13 @@ size_t TableJoin::rightKeyInclusion(const String & name) const
     return count;
 }
 
+void TableJoin::setOutputColumns(NamesAndTypesList left_output_columns, NamesAndTypesList right_output_columns)
+{
+    columns_from_left_table = left_output_columns;
+    columns_from_joined_table = right_output_columns;
+}
+
+
 void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix)
 {
     NameSet joined_columns;
@@ -327,9 +334,18 @@ bool TableJoin::rightBecomeNullable(const DataTypePtr & column_type) const
     return forceNullableRight() && JoinCommon::canBecomeNullable(column_type);
 }
 
+void TableJoin::setUsedColumn(const NameAndTypePair & joined_column, JoinTableSide side)
+{
+    if (side == JoinTableSide::Left)
+        result_columns_from_left_table.push_back(joined_column);
+    else
+        columns_added_by_join.push_back(joined_column);
+
+}
+
 void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 {
-    columns_added_by_join.emplace_back(joined_column);
+    setUsedColumn(joined_column, JoinTableSide::Right);
 }
 
 NamesAndTypesList TableJoin::correctedColumnsAddedByJoin() const
@@ -971,5 +987,24 @@ size_t TableJoin::getMaxMemoryUsage() const
     return max_memory_usage;
 }
 
+void TableJoin::swapSides()
+{
+    std::swap(key_asts_left, key_asts_right);
+    std::swap(left_type_map, right_type_map);
+    for (auto & clause : clauses)
+    {
+        std::swap(clause.key_names_left, clause.key_names_right);
+        std::swap(clause.on_filter_condition_left, clause.on_filter_condition_right);
+        std::swap(clause.analyzer_left_filter_condition_column_name, clause.analyzer_right_filter_condition_column_name);
+    }
+
+    std::swap(columns_from_left_table, columns_from_joined_table);
+    std::swap(result_columns_from_left_table, columns_added_by_join);
+
+    if (table_join.kind == JoinKind::Left)
+        table_join.kind = JoinKind::Right;
+    else if (table_join.kind == JoinKind::Right)
+        table_join.kind = JoinKind::Left;
+}
 
 }

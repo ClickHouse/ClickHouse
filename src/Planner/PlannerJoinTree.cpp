@@ -1447,15 +1447,26 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     auto left_table_names = left_header.getNames();
     NameSet left_table_names_set(left_table_names.begin(), left_table_names.end());
 
-    auto columns_from_joined_table = right_plan.getCurrentDataStream().header.getNamesAndTypesList();
-    table_join->setColumnsFromJoinedTable(columns_from_joined_table, left_table_names_set, "");
+    auto columns_from_left_table = left_plan.getCurrentDataStream().header.getNamesAndTypesList();
+    auto columns_from_right_table = right_plan.getCurrentDataStream().header.getNamesAndTypesList();
+    table_join->setOutputColumns(columns_from_left_table, columns_from_right_table);
+    // table_join->setColumnsFromJoinedTable(columns_from_right_table, left_table_names_set, "");
+    UNUSED(left_table_names_set);
 
-    for (auto & column_from_joined_table : columns_from_joined_table)
+    for (auto & column_from_joined_table : columns_from_left_table)
     {
-        /// Add columns from joined table only if they are presented in outer scope, otherwise they can be dropped
+        /// Add columns to output only if they are presented in outer scope, otherwise they can be dropped
         if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
             outer_scope_columns.contains(column_from_joined_table.name))
-            table_join->addJoinedColumn(column_from_joined_table);
+            table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Left);
+    }
+
+    for (auto & column_from_joined_table : columns_from_right_table)
+    {
+        /// Add columns to output only if they are presented in outer scope, otherwise they can be dropped
+        if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
+            outer_scope_columns.contains(column_from_joined_table.name))
+            table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Right);
     }
 
     const Block & right_header = right_plan.getCurrentDataStream().header;
@@ -1563,6 +1574,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             settings.max_block_size,
             settings.max_threads,
             false /*optimize_read_in_order*/);
+        join_step->inner_table_selection_mode = settings.query_plan_join_inner_table_selection;
 
         join_step->setStepDescription(fmt::format("JOIN {}", join_pipeline_type));
 

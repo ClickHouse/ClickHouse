@@ -913,6 +913,10 @@ class SettingsRandomizer:
         "min_external_table_block_size_bytes": lambda: random.choice([0, 1, 100000000]),
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
+        "query_plan_join_inner_table_selection": lambda: random.choice(
+            ["left", "auto"]
+            # ["left", "auto", "right"]
+        ),
     }
 
     @staticmethod

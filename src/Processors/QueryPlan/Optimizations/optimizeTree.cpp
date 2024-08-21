@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Common/logger_useful.h>
 
 #include <stack>
 
@@ -225,6 +226,9 @@ void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::
     {
         /// NOTE: frame cannot be safely used after stack was modified.
         auto & frame = stack.back();
+
+        if (frame.next_child == 0)
+            optimizeJoin(*frame.node, nodes);
 
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())
