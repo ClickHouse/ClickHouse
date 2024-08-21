@@ -400,7 +400,10 @@ class CI:
             required_builds=[BuildNames.PACKAGE_DEBUG], pr_only=True
         ),
         JobNames.INTEGRATION_TEST_ASAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], release_only=True, num_batches=4
+            required_builds=[BuildNames.PACKAGE_ASAN],
+            release_only=True,
+            num_batches=4,
+            timeout=10800,
         ),
         JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
