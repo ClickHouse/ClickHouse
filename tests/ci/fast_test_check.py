@@ -31,15 +31,14 @@ def get_fasttest_cmd(
         "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
         "--network=host "  # required to get access to IAM credentials
         f"-e FASTTEST_WORKSPACE=/fasttest-workspace -e FASTTEST_OUTPUT=/test_output "
-        f"-e FASTTEST_SOURCE=/ClickHouse "
+        f"-e FASTTEST_SOURCE=/repo "
         f"-e FASTTEST_CMAKE_FLAGS='-DCOMPILER_CACHE=sccache' "
         f"-e PULL_REQUEST_NUMBER={pr_number} -e COMMIT_SHA={commit_sha} "
         f"-e COPY_CLICKHOUSE_BINARY_TO_OUTPUT=1 "
         f"-e SCCACHE_BUCKET={S3_BUILDS_BUCKET} -e SCCACHE_S3_KEY_PREFIX=ccache/sccache "
         "-e stage=clone_submodules "
-        f"--volume={workspace}:/fasttest-workspace --volume={repo_path}:/ClickHouse "
-        f"--volume={repo_path}/tests/analyzer_tech_debt.txt:/analyzer_tech_debt.txt "
-        f"--volume={output_path}:/test_output {image}"
+        f"--volume={workspace}:/fasttest-workspace --volume={repo_path}:/repo "
+        f"--volume={output_path}:/test_output {image} /repo/tests/docker_scripts/fasttest_runner.sh"
     )
 
 
