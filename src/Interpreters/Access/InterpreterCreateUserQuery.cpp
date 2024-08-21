@@ -82,25 +82,30 @@ namespace
             user.authentication_methods.clear();
         }
 
-        auto number_of_authentication_methods = user.authentication_methods.size() + authentication_methods.size();
-        if (number_of_authentication_methods > max_number_of_authentication_methods)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "User can not be created/updated because it exceeds the allowed quantity of authentication methods per user."
-                "Check the `max_authentication_methods_per_user` setting");
-        }
-
-        for (const auto & authentication_method : authentication_methods)
-        {
-            user.authentication_methods.emplace_back(authentication_method);
-        }
-
         // drop existing ones and keep the most recent
         if (reset_authentication_methods)
         {
             auto backup_authentication_method = user.authentication_methods.back();
             user.authentication_methods.clear();
             user.authentication_methods.emplace_back(backup_authentication_method);
+        }
+
+        if (!authentication_methods.empty())
+        {
+            // we only check if user exceeds the allowed quantity of authentication methods in case the create/alter query includes
+            // authentication information. Otherwise, we can bypass this check to avoid blocking non-authentication related alters.
+            auto number_of_authentication_methods = user.authentication_methods.size() + authentication_methods.size();
+            if (number_of_authentication_methods > max_number_of_authentication_methods)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "User can not be created/updated because it exceeds the allowed quantity of authentication methods per user."
+                                "Check the `max_authentication_methods_per_user` setting");
+            }
+        }
+
+        for (const auto & authentication_method : authentication_methods)
+        {
+            user.authentication_methods.emplace_back(authentication_method);
         }
 
         if (!query.alter)
