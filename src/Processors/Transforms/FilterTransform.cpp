@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <Processors/Transforms/FilterTransform.h>
 
 #include <Interpreters/ExpressionActions.h>
@@ -6,7 +5,6 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 
 namespace DB
 {
@@ -37,22 +35,26 @@ static void replaceFilterToConstant(Block & block, const String & filter_column_
 }
 
 Block FilterTransform::transformHeader(
-    const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column)
+    Block header,
+    const ActionsDAG * expression,
+    const String & filter_column_name,
+    bool remove_filter_column)
 {
-    Block result = expression ? expression->updateHeader(header) : header;
+    if (expression)
+        header = expression->updateHeader(std::move(header));
 
-    auto filter_type = result.getByName(filter_column_name).type;
+    auto filter_type = header.getByName(filter_column_name).type;
     if (!filter_type->onlyNull() && !isUInt8(removeNullable(removeLowCardinality(filter_type))))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Illegal type {} of column {} for filter. Must be UInt8 or Nullable(UInt8).",
             filter_type->getName(), filter_column_name);
 
     if (remove_filter_column)
-        result.erase(filter_column_name);
+        header.erase(filter_column_name);
     else
-        replaceFilterToConstant(result, filter_column_name);
+        replaceFilterToConstant(header, filter_column_name);
 
-    return result;
+    return header;
 }
 
 FilterTransform::FilterTransform(
@@ -124,7 +126,6 @@ void FilterTransform::doTransform(Chunk & chunk)
 {
     size_t num_rows_before_filtration = chunk.getNumRows();
     auto columns = chunk.detachColumns();
-    DataTypes types;
 
     {
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
@@ -134,7 +135,6 @@ void FilterTransform::doTransform(Chunk & chunk)
             expression->execute(block, num_rows_before_filtration);
 
         columns = block.getColumns();
-        types = block.getDataTypes();
     }
 
     if (constant_filter_description.always_true || on_totals)
@@ -164,32 +164,25 @@ void FilterTransform::doTransform(Chunk & chunk)
         return;
     }
 
-    std::unique_ptr<IFilterDescription> filter_description;
-    if (filter_column->isSparse())
-        filter_description = std::make_unique<SparseFilterDescription>(*filter_column);
-    else
-        filter_description = std::make_unique<FilterDescription>(*filter_column);
-
     /** Let's find out how many rows will be in result.
       * To do this, we filter out the first non-constant column
       *  or calculate number of set bytes in the filter.
       */
     size_t first_non_constant_column = num_columns;
-    size_t min_size_in_memory = std::numeric_limits<size_t>::max();
     for (size_t i = 0; i < num_columns; ++i)
     {
-        DataTypePtr type_not_null = removeNullableOrLowCardinalityNullable(types[i]);
-        if (i != filter_column_position && !isColumnConst(*columns[i]) && type_not_null->isValueRepresentedByNumber())
+        if (i != filter_column_position && !isColumnConst(*columns[i]))
         {
-            size_t size_in_memory = type_not_null->getSizeOfValueInMemory() + (isNullableOrLowCardinalityNullable(types[i]) ? 1 : 0);
-            if (size_in_memory < min_size_in_memory)
-            {
-                min_size_in_memory = size_in_memory;
-                first_non_constant_column = i;
-            }
+            first_non_constant_column = i;
+            break;
         }
     }
-    (void)min_size_in_memory; /// Suppress error of clang-analyzer-deadcode.DeadStores
+
+    std::unique_ptr<IFilterDescription> filter_description;
+    if (filter_column->isSparse())
+        filter_description = std::make_unique<SparseFilterDescription>(*filter_column);
+    else
+        filter_description = std::make_unique<FilterDescription>(*filter_column);
 
     size_t num_filtered_rows = 0;
     if (first_non_constant_column != num_columns)

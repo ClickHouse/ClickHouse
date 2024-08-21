@@ -2,7 +2,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -17,6 +16,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/castColumn.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTExpressionList.h>
@@ -28,6 +28,7 @@
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <boost/functional/hash.hpp>
+#include <base/sort.h>
 
 
 namespace DB
@@ -208,32 +209,27 @@ private:
             /// Do not replace empty array and array of NULLs
             if (literal->value.getType() == Field::Types::Array)
             {
-                const Array & array = literal->value.safeGet<Array>();
+                const Array & array = literal->value.get<Array>();
                 auto not_null = std::find_if_not(array.begin(), array.end(), [](const auto & elem) { return elem.isNull(); });
                 if (not_null == array.end())
                     return true;
             }
             else if (literal->value.getType() == Field::Types::Map)
             {
-                const Map & map = literal->value.safeGet<Map>();
+                const Map & map = literal->value.get<Map>();
                 if (map.size() % 2)
                     return false;
             }
             else if (literal->value.getType() == Field::Types::Tuple)
             {
-                const Tuple & tuple = literal->value.safeGet<Tuple>();
+                const Tuple & tuple = literal->value.get<Tuple>();
 
                 for (const auto & value : tuple)
                     if (value.isNull())
                         return true;
             }
 
-            /// When generating placeholder names, ensure that we use names
-            /// requiring quotes to be valid identifiers. This prevents the
-            /// tuple() function from generating named tuples. Otherwise,
-            /// inserting named tuples with different names into another named
-            /// tuple will result in only default values being inserted.
-            String column_name = "-dummy-" + std::to_string(replaced_literals.size());
+            String column_name = "_dummy_" + std::to_string(replaced_literals.size());
             replaced_literals.emplace_back(literal, column_name, force_nullable);
             setDataType(replaced_literals.back());
             ast = std::make_shared<ASTIdentifier>(column_name);
@@ -397,7 +393,7 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     SipHash hash_state;
     hash_state.update(result_column_type->getName());
 
-    expression->updateTreeHash(hash_state, /*ignore_aliases=*/ true);
+    expression->updateTreeHash(hash_state);
 
     for (const auto & info : replaced_literals)
         hash_state.update(info.type->getName());
@@ -543,7 +539,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
         ParserArrayOfLiterals parser_array;
         ParserTupleOfLiterals parser_tuple;
 
-        IParser::Pos iterator(token_iterator, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
+        IParser::Pos iterator(token_iterator, static_cast<unsigned>(settings.max_parser_depth));
         while (iterator->begin < istr.position())
             ++iterator;
         Expected expected;
@@ -607,8 +603,6 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
             memcpy(buf, istr.position(), bytes_to_copy);
             buf[bytes_to_copy] = 0;
 
-            const bool hex_like = bytes_to_copy >= 2 && buf[0] == '0' && (buf[1] == 'x' || buf[1] == 'X');
-
             char * pos_double = buf;
             errno = 0;
             Float64 float_value = std::strtod(buf, &pos_double);
@@ -620,13 +614,13 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
 
             char * pos_integer = buf;
             errno = 0;
-            UInt64 uint_value = std::strtoull(buf, &pos_integer, hex_like ? 16 : 10);
+            UInt64 uint_value = std::strtoull(buf, &pos_integer, 0);
             if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
             {
                 istr.position() += pos_integer - buf;
                 if (negative && type_info.main_type == Type::Int64)
                     number = static_cast<Int64>(-uint_value);
-                else if (type_info.main_type == Type::UInt64 && (!negative || uint_value == 0))
+                else if (!negative && type_info.main_type == Type::UInt64)
                     number = uint_value;
                 else
                     return false;

@@ -19,6 +19,7 @@ using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
 /// Return false if the data isn't going to be changed by mutations.
 bool isStorageTouchedByMutations(
+    MergeTreeData & storage,
     MergeTreeData::DataPartPtr source_part,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
@@ -30,8 +31,6 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     const StoragePtr & storage,
     ContextPtr context
 );
-
-MutationCommand createCommandToApplyDeletedMask(const MutationCommand & command);
 
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
@@ -92,8 +91,6 @@ public:
 
     NameSet grabMaterializedIndices() { return std::move(materialized_indices); }
 
-    NameSet grabMaterializedStatistics() { return std::move(materialized_statistics); }
-
     NameSet grabMaterializedProjections() { return std::move(materialized_projections); }
 
     struct MutationKind
@@ -101,7 +98,7 @@ public:
         enum MutationKindEnum
         {
             MUTATE_UNKNOWN,
-            MUTATE_INDEX_STATISTICS_PROJECTION,
+            MUTATE_INDEX_PROJECTION,
             MUTATE_OTHER,
         } mutation_kind = MUTATE_UNKNOWN;
 
@@ -125,8 +122,6 @@ public:
         bool materializeTTLRecalculateOnly() const;
         bool hasSecondaryIndex(const String & name) const;
         bool hasProjection(const String & name) const;
-        bool hasBrokenProjection(const String & name) const;
-        bool isCompactPart() const;
 
         void read(
             Stage & first_stage,
@@ -174,8 +169,6 @@ private:
     Settings settings;
     SelectQueryOptions select_limits;
 
-    LoggerPtr logger;
-
     /// A sequence of mutation commands is executed as a sequence of stages. Each stage consists of several
     /// filters, followed by updating values of some columns. Commands can reuse expressions calculated by the
     /// previous commands in the same stage, but at the end of each stage intermediate columns are thrown away
@@ -217,11 +210,9 @@ private:
     std::unique_ptr<Block> updated_header;
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.
-    bool deleted_mask_updated = false;
 
     NameSet materialized_indices;
     NameSet materialized_projections;
-    NameSet materialized_statistics;
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.
 

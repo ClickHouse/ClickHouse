@@ -13,9 +13,9 @@ REGISTER_FUNCTION(ToDayOfMonth)
 {
     factory.registerFunction<FunctionToDayOfMonth>();
 
-    /// MySQL compatibility alias.
-    factory.registerAlias("DAY", "toDayOfMonth", FunctionFactory::Case::Insensitive);
-    factory.registerAlias("DAYOFMONTH", "toDayOfMonth", FunctionFactory::Case::Insensitive);
+    /// MysQL compatibility alias.
+    factory.registerAlias("DAY", "toDayOfMonth", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("DAYOFMONTH", "toDayOfMonth", FunctionFactory::CaseInsensitive);
 }
 
 }

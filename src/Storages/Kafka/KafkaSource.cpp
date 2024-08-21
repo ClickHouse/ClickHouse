@@ -33,7 +33,7 @@ KafkaSource::KafkaSource(
     const StorageSnapshotPtr & storage_snapshot_,
     const ContextPtr & context_,
     const Names & columns,
-    LoggerPtr log_,
+    Poco::Logger * log_,
     size_t max_block_size_,
     bool commit_in_suffix_)
     : ISource(storage_snapshot_->getSampleBlockForColumns(columns))
@@ -45,8 +45,8 @@ KafkaSource::KafkaSource(
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
-    , virtual_header(storage.getVirtualsHeader())
-    , handle_error_mode(storage.getStreamingHandleErrorMode())
+    , virtual_header(storage_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames()))
+    , handle_error_mode(storage.getHandleKafkaErrorMode())
 {
 }
 
@@ -98,7 +98,7 @@ Chunk KafkaSource::generateImpl()
     // otherwise external iteration will reuse that and logic will became even more fuzzy
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
-    auto put_error_to_stream = handle_error_mode == StreamingHandleErrorMode::STREAM;
+    auto put_error_to_stream = handle_error_mode == HandleKafkaErrorMode::STREAM;
 
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
@@ -207,9 +207,9 @@ Chunk KafkaSource::generateImpl()
                 {
                     if (exception_message)
                     {
-                        const auto & payload = consumer->currentPayload();
-                        virtual_columns[8]->insertData(reinterpret_cast<const char *>(payload.get_data()), payload.get_size());
-                        virtual_columns[9]->insertData(exception_message->data(), exception_message->size());
+                        auto payload = consumer->currentPayload();
+                        virtual_columns[8]->insert(payload);
+                        virtual_columns[9]->insert(*exception_message);
                     }
                     else
                     {
@@ -262,7 +262,7 @@ Chunk KafkaSource::generateImpl()
     // they are not needed here:
     // and it's misleading to use them here,
     // as columns 'materialized' that way stays 'ephemeral'
-    // i.e. will not be stored anywhere
+    // i.e. will not be stored anythere
     // If needed any extra columns can be added using DEFAULT they can be added at MV level if needed.
 
     auto result_block  = non_virtual_header.cloneWithColumns(executor.getResultColumns());

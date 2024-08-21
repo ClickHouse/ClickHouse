@@ -1,9 +1,7 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/Context.h>
-#include <Core/Settings.h>
 
 namespace DB
 {
@@ -34,6 +32,7 @@ BlockIO InterpreterTransactionControlQuery::execute()
         case ASTTransactionControl::SET_SNAPSHOT:
             return executeSetSnapshot(session_context, tcl.snapshot);
     }
+    UNREACHABLE();
 }
 
 BlockIO InterpreterTransactionControlQuery::executeBegin(ContextMutablePtr session_context)
@@ -52,12 +51,7 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr sess
 {
     auto txn = session_context->getCurrentTransaction();
     if (!txn)
-    {
-        if (session_context->getClientInfo().interface == ClientInfo::Interface::MYSQL)
-            return {};
-        else
-            throw Exception(ErrorCodes::INVALID_TRANSACTION, "There is no current transaction");
-    }
+        throw Exception(ErrorCodes::INVALID_TRANSACTION, "There is no current transaction");
     if (txn->getState() != MergeTreeTransaction::RUNNING)
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction is not in RUNNING state");
 
@@ -116,12 +110,7 @@ BlockIO InterpreterTransactionControlQuery::executeRollback(ContextMutablePtr se
 {
     auto txn = session_context->getCurrentTransaction();
     if (!txn)
-    {
-        if (session_context->getClientInfo().interface == ClientInfo::Interface::MYSQL)
-            return {};
-        else
-            throw Exception(ErrorCodes::INVALID_TRANSACTION, "There is no current transaction");
-    }
+        throw Exception(ErrorCodes::INVALID_TRANSACTION, "There is no current transaction");
     if (txn->getState() == MergeTreeTransaction::COMMITTED)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction is in COMMITTED state");
     if (txn->getState() == MergeTreeTransaction::COMMITTING)
@@ -144,15 +133,6 @@ BlockIO InterpreterTransactionControlQuery::executeSetSnapshot(ContextMutablePtr
 
     txn->setSnapshot(snapshot);
     return {};
-}
-
-void registerInterpreterTransactionControlQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterTransactionControlQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterTransactionControlQuery", create_fn);
 }
 
 }

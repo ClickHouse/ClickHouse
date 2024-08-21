@@ -10,9 +10,9 @@
 namespace DB
 {
 
-StorageDummy::StorageDummy(
-    const StorageID & table_id_, const ColumnsDescription & columns_, const StorageSnapshotPtr & original_storage_snapshot_)
-    : IStorage(table_id_), original_storage_snapshot(original_storage_snapshot_)
+StorageDummy::StorageDummy(const StorageID & table_id_, const ColumnsDescription & columns_, ColumnsDescription object_columns_)
+    : IStorage(table_id_)
+    , object_columns(std::move(object_columns_))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -31,38 +31,23 @@ QueryProcessingStage::Enum StorageDummy::getQueryProcessingStage(
 void StorageDummy::read(QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr local_context,
+    SelectQueryInfo &,
+    ContextPtr,
     QueryProcessingStage::Enum,
     size_t,
     size_t)
 {
-    query_plan.addStep(std::make_unique<ReadFromDummy>(
-        column_names,
-        query_info,
-        original_storage_snapshot ? original_storage_snapshot : storage_snapshot,
-        local_context,
-        *this));
+    query_plan.addStep(std::make_unique<ReadFromDummy>(*this, storage_snapshot, column_names));
 }
 
-ReadFromDummy::ReadFromDummy(
-    const Names & column_names_,
-    const SelectQueryInfo & query_info_,
-    const StorageSnapshotPtr & storage_snapshot_,
-    const ContextPtr & context_,
-    const StorageDummy & storage_)
-    : SourceStepWithFilter(
-        DataStream{
-            .header = SourceStepWithFilter::applyPrewhereActions(
-                storage_snapshot_->getSampleBlockForColumns(column_names_), query_info_.prewhere_info)},
-        column_names_,
-        query_info_,
-        storage_snapshot_,
-        context_)
+ReadFromDummy::ReadFromDummy(const StorageDummy & storage_,
+    StorageSnapshotPtr storage_snapshot_,
+    Names column_names_)
+    : SourceStepWithFilter(DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)})
     , storage(storage_)
-    , column_names(column_names_)
-{
-}
+    , storage_snapshot(std::move(storage_snapshot_))
+    , column_names(std::move(column_names_))
+{}
 
 void ReadFromDummy::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {

@@ -12,14 +12,11 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
-#include <Storages/AlterCommands.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SelectQueryDescription.h>
 
 #include <Common/typeid_cast.h>
-
-#include <Core/Settings.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -38,7 +35,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -94,10 +90,10 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
   */
-ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot)
+ContextPtr getViewContext(ContextPtr context)
 {
-    auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
-    Settings view_settings = view_context->getSettingsCopy();
+    auto view_context = Context::createCopy(context);
+    Settings view_settings = context->getSettings();
     view_settings.max_result_rows = 0;
     view_settings.max_result_bytes = 0;
     view_settings.extremes = false;
@@ -112,7 +108,7 @@ StorageView::StorageView(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     const String & comment,
-    bool is_parameterized_view_)
+    const bool is_parameterized_view_)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
@@ -126,8 +122,6 @@ StorageView::StorageView(
         storage_metadata.setColumns(columns_);
 
     storage_metadata.setComment(comment);
-    if (query.sql_security)
-        storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -166,21 +160,21 @@ void StorageView::read(
 
     if (context->getSettingsRef().allow_experimental_analyzer)
     {
-        InterpreterSelectQueryAnalyzer interpreter(current_inner_query, getViewContext(context, storage_snapshot), options, column_names);
+        InterpreterSelectQueryAnalyzer interpreter(current_inner_query, getViewContext(context), options);
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
     }
     else
     {
-        InterpreterSelectWithUnionQuery interpreter(current_inner_query, getViewContext(context, storage_snapshot), options, column_names);
+        InterpreterSelectWithUnionQuery interpreter(current_inner_query, getViewContext(context), options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(query_plan);
     }
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    ActionsDAG materializing_actions(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
-    materializing_actions.addMaterializingOutputActions();
+    auto materializing_actions = std::make_shared<ActionsDAG>(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
+    materializing_actions->addMaterializingOutputActions();
 
     auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(materializing_actions));
     materializing->setStepDescription("Materialize constants after VIEW subquery");
@@ -205,7 +199,7 @@ void StorageView::read(
             expected_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
 
-    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(convert_actions_dag));
+    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
     query_plan.addStep(std::move(converting));
 }
@@ -213,12 +207,12 @@ void StorageView::read(
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)
 {
     if (!select_query.tables() || select_query.tables()->children.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No table expression in view select AST");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no table expression in view select AST");
 
     auto * select_element = select_query.tables()->children[0]->as<ASTTablesInSelectQueryElement>();
 
     if (!select_element->table_expression)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect table expression");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: incorrect table expression");
 
     return select_element->table_expression->as<ASTTableExpression>();
 }
@@ -249,7 +243,7 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
 
         }
         if (!table_expression->database_and_table_name)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect table expression");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: incorrect table expression");
     }
 
     DatabaseAndTableWithAlias db_table(table_expression->database_and_table_name);
@@ -257,7 +251,8 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
 
     view_name = table_expression->database_and_table_name;
     table_expression->database_and_table_name = {};
-    table_expression->subquery = std::make_shared<ASTSubquery>(view_query);
+    table_expression->subquery = std::make_shared<ASTSubquery>();
+    table_expression->subquery->children.push_back(view_query);
     table_expression->subquery->setAlias(alias);
 
     for (auto & child : table_expression->children)
@@ -276,7 +271,7 @@ ASTPtr StorageView::restoreViewName(ASTSelectQuery & select_query, const ASTPtr 
     ASTTableExpression * table_expression = getFirstTableExpression(select_query);
 
     if (!table_expression->subquery)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect table expression");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: incorrect table expression");
 
     ASTPtr subquery = table_expression->subquery;
     table_expression->subquery = {};
@@ -286,15 +281,6 @@ ASTPtr StorageView::restoreViewName(ASTSelectQuery & select_query, const ASTPtr 
         if (child.get() == subquery.get())
             child = view_name;
     return subquery->children[0];
-}
-
-void StorageView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* local_context */) const
-{
-    for (const auto & command : commands)
-    {
-        if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_SQL_SECURITY)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
-    }
 }
 
 void registerStorageView(StorageFactory & factory)

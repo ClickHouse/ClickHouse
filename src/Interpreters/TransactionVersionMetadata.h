@@ -72,7 +72,7 @@ struct VersionMetadata
 
     String toString(bool one_line = true) const;
 
-    LoggerPtr log;
+    Poco::Logger * log;
     VersionMetadata();
 };
 

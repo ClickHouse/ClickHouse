@@ -1,11 +1,10 @@
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/Transforms/CubeTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -36,30 +35,30 @@ CubeStep::CubeStep(const DataStream & input_stream_, Aggregator::Params params_,
 
 ProcessorPtr addGroupingSetForTotals(const Block & header, const Names & keys, bool use_nulls, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number)
 {
-    ActionsDAG dag(header.getColumnsWithTypeAndName());
-    auto & outputs = dag.getOutputs();
+    auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
+    auto & outputs = dag->getOutputs();
 
     if (use_nulls)
     {
         auto to_nullable = FunctionFactory::instance().get("toNullable", nullptr);
         for (const auto & key : keys)
         {
-            const auto * node = dag.getOutputs()[header.getPositionByName(key)];
+            const auto * node = dag->getOutputs()[header.getPositionByName(key)];
             if (node->result_type->canBeInsideNullable())
             {
-                dag.addOrReplaceInOutputs(dag.addFunction(to_nullable, { node }, node->result_name));
+                dag->addOrReplaceInOutputs(dag->addFunction(to_nullable, { node }, node->result_name));
             }
         }
     }
 
     auto grouping_col = ColumnUInt64::create(1, grouping_set_number);
-    const auto * grouping_node = &dag.addColumn(
+    const auto * grouping_node = &dag->addColumn(
         {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
 
-    grouping_node = &dag.materializeNode(*grouping_node);
+    grouping_node = &dag->materializeNode(*grouping_node);
     outputs.insert(outputs.begin(), grouping_node);
 
-    auto expression = std::make_shared<ExpressionActions>(std::move(dag), settings.getActionsSettings());
+    auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
     return std::make_shared<ExpressionTransform>(header, expression);
 }
 

@@ -12,7 +12,6 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Planner/Planner.h>
@@ -37,12 +36,6 @@ public:
 
     void visitImpl(const QueryTreeNodePtr & node)
     {
-        if (const auto * constant_node = node->as<ConstantNode>())
-            /// Collect sets from source expression as well.
-            /// Most likely we will not build them, but those sets could be requested during analysis.
-            if (constant_node->hasSourceExpression())
-                collectSets(constant_node->getSourceExpression(), planner_context);
-
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !isNameOfInFunction(function_node->getFunctionName()))
             return;
@@ -62,9 +55,6 @@ public:
         {
             /// Handle storage_set as ready set.
             auto set_key = in_second_argument->getTreeHash();
-            if (sets.findStorage(set_key))
-                return;
-
             sets.addFromStorage(set_key, storage_set->getSet());
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
@@ -74,6 +64,7 @@ public:
                 constant_node->getValue(),
                 constant_node->getResultType(),
                 settings.transform_null_in);
+
             DataTypes set_element_types = {in_first_argument->getResultType()};
             const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
             if (left_tuple_type && left_tuple_type->getElements().size() != 1)
@@ -96,8 +87,34 @@ public:
                 return;
 
             auto subquery_to_execute = in_second_argument;
-            if (in_second_argument->as<TableNode>())
-                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context.getQueryContext());
+
+            if (auto * table_node = in_second_argument->as<TableNode>())
+            {
+                auto storage_snapshot = table_node->getStorageSnapshot();
+                auto columns_to_select = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
+
+                size_t columns_to_select_size = columns_to_select.size();
+
+                auto column_nodes_to_select = std::make_shared<ListNode>();
+                column_nodes_to_select->getNodes().reserve(columns_to_select_size);
+
+                NamesAndTypes projection_columns;
+                projection_columns.reserve(columns_to_select_size);
+
+                for (auto & column : columns_to_select)
+                {
+                    column_nodes_to_select->getNodes().emplace_back(std::make_shared<ColumnNode>(column, subquery_to_execute));
+                    projection_columns.emplace_back(column.name, column.type);
+                }
+
+                auto subquery_for_table = std::make_shared<QueryNode>(Context::createCopy(planner_context.getQueryContext()));
+                subquery_for_table->setIsSubquery(true);
+                subquery_for_table->getProjectionNode() = std::move(column_nodes_to_select);
+                subquery_for_table->getJoinTree() = std::move(subquery_to_execute);
+                subquery_for_table->resolveProjectionColumns(std::move(projection_columns));
+
+                subquery_to_execute = std::move(subquery_for_table);
+            }
 
             sets.addFromSubquery(set_key, std::move(subquery_to_execute), settings);
         }

@@ -1,4 +1,4 @@
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <Functions/StringHelpers.h>
@@ -74,7 +74,7 @@ struct ExtractNetloc
         Pos start_of_host = pos;
         for (; pos < end; ++pos)
         {
-            switch (*pos) // NOLINT(bugprone-switch-missing-default-case)
+            switch (*pos)
             {
                 case '/':
                     if (has_identification)

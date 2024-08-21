@@ -5,31 +5,37 @@ import time
 import pytz
 import uuid
 import grpc
-from helpers.cluster import ClickHouseCluster, is_arm, run_and_check
+from helpers.cluster import ClickHouseCluster, run_and_check
 from threading import Thread
 import gzip
 import lz4.frame
 
-script_dir = os.path.dirname(os.path.realpath(__file__))
-pb2_dir = os.path.join(script_dir, "pb2")
-if pb2_dir not in sys.path:
-    sys.path.append(pb2_dir)
-import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute pb2/generate.py to generate these modules.
-
-
 GRPC_PORT = 9100
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_ENCODING = "utf-8"
 
-# GRPC is disabled on ARM build - skip tests
-if is_arm():
-    pytestmark = pytest.mark.skip
+
+# Use grpcio-tools to generate *pb2.py files from *.proto.
+
+proto_dir = os.path.join(SCRIPT_DIR, "./protos")
+gen_dir = os.path.join(SCRIPT_DIR, "./_gen")
+os.makedirs(gen_dir, exist_ok=True)
+run_and_check(
+    "python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} \
+    {proto_dir}/clickhouse_grpc.proto".format(
+        proto_dir=proto_dir, gen_dir=gen_dir
+    ),
+    shell=True,
+)
+
+sys.path.append(gen_dir)
+import clickhouse_grpc_pb2
+import clickhouse_grpc_pb2_grpc
 
 
 # Utilities
 
-IPV6_ADDRESS = "2001:3984:3989::1:1111"
-
-config_dir = os.path.join(script_dir, "./configs")
+config_dir = os.path.join(SCRIPT_DIR, "./configs")
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
@@ -38,16 +44,12 @@ node = cluster.add_instance(
     env_variables={
         "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
     },
-    ipv6_address=IPV6_ADDRESS,
-    stay_alive=True,
 )
 main_channel = None
 
 
-def create_channel(hostname=None):
-    if not hostname:
-        hostname = cluster.get_instance_ip("node")
-    node_ip_with_grpc_port = hostname + ":" + str(GRPC_PORT)
+def create_channel():
+    node_ip_with_grpc_port = cluster.get_instance_ip("node") + ":" + str(GRPC_PORT)
     channel = grpc.insecure_channel(node_ip_with_grpc_port)
     grpc.channel_ready_future(channel).result(timeout=10)
     global main_channel
@@ -210,11 +212,6 @@ def test_select_one():
     assert query("SELECT 1") == "1\n"
 
 
-def test_ipv6_select_one():
-    with create_channel(f"[{IPV6_ADDRESS}]") as channel:
-        assert query("SELECT 1", channel=channel) == "1\n"
-
-
 def test_ordinary_query():
     assert query("SELECT count() FROM numbers(100)") == "100\n"
 
@@ -370,33 +367,46 @@ def test_progress():
         "SELECT number, sleep(0.31) FROM numbers(8) SETTINGS max_block_size=2, interactive_delay=100000",
         stream_output=True,
     )
+    results = list(results)
+    for result in results:
+        result.time_zone = ""
+        result.query_id = ""
+    # print(results)
 
-    # Note: We can't compare results using a statement like `assert results == expected_results`
-    # because `results` can come in slightly different order.
-    # So we compare `outputs` and `progresses` separately and not `results` as a whole.
-
-    outputs = [i.output for i in results if i.output]
-    progresses = [i.progress for i in results if i.HasField("progress")]
-
-    # print(outputs)
-    # print(progresses)
-
-    expected_outputs = [
-        b"0\t0\n1\t0\n",
-        b"2\t0\n3\t0\n",
-        b"4\t0\n5\t0\n",
-        b"6\t0\n7\t0\n",
+    # Note: We can't convert those messages to string like `results = str(results)` and then compare it as a string
+    # because str() can serialize a protobuf message with any order of fields.
+    expected_results = [
+        clickhouse_grpc_pb2.Result(
+            output_format="TabSeparated",
+            progress=clickhouse_grpc_pb2.Progress(
+                read_rows=2, read_bytes=16, total_rows_to_read=8
+            ),
+        ),
+        clickhouse_grpc_pb2.Result(output=b"0\t0\n1\t0\n"),
+        clickhouse_grpc_pb2.Result(
+            progress=clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16)
+        ),
+        clickhouse_grpc_pb2.Result(output=b"2\t0\n3\t0\n"),
+        clickhouse_grpc_pb2.Result(
+            progress=clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16)
+        ),
+        clickhouse_grpc_pb2.Result(output=b"4\t0\n5\t0\n"),
+        clickhouse_grpc_pb2.Result(
+            progress=clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16)
+        ),
+        clickhouse_grpc_pb2.Result(output=b"6\t0\n7\t0\n"),
+        clickhouse_grpc_pb2.Result(
+            stats=clickhouse_grpc_pb2.Stats(
+                rows=8,
+                blocks=4,
+                allocated_bytes=1092,
+                applied_limit=True,
+                rows_before_limit=8,
+            )
+        ),
     ]
 
-    expected_progresses = [
-        clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16, total_rows_to_read=8),
-        clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16),
-        clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16),
-        clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16),
-    ]
-
-    assert outputs == expected_outputs
-    assert progresses == expected_progresses
+    assert results == expected_results
 
 
 def test_session_settings():
@@ -750,9 +760,3 @@ def test_opentelemetry_context_propagation():
         )
         == "SELECT 1\tsome custom state\n"
     )
-
-
-def test_restart():
-    assert query("SELECT 1") == "1\n"
-    node.restart_clickhouse()
-    assert query("SELECT 2") == "2\n"

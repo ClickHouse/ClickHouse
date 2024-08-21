@@ -13,7 +13,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int EMPTY_DATA_PASSED;
-    extern const int TYPE_MISMATCH;
 }
 
 
@@ -110,7 +109,7 @@ void JSONColumnsBlockInputFormatBase::setReadBuffer(ReadBuffer & in_)
     IInputFormat::setReadBuffer(in_);
 }
 
-Chunk JSONColumnsBlockInputFormatBase::read()
+Chunk JSONColumnsBlockInputFormatBase::generate()
 {
     MutableColumns columns = getPort().getHeader().cloneEmptyColumns();
     block_missing_values.clear();
@@ -135,7 +134,7 @@ Chunk JSONColumnsBlockInputFormatBase::read()
         {
             do
             {
-                skipJSONField(*in, "skip_field", format_settings.json);
+                skipJSONField(*in, "skip_field");
                 ++num_rows;
             } while (!reader->checkColumnEndOrSkipFieldDelimiter());
         }
@@ -195,8 +194,6 @@ Chunk JSONColumnsBlockInputFormatBase::read()
     {
         if (!seen_columns[i])
         {
-            if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(fields[i].type))
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column `{}` of type '{}'", fields[i].name, fields[i].type->getName());
             columns[i]->insertManyDefaults(rows);
             if (format_settings.defaults_for_omitted_fields)
                 block_missing_values.setBits(i, rows);
@@ -218,7 +215,7 @@ JSONColumnsSchemaReaderBase::JSONColumnsSchemaReaderBase(
 {
 }
 
-void JSONColumnsSchemaReaderBase::setContext(const ContextPtr & ctx)
+void JSONColumnsSchemaReaderBase::setContext(ContextPtr & ctx)
 {
     ColumnsDescription columns;
     if (tryParseColumnsListFromString(hints_str, columns, ctx, hints_parsing_error))
@@ -231,11 +228,6 @@ void JSONColumnsSchemaReaderBase::setContext(const ContextPtr & ctx)
 void JSONColumnsSchemaReaderBase::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
 {
     transformInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
-}
-
-void JSONColumnsSchemaReaderBase::transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
-{
-    transformInferredJSONTypesFromDifferentFilesIfNeeded(type, new_type, format_settings);
 }
 
 NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
@@ -302,7 +294,7 @@ NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
         /// Don't check/change types from hints.
         if (!hints.contains(name))
         {
-            transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
+            transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
             /// Check that we could determine the type of this column.
             checkFinalInferredType(type, name, format_settings, nullptr, format_settings.max_rows_to_read_for_schema_inference, hints_parsing_error);
         }
@@ -329,7 +321,7 @@ DataTypePtr JSONColumnsSchemaReaderBase::readColumnAndGetDataType(const String &
             break;
         }
 
-        readJSONField(field, in, format_settings.json);
+        readJSONField(field, in);
         DataTypePtr field_type = tryInferDataTypeForSingleJSONField(field, format_settings, &inference_info);
         chooseResultColumnType(*this, column_type, field_type, nullptr, column_name, rows_read);
         ++rows_read;

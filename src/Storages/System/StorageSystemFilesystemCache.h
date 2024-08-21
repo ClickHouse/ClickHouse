@@ -7,7 +7,7 @@ namespace DB
 {
 
 /**
- * Usage example. How to get mapping from local paths to remote paths:
+ * Usgae example. How to get mapping from local paths to remote paths:
  * SELECT
  *     cache_path,
  *     cache_hits,
@@ -29,17 +29,17 @@ namespace DB
  * FORMAT Vertical
  */
 
-class StorageSystemFilesystemCache final : public IStorageSystemOneBlock
+class StorageSystemFilesystemCache final : public IStorageSystemOneBlock<StorageSystemFilesystemCache>
 {
 public:
     explicit StorageSystemFilesystemCache(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemFilesystemCache"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
-    void fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 };
 
 }

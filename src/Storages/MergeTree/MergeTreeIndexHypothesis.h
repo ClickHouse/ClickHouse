@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <memory>
 
 namespace DB
 {
@@ -66,13 +67,15 @@ public:
     bool isMergeable() const override { return true; }
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-        const ActionsDAG * filter_actions_dag, ContextPtr context) const override;
+        const SelectQueryInfo & query, ContextPtr context) const override;
 
     MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & query_info, StorageMetadataPtr storage_metadata) const override;
+
+    bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 
     size_t max_rows = 0;
 };

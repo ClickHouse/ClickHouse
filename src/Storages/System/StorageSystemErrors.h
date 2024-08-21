@@ -13,17 +13,17 @@ class Context;
  * Implements the `errors` system table, which shows the error code and the number of times it happens
  * (i.e. Exception with this code had been thrown).
  */
-class StorageSystemErrors final : public IStorageSystemOneBlock
+class StorageSystemErrors final : public IStorageSystemOneBlock<StorageSystemErrors>
 {
 public:
     std::string getName() const override { return "SystemErrors"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const override;
 };
 
 }

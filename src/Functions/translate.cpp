@@ -6,9 +6,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/iota.h>
 
 #include <numeric>
 
@@ -35,7 +34,7 @@ struct TranslateImpl
         if (map_from.size() != map_to.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be the same length");
 
-        iota(map.data(), map.size(), UInt8(0));
+        std::iota(map.begin(), map.end(), 0);
 
         for (size_t i = 0; i < map_from.size(); ++i)
         {
@@ -52,8 +51,7 @@ struct TranslateImpl
         const std::string & map_from,
         const std::string & map_to,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+        ColumnString::Offsets & res_offsets)
     {
         Map map;
         fillMapWithValues(map, map_from, map_to);
@@ -63,7 +61,7 @@ struct TranslateImpl
 
         UInt8 * dst = res_data.data();
 
-        for (UInt64 i = 0; i < input_rows_count; ++i)
+        for (UInt64 i = 0; i < offsets.size(); ++i)
         {
             const UInt8 * src = data.data() + offsets[i - 1];
             const UInt8 * src_end = data.data() + offsets[i] - 1;
@@ -134,7 +132,7 @@ struct TranslateUTF8Impl
         if (map_from_size != map_to_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be the same length");
 
-        iota(map_ascii.data(), map_ascii.size(), UInt32(0));
+        std::iota(map_ascii.begin(), map_ascii.end(), 0);
 
         const UInt8 * map_from_ptr = reinterpret_cast<const UInt8 *>(map_from.data());
         const UInt8 * map_from_end = map_from_ptr + map_from.size();
@@ -176,20 +174,19 @@ struct TranslateUTF8Impl
         const std::string & map_from,
         const std::string & map_to,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+        ColumnString::Offsets & res_offsets)
     {
         MapASCII map_ascii;
         MapUTF8 map;
         fillMapWithValues(map_ascii, map, map_from, map_to);
 
         res_data.resize(data.size());
-        res_offsets.resize(input_rows_count);
+        res_offsets.resize(offsets.size());
 
         UInt8 * dst = res_data.data();
         UInt64 data_size = 0;
 
-        for (UInt64 i = 0; i < input_rows_count; ++i)
+        for (UInt64 i = 0; i < offsets.size(); ++i)
         {
             const UInt8 * src = data.data() + offsets[i - 1];
             const UInt8 * src_end = data.data() + offsets[i] - 1;
@@ -313,7 +310,7 @@ public:
         }
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const ColumnPtr column_src = arguments[0].column;
         const ColumnPtr column_map_from = arguments[1].column;
@@ -332,7 +329,7 @@ public:
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
         {
             auto col_res = ColumnString::create();
-            Impl::vector(col->getChars(), col->getOffsets(), map_from, map_to, col_res->getChars(), col_res->getOffsets(), input_rows_count);
+            Impl::vector(col->getChars(), col->getOffsets(), map_from, map_to, col_res->getChars(), col_res->getOffsets());
             return col_res;
         }
         else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_src.get()))

@@ -16,7 +16,6 @@ namespace DB
 {
 
 class ArrowColumnToCHColumn;
-class ParquetRecordReader;
 
 // Parquet files contain a metadata block with the following information:
 //  * list of columns,
@@ -57,6 +56,8 @@ public:
 
     ~ParquetBlockInputFormat() override;
 
+    void setQueryInfo(const SelectQueryInfo & query_info, ContextPtr context) override;
+
     void resetParser() override;
 
     String getName() const override { return "ParquetBlockInputFormat"; }
@@ -66,9 +67,9 @@ public:
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
 
 private:
-    Chunk read() override;
+    Chunk generate() override;
 
-    void onCancel() noexcept override
+    void onCancel() override
     {
         is_stopped = 1;
     }
@@ -143,7 +144,7 @@ private:
     // reading its data (using RAM). Row group becomes inactive when we finish reading and
     // delivering all its blocks and free the RAM. Size of the window is max_decoding_threads.
     //
-    // Decoded blocks are placed in `pending_chunks` queue, then picked up by read().
+    // Decoded blocks are placed in `pending_chunks` queue, then picked up by generate().
     // If row group decoding runs too far ahead of delivery (by `max_pending_chunks_per_row_group`
     // chunks), we pause the stream for the row group, to avoid using too much memory when decoded
     // chunks are much bigger than the compressed data.
@@ -151,7 +152,7 @@ private:
     // Also:
     //  * If preserve_order = true, we deliver chunks strictly in order of increasing row group.
     //    Decoding may still proceed in later row groups.
-    //  * If max_decoding_threads <= 1, we run all tasks inline in read(), without thread pool.
+    //  * If max_decoding_threads <= 1, we run all tasks inline in generate(), without thread pool.
 
     // Potential improvements:
     //  * Plan all read ranges ahead of time, for the whole file, and do prefetching for them
@@ -178,7 +179,7 @@ private:
         //               Paused
         //
         // If max_decoding_threads <= 1: NotStarted -> Complete.
-        enum class Status : uint8_t
+        enum class Status
         {
             NotStarted,
             Running,
@@ -190,7 +191,7 @@ private:
 
         Status status = Status::NotStarted;
 
-        // Window of chunks that were decoded but not returned from read():
+        // Window of chunks that were decoded but not returned from generate():
         //
         // (delivered)            next_chunk_idx
         //   v   v                       v
@@ -208,20 +209,15 @@ private:
         size_t total_rows = 0;
         size_t total_bytes_compressed = 0;
 
-        size_t adaptive_chunk_size = 0;
-
         std::vector<int> row_groups_idxs;
 
         // These are only used by the decoding thread, so don't require locking the mutex.
-        // If use_native_reader, only native_record_reader is used;
-        // otherwise, only native_record_reader is not used.
-        std::shared_ptr<ParquetRecordReader> native_record_reader;
         std::unique_ptr<parquet::arrow::FileReader> file_reader;
         std::shared_ptr<arrow::RecordBatchReader> record_batch_reader;
         std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
     };
 
-    // Chunk ready to be delivered by read().
+    // Chunk ready to be delivered by generate().
     struct PendingChunk
     {
         Chunk chunk;
@@ -259,6 +255,9 @@ private:
     std::shared_ptr<parquet::FileMetaData> metadata;
     /// Indices of columns to read from Parquet file.
     std::vector<int> column_indices;
+    /// Pushed-down filter that we'll use to skip row groups.
+    std::optional<KeyCondition> key_condition;
+
 
     // Window of active row groups:
     //
@@ -271,7 +270,7 @@ private:
     //    Done                        NotStarted
 
     std::mutex mutex;
-    // Wakes up the read() call, if any.
+    // Wakes up the generate() call, if any.
     std::condition_variable condvar;
 
     std::vector<RowGroupBatchState> row_group_batches;

@@ -21,7 +21,6 @@ namespace CurrentMetrics
 {
     extern const Metric ParallelFormattingOutputFormatThreads;
     extern const Metric ParallelFormattingOutputFormatThreadsActive;
-    extern const Metric ParallelFormattingOutputFormatThreadsScheduled;
 }
 
 namespace DB
@@ -81,10 +80,10 @@ public:
     explicit ParallelFormattingOutputFormat(Params params)
         : IOutputFormat(params.header, params.out)
         , internal_formatter_creator(params.internal_formatter_creator)
-        , pool(CurrentMetrics::ParallelFormattingOutputFormatThreads, CurrentMetrics::ParallelFormattingOutputFormatThreadsActive, CurrentMetrics::ParallelFormattingOutputFormatThreadsScheduled, params.max_threads_for_parallel_formatting)
+        , pool(CurrentMetrics::ParallelFormattingOutputFormatThreads, CurrentMetrics::ParallelFormattingOutputFormatThreadsActive, params.max_threads_for_parallel_formatting)
 
     {
-        LOG_TEST(getLogger("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
+        LOG_TEST(&Poco::Logger::get("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
 
         NullWriteBuffer buf;
         save_totals_and_extremes_in_statistics = internal_formatter_creator(buf)->areTotalsAndExtremesUsedInFinalize();
@@ -92,7 +91,7 @@ public:
 
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
         /// and n threads for formatting.
-        processing_units.resize(std::min(params.max_threads_for_parallel_formatting + 2, size_t{1024}));
+        processing_units.resize(params.max_threads_for_parallel_formatting + 2);
 
         /// Do not put any code that could throw an exception under this line.
         /// Because otherwise the destructor of this class won't be called and this thread won't be joined.
@@ -122,7 +121,7 @@ public:
         started_prefix = true;
     }
 
-    void onCancel() noexcept override
+    void onCancel() override
     {
         finishAndWait();
     }
@@ -154,7 +153,7 @@ public:
     void setException(const String & exception_message_) override { exception_message = exception_message_; }
 
 private:
-    void consume(Chunk chunk) final
+    void consume(Chunk chunk) override final
     {
         addChunk(std::move(chunk), ProcessingUnitType::PLAIN, /*can_throw_exception*/ true);
     }
@@ -205,7 +204,7 @@ private:
     };
 
     /// Some information about what methods to call from internal parser.
-    enum class ProcessingUnitType : uint8_t
+    enum class ProcessingUnitType
     {
         START,
         PLAIN,
@@ -268,7 +267,7 @@ private:
     bool collected_suffix = false;
     bool collected_finalize = false;
 
-    void finishAndWait() noexcept;
+    void finishAndWait();
 
     void onBackgroundException()
     {
@@ -312,12 +311,6 @@ private:
         std::lock_guard lock(statistics_mutex);
         statistics.rows_before_limit = rows_before_limit;
         statistics.applied_limit = true;
-    }
-    void setRowsBeforeAggregation(size_t rows_before_aggregation) override
-    {
-        std::lock_guard lock(statistics_mutex);
-        statistics.rows_before_aggregation = rows_before_aggregation;
-        statistics.applied_aggregation = true;
     }
 };
 

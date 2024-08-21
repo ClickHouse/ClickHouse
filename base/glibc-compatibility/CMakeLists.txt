@@ -5,6 +5,9 @@ if (GLIBC_COMPATIBILITY)
     endif()
 
     enable_language(ASM)
+    include(CheckIncludeFile)
+
+    check_include_file("sys/random.h" HAVE_SYS_RANDOM_H)
 
     add_headers_and_sources(glibc_compatibility .)
     add_headers_and_sources(glibc_compatibility musl)
@@ -18,14 +21,9 @@ if (GLIBC_COMPATIBILITY)
         message (FATAL_ERROR "glibc_compatibility can only be used on x86_64 or aarch64.")
     endif ()
 
-    if (SANITIZE STREQUAL thread)
-        # Disable TSAN instrumentation that conflicts with re-exec due to high ASLR entropy using getauxval
-        # See longer comment in __auxv_init_procfs
-        # In the case of tsan we need to make sure getauxval is not instrumented as that would introduce tsan
-        # internal calls to functions that depend on a state that isn't initialized yet
-        set_source_files_properties(
-                musl/getauxval.c
-                PROPERTIES COMPILE_FLAGS "-mllvm -tsan-instrument-func-entry-exit=false")
+    list(REMOVE_ITEM glibc_compatibility_sources musl/getentropy.c)
+    if(HAVE_SYS_RANDOM_H)
+        list(APPEND glibc_compatibility_sources musl/getentropy.c)
     endif()
 
     # Need to omit frame pointers to match the performance of glibc
@@ -44,6 +42,12 @@ if (GLIBC_COMPATIBILITY)
     endif ()
 
     target_link_libraries(global-libs INTERFACE glibc-compatibility ${MEMCPY_LIBRARY})
+
+    install(
+        TARGETS glibc-compatibility ${MEMCPY_LIBRARY}
+        EXPORT global
+        ARCHIVE DESTINATION lib
+    )
 
     message (STATUS "Some symbols from glibc will be replaced for compatibility")
 

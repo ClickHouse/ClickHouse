@@ -6,7 +6,7 @@
 namespace DB
 {
 
-enum class BackupStatus : uint8_t
+enum class BackupStatus
 {
     /// Statuses of making backups
     CREATING_BACKUP,
@@ -17,10 +17,6 @@ enum class BackupStatus : uint8_t
     RESTORING,
     RESTORED,
     RESTORE_FAILED,
-
-    /// Statuses used after a BACKUP or RESTORE operation was cancelled.
-    BACKUP_CANCELLED,
-    RESTORE_CANCELLED,
 
     MAX,
 };

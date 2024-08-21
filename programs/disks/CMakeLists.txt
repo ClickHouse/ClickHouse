@@ -1,8 +1,6 @@
 set (CLICKHOUSE_DISKS_SOURCES
     DisksApp.cpp
-    DisksClient.cpp
     ICommand.cpp
-    CommandChangeDirectory.cpp
     CommandCopy.cpp
     CommandLink.cpp
     CommandList.cpp
@@ -11,15 +9,7 @@ set (CLICKHOUSE_DISKS_SOURCES
     CommandMove.cpp
     CommandRead.cpp
     CommandRemove.cpp
-    CommandSwitchDisk.cpp
-    CommandWrite.cpp
-    CommandHelp.cpp
-    CommandTouch.cpp
-    CommandGetCurrentDiskAndPath.cpp)
-
-if (CLICKHOUSE_CLOUD)
-  set (CLICKHOUSE_DISKS_SOURCES ${CLICKHOUSE_DISKS_SOURCES} CommandPackedIO.cpp)
-endif ()
+    CommandWrite.cpp)
 
 set (CLICKHOUSE_DISKS_LINK
     PRIVATE

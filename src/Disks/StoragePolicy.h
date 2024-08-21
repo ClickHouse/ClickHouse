@@ -12,6 +12,7 @@
 #include <Common/formatReadable.h>
 
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 #include <unistd.h>
 #include <boost/noncopyable.hpp>
@@ -104,7 +105,7 @@ private:
 
     void buildVolumeIndices();
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 
@@ -121,7 +122,7 @@ public:
 
     StoragePolicySelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks);
 
-    StoragePolicySelectorPtr updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks, Strings & new_disks) const;
+    StoragePolicySelectorPtr updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks) const;
 
     /// Policy by name
     StoragePolicyPtr get(const String & name) const;

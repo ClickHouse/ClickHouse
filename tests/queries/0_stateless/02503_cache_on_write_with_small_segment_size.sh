@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest, no-object-storage, no-random-settings
+# Tags: no-parallel, no-fasttest, no-s3-storage, no-random-settings
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 
@@ -11,7 +11,7 @@ function random {
      cat /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z' | fold -w ${1:-8} | head -n 1
 }
 
-${CLICKHOUSE_CLIENT} --multiline -q "
+${CLICKHOUSE_CLIENT} --multiline --multiquery -q "
 drop table if exists ttt;
 
 CREATE TABLE ttt (id Int32, value String)
@@ -22,7 +22,6 @@ SETTINGS min_bytes_for_wide_part = 0,
             type = cache,
             max_size = '128Mi',
             max_file_segment_size = '10Ki',
-            boundary_alignment = '5Ki',
             path = '${CLICKHOUSE_TEST_UNIQUE_NAME}',
             cache_on_write_operations = 1,
             enable_filesystem_query_cache_limit = 1,
@@ -46,7 +45,7 @@ ${CLICKHOUSE_CLIENT}  -q "
 select count() from system.filesystem_cache_log where query_id = '$query_id' AND read_type == 'READ_FROM_CACHE';
 "
 
-${CLICKHOUSE_CLIENT} --multiline -q "
+${CLICKHOUSE_CLIENT} --multiline --multiquery -q "
 select count() from ttt;
 drop table ttt sync;
 "

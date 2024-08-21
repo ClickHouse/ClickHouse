@@ -7,19 +7,15 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
-#include <Common/FailPoint.h>
-#include <Core/Settings.h>
 #include <base/sleep.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 
 
 namespace ProfileEvents
 {
 extern const Event SleepFunctionCalls;
 extern const Event SleepFunctionMicroseconds;
-extern const Event SleepFunctionElapsedMicroseconds;
 }
 
 namespace DB
@@ -33,15 +29,10 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace FailPoints
-{
-    extern const char infinite_sleep[];
-}
-
 /** sleep(seconds) - the specified number of seconds sleeps each columns.
   */
 
-enum class FunctionSleepVariant : uint8_t
+enum class FunctionSleepVariant
 {
     PerBlock,
     PerRow
@@ -52,34 +43,43 @@ class FunctionSleep : public IFunction
 {
 private:
     UInt64 max_microseconds;
-    QueryStatusPtr query_status;
-
 public:
     static constexpr auto name = variant == FunctionSleepVariant::PerBlock ? "sleep" : "sleepEachRow";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionSleep<variant>>(
-            context->getSettingsRef().function_sleep_max_microseconds_per_block,
-            context->getProcessListElementSafe());
+        return std::make_shared<FunctionSleep<variant>>(context->getSettingsRef().function_sleep_max_microseconds_per_block);
     }
 
-    FunctionSleep(UInt64 max_microseconds_, QueryStatusPtr query_status_)
-        : max_microseconds(std::min(max_microseconds_, static_cast<UInt64>(std::numeric_limits<UInt32>::max())))
-        , query_status(query_status_)
+    FunctionSleep(UInt64 max_microseconds_) : max_microseconds(max_microseconds_)
     {
     }
 
-    String getName() const override { return name; }
-    bool isSuitableForConstantFolding() const override { return false; } /// Do not sleep during query analysis.
-    size_t getNumberOfArguments() const override { return 1; }
+    /// Get the name of the function.
+    String getName() const override
+    {
+        return name;
+    }
+
+    /// Do not sleep during query analysis.
+    bool isSuitableForConstantFolding() const override
+    {
+        return false;
+    }
+
+    size_t getNumberOfArguments() const override
+    {
+        return 1;
+    }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         WhichDataType which(arguments[0]);
 
-        if (!which.isFloat() && !which.isNativeUInt())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, expected UInt* or Float*",
+        if (!which.isFloat()
+            && !which.isNativeUInt())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, expected Float64",
                 arguments[0]->getName(), getName());
 
         return std::make_shared<DataTypeUInt8>();
@@ -103,8 +103,8 @@ public:
 
         Float64 seconds = applyVisitor(FieldVisitorConvertToNumber<Float64>(), assert_cast<const ColumnConst &>(*col).getField());
 
-        if (seconds < 0 || !std::isfinite(seconds) || seconds > static_cast<Float64>(std::numeric_limits<UInt32>::max()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot sleep infinite, very large or negative amount of time (not implemented)");
+        if (seconds < 0 || !std::isfinite(seconds))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot sleep infinite or negative amount of time (not implemented)");
 
         size_t size = col->size();
 
@@ -112,40 +112,22 @@ public:
         if (size > 0)
         {
             /// When sleeping, the query cannot be cancelled. For ability to cancel query, we limit sleep time.
-            UInt64 microseconds = static_cast<UInt64>(seconds * 1e6);
-            FailPointInjection::pauseFailPoint(FailPoints::infinite_sleep);
-
-            if (max_microseconds && microseconds > max_microseconds)
-                throw Exception(ErrorCodes::TOO_SLOW, "The maximum sleep time is {} microseconds. Requested: {} microseconds",
-                    max_microseconds, microseconds);
+            if (max_microseconds && seconds * 1e6 > max_microseconds)
+                throw Exception(ErrorCodes::TOO_SLOW, "The maximum sleep time is {} microseconds. Requested: {}", max_microseconds, seconds);
 
             if (!dry_run)
             {
                 UInt64 count = (variant == FunctionSleepVariant::PerBlock ? 1 : size);
-                microseconds *= count;
+                UInt64 microseconds = static_cast<UInt64>(seconds * count * 1e6);
 
                 if (max_microseconds && microseconds > max_microseconds)
                     throw Exception(ErrorCodes::TOO_SLOW,
                         "The maximum sleep time is {} microseconds. Requested: {} microseconds per block (of size {})",
                         max_microseconds, microseconds, size);
 
-                UInt64 elapsed = 0;
-                while (elapsed < microseconds)
-                {
-                    UInt64 sleep_time = microseconds - elapsed;
-                    if (query_status)
-                        sleep_time = std::min(sleep_time, /* 1 second */ static_cast<UInt64>(1000000));
-
-                    sleepForMicroseconds(sleep_time);
-                    elapsed += sleep_time;
-
-                    if (query_status && !query_status->checkTimeLimit())
-                        break;
-                }
-
+                sleepForMicroseconds(microseconds);
                 ProfileEvents::increment(ProfileEvents::SleepFunctionCalls, count);
                 ProfileEvents::increment(ProfileEvents::SleepFunctionMicroseconds, microseconds);
-                ProfileEvents::increment(ProfileEvents::SleepFunctionElapsedMicroseconds, elapsed);
             }
         }
 

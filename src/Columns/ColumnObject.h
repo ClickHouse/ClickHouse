@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <Core/Names.h>
-#include <DataTypes/Serializations/SubcolumnsTree.h>
+#include <Columns/IColumn.h>
 #include <Common/PODArray.h>
-#include <Common/WeakHash.h>
+#include <Common/HashTable/HashMap.h>
+#include <DataTypes/Serializations/JSONDataParser.h>
+#include <DataTypes/Serializations/SubcolumnsTree.h>
 
 #include <DataTypes/IDataType.h>
 
@@ -47,7 +48,7 @@ FieldInfo getFieldInfo(const Field & field);
  *  a trie-like structure. ColumnObject is not suitable for writing into tables
  *  and it should be converted to Tuple with fixed set of subcolumns before that.
  */
-class ColumnObject final : public COWHelper<IColumnHelper<ColumnObject>, ColumnObject>
+class ColumnObject final : public COWHelper<IColumn, ColumnObject>
 {
 public:
     /** Class that represents one subcolumn.
@@ -208,17 +209,9 @@ public:
     void forEachSubcolumn(MutableColumnCallback callback) override;
     void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
     void insert(const Field & field) override;
-    bool tryInsert(const Field & field) override;
     void insertDefault() override;
-
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src, size_t n) override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-#else
-    void doInsertFrom(const IColumn & src, size_t n) override;
-    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-#endif
-
     void popBack(size_t length) override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
@@ -235,26 +228,28 @@ public:
 
     /// Order of rows in ColumnObject is undefined.
     void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const override;
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                       int direction, int nan_direction_hint) const override;
+
     void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
-#else
-    int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
-#endif
     void getExtremes(Field & min, Field & max) const override;
+
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+    void gather(ColumnGathererStream & gatherer) override;
 
     /// All other methods throw exception.
 
     StringRef getDataAt(size_t) const override { throwMustBeConcrete(); }
     bool isDefaultAt(size_t) const override { throwMustBeConcrete(); }
     void insertData(const char *, size_t) override { throwMustBeConcrete(); }
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwMustBeConcrete(); }
-    char * serializeValueIntoMemory(size_t, char *) const override { throwMustBeConcrete(); }
+    StringRef serializeValueIntoArena(size_t, Arena &, char const *&, const UInt8 *) const override { throwMustBeConcrete(); }
     const char * deserializeAndInsertFromArena(const char *) override { throwMustBeConcrete(); }
     const char * skipSerializedInArena(const char *) const override { throwMustBeConcrete(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeConcrete(); }
-    WeakHash32 getWeakHash32() const override { throwMustBeConcrete(); }
-    void updateHashFast(SipHash & hash) const override;
+    void updateWeakHash32(WeakHash32 &) const override { throwMustBeConcrete(); }
+    void updateHashFast(SipHash &) const override { throwMustBeConcrete(); }
     void expand(const Filter &, bool) override { throwMustBeConcrete(); }
     bool hasEqualValues() const override { throwMustBeConcrete(); }
     size_t byteSizeAt(size_t) const override { throwMustBeConcrete(); }

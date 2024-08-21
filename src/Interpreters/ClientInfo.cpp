@@ -5,13 +5,11 @@
 #include <IO/WriteHelpers.h>
 #include <Core/ProtocolDefines.h>
 #include <base/getFQDNOrHostName.h>
-#include <Poco/Net/HTTPRequest.h>
 #include <unistd.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 #include <format>
-
 
 namespace DB
 {
@@ -24,7 +22,7 @@ namespace ErrorCodes
 void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 {
     if (server_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Method ClientInfo::write is called for unsupported server revision");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: method ClientInfo::write is called for unsupported server revision");
 
     writeBinary(static_cast<UInt8>(query_kind), out);
     if (empty())
@@ -95,7 +93,7 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
     if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS)
     {
         writeVarUInt(static_cast<UInt64>(collaborate_with_initiator), out);
-        writeVarUInt(obsolete_count_participating_replicas, out);
+        writeVarUInt(count_participating_replicas, out);
         writeVarUInt(number_of_current_replica, out);
     }
 }
@@ -104,7 +102,7 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Method ClientInfo::read is called for unsupported client revision");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: method ClientInfo::read is called for unsupported client revision");
 
     UInt8 read_query_kind = 0;
     readBinary(read_query_kind, in);
@@ -185,7 +183,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
         UInt64 value;
         readVarUInt(value, in);
         collaborate_with_initiator = static_cast<bool>(value);
-        readVarUInt(obsolete_count_participating_replicas, in);
+        readVarUInt(count_participating_replicas, in);
         readVarUInt(number_of_current_replica, in);
     }
 }
@@ -198,7 +196,7 @@ void ClientInfo::setInitialQuery()
     if (client_name.empty())
         client_name = VERSION_NAME;
     else
-        client_name = std::string(VERSION_NAME) + " " + client_name;
+        client_name = (VERSION_NAME " ") + client_name;
 }
 
 bool ClientInfo::clientVersionEquals(const ClientInfo & other, bool compare_patch) const
@@ -254,33 +252,9 @@ String toString(ClientInfo::Interface interface)
             return "LOCAL";
         case ClientInfo::Interface::TCP_INTERSERVER:
             return "TCP_INTERSERVER";
-        case ClientInfo::Interface::PROMETHEUS:
-            return "PROMETHEUS";
     }
 
-    return std::format("Unknown server interface ({}).", static_cast<int>(interface));
-}
-
-void ClientInfo::setFromHTTPRequest(const Poco::Net::HTTPRequest & request)
-{
-    http_method = ClientInfo::HTTPMethod::UNKNOWN;
-    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
-        http_method = ClientInfo::HTTPMethod::GET;
-    else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
-        http_method = ClientInfo::HTTPMethod::POST;
-
-    http_user_agent = request.get("User-Agent", "");
-    http_referer = request.get("Referer", "");
-    forwarded_for = request.get("X-Forwarded-For", "");
-
-    for (const auto & header : request)
-    {
-        /// These headers can contain authentication info and shouldn't be accessible by the user.
-        String key_lowercase = Poco::toLower(header.first);
-        if (key_lowercase.starts_with("x-clickhouse") || key_lowercase == "authentication")
-            continue;
-        http_headers[header.first] = header.second;
-    }
+    return std::format("Unknown {}!\n", static_cast<int>(interface));
 }
 
 }

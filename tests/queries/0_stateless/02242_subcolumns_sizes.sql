@@ -9,7 +9,6 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0;
 
 INSERT INTO t_subcolumns_sizes FORMAT JSONEachRow {"id": 1, "arr": [1, 2, 3], "n": null, "d": {"k1": "v1", "k2": [{"k3": 1, "k4": "v2"}, {"k3": 3}]}}
-
 INSERT INTO t_subcolumns_sizes FORMAT JSONEachRow {"id": 2, "arr": [0], "n": "foo", "d": {"k1": "v3", "k2": [{"k4": "v4"}, {"k3": "v5", "k5": 5}]}}
 
 OPTIMIZE TABLE t_subcolumns_sizes FINAL;

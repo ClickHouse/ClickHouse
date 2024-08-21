@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std::filesystem::path & local_path_)
 {
-    auto log = getLogger("RemoteCacheController");
+    auto * log = &Poco::Logger::get("RemoteCacheController");
 
     if (!std::filesystem::exists(local_path_ / "data.bin"))
     {
@@ -206,7 +206,7 @@ void RemoteCacheController::close()
     // delete directory
     LOG_TRACE(log, "Removing the local cache. local path: {}", local_path.string());
     if (fs::exists(local_path))
-        (void)fs::remove_all(local_path);
+        fs::remove_all(local_path);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> RemoteCacheController::allocFile()

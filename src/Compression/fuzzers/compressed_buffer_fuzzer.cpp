@@ -4,18 +4,17 @@
 
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
+try
 {
-    try
-    {
-        DB::ReadBufferFromMemory from(data, size);
-        DB::CompressedReadBuffer in{from};
+    DB::ReadBufferFromMemory from(data, size);
+    DB::CompressedReadBuffer in{from};
 
-        while (!in.eof())
-            in.next();
-    }
-    catch (...)
-    {
-    }
+    while (!in.eof())
+        in.next();
 
     return 0;
+}
+catch (...)
+{
+    return 1;
 }

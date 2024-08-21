@@ -38,12 +38,14 @@ protected:
         UInt64 max_block_size_,
         bool auto_commit_);
 
+    String query_str;
+    std::shared_ptr<T> tx;
+    std::unique_ptr<pqxx::stream_from> stream;
+
     Status prepare() override;
 
-    Chunk generate() override;
-
     void onStart();
-
+    Chunk generate() override;
     void onFinish();
 
 private:
@@ -59,12 +61,6 @@ private:
     postgres::ConnectionHolderPtr connection_holder;
 
     std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
-
-protected:
-    String query_str;
-    /// tx and stream must be destroyed before connection_holder.
-    std::shared_ptr<T> tx;
-    std::unique_ptr<pqxx::stream_from> stream;
 };
 
 

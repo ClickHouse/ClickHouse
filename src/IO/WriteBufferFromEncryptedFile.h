@@ -28,7 +28,7 @@ public:
 
     void sync() override;
 
-    std::string getFileName() const override { return assert_cast<WriteBufferFromFileBase *>(out)->getFileName(); }
+    std::string getFileName() const override { return assert_cast<WriteBufferFromFileBase *>(out.get())->getFileName(); }
 
 private:
     void nextImpl() override;
@@ -39,8 +39,6 @@ private:
     bool flush_header = false;
 
     FileEncryption::Encryptor encryptor;
-
-    LoggerPtr log = getLogger("WriteBufferFromEncryptedFile");
 };
 
 }

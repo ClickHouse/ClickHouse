@@ -1,32 +1,46 @@
 #!/usr/bin/env python3
 
-import argparse
-import logging
-import subprocess
-import sys
-import time
 from pathlib import Path
 from typing import Tuple
+import subprocess
+import logging
+import sys
+import time
 
-import docker_images_helper
-from ci_config import CI
-from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
-from git_helper import Git
+from ci_config import CI_CONFIG, BuildConfig
+from ccache_utils import CargoCache
+from docker_pull_helper import get_image_with_version
+from env_helper import (
+    GITHUB_JOB_API_URL,
+    IMAGES_PATH,
+    REPO_COPY,
+    S3_BUILDS_BUCKET,
+    S3_DOWNLOAD,
+    TEMP_PATH,
+)
+from git_helper import Git, git_runner
 from pr_info import PRInfo
-from report import FAILURE, SUCCESS, JobReport, StatusType
-from stopwatch import Stopwatch
+from report import BuildResult, FAILURE, StatusType, SUCCESS
+from s3_helper import S3Helper
 from tee_popen import TeePopen
 from version_helper import (
     ClickHouseVersion,
     get_version_from_repo,
     update_version_local,
 )
+from clickhouse_helper import (
+    ClickHouseHelper,
+    CiLogsCredentials,
+    prepare_tests_results_for_clickhouse,
+    get_instance_type,
+)
+from stopwatch import Stopwatch
 
 IMAGE_NAME = "clickhouse/binary-builder"
 BUILD_LOG_NAME = "build_log.log"
 
 
-def _can_export_binaries(build_config: CI.BuildConfig) -> bool:
+def _can_export_binaries(build_config: BuildConfig) -> bool:
     if build_config.package_type != "deb":
         return False
     if build_config.sanitizer != "":
@@ -37,9 +51,10 @@ def _can_export_binaries(build_config: CI.BuildConfig) -> bool:
 
 
 def get_packager_cmd(
-    build_config: CI.BuildConfig,
+    build_config: BuildConfig,
     packager_path: Path,
     output_path: Path,
+    cargo_cache_dir: Path,
     build_version: str,
     image_version: str,
     official: bool,
@@ -56,14 +71,13 @@ def get_packager_cmd(
         cmd += " --debug-build"
     if build_config.sanitizer:
         cmd += f" --sanitizer={build_config.sanitizer}"
-    if build_config.coverage:
-        cmd += " --coverage"
     if build_config.tidy:
         cmd += " --clang-tidy"
 
     cmd += " --cache=sccache"
     cmd += " --s3-rw-access"
     cmd += f" --s3-bucket={S3_BUILDS_BUCKET}"
+    cmd += f" --cargo-cache-dir={cargo_cache_dir}"
 
     if build_config.additional_pkgs:
         cmd += " --additional-pkgs"
@@ -106,10 +120,54 @@ def build_clickhouse(
     return build_log_path, SUCCESS if success else FAILURE
 
 
-def is_release_pr(pr_info: PRInfo) -> bool:
-    return (
-        CI.Labels.RELEASE in pr_info.labels or CI.Labels.RELEASE_LTS in pr_info.labels
+def check_for_success_run(
+    s3_helper: S3Helper,
+    s3_prefix: str,
+    build_name: str,
+    version: ClickHouseVersion,
+) -> None:
+    # TODO: Remove after S3 artifacts
+    logging.info("Checking for artifacts %s in bucket %s", s3_prefix, S3_BUILDS_BUCKET)
+    try:
+        # Performance artifacts are now part of regular build, so we're safe
+        build_results = s3_helper.list_prefix(s3_prefix)
+    except Exception as ex:
+        logging.info("Got exception while listing %s: %s\nRerun", s3_prefix, ex)
+        return
+
+    if build_results is None or len(build_results) == 0:
+        logging.info("Nothing found in %s, rerun", s3_prefix)
+        return
+
+    logging.info("Some build results found:\n%s", build_results)
+    build_urls = []
+    log_url = ""
+    for url in build_results:
+        url_escaped = url.replace("+", "%2B").replace(" ", "%20")
+        if BUILD_LOG_NAME in url:
+            log_url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{url_escaped}"
+        else:
+            build_urls.append(f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{url_escaped}")
+    if not log_url:
+        # log is uploaded the last, so if there's no log we need to rerun the build
+        return
+
+    success = len(build_urls) > 0
+    build_result = BuildResult(
+        build_name,
+        log_url,
+        build_urls,
+        version.describe,
+        SUCCESS if success else FAILURE,
+        0,
+        GITHUB_JOB_API_URL(),
     )
+    build_result.write_json(Path(TEMP_PATH))
+    # Fail build job if not successeded
+    if not success:
+        sys.exit(1)
+    else:
+        sys.exit(0)
 
 
 def get_release_or_pr(pr_info: PRInfo, version: ClickHouseVersion) -> Tuple[str, str]:
@@ -120,7 +178,7 @@ def get_release_or_pr(pr_info: PRInfo, version: ClickHouseVersion) -> Tuple[str,
     # It should be fixed in performance-comparison image eventually
     # For performance tests we always set PRs prefix
     performance_pr = "PRs/0"
-    if is_release_pr(pr_info):
+    if "release" in pr_info.labels or "release-lts" in pr_info.labels:
         # for release pull requests we use branch names prefixes, not pr numbers
         return pr_info.head_ref, performance_pr
     if pr_info.number == 0:
@@ -131,25 +189,34 @@ def get_release_or_pr(pr_info: PRInfo, version: ClickHouseVersion) -> Tuple[str,
     return pr_number, pr_number
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser("Clickhouse builder script")
-    parser.add_argument(
-        "build_name",
-        help="build name",
-    )
-    return parser.parse_args()
+def upload_master_static_binaries(
+    pr_info: PRInfo,
+    build_config: BuildConfig,
+    s3_helper: S3Helper,
+    build_output_path: Path,
+) -> None:
+    """Upload binary artifacts to a static S3 links"""
+    static_binary_name = build_config.static_binary_name
+    if pr_info.number != 0:
+        return
+    elif not static_binary_name:
+        return
+    elif pr_info.base_ref != "master":
+        return
+
+    s3_path = "/".join((pr_info.base_ref, static_binary_name, "clickhouse"))
+    binary = build_output_path / "clickhouse"
+    url = s3_helper.upload_build_file_to_s3(binary, s3_path)
+    print(f"::notice ::Binary static URL: {url}")
 
 
 def main():
     logging.basicConfig(level=logging.INFO)
 
-    args = parse_args()
-
     stopwatch = Stopwatch()
-    build_name = args.build_name
+    build_name = sys.argv[1]
 
-    build_config = CI.JOB_CONFIGS[build_name].build_config
-    assert build_config
+    build_config = CI_CONFIG.build_config[build_name]
 
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
@@ -159,13 +226,32 @@ def main():
 
     logging.info("Repo copy path %s", repo_path)
 
+    s3_helper = S3Helper()
+
     version = get_version_from_repo(git=Git(True))
+    release_or_pr, performance_pr = get_release_or_pr(pr_info, version)
+
+    s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
+    # FIXME performance
+    s3_performance_path = "/".join(
+        (performance_pr, pr_info.sha, build_name, "performance.tar.zst")
+    )
+
+    # If this is rerun, then we try to find already created artifacts and just
+    # put them as github actions artifact (result)
+    # The s3_path_prefix has additional "/" in the end to prevent finding
+    # e.g. `binary_darwin_aarch64/clickhouse` for `binary_darwin`
+    check_for_success_run(s3_helper, f"{s3_path_prefix}/", build_name, version)
+
+    docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
+    image_version = docker_image.version
+
     logging.info("Got version from repo %s", version.string)
 
     official_flag = pr_info.number == 0
 
     version_type = "testing"
-    if is_release_pr(pr_info):
+    if "release" in pr_info.labels or "release-lts" in pr_info.labels:
         version_type = "stable"
         official_flag = True
 
@@ -177,17 +263,18 @@ def main():
 
     build_output_path = temp_path / build_name
     build_output_path.mkdir(parents=True, exist_ok=True)
-
-    docker_image = docker_images_helper.pull_image(
-        docker_images_helper.get_docker_image(IMAGE_NAME)
+    cargo_cache = CargoCache(
+        temp_path / "cargo_cache" / "registry", temp_path, s3_helper
     )
+    cargo_cache.download()
 
     packager_cmd = get_packager_cmd(
         build_config,
         repo_path / "docker" / "packager",
         build_output_path,
+        cargo_cache.directory,
         version.string,
-        docker_image.version,
+        image_version,
         official_flag,
     )
 
@@ -205,7 +292,9 @@ def main():
         f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True
     )
     logging.info("Build finished as %s, log path %s", build_status, log_path)
-    if build_status != SUCCESS:
+    if build_status == SUCCESS:
+        cargo_cache.upload()
+    else:
         # We check if docker works, because if it's down, it's infrastructure
         try:
             subprocess.check_call("docker info", shell=True)
@@ -215,16 +304,145 @@ def main():
             )
             sys.exit(1)
 
-    JobReport(
-        description=version.describe,
-        test_results=[],
-        status=build_status,
-        start_time=stopwatch.start_time_str,
-        duration=elapsed,
-        additional_files=[log_path],
-        build_dir_for_upload=build_output_path,
-        version=version.describe,
-    ).dump()
+    # FIXME performance
+    performance_urls = []
+    performance_path = build_output_path / "performance.tar.zst"
+    if performance_path.exists():
+        performance_urls.append(
+            s3_helper.upload_build_file_to_s3(performance_path, s3_performance_path)
+        )
+        logging.info(
+            "Uploaded performance.tar.zst to %s, now delete to avoid duplication",
+            performance_urls[0],
+        )
+        performance_path.unlink()
+
+    build_urls = (
+        s3_helper.upload_build_directory_to_s3(
+            build_output_path,
+            s3_path_prefix,
+            keep_dirs_in_s3_path=False,
+            upload_symlinks=False,
+        )
+        + performance_urls
+    )
+    logging.info("Got build URLs %s", build_urls)
+
+    print("::notice ::Build URLs: {}".format("\n".join(build_urls)))
+
+    if log_path.exists():
+        log_url = s3_helper.upload_build_file_to_s3(
+            log_path, s3_path_prefix + "/" + log_path.name
+        )
+        logging.info("Log url %s", log_url)
+    else:
+        logging.info("Build log doesn't exist")
+
+    print(f"::notice ::Log URL: {log_url}")
+
+    build_result = BuildResult(
+        build_name,
+        log_url,
+        build_urls,
+        version.describe,
+        build_status,
+        elapsed,
+        GITHUB_JOB_API_URL(),
+    )
+    result_json_path = build_result.write_json(temp_path)
+    logging.info(
+        "Build result file %s is written, content:\n %s",
+        result_json_path,
+        result_json_path.read_text(encoding="utf-8"),
+    )
+
+    upload_master_static_binaries(pr_info, build_config, s3_helper, build_output_path)
+
+    # Upload profile data
+    ch_helper = ClickHouseHelper()
+
+    ci_logs_credentials = CiLogsCredentials(Path("/dev/null"))
+    if ci_logs_credentials.host:
+        instance_type = get_instance_type()
+        query = f"""INSERT INTO build_time_trace
+(
+    pull_request_number,
+    commit_sha,
+    check_start_time,
+    check_name,
+    instance_type,
+    file,
+    library,
+    time,
+    pid,
+    tid,
+    ph,
+    ts,
+    dur,
+    cat,
+    name,
+    detail,
+    count,
+    avgMs,
+    args_name
+)
+SELECT {pr_info.number}, '{pr_info.sha}', '{stopwatch.start_time_str}', '{build_name}', '{instance_type}', *
+FROM input('
+    file String,
+    library String,
+    time DateTime64(6),
+    pid UInt32,
+    tid UInt32,
+    ph String,
+    ts UInt64,
+    dur UInt64,
+    cat String,
+    name String,
+    detail String,
+    count UInt64,
+    avgMs UInt64,
+    args_name String')
+FORMAT JSONCompactEachRow"""
+
+        auth = {
+            "X-ClickHouse-User": "ci",
+            "X-ClickHouse-Key": ci_logs_credentials.password,
+        }
+        url = f"https://{ci_logs_credentials.host}/"
+        profiles_dir = temp_path / "profiles_source"
+        profiles_dir.mkdir(parents=True, exist_ok=True)
+        logging.info(
+            "Processing profile JSON files from %s", repo_path / "build_docker"
+        )
+        git_runner(
+            "./utils/prepare-time-trace/prepare-time-trace.sh "
+            f"build_docker {profiles_dir.absolute()}"
+        )
+        profile_data_file = temp_path / "profile.json"
+        with open(profile_data_file, "wb") as profile_fd:
+            for profile_sourse in profiles_dir.iterdir():
+                with open(profiles_dir / profile_sourse, "rb") as ps_fd:
+                    profile_fd.write(ps_fd.read())
+
+        logging.info(
+            "::notice ::Log Uploading profile data, path: %s, size: %s, query: %s",
+            profile_data_file,
+            profile_data_file.stat().st_size,
+            query,
+        )
+        ch_helper.insert_file(url, auth, query, profile_data_file)
+
+    # Upload statistics to CI database
+    prepared_events = prepare_tests_results_for_clickhouse(
+        pr_info,
+        [],
+        build_status,
+        stopwatch.duration_seconds,
+        stopwatch.start_time_str,
+        log_url,
+        f"Build ({build_name})",
+    )
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     # Fail the build job if it didn't succeed
     if build_status != SUCCESS:

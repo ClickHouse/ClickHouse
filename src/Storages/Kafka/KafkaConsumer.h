@@ -57,12 +57,13 @@ public:
         UInt64 num_rebalance_revocations;
         KafkaConsumer::ExceptionsBuffer exceptions_buffer;
         bool in_use;
-        UInt64 last_used_usec;
         std::string rdkafka_stat;
     };
 
+public:
     KafkaConsumer(
-        LoggerPtr log_,
+        ConsumerPtr consumer_,
+        Poco::Logger * log_,
         size_t max_batch_size,
         size_t poll_timeout_,
         bool intermediate_commit_,
@@ -71,28 +72,23 @@ public:
     );
 
     ~KafkaConsumer();
-
-    void createConsumer(cppkafka::Configuration consumer_config);
-    bool hasConsumer() const { return consumer.get() != nullptr; }
-    ConsumerPtr && moveConsumer();
-
     void commit(); // Commit all processed messages.
     void subscribe(); // Subscribe internal consumer to topics.
     void unsubscribe(); // Unsubscribe internal consumer in case of failure.
 
     auto pollTimeout() const { return poll_timeout; }
 
-    bool hasMorePolledMessages() const
+    inline bool hasMorePolledMessages() const
     {
         return (stalled_status == NOT_STALLED) && (current != messages.end());
     }
 
-    bool polledDataUnusable() const
+    inline bool polledDataUnusable() const
     {
         return  (stalled_status != NOT_STALLED) && (stalled_status != NO_MESSAGES_RETURNED);
     }
 
-    bool isStalled() const { return stalled_status != NOT_STALLED; }
+    inline bool isStalled() const { return stalled_status != NOT_STALLED; }
 
     void storeLastReadMessageOffset();
     void resetToLastCommitted(const char * msg);
@@ -108,7 +104,7 @@ public:
     auto currentPartition() const { return current[-1].get_partition(); }
     auto currentTimestamp() const { return current[-1].get_timestamp(); }
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
-    const cppkafka::Buffer & currentPayload() const { return current[-1].get_payload(); }
+    String currentPayload() const { return current[-1].get_payload(); }
     void setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace = true);
     void setExceptionInfo(const std::string & text, bool with_stacktrace = true);
     void setRDKafkaStat(const std::string & stat_json_string)
@@ -117,19 +113,10 @@ public:
         rdkafka_stat = stat_json_string;
     }
     void inUse() { in_use = true; }
-    void notInUse()
-    {
-        in_use = false;
-        last_used_usec = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    }
+    void notInUse() { in_use = false; }
 
     // For system.kafka_consumers
     Stat getStat() const;
-
-    bool isInUse() const { return in_use; }
-    UInt64 getLastUsedUsec() const { return last_used_usec; }
-
-    std::string getMemberId() const;
 
 private:
     using Messages = std::vector<cppkafka::Message>;
@@ -145,12 +132,8 @@ private:
         ERRORS_RETURNED
     };
 
-    // order is important, need to be destructed *after* consumer
-    mutable std::mutex rdkafka_stat_mutex;
-    std::string rdkafka_stat;
-
     ConsumerPtr consumer;
-    LoggerPtr log;
+    Poco::Logger * log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
     size_t offsets_stored = 0;
@@ -162,11 +145,11 @@ private:
 
     const std::atomic<bool> & stopped;
 
-    // order is important, need to be destructed *before* consumer
+    // order is important, need to be destructed before consumer
     Messages messages;
     Messages::const_iterator current;
 
-    // order is important, need to be destructed *before* consumer
+    // order is important, need to be destructed before consumer
     std::optional<cppkafka::TopicPartitionList> assignment;
     const Names topics;
 
@@ -184,15 +167,19 @@ private:
     std::atomic<UInt64> last_rebalance_timestamp_usec = 0;
     std::atomic<UInt64> num_rebalance_assignments = 0;
     std::atomic<UInt64> num_rebalance_revocations = 0;
-    std::atomic<bool> in_use = false;
-    /// Last used time (for TTL)
-    std::atomic<UInt64> last_used_usec = 0;
+    std::atomic<bool> in_use = 0;
+
+    mutable std::mutex rdkafka_stat_mutex;
+    std::string rdkafka_stat;
 
     void drain();
     void cleanUnprocessed();
     void resetIfStopped();
-    void filterMessageErrors();
+    /// Return number of messages with an error.
+    size_t filterMessageErrors();
     ReadBufferPtr getNextMessage();
+
+    std::string getMemberId() const;
 };
 
 }

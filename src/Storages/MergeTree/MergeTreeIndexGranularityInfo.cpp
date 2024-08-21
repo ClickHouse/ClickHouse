@@ -1,6 +1,5 @@
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 
 namespace fs = std::filesystem;
@@ -55,9 +54,9 @@ MarkType::MarkType(bool adaptive_, bool compressed_, MergeTreeDataPartType::Valu
     : adaptive(adaptive_), compressed(compressed_), part_type(part_type_)
 {
     if (!adaptive && part_type != MergeTreeDataPartType::Wide)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-Wide data part type with non-adaptive granularity");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: non-Wide data part type with non-adaptive granularity");
     if (part_type == MergeTreeDataPartType::Unknown)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown data part type");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unknown data part type");
 }
 
 bool MarkType::isMarkFileExtension(std::string_view extension)
@@ -72,7 +71,7 @@ std::string MarkType::getFileExtension() const
     if (!adaptive)
     {
         if (part_type != MergeTreeDataPartType::Wide)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-Wide data part type with non-adaptive granularity");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: non-Wide data part type with non-adaptive granularity");
         return res;
     }
 
@@ -82,15 +81,13 @@ std::string MarkType::getFileExtension() const
             return res + "2";
         case MergeTreeDataPartType::Compact:
             return res + "3";
+        case MergeTreeDataPartType::InMemory:
+            return "";
         case MergeTreeDataPartType::Unknown:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown data part type");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unknown data part type");
     }
 }
 
-std::string MarkType::describe() const
-{
-    return fmt::format("adaptive: {}, compressed: {}, part_type: {}", adaptive, compressed, part_type);
-}
 
 std::optional<MarkType> MergeTreeIndexGranularityInfo::getMarksTypeFromFilesystem(const IDataPartStorage & data_part_storage)
 {
@@ -129,17 +126,10 @@ size_t MergeTreeIndexGranularityInfo::getMarkSizeInBytes(size_t columns_num) con
         return mark_type.adaptive ? getAdaptiveMrkSizeWide() : getNonAdaptiveMrkSizeWide();
     else if (mark_type.part_type == MergeTreeDataPartType::Compact)
         return getAdaptiveMrkSizeCompact(columns_num);
+    else if (mark_type.part_type == MergeTreeDataPartType::InMemory)
+        return 0;
     else
         throw Exception(ErrorCodes::UNKNOWN_PART_TYPE, "Unknown part type");
-}
-
-std::string MergeTreeIndexGranularityInfo::describe() const
-{
-    return fmt::format(
-        "mark_type: [{}], index_granularity_bytes: {}, fixed_index_granularity: {}",
-        mark_type.describe(),
-        index_granularity_bytes,
-        fixed_index_granularity);
 }
 
 size_t getAdaptiveMrkSizeCompact(size_t columns_num)
@@ -147,4 +137,5 @@ size_t getAdaptiveMrkSizeCompact(size_t columns_num)
     /// Each mark contains number of rows in granule and two offsets for every column.
     return sizeof(UInt64) * (columns_num * 2 + 1);
 }
+
 }

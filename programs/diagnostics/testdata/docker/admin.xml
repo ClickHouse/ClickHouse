@@ -1,0 +1,15 @@
+<clickhouse>
+    <!-- Profiles of settings. -->
+    <profiles>
+        <!-- Default settings. -->
+        <default>
+            <!-- Allows us to create replicated databases. -->
+            <allow_experimental_database_replicated>1</allow_experimental_database_replicated>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <access_management>1</access_management>
+        </default>
+    </users>
+</clickhouse>

@@ -2,7 +2,7 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeMap.h>
 
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnMap.h>
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
@@ -40,7 +40,7 @@ static IColumn & extractNestedColumn(IColumn & column)
 
 void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const auto & map = field.safeGet<const Map &>();
+    const auto & map = field.get<const Map &>();
     writeVarUInt(map.size(), ostr);
     for (const auto & elem : map)
     {
@@ -55,15 +55,15 @@ void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const
 {
     size_t size;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+    if (settings.max_binary_array_size && size > settings.max_binary_array_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large map size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.binary.max_binary_string_size);
+            settings.max_binary_array_size);
     field = Map();
-    Map & map = field.safeGet<Map &>();
+    Map & map = field.get<Map &>();
     map.reserve(size);
     for (size_t i = 0; i < size; ++i)
     {
@@ -115,11 +115,9 @@ void SerializationMap::serializeTextImpl(
     writeChar('}', ostr);
 }
 
-template <typename ReturnType, typename Reader>
-ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader) const
+template <typename Reader>
+void SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader) const
 {
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
     auto & column_map = assert_cast<ColumnMap &>(column);
 
     auto & nested_array = column_map.getNestedColumn();
@@ -130,21 +128,7 @@ ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & 
     auto & value_column = nested_tuple.getColumn(1);
 
     size_t size = 0;
-    if constexpr (throw_exception)
-        assertChar('{', istr);
-    else if (!checkChar('{', istr))
-        return ReturnType(false);
-
-    auto on_error_no_throw = [&]()
-    {
-        if (size)
-        {
-            nested_tuple.getColumnPtr(0) = key_column.cut(0, offsets.back());
-            nested_tuple.getColumnPtr(1) = value_column.cut(0, offsets.back());
-        }
-
-        return ReturnType(false);
-    };
+    assertChar('{', istr);
 
     try
     {
@@ -154,15 +138,9 @@ ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & 
             if (!first)
             {
                 if (*istr.position() == ',')
-                {
                     ++istr.position();
-                }
                 else
-                {
-                    if constexpr (throw_exception)
-                        throw Exception(ErrorCodes::CANNOT_READ_MAP_FROM_TEXT, "Cannot read Map from text");
-                    return on_error_no_throw();
-                }
+                    throw Exception(ErrorCodes::CANNOT_READ_MAP_FROM_TEXT, "Cannot read Map from text");
             }
 
             first = false;
@@ -172,32 +150,19 @@ ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & 
             if (*istr.position() == '}')
                 break;
 
-            if constexpr (throw_exception)
-                reader(istr, key, key_column);
-            else if (!reader(istr, key, key_column))
-                return on_error_no_throw();
-
+            reader(istr, key, key_column);
             ++size;
 
             skipWhitespaceIfAny(istr);
-            if constexpr (throw_exception)
-                assertChar(':', istr);
-            else if (!checkChar(':', istr))
-                return on_error_no_throw();
+            assertChar(':', istr);
             skipWhitespaceIfAny(istr);
 
-            if constexpr (throw_exception)
-                reader(istr, value, value_column);
-            else if (!reader(istr, value, value_column))
-                return on_error_no_throw();
+            reader(istr, value, value_column);
 
             skipWhitespaceIfAny(istr);
         }
 
-        if constexpr (throw_exception)
-            assertChar('}', istr);
-        else if (!checkChar('}', istr))
-            return on_error_no_throw();
+        assertChar('}', istr);
     }
     catch (...)
     {
@@ -206,14 +171,10 @@ ReturnType SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & 
             nested_tuple.getColumnPtr(0) = key_column.cut(0, offsets.back());
             nested_tuple.getColumnPtr(1) = value_column.cut(0, offsets.back());
         }
-
-        if constexpr (throw_exception)
-            throw;
-        return ReturnType(false);
+        throw;
     }
 
     offsets.push_back(offsets.back() + size);
-    return ReturnType(true);
 }
 
 void SerializationMap::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -231,36 +192,11 @@ void SerializationMap::deserializeText(IColumn & column, ReadBuffer & istr, cons
     deserializeTextImpl(column, istr,
         [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
         {
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(subcolumn, buf, settings, subcolumn_serialization);
-            else
-                subcolumn_serialization->deserializeTextQuoted(subcolumn, buf, settings);
+            subcolumn_serialization->deserializeTextQuoted(subcolumn, buf, settings);
         });
 
     if (whole && !istr.eof())
         throwUnexpectedDataAfterParsedValue(column, istr, settings, "Map");
-}
-
-bool SerializationMap::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
-{
-    auto reader = [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
-    {
-        if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(subcolumn, buf, settings, subcolumn_serialization);
-        return subcolumn_serialization->tryDeserializeTextQuoted(subcolumn, buf, settings);
-    };
-
-    auto ok = deserializeTextImpl<bool>(column, istr, reader);
-    if (!ok)
-        return false;
-
-    if (whole && !istr.eof())
-    {
-        column.popBack(1);
-        return false;
-    }
-
-    return true;
 }
 
 void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -321,23 +257,11 @@ void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, 
     deserializeTextImpl(column, istr,
         [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
         {
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-                SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
+            if (settings.null_as_default)
+                SerializationNullable::deserializeTextJSONImpl(subcolumn, buf, settings, subcolumn_serialization);
             else
                 subcolumn_serialization->deserializeTextJSON(subcolumn, buf, settings);
         });
-}
-
-bool SerializationMap::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    auto reader = [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
-    {
-        if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
-        return subcolumn_serialization->tryDeserializeTextJSON(subcolumn, buf, settings);
-    };
-
-    return deserializeTextImpl<bool>(column, istr, reader);
 }
 
 void SerializationMap::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -381,15 +305,6 @@ void SerializationMap::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
     deserializeText(column, rb, settings, true);
 }
 
-bool SerializationMap::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    String s;
-    if (!tryReadCSV(s, istr, settings.csv))
-        return false;
-    ReadBufferFromString rb(s);
-    return tryDeserializeText(column, rb, settings, true);
-}
-
 void SerializationMap::enumerateStreams(
     EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
@@ -398,8 +313,7 @@ void SerializationMap::enumerateStreams(
     auto next_data = SubstreamData(nested)
         .withType(data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() : nullptr)
         .withColumn(data.column ? assert_cast<const ColumnMap &>(*data.column).getNestedColumnPtr() : nullptr)
-        .withSerializationInfo(data.serialization_info)
-        .withDeserializeState(data.deserialize_state);
+        .withSerializationInfo(data.serialization_info);
 
     nested->enumerateStreams(settings, callback, next_data);
 }
@@ -421,10 +335,9 @@ void SerializationMap::serializeBinaryBulkStateSuffix(
 
 void SerializationMap::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state,
-    SubstreamsDeserializeStatesCache * cache) const
+    DeserializeBinaryBulkStatePtr & state) const
 {
-    nested->deserializeBinaryBulkStatePrefix(settings, state, cache);
+    nested->deserializeBinaryBulkStatePrefix(settings, state);
 }
 
 

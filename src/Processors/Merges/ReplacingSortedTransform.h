@@ -3,10 +3,6 @@
 #include <Processors/Merges/IMergingTransform.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 
-namespace ProfileEvents
-{
-    extern const Event ReplacingSortedMilliseconds;
-}
 
 namespace DB
 {
@@ -23,8 +19,7 @@ public:
         size_t max_block_size_bytes,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false,
-        bool cleanup = false,
-        bool enable_vertical_final = false)
+        bool cleanup = false)
         : IMergingTransform(
             num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
             header,
@@ -36,17 +31,11 @@ public:
             max_block_size_bytes,
             out_row_sources_buf_,
             use_average_block_sizes,
-            cleanup,
-            enable_vertical_final)
+            cleanup)
     {
     }
 
     String getName() const override { return "ReplacingSorted"; }
-
-    void onFinish() override
-    {
-        logMergedStats(ProfileEvents::ReplacingSortedMilliseconds, "Replaced sorted", getLogger("ReplacingSortedTransform"));
-    }
 };
 
 }

@@ -2,14 +2,12 @@
 
 #include <chrono>
 #include <functional>
-#include <exception>
 #include <unordered_map>
 #include <base/types.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <base/scope_guard.h>
 #include <Common/ExternalLoaderStatus.h>
-#include <Common/Logger.h>
 #include <Core/Types.h>
 
 namespace Poco { class Logger; }
@@ -51,7 +49,6 @@ class ExternalLoader
 {
 public:
     using LoadablePtr = std::shared_ptr<const IExternalLoadable>;
-    using LoadableMutablePtr = std::shared_ptr<IExternalLoadable>;
     using Loadables = std::vector<LoadablePtr>;
     using Status = ExternalLoaderStatus;
 
@@ -87,7 +84,7 @@ public:
     template <typename T>
     static constexpr bool is_vector_load_result_type = std::is_same_v<T, LoadResults> || std::is_same_v<T, Loadables>;
 
-    ExternalLoader(const String & type_name_, LoggerPtr log);
+    ExternalLoader(const String & type_name_, Poco::Logger * log);
     virtual ~ExternalLoader();
 
     /// Adds a repository which will be used to read configurations from.
@@ -111,17 +108,17 @@ public:
 
     /// Returns the result of loading the object.
     /// The function doesn't load anything, it just returns the current load result as is.
-    template <typename ReturnType = LoadResult, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>> // NOLINT
+    template <typename ReturnType = LoadResult, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>>
     ReturnType getLoadResult(const String & name) const;
 
     using FilterByNameFunction = std::function<bool(const String &)>;
 
     /// Returns all the load results as a map.
     /// The function doesn't load anything, it just returns the current load results as is.
-    template <typename ReturnType = LoadResults, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
+    template <typename ReturnType = LoadResults, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
     ReturnType getLoadResults() const { return getLoadResults<ReturnType>(FilterByNameFunction{}); }
 
-    template <typename ReturnType = LoadResults, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
+    template <typename ReturnType = LoadResults, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
     ReturnType getLoadResults(const FilterByNameFunction & filter) const;
 
     /// Returns all loaded objects as a map.
@@ -145,59 +142,59 @@ public:
     /// Loads a specified object.
     /// The function does nothing if it's already loaded.
     /// The function doesn't throw an exception if it's failed to load.
-    template <typename ReturnType = LoadablePtr, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>> // NOLINT
+    template <typename ReturnType = LoadablePtr, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>>
     ReturnType tryLoad(const String & name, Duration timeout = WAIT) const;
 
     /// Loads objects by filter.
     /// The function does nothing for already loaded objects, it just returns them.
     /// The function doesn't throw an exception if it's failed to load something.
-    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
+    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
     ReturnType tryLoad(const FilterByNameFunction & filter, Duration timeout = WAIT) const;
 
     /// Loads all objects.
     /// The function does nothing for already loaded objects, it just returns them.
     /// The function doesn't throw an exception if it's failed to load something.
-    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
+    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
     ReturnType tryLoadAll(Duration timeout = WAIT) const { return tryLoad<ReturnType>(FilterByNameFunction{}, timeout); }
 
     /// Loads a specified object.
     /// The function does nothing if it's already loaded.
     /// The function throws an exception if it's failed to load.
-    template <typename ReturnType = LoadablePtr, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>> // NOLINT
+    template <typename ReturnType = LoadablePtr, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>>
     ReturnType load(const String & name) const;
 
     /// Loads objects by filter.
     /// The function does nothing for already loaded objects, it just returns them.
     /// The function throws an exception if it's failed to load something.
-    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
+    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
     ReturnType load(const FilterByNameFunction & filter) const;
 
     /// Loads all objects. Not recommended to use.
     /// The function does nothing for already loaded objects, it just returns them.
     /// The function throws an exception if it's failed to load something.
-    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
+    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
     ReturnType loadAll() const { return load<ReturnType>(FilterByNameFunction{}); }
 
     /// Loads or reloads a specified object.
     /// The function reloads the object if it's already loaded.
     /// The function throws an exception if it's failed to load or reload.
-    template <typename ReturnType = LoadablePtr, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>> // NOLINT
+    template <typename ReturnType = LoadablePtr, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>>
     ReturnType loadOrReload(const String & name) const;
 
     /// Loads or reloads objects by filter.
     /// The function reloads the objects which are already loaded.
     /// The function throws an exception if it's failed to load or reload something.
-    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
+    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
     ReturnType loadOrReload(const FilterByNameFunction & filter) const;
 
     /// Load or reloads all objects. Not recommended to use.
     /// The function throws an exception if it's failed to load or reload something.
-    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
+    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
     ReturnType loadOrReloadAll() const { return loadOrReload<ReturnType>(FilterByNameFunction{}); }
 
     /// Reloads objects by filter which were tried to load before (successfully or not).
     /// The function throws an exception if it's failed to load or reload something.
-    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
+    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
     ReturnType reloadAllTriedToLoad() const;
 
     /// Check if object with name exists in configuration
@@ -213,15 +210,7 @@ public:
     void reloadConfig(const String & repository_name, const String & path) const;
 
 protected:
-    virtual LoadableMutablePtr createObject(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config, const String & repository_name) const = 0;
-
-    /// Returns whether the object must be reloaded after a specified change in its configuration.
-    virtual bool doesConfigChangeRequiresReloadingObject(const Poco::Util::AbstractConfiguration & /* old_config */, const String & /* old_key_in_config */,
-                                                         const Poco::Util::AbstractConfiguration & /* new_config */, const String & /* new_key_in_config */) const { return true; /* always reload */ }
-
-    /// Updates the object from the configuration without reloading as much as possible.
-    virtual void updateObjectFromConfigWithoutReloading(
-        IExternalLoadable & /* object */, const Poco::Util::AbstractConfiguration & /* config */, const String & /* key_in_config */) const {}
+    virtual LoadablePtr create(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config, const String & repository_name) const = 0;
 
 private:
     void checkLoaded(const LoadResult & result, bool check_no_errors) const;
@@ -229,7 +218,7 @@ private:
 
     Strings getAllTriedToLoadNames() const;
 
-    LoadableMutablePtr createOrCloneObject(const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const;
+    LoadablePtr createObject(const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const;
 
     class LoadablesConfigReader;
     std::unique_ptr<LoadablesConfigReader> config_files_reader;
@@ -241,7 +230,7 @@ private:
     std::unique_ptr<PeriodicUpdater> periodic_updater;
 
     const String type_name;
-    const LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

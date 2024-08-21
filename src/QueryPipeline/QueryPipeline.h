@@ -167,7 +167,6 @@ private:
     friend class PushingAsyncPipelineExecutor;
     friend class PullingAsyncPipelineExecutor;
     friend class CompletedPipelineExecutor;
-    friend class RefreshTask;
     friend class QueryPipelineBuilder;
 };
 

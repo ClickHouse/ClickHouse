@@ -1,5 +1,5 @@
-#include <Interpreters/Context.h>
 #include "ICommand.h"
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -9,70 +9,51 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-
 class CommandMove final : public ICommand
 {
 public:
     CommandMove()
     {
         command_name = "move";
-        description = "Move file or directory from `from_path` to `to_path`";
-        options_description.add_options()("path-from", po::value<String>(), "path from which we copy (mandatory, positional)")(
-            "path-to", po::value<String>(), "path to which we copy (mandatory, positional)");
-        positional_options_description.add("path-from", 1);
-        positional_options_description.add("path-to", 1);
+        description = "Move file or directory from `from_path` to `to_path`\nPath should be in format './' or './path' or 'path'";
+        usage = "move [OPTION]... <FROM_PATH> <TO_PATH>";
     }
 
-    void executeImpl(const CommandLineOptions & options, DisksClient & client) override
+    void processOptions(
+        Poco::Util::LayeredConfiguration &,
+        po::variables_map &) const override
+    {}
+
+    void execute(
+        const std::vector<String> & command_arguments,
+        DB::ContextMutablePtr & global_context,
+        Poco::Util::LayeredConfiguration & config) override
     {
-        auto disk = client.getCurrentDiskWithPath();
+        if (command_arguments.size() != 2)
+        {
+            printHelpMessage();
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
+        }
 
-        String path_from = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-from"));
-        String path_to = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-to"));
+        String disk_name = config.getString("disk", "default");
 
-        if (disk.getDisk()->isFile(path_from))
-        {
-            disk.getDisk()->moveFile(path_from, path_to);
-        }
-        else if (disk.getDisk()->isDirectory(path_from))
-        {
-            auto target_location = getTargetLocation(path_from, disk, path_to);
-            if (!disk.getDisk()->exists(target_location))
-            {
-                disk.getDisk()->createDirectory(target_location);
-                disk.getDisk()->moveDirectory(path_from, target_location);
-            }
-            else
-            {
-                if (disk.getDisk()->isFile(target_location))
-                {
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS, "cannot overwrite non-directory '{}' with directory '{}'", target_location, path_from);
-                }
-                if (!disk.getDisk()->isDirectoryEmpty(target_location))
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot move '{}' to '{}': Directory not empty", path_from, target_location);
-                }
-                else
-                {
-                    disk.getDisk()->moveDirectory(path_from, target_location);
-                }
-            }
-        }
-        else if (!disk.getDisk()->exists(path_from))
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "cannot stat '{}' on disk: '{}': No such file or directory",
-                path_from,
-                disk.getDisk()->getName());
-        }
+        const String & path_from = command_arguments[0];
+        const String & path_to = command_arguments[1];
+
+        DiskPtr disk = global_context->getDisk(disk_name);
+
+        String relative_path_from = validatePathAndGetAsRelative(path_from);
+        String relative_path_to = validatePathAndGetAsRelative(path_to);
+
+        if (disk->isFile(relative_path_from))
+            disk->moveFile(relative_path_from, relative_path_to);
+        else
+            disk->moveDirectory(relative_path_from, relative_path_to);
     }
 };
-
-CommandPtr makeCommandMove()
-{
-    return std::make_shared<DB::CommandMove>();
 }
 
+std::unique_ptr <DB::ICommand> makeCommandMove()
+{
+    return std::make_unique<DB::CommandMove>();
 }

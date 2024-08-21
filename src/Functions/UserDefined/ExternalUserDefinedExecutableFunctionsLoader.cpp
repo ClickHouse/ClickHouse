@@ -1,8 +1,7 @@
 #include "ExternalUserDefinedExecutableFunctionsLoader.h"
 
 #include <boost/algorithm/string/split.hpp>
-#include <Common/StringUtils.h>
-#include <Core/Settings.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -96,13 +95,12 @@ namespace
 }
 
 ExternalUserDefinedExecutableFunctionsLoader::ExternalUserDefinedExecutableFunctionsLoader(ContextPtr global_context_)
-    : ExternalLoader("external user defined function", getLogger("ExternalUserDefinedExecutableFunctionsLoader"))
+    : ExternalLoader("external user defined function", &Poco::Logger::get("ExternalUserDefinedExecutableFunctionsLoader"))
     , WithContext(global_context_)
 {
     setConfigSettings({"function", "name", "database", "uuid"});
     enableAsyncLoading(false);
-    if (getContext()->getApplicationType() == Context::ApplicationType::SERVER)
-        enablePeriodicUpdates(true);
+    enablePeriodicUpdates(true);
     enableAlwaysLoadEverything(true);
 }
 
@@ -121,7 +119,7 @@ void ExternalUserDefinedExecutableFunctionsLoader::reloadFunction(const std::str
     loadOrReload(user_defined_function_name);
 }
 
-ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader::createObject(const std::string & name,
+ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create(const std::string & name,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & key_in_config,
     const std::string &) const
@@ -185,7 +183,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
         pool_size = config.getUInt64(key_in_config + ".pool_size", 16);
         max_command_execution_time = config.getUInt64(key_in_config + ".max_command_execution_time", 10);
 
-        size_t max_execution_time_seconds = static_cast<size_t>(getContext()->getSettingsRef().max_execution_time.totalSeconds());
+        size_t max_execution_time_seconds = static_cast<size_t>(getContext()->getSettings().max_execution_time.totalSeconds());
         if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
             max_command_execution_time = max_execution_time_seconds;
     }

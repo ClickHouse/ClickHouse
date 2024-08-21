@@ -17,7 +17,7 @@ Columns:
     - `0` — Current user can change the setting.
     - `1` — Current user can’t change the setting.
 - `default` ([String](../../sql-reference/data-types/string.md)) — Setting default value.
-- `is_obsolete` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) - Shows whether a setting is obsolete.
+- `is_obsolete` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) _ Shows whether a setting is obsolete.
 
 **Example**
 

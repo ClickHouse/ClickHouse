@@ -9,7 +9,11 @@ if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     add_subdirectory (self-extracting-executable)
 endif ()
 
-# Not used in packages
+# Utils used in package
+add_subdirectory (config-processor)
+add_subdirectory (report)
+
+# Not used in package
 if (ENABLE_UTILS)
     add_subdirectory (compressor)
     add_subdirectory (corrector_utf8)

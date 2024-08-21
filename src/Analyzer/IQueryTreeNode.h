@@ -25,7 +25,7 @@ namespace ErrorCodes
 class WriteBuffer;
 
 /// Query tree node type
-enum class QueryTreeNodeType : uint8_t
+enum class QueryTreeNodeType
 {
     IDENTIFIER,
     MATCHER,
@@ -49,7 +49,7 @@ enum class QueryTreeNodeType : uint8_t
 /// Convert query tree node type to string
 const char * toString(QueryTreeNodeType type);
 
-/** Query tree is a semantic representation of query.
+/** Query tree is semantical representation of query.
   * Query tree node represent node in query tree.
   * IQueryTreeNode is base class for all query tree nodes.
   *
@@ -97,7 +97,6 @@ public:
     struct CompareOptions
     {
         bool compare_aliases = true;
-        bool compare_types = true;
     };
 
     /** Is tree equal to other tree with node root.
@@ -105,7 +104,7 @@ public:
       * With default compare options aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .compare_types = true }) const;
+    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true }) const;
 
     using Hash = CityHash_v1_0_2::uint128;
     using HashState = SipHash;
@@ -115,7 +114,7 @@ public:
       * Alias of query tree node is part of query tree hash.
       * Original AST is not part of query tree hash.
       */
-    Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .compare_types = true }) const;
+    Hash getTreeHash() const;
 
     /// Get a deep copy of the query tree
     QueryTreeNodePtr clone() const;
@@ -144,17 +143,9 @@ public:
         return alias;
     }
 
-    const String & getOriginalAlias() const
-    {
-        return original_alias.empty() ? alias : original_alias;
-    }
-
     /// Set node alias
     void setAlias(String alias_value)
     {
-        if (original_alias.empty())
-            original_alias = std::move(alias);
-
         alias = std::move(alias_value);
     }
 
@@ -191,7 +182,7 @@ public:
 
     struct ConvertToASTOptions
     {
-        /// Add _CAST if constant literal type is different from column type
+        /// Add _CAST if constant litral type is different from column type
         bool add_cast_for_constants = true;
 
         /// Identifiers are fully qualified (`database.table.column`), otherwise names are just column names (`column`)
@@ -265,12 +256,12 @@ protected:
     /** Subclass must compare its internal state with rhs node internal state and do not compare children or weak pointers to other
       * query tree nodes.
       */
-    virtual bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const = 0;
+    virtual bool isEqualImpl(const IQueryTreeNode & rhs) const = 0;
 
     /** Subclass must update tree hash with its internal state and do not update tree hash for children or weak pointers to other
       * query tree nodes.
       */
-    virtual void updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const = 0;
+    virtual void updateTreeHashImpl(HashState & hash_state) const = 0;
 
     /** Subclass must clone its internal state and do not clone children or weak pointers to other
       * query tree nodes.
@@ -285,9 +276,6 @@ protected:
 
 private:
     String alias;
-    /// An alias from query. Alias can be replaced by query passes,
-    /// but we need to keep the original one to support additional_table_filters.
-    String original_alias;
     ASTPtr original_ast;
 };
 

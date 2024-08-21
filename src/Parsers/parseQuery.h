@@ -19,8 +19,7 @@ ASTPtr tryParseQuery(
     size_t max_query_size,          /// If (end - pos) > max_query_size and query is longer than max_query_size then throws "Max query size exceeded".
                                     /// Disabled if zero. Is used in order to check query size if buffer can contains data for INSERT query.
     size_t max_parser_depth,
-    size_t max_parser_backtracks,
-    bool skip_insignificant);  /// If true, lexer will skip all insignificant tokens (e.g. whitespaces)
+    bool skip_insignificant = true);  /// If true, lexer will skip all insignificant tokens (e.g. whitespaces)
 
 
 /// Parse query or throw an exception with error message.
@@ -31,8 +30,7 @@ ASTPtr parseQueryAndMovePosition(
     const std::string & description,
     bool allow_multi_statements,
     size_t max_query_size,
-    size_t max_parser_depth,
-    size_t max_parser_backtracks);
+    size_t max_parser_depth);
 
 ASTPtr parseQuery(
     IParser & parser,
@@ -40,23 +38,20 @@ ASTPtr parseQuery(
     const char * end,
     const std::string & description,
     size_t max_query_size,
-    size_t max_parser_depth,
-    size_t max_parser_backtracks);
+    size_t max_parser_depth);
 
 ASTPtr parseQuery(
     IParser & parser,
     const std::string & query,
     const std::string & query_description,
     size_t max_query_size,
-    size_t max_parser_depth,
-    size_t max_parser_backtracks);
+    size_t max_parser_depth);
 
 ASTPtr parseQuery(
     IParser & parser,
     const std::string & query,
     size_t max_query_size,
-    size_t max_parser_depth,
-    size_t max_parser_backtracks);
+    size_t max_parser_depth);
 
 
 /** Split queries separated by ; on to list of single queries
@@ -68,12 +63,6 @@ std::pair<const char *, bool> splitMultipartQuery(
     std::vector<std::string> & queries_list,
     size_t max_query_size,
     size_t max_parser_depth,
-    size_t max_parser_backtracks,
     bool allow_settings_after_format_in_insert);
-
-/** If the query contains raw data part, such as INSERT ... FORMAT ..., return a pointer to it.
-  * The SQL parser stops at the raw data part, which is parsed by a separate parser.
-  */
-const char * getInsertData(const ASTPtr & ast);
 
 }

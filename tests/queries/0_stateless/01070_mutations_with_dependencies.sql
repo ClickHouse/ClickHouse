@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-object-storage
+-- Tags: no-parallel, no-s3-storage
 -- With s3 policy TTL TO DISK 'default' doesn't work (because we have no default, only 's3')
 
 drop table if exists ttl;
@@ -34,8 +34,6 @@ select count() from ttl where s = 'b';
 drop table ttl;
 
 -- check only that it doesn't throw exceptions.
-SET allow_suspicious_ttl_expressions = 1;
-
 create table ttl (i Int, s String) engine = MergeTree order by i ttl toDate('2000-01-01') TO DISK 'default';
 alter table ttl materialize ttl;
 drop table ttl;

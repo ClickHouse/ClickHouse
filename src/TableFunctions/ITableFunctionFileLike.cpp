@@ -7,7 +7,6 @@
 
 #include <Storages/StorageFile.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/VirtualColumnUtils.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 
@@ -28,19 +27,14 @@ void ITableFunctionFileLike::parseFirstArguments(const ASTPtr & arg, const Conte
     filename = checkAndGetLiteralArgument<String>(arg, "source");
 }
 
-std::optional<String> ITableFunctionFileLike::tryGetFormatFromFirstArgument()
+String ITableFunctionFileLike::getFormatFromFirstArgument()
 {
-    return FormatFactory::instance().tryGetFormatFromFileName(filename);
+    return FormatFactory::instance().getFormatFromFileName(filename, true);
 }
 
 bool ITableFunctionFileLike::supportsReadingSubsetOfColumns(const ContextPtr & context)
 {
-    return format != "auto" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format, context);
-}
-
-NameSet ITableFunctionFileLike::getVirtualsToCheckBeforeUsingStructureHint() const
-{
-    return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format, context);
 }
 
 void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -69,10 +63,7 @@ void ITableFunctionFileLike::parseArgumentsImpl(ASTs & args, const ContextPtr & 
         format = checkAndGetLiteralArgument<String>(args[1], "format");
 
     if (format == "auto")
-    {
-        if (auto format_from_first_argument = tryGetFormatFromFirstArgument())
-            format = *format_from_first_argument;
-    }
+        format = getFormatFromFirstArgument();
 
     if (args.size() > 2)
     {
@@ -88,37 +79,34 @@ void ITableFunctionFileLike::parseArgumentsImpl(ASTs & args, const ContextPtr & 
         compression_method = checkAndGetLiteralArgument<String>(args[3], "compression_method");
 }
 
-void ITableFunctionFileLike::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr & context)
+void ITableFunctionFileLike::addColumnsStructureToArguments(ASTs & args, const String & structure, const ContextPtr &)
 {
     if (args.empty() || args.size() > getMaxNumberOfArguments())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function, got {}", getMaxNumberOfArguments(), args.size());
 
-    auto format_literal = std::make_shared<ASTLiteral>(format);
     auto structure_literal = std::make_shared<ASTLiteral>(structure);
-
-    for (auto & arg : args)
-        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
     /// f(filename)
     if (args.size() == 1)
     {
-        args.push_back(format_literal);
+        /// Add format=auto before structure argument.
+        args.push_back(std::make_shared<ASTLiteral>("auto"));
         args.push_back(structure_literal);
     }
     /// f(filename, format)
     else if (args.size() == 2)
     {
-        if (checkAndGetLiteralArgument<String>(args[1], "format") == "auto")
-            args.back() = format_literal;
         args.push_back(structure_literal);
     }
-    /// f(filename, format, structure) or f(filename, format, structure, compression)
-    else if (args.size() >= 3)
+    /// f(filename, format, 'auto')
+    else if (args.size() == 3)
     {
-        if (checkAndGetLiteralArgument<String>(args[1], "format") == "auto")
-            args[1] = format_literal;
-        if (checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
-            args[2] = structure_literal;
+        args.back() = structure_literal;
+    }
+    /// f(filename, format, 'auto', compression)
+    else if (args.size() == 4)
+    {
+        args[args.size() - 2] = structure_literal;
     }
 }
 

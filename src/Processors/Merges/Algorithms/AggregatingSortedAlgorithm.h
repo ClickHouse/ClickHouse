@@ -1,10 +1,9 @@
 #pragma once
 
-#include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Common/AlignedBuffer.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
-#include <Common/AlignedBuffer.h>
 
 namespace DB
 {
@@ -25,12 +24,9 @@ public:
         size_t max_block_size_rows_,
         size_t max_block_size_bytes_);
 
-    const char * getName() const override { return "AggregatingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
-
-    MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
 
     /// Stores information for aggregation of SimpleAggregateFunction columns
     struct SimpleAggregateDescription
@@ -50,7 +46,7 @@ public:
         bool created = false;
 
         SimpleAggregateDescription(
-            AggregateFunctionPtr function_, size_t column_number_,
+            AggregateFunctionPtr function_, const size_t column_number_,
             DataTypePtr nested_type_, DataTypePtr real_type_);
 
         void createState();
@@ -104,11 +100,10 @@ private:
 
     public:
         AggregatingMergedData(
+            MutableColumns columns_,
             UInt64 max_block_size_rows_,
             UInt64 max_block_size_bytes_,
             ColumnsDefinition & def_);
-
-        void initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs) override;
 
         /// Group is a group of rows with the same sorting key. It represents single row in result.
         /// Algorithm is: start group, add several rows, finish group.

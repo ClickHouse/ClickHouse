@@ -47,7 +47,7 @@ public:
     /// Returns set if set is ready (created and filled) or nullptr if not.
     virtual SetPtr get() const = 0;
     /// Returns set->getElementsTypes(), even if set is not created yet.
-    virtual DataTypes getTypes() const = 0;
+    virtual const DataTypes & getTypes() const = 0;
     /// If possible, return set with stored elements useful for PK analysis.
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
 };
@@ -59,17 +59,15 @@ using FutureSetPtr = std::shared_ptr<FutureSet>;
 class FutureSetFromStorage final : public FutureSet
 {
 public:
-    explicit FutureSetFromStorage(SetPtr set_);
+    FutureSetFromStorage(SetPtr set_);
 
     SetPtr get() const override;
-    DataTypes getTypes() const override;
+    const DataTypes & getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
 
 private:
     SetPtr set;
 };
-
-using FutureSetFromStoragePtr = std::shared_ptr<FutureSetFromStorage>;
 
 /// Set from tuple is filled as well as set from storage.
 /// Additionally, it can be converted to set useful for PK.
@@ -81,27 +79,16 @@ public:
     SetPtr get() const override { return set; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
-    DataTypes getTypes() const override;
+    const DataTypes & getTypes() const override;
 
 private:
     SetPtr set;
     SetKeyColumns set_key_columns;
 };
 
-using FutureSetFromTuplePtr = std::shared_ptr<FutureSetFromTuple>;
-
-/// Set from subquery can be filled (by running the subquery) in one of two ways:
-///  1. During query analysis. Specifically, inside `SourceStepWithFilter::applyFilters()`.
-///     Useful if the query plan depends on the set contents, e.g. to determine which files to read.
-///  2. During query execution. This is the preferred way.
-///     Sets are created by CreatingSetStep, which runs before other steps.
-/// Be careful: to build the set during query analysis, the `buildSetInplace()` call must happen
-/// inside `SourceStepWithFilter::applyFilters()`. Calling it later, e.g. from `initializePipeline()`
-/// will result in LOGICAL_ERROR "Not-ready Set is passed" (because a CreatingSetStep was already
-/// added to pipeline but hasn't executed yet).
-///
-/// If use_index_for_in_with_subqueries_max_values is reached, the built set won't be suitable for
-/// key analysis, but will work with function IN (the set will contain only hashes of elements).
+/// Set from subquery can be built inplace for PK or in CreatingSet step.
+/// If use_index_for_in_with_subqueries_max_values is reached, set for PK won't be created,
+/// but ordinary set would be created instead.
 class FutureSetFromSubquery final : public FutureSet
 {
 public:
@@ -109,7 +96,7 @@ public:
         String key,
         std::unique_ptr<QueryPlan> source_,
         StoragePtr external_table_,
-        std::shared_ptr<FutureSetFromSubquery> external_table_set_,
+        FutureSetPtr external_table_set_,
         const Settings & settings);
 
     FutureSetFromSubquery(
@@ -117,14 +104,11 @@ public:
         QueryTreeNodePtr query_tree_,
         const Settings & settings);
 
-    ~FutureSetFromSubquery() override;
-
     SetPtr get() const override;
-    DataTypes getTypes() const override;
+    const DataTypes & getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
     std::unique_ptr<QueryPlan> build(const ContextPtr & context);
-    void buildSetInplace(const ContextPtr & context);
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
@@ -132,13 +116,11 @@ public:
 private:
     SetAndKeyPtr set_and_key;
     StoragePtr external_table;
-    std::shared_ptr<FutureSetFromSubquery> external_table_set;
+    FutureSetPtr external_table_set;
 
     std::unique_ptr<QueryPlan> source;
     QueryTreeNodePtr query_tree;
 };
-
-using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 
 /// Container for all the sets used in query.
 class PreparedSets
@@ -151,32 +133,31 @@ public:
         UInt64 operator()(const Hash & key) const { return key.low64 ^ key.high64; }
     };
 
-    using SetsFromTuple = std::unordered_map<Hash, std::vector<FutureSetFromTuplePtr>, Hashing>;
-    using SetsFromStorage = std::unordered_map<Hash, FutureSetFromStoragePtr, Hashing>;
-    using SetsFromSubqueries = std::unordered_map<Hash, FutureSetFromSubqueryPtr, Hashing>;
+    using SetsFromTuple = std::unordered_map<Hash, std::vector<std::shared_ptr<FutureSetFromTuple>>, Hashing>;
+    using SetsFromStorage = std::unordered_map<Hash, std::shared_ptr<FutureSetFromStorage>, Hashing>;
+    using SetsFromSubqueries = std::unordered_map<Hash, std::shared_ptr<FutureSetFromSubquery>, Hashing>;
 
-    FutureSetFromStoragePtr addFromStorage(const Hash & key, SetPtr set_);
-    FutureSetFromTuplePtr addFromTuple(const Hash & key, Block block, const Settings & settings);
+    FutureSetPtr addFromStorage(const Hash & key, SetPtr set_);
+    FutureSetPtr addFromTuple(const Hash & key, Block block, const Settings & settings);
 
-    FutureSetFromSubqueryPtr addFromSubquery(
+    FutureSetPtr addFromSubquery(
         const Hash & key,
         std::unique_ptr<QueryPlan> source,
         StoragePtr external_table,
-        FutureSetFromSubqueryPtr external_table_set,
+        FutureSetPtr external_table_set,
         const Settings & settings);
 
-    FutureSetFromSubqueryPtr addFromSubquery(
+    FutureSetPtr addFromSubquery(
         const Hash & key,
         QueryTreeNodePtr query_tree,
         const Settings & settings);
 
-    FutureSetFromTuplePtr findTuple(const Hash & key, const DataTypes & types) const;
-    FutureSetFromStoragePtr findStorage(const Hash & key) const;
-    FutureSetFromSubqueryPtr findSubquery(const Hash & key) const;
+    FutureSetPtr findTuple(const Hash & key, const DataTypes & types) const;
+    std::shared_ptr<FutureSetFromStorage> findStorage(const Hash & key) const;
+    std::shared_ptr<FutureSetFromSubquery> findSubquery(const Hash & key) const;
 
-    using Subqueries = std::vector<FutureSetFromSubqueryPtr>;
-    Subqueries getSubqueries() const;
-    bool hasSubqueries() const { return !sets_from_subqueries.empty(); }
+    using Subqueries = std::vector<std::shared_ptr<FutureSetFromSubquery>>;
+    Subqueries getSubqueries();
 
     const SetsFromTuple & getSetsFromTuple() const { return sets_from_tuple; }
     // const SetsFromStorage & getSetsFromStorage() const { return sets_from_storage; }

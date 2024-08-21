@@ -7,14 +7,14 @@
 #include <type_traits>
 #include <functional>
 
-#include <Core/CompareHelper.h>
-#include <Core/Defines.h>
-#include <Core/Types.h>
-#include <Core/UUID.h>
-#include <base/DayNum.h>
-#include <base/IPv4andIPv6.h>
-#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/Exception.h>
+#include <Common/AllocatorWithMemoryTracking.h>
+#include <Core/Types.h>
+#include <Core/Defines.h>
+#include <Core/DecimalFunctions.h>
+#include <Core/UUID.h>
+#include <base/IPv4andIPv6.h>
+#include <base/DayNum.h>
 
 namespace DB
 {
@@ -39,7 +39,6 @@ using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
 /// construct a Field of Array or a Tuple type. An alternative approach would be
 /// to construct both of these types from FieldVector, and have the caller
 /// specify the desired Field type explicitly.
-/// NOLINTBEGIN(modernize-type-traits)
 #define DEFINE_FIELD_VECTOR(X) \
 struct X : public FieldVector \
 { \
@@ -48,7 +47,6 @@ struct X : public FieldVector \
 
 DEFINE_FIELD_VECTOR(Array);
 DEFINE_FIELD_VECTOR(Tuple);
-/// NOLINTEND(modernize-type-traits)
 
 /// An array with the following structure: [(key1, value1), (key2, value2), ...]
 DEFINE_FIELD_VECTOR(Map); /// TODO: use map instead of vector.
@@ -124,7 +122,7 @@ struct CustomType
     bool isSecret() const { return impl->isSecret(); }
     const char * getTypeName() const { return impl->getTypeName(); }
     String toString(bool show_secrets = true) const { return impl->toString(show_secrets); }
-    const CustomTypeImpl & getImpl() const { return *impl; }
+    const CustomTypeImpl & getImpl() { return *impl; }
 
     bool operator < (const CustomType & rhs) const { return *impl < *rhs.impl; }
     bool operator <= (const CustomType & rhs) const { return *impl <= *rhs.impl; }
@@ -150,7 +148,7 @@ public:
 
     operator T() const { return dec; } /// NOLINT
     T getValue() const { return dec; }
-    T getScaleMultiplier() const;
+    T getScaleMultiplier() const { return DecimalUtils::scaleMultiplier<T>(scale); }
     UInt32 getScale() const { return scale; }
 
     template <typename U>
@@ -199,12 +197,6 @@ private:
     UInt32 scale;
 };
 
-extern template class DecimalField<Decimal32>;
-extern template class DecimalField<Decimal64>;
-extern template class DecimalField<Decimal128>;
-extern template class DecimalField<Decimal256>;
-extern template class DecimalField<DateTime64>;
-
 template <typename T> constexpr bool is_decimal_field = false;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal32>> = true;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal64>> = true;
@@ -223,8 +215,9 @@ using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
 template <> struct NearestFieldTypeImpl<char> { using Type = std::conditional_t<is_signed_v<char>, Int64, UInt64>; };
 template <> struct NearestFieldTypeImpl<signed char> { using Type = Int64; };
 template <> struct NearestFieldTypeImpl<unsigned char> { using Type = UInt64; };
+#ifdef __cpp_char8_t
 template <> struct NearestFieldTypeImpl<char8_t> { using Type = UInt64; };
-template <> struct NearestFieldTypeImpl<Int8> { using Type = Int64; };
+#endif
 
 template <> struct NearestFieldTypeImpl<UInt16> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<UInt32> { using Type = UInt64; };
@@ -299,7 +292,7 @@ concept not_field_or_bool_or_stringlike
 /** 32 is enough. Round number is used for alignment and for better arithmetic inside std::vector.
   * NOTE: Actually, sizeof(std::string) is 32 when using libc++, so Field is 40 bytes.
   */
-static constexpr auto DBMS_MIN_FIELD_SIZE = 32;
+#define DBMS_MIN_FIELD_SIZE 32
 
 
 /** Discriminated union of several types.
@@ -457,6 +450,15 @@ public:
     std::string_view getTypeName() const;
 
     bool isNull() const { return which == Types::Null; }
+    template <typename T>
+    NearestFieldType<std::decay_t<T>> & get();
+
+    template <typename T>
+    const auto & get() const
+    {
+        auto * mutable_this = const_cast<std::decay_t<decltype(*this)> *>(this);
+        return mutable_this->get<T>();
+    }
 
     bool isNegativeInfinity() const { return which == Types::Null && get<Null>().isNegativeInfinity(); }
     bool isPositiveInfinity() const { return which == Types::Null && get<Null>().isPositiveInfinity(); }
@@ -495,7 +497,7 @@ public:
 
         switch (which)
         {
-            case Types::Null:    return get<Null>() < rhs.get<Null>();
+            case Types::Null:    return false;
             case Types::Bool:    [[fallthrough]];
             case Types::UInt64:  return get<UInt64>()  < rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() < rhs.get<UInt128>();
@@ -506,9 +508,7 @@ public:
             case Types::UUID:    return get<UUID>()    < rhs.get<UUID>();
             case Types::IPv4:    return get<IPv4>()    < rhs.get<IPv4>();
             case Types::IPv6:    return get<IPv6>()    < rhs.get<IPv6>();
-            case Types::Float64:
-                static constexpr int nan_direction_hint = 1; /// Put NaN at the end
-                return FloatCompareHelper<Float64>::less(get<Float64>(), rhs.get<Float64>(), nan_direction_hint);
+            case Types::Float64: return get<Float64>() < rhs.get<Float64>();
             case Types::String:  return get<String>()  < rhs.get<String>();
             case Types::Array:   return get<Array>()   < rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   < rhs.get<Tuple>();
@@ -539,7 +539,7 @@ public:
 
         switch (which)
         {
-            case Types::Null:    return get<Null>() <= rhs.get<Null>();
+            case Types::Null:    return true;
             case Types::Bool: [[fallthrough]];
             case Types::UInt64:  return get<UInt64>()  <= rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() <= rhs.get<UInt128>();
@@ -550,14 +550,7 @@ public:
             case Types::UUID:    return get<UUID>().toUnderType() <= rhs.get<UUID>().toUnderType();
             case Types::IPv4:    return get<IPv4>()    <= rhs.get<IPv4>();
             case Types::IPv6:    return get<IPv6>()    <= rhs.get<IPv6>();
-            case Types::Float64:
-            {
-                static constexpr int nan_direction_hint = 1; /// Put NaN at the end
-                Float64 f1 = get<Float64>();
-                Float64 f2 = get<Float64>();
-                return FloatCompareHelper<Float64>::less(f1, f2, nan_direction_hint)
-                    || FloatCompareHelper<Float64>::equals(f1, f2, nan_direction_hint);
-            }
+            case Types::Float64: return get<Float64>() <= rhs.get<Float64>();
             case Types::String:  return get<String>()  <= rhs.get<String>();
             case Types::Array:   return get<Array>()   <= rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   <= rhs.get<Tuple>();
@@ -588,13 +581,15 @@ public:
 
         switch (which)
         {
-            case Types::Null: return get<Null>() == rhs.get<Null>();
+            case Types::Null: return true;
             case Types::Bool: [[fallthrough]];
             case Types::UInt64: return get<UInt64>() == rhs.get<UInt64>();
             case Types::Int64:   return get<Int64>() == rhs.get<Int64>();
             case Types::Float64:
-                static constexpr int nan_direction_hint = 1; /// Put NaN at the end
-                return FloatCompareHelper<Float64>::equals(get<Float64>(), rhs.get<Float64>(), nan_direction_hint);
+            {
+                // Compare as UInt64 so that NaNs compare as equal.
+                return std::bit_cast<UInt64>(get<Float64>()) == std::bit_cast<UInt64>(rhs.get<Float64>());
+            }
             case Types::UUID:    return get<UUID>()    == rhs.get<UUID>();
             case Types::IPv4:    return get<IPv4>()    == rhs.get<IPv4>();
             case Types::IPv6:    return get<IPv6>()    == rhs.get<IPv6>();
@@ -658,6 +653,8 @@ public:
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
             case Types::CustomType: return f(field.template get<CustomType>());
         }
+
+        UNREACHABLE();
     }
 
     String dump() const;
@@ -672,25 +669,6 @@ private:
 
     Types::Which which;
 
-    /// This function is prone to type punning and should never be used outside of Field class,
-    /// whenever it is used within this class the stored type should be checked in advance.
-    template <typename T>
-    NearestFieldType<std::decay_t<T>> & get()
-    {
-        // Before storing the value in the Field, we static_cast it to the field
-        // storage type, so here we return the value of storage type as well.
-        // Otherwise, it is easy to make a mistake of reinterpret_casting the stored
-        // value to a different and incompatible type.
-        // For example, a Float32 value is stored as Float64, and it is incorrect to
-        // return a reference to this value as Float32.
-        return *reinterpret_cast<NearestFieldType<std::decay_t<T>>*>(&storage);
-    }
-
-    template <typename T>
-    NearestFieldType<std::decay_t<T>> & get() const
-    {
-        return const_cast<Field *>(this)->get<T>();
-    }
 
     /// Assuming there was no allocated state or it was deallocated (see destroy).
     template <typename T>
@@ -863,33 +841,58 @@ template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { usi
 template <> struct Field::EnumToType<Field::Types::CustomType> { using Type = CustomType; };
 template <> struct Field::EnumToType<Field::Types::Bool> { using Type = UInt64; };
 
-constexpr bool isInt64OrUInt64FieldType(Field::Types::Which t)
+inline constexpr bool isInt64OrUInt64FieldType(Field::Types::Which t)
 {
     return t == Field::Types::Int64
         || t == Field::Types::UInt64;
 }
 
-constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
+inline constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
 {
     return t == Field::Types::Int64
         || t == Field::Types::UInt64
         || t == Field::Types::Bool;
 }
 
+// Field value getter with type checking in debug builds.
+template <typename T>
+NearestFieldType<std::decay_t<T>> & Field::get()
+{
+    // Before storing the value in the Field, we static_cast it to the field
+    // storage type, so here we return the value of storage type as well.
+    // Otherwise, it is easy to make a mistake of reinterpret_casting the stored
+    // value to a different and incompatible type.
+    // For example, a Float32 value is stored as Float64, and it is incorrect to
+    // return a reference to this value as Float32.
+    using StoredType = NearestFieldType<std::decay_t<T>>;
+
+#ifndef NDEBUG
+    // Disregard signedness when converting between int64 types.
+    constexpr Field::Types::Which target = TypeToEnum<StoredType>::value;
+    if (target != which
+           && (!isInt64OrUInt64orBoolFieldType(target) || !isInt64OrUInt64orBoolFieldType(which)))
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid Field get from type {} to type {}", which, target);
+#endif
+
+    StoredType * MAY_ALIAS ptr = reinterpret_cast<StoredType *>(&storage);
+
+    return *ptr;
+}
+
+
 template <typename T>
 auto & Field::safeGet()
 {
-    const Types::Which target = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
+    const Types::Which requested = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
 
-    /// bool is stored as uint64, will be returned as UInt64 when requested as bool or UInt64, as Int64 when requested as Int64
-    /// also allow UInt64 <-> Int64 conversion
-    if (target != which &&
-        !(which == Field::Types::Bool && (target == Field::Types::UInt64 || target == Field::Types::Int64)) &&
-        !(isInt64OrUInt64FieldType(which) && isInt64OrUInt64FieldType(target)))
-            throw Exception(ErrorCodes::BAD_GET, "Bad get: has {}, requested {}", getTypeName(), target);
+    if (which != requested)
+        throw Exception(ErrorCodes::BAD_GET,
+            "Bad get: has {}, requested {}", getTypeName(), requested);
 
     return get<T>();
 }
+
 
 template <typename T>
 requires not_field_or_bool_or_stringlike<T>
@@ -1021,7 +1024,7 @@ struct fmt::formatter<DB::Field>
     }
 
     template <typename FormatContext>
-    auto format(const DB::Field & x, FormatContext & ctx) const
+    auto format(const DB::Field & x, FormatContext & ctx)
     {
         return fmt::format_to(ctx.out(), "{}", toString(x));
     }

@@ -12,29 +12,29 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 
-def make_instance(name, *args, **kwargs):
-    main_configs = kwargs.pop("main_configs", [])
-    main_configs.append("configs/remote_servers.xml")
-    user_configs = kwargs.pop("user_configs", [])
-    user_configs.append("configs/users.xml")
+def make_instance(name, cfg, *args, **kwargs):
     return cluster.add_instance(
         name,
         with_zookeeper=True,
-        main_configs=main_configs,
-        user_configs=user_configs,
+        main_configs=["configs/remote_servers.xml", cfg],
+        user_configs=["configs/users.xml"],
         *args,
         **kwargs,
     )
 
 
 # _n1/_n2 contains cluster with different <secret> -- should fail
-# only n1 contains new_user
-n1 = make_instance(
-    "n1",
-    main_configs=["configs/remote_servers_n1.xml"],
-    user_configs=["configs/users.d/new_user.xml"],
+n1 = make_instance("n1", "configs/remote_servers_n1.xml")
+n2 = make_instance("n2", "configs/remote_servers_n2.xml")
+backward = make_instance(
+    "backward",
+    "configs/remote_servers_backward.xml",
+    image="clickhouse/clickhouse-server",
+    # version without DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
+    tag="23.2.3",
+    with_installed_binary=True,
+    allow_analyzer=False,
 )
-n2 = make_instance("n2", main_configs=["configs/remote_servers_n2.xml"])
 
 users = pytest.mark.parametrize(
     "user,password",
@@ -44,10 +44,6 @@ users = pytest.mark.parametrize(
         ("pass", "foo"),
     ],
 )
-
-
-def generate_query_id():
-    return str(uuid.uuid4())
 
 
 def bootstrap():
@@ -102,12 +98,6 @@ def bootstrap():
         )
         """
         )
-        n.query(
-            """
-        CREATE TABLE dist_over_dist_secure AS data
-        Engine=Distributed(secure, currentDatabase(), dist_secure, key)
-        """
-        )
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -120,10 +110,10 @@ def start_cluster():
         cluster.shutdown()
 
 
-# @return -- [[user, initial_user]]
+# @return -- [user, initial_user]
 def get_query_user_info(node, query_pattern):
     node.query("SYSTEM FLUSH LOGS")
-    lines = (
+    return (
         node.query(
             """
     SELECT user, initial_user
@@ -137,10 +127,8 @@ def get_query_user_info(node, query_pattern):
             )
         )
         .strip()
-        .split("\n")
+        .split("\t")
     )
-    lines = map(lambda x: x.split("\t"), lines)
-    return list(lines)
 
 
 # @return -- [user, initial_user]
@@ -198,7 +186,7 @@ def test_insecure_insert_sync():
     n1.query("TRUNCATE TABLE data")
     n1.query(
         "INSERT INTO dist_insecure SELECT * FROM numbers(2)",
-        settings={"distributed_foreground_insert": 1},
+        settings={"insert_distributed_sync": 1},
     )
     assert int(n1.query("SELECT count() FROM dist_insecure")) == 2
     n1.query("TRUNCATE TABLE data ON CLUSTER secure")
@@ -220,7 +208,7 @@ def test_secure_insert_sync():
     n1.query("TRUNCATE TABLE data")
     n1.query(
         "INSERT INTO dist_secure SELECT * FROM numbers(2)",
-        settings={"distributed_foreground_insert": 1},
+        settings={"insert_distributed_sync": 1},
     )
     assert int(n1.query("SELECT count() FROM dist_secure")) == 2
     n1.query("TRUNCATE TABLE data ON CLUSTER secure")
@@ -252,7 +240,7 @@ def test_secure_insert_sync():
 # - after we will ensure that connection is really established from the context
 #   of SELECT query, and that the connection will not be established from the
 #   context of the INSERT query (but actually it is a no-op since the INSERT
-#   will be done in background, due to distributed_foreground_insert=false by
+#   will be done in background, due to insert_distributed_sync=false by
 #   default)
 #
 # - if the bug is there, then FLUSH DISTRIBUTED will fail, because it will go
@@ -272,13 +260,13 @@ def test_secure_insert_buffer_async():
     n1.query("SYSTEM RELOAD CONFIG")
     # ensure that SELECT creates new connection (we need separate table for
     # this, so that separate distributed pool will be used)
-    query_id = generate_query_id()
+    query_id = uuid.uuid4().hex
     n1.query("SELECT * FROM dist_secure_from_buffer", user="ro", query_id=query_id)
     assert n1.contains_in_log(
         "{" + query_id + "} <Trace> Connection (n2:9000): Connecting."
     )
 
-    query_id = generate_query_id()
+    query_id = uuid.uuid4().hex
     n1.query(
         "INSERT INTO dist_secure_buffer SELECT * FROM numbers(2)", query_id=query_id
     )
@@ -335,26 +323,26 @@ def test_secure_disagree_insert():
 
 @users
 def test_user_insecure_cluster(user, password):
-    id_ = "query-dist_insecure-" + user + "-" + generate_query_id()
+    id_ = "query-dist_insecure-" + user
     n1.query(f"SELECT *, '{id_}' FROM dist_insecure", user=user, password=password)
-    assert get_query_user_info(n1, id_)[0] == [
+    assert get_query_user_info(n1, id_) == [
         user,
         user,
     ]  # due to prefer_localhost_replica
-    assert get_query_user_info(n2, id_)[0] == ["default", user]
+    assert get_query_user_info(n2, id_) == ["default", user]
 
 
 @users
 def test_user_secure_cluster(user, password):
-    id_ = "query-dist_secure-" + user + "-" + generate_query_id()
+    id_ = "query-dist_secure-" + user
     n1.query(f"SELECT *, '{id_}' FROM dist_secure", user=user, password=password)
-    assert get_query_user_info(n1, id_)[0] == [user, user]
-    assert get_query_user_info(n2, id_)[0] == [user, user]
+    assert get_query_user_info(n1, id_) == [user, user]
+    assert get_query_user_info(n2, id_) == [user, user]
 
 
 @users
 def test_per_user_inline_settings_insecure_cluster(user, password):
-    id_ = "query-ddl-settings-dist_insecure-" + user + "-" + generate_query_id()
+    id_ = "query-ddl-settings-dist_insecure-" + user
     n1.query(
         f"""
         SELECT *, '{id_}' FROM dist_insecure
@@ -371,7 +359,7 @@ def test_per_user_inline_settings_insecure_cluster(user, password):
 
 @users
 def test_per_user_inline_settings_secure_cluster(user, password):
-    id_ = "query-ddl-settings-dist_secure-" + user + "-" + generate_query_id()
+    id_ = "query-ddl-settings-dist_secure-" + user
     n1.query(
         f"""
         SELECT *, '{id_}' FROM dist_secure
@@ -390,7 +378,7 @@ def test_per_user_inline_settings_secure_cluster(user, password):
 
 @users
 def test_per_user_protocol_settings_insecure_cluster(user, password):
-    id_ = "query-protocol-settings-dist_insecure-" + user + "-" + generate_query_id()
+    id_ = "query-protocol-settings-dist_insecure-" + user
     n1.query(
         f"SELECT *, '{id_}' FROM dist_insecure",
         user=user,
@@ -406,7 +394,7 @@ def test_per_user_protocol_settings_insecure_cluster(user, password):
 
 @users
 def test_per_user_protocol_settings_secure_cluster(user, password):
-    id_ = "query-protocol-settings-dist_secure-" + user + "-" + generate_query_id()
+    id_ = "query-protocol-settings-dist_secure-" + user
     n1.query(
         f"SELECT *, '{id_}' FROM dist_secure",
         user=user,
@@ -422,31 +410,23 @@ def test_per_user_protocol_settings_secure_cluster(user, password):
     )
 
 
-def test_secure_cluster_distributed_over_distributed_different_users_remote():
-    # This works because we will have initial_user='default'
+@users
+def test_user_secure_cluster_with_backward(user, password):
+    id_ = "with-backward-query-dist_secure-" + user
     n1.query(
-        "SELECT * FROM remote('n1', currentDatabase(), dist_secure)", user="new_user"
+        f"SELECT *, '{id_}' FROM dist_secure_backward", user=user, password=password
     )
-    # While this is broken because now initial_user='new_user', and n2 does not has it
-    with pytest.raises(QueryRuntimeException):
-        n2.query(
-            "SELECT * FROM remote('n1', currentDatabase(), dist_secure, 'new_user')"
-        )
-    # And this is still a problem, let's assume that this is OK, since we are
-    # expecting that in case of dist-over-dist the clusters are the same (users
-    # and stuff).
-    with pytest.raises(QueryRuntimeException):
-        n1.query("SELECT * FROM dist_over_dist_secure", user="new_user")
+    assert get_query_user_info(n1, id_) == [user, user]
+    assert get_query_user_info(backward, id_) == [user, user]
 
 
-def test_secure_cluster_distributed_over_distributed_different_users_cluster():
-    id_ = "cluster-user" + "-" + generate_query_id()
-    n1.query(
-        f"SELECT *, '{id_}' FROM cluster(secure, currentDatabase(), dist_secure)",
-        user="nopass",
-        settings={
-            "prefer_localhost_replica": 0,
-        },
+@users
+def test_user_secure_cluster_from_backward(user, password):
+    id_ = "from-backward-query-dist_secure-" + user
+    backward.query(f"SELECT *, '{id_}' FROM dist_secure", user=user, password=password)
+    assert get_query_user_info(n1, id_) == [user, user]
+    assert get_query_user_info(backward, id_) == [user, user]
+
+    assert n1.contains_in_log(
+        "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster."
     )
-    assert get_query_user_info(n1, id_) == [["nopass", "nopass"]] * 4
-    assert get_query_user_info(n2, id_) == [["nopass", "nopass"]] * 3

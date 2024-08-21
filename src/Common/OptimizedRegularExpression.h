@@ -5,8 +5,10 @@
 #include <memory>
 #include <optional>
 #include <Common/StringSearcher.h>
-#include <Common/re2.h>
 #include "config.h"
+#include <re2/re2.h>
+#include <re2_st/re2.h>
+
 
 /** Uses two ways to optimize a regular expression:
   * 1. If the regular expression is trivial (reduces to finding a substring in a string),
@@ -35,7 +37,8 @@ namespace OptimizedRegularExpressionDetails
     };
 }
 
-class OptimizedRegularExpression
+template <bool thread_safe>
+class OptimizedRegularExpressionImpl
 {
 public:
     enum Options
@@ -48,10 +51,12 @@ public:
     using Match = OptimizedRegularExpressionDetails::Match;
     using MatchVec = std::vector<Match>;
 
-    OptimizedRegularExpression(const std::string & regexp_, int options = 0); /// NOLINT
+    using RegexType = std::conditional_t<thread_safe, re2::RE2, re2_st::RE2>;
+
+    OptimizedRegularExpressionImpl(const std::string & regexp_, int options = 0); /// NOLINT
     /// StringSearcher store pointers to required_substring, it must be updated on move.
-    OptimizedRegularExpression(OptimizedRegularExpression && rhs) noexcept;
-    OptimizedRegularExpression(const OptimizedRegularExpression & rhs) = delete;
+    OptimizedRegularExpressionImpl(OptimizedRegularExpressionImpl && rhs) noexcept;
+    OptimizedRegularExpressionImpl(const OptimizedRegularExpressionImpl & rhs) = delete;
 
     bool match(const std::string & subject) const
     {
@@ -80,7 +85,7 @@ public:
     unsigned getNumberOfSubpatterns() const { return number_of_subpatterns; }
 
     /// Get the regexp re2 or nullptr if the pattern is trivial (for output to the log).
-    const std::unique_ptr<re2::RE2> & getRE2() const { return re2; }
+    const std::unique_ptr<RegexType> & getRE2() const { return re2; }
 
     void getAnalyzeResult(std::string & out_required_substring, bool & out_is_trivial, bool & out_required_substring_is_prefix) const
     {
@@ -105,6 +110,9 @@ private:
     std::string required_substring;
     std::optional<DB::ASCIICaseSensitiveStringSearcher> case_sensitive_substring_searcher;
     std::optional<DB::ASCIICaseInsensitiveStringSearcher> case_insensitive_substring_searcher;
-    std::unique_ptr<re2::RE2> re2;
+    std::unique_ptr<RegexType> re2;
     unsigned number_of_subpatterns;
 };
+
+using OptimizedRegularExpression = OptimizedRegularExpressionImpl<true>;
+using OptimizedRegularExpressionSingleThreaded = OptimizedRegularExpressionImpl<false>;

@@ -14,26 +14,16 @@ namespace DB
 class Lz4DeflatingWriteBuffer : public WriteBufferWithOwnMemoryDecorator
 {
 public:
-    template<typename WriteBufferT>
     Lz4DeflatingWriteBuffer(
-        WriteBufferT && out_,
+        std::unique_ptr<WriteBuffer> out_,
         int compression_level,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        char * existing_memory = nullptr, /// NOLINT(readability-non-const-parameter)
-        size_t alignment = 0,
-        bool compress_empty_ = true)
-    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment) /// NOLINT(bugprone-move-forwarding-reference)
-    , tmp_memory(buf_size)
-    , compress_empty(compress_empty_)
-    {
-        initialize(compression_level);
-    }
+        char * existing_memory = nullptr,
+        size_t alignment = 0);
 
     ~Lz4DeflatingWriteBuffer() override;
 
 private:
-    void initialize(int compression_level);
-
     void nextImpl() override;
 
     void finalizeBefore() override;
@@ -42,9 +32,12 @@ private:
     LZ4F_preferences_t kPrefs; /// NOLINT
     LZ4F_compressionContext_t ctx;
 
-    Memory<> tmp_memory;
+    void * in_data;
+    void * out_data;
+
+    size_t in_capacity;
+    size_t out_capacity;
 
     bool first_time = true;
-    bool compress_empty = true;
 };
 }

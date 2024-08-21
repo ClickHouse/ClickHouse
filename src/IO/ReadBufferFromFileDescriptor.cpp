@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int CANNOT_SELECT;
     extern const int CANNOT_ADVISE;
 }
 
@@ -49,7 +50,7 @@ std::string ReadBufferFromFileDescriptor::getFileName() const
 }
 
 
-size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_t max_bytes, size_t offset) const
+size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_t max_bytes, size_t offset)
 {
     chassert(min_bytes <= max_bytes);
 
@@ -80,8 +81,7 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
         if (-1 == res && errno != EINTR)
         {
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-            ErrnoException::throwFromPath(
-                ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, getFileName(), "Cannot read from file {}", getFileName());
+            throwFromErrnoWithPath("Cannot read from file: " + getFileName(), getFileName(), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
         }
 
         if (res > 0)
@@ -146,7 +146,7 @@ void ReadBufferFromFileDescriptor::prefetch(Priority)
 
     /// Ask OS to prefetch data into page cache.
     if (0 != posix_fadvise(fd, file_offset_of_buffer_end, internal_buffer.size(), POSIX_FADV_WILLNEED))
-        throw ErrnoException(ErrorCodes::CANNOT_ADVISE, "Cannot posix_fadvise");
+        throwFromErrno("Cannot posix_fadvise", ErrorCodes::CANNOT_ADVISE);
 #endif
 }
 
@@ -173,7 +173,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
         return new_pos;
 
-    if (file_offset_of_buffer_end - working_buffer.size() <= new_pos
+    if (file_offset_of_buffer_end - working_buffer.size() <= static_cast<size_t>(new_pos)
         && new_pos <= file_offset_of_buffer_end)
     {
         /// Position is still inside the buffer.
@@ -209,12 +209,8 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
             off_t res = ::lseek(fd, seek_pos, SEEK_SET);
             if (-1 == res)
-                ErrnoException::throwFromPath(
-                    ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
-                    getFileName(),
-                    "Cannot seek through file {} at offset {}",
-                    getFileName(),
-                    seek_pos);
+                throwFromErrnoWithPath(fmt::format("Cannot seek through file {} at offset {}", getFileName(), seek_pos), getFileName(),
+                    ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
             /// Also note that seeking past the file size is not allowed.
             if (res != seek_pos)
@@ -242,8 +238,8 @@ void ReadBufferFromFileDescriptor::rewind()
         ProfileEvents::increment(ProfileEvents::Seek);
         off_t res = ::lseek(fd, 0, SEEK_SET);
         if (-1 == res)
-            ErrnoException::throwFromPath(
-                ErrorCodes::CANNOT_SEEK_THROUGH_FILE, getFileName(), "Cannot seek through file {}", getFileName());
+            throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
+                ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
     }
     /// In case of pread, the ProfileEvents::Seek is not accounted, but it's Ok.
 
@@ -253,7 +249,25 @@ void ReadBufferFromFileDescriptor::rewind()
     file_offset_of_buffer_end = 0;
 }
 
-std::optional<size_t> ReadBufferFromFileDescriptor::tryGetFileSize()
+
+/// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
+bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds) const
+{
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(fd, &fds);
+    timeval timeout = { time_t(timeout_microseconds / 1000000), suseconds_t(timeout_microseconds % 1000000) };
+
+    int res = select(1, &fds, nullptr, nullptr, &timeout);
+
+    if (-1 == res)
+        throwFromErrno("Cannot select", ErrorCodes::CANNOT_SELECT);
+
+    return res > 0;
+}
+
+
+size_t ReadBufferFromFileDescriptor::getFileSize()
 {
     return getSizeFromFileDescriptor(fd, getFileName());
 }
@@ -265,7 +279,7 @@ bool ReadBufferFromFileDescriptor::checkIfActuallySeekable()
     return res == 0 && S_ISREG(stat.st_mode);
 }
 
-size_t ReadBufferFromFileDescriptor::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &) const
+size_t ReadBufferFromFileDescriptor::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &)
 {
     chassert(use_pread);
     return readImpl(to, n, n, offset);

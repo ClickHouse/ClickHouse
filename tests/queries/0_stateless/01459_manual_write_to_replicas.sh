@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: replica, no-parallel, no-debug
+# Tags: replica, no-parallel
 
 set -e
 
@@ -20,6 +20,10 @@ function thread {
     for x in {0..99}; do
         # sometimes we can try to commit obsolete part if fetches will be quite fast,
         # so supress warning messages like "Tried to commit obsolete part ... covered by ..."
+        # (2) keeper fault injection for inserts because
+        #     it can be a cause of deduplicated parts be visible to SELECTs for sometime (until cleanup thread remove them),
+        #     so the same SELECT on different replicas can return different results, i.e. test output will be non-deterministic
+        #     (see #9712)
         $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 --query "INSERT INTO r$1 SELECT $x % $NUM_REPLICAS = $1 ? $x - 1 : $x" 2>/dev/null  # Replace some records as duplicates so they will be written by other replicas
     done
 }

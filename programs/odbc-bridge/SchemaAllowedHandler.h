@@ -17,12 +17,18 @@ class Context;
 class SchemaAllowedHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    explicit SchemaAllowedHandler(ContextPtr context_) : WithContext(context_), log(getLogger("SchemaAllowedHandler")) { }
+    SchemaAllowedHandler(size_t keep_alive_timeout_, ContextPtr context_)
+        : WithContext(context_)
+        , log(&Poco::Logger::get("SchemaAllowedHandler"))
+        , keep_alive_timeout(keep_alive_timeout_)
+    {
+    }
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 
 private:
-    LoggerPtr log;
+    Poco::Logger * log;
+    size_t keep_alive_timeout;
 };
 
 }

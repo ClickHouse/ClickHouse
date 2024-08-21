@@ -38,7 +38,6 @@ public:
         TableNamesSet dependencies;
         ContextPtr global_context;
         ASTPtr create_query;
-        QualifiedTableName table_name;
     };
 
     using Visitor = ConstInDepthNodeVisitor<DDLLoadingDependencyVisitor, true>;

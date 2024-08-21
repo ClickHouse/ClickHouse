@@ -1,21 +1,3 @@
-if (OS_FREEBSD)
-    # Right nix/libc requires fspacectl and it had been added only since FreeBSD14.
-    # And since sysroot has older libraries you will got undefined reference for clickhouse binary.
-    #
-    # But likely everything should work without this syscall, however it is not
-    # possible right now to gently override libraries versions for dependencies,
-    # and forking rust modules is a little bit too much for this thing.
-    #
-    # You can take a look at the details in the following issue [1].
-    #
-    #   [1]: https://github.com/rust-lang/cargo/issues/5640
-    #
-    # Update 2024-04: Now prql also requires getrandom() via std::sys::pal::unix::rand::imp::getrandom_fill_bytes
-    message(STATUS "Rust build is disabled for FreeBSD because we use old sysroot files")
-    return()
-endif()
-
-
 # NOTE: should be macro to export RUST_CXXFLAGS/RUST_CFLAGS for subfolders
 macro(configure_rustc)
     # NOTE: this can also be done by overriding rustc, but it not trivial with rustup.
@@ -32,15 +14,6 @@ macro(configure_rustc)
         set(RUST_CFLAGS "${RUST_CFLAGS} --sysroot ${CMAKE_SYSROOT}")
     endif()
 
-    if (CMAKE_OSX_DEPLOYMENT_TARGET)
-        set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
-        set(RUST_CFLAGS "${RUST_CFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
-    endif()
-
-    if (USE_MUSL)
-        set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -D_LIBCPP_HAS_MUSL_LIBC=1")
-    endif ()
-
     if(CCACHE_EXECUTABLE MATCHES "/sccache$")
         message(STATUS "Using RUSTC_WRAPPER: ${CCACHE_EXECUTABLE}")
         set(RUSTCWRAPPER "rustc-wrapper = \"${CCACHE_EXECUTABLE}\"")
@@ -48,41 +21,66 @@ macro(configure_rustc)
         set(RUSTCWRAPPER "")
     endif()
 
-    set(RUSTFLAGS)
-    if (CMAKE_OSX_DEPLOYMENT_TARGET)
-        list(APPEND RUSTFLAGS "-C" "link-arg=-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
-    endif()
-
+    set(RUSTFLAGS "[]")
     set(RUST_CARGO_BUILD_STD "")
     # For more info: https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html#memorysanitizer
     if (SANITIZE STREQUAL "memory")
         set(RUST_CARGO_BUILD_STD "build-std = [\"std\", \"panic_abort\", \"core\", \"alloc\"]")
-        list(APPEND RUSTFLAGS "-Zsanitizer=memory" "-Zsanitizer-memory-track-origins")
+        set(RUSTFLAGS "[\"-Zsanitizer=memory\", \"-Zsanitizer-memory-track-origins\"]")
     endif()
-
-    list(TRANSFORM RUSTFLAGS PREPEND "\"")
-    list(TRANSFORM RUSTFLAGS APPEND "\"")
-    list(JOIN RUSTFLAGS "," RUSTFLAGS)
-    set(RUSTFLAGS "[${RUSTFLAGS}]")
 
     message(STATUS "RUST_CFLAGS: ${RUST_CFLAGS}")
     message(STATUS "RUST_CXXFLAGS: ${RUST_CXXFLAGS}")
     message(STATUS "RUSTFLAGS: ${RUSTFLAGS}")
     message(STATUS "RUST_CARGO_BUILD_STD: ${RUST_CARGO_BUILD_STD}")
 
-    set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../contrib/rust_vendor")
+    # NOTE: requires RW access for the source dir
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/.cargo/config.toml.in" "${CMAKE_CURRENT_SOURCE_DIR}/.cargo/config.toml" @ONLY)
 endmacro()
 configure_rustc()
 
+function(clickhouse_import_crate)
+    # This is a workaround for Corrosion case sensitive build type matching in
+    # _generator_add_cargo_targets(), that leads to different paths in
+    # IMPORTED_LOCATION and real path of the library.
+    #
+    # It uses CMAKE_CONFIGURATION_TYPES and $<CONFIG>, so here we preserve the
+    # case of ${CMAKE_BUILD_TYPE} in ${CMAKE_CONFIGURATION_TYPES}.
+    if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
+        set(CMAKE_CONFIGURATION_TYPES "${CMAKE_BUILD_TYPE};release")
+    else()
+        set(CMAKE_CONFIGURATION_TYPES "${CMAKE_BUILD_TYPE};debug")
+    endif()
+
+    if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+        set(profile "")
+    else()
+        if (ENABLE_THINLTO)
+            set(profile "release-thinlto")
+        else()
+            set(profile "release")
+        endif()
+    endif()
+
+    # Note, here --offline is not used, since on CI vendor archive is used, and
+    # passing --offline here will be inconvenient for local development.
+    corrosion_import_crate(NO_STD ${ARGN} PROFILE ${profile})
+endfunction()
+
 # Add crate from the build directory.
-# To avoid overlaps different builds for one source directory, crate will
+#
+# Our crates has configuration files:
+# - config for cargo (see config.toml.in)
+# - and possibly config for build (build.rs.in)
+#
+# And to avoid overlaps different builds for one source directory, crate will
 # be copied from source directory to the binary directory.
+file(COPY ".cargo" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 function(add_rust_subdirectory src)
     set(dst "${CMAKE_CURRENT_BINARY_DIR}/${src}")
     message(STATUS "Copy ${src} to ${dst}")
     file(COPY "${src}" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}"
         PATTERN target EXCLUDE)
-
     add_subdirectory("${dst}" "${dst}")
 
     # cmake -E copy* do now know how to exclude files
@@ -97,4 +95,6 @@ function(add_rust_subdirectory src)
         VERBATIM)
 endfunction()
 
-add_rust_subdirectory (workspace)
+add_rust_subdirectory (BLAKE3)
+add_rust_subdirectory (skim)
+add_rust_subdirectory (prql)

@@ -38,24 +38,19 @@ struct AlterCommand
         DROP_CONSTRAINT,
         ADD_PROJECTION,
         DROP_PROJECTION,
-        ADD_STATISTICS,
-        DROP_STATISTICS,
-        MODIFY_STATISTICS,
         MODIFY_TTL,
         MODIFY_SETTING,
         RESET_SETTING,
         MODIFY_QUERY,
-        MODIFY_REFRESH,
         RENAME_COLUMN,
         REMOVE_TTL,
         MODIFY_DATABASE_SETTING,
         COMMENT_TABLE,
         REMOVE_SAMPLE_BY,
-        MODIFY_SQL_SECURITY,
     };
 
     /// Which property user wants to remove from column
-    enum class RemoveProperty : uint8_t
+    enum class RemoveProperty
     {
         NO_PROPERTY,
         /// Default specifiers
@@ -66,8 +61,7 @@ struct AlterCommand
         /// Other properties
         COMMENT,
         CODEC,
-        TTL,
-        SETTINGS
+        TTL
     };
 
     Type type = UNKNOWN;
@@ -124,10 +118,6 @@ struct AlterCommand
     /// For ADD/DROP PROJECTION
     String projection_name;
 
-    ASTPtr statistics_decl = nullptr;
-    std::vector<String> statistics_columns;
-    std::vector<String> statistics_types;
-
     /// For MODIFY TTL
     ASTPtr ttl = nullptr;
 
@@ -140,29 +130,20 @@ struct AlterCommand
     /// For ADD and MODIFY
     ASTPtr codec = nullptr;
 
-    /// For MODIFY SETTING or MODIFY COLUMN MODIFY SETTING
+    /// For MODIFY SETTING
     SettingsChanges settings_changes;
 
-    /// For RESET SETTING or MODIFY COLUMN RESET SETTING
+    /// For RESET SETTING
     std::set<String> settings_resets;
 
     /// For MODIFY_QUERY
     ASTPtr select = nullptr;
-
-    /// For MODIFY_SQL_SECURITY
-    ASTPtr sql_security = nullptr;
-
-    /// For MODIFY_REFRESH
-    ASTPtr refresh = nullptr;
 
     /// Target column name
     String rename_to;
 
     /// What to remove from column (or TTL)
     RemoveProperty to_remove = RemoveProperty::NO_PROPERTY;
-
-    /// Is this MODIFY COLUMN MODIFY SETTING or MODIFY COLUMN column with settings declaration)
-    bool append_column_setting = false;
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
@@ -185,8 +166,6 @@ struct AlterCommand
 
     /// Command removing some property from column or table
     bool isRemovingProperty() const;
-
-    bool isDropSomething() const;
 
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
@@ -217,11 +196,8 @@ public:
     /// Commands have to be prepared before apply.
     void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
-    /// At least one command modify settings or comments.
-    bool hasNonReplicatedAlterCommand() const;
-
-    /// All commands modify settings or comments.
-    bool areNonReplicatedAlterCommands() const;
+    /// At least one command modify settings.
+    bool hasSettingsAlterCommand() const;
 
     /// All commands modify settings only.
     bool isSettingsAlter() const;
@@ -235,8 +211,8 @@ public:
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
     MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
 
-    /// Check if commands have any full-text index
-    static bool hasFullTextIndex(const StorageInMemoryMetadata & metadata);
+    /// Check if commands have any inverted index
+    static bool hasInvertedIndex(const StorageInMemoryMetadata & metadata);
 };
 
 }

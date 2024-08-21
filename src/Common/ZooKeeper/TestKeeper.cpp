@@ -1,7 +1,7 @@
 #include "Common/ZooKeeper/IKeeper.h"
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/setThreadName.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <base/types.h>
 #include <functional>
 
@@ -99,7 +99,6 @@ struct TestKeeperExistsRequest final : ExistsRequest, TestKeeperRequest
 struct TestKeeperGetRequest final : GetRequest, TestKeeperRequest
 {
     TestKeeperGetRequest() = default;
-    explicit TestKeeperGetRequest(const GetRequest & base) : GetRequest(base) {}
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
@@ -119,8 +118,6 @@ struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
 
 struct TestKeeperListRequest : ListRequest, TestKeeperRequest
 {
-    TestKeeperListRequest() = default;
-    explicit TestKeeperListRequest(const ListRequest & base) : ListRequest(base) {}
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
@@ -157,10 +154,6 @@ struct TestKeeperReconfigRequest final : ReconfigRequest, TestKeeperRequest
 struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
 {
     explicit TestKeeperMultiRequest(const Requests & generic_requests)
-        : TestKeeperMultiRequest(std::span(generic_requests))
-    {}
-
-    explicit TestKeeperMultiRequest(std::span<const RequestPtr> generic_requests)
     {
         requests.reserve(generic_requests.size());
 
@@ -182,14 +175,6 @@ struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
             else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
             {
                 requests.push_back(std::make_shared<TestKeeperCheckRequest>(*concrete_request_check));
-            }
-            else if (const auto * concrete_request_get = dynamic_cast<const GetRequest *>(generic_request.get()))
-            {
-                requests.push_back(std::make_shared<TestKeeperGetRequest>(*concrete_request_get));
-            }
-            else if (const auto * concrete_request_list = dynamic_cast<const ListRequest *>(generic_request.get()))
-            {
-                requests.push_back(std::make_shared<TestKeeperListRequest>(*concrete_request_list));
             }
             else
                 throw Exception::fromMessage(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
@@ -637,9 +622,6 @@ void TestKeeper::finalize(const String &)
         expired = true;
     }
 
-    /// Signal request_queue to wake up processing thread without waiting for timeout
-    requests_queue.finish();
-
     processing_thread.join();
 
     try
@@ -889,13 +871,6 @@ void TestKeeper::reconfig(
 
 void TestKeeper::multi(
         const Requests & requests,
-        MultiCallback callback)
-{
-    multi(std::span(requests), std::move(callback));
-}
-
-void TestKeeper::multi(
-        std::span<const RequestPtr> requests,
         MultiCallback callback)
 {
     TestKeeperMultiRequest request(requests);

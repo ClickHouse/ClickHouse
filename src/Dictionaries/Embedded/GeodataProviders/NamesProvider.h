@@ -3,8 +3,6 @@
 #include <Common/FileUpdatesTracker.h>
 #include "INamesProvider.h"
 
-namespace DB
-{
 
 // Represents local file with list of regions ids / names
 class LanguageRegionsNamesDataSource : public ILanguageRegionsNamesDataSource
@@ -48,5 +46,3 @@ public:
 private:
     std::string getDataFilePath(const std::string & language) const;
 };
-
-}

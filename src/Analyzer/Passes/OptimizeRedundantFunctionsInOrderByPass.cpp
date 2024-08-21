@@ -8,7 +8,6 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
-#include <Core/Settings.h>
 
 namespace DB
 {
@@ -125,7 +124,7 @@ private:
 
 }
 
-void OptimizeRedundantFunctionsInOrderByPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+void OptimizeRedundantFunctionsInOrderByPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     OptimizeRedundantFunctionsInOrderByVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

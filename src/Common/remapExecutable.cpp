@@ -120,7 +120,7 @@ __attribute__((__noinline__)) void remapToHugeStep1(void * begin, size_t size)
 
     void * scratch = mmap(nullptr, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (MAP_FAILED == scratch)
-        throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot mmap {} bytes", size);
+        throwFromErrno(fmt::format("Cannot mmap {} bytes", size), ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
     memcpy(scratch, begin, size);
 

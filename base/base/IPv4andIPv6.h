@@ -1,7 +1,8 @@
 #pragma once
 
-#include <base/extended_types.h>
 #include <base/strong_typedef.h>
+#include <base/extended_types.h>
+#include <Common/formatIPv6.h>
 #include <Common/memcmpSmall.h>
 
 namespace DB
@@ -61,8 +62,7 @@ namespace std
     {
         size_t operator()(const DB::IPv6 & x) const
         {
-            return std::hash<std::string_view>{}(
-                std::string_view(reinterpret_cast<const char *>(&x.toUnderType()), sizeof(DB::IPv6::UnderlyingType)));
+            return std::hash<std::string_view>{}(std::string_view(reinterpret_cast<const char*>(&x.toUnderType()), IPV6_BINARY_LENGTH));
         }
     };
 

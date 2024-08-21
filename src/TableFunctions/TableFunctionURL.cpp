@@ -55,62 +55,45 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 
         format = configuration.format;
         if (format == "auto")
-            format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath()).value_or("auto");
+            format = FormatFactory::instance().getFormatFromFileName(Poco::URI(filename).getPath(), true);
 
-        StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
+        StorageURL::collectHeaders(args, configuration.headers, context);
     }
     else
     {
-        size_t count = StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
+        auto * headers_it = StorageURL::collectHeaders(args, configuration.headers, context);
         /// ITableFunctionFileLike cannot parse headers argument, so remove it.
-        ASTPtr headers_ast;
-        if (count != args.size())
-        {
-            chassert(count + 1 == args.size());
-            headers_ast = args.back();
-            args.pop_back();
-        }
+        if (headers_it != args.end())
+            args.erase(headers_it);
 
         ITableFunctionFileLike::parseArgumentsImpl(args, context);
-
-        if (headers_ast)
-            args.push_back(headers_ast);
     }
 }
 
-void TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure_, const String & format_, const ContextPtr & context)
+void TableFunctionURL::addColumnsStructureToArguments(ASTs & args, const String & desired_structure, const ContextPtr & context)
 {
-    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (tryGetNamedCollectionWithOverrides(args, context))
     {
-        /// In case of named collection, just add key-value pairs "format='...', structure='...'"
-        /// at the end of arguments to override existed format and structure with "auto" values.
-        if (collection->getOrDefault<String>("format", "auto") == "auto")
-        {
-            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
-            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
-            args.push_back(format_equal_func);
-        }
-        if (collection->getOrDefault<String>("structure", "auto") == "auto")
-        {
-            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
-            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
-            args.push_back(structure_equal_func);
-        }
+        /// In case of named collection, just add key-value pair "structure='...'"
+        /// at the end of arguments to override existed structure.
+        ASTs equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(desired_structure)};
+        auto equal_func = makeASTFunction("equals", std::move(equal_func_args));
+        args.push_back(equal_func);
     }
     else
     {
-        /// If arguments contain headers, just remove it and add to the end of arguments later.
+        /// If arguments contain headers, just remove it and add to the end of arguments later
+        /// (header argument can be at any position).
         HTTPHeaderEntries tmp_headers;
-        size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context);
+        auto * headers_it = StorageURL::collectHeaders(args, tmp_headers, context);
         ASTPtr headers_ast;
-        if (count != args.size())
+        if (headers_it != args.end())
         {
-            chassert(count + 1 == args.size());
-            headers_ast = args.back();
-            args.pop_back();
+            headers_ast = *headers_it;
+            args.erase(headers_it);
         }
 
-        ITableFunctionFileLike::updateStructureAndFormatArgumentsIfNeeded(args, structure_, format_, context);
+        ITableFunctionFileLike::addColumnsStructureToArguments(args, desired_structure, context);
 
         if (headers_ast)
             args.push_back(headers_ast);
@@ -140,14 +123,6 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
     if (structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        if (format == "auto")
-            return StorageURL::getTableStructureAndFormatFromData(
-                       filename,
-                       chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
-                       configuration.headers,
-                       std::nullopt,
-                       context).first;
-
         return StorageURL::getTableStructureFromData(format,
             filename,
             chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
@@ -159,9 +134,9 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
     return parseColumnsListFromString(structure, context);
 }
 
-std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
+String TableFunctionURL::getFormatFromFirstArgument()
 {
-    return FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath());
+    return FormatFactory::instance().getFormatFromFileName(Poco::URI(filename).getPath(), true);
 }
 
 void registerTableFunctionURL(TableFunctionFactory & factory)

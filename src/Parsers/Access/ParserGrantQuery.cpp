@@ -28,7 +28,7 @@ namespace
             if (pos_->type != TokenType::BareWord)
                 return false;
             std::string_view word{pos_->begin, pos_->size()};
-            return !(boost::iequals(word, toStringView(Keyword::ON)) || boost::iequals(word, toStringView(Keyword::TO)) || boost::iequals(word, toStringView(Keyword::FROM)));
+            return !(boost::iequals(word, "ON") || boost::iequals(word, "TO") || boost::iequals(word, "FROM"));
         };
 
         expected.add(pos, "access type");
@@ -132,7 +132,7 @@ namespace
                         ++is_global_with_parameter;
                 }
 
-                if (!ParserKeyword{Keyword::ON}.ignore(pos, expected))
+                if (!ParserKeyword{"ON"}.ignore(pos, expected))
                     return false;
 
                 if (is_global_with_parameter && is_global_with_parameter == access_and_columns.size())
@@ -197,13 +197,11 @@ namespace
         {
             AccessRightsElement default_element(AccessType::ALL);
 
-            if (!ParserKeyword{Keyword::ON}.ignore(pos, expected))
+            if (!ParserKeyword{"ON"}.ignore(pos, expected))
                 return false;
 
-            String database_name;
-            String table_name;
-            bool any_database = false;
-            bool any_table = false;
+            String database_name, table_name;
+            bool any_database = false, any_table = false;
             if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, any_database, table_name, any_table))
                 return false;
 
@@ -219,7 +217,7 @@ namespace
 
     void throwIfNotGrantable(AccessRightsElements & elements)
     {
-        std::erase_if(elements, [](AccessRightsElement & element)
+        boost::range::remove_erase_if(elements, [](AccessRightsElement & element)
         {
             if (element.empty())
                 return true;
@@ -265,7 +263,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{is_revoke ? Keyword::FROM : Keyword::TO}.ignore(pos, expected))
+            if (!ParserKeyword{is_revoke ? "FROM" : "TO"}.ignore(pos, expected))
                 return false;
 
             ASTPtr ast;
@@ -283,7 +281,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{Keyword::ON}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
 }
@@ -291,14 +289,14 @@ namespace
 
 bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (attach_mode && !ParserKeyword{Keyword::ATTACH}.ignore(pos, expected))
+    if (attach_mode && !ParserKeyword{"ATTACH"}.ignore(pos, expected))
         return false;
 
     bool is_replace = false;
     bool is_revoke = false;
-    if (ParserKeyword{Keyword::REVOKE}.ignore(pos, expected))
+    if (ParserKeyword{"REVOKE"}.ignore(pos, expected))
         is_revoke = true;
-    else if (!ParserKeyword{Keyword::GRANT}.ignore(pos, expected))
+    else if (!ParserKeyword{"GRANT"}.ignore(pos, expected))
         return false;
 
     String cluster;
@@ -308,9 +306,9 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     bool admin_option = false;
     if (is_revoke)
     {
-        if (ParserKeyword{Keyword::GRANT_OPTION_FOR}.ignore(pos, expected))
+        if (ParserKeyword{"GRANT OPTION FOR"}.ignore(pos, expected))
             grant_option = true;
-        else if (ParserKeyword{Keyword::ADMIN_OPTION_FOR}.ignore(pos, expected))
+        else if (ParserKeyword{"ADMIN OPTION FOR"}.ignore(pos, expected))
             admin_option = true;
     }
 
@@ -318,7 +316,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     std::shared_ptr<ASTRolesOrUsersSet> roles;
 
     bool current_grants = false;
-    if (!is_revoke && ParserKeyword{Keyword::CURRENT_GRANTS}.ignore(pos, expected))
+    if (!is_revoke && ParserKeyword{"CURRENT GRANTS"}.ignore(pos, expected))
     {
         current_grants = true;
         if (!parseCurrentGrants(pos, expected, elements))
@@ -342,12 +340,12 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (!is_revoke)
     {
-        if (ParserKeyword{Keyword::WITH_GRANT_OPTION}.ignore(pos, expected))
+        if (ParserKeyword{"WITH GRANT OPTION"}.ignore(pos, expected))
             grant_option = true;
-        else if (ParserKeyword{Keyword::WITH_ADMIN_OPTION}.ignore(pos, expected))
+        else if (ParserKeyword{"WITH ADMIN OPTION"}.ignore(pos, expected))
             admin_option = true;
 
-        if (ParserKeyword{Keyword::WITH_REPLACE_OPTION}.ignore(pos, expected))
+        if (ParserKeyword{"WITH REPLACE OPTION"}.ignore(pos, expected))
             is_replace = true;
     }
 

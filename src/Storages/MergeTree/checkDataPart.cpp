@@ -1,4 +1,5 @@
 #include <Poco/Logger.h>
+#include <algorithm>
 #include <optional>
 
 #include <Poco/DirectoryIterator.h>
@@ -6,7 +7,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
@@ -14,11 +15,6 @@
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/SipHash.h>
-#include <Common/ZooKeeper/IKeeper.h>
-#include <IO/AzureBlobStorage/isRetryableAzureException.h>
-#include <Poco/Net/NetException.h>
-
 
 namespace CurrentMetrics
 {
@@ -36,13 +32,9 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
-    extern const int CANNOT_SCHEDULE_TASK;
     extern const int UNEXPECTED_FILE_IN_DATA_PART;
-    extern const int NO_FILE_IN_DATA_PART;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
-    extern const int BROKEN_PROJECTION;
-    extern const int ABORTED;
 }
 
 
@@ -57,54 +49,23 @@ bool isNotEnoughMemoryErrorCode(int code)
         || code == ErrorCodes::CANNOT_MREMAP;
 }
 
-bool isRetryableException(std::exception_ptr exception_ptr)
+bool isRetryableException(const Exception & e)
 {
-    try
-    {
-        rethrow_exception(exception_ptr);
-    }
+    if (isNotEnoughMemoryErrorCode(e.code()))
+        return true;
+
+    if (e.code() == ErrorCodes::NETWORK_ERROR || e.code() == ErrorCodes::SOCKET_TIMEOUT)
+        return true;
+
 #if USE_AWS_S3
-    catch (const S3Exception & s3_exception)
-    {
-        return s3_exception.isRetryableError();
-    }
-#endif
-#if USE_AZURE_BLOB_STORAGE
-    catch (const Azure::Core::RequestFailedException & e)
-    {
-        return isRetryableAzureException(e);
-    }
-#endif
-    catch (const ErrnoException & e)
-    {
-        return e.getErrno() == EMFILE;
-    }
-    catch (const Coordination::Exception & e)
-    {
-        return Coordination::isHardwareError(e.code);
-    }
-    catch (const Exception & e)
-    {
-        return isNotEnoughMemoryErrorCode(e.code())
-            || e.code() == ErrorCodes::NETWORK_ERROR
-            || e.code() == ErrorCodes::SOCKET_TIMEOUT
-            || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
-            || e.code() == ErrorCodes::ABORTED;
-    }
-    catch (const Poco::Net::NetException &)
-    {
+    const auto * s3_exception = dynamic_cast<const S3Exception *>(&e);
+    if (s3_exception && s3_exception->isRetryableError())
         return true;
-    }
-    catch (const Poco::TimeoutException &)
-    {
-        return true;
-    }
-    catch (...)
-    {
-        /// In fact, there can be other similar situations.
-        /// But it is OK, because there is a safety guard against deleting too many parts.
-        return false;
-    }
+#endif
+
+    /// In fact, there can be other similar situations.
+    /// But it is OK, because there is a safety guard against deleting too many parts.
+    return false;
 }
 
 
@@ -116,9 +77,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     const NameSet & files_without_checksums,
     const ReadSettings & read_settings,
     bool require_checksums,
-    std::function<bool()> is_cancelled,
-    bool & is_broken_projection,
-    bool throw_on_broken_projection)
+    std::function<bool()> is_cancelled)
 {
     /** Responsibility:
       * - read list of columns from columns.txt;
@@ -127,7 +86,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
       */
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedChecks};
-    Poco::Logger * log = &Poco::Logger::get("checkDataPart");
 
     NamesAndTypesList columns_txt;
 
@@ -165,20 +123,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
     if (data_part_storage.exists(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
     {
-        try
-        {
-            auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt, std::nullopt);
-            SerializationInfo::Settings settings{ratio_of_defaults, false};
-            serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
-        }
-        catch (const Poco::Exception & ex)
-        {
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Failed to load {}, with error {}", IMergeTreeDataPart::SERIALIZATION_FILE_NAME, ex.message());
-        }
-        catch (...)
-        {
-            throw;
-        }
+        auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt, std::nullopt);
+        SerializationInfo::Settings settings{ratio_of_defaults, false};
+        serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
     }
 
     auto get_serialization = [&serialization_infos](const auto & column)
@@ -215,16 +162,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         {
             get_serialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage);
-
-                if (!stream_name)
-                    throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
-                        "There is no file for column '{}' in data part '{}'",
-                        column.name, data_part->name);
-
-                auto file_name = *stream_name + ".bin";
+                String file_name = ISerialization::getFileNameForStream(column, substream_path) + ".bin";
                 checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
-            }, column.type, data_part->getColumnSample(column));
+            });
         }
     }
     else
@@ -255,8 +195,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             continue;
         }
 
-        /// Exclude files written by full-text index from check. No correct checksums are available for them currently.
-        if (isGinFile(file_name))
+        /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
+        if (file_name.ends_with(".gin_dict") || file_name.ends_with(".gin_post") || file_name.ends_with(".gin_seg") || file_name.ends_with(".gin_sid"))
             continue;
 
         auto checksum_it = checksums_data.files.find(file_name);
@@ -277,54 +217,17 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
     }
 
-    std::string broken_projections_message;
     for (const auto & [name, projection] : data_part->getProjectionParts())
     {
         if (is_cancelled())
             return {};
 
         auto projection_file = name + ".proj";
-
-        IMergeTreeDataPart::Checksums projection_checksums;
-        try
-        {
-            bool noop;
-            projection_checksums = checkDataPart(
-                projection, *data_part_storage.getProjection(projection_file),
-                projection->getColumns(), projection->getType(),
-                projection->getFileNamesWithoutChecksums(),
-                read_settings, require_checksums, is_cancelled, noop, /* throw_on_broken_projection */false);
-        }
-        catch (...)
-        {
-            if (isRetryableException(std::current_exception()))
-                throw;
-
-            is_broken_projection = true;
-            projections_on_disk.erase(projection_file);
-            checksums_txt.remove(projection_file);
-
-            const auto exception_message = getCurrentExceptionMessage(true);
-
-            if (!projection->is_broken)
-            {
-                LOG_WARNING(log, "Marking projection {} as broken ({}). Reason: {}",
-                            name, projection_file, exception_message);
-                projection->setBrokenReason(exception_message, getCurrentExceptionCode());
-            }
-
-            if (throw_on_broken_projection)
-            {
-                if (!broken_projections_message.empty())
-                    broken_projections_message += "\n";
-
-                broken_projections_message += fmt::format(
-                    "Part {} has a broken projection {} (error: {})",
-                    data_part->name, name, exception_message);
-            }
-
-            continue;
-        }
+        auto projection_checksums = checkDataPart(
+            projection, *data_part_storage.getProjection(projection_file),
+            projection->getColumns(), projection->getType(),
+            projection->getFileNamesWithoutChecksums(),
+            read_settings, require_checksums, is_cancelled);
 
         checksums_data.files[projection_file] = IMergeTreeDataPart::Checksums::Checksum(
             projection_checksums.getTotalSizeOnDisk(),
@@ -333,39 +236,38 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         projections_on_disk.erase(projection_file);
     }
 
-    if (throw_on_broken_projection)
+    if (require_checksums && !projections_on_disk.empty())
     {
-        if (!broken_projections_message.empty())
-        {
-            throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
-        }
-
-        /// This one is actually not broken, just redundant files on disk which
-        /// MergeTree will never use.
-        if (require_checksums && !projections_on_disk.empty())
-        {
-            throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
-                "Found unexpected projection directories: {}",
-                fmt::join(projections_on_disk, ","));
-        }
+        throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
+            "Found unexpected projection directories: {}",
+            fmt::join(projections_on_disk, ","));
     }
 
     if (is_cancelled())
         return {};
 
     if (require_checksums || !checksums_txt.files.empty())
-        checksums_txt.checkEqual(checksums_data, check_uncompressed, data_part->name);
+        checksums_txt.checkEqual(checksums_data, check_uncompressed);
 
     return checksums_data;
+}
+
+IMergeTreeDataPart::Checksums checkDataPartInMemory(const DataPartInMemoryPtr & data_part)
+{
+    IMergeTreeDataPart::Checksums data_checksums;
+    data_checksums.files["data.bin"] = data_part->calculateBlockChecksum();
+    data_part->checksums.checkEqual(data_checksums, true);
+    return data_checksums;
 }
 
 IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     bool require_checksums,
-    bool & is_broken_projection,
-    std::function<bool()> is_cancelled,
-    bool throw_on_broken_projection)
+    std::function<bool()> is_cancelled)
 {
+    if (auto part_in_memory = asInMemoryPart(data_part))
+        return checkDataPartInMemory(part_in_memory);
+
     /// If check of part has failed and it is stored on disk with cache
     /// try to drop cache and check it once again because maybe the cache
     /// is broken not the part itself.
@@ -378,26 +280,17 @@ IMergeTreeDataPart::Checksums checkDataPart(
             throw;
 
         LOG_DEBUG(
-            getLogger("checkDataPart"),
+            &Poco::Logger::get("checkDataPart"),
             "Will drop cache for data part {} and will check it once again", data_part->name);
 
-        auto & cache = *FileCacheFactory::instance().getByName(*cache_name)->cache;
+        auto & cache = *FileCacheFactory::instance().getByName(*cache_name).cache;
         for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
         {
             auto file_name = it->name();
             if (!data_part_storage.isDirectory(file_name))
             {
-                const bool is_projection_part = data_part->isProjectionPart();
-                auto remote_path = data_part_storage.getRemotePath(file_name, /* if_exists */is_projection_part);
-                if (remote_path.empty())
-                {
-                    chassert(is_projection_part);
-                    throw Exception(
-                        ErrorCodes::BROKEN_PROJECTION,
-                        "Remote path for {} does not exist for projection path. Projection {} is broken",
-                        file_name, data_part->name);
-                }
-                cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
+                auto remote_path = data_part_storage.getRemotePath(file_name);
+                cache.removePathIfExists(remote_path);
             }
         }
 
@@ -412,9 +305,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             data_part->getFileNamesWithoutChecksums(),
             read_settings,
             require_checksums,
-            is_cancelled,
-            is_broken_projection,
-            throw_on_broken_projection);
+            is_cancelled);
     };
 
     try
@@ -428,14 +319,17 @@ IMergeTreeDataPart::Checksums checkDataPart(
             data_part->getFileNamesWithoutChecksums(),
             read_settings,
             require_checksums,
-            is_cancelled,
-            is_broken_projection,
-            throw_on_broken_projection);
+            is_cancelled);
+    }
+    catch (const Exception & e)
+    {
+        if (isRetryableException(e))
+            throw;
+
+        return drop_cache_and_check();
     }
     catch (...)
     {
-        if (isRetryableException(std::current_exception()))
-            throw;
         return drop_cache_and_check();
     }
 }

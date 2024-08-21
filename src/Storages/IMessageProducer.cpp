@@ -4,7 +4,7 @@
 namespace DB
 {
 
-IMessageProducer::IMessageProducer(LoggerPtr log_) : log(log_)
+IMessageProducer::IMessageProducer(Poco::Logger * log_) : log(log_)
 {
 }
 
@@ -12,16 +12,7 @@ void AsynchronousMessageProducer::start(const ContextPtr & context)
 {
     LOG_TEST(log, "Executing startup");
 
-    try
-    {
-        initialize();
-    }
-    catch (...)
-    {
-        finished = true;
-        throw;
-    }
-
+    initialize();
     producing_task = context->getSchedulePool().createTask(getProducingTaskName(), [this]
     {
         LOG_TEST(log, "Starting producing task loop");

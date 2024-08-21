@@ -12,13 +12,13 @@ private:
     int timer_fd;
 
 public:
-    TimerDescriptor();
+    explicit TimerDescriptor(int clockid = CLOCK_MONOTONIC, int flags = 0);
     ~TimerDescriptor();
 
     TimerDescriptor(const TimerDescriptor &) = delete;
     TimerDescriptor & operator=(const TimerDescriptor &) = delete;
     TimerDescriptor(TimerDescriptor && other) noexcept;
-    TimerDescriptor & operator=(TimerDescriptor &&) noexcept;
+    TimerDescriptor & operator=(TimerDescriptor &&) = default;
 
     int getDescriptor() const { return timer_fd; }
 

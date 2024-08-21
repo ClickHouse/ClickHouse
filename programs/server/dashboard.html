@@ -5,19 +5,17 @@
     <title>ClickHouse Dashboard</title>
     <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
     <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
     <style>
         :root {
             --color: black;
-            --background-color-1: #00CCFF;
-            --background: linear-gradient(to bottom, var(--background-color-1), #00D0D0);
+            --background: linear-gradient(to bottom, #00CCFF, #00D0D0);
             --chart-background: white;
             --shadow-color: rgba(0, 0, 0, 0.25);
             --moving-shadow-color: rgba(0, 0, 0, 0.5);
             --input-shadow-color: rgba(0, 255, 0, 1);
             --error-color: red;
-            --global-error-color: white;
-            --legend-background: rgba(255, 255, 0, 0.75);
+            --auth-error-color: white;
+            --legend-background: rgba(255, 255, 255, 0.75);
             --title-color: #666;
             --text-color: black;
             --edit-title-background: #FEE;
@@ -34,14 +32,13 @@
 
         [data-theme="dark"] {
             --color: white;
-            --background-color-1: #151C2C;
-            --background: var(--background-color-1);
+            --background: #151C2C;
             --chart-background: #1b2834;
             --shadow-color: rgba(0, 0, 0, 0);
             --moving-shadow-color: rgba(255, 255, 255, 0.25);
             --input-shadow-color: rgba(255, 128, 0, 0.25);
             --error-color: #F66;
-            --legend-background: rgba(0, 96, 128, 0.75);
+            --legend-background: rgba(255, 255, 255, 0.25);
             --title-color: white;
             --text-color: white;
             --edit-title-background: #364f69;
@@ -87,10 +84,11 @@
             gap: 1rem;
         }
         .chart {
-            flex: 1 1 40rem;
+            flex: 1 40%;
+            min-width: 20rem;
             min-height: 16rem;
             background: var(--chart-background);
-            box-shadow: 1px 1px 0 var(--shadow-color);
+            box-shadow: 0 0 1rem var(--shadow-color);
             overflow: hidden;
             position: relative;
         }
@@ -110,7 +108,7 @@
             filter: blur(1px);
         }
 
-        .chart > div { position: absolute; }
+        .chart div { position: absolute; }
 
         .inputs {
             height: auto;
@@ -121,18 +119,6 @@
             display: flex;
             flex-flow: column nowrap;
             justify-content: center;
-
-            position: sticky;
-            top: -1rem;
-            margin-top: -1rem;
-            margin-left: -1rem;
-            margin-right: -1rem;
-            border-top: 1rem solid var(--background-color-1);
-            border-left: 1rem solid var(--background-color-1);
-            border-right: 1rem solid var(--background-color-1);
-            box-sizing: content-box;
-            z-index: 1000;
-            background: var(--background-color-1);
         }
 
         .inputs.unconnected {
@@ -208,17 +194,12 @@
         }
 
         .inputs input {
-            box-shadow: 1px 1px 0 var(--shadow-color);
+            box-shadow: 0 0 1rem var(--shadow-color);
             padding: 0.25rem;
         }
 
         #chart-params input {
             margin-right: 0.25rem;
-        }
-
-        #chart-params .param {
-            width: 6%;
-            font-family: monospace;
         }
 
         input {
@@ -229,6 +210,8 @@
             background-color: var(--input-background);
             color: var(--text-color);
         }
+
+        .u-legend th { display: none; }
 
         .themes {
             float: right;
@@ -264,12 +247,14 @@
             filter: contrast(125%);
         }
 
-        #add, #reload, #edit, #search {
+        #add, #reload, #edit {
             padding: 0.25rem 0.5rem;
             text-align: center;
             font-weight: bold;
             user-select: none;
             cursor: pointer;
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
             background: var(--new-chart-background-color);
             color: var(--new-chart-text-color);
             float: right;
@@ -279,21 +264,16 @@
             height: 3ex;
         }
 
-        #add:hover, #reload:hover, #edit:hover, #search:hover {
+        #add:hover, #reload:hover, #edit:hover {
             background: var(--button-background-color);
         }
 
-        #search-query {
-            float: right;
-            width: 36%;
-        }
-
-        #global-error {
+        #auth-error {
             align-self: center;
             width: 60%;
             padding: .5rem;
 
-            color: var(--global-error-color);
+            color: var(--auth-error-color);
 
             display: flex;
             flex-flow: row nowrap;
@@ -310,8 +290,8 @@
             background: var(--param-background-color);
             color: var(--param-text-color);
             display: inline-block;
-            box-shadow: 1px 1px 0 var(--shadow-color);
-            margin-bottom: 0.5rem;
+            box-shadow: 0 0 1rem var(--shadow-color);
+            margin-bottom: 1rem;
         }
 
         input:focus {
@@ -437,21 +417,7 @@
         }
 
         #mass-editor-message {
-            color: var(--global-error-color);
-        }
-
-        #charts > div:only-child .display-only-if-more-than-one-chart {
-            display: none;
-        }
-
-        .u-series {
-            line-height: 0.8;
-        }
-
-        .u-series.footer {
-            font-size: 8px;
-            padding-top: 0;
-            margin-top: 0;
+            color: var(--auth-error-color);
         }
 
         /* Source: https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.min.css
@@ -468,7 +434,6 @@
             <div id="username-password">
                 <input spellcheck="false" id="user" type="text" value="" placeholder="user" />
                 <input spellcheck="false" id="password" type="password" placeholder="password" />
-                <input id="hidden-submit" type="submit" hidden="true"/>
             </div>
         </div>
         <div id="button-options">
@@ -476,11 +441,10 @@
             <input id="edit" type="button" value="✎" style="display: none;">
             <input id="add" type="button" value="Add chart" style="display: none;">
             <input id="reload" type="button" value="Reload">
-            <span id="search-span" class="nowrap" style="display: none;"><input id="search" type="button" value="🔎" title="Run query to obtain list of charts from ClickHouse"><input id="search-query" name="search" type="text" spellcheck="false"></span>
             <div id="chart-params"></div>
         </div>
     </form>
-    <div id="global-error"></div>
+    <div id="auth-error"></div>
 </div>
 <div id="charts"></div>
 <div id="mass-editor">
@@ -497,24 +461,25 @@
   *
   * TODO:
   * - zoom on the graphs should work on touch devices;
+  * - compress the state for URL's #hash;
   * - footer with "about" or a link to source code;
   * - allow to configure a table on a server to save the dashboards;
+  * - multiple lines on chart;
   * - if a query returned one value, display this value instead of a diagram;
   * - if a query returned something unusual, display the table;
   */
 
-let host = location.protocol != 'file:' ? location.origin : 'http://localhost:8123/';
-let user = 'default';
+let host = 'https://play.clickhouse.com/';
+let user = 'explorer';
 let password = '';
-let add_http_cors_header = (location.protocol != 'file:');
+let add_http_cors_header = true;
 
-const current_url = new URL(window.location);
-/// Substitute user name if it's specified in the query string
-const user_from_url = current_url.searchParams.get('user');
-if (user_from_url) {
-    user = user_from_url;
+/// If it is hosted on server, assume that it is the address of ClickHouse.
+if (location.protocol != 'file:') {
+    host = location.origin;
+    user = 'default';
+    add_http_cors_header = false;
 }
-
 
 const errorCodeMessageMap = {
     516: 'Error authenticating with database. Please check your connection params and try again.'
@@ -532,76 +497,158 @@ const errorMessages = [
     }
 ]
 
+/// This is just a demo configuration of the dashboard.
 
-/// Query to fill `queries` list for the dashboard
-let search_query = `SELECT title, query FROM system.dashboards WHERE dashboard = 'Overview'`;
-let customized = false;
-let queries = [];
+let queries = [
+    {
+      "title": "Queries/second",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_Query)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
+    },
+    {
+      "title": "CPU Usage (cores)",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_OSCPUVirtualTimeMicroseconds) / 1000000
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
+    },
+    {
+      "title": "Queries Running",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(CurrentMetric_Query)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
+    },
+    {
+      "title": "Merges Running",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(CurrentMetric_Merge)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
+    },
+    {
+      "title": "Selected Bytes/second",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_SelectedBytes)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
+    },
+    {
+      "title": "IO Wait",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_OSIOWaitMicroseconds) / 1000000
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
+    },
+    {
+      "title": "CPU Wait",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_OSCPUWaitMicroseconds) / 1000000
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
+    },
+    {
+      "title": "OS CPU Usage (Userspace)",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
+FROM system.asynchronous_metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'OSUserTimeNormalized'
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
+    },
+    {
+      "title": "OS CPU Usage (Kernel)",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
+FROM system.asynchronous_metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'OSSystemTimeNormalized'
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
+    },
+    {
+      "title": "Read From Disk",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_OSReadBytes)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
+    },
+    {
+      "title": "Read From Filesystem",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_OSReadChars)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
+    },
+    {
+      "title": "Memory (tracked)",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(CurrentMetric_MemoryTracking)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
+    },
+    {
+      "title": "Load Average (15 minutes)",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
+FROM system.asynchronous_metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'LoadAverage15'
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
+    },
+    {
+      "title": "Selected Rows/second",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_SelectedRows)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
+    },
+    {
+      "title": "Inserted Rows/second",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_InsertedRows)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
+    },
+    {
+      "title": "Total MergeTree Parts",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
+FROM system.asynchronous_metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'TotalPartsOfMergeTreeTables'
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
+    },
+    {
+      "title": "Max Parts For Partition",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, max(value)
+FROM system.asynchronous_metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'MaxPartCountForPartition'
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}`
+    }
+];
 
 /// Query parameters with predefined default values.
 /// All other parameters will be automatically found in the queries.
-let default_params = {
-    'rounding': '60',
-    'seconds': '86400'
+let params = {
+    "rounding": "60",
+    "seconds": "86400"
 };
-let params = default_params;
-
-/// Palette generation for charts
-function generatePalette(numColors) {
-    // oklch() does not work in firefox<=125 inside <canvas> element so we convert it back to rgb for now.
-    // Based on https://github.com/color-js/color.js/blob/main/src/spaces/oklch.js
-    const multiplyMatrices = (A, B) => {
-        return [
-            A[0]*B[0] + A[1]*B[1] + A[2]*B[2],
-            A[3]*B[0] + A[4]*B[1] + A[5]*B[2],
-            A[6]*B[0] + A[7]*B[1] + A[8]*B[2]
-        ];
-    }
-
-    const oklch2oklab = ([l, c, h]) => [
-        l,
-        isNaN(h) ? 0 : c * Math.cos(h * Math.PI / 180),
-        isNaN(h) ? 0 : c * Math.sin(h * Math.PI / 180)
-    ]
-
-    const srgbLinear2rgb = rgb => rgb.map(c =>
-        Math.abs(c) > 0.0031308 ?
-            (c < 0 ? -1 : 1) * (1.055 * (Math.abs(c) ** (1 / 2.4)) - 0.055) :
-            12.92 * c
-    )
-
-    const oklab2xyz = lab => {
-        const LMSg = multiplyMatrices([
-            1,  0.3963377773761749,  0.2158037573099136,
-            1, -0.1055613458156586, -0.0638541728258133,
-            1, -0.0894841775298119, -1.2914855480194092,
-        ], lab)
-        const LMS = LMSg.map(val => val ** 3)
-        return multiplyMatrices([
-            1.2268798758459243,  -0.5578149944602171,  0.2813910456659647,
-            -0.0405757452148008,  1.1122868032803170, -0.0717110580655164,
-            -0.0763729366746601, -0.4214933324022432,  1.5869240198367816
-        ], LMS)
-    }
-
-    const xyz2rgbLinear = xyz => {
-        return multiplyMatrices([
-            3.2409699419045226,  -1.537383177570094,   -0.4986107602930034,
-           -0.9692436362808796,   1.8759675015077202,   0.04155505740717559,
-            0.05563007969699366, -0.20397695888897652,  1.0569715142428786
-        ], xyz)
-    }
-
-    const oklch2rgb = lch =>  srgbLinear2rgb(xyz2rgbLinear(oklab2xyz(oklch2oklab(lch))))
-
-    palette = [];
-    for (let i = 0; i < numColors; i++) {
-        //palette.push(`oklch(${theme != 'dark' ? 0.75 : 0.5}, 0.15, ${360 * i / numColors})`);
-        let rgb = oklch2rgb([theme != 'dark' ? 0.75 : 0.5, 0.15, 360 * i / numColors]);
-        palette.push(`rgb(${rgb[0] * 255}, ${rgb[1] * 255}, ${rgb[2] * 255})`);
-    }
-    return palette;
-}
 
 let theme = 'light';
 
@@ -621,24 +668,18 @@ let plots = [];
 let charts = document.getElementById('charts');
 
 /// This is not quite correct (we cannot really parse SQL with regexp) but tolerable.
-const query_param_regexp = /\{(\w+):([^}]+)\}/g;
+const query_param_regexp = /\{(\w+):[^}]+\}/g;
 
 /// Automatically parse more parameters from the queries.
 function findParamsInQuery(query, new_params) {
-    const typeDefault = (type) => type.includes('Int') ? '0'
-        : (type.includes('Float') ? '0.0'
-        : (type.includes('Bool') ? 'false'
-        : (type.includes('Date') ? new Date().toISOString().slice(0, 10)
-        : (type.includes('UUID') ? '00000000-0000-0000-0000-000000000000'
-        : ''))));
     for (let match of query.matchAll(query_param_regexp)) {
         const name = match[1];
-        new_params[name] = params[name] || default_params[name] || typeDefault(match[2]);
+        new_params[name] = params[name] || '';
     }
 }
 
 function findParamsInQueries() {
-    let new_params = {};
+    let new_params = {}
     queries.forEach(q => findParamsInQuery(q.query, new_params));
     params = new_params;
 }
@@ -658,10 +699,6 @@ function insertParam(name, value) {
     param_value.type = 'text';
     param_value.value = value;
     param_value.spellcheck = false;
-
-    let setWidth = e => { e.style.width = (e.value.length + 1) + 'ch' };
-    if (value) { setWidth(param_value); }
-    param_value.addEventListener('input', e => setWidth(e.target));
 
     param_wrapper.appendChild(param_name);
     param_wrapper.appendChild(param_value);
@@ -749,16 +786,15 @@ function insertChart(i) {
         title_text.data = '';
         findParamsInQuery(q.query, params);
         buildParams();
-        refreshCustomized(true);
-        saveState();
         const idx = getCurrentIndex();
         draw(idx, chart, getParamsForURL(), q.query);
+        saveState();
     }
 
     query_editor_confirm.addEventListener('click', editConfirm);
 
     /// Ctrl+Enter (or Cmd+Enter on Mac) will also confirm editing.
-    query_editor.addEventListener('keydown', event => {
+    query_editor.addEventListener('keydown', e => {
         if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
             editConfirm();
         }
@@ -781,85 +817,77 @@ function insertChart(i) {
     let move_text = document.createTextNode('✥');
     move.appendChild(move_text);
 
-    let drag_state = {
-        is_dragging: false,
-        idx: null,
-        offset_x: null,
-        offset_y: null,
-        displace_idx: null,
-        displace_chart: null
-    };
-
-    function dragStop(e) {
-        drag_state.is_dragging = false;
-        chart.className = 'chart';
-        chart.style.left = null;
-        chart.style.top = null;
-
-        if (drag_state.displace_idx !== null) {
-            const elem = queries[drag_state.idx];
-            queries.splice(drag_state.idx, 1);
-            queries.splice(drag_state.displace_idx, 0, elem);
-
-            drag_state.displace_chart.className = 'chart';
-            drawAll();
-        }
-    }
-
-    function dragMove(e) {
-        if (!drag_state.is_dragging) return;
-
-        let x = e.clientX - drag_state.offset_x;
-        let y = e.clientY - drag_state.offset_y;
-
-        chart.style.left = `${x}px`;
-        chart.style.top = `${y}px`;
-
-        drag_state.displace_idx = null;
-        drag_state.displace_chart = null;
-        let current_idx = -1;
-        for (const elem of charts.querySelectorAll('.chart')) {
-            ++current_idx;
-            if (current_idx == drag_state.idx) {
-                continue;
-            }
-
-            const this_rect = chart.getBoundingClientRect();
-            const this_center_x = this_rect.left + this_rect.width / 2;
-            const this_center_y = this_rect.top + this_rect.height / 2;
-
-            const elem_rect = elem.getBoundingClientRect();
-
-            if (this_center_x >= elem_rect.left && this_center_x <= elem_rect.right
-                && this_center_y >= elem_rect.top && this_center_y <= elem_rect.bottom) {
-
-                elem.className = 'chart chart-displaced';
-                drag_state.displace_idx = current_idx;
-                drag_state.displace_chart = elem;
-            } else {
-                elem.className = 'chart';
-            }
-        }
-    }
-
-    function dragStart(e) {
-        if (e.button !== 0) return; /// left button only
-        move.setPointerCapture(e.pointerId);
-
-        drag_state.is_dragging = true;
-        drag_state.idx = getCurrentIndex();
+    let is_dragging = false;
+    move.addEventListener('mousedown', e => {
+        const idx = getCurrentIndex();
+        is_dragging = true;
         chart.className = 'chart chart-moving';
 
-        drag_state.offset_x = e.clientX;
-        drag_state.offset_y = e.clientY;
-    }
+        let offset_x = e.clientX;
+        let offset_y = e.clientY;
 
-    /// Read https://www.redblobgames.com/making-of/draggable/
-    move.addEventListener('pointerdown', dragStart);
-    move.addEventListener('pointermove', dragMove);
-    move.addEventListener('pointerup', dragStop);
-    move.addEventListener('pointerancel', dragStop);
-    move.addEventListener('touchstart', (e) => e.preventDefault());
+        let displace_idx = null;
+        let displace_chart = null;
+
+        function mouseup(e) {
+            is_dragging = false;
+            chart.className = 'chart';
+            chart.style.left = null;
+            chart.style.top = null;
+
+            if (displace_idx !== null) {
+                const elem = queries[idx];
+                queries.splice(idx, 1);
+                queries.splice(displace_idx, 0, elem);
+
+                displace_chart.className = 'chart';
+                drawAll();
+            }
+        }
+
+        function mousemove(e) {
+            if (!is_dragging) {
+                document.body.removeEventListener('mousemove', mousemove);
+                document.body.removeEventListener('mouseup', mouseup);
+                return;
+            }
+
+            let x = e.clientX - offset_x;
+            let y = e.clientY - offset_y;
+
+            chart.style.left = `${x}px`;
+            chart.style.top = `${y}px`;
+
+            displace_idx = null;
+            displace_chart = null;
+            let current_idx = -1;
+            for (const elem of charts.querySelectorAll('.chart')) {
+                ++current_idx;
+                if (current_idx == idx) {
+                    continue;
+                }
+
+                const this_rect = chart.getBoundingClientRect();
+                const this_center_x = this_rect.left + this_rect.width / 2;
+                const this_center_y = this_rect.top + this_rect.height / 2;
+
+                const elem_rect = elem.getBoundingClientRect();
+
+                if (this_center_x >= elem_rect.left && this_center_x <= elem_rect.right
+                    && this_center_y >= elem_rect.top && this_center_y <= elem_rect.bottom) {
+
+                    elem.className = 'chart chart-displaced';
+                    displace_idx = current_idx;
+                    displace_chart = elem;
+                } else {
+                    elem.className = 'chart';
+                }
+            }
+        }
+
+        document.body.addEventListener('mouseup', mouseup);
+        document.body.addEventListener('mousemove', mousemove);
+    });
 
     let maximize = document.createElement('a');
     let maximize_text = document.createTextNode('🗖');
@@ -900,12 +928,8 @@ function insertChart(i) {
         findParamsInQueries();
         buildParams();
         resize();
-        refreshCustomized(true);
         saveState();
     });
-
-    move.classList.add('display-only-if-more-than-one-chart');
-    maximize.classList.add('display-only-if-more-than-one-chart');
 
     edit_buttons.appendChild(move);
     edit_buttons.appendChild(maximize);
@@ -919,7 +943,7 @@ function insertChart(i) {
 
     charts.appendChild(chart);
     return {chart: chart, textarea: query_editor_textarea};
-}
+};
 
 document.getElementById('add').addEventListener('click', e => {
     queries.push({ title: '', query: '' });
@@ -933,12 +957,9 @@ document.getElementById('add').addEventListener('click', e => {
 });
 
 document.getElementById('reload').addEventListener('click', e => {
-    reloadAll(queries.length == 0);
+    reloadAll();
 });
 
-document.getElementById('search').addEventListener('click', e => {
-    reloadAll(true);
-});
 
 let mass_editor_active = false;
 
@@ -951,7 +972,6 @@ function showMassEditor() {
     let editor = document.getElementById('mass-editor-textarea');
     editor.value = JSON.stringify({params: params, queries: queries}, null, 2);
 
-    editor.focus();
     mass_editor_active = true;
 }
 
@@ -967,9 +987,8 @@ function massEditorApplyChanges() {
     ({params, queries} = JSON.parse(editor.value));
     hideMassEditor();
     regenerate();
-    refreshCustomized(true);
-    saveState();
     drawAll();
+    saveState();
 }
 
 document.getElementById('edit').addEventListener('click', e => {
@@ -1003,48 +1022,32 @@ document.getElementById('mass-editor-textarea').addEventListener('input', e => {
 
 function legendAsTooltipPlugin({ className, style = { background: "var(--legend-background)" } } = {}) {
     let legendEl;
-    let multiline;
 
     function init(u, opts) {
         legendEl = u.root.querySelector(".u-legend");
+
         legendEl.classList.remove("u-inline");
         className && legendEl.classList.add(className);
 
         uPlot.assign(legendEl.style, {
-            textAlign: "right",
+            textAlign: "left",
             pointerEvents: "none",
             display: "none",
             position: "absolute",
             left: 0,
             top: 0,
             zIndex: 100,
-            boxShadow: "2px 2px 10px rgba(0, 0, 0, 0.1)",
+            boxShadow: "2px 2px 10px rgba(0,0,0,0.1)",
             ...style
         });
 
-        const nodes = legendEl.querySelectorAll("th");
-        for (let i = 0; i < nodes.length; i++)
-            nodes[i]._order = i;
+        // hide series color markers
+        const idents = legendEl.querySelectorAll(".u-marker");
 
-        if (opts.series.length == 2) {
-            multiline = false;
-            for (let i = 0; i < nodes.length; i++)
-                nodes[i].style.display = "none";
-        } else {
-            multiline = true;
-            legendEl.querySelector("th").remove();
-            legendEl.querySelector("td").setAttribute('colspan', '2');
-            legendEl.querySelector("td").style.textAlign = 'center';
-            let footer = legendEl.insertRow().insertCell();
-            footer.setAttribute('colspan', '2');
-            footer.style.textAlign = 'center';
-            footer.classList.add('u-value');
-            footer.parentNode.classList.add('u-series','footer');
-            footer.textContent = ". . .";
-        }
+        for (let i = 0; i < idents.length; i++)
+            idents[i].style.display = "none";
 
         const overEl = u.over;
-        overEl.style.overflow = "visible";
 
         overEl.appendChild(legendEl);
 
@@ -1052,32 +1055,11 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
         overEl.addEventListener("mouseleave", () => {legendEl.style.display = "none";});
     }
 
-    function nodeListToArray(nodeList) {
-        return Array.prototype.slice.call(nodeList);
-    }
-
     function update(u) {
         let { left, top } = u.cursor;
-        /// This will make the balloon to the right of the cursor when the cursor is on the left side, and vise-versa,
-        /// avoiding the borders of the chart.
-        left -= legendEl.clientWidth * (left / u.width);
-        top -= legendEl.clientHeight;
+        left -= legendEl.clientWidth / 2;
+        top -= legendEl.clientHeight / 2;
         legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
-
-        if (multiline) {
-            let nodes = nodeListToArray(legendEl.querySelectorAll("tr"));
-            let header = nodes.shift();
-            let footer = nodes.pop();
-            let showLimit = Math.floor(u.height / 30);
-            nodes.forEach(function (node) { node._sort_key = nodes.length > showLimit ? +node.querySelector("td").textContent.replace(/,/g,'') : node._order; });
-            nodes.sort((a, b) => b._sort_key - a._sort_key);
-            nodes.forEach(function (node) { node.parentNode.appendChild(node); });
-            for (let i = 0; i < nodes.length; i++) {
-                nodes[i].style.display = i < showLimit ? null : "none";
-            }
-            footer.parentNode.appendChild(footer);
-            footer.style.display = nodes.length > showLimit ? null : "none";
-        }
     }
 
     return {
@@ -1088,13 +1070,17 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
     };
 }
 
+async function draw(idx, chart, url_params, query) {
+    if (plots[idx]) {
+        plots[idx].destroy();
+        plots[idx] = null;
+    }
 
-async function doFetch(query, url_params = '') {
-    host = document.getElementById('url').value || host;
+    host = document.getElementById('url').value;
     user = document.getElementById('user').value;
     password = document.getElementById('password').value;
 
-    let url = `${host}?default_format=JSONColumnsWithMetadata&enable_http_compression=1`
+    let url = `${host}?default_format=JSONCompactColumns&enable_http_compression=1`
 
     if (add_http_cors_header) {
         // For debug purposes, you may set add_http_cors_header from a browser console
@@ -1108,17 +1094,14 @@ async function doFetch(query, url_params = '') {
         url += `&password=${encodeURIComponent(password)}`;
     }
 
-    let response, reply, error;
+    let response, data, error;
     try {
         response = await fetch(url + url_params, { method: "POST", body: query });
-        reply = await response.text();
+        data = await response.text();
         if (response.ok) {
-            reply = JSON.parse(reply);
-            if (reply.exception) {
-                error = reply.exception;
-            }
+            data = JSON.parse(data);
         } else {
-            error = reply;
+            error = data;
         }
     } catch (e) {
         console.log(e);
@@ -1137,85 +1120,15 @@ async function doFetch(query, url_params = '') {
         }
     }
 
-    return {reply, error};
-}
-
-async function draw(idx, chart, url_params, query) {
-    if (plots[idx]) {
-        plots[idx].destroy();
-        plots[idx] = null;
-    }
-
-    let {reply, error} = await doFetch(query, url_params);
     if (!error) {
-        if (reply.rows == 0) {
+        if (!Array.isArray(data)) {
+            error = "Query should return an array.";
+        } else if (data.length == 0) {
             error = "Query returned empty result.";
-        } else if (reply.meta.length < 2) {
-            error = "Query should return at least two columns: unix timestamp and value.";
-        } else {
-            for (let i = 0; i < reply.meta.length; i++) {
-                let label = reply.meta[i].name;
-                let column = reply.data[label];
-                if (!Array.isArray(column) || column.length != reply.data[reply.meta[0].name].length) {
-                    error = "Wrong data format of the query.";
-                    break;
-                }
-            }
-        }
-    }
-
-    // Transform string-labeled data to multi-column data
-    function transformToColumns() {
-        const x = reply.meta[0].name; // time; must be ordered
-        const l = reply.meta[1].name; // string label column to distinguish series; must be ordered
-        const y = reply.meta[2].name; // values; must have single value for (x, l) pair
-        const labels = [...new Set(reply.data[l])].sort((a, b) => a - b);
-        if (labels.includes('__time__')) {
-            error = "The second column is not allowed to contain '__time__' values.";
-            return;
-        }
-        const times = [...new Set(reply.data[x])].sort((a, b) => a - b);
-        let new_meta = [{ name: '__time__', type: reply.meta[0].type }];
-        let new_data = { __time__: [] };
-        for (let label of labels) {
-            new_meta.push({ name: label, type: reply.meta[2].type });
-            new_data[label] = [];
-        }
-        let new_rows = 0;
-        function row_done(row_time) {
-            new_rows++;
-            new_data.__time__.push(row_time);
-            for (let label of labels) {
-                if (new_data[label].length < new_rows) {
-                    new_data[label].push(null);
-                }
-            }
-        }
-        let prev_time = reply.data[x][0];
-        const old_rows = reply.data[x].length;
-        for (let i = 0; i < old_rows; i++) {
-            const time = reply.data[x][i];
-            const label = reply.data[l][i];
-            const value = reply.data[y][i];
-            if (prev_time != time) {
-                row_done(prev_time);
-                prev_time = time;
-            }
-            new_data[label].push(value);
-        }
-        row_done(prev_time);
-        reply.meta = new_meta;
-        reply.data = new_data;
-        reply.rows = new_rows;
-    }
-
-    function isStringColumn(type) {
-        return type === 'String' || type === 'LowCardinality(String)';
-    }
-
-    if (!error) {
-        if (reply.meta.length == 3 && isStringColumn(reply.meta[1].type)) {
-            transformToColumns();
+        } else if (data.length != 2) {
+            error = "Query should return exactly two columns: unix timestamp and value.";
+        } else if (!Array.isArray(data[0]) || !Array.isArray(data[1]) || data[0].length != data[1].length) {
+            error = "Wrong data format of the query.";
         }
     }
 
@@ -1223,7 +1136,7 @@ async function draw(idx, chart, url_params, query) {
     let title_div = chart.querySelector('.title');
     if (error) {
         error_div.firstChild.data = error;
-        title_div.style.display = 'none';
+        title_div.style.display = 'none'; 
         error_div.style.display = 'block';
         return false;
     } else {
@@ -1233,79 +1146,25 @@ async function draw(idx, chart, url_params, query) {
     }
 
     const [line_color, fill_color, grid_color, axes_color] = theme != 'dark'
-        ? ["#ff8888", "#ffeeee", "#eeeedd", "#2c3235"]
-        : ["#886644", "#004455", "#2c3235", "#c7d0d9"];
+        ? ["#F88", "#FEE", "#EED", "#2c3235"]
+        : ["#864", "#045", "#2c3235", "#c7d0d9"];
 
     let sync = uPlot.sync("sync");
 
-    function formatDateTime(t) {
-        return (new Date(t * 1000)).toISOString().replace('T', '\n').replace('.000Z', '');
-    }
-
-    function formatDateTimes(self, ticks) {
-        return ticks.map((t, idx) => {
-            let res = formatDateTime(t);
-            if (idx == 0 || res.substring(0, 10) != formatDateTime(ticks[idx - 1]).substring(0, 10)) {
-                return res;
-            } else {
-                return res.substring(11);
-            }
-        });
-    }
-
-    function formatValue(v) {
-        const a = Math.abs(v);
-        if (a >= 1000000000000000) { return (v / 1000000000000000) + 'P'; }
-        if (a >= 1000000000000) { return (v / 1000000000000) + 'T'; }
-        if (a >= 1000000000) { return (v / 1000000000) + 'G'; }
-        if (a >= 1000000) { return (v / 1000000) + 'M'; }
-        if (a >= 1000) { return (v / 1000) + 'K'; }
-        if (a > 0 && a < 0.001) { return (v * 1000000) + "μ"; }
-        return v;
-    }
-
-    let axis_x = {
-        stroke: axes_color,
-        grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-        ticks: { width: 1 / devicePixelRatio, stroke: grid_color },
-        values: formatDateTimes,
-        space: 80,
-        incrs: [1, 5, 10, 15, 30,
-            60, 60 * 5, 60 * 10, 60 * 15, 60 * 30,
-            3600, 3600 * 2, 3600 * 3, 3600 * 4, 3600 * 6, 3600 * 12,
-            3600 * 24],
-    };
-
-    let axis_y = {
-        stroke: axes_color,
-        grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-        ticks: { width: 1 / devicePixelRatio, stroke: grid_color },
-        values: (self, ticks) => ticks.map(formatValue)
-    };
-
-    let axes = [axis_x, axis_y];
-    let series = [{ label: "time", value: (self, t) => formatDateTime(t) }];
-    let data = [reply.data[reply.meta[0].name]];
-
-    // Treat every column as series
-    const series_count = reply.meta.length;
-    const fill = series_count == 2 ? fill_color : undefined;
-    const palette = series_count == 2 ? [line_color] : generatePalette(series_count);
-    let max_value = Number.NEGATIVE_INFINITY;
-    for (let i = 1; i < series_count; i++) {
-        let label = reply.meta[i].name;
-        series.push({ label, stroke: palette[i - 1], fill });
-        data.push(reply.data[label]);
-        max_value = Math.max(max_value, ...reply.data[label]);
-    }
+    const max_value = Math.max(...data[1]);
 
     const opts = {
         width: chart.clientWidth,
         height: chart.clientHeight,
-        scales: { x: { time: false } }, /// Because we want to split and format time on our own.
-        axes,
-        series,
-        padding: [ null, null, null, 3 ],
+        axes: [ { stroke: axes_color,
+                  grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+                  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
+                { stroke: axes_color,
+                  grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+                  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
+        series: [ { label: "x" },
+                  { label: "y", stroke: line_color, fill: fill_color } ],
+        padding: [ null, null, null, (Math.round(max_value * 100) / 100).toString().length * 6 - 10 ],
         plugins: [ legendAsTooltipPlugin() ],
         cursor: {
             sync: {
@@ -1320,47 +1179,44 @@ async function draw(idx, chart, url_params, query) {
     /// Set title
     const title = queries[idx] && queries[idx].title ? queries[idx].title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] ) : '';
     chart.querySelector('.title').firstChild.data = title;
-    return true;
+    return true
 }
 
-function showError(message) {
+function showAuthError(message) {
     const charts = document.getElementById('charts');
     charts.style.height = '0px';
     charts.style.opacity = '0';
     document.getElementById('add').style.display = 'none';
     document.getElementById('edit').style.display = 'none';
 
-    const error = document.getElementById('global-error');
-    error.textContent = message;
-    error.style.display = 'flex';
+    const authError = document.getElementById('auth-error');
+    authError.textContent = message;
+    authError.style.display = 'flex';
 }
 
-function hideError() {
+function hideAuthError() {
     const charts = document.getElementById('charts');
     charts.style.height = 'auto';
     charts.style.opacity = '1';
 
-    const error = document.getElementById('global-error');
-    error.textContent = '';
-    error.style.display = 'none';
+    const authError = document.getElementById('auth-error');
+    authError.textContent = '';
+    authError.style.display = 'none';
 }
 
 let firstLoad = true;
-let is_drawing = false; // Prevent race condition leading to duplicate/dangling charts.
-async function drawAll() {
-    if (is_drawing) return;
-    is_drawing = true;
 
+async function drawAll() {
     let params = getParamsForURL();
     const chartsArray = document.getElementsByClassName('chart');
 
     if (!firstLoad) {
-        hideError();
+        hideAuthError();
     }
     await Promise.all([...Array(queries.length)].map(async (_, i) => {
         return draw(i, chartsArray[i], params, queries[i].query).catch((e) => {
             if (!firstLoad) {
-                showError(e.message);
+                showAuthError(e.message);
             }
             return false;
         });
@@ -1368,21 +1224,20 @@ async function drawAll() {
         if (firstLoad) {
             firstLoad = false;
         } else {
-            enableButtons();
+            enableReloadButton();
+            enableRunButton();
         }
         if (results.includes(true)) {
             const element = document.querySelector('.inputs');
             element.classList.remove('unconnected');
             document.getElementById('add').style.display = 'inline-block';
             document.getElementById('edit').style.display = 'inline-block';
-            document.getElementById('search-span').style.display = '';
-            hideError();
-        } else {
-            document.getElementById('charts').style.height = '0px';
+        } 
+        else {
+            const charts = document.getElementById('charts')
+            charts.style.height = '0px';
         }
-    });
-
-    is_drawing = false;
+    })
 }
 
 function resize() {
@@ -1396,119 +1251,59 @@ function resize() {
 
 new ResizeObserver(resize).observe(document.body);
 
-function disableButtons() {
-    const reloadButton = document.getElementById('reload');
-    reloadButton.value = 'Reloading…';
-    reloadButton.disabled = true;
-    reloadButton.classList.add('disabled');
-
-    const runButton = document.getElementById('run');
-    if (runButton) {
-        runButton.value = 'Reloading…';
-        runButton.disabled = true;
-        runButton.classList.add('disabled');
-    }
-
-    const searchButton = document.getElementById('search');
-    searchButton.value = '…';
-    searchButton.disabled = true;
-    searchButton.classList.add('disabled');
+function disableReloadButton() {
+    const reloadButton = document.getElementById('reload')
+    reloadButton.value = 'Reloading…'
+    reloadButton.disabled = true
+    reloadButton.classList.add('disabled')
 }
 
-function enableButtons() {
-    const reloadButton = document.getElementById('reload');
-    reloadButton.value = 'Reload';
-    reloadButton.disabled = false;
-    reloadButton.classList.remove('disabled');
-
-    const runButton = document.getElementById('run');
-    if (runButton) {
-        runButton.value = 'Ok';
-        runButton.disabled = false;
-        runButton.classList.remove('disabled');
-    }
-
-    const searchButton = document.getElementById('search');
-    searchButton.value = '🔎';
-    searchButton.disabled = false;
-    searchButton.classList.remove('disabled');
+function disableRunButton() {
+    const runButton = document.getElementById('run')
+    runButton.value = 'Reloading…'
+    runButton.disabled = true
+    runButton.classList.add('disabled')
 }
 
-async function reloadAll(do_search) {
-    disableButtons();
-    try {
-        updateParams();
-        if (do_search) {
-            search_query = document.getElementById('search-query').value;
-            queries = [];
-            refreshCustomized(false);
-        }
-        saveState();
-        if (do_search) {
-            await searchQueries();
-        }
-        await drawAll();
-    } catch (e) {
-        showError(e.message);
-    }
-    enableButtons();
+function enableReloadButton() {
+    const reloadButton = document.getElementById('reload')
+    reloadButton.value = 'Reload'
+    reloadButton.disabled = false
+    reloadButton.classList.remove('disabled')
+}
+
+function enableRunButton() {
+    const runButton = document.getElementById('run')
+    runButton.value = 'Ok'
+    runButton.disabled = false
+    runButton.classList.remove('disabled')
+}
+
+function reloadAll() {
+    updateParams();
+    drawAll();
+    saveState();
+    disableReloadButton();
+    disableRunButton();
 }
 
 document.getElementById('params').onsubmit = function(event) {
-    if (document.activeElement === document.getElementById('search-query')) {
-        reloadAll(true);
-    } else {
-        reloadAll(queries.length == 0);
-    }
+    reloadAll();
     event.preventDefault();
 }
 
-const decodeState = (x) => JSON.parse(LZString.decompressFromEncodedURIComponent(x) || atob(x));
-const encodeState = (x) => LZString.compressToEncodedURIComponent(JSON.stringify(x));
 
 function saveState() {
-    const state = { host, user, queries, params, search_query, customized };
+    const state = { host: host, user: user, queries: queries, params: params };
     history.pushState(state, '',
-        window.location.pathname + (window.location.search || '') + '#' + encodeState(state));
-}
-
-async function searchQueries() {
-    let {reply, error} = await doFetch(search_query);
-    if (error) {
-        throw new Error(error);
-    }
-    let data = reply.data;
-    if (reply.rows == 0) {
-        throw new Error("Search query returned empty result.");
-    } else if (reply.meta.length != 2 || reply.meta[0].name != "title" || reply.meta[1].name != "query") {
-        throw new Error("Search query should return exactly two columns: title and query.");
-    } else if (!Array.isArray(data.title) || !Array.isArray(data.query) || data.title.length != data.query.length) {
-        throw new Error("Wrong data format of the search query.");
-    }
-
-    for (let i = 0; i < data.title.length; i++) {
-        queries.push({title: data.title[i], query: data.query[i]});
-    }
-
-    regenerate();
-}
-
-function refreshCustomized(value) {
-    if (value !== undefined) {
-        customized = value;
-    }
-    document.getElementById('search-span').style.opacity = customized ? 0.5 : 1.0;
-}
-
-function updateFromState() {
-    document.getElementById('url').value = host;
-    document.getElementById('user').value = user;
-    document.getElementById('password').value = password;
-    document.getElementById('search-query').value = search_query;
-    refreshCustomized();
+        window.location.pathname + (window.location.search || '') + '#' + btoa(JSON.stringify(state)));
 }
 
 function regenerate() {
+    document.getElementById('url').value = host;
+    document.getElementById('user').value = user;
+    document.getElementById('password').value = password;
+
     findParamsInQueries();
     buildParams();
 
@@ -1526,44 +1321,26 @@ function regenerate() {
 
 window.onpopstate = function(event) {
     if (!event.state) { return; }
-    ({host, user, queries, params, search_query, customized} = event.state);
-    updateFromState();
+    ({host, user, queries, params} = event.state);
+
     regenerate();
     drawAll();
 };
 
 if (window.location.hash) {
     try {
-        let search_query_, customized_;
-        ({host, user, queries, params, search_query_, customized_} = decodeState(window.location.hash.substring(1)));
-
-        // For compatibility with old URLs' hashes
-        search_query = search_query_ !== undefined ? search_query_ : search_query;
-        customized = customized_ !== undefined ? customized_ : true;
+        ({host, user, queries, params} = JSON.parse(atob(window.location.hash.substring(1))));
     } catch {}
 }
 
-async function start() {
-    try {
-        updateFromState();
-        if (queries.length == 0) {
-            await searchQueries();
-        } else {
-            regenerate();
-        }
-        saveState();
-        let new_theme = window.localStorage.getItem('theme');
-        if (new_theme && new_theme != theme) {
-            setTheme(new_theme);
-        } else {
-            drawAll();
-        }
-    } catch (e) {
-        showError(e.message);
-    }
-}
+regenerate();
 
-start();
+let new_theme = window.localStorage.getItem('theme');
+if (new_theme && new_theme != theme) {
+    setTheme(new_theme);
+} else {
+    drawAll();
+}
 
 </script>
 </body>

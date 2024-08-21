@@ -16,17 +16,14 @@ ln -s /usr/share/clickhouse-test/ci/get_previous_release_tag.py /usr/bin/get_pre
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
-# shellcheck source=../stateless/attach_gdb.lib
-source /attach_gdb.lib
-# shellcheck source=../stateless/stress_tests.lib
-source /stress_tests.lib
+source /usr/share/clickhouse-test/ci/attach_gdb.lib
+source /usr/share/clickhouse-test/ci/stress_tests.lib
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateless # to have a proper environment
 
 echo "Get previous release tag"
-# shellcheck disable=SC2016
-previous_release_tag=$(dpkg-deb --showformat='${Version}' --show package_folder/clickhouse-client*.deb | get_previous_release_tag)
+previous_release_tag=$(dpkg --info package_folder/clickhouse-client*.deb | grep "Version: " | awk '{print $2}' | cut -f1 -d'+' | get_previous_release_tag)
 echo $previous_release_tag
 
 echo "Clone previous release repository"
@@ -59,28 +56,14 @@ echo "ATTACH DATABASE system ENGINE=Ordinary" > /var/lib/clickhouse/metadata/sys
 # Install previous release packages
 install_packages previous_release_package_folder
 
-# NOTE: we need to run clickhouse-local under script to get settings without any adjustments, like clickhouse-local does in case of stdout is not a tty
-function save_settings_clean()
-{
-  local out=$1 && shift
-  script -q -c "clickhouse-local -q \"select * from system.settings into outfile '$out'\"" --log-out /dev/null
-}
-
-# We save the (numeric) version of the old server to compare setting changes between the 2
-# We do this since we are testing against the latest release, not taking into account release candidates, so we might
-# be testing current master (24.6) against the latest stable release (24.4)
-function save_major_version()
-{
-  local out=$1 && shift
-  clickhouse-local -q "SELECT a[1]::UInt64 * 100 + a[2]::UInt64 as v FROM (Select splitByChar('.', version()) as a) into outfile '$out'"
-}
-
-save_settings_clean 'old_settings.native'
-save_major_version 'old_version.native'
-
 # Initial run without S3 to create system.*_log on local file system to make it
 # available for dump via clickhouse-local
 configure
+
+# it contains some new settings, but we can safely remove it
+rm /etc/clickhouse-server/config.d/merge_tree.xml
+rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
+rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 
 start
 stop
@@ -93,10 +76,24 @@ export USE_S3_STORAGE_FOR_MERGE_TREE=1
 export ZOOKEEPER_FAULT_INJECTION=0
 configure
 
+# force_sync=false doesn't work correctly on some older versions
+sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
+  | sed "s|<force_sync>false</force_sync>|<force_sync>true</force_sync>|" \
+  > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
+sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+
 # But we still need default disk because some tables loaded only into it
-sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
+  | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" \
+  > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
+mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+
+# it contains some new settings, but we can safely remove it
+rm /etc/clickhouse-server/config.d/merge_tree.xml
+rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
+rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 
 start
 
@@ -127,72 +124,11 @@ install_packages package_folder
 export ZOOKEEPER_FAULT_INJECTION=1
 configure
 
-# Check that all new/changed setting were added in settings changes history.
-# Some settings can be different for builds with sanitizers, so we check
-# settings changes only for non-sanitizer builds.
-IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
-if [ "${IS_SANITIZED}" -eq "0" ]
-then
-  save_settings_clean 'new_settings.native'
-  clickhouse-local -nmq "
-  CREATE TABLE old_settings AS file('old_settings.native');
-  CREATE TABLE old_version AS file('old_version.native');
-  CREATE TABLE new_settings AS file('new_settings.native');
-
-  SELECT
-      name,
-      new_settings.value AS new_value,
-      old_settings.value AS old_value
-  FROM new_settings
-  LEFT JOIN old_settings ON new_settings.name = old_settings.name
-  WHERE (new_settings.value != old_settings.value) AND (name NOT IN (
-      SELECT arrayJoin(tupleElement(changes, 'name'))
-      FROM
-      (
-          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes
-      )
-      WHERE (version_array[1]::UInt64 * 100 + version_array[2]::UInt64) > (SELECT v FROM old_version LIMIT 1)
-  ))
-  SETTINGS join_use_nulls = 1
-  INTO OUTFILE 'changed_settings.txt'
-  FORMAT PrettyCompactNoEscapes;
-
-  SELECT name
-  FROM new_settings
-  WHERE (name NOT IN (
-      SELECT name
-      FROM old_settings
-  )) AND (name NOT IN (
-      SELECT arrayJoin(tupleElement(changes, 'name'))
-      FROM
-      (
-          SELECT *, splitByChar('.', version) AS version_array FROM system.settings_changes
-      )
-      WHERE (version_array[1]::UInt64 * 100 + version_array[2]::UInt64) > (SELECT v FROM old_version LIMIT 1)
-  ))
-  INTO OUTFILE 'new_settings.txt'
-  FORMAT PrettyCompactNoEscapes;
-  "
-
-  if [ -s changed_settings.txt ]
-  then
-      mv changed_settings.txt /test_output/
-      echo -e "Changed settings are not reflected in settings changes history (see changed_settings.txt)$FAIL$(head_escaped /test_output/changed_settings.txt)" >> /test_output/test_results.tsv
-  else
-      echo -e "There are no changed settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
-  fi
-
-  if [ -s new_settings.txt ]
-  then
-      mv new_settings.txt /test_output/
-      echo -e "New settings are not reflected in settings changes history (see new_settings.txt)$FAIL$(head_escaped /test_output/new_settings.txt)" >> /test_output/test_results.tsv
-  else
-      echo -e "There are no new settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
-  fi
-fi
-
 # Just in case previous version left some garbage in zk
-sudo sed -i "s|>1<|>0<|g" /etc/clickhouse-server/config.d/lost_forever_check.xml \
+sudo cat /etc/clickhouse-server/config.d/lost_forever_check.xml \
+  | sed "s|>1<|>0<|g" \
+  > /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp
+sudo mv /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp /etc/clickhouse-server/config.d/lost_forever_check.xml
 rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 
 start 500
@@ -233,7 +169,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "ZooKeeperClient" \
            -e "KEEPER_EXCEPTION" \
            -e "DirectoryMonitor" \
-           -e "DistributedInsertQueue" \
            -e "TABLE_IS_READ_ONLY" \
            -e "Code: 1000, e.code() = 111, Connection refused" \
            -e "UNFINISHED" \
@@ -293,10 +228,8 @@ clickhouse-local --structure "test String, res String, time Nullable(Float32), d
 (test like '%Fatal message%') DESC,
 (test like '%Error message%') DESC,
 (test like '%previous release%') DESC,
-(test like '%Changed settings%') DESC,
-(test like '%New settings%') DESC,
 rowNumberInAllBlocks()
-LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo -e "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
+LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
 # But OOMs in stress test are allowed

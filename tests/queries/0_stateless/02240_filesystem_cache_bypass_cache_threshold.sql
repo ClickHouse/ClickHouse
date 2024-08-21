@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest, no-object-storage, no-random-settings
+-- Tags: no-parallel, no-fasttest, no-s3-storage, no-random-settings
 
 -- { echo }
 
@@ -15,9 +15,9 @@ SETTINGS min_bytes_for_wide_part = 10485760,
          disk = disk(
             type = cache,
             max_size = '128Mi',
-            path = 'filesystem_cache_bypass_cache_threshold/',
-            enable_bypass_cache_with_threshold = 1,
-            bypass_cache_threshold = 100,
+            path = '${CLICKHOUSE_TEST_UNIQUE_NAME}_cache',
+            enable_bypass_cache_with_threashold = 1,
+            bypass_cache_threashold = 100,
             delayed_cleanup_interval_ms = 100,
             disk = 's3_disk');
 

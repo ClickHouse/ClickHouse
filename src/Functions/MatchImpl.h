@@ -9,7 +9,7 @@
 #include <Functions/Regexps.h>
 
 #include "config.h"
-#include <re2/re2.h>
+#include <re2_st/re2.h>
 
 
 namespace DB
@@ -81,19 +81,19 @@ inline bool likePatternIsSubstring(std::string_view pattern, String & res)
 // For more readable instantiations of MatchImpl<>
 struct MatchTraits
 {
-enum class Syntax : uint8_t
+enum class Syntax
 {
     Like,
     Re2
 };
 
-enum class Case : uint8_t
+enum class Case
 {
     Sensitive,
     Insensitive
 };
 
-enum class Result : uint8_t
+enum class Result
 {
     DontNegate,
     Negate
@@ -127,17 +127,17 @@ struct MatchImpl
         const String & needle,
         [[maybe_unused]] const ColumnPtr & start_pos_,
         PaddedPODArray<UInt8> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null,
-        size_t input_rows_count)
+        [[maybe_unused]] ColumnUInt8 * res_null)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        chassert(!res_null);
+        assert(!res_null);
 
-        chassert(res.size() == haystack_offsets.size());
-        chassert(res.size() == input_rows_count);
-        chassert(start_pos_ == nullptr);
+        const size_t haystack_size = haystack_offsets.size();
 
-        if (input_rows_count == 0)
+        assert(haystack_size == res.size());
+        assert(start_pos_ == nullptr);
+
+        if (haystack_offsets.empty())
             return;
 
         /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
@@ -191,7 +191,7 @@ struct MatchImpl
             return;
         }
 
-        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
+        const auto & regexp = Regexps::Regexp(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
 
         String required_substring;
         bool is_trivial;
@@ -202,17 +202,17 @@ struct MatchImpl
         if (required_substring.empty())
         {
             if (!regexp.getRE2()) /// An empty regexp. Always matches.
-                memset(res.data(), !negate, input_rows_count * sizeof(res[0]));
+                memset(res.data(), !negate, haystack_size * sizeof(res[0]));
             else
             {
                 size_t prev_offset = 0;
-                for (size_t i = 0; i < input_rows_count; ++i)
+                for (size_t i = 0; i < haystack_size; ++i)
                 {
                     const bool match = regexp.getRE2()->Match(
                             {reinterpret_cast<const char *>(&haystack_data[prev_offset]), haystack_offsets[i] - prev_offset - 1},
                             0,
                             haystack_offsets[i] - prev_offset - 1,
-                            re2::RE2::UNANCHORED,
+                            re2_st::RE2::UNANCHORED,
                             nullptr,
                             0);
                     res[i] = negate ^ match;
@@ -266,7 +266,7 @@ struct MatchImpl
                                 {str_data, str_size},
                                 start_pos,
                                 end_pos,
-                                re2::RE2::UNANCHORED,
+                                re2_st::RE2::UNANCHORED,
                                 nullptr,
                                 0);
                         res[i] = negate ^ match;
@@ -291,16 +291,16 @@ struct MatchImpl
         size_t N,
         const String & needle,
         PaddedPODArray<UInt8> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null,
-        size_t input_rows_count)
+        [[maybe_unused]] ColumnUInt8 * res_null)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        chassert(!res_null);
+        assert(!res_null);
 
-        chassert(res.size() == haystack.size() / N);
-        chassert(res.size() == input_rows_count);
+        const size_t haystack_size = haystack.size() / N;
 
-        if (input_rows_count == 0)
+        assert(haystack_size == res.size());
+
+        if (haystack.empty())
             return;
 
         /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
@@ -359,7 +359,7 @@ struct MatchImpl
             return;
         }
 
-        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
+        const auto & regexp = Regexps::Regexp(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
 
         String required_substring;
         bool is_trivial;
@@ -370,17 +370,17 @@ struct MatchImpl
         if (required_substring.empty())
         {
             if (!regexp.getRE2()) /// An empty regexp. Always matches.
-                memset(res.data(), !negate, input_rows_count * sizeof(res[0]));
+                memset(res.data(), !negate, haystack_size * sizeof(res[0]));
             else
             {
                 size_t offset = 0;
-                for (size_t i = 0; i < input_rows_count; ++i)
+                for (size_t i = 0; i < haystack_size; ++i)
                 {
                     const bool match = regexp.getRE2()->Match(
                             {reinterpret_cast<const char *>(&haystack[offset]), N},
                             0,
                             N,
-                            re2::RE2::UNANCHORED,
+                            re2_st::RE2::UNANCHORED,
                             nullptr,
                             0);
                     res[i] = negate ^ match;
@@ -437,7 +437,7 @@ struct MatchImpl
                                     {str_data, N},
                                     start_pos,
                                     end_pos,
-                                    re2::RE2::UNANCHORED,
+                                    re2_st::RE2::UNANCHORED,
                                     nullptr,
                                     0);
                             res[i] = negate ^ match;
@@ -464,18 +464,18 @@ struct MatchImpl
         const ColumnString::Offsets & needle_offset,
         [[maybe_unused]] const ColumnPtr & start_pos_,
         PaddedPODArray<UInt8> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null,
-        size_t input_rows_count)
+        [[maybe_unused]] ColumnUInt8 * res_null)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        chassert(!res_null);
+        assert(!res_null);
 
-        chassert(haystack_offsets.size() == needle_offset.size());
-        chassert(res.size() == haystack_offsets.size());
-        chassert(res.size() == input_rows_count);
-        chassert(start_pos_ == nullptr);
+        const size_t haystack_size = haystack_offsets.size();
 
-        if (input_rows_count == 0)
+        assert(haystack_size == needle_offset.size());
+        assert(haystack_size == res.size());
+        assert(start_pos_ == nullptr);
+
+        if (haystack_offsets.empty())
             return;
 
         String required_substr;
@@ -488,7 +488,7 @@ struct MatchImpl
         Regexps::LocalCacheTable cache;
         Regexps::RegexpPtr regexp;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < haystack_size; ++i)
         {
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
             const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
@@ -526,7 +526,7 @@ struct MatchImpl
                                 {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
                                 0,
                                 cur_haystack_length,
-                                re2::RE2::UNANCHORED,
+                                re2_st::RE2::UNANCHORED,
                                 nullptr,
                                 0);
                         res[i] = negate ^ match;
@@ -552,7 +552,7 @@ struct MatchImpl
                                     {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
                                     start_pos,
                                     end_pos,
-                                    re2::RE2::UNANCHORED,
+                                    re2_st::RE2::UNANCHORED,
                                     nullptr,
                                     0);
                             res[i] = negate ^ match2;
@@ -573,16 +573,16 @@ struct MatchImpl
         const ColumnString::Offsets & needle_offset,
         [[maybe_unused]] const ColumnPtr & start_pos_,
         PaddedPODArray<UInt8> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null,
-        size_t input_rows_count)
+        [[maybe_unused]] ColumnUInt8 * res_null)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        chassert(!res_null);
+        assert(!res_null);
 
-        chassert(res.size() == input_rows_count);
-        chassert(res.size() == haystack.size() / N);
-        chassert(res.size() == needle_offset.size());
-        chassert(start_pos_ == nullptr);
+        const size_t haystack_size = haystack.size()/N;
+
+        assert(haystack_size == needle_offset.size());
+        assert(haystack_size == res.size());
+        assert(start_pos_ == nullptr);
 
         if (haystack.empty())
             return;
@@ -597,7 +597,7 @@ struct MatchImpl
         Regexps::LocalCacheTable cache;
         Regexps::RegexpPtr regexp;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < haystack_size; ++i)
         {
             const auto * const cur_haystack_data = &haystack[prev_haystack_offset];
             const size_t cur_haystack_length = N;
@@ -635,7 +635,7 @@ struct MatchImpl
                                 {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
                                 0,
                                 cur_haystack_length,
-                                re2::RE2::UNANCHORED,
+                                re2_st::RE2::UNANCHORED,
                                 nullptr,
                                 0);
                         res[i] = negate ^ match;
@@ -661,7 +661,7 @@ struct MatchImpl
                                     {reinterpret_cast<const char *>(cur_haystack_data), cur_haystack_length},
                                     start_pos,
                                     end_pos,
-                                    re2::RE2::UNANCHORED,
+                                    re2_st::RE2::UNANCHORED,
                                     nullptr,
                                     0);
                             res[i] = negate ^ match2;

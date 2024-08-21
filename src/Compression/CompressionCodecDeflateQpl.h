@@ -3,12 +3,6 @@
 #include <Compression/ICompressionCodec.h>
 #include <map>
 #include <random>
-#include <pcg_random.hpp>
-
-#include "config.h"
-
-#if USE_QPL
-
 #include <qpl/qpl.h>
 
 namespace Poco
@@ -31,7 +25,7 @@ public:
 
     qpl_job * acquireJob(UInt32 & job_id);
     void releaseJob(UInt32 job_id);
-    const bool & isJobPoolReady() const { return job_pool_ready; }
+    const bool & isJobPoolReady() { return job_pool_ready; }
 
 private:
     bool tryLockJob(UInt32 index);
@@ -47,7 +41,7 @@ private:
     std::unique_ptr<std::atomic_bool[]> hw_job_ptr_locks;
 
     bool job_pool_ready;
-    pcg64_fast random_engine;
+    std::mt19937 random_engine;
     std::uniform_int_distribution<int> distribution;
 };
 
@@ -71,7 +65,7 @@ public:
     /// RET_ERROR stands for hardware codec fail, needs fallback to software codec.
     static constexpr Int32 RET_ERROR = -1;
 
-    explicit HardwareCodecDeflateQpl(SoftwareCodecDeflateQpl & sw_codec_);
+    HardwareCodecDeflateQpl();
     ~HardwareCodecDeflateQpl();
 
     Int32 doCompressData(const char * source, UInt32 source_size, char * dest, UInt32 dest_size) const;
@@ -91,9 +85,7 @@ private:
     /// For each submission, push job ID && job object into this map;
     /// For flush, pop out job ID && job object from this map. Use job ID to release job lock and use job object to check job status till complete.
     std::map<UInt32, qpl_job *> decomp_async_job_map;
-    LoggerPtr log;
-    /// Provides a fallback in case of errors.
-    SoftwareCodecDeflateQpl & sw_codec;
+    Poco::Logger * log;
 };
 
 class CompressionCodecDeflateQpl final : public ICompressionCodec
@@ -117,9 +109,8 @@ protected:
 private:
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    std::unique_ptr<SoftwareCodecDeflateQpl> sw_codec;
     std::unique_ptr<HardwareCodecDeflateQpl> hw_codec;
+    std::unique_ptr<SoftwareCodecDeflateQpl> sw_codec;
 };
 
 }
-#endif

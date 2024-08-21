@@ -4,8 +4,6 @@
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
-#include <Core/ServerSettings.h>
-#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Context.h>
@@ -47,7 +45,7 @@ StorageXDBC::StorageXDBC(
     , bridge_helper(bridge_helper_)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
-    , log(getLogger("Storage" + bridge_helper->getName()))
+    , log(&Poco::Logger::get("Storage" + bridge_helper->getName()))
 {
     uri = bridge_helper->getMainURI().toString();
 }
@@ -61,7 +59,7 @@ std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(
     const Names & /* column_names */,
     const StorageSnapshotPtr & /*storage_snapshot*/,
     const SelectQueryInfo & /*query_info*/,
-    const ContextPtr & /*context*/,
+    ContextPtr /*context*/,
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t max_block_size) const
 {
@@ -72,7 +70,7 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
     const Names & column_names,
     const ColumnsDescription & columns_description,
     const SelectQueryInfo & query_info,
-    const ContextPtr & local_context,
+    ContextPtr local_context,
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t /*max_block_size*/) const
 {
@@ -104,8 +102,7 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
     return write_body_callback;
 }
 
-void StorageXDBC::read(
-    QueryPlan & query_plan,
+Pipe StorageXDBC::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -117,7 +114,7 @@ void StorageXDBC::read(
     storage_snapshot->check(column_names);
 
     bridge_helper->startBridgeSync();
-    IStorageURLBase::read(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+    return IStorageURLBase::read(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
 }
 
 SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
@@ -145,7 +142,7 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMet
         local_context,
         ConnectionTimeouts::getHTTPTimeouts(
             local_context->getSettingsRef(),
-            local_context->getServerSettings().keep_alive_timeout),
+            {local_context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}),
         compression_method);
 }
 

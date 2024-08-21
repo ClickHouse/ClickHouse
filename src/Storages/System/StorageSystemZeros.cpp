@@ -1,12 +1,10 @@
 #include <Storages/System/StorageSystemZeros.h>
-#include <Storages/SelectQueryInfo.h>
 
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-
 
 namespace DB
 {
@@ -16,9 +14,7 @@ namespace
 
 struct ZerosState
 {
-    explicit ZerosState(UInt64 limit) : add_total_rows(limit) { }
     std::atomic<UInt64> num_generated_rows = 0;
-    std::atomic<UInt64> add_total_rows = 0;
 };
 
 using ZerosStatePtr = std::shared_ptr<ZerosState>;
@@ -44,13 +40,10 @@ protected:
         auto column_ptr = column;
         size_t column_size = column_ptr->size();
 
-        UInt64 total_rows = state->add_total_rows.fetch_and(0);
-        if (total_rows)
-            addTotalRowsApprox(total_rows);
-
-        if (limit)
+        if (state)
         {
             auto generated_rows = state->num_generated_rows.fetch_add(column_size, std::memory_order_acquire);
+
             if (generated_rows >= limit)
                 return {};
 
@@ -92,7 +85,7 @@ StorageSystemZeros::StorageSystemZeros(const StorageID & table_id_, bool multith
     : IStorage(table_id_), multithreaded(multithreaded_), limit(limit_)
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription({{"zero", std::make_shared<DataTypeUInt8>(), "dummy"}}));
+    storage_metadata.setColumns(ColumnsDescription({{"zero", std::make_shared<DataTypeUInt8>()}}));
     setInMemoryMetadata(storage_metadata);
 
 }
@@ -100,7 +93,7 @@ StorageSystemZeros::StorageSystemZeros(const StorageID & table_id_, bool multith
 Pipe StorageSystemZeros::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
+    SelectQueryInfo &,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -108,25 +101,31 @@ Pipe StorageSystemZeros::read(
 {
     storage_snapshot->check(column_names);
 
-    UInt64 query_limit = limit ? *limit : 0;
-    if (query_info.trivial_limit)
-        query_limit = query_limit ? std::min(query_limit, query_info.trivial_limit) : query_info.trivial_limit;
+    bool use_multiple_streams = multithreaded;
 
-    if (query_limit && query_limit < max_block_size)
-        max_block_size = query_limit;
+    if (limit && *limit < max_block_size)
+    {
+        max_block_size = static_cast<size_t>(*limit);
+        use_multiple_streams = false;
+    }
 
-    if (!multithreaded)
+    if (!use_multiple_streams)
         num_streams = 1;
-    else if (query_limit && num_streams * max_block_size > query_limit)
-        /// We want to avoid spawning more streams than necessary
-        num_streams = std::min(num_streams, static_cast<size_t>(((query_limit + max_block_size - 1) / max_block_size)));
-
-    ZerosStatePtr state = std::make_shared<ZerosState>(query_limit);
 
     Pipe res;
+
+    ZerosStatePtr state;
+
+    if (limit)
+        state = std::make_shared<ZerosState>();
+
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto source = std::make_shared<ZerosSource>(max_block_size, query_limit, state);
+        auto source = std::make_shared<ZerosSource>(max_block_size, limit ? *limit : 0, state);
+
+        if (limit && i == 0)
+            source->addTotalRowsApprox(*limit);
+
         res.addSource(std::move(source));
     }
 

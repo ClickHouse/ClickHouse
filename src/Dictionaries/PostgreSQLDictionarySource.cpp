@@ -2,7 +2,6 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/QualifiedTableName.h>
-#include <Core/Settings.h>
 #include "DictionarySourceFactory.h"
 #include "registerDictionaries.h"
 
@@ -58,7 +57,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     , configuration(configuration_)
     , pool(std::move(pool_))
     , sample_block(sample_block_)
-    , log(getLogger("PostgreSQLDictionarySource"))
+    , log(&Poco::Logger::get("PostgreSQLDictionarySource"))
     , query_builder(makeExternalQueryBuilder(dict_struct, configuration.schema, configuration.table, configuration.query, configuration.where))
     , load_all_query(query_builder.composeLoadAllQuery())
 {
@@ -71,7 +70,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
     , configuration(other.configuration)
     , pool(other.pool)
     , sample_block(other.sample_block)
-    , log(getLogger("PostgreSQLDictionarySource"))
+    , log(&Poco::Logger::get("PostgreSQLDictionarySource"))
     , query_builder(makeExternalQueryBuilder(dict_struct, configuration.schema, configuration.table, configuration.query, configuration.where))
     , load_all_query(query_builder.composeLoadAllQuery())
     , update_time(other.update_time)
@@ -206,9 +205,8 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             configuration.replicas_configurations,
             settings.postgresql_connection_pool_size,
             settings.postgresql_connection_pool_wait_timeout,
-            settings.postgresql_connection_pool_retries,
-            settings.postgresql_connection_pool_auto_close_connection,
-            settings.postgresql_connection_attempt_timeout);
+            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+            settings.postgresql_connection_pool_auto_close_connection);
 
         PostgreSQLDictionarySource::Configuration dictionary_configuration
         {

@@ -1,23 +1,23 @@
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <IO/Operators.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/WindowStep.h>
-#include <Processors/Transforms/ExpressionTransform.h>
+
 #include <Processors/Transforms/WindowTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Interpreters/ExpressionActions.h>
+#include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits(bool preserves_sorting)
+static ITransformingStep::Traits getTraits()
 {
     return ITransformingStep::Traits
     {
         {
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = preserves_sorting,
+            .preserves_sorting = true,
         },
         {
             .preserves_number_of_rows = true
@@ -46,12 +46,10 @@ static Block addWindowFunctionResultColumns(const Block & block,
 WindowStep::WindowStep(
     const DataStream & input_stream_,
     const WindowDescription & window_description_,
-    const std::vector<WindowFunctionDescription> & window_functions_,
-    bool streams_fan_out_)
-    : ITransformingStep(input_stream_, addWindowFunctionResultColumns(input_stream_.header, window_functions_), getTraits(!streams_fan_out_))
+    const std::vector<WindowFunctionDescription> & window_functions_)
+    : ITransformingStep(input_stream_, addWindowFunctionResultColumns(input_stream_.header, window_functions_), getTraits())
     , window_description(window_description_)
     , window_functions(window_functions_)
-    , streams_fan_out(streams_fan_out_)
 {
     // We don't remove any columns, only add, so probably we don't have to update
     // the output DataStream::distinct_columns.
@@ -62,13 +60,10 @@ WindowStep::WindowStep(
 
 void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto num_threads = pipeline.getNumThreads();
-
     // This resize is needed for cases such as `over ()` when we don't have a
     // sort node, and the input might have multiple streams. The sort node would
     // have resized it.
-    if (window_description.full_sort_description.empty())
-        pipeline.resize(1);
+    pipeline.resize(1);
 
     pipeline.addSimpleTransform(
         [&](const Block & /*header*/)
@@ -76,11 +71,6 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
             return std::make_shared<WindowTransform>(
                 input_streams.front().header, output_stream->header, window_description, window_functions);
         });
-
-    if (streams_fan_out)
-    {
-        pipeline.resize(num_threads);
-    }
 
     assertBlocksHaveEqualStructure(pipeline.getHeader(), output_stream->header,
         "WindowStep transform for '" + window_description.window_name + "'");

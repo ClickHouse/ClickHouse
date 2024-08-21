@@ -1,14 +1,11 @@
 #pragma once
 
-#include <atomic>
-#include <list>
-#include <memory>
-#include <mutex>
-#include <optional>
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
+#include <mutex>
+#include <memory>
+#include <list>
 
-#include <Common/ISlotControl.h>
 
 namespace DB
 {
@@ -36,35 +33,41 @@ namespace DB
  * Oversubscription is possible: total amount of allocated slots can exceed `setMaxConcurrency(limit)`
  * because `min` amount of slots is allocated for each query unconditionally.
  */
-class ConcurrencyControl : public ISlotControl
+class ConcurrencyControl : boost::noncopyable
 {
 public:
     struct Allocation;
+    using AllocationPtr = std::shared_ptr<Allocation>;
+    using SlotCount = UInt64;
     using Waiters = std::list<Allocation *>;
 
+    static constexpr SlotCount Unlimited = std::numeric_limits<SlotCount>::max();
+
     // Scoped guard for acquired slot, see Allocation::tryAcquire()
-    struct Slot : public IAcquiredSlot
+    struct Slot : boost::noncopyable
     {
-        ~Slot() override;
+        ~Slot();
 
     private:
         friend struct Allocation; // for ctor
 
-        explicit Slot(SlotAllocationPtr && allocation_);
+        explicit Slot(AllocationPtr && allocation_);
 
-        SlotAllocationPtr allocation;
+        AllocationPtr allocation;
     };
 
+    // FIXME: have to be unique_ptr, but ThreadFromGlobalPool does not support move semantics yet
+    using SlotPtr = std::shared_ptr<Slot>;
+
     // Manages group of slots for a single query, see ConcurrencyControl::allocate(min, max)
-    struct Allocation : public ISlotAllocation
+    struct Allocation : std::enable_shared_from_this<Allocation>, boost::noncopyable
     {
-        ~Allocation() override;
+        ~Allocation();
 
         // Take one already granted slot if available. Lock-free iff there is no granted slot.
-        [[nodiscard]] AcquiredSlotPtr tryAcquire() override;
+        [[nodiscard]] SlotPtr tryAcquire();
 
-        SlotCount grantedCount() const override;
-        SlotCount allocatedCount() const override;
+        SlotCount grantedCount() const;
 
     private:
         friend struct Slot; // for release()
@@ -90,7 +93,7 @@ public:
         ConcurrencyControl & parent;
         const SlotCount limit;
 
-        mutable std::mutex mutex; // the following values must be accessed under this mutex
+        std::mutex mutex; // the following values must be accessed under this mutex
         SlotCount allocated; // allocated total (including already `released`)
         SlotCount released = 0;
 
@@ -99,16 +102,17 @@ public:
         const Waiters::iterator waiter; // iterator to itself in Waiters list; valid iff allocated < limit
     };
 
+public:
     ConcurrencyControl();
 
     // WARNING: all Allocation objects MUST be destructed before ConcurrencyControl
     // NOTE: Recommended way to achieve this is to use `instance()` and do graceful shutdown of queries
-    ~ConcurrencyControl() override;
+    ~ConcurrencyControl();
 
     // Allocate at least `min` and at most `max` slots.
     // If not all `max` slots were successfully allocated, a subscription for later allocation is created
     // Use `Allocation::tryAcquire()` to acquire allocated slot, before running a thread.
-    [[nodiscard]] SlotAllocationPtr allocate(SlotCount min, SlotCount max) override;
+    [[nodiscard]] AllocationPtr allocate(SlotCount min, SlotCount max);
 
     void setMaxConcurrency(SlotCount value);
 
@@ -129,7 +133,7 @@ private:
     std::mutex mutex;
     Waiters waiters;
     Waiters::iterator cur_waiter; // round-robin pointer
-    SlotCount max_concurrency = UnlimitedSlots;
+    SlotCount max_concurrency = Unlimited;
     SlotCount cur_concurrency = 0;
 };
 

@@ -3,14 +3,10 @@
 #include "config.h"
 
 #if USE_RAPIDJSON
-
-/// Prevent stack overflow:
-#define RAPIDJSON_PARSE_DEFAULT_FLAGS (kParseIterativeFlag)
-
-#include <base/types.h>
-#include <base/defines.h>
-#include <rapidjson/document.h>
-#include "ElementTypes.h"
+#    include <base/types.h>
+#    include <base/defines.h>
+#    include <rapidjson/document.h>
+#    include "ElementTypes.h"
 
 namespace DB
 {

@@ -7,9 +7,8 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
+#include <Common/PoolBase.h>
 #include <Poco/URIStreamFactory.h>
-#include <Common/HTTPConnectionPool.h>
-#include <Common/ProxyConfiguration.h>
 
 #include <IO/ConnectionTimeouts.h>
 
@@ -34,9 +33,9 @@ public:
     {}
 
     HTTPException * clone() const override { return new HTTPException(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+    void rethrow() const override { throw *this; }
 
-    Poco::Net::HTTPResponse::HTTPStatus getHTTPStatus() const { return http_status; }
+    int getHTTPStatus() const { return http_status; }
 
 private:
     Poco::Net::HTTPResponse::HTTPStatus http_status{};
@@ -52,17 +51,43 @@ private:
     const char * className() const noexcept override { return "DB::HTTPException"; }
 };
 
+using PooledHTTPSessionPtr = PoolBase<Poco::Net::HTTPClientSession>::Entry; // SingleEndpointHTTPSessionPool::Entry
 using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 
-void setResponseDefaultHeaders(HTTPServerResponse & response);
+/// If a session have this tag attached, it will be reused without calling `reset()` on it.
+/// All pooled sessions don't have this tag attached after being taken from a pool.
+/// If the request and the response were fully written/read, the client code should add this tag
+/// explicitly by calling `markSessionForReuse()`.
+struct HTTPSessionReuseTag
+{
+};
+
+void markSessionForReuse(HTTPSessionPtr session);
+void markSessionForReuse(PooledHTTPSessionPtr session);
+
+
+void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_timeout);
 
 /// Create session object to perform requests and set required parameters.
 HTTPSessionPtr makeHTTPSession(
-    HTTPConnectionGroupType group,
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
-    const ProxyConfiguration & proxy_config = {}
+    Poco::Net::HTTPClientSession::ProxyConfig proxy_config = {}
 );
+
+/// As previous method creates session, but tooks it from pool, without and with proxy uri.
+PooledHTTPSessionPtr makePooledHTTPSession(
+    const Poco::URI & uri,
+    const ConnectionTimeouts & timeouts,
+    size_t per_endpoint_pool_size,
+    bool wait_on_pool_size_limit = true);
+
+PooledHTTPSessionPtr makePooledHTTPSession(
+    const Poco::URI & uri,
+    const Poco::URI & proxy_uri,
+    const ConnectionTimeouts & timeouts,
+    size_t per_endpoint_pool_size,
+    bool wait_on_pool_size_limit = true);
 
 bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);
 
@@ -75,6 +100,5 @@ std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, bool allow_redirects);
 
 void assertResponseIsOk(
-    const String & uri, Poco::Net::HTTPResponse & response, std::istream & istr, bool allow_redirects = false);
-
+    const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, std::istream & istr, bool allow_redirects = false);
 }

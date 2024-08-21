@@ -9,13 +9,11 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsConversion.h>
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/numLiteralChars.h>
-
-#include <Interpreters/Context.h>
-#include <Interpreters/castColumn.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -23,7 +21,6 @@
 #include <Common/DateLUTImpl.h>
 #include <base/find_symbols.h>
 #include <Core/DecimalFunctions.h>
-#include <Core/Settings.h>
 
 #include <type_traits>
 #include <concepts>
@@ -44,13 +41,13 @@ namespace
 {
 using Pos = const char *;
 
-enum class SupportInteger : uint8_t
+enum class SupportInteger
 {
     Yes,
     No
 };
 
-enum class FormatSyntax : uint8_t
+enum class FormatSyntax
 {
     MySQL,
     Joda
@@ -63,8 +60,8 @@ template <> struct InstructionValueTypeMap<DataTypeInt16>      { using Instructi
 template <> struct InstructionValueTypeMap<DataTypeUInt16>     { using InstructionValueType = UInt32; };
 template <> struct InstructionValueTypeMap<DataTypeInt32>      { using InstructionValueType = UInt32; };
 template <> struct InstructionValueTypeMap<DataTypeUInt32>     { using InstructionValueType = UInt32; };
-template <> struct InstructionValueTypeMap<DataTypeInt64>      { using InstructionValueType = Int64; };
-template <> struct InstructionValueTypeMap<DataTypeUInt64>     { using InstructionValueType = UInt64; };
+template <> struct InstructionValueTypeMap<DataTypeInt64>      { using InstructionValueType = UInt32; };
+template <> struct InstructionValueTypeMap<DataTypeUInt64>     { using InstructionValueType = UInt32; };
 template <> struct InstructionValueTypeMap<DataTypeDate>       { using InstructionValueType = UInt16; };
 template <> struct InstructionValueTypeMap<DataTypeDate32>     { using InstructionValueType = Int32; };
 template <> struct InstructionValueTypeMap<DataTypeDateTime>   { using InstructionValueType = UInt32; };
@@ -206,13 +203,13 @@ private:
             return 4;
         }
 
-        /// Casts val from integer to string, then appends result string to buffer.
-        /// Makes sure digits number in result string is no less than min_digits by padding leading '0'.
+        /// Cast content from integer to string, and append result string to buffer.
+        /// Make sure digits number in result string is no less than total_digits by padding leading '0'
         /// Notice: '-' is not counted as digit.
         /// For example:
-        /// val = -123, min_digits = 2 => dest = "-123"
-        /// val = -123, min_digits = 3 => dest = "-123"
-        /// val = -123, min_digits = 4 => dest = "-0123"
+        /// val = -123, total_digits = 2 => dest = "-123"
+        /// val = -123, total_digits = 3 => dest = "-123"
+        /// val = -123, total_digits = 4 => dest = "-0123"
         static size_t writeNumberWithPadding(char * dest, std::integral auto val, size_t min_digits)
         {
             using T = decltype(val);
@@ -227,10 +224,9 @@ private:
                 ++digits;
             }
 
+            /// Possible sign
             size_t pos = 0;
             n = val;
-
-            /// Possible sign
             if constexpr (is_signed_v<T>)
                 if (val < 0)
                 {
@@ -247,17 +243,16 @@ private:
             }
 
             /// Digits
-            size_t digits_written = 0;
             while (w >= 100)
             {
                 w /= 100;
 
                 writeNumber2(dest + pos, n / w);
                 pos += 2;
-                digits_written += 2;
+
                 n = n % w;
             }
-            if (digits_written < digits)
+            if (n)
             {
                 dest[pos] = '0' + n;
                 ++pos;
@@ -323,18 +318,6 @@ private:
         size_t mysqlMonth(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             return writeNumber2(dest, ToMonthImpl::execute(source, timezone));
-        }
-
-        size_t mysqlMonthWithoutLeadingZero(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
-        {
-            auto month = ToMonthImpl::execute(source, timezone);
-            if (month < 10)
-            {
-                dest[0] = '0' + month;
-                return 1;
-            }
-            else
-                return writeNumber2(dest, month);
         }
 
         static size_t monthOfYearText(char * dest, Time source, bool abbreviate, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -419,36 +402,10 @@ private:
             return writeNumber2(dest, ToHourImpl::execute(source, timezone));
         }
 
-        size_t mysqlHour24WithoutLeadingZero(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
-        {
-            auto hour = ToHourImpl::execute(source, timezone);
-            if (hour < 10)
-            {
-                dest[0] = '0' + hour;
-                return 1;
-            }
-            else
-                return writeNumber2(dest, hour);
-        }
-
         size_t mysqlHour12(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto hour = ToHourImpl::execute(source, timezone);
-            hour = (hour == 0) ? 12 : (hour > 12 ? hour - 12 : hour);
-            return writeNumber2(dest, hour);
-        }
-
-        size_t mysqlHour12WithoutLeadingZero(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
-        {
-            auto hour = ToHourImpl::execute(source, timezone);
-            hour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
-            if (hour < 10)
-            {
-                dest[0] = '0' + hour;
-                return 1;
-            }
-            else
-                return writeNumber2(dest, hour);
+            auto x = ToHourImpl::execute(source, timezone);
+            return writeNumber2(dest, x == 0 ? 12 : (x > 12 ? x - 12 : x));
         }
 
         size_t mysqlMinute(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -555,12 +512,12 @@ private:
 
         static size_t jodaEra(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            Int32 year = static_cast<Int32>(ToYearImpl::execute(source, timezone));
+            auto year = static_cast<Int32>(ToYearImpl::execute(source, timezone));
             String res;
             if (min_represent_digits <= 3)
-                res = year > 0 ? "AD" : "BC";
+                res = static_cast<Int32>(year) > 0 ? "AD" : "BC";
             else
-                res = year > 0 ? "Anno Domini" : "Before Christ";
+                res = static_cast<Int32>(year) > 0 ? "Anno Domini" : "Before Christ";
 
             memcpy(dest, res.data(), res.size());
             return res.size();
@@ -692,7 +649,8 @@ private:
 
         static size_t jodaFractionOfSecond(size_t min_represent_digits, char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
         {
-            min_represent_digits = std::min<size_t>(min_represent_digits, 9);
+            if (min_represent_digits > 9)
+                min_represent_digits = 9;
             if (fractional_second == 0)
             {
                 for (UInt64 i = 0; i < min_represent_digits; ++i)
@@ -729,11 +687,10 @@ private:
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'%' must not be the last character in the format string, use '%%' instead");
     }
 
-    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name, bool mysql_format_ckl_without_leading_zeros)
+    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name)
     {
         static constexpr std::array variable_width_formatter = {'W'};
         static constexpr std::array variable_width_formatter_M_is_month_name = {'W', 'M'};
-        static constexpr std::array variable_width_formatter_leading_zeros = {'c', 'l', 'k'};
 
         for (size_t i = 0; i < format.size(); ++i)
         {
@@ -746,13 +703,6 @@ private:
                     {
                         if (std::any_of(
                                 variable_width_formatter_M_is_month_name.begin(), variable_width_formatter_M_is_month_name.end(),
-                                [&](char c){ return c == format[i + 1]; }))
-                            return false;
-                    }
-                    if (mysql_format_ckl_without_leading_zeros)
-                    {
-                        if (std::any_of(
-                                variable_width_formatter_leading_zeros.begin(), variable_width_formatter_leading_zeros.end(),
                                 [&](char c){ return c == format[i + 1]; }))
                             return false;
                     }
@@ -775,7 +725,6 @@ private:
 
     const bool mysql_M_is_month_name;
     const bool mysql_f_prints_single_zero;
-    const bool mysql_format_ckl_without_leading_zeros;
 
 public:
     static constexpr auto name = Name::name;
@@ -783,9 +732,8 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFormatDateTimeImpl>(context); }
 
     explicit FunctionFormatDateTimeImpl(ContextPtr context)
-        : mysql_M_is_month_name(context->getSettingsRef().formatdatetime_parsedatetime_m_is_month_name)
-        , mysql_f_prints_single_zero(context->getSettingsRef().formatdatetime_f_prints_single_zero)
-        , mysql_format_ckl_without_leading_zeros(context->getSettingsRef().formatdatetime_format_without_leading_zeros)
+        : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
+        , mysql_f_prints_single_zero(context->getSettings().formatdatetime_f_prints_single_zero)
     {
     }
 
@@ -798,7 +746,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -848,31 +796,42 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, [[maybe_unused]] size_t input_rows_count) const override
     {
         ColumnPtr res;
         if constexpr (support_integer == SupportInteger::Yes)
         {
             if (arguments.size() == 1)
             {
-                return castColumn(arguments[0], result_type);
+                if (!castType(arguments[0].type.get(), [&](const auto & type)
+                    {
+                        using FromDataType = std::decay_t<decltype(type)>;
+                        res = ConvertImpl<FromDataType, DataTypeDateTime, Name>::execute(arguments, result_type, input_rows_count);
+                        return true;
+                    }))
+                {
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                    "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime "
+                                    "or DateTime64 when arguments size is 1.",
+                                    arguments[0].column->getName(), getName());
+                }
             }
             else
             {
                 if (!castType(arguments[0].type.get(), [&](const auto & type)
                     {
                         using FromDataType = std::decay_t<decltype(type)>;
-                        if (!(res = executeType<FromDataType>(arguments, result_type, input_rows_count)))
+                        if (!(res = executeType<FromDataType>(arguments, result_type)))
                             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                                 "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime or DateTime64.",
                                 arguments[0].column->getName(), getName());
                         return true;
                     }))
                 {
-                    if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
-                        || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
-                        || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
-                        || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
+                    if (!((res = executeType<DataTypeDate>(arguments, result_type))
+                        || (res = executeType<DataTypeDate32>(arguments, result_type))
+                        || (res = executeType<DataTypeDateTime>(arguments, result_type))
+                        || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
                         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                             "Illegal column {} of function {}, must be Integer or DateTime.",
                             arguments[0].column->getName(), getName());
@@ -881,10 +840,10 @@ public:
         }
         else
         {
-            if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
-                || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
-                || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
-                || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
+            if (!((res = executeType<DataTypeDate>(arguments, result_type))
+                || (res = executeType<DataTypeDate32>(arguments, result_type))
+                || (res = executeType<DataTypeDateTime>(arguments, result_type))
+                || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Illegal column {} of function {}, must be Date or DateTime.",
                     arguments[0].column->getName(), getName());
@@ -894,27 +853,19 @@ public:
     }
 
     template <typename DataType>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
     {
-        auto non_const_datetime = arguments[0].column->convertToFullColumnIfConst();
-        auto * times = checkAndGetColumn<typename DataType::ColumnType>(non_const_datetime.get());
+        auto * times = checkAndGetColumn<typename DataType::ColumnType>(arguments[0].column.get());
         if (!times)
             return nullptr;
 
-        String format;
-        if (const auto * format_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
-            format = format_column->getValue<String>();
-        else
+        const ColumnConst * format_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+        if (!format_column)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
                 arguments[1].column->getName(), getName());
 
-        const ColumnConst * const_time_zone_column = nullptr;
-        const DateLUTImpl * time_zone = nullptr;
-        if (arguments.size() == 2)
-            time_zone = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
-        else if (arguments.size() > 2)
-            const_time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[2].column.get());
+        String format = format_column->getValue<String>();
 
         UInt32 scale [[maybe_unused]] = 0;
         if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
@@ -935,31 +886,29 @@ public:
         ///   column rows are NOT populated with the template and left uninitialized. We run the normal instructions for formatters AND
         ///   instructions that copy literal characters before/between/after formatters. As a result, each byte of each result row is
         ///   written which is obviously slow.
-        bool mysql_with_only_fixed_length_formatters = (format_syntax == FormatSyntax::MySQL) ? containsOnlyFixedWidthMySQLFormatters(format, mysql_M_is_month_name, mysql_format_ckl_without_leading_zeros) : false;
+        bool mysql_with_only_fixed_length_formatters = (format_syntax == FormatSyntax::MySQL) ? containsOnlyFixedWidthMySQLFormatters(format, mysql_M_is_month_name) : false;
 
         using T = typename InstructionValueTypeMap<DataType>::InstructionValueType;
         std::vector<Instruction<T>> instructions;
         String out_template;
         size_t out_template_size = parseFormat(format, instructions, scale, mysql_with_only_fixed_length_formatters, out_template);
 
+        const DateLUTImpl * time_zone_tmp = nullptr;
         if (castType(arguments[0].type.get(), [&]([[maybe_unused]] const auto & type) { return true; }))
-        {
-            if (const_time_zone_column)
-                time_zone = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
-        }
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         else if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
-        {
-            if (const_time_zone_column)
-                time_zone = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
-        }
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         else
-            time_zone = &DateLUT::instance();
+            time_zone_tmp = &DateLUT::instance();
+
+        const DateLUTImpl & time_zone = *time_zone_tmp;
+        const auto & vec = times->getData();
 
         auto col_res = ColumnString::create();
         auto & res_data = col_res->getChars();
         auto & res_offsets = col_res->getOffsets();
-        res_data.resize(input_rows_count * (out_template_size + 1));
-        res_offsets.resize(input_rows_count);
+        res_data.resize(vec.size() * (out_template_size + 1));
+        res_offsets.resize(vec.size());
 
         if constexpr (format_syntax == FormatSyntax::MySQL)
         {
@@ -988,19 +937,10 @@ public:
             }
         }
 
-        const auto & vec = times->getData();
-
         auto * begin = reinterpret_cast<char *>(res_data.data());
         auto * pos = begin;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < vec.size(); ++i)
         {
-            if (!const_time_zone_column && arguments.size() > 2)
-            {
-                if (!arguments[2].column.get()->getDataAt(i).toString().empty())
-                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i).toString());
-                else
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
-            }
             if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
             {
                 auto c = DecimalUtils::split(vec[i], scale);
@@ -1014,12 +954,12 @@ public:
                 }
 
                 for (auto & instruction : instructions)
-                    instruction.perform(pos, static_cast<Int64>(c.whole), c.fractional, scale, *time_zone);
+                    instruction.perform(pos, static_cast<Int64>(c.whole), c.fractional, scale, time_zone);
             }
             else
             {
                 for (auto & instruction : instructions)
-                    instruction.perform(pos, static_cast<T>(vec[i]), 0, 0, *time_zone);
+                    instruction.perform(pos, static_cast<UInt32>(vec[i]), 0, 0, time_zone);
             }
             *pos++ = '\0';
 
@@ -1075,7 +1015,7 @@ public:
         {
             /// DateTime/DateTime64 --> insert instruction
             /// Other types cannot provide the requested data --> write out template
-            if constexpr (is_any_of<T, UInt32, Int64, UInt64>)
+            if constexpr (is_any_of<T, UInt32, Int64>)
             {
                 Instruction<T> instruction;
                 instruction.setMysqlFunc(std::move(func));
@@ -1127,22 +1067,12 @@ public:
                         break;
                     }
 
-                    // Month as a integer number:
-                    // - if formatdatetime_format_without_leading_zeros = true: prints without leading zero, i.e. 1-12
-                    // - otherwise: print with leading zeros: i.e. 01-12
+                    // Month as a integer number (01-12)
                     case 'c':
                     {
                         Instruction<T> instruction;
-                        if (mysql_format_ckl_without_leading_zeros)
-                        {
-                            instruction.setMysqlFunc(&Instruction<T>::mysqlMonthWithoutLeadingZero);
-                            instructions.push_back(std::move(instruction));
-                        }
-                        else
-                        {
-                            instruction.setMysqlFunc(&Instruction<T>::mysqlMonth);
-                            instructions.push_back(std::move(instruction));
-                        }
+                        instruction.setMysqlFunc(&Instruction<T>::mysqlMonth);
+                        instructions.push_back(std::move(instruction));
                         out_template += "00";
                         break;
                     }
@@ -1451,30 +1381,20 @@ public:
                         break;
                     }
 
-                    // Hour in 24h format:
-                    // - if formatdatetime_format_without_leading_zeros = true: prints without leading zero, i.e. 0-23
-                    // - otherwise: print with leading zeros: i.e. 00-23
+                    // Hour in 24h format (00-23)
                     case 'k':
                     {
                         static constexpr std::string_view val = "00";
-                        if (mysql_format_ckl_without_leading_zeros)
-                            add_time_instruction(&Instruction<T>::mysqlHour24WithoutLeadingZero, val);
-                        else
-                            add_time_instruction(&Instruction<T>::mysqlHour24, val);
+                        add_time_instruction(&Instruction<T>::mysqlHour24, val);
                         out_template += val;
                         break;
                     }
 
-                    // Hour in 12h format:
-                    // - if formatdatetime_format_without_leading_zeros = true: prints without leading zero, i.e. 0-12
-                    // - otherwise: print with leading zeros: i.e. 00-12
+                    // Hour in 12h format (01-12)
                     case 'l':
                     {
                         static constexpr std::string_view val = "12";
-                        if (mysql_format_ckl_without_leading_zeros)
-                            add_time_instruction(&Instruction<T>::mysqlHour12WithoutLeadingZero, val);
-                        else
-                            add_time_instruction(&Instruction<T>::mysqlHour12, val);
+                        add_time_instruction(&Instruction<T>::mysqlHour12, val);
                         out_template += val;
                         break;
                     }
@@ -1541,7 +1461,7 @@ public:
         /// If the argument was DateTime, add instruction for printing. If it was date, just append default literal
         auto add_instruction = [&]([[maybe_unused]] typename Instruction<T>::FuncJoda && func, [[maybe_unused]] const String & default_literal)
         {
-            if constexpr (is_any_of<T, UInt32, Int64, UInt64>)
+            if constexpr (is_any_of<T, UInt32, Int64>)
             {
                 Instruction<T> instruction;
                 instruction.setJodaFunc(std::move(func));
@@ -1834,10 +1754,10 @@ using FunctionFromUnixTimestampInJodaSyntax = FunctionFormatDateTimeImpl<NameFro
 REGISTER_FUNCTION(FormatDateTime)
 {
     factory.registerFunction<FunctionFormatDateTime>();
-    factory.registerAlias("DATE_FORMAT", FunctionFormatDateTime::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("DATE_FORMAT", FunctionFormatDateTime::name);
 
     factory.registerFunction<FunctionFromUnixTimestamp>();
-    factory.registerAlias("FROM_UNIXTIME", FunctionFromUnixTimestamp::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("FROM_UNIXTIME", FunctionFromUnixTimestamp::name);
 
     factory.registerFunction<FunctionFormatDateTimeInJodaSyntax>();
     factory.registerFunction<FunctionFromUnixTimestampInJodaSyntax>();

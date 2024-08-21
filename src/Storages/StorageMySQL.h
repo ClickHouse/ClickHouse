@@ -20,6 +20,7 @@ class NamedCollection;
 
 /** Implements storage in the MySQL database.
   * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
+  * Read only.
   */
 class StorageMySQL final : public IStorage, WithContext
 {
@@ -92,7 +93,7 @@ private:
 
     mysqlxx::PoolWithFailoverPtr pool;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 };
 
 }

@@ -18,27 +18,23 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemGrants::getColumnsDescription()
+NamesAndTypesList StorageSystemGrants::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"user_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "User name."},
-        {"role_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Role assigned to user account."},
-        {"access_type", std::make_shared<DataTypeEnum16>(StorageSystemPrivileges::getAccessTypeEnumValues()), "Access parameters for ClickHouse user account."},
-        {"database", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Name of a database."},
-        {"table", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Name of a table."},
-        {"column", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Name of a column to which access is granted."},
-        {"is_partial_revoke", std::make_shared<DataTypeUInt8>(),
-            "Logical value. It shows whether some privileges have been revoked. Possible values: "
-            "0 — The row describes a partial revoke, "
-            "1 — The row describes a grant."
-        },
-        {"grant_option", std::make_shared<DataTypeUInt8>(), "Permission is granted WITH GRANT OPTION."},
+    NamesAndTypesList names_and_types{
+        {"user_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"role_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"access_type", std::make_shared<DataTypeEnum16>(StorageSystemPrivileges::getAccessTypeEnumValues())},
+        {"database", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"table", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"column", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"is_partial_revoke", std::make_shared<DataTypeUInt8>()},
+        {"grant_option", std::make_shared<DataTypeUInt8>()},
     };
+    return names_and_types;
 }
 
 
-void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();

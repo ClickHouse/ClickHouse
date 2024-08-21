@@ -61,20 +61,10 @@ def test_merge_doesnt_work_without_zookeeper(start_cluster):
 
     node1.query("TRUNCATE TABLE test_table")
 
-    total_parts = node1.query(
-        "SELECT count(*) from system.parts where table = 'test_table'"
-    )
-    assert total_parts == "0\n" or total_parts == "1\n"
-
     assert (
-        node1.query(
-            "SELECT count(*) from system.parts where table = 'test_table' and active = 1"
-        )
+        node1.query("SELECT count(*) from system.parts where table = 'test_table'")
         == "0\n"
     )
-
-    node1.query("DETACH TABLE test_table SYNC")
-    node1.query("ATTACH TABLE test_table")
 
     node1.query(
         "INSERT INTO test_table VALUES ('2018-10-01', 1), ('2018-10-02', 2), ('2018-10-03', 3)"

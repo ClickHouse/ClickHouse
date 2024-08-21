@@ -1,18 +1,23 @@
 #pragma once
+#include "config.h"
 
 #include <Common/Exception.h>
 #include <Core/Types.h>
-#include <Poco/Util/AbstractConfiguration.h>
 
-#include "config.h"
-
+#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdocumentation"
 #pragma clang diagnostic ignored "-Wreserved-macro-identifier"
-#  include <fiu.h>
-#  include <fiu-control.h>
-#pragma clang diagnostic pop
+#endif
 
+#include <fiu.h>
+#include <fiu-control.h>
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+
+#include <any>
 #include <unordered_map>
 
 namespace DB
@@ -40,8 +45,6 @@ public:
     static void disableFailPoint(const String & fail_point_name);
 
     static void wait(const String & fail_point_name);
-
-    static void enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config);
 
 private:
     static std::mutex mu;

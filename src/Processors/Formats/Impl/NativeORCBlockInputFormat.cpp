@@ -14,7 +14,6 @@
 #    include <DataTypes/DataTypeFactory.h>
 #    include <DataTypes/DataTypeFixedString.h>
 #    include <DataTypes/DataTypeIPv4andIPv6.h>
-#    include <DataTypes/DataTypeLowCardinality.h>
 #    include <DataTypes/DataTypeMap.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypeString.h>
@@ -30,9 +29,7 @@
 #    include <IO/WriteHelpers.h>
 #    include <IO/copyData.h>
 #    include <Interpreters/castColumn.h>
-#    include <Storages/MergeTree/KeyCondition.h>
 #    include <boost/algorithm/string/case_conv.hpp>
-#    include <Common/FieldVisitorsAccurateComparison.h>
 #    include "ArrowBufferedStreams.h"
 
 
@@ -53,19 +50,19 @@ ORCInputStream::ORCInputStream(SeekableReadBuffer & in_, size_t file_size_) : in
 {
 }
 
-UInt64 ORCInputStream::getLength() const
+uint64_t ORCInputStream::getLength() const
 {
     return file_size;
 }
 
-UInt64 ORCInputStream::getNaturalReadSize() const
+uint64_t ORCInputStream::getNaturalReadSize() const
 {
     return 128 * 1024;
 }
 
-void ORCInputStream::read(void * buf, UInt64 length, UInt64 offset)
+void ORCInputStream::read(void * buf, uint64_t length, uint64_t offset)
 {
-    if (offset != static_cast<UInt64>(in.getPosition()))
+    if (offset != static_cast<uint64_t>(in.getPosition()))
         in.seek(offset, SEEK_SET);
 
     in.readStrict(reinterpret_cast<char *>(buf), length);
@@ -101,15 +98,6 @@ std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
     return std::make_unique<ORCInputStreamFromString>(std::move(file_data), file_size);
 }
 
-static const orc::Type * getORCTypeByName(const orc::Type & schema, const String & name, bool ignore_case)
-{
-    for (UInt64 i = 0; i != schema.getSubtypeCount(); ++i)
-        if (boost::equals(schema.getFieldName(i), name)
-            || (ignore_case && boost::iequals(schema.getFieldName(i), name)))
-            return schema.getSubtype(i);
-    return nullptr;
-}
-
 static DataTypePtr parseORCType(const orc::Type * orc_type, bool skip_columns_with_unsupported_types, bool & skipped)
 {
     assert(orc_type != nullptr);
@@ -135,8 +123,6 @@ static DataTypePtr parseORCType(const orc::Type * orc_type, bool skip_columns_wi
             return std::make_shared<DataTypeDate32>();
         case orc::TypeKind::TIMESTAMP:
             return std::make_shared<DataTypeDateTime64>(9);
-        case orc::TypeKind::TIMESTAMP_INSTANT:
-            return std::make_shared<DataTypeDateTime64>(9, "UTC");
         case orc::TypeKind::VARCHAR:
         case orc::TypeKind::BINARY:
         case orc::TypeKind::STRING:
@@ -212,489 +198,13 @@ static DataTypePtr parseORCType(const orc::Type * orc_type, bool skip_columns_wi
     }
 }
 
-static std::optional<orc::PredicateDataType> convertORCTypeToPredicateType(const orc::Type & orc_type)
-{
-    switch (orc_type.getKind())
-    {
-        case orc::BOOLEAN:
-            return orc::PredicateDataType::BOOLEAN;
-        case orc::BYTE:
-        case orc::SHORT:
-        case orc::INT:
-        case orc::LONG:
-            return orc::PredicateDataType::LONG;
-        case orc::FLOAT:
-        case orc::DOUBLE:
-            return orc::PredicateDataType::FLOAT;
-        case orc::VARCHAR:
-        case orc::CHAR:
-        case orc::STRING:
-            return orc::PredicateDataType::STRING;
-        case orc::DATE:
-            return orc::PredicateDataType::DATE;
-        case orc::TIMESTAMP:
-            return orc::PredicateDataType::TIMESTAMP;
-        case orc::DECIMAL:
-            return orc::PredicateDataType::DECIMAL;
-        default:
-            return {};
-    }
-}
 
-static String getColumnNameFromKeyCondition(const KeyCondition & key_condition, size_t indice)
-{
-    const auto & key_columns = key_condition.getKeyColumns();
-    for (const auto & [name, i] : key_columns)
-    {
-        if (i == indice)
-            return name;
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't get column from KeyCondition with indice {}", indice);
-}
-
-static std::optional<orc::Literal>
-convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTypePtr type_hint = nullptr)
-{
-    try
-    {
-        /// We always fallback to return null if possible CH type hint not consistent with ORC type
-        switch (orc_type.getKind())
-        {
-            case orc::BOOLEAN: {
-                /// May throw exception
-                auto val = field.safeGet<UInt64>();
-                return orc::Literal(val != 0);
-            }
-            case orc::BYTE:
-            case orc::SHORT:
-            case orc::INT:
-            case orc::LONG: {
-                /// May throw exception.
-                ///
-                /// In particular, it'll throw if we request the column as unsigned, like this:
-                ///   SELECT * FROM file('t.orc', ORC, 'x UInt8') WHERE x > 10
-                /// We have to reject this, otherwise it would miss values > 127 (because
-                /// they're treated as negative by ORC).
-                auto val = field.safeGet<Int64>();
-                return orc::Literal(val);
-            }
-            case orc::FLOAT:
-            case orc::DOUBLE: {
-                Float64 val;
-                if (field.tryGet(val))
-                    return orc::Literal(val);
-                break;
-            }
-            case orc::VARCHAR:
-            case orc::CHAR:
-            case orc::STRING: {
-                String str;
-                if (field.tryGet(str))
-                    return orc::Literal(str.data(), str.size());
-                break;
-            }
-            case orc::DATE: {
-                Int64 val;
-                if (field.tryGet(val))
-                    return orc::Literal(orc::PredicateDataType::DATE, val);
-                break;
-            }
-            case orc::TIMESTAMP: {
-                if (type_hint && isDateTime64(type_hint))
-                {
-                    const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(type_hint.get());
-                    if (datetime64_type->getScale() != 9)
-                        return std::nullopt;
-                }
-
-                DecimalField<Decimal64> ts;
-                if (field.tryGet(ts))
-                {
-                    Int64 secs = (ts.getValue() / ts.getScaleMultiplier()).convertTo<Int64>();
-                    Int32 nanos = (ts.getValue() - (ts.getValue() / ts.getScaleMultiplier()) * ts.getScaleMultiplier()).convertTo<Int32>();
-                    return orc::Literal(secs, nanos);
-                }
-                break;
-            }
-            case orc::DECIMAL: {
-                auto precision = orc_type.getPrecision();
-                if (precision == 0)
-                    precision = 38;
-
-                if (precision <= DecimalUtils::max_precision<Decimal32>)
-                {
-                    DecimalField<Decimal32> val;
-                    if (field.tryGet(val))
-                    {
-                        Int64 right = val.getValue().convertTo<Int64>();
-                        return orc::Literal(
-                            orc::Int128(right), static_cast<Int32>(orc_type.getPrecision()), static_cast<Int32>(orc_type.getScale()));
-                    }
-                }
-                else if (precision <= DecimalUtils::max_precision<Decimal64>)
-                {
-                    DecimalField<Decimal64> val;
-                    if (field.tryGet(val))
-                    {
-                        Int64 right = val.getValue().convertTo<Int64>();
-                        return orc::Literal(
-                            orc::Int128(right), static_cast<Int32>(orc_type.getPrecision()), static_cast<Int32>(orc_type.getScale()));
-                    }
-                }
-                else if (precision <= DecimalUtils::max_precision<Decimal128>)
-                {
-                    DecimalField<Decimal128> val;
-                    if (field.tryGet(val))
-                    {
-                        Int64 high = val.getValue().value.items[1];
-                        UInt64 low = static_cast<UInt64>(val.getValue().value.items[0]);
-                        return orc::Literal(
-                            orc::Int128(high, low), static_cast<Int32>(orc_type.getPrecision()), static_cast<Int32>(orc_type.getScale()));
-                    }
-                }
-                break;
-            }
-            default:
-                break;
-        }
-        return std::nullopt;
-    }
-    catch (Exception &)
-    {
-        return std::nullopt;
-    }
-}
-
-/// Attention: evaluateRPNElement is only invoked in buildORCSearchArgumentImpl.
-/// So it is guaranteed that:
-///     1. elem has no monotonic_functions_chains.
-///     2. if elem function is FUNCTION_IN_RANGE/FUNCTION_NOT_IN_RANGE, `set_index` is not null and `set_index->getOrderedSet().size()` is 1.
-///     3. elem function should be FUNCTION_IN_RANGE/FUNCTION_NOT_IN_RANGE/FUNCTION_IN_SET/FUNCTION_NOT_IN_SET/FUNCTION_IS_NULL/FUNCTION_IS_NOT_NULL
-static bool evaluateRPNElement(const Field & field, const KeyCondition::RPNElement & elem)
-{
-    Range key_range(field);
-    switch (elem.function)
-    {
-        case KeyCondition::RPNElement::FUNCTION_IN_RANGE:
-        case KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE: {
-            /// Rows with null values should never output when filters like ">=", ">", "<=", "<", '=' are applied
-            if (field.isNull())
-                return false;
-
-            bool res = elem.range.intersectsRange(key_range);
-            if (elem.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE)
-                res = !res;
-            return res;
-        }
-        case KeyCondition::RPNElement::FUNCTION_IN_SET:
-        case KeyCondition::RPNElement::FUNCTION_NOT_IN_SET: {
-            const auto & set_index = elem.set_index;
-            const auto & ordered_set = set_index->getOrderedSet();
-            const auto & set_column = ordered_set[0];
-
-            bool res = false;
-            for (size_t i = 0; i < set_column->size(); ++i)
-            {
-                if (Range::equals(field, (*set_column)[i]))
-                {
-                    res = true;
-                    break;
-                }
-            }
-
-            if (elem.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_SET)
-                res = !res;
-            return res;
-        }
-        case KeyCondition::RPNElement::FUNCTION_IS_NULL:
-        case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL: {
-            if (field.isNull())
-                return elem.function == KeyCondition::RPNElement::FUNCTION_IS_NULL;
-            else
-                return elem.function == KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL;
-        }
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected RPNElement Function {}", elem.toString());
-    }
-}
-
-static void buildORCSearchArgumentImpl(
-    const KeyCondition & key_condition,
-    const Block & header,
-    const orc::Type & schema,
-    KeyCondition::RPN & rpn_stack,
-    orc::SearchArgumentBuilder & builder,
-    const FormatSettings & format_settings)
-{
-    if (rpn_stack.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty rpn stack in buildORCSearchArgumentImpl");
-
-    const auto & curr = rpn_stack.back();
-    switch (curr.function)
-    {
-        case KeyCondition::RPNElement::FUNCTION_IN_RANGE:
-        case KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE:
-        case KeyCondition::RPNElement::FUNCTION_IN_SET:
-        case KeyCondition::RPNElement::FUNCTION_NOT_IN_SET:
-        case KeyCondition::RPNElement::FUNCTION_IS_NULL:
-        case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL:
-        {
-            const bool need_wrap_not = curr.function == KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL
-                || curr.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE
-                || curr.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_SET;
-            const bool contains_is_null = curr.function == KeyCondition::RPNElement::FUNCTION_IS_NULL
-                || curr.function == KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL;
-            const bool contains_in_set = curr.function == KeyCondition::RPNElement::FUNCTION_IN_SET
-                || curr.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_SET;
-            const bool contains_in_range = curr.function == KeyCondition::RPNElement::FUNCTION_IN_RANGE
-                || curr.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE;
-
-            SCOPE_EXIT({rpn_stack.pop_back();});
-
-
-            /// Key filter expressions like "func(col) > 100" are not supported for ORC filter push down
-            if (!curr.monotonic_functions_chain.empty())
-            {
-                builder.literal(orc::TruthValue::YES_NO_NULL);
-                break;
-            }
-
-            /// key filter expressions like "(a, b, c) in " or "(func(a), b) in " are not supported for ORC filter push down
-            /// Only expressions like "a in " are supported currently, maybe we can improve it later.
-            auto set_index = curr.set_index;
-            if (contains_in_set)
-            {
-                if (!set_index || set_index->getOrderedSet().size() != 1 || set_index->hasMonotonicFunctionsChain())
-                {
-                    builder.literal(orc::TruthValue::YES_NO_NULL);
-                    break;
-                }
-            }
-
-            String column_name = getColumnNameFromKeyCondition(key_condition, curr.key_column);
-            const auto * orc_type = getORCTypeByName(schema, column_name, format_settings.orc.case_insensitive_column_matching);
-            if (!orc_type)
-            {
-                builder.literal(orc::TruthValue::YES_NO_NULL);
-                break;
-            }
-
-            /// Make sure key column in header has exactly the same type with key column in ORC file schema
-            /// Counter-example 1:
-            ///     Column a has type "Nullable(Int64)" in ORC file, but in header column a has type "Int64", which is allowed in CH.
-            ///     For queries with where condition like "a is null", if a column contains null value, pushing or not pushing down filters
-            ///     would result in different outputs.
-            /// Counter-example 2:
-            ///     Column a has type "Nullable(Int64)" in ORC file, but in header column a has type "Nullable(UInt64)".
-            ///     For queries with where condition like "a > 10", if a column contains negative values such as "-1", pushing or not pushing
-            ///     down filters would result in different outputs.
-            bool skipped = false;
-            auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, skipped));
-            const ColumnWithTypeAndName * column = header.findByName(column_name, format_settings.orc.case_insensitive_column_matching);
-            if (!expect_type || !column)
-            {
-                builder.literal(orc::TruthValue::YES_NO_NULL);
-                break;
-            }
-
-            auto nested_type = removeNullable(recursiveRemoveLowCardinality(column->type));
-            auto expect_nested_type = removeNullable(expect_type);
-            if (!nested_type->equals(*expect_nested_type))
-            {
-                builder.literal(orc::TruthValue::YES_NO_NULL);
-                break;
-            }
-
-            /// If null_as_default is true, the only difference is nullable, and the evaluations of current RPNElement based on default and null field
-            /// have the same result, we still should push down current filter.
-            if (format_settings.null_as_default && !column->type->isNullable() && !column->type->isLowCardinalityNullable())
-            {
-                bool match_if_null = evaluateRPNElement({}, curr);
-                bool match_if_default = evaluateRPNElement(column->type->getDefault(), curr);
-                if (match_if_default != match_if_null)
-                {
-                    builder.literal(orc::TruthValue::YES_NO_NULL);
-                    break;
-                }
-            }
-
-            auto predicate_type = convertORCTypeToPredicateType(*orc_type);
-            if (!predicate_type.has_value())
-            {
-                builder.literal(orc::TruthValue::YES_NO_NULL);
-                break;
-            }
-
-            if (need_wrap_not)
-                builder.startNot();
-
-            if (contains_is_null)
-            {
-                builder.isNull(orc_type->getColumnId(), *predicate_type);
-            }
-            else if (contains_in_range)
-            {
-                const auto & range = curr.range;
-                bool has_left_bound = !range.left.isNegativeInfinity();
-                bool has_right_bound = !range.right.isPositiveInfinity();
-                if (!has_left_bound && !has_right_bound)
-                {
-                    /// Transform whole range orc::TruthValue::YES_NULL
-                    builder.literal(orc::TruthValue::YES_NULL);
-                }
-                else if (has_left_bound && has_right_bound && range.left_included && range.right_included && range.left == range.right)
-                {
-                    /// Transform range with the same left bound and right bound to equal, which could utilize bloom filters in ORC
-                    auto literal = convertFieldToORCLiteral(*orc_type, range.left);
-                    if (literal.has_value())
-                        builder.equals(orc_type->getColumnId(), *predicate_type, *literal);
-                    else
-                        builder.literal(orc::TruthValue::YES_NO_NULL);
-                }
-                else
-                {
-                    std::optional<orc::Literal> left_literal;
-                    if (has_left_bound)
-                        left_literal = convertFieldToORCLiteral(*orc_type, range.left);
-
-                    std::optional<orc::Literal> right_literal;
-                    if (has_right_bound)
-                        right_literal = convertFieldToORCLiteral(*orc_type, range.right);
-
-                    if (has_left_bound && has_right_bound)
-                        builder.startAnd();
-
-                    if (has_left_bound)
-                    {
-                        if (left_literal.has_value())
-                        {
-                            /// >= is transformed to not < and > is transformed to not <=
-                            builder.startNot();
-                            if (range.left_included)
-                                builder.lessThan(orc_type->getColumnId(), *predicate_type, *left_literal);
-                            else
-                                builder.lessThanEquals(orc_type->getColumnId(), *predicate_type, *left_literal);
-                            builder.end();
-                        }
-                        else
-                            builder.literal(orc::TruthValue::YES_NO_NULL);
-                    }
-
-                    if (has_right_bound)
-                    {
-                        if (right_literal.has_value())
-                        {
-                            if (range.right_included)
-                                builder.lessThanEquals(orc_type->getColumnId(), *predicate_type, *right_literal);
-                            else
-                                builder.lessThan(orc_type->getColumnId(), *predicate_type, *right_literal);
-                        }
-                        else
-                            builder.literal(orc::TruthValue::YES_NO_NULL);
-                    }
-
-                    if (has_left_bound && has_right_bound)
-                        builder.end();
-                }
-            }
-            else if (contains_in_set)
-            {
-                /// Build literals from MergeTreeSetIndex
-                const auto & ordered_set = set_index->getOrderedSet();
-                const auto & set_column = ordered_set[0];
-
-                bool fail = false;
-                std::vector<orc::Literal> literals;
-                literals.reserve(set_column->size());
-                for (size_t i = 0; i < set_column->size(); ++i)
-                {
-                    auto literal = convertFieldToORCLiteral(*orc_type, (*set_column)[i]);
-                    if (!literal.has_value())
-                    {
-                        fail = true;
-                        break;
-                    }
-
-                    literals.emplace_back(*literal);
-                }
-
-                /// set has zero element
-                if (literals.empty())
-                    builder.literal(orc::TruthValue::YES);
-                else if (fail)
-                    builder.literal(orc::TruthValue::YES_NO_NULL);
-                else
-                    builder.in(orc_type->getColumnId(), *predicate_type, literals);
-            }
-
-            if (need_wrap_not)
-                builder.end();
-
-            break;
-        }
-        /// There is no optimization with space-filling curves for ORC.
-        case KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
-        case KeyCondition::RPNElement::FUNCTION_UNKNOWN:
-        {
-            builder.literal(orc::TruthValue::YES_NO_NULL);
-            rpn_stack.pop_back();
-            break;
-        }
-        case KeyCondition::RPNElement::FUNCTION_NOT:
-        {
-            builder.startNot();
-            rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
-            builder.end();
-            break;
-        }
-        case KeyCondition::RPNElement::FUNCTION_AND:
-        {
-            builder.startAnd();
-            rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
-            builder.end();
-            break;
-        }
-        case KeyCondition::RPNElement::FUNCTION_OR:
-        {
-            builder.startOr();
-            rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
-            builder.end();
-            break;
-        }
-        case KeyCondition::RPNElement::ALWAYS_FALSE:
-        {
-            builder.literal(orc::TruthValue::NO);
-            rpn_stack.pop_back();
-            break;
-        }
-        case KeyCondition::RPNElement::ALWAYS_TRUE:
-        {
-            builder.literal(orc::TruthValue::YES);
-            rpn_stack.pop_back();
-            break;
-        }
-    }
-}
-
-std::unique_ptr<orc::SearchArgument>
-buildORCSearchArgument(const KeyCondition & key_condition, const Block & header, const orc::Type & schema, const FormatSettings & format_settings)
-{
-    auto rpn_stack = key_condition.getRPN();
-    if (rpn_stack.empty())
-        return nullptr;
-
-    auto builder = orc::SearchArgumentFactory::newBuilder();
-    buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, *builder, format_settings);
-    return builder->build();
-}
-
-static void getFileReader(
-    ReadBuffer & in, std::unique_ptr<orc::Reader> & file_reader, const FormatSettings & format_settings, std::atomic<int> & is_stopped)
+static void getFileReaderAndSchema(
+    ReadBuffer & in,
+    std::unique_ptr<orc::Reader> & file_reader,
+    Block & header,
+    const FormatSettings & format_settings,
+    std::atomic<int> & is_stopped)
 {
     if (is_stopped)
         return;
@@ -702,144 +212,17 @@ static void getFileReader(
     orc::ReaderOptions options;
     auto input_stream = asORCInputStream(in, format_settings, is_stopped);
     file_reader = orc::createReader(std::move(input_stream), options);
-}
+    const auto & schema = file_reader->getType();
 
-static const orc::Type * traverseDownORCTypeByName(
-    const std::string & target,
-    const orc::Type * orc_type,
-    DataTypePtr & type,
-    bool ignore_case)
-{
-    if (target.empty())
-        return orc_type;
-
-    auto search_struct_field = [&](const std::string & target_, const orc::Type * type_) -> std::pair<std::string, const orc::Type *>
+    for (size_t i = 0; i < schema.getSubtypeCount(); ++i)
     {
-        auto target_copy = target_;
-        if (ignore_case)
-            boost::to_lower(target_copy);
+        const std::string & name = schema.getFieldName(i);
+        const orc::Type * orc_type = schema.getSubtype(i);
 
-        for (size_t i = 0; i < type_->getSubtypeCount(); ++i)
-        {
-            auto field_name = type_->getFieldName(i);
-            if (ignore_case)
-                boost::to_lower(field_name);
-
-            if (startsWith(target_copy, field_name) && (target_copy.size() == field_name.size() || target_copy[field_name.size()] == '.'))
-            {
-                return {target_copy.size() == field_name.size() ? "" : target_.substr(field_name.size() + 1), type_->getSubtype(i)};
-            }
-        }
-        return {"", nullptr};
-    };
-
-    if (orc::STRUCT == orc_type->getKind())
-    {
-        const auto [next_target, next_orc_type]= search_struct_field(target, orc_type);
-        return next_orc_type ? traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case) : nullptr;
-    }
-    else if (orc::LIST == orc_type->getKind())
-    {
-        /// For cases in which header contains subcolumns flattened from nested columns.
-        /// For example, "a Nested(x String, y Int64)" is flattened to "a.x Array(String), a.y Array(Int64)", and orc file schema is still "a array<struct<x string, y long>>".
-        /// In this case, we should skip possible array type and traverse down to its nested struct type.
-        const auto * array_type = typeid_cast<const DataTypeArray *>(removeNullable(type).get());
-        const auto * orc_nested_type = orc_type->getSubtype(0);
-        if (array_type && orc::STRUCT == orc_nested_type->getKind())
-        {
-            auto next_type_and_target = search_struct_field(target, orc_nested_type);
-            const auto & next_target = next_type_and_target.first;
-            const auto * next_orc_type = next_type_and_target.second;
-            if (next_orc_type)
-            {
-                /// Adjust CH type to avoid inconsistency between CH and ORC type brought by flattened Nested type.
-                type = array_type->getNestedType();
-                return traverseDownORCTypeByName(next_target, next_orc_type, type, ignore_case);
-            }
-        }
-    }
-    return nullptr;
-}
-
-static void updateIncludeTypeIds(
-    DataTypePtr type, const orc::Type * orc_type, bool ignore_case, std::unordered_set<UInt64> & include_typeids)
-{
-    /// For primitive types, directly append column id into result
-    if (orc_type->getSubtypeCount() == 0)
-    {
-        include_typeids.insert(orc_type->getColumnId());
-        return;
-    }
-
-    auto non_nullable_type = removeNullable(type);
-    switch (orc_type->getKind())
-    {
-        case orc::LIST: {
-            const auto * array_type = typeid_cast<const DataTypeArray *>(non_nullable_type.get());
-            if (array_type)
-            {
-                updateIncludeTypeIds(
-                    array_type->getNestedType(), orc_type->getSubtype(0), ignore_case, include_typeids);
-            }
-            return;
-        }
-        case orc::MAP: {
-            const auto * map_type = typeid_cast<const DataTypeMap *>(non_nullable_type.get());
-            if (map_type)
-            {
-                updateIncludeTypeIds(map_type->getKeyType(), orc_type->getSubtype(0), ignore_case, include_typeids);
-                updateIncludeTypeIds(map_type->getValueType(), orc_type->getSubtype(1), ignore_case, include_typeids);
-            }
-            return;
-        }
-        case orc::STRUCT: {
-            /// To make sure tuple field pruning work fine, we should include only the fields of orc struct type which are also contained in CH tuple types, instead of all fields of orc struct type.
-            /// For example, CH tupe type in header is "x Tuple(a String)", ORC struct type is "x struct<a:string, b:long>", then only type id of field "x.a" should be included.
-            /// For tuple field pruning purpose, we should never include "x.b" for it is not required in format header.
-            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(non_nullable_type.get());
-            if (tuple_type)
-            {
-                if (tuple_type->haveExplicitNames())
-                {
-                    std::unordered_map<String, size_t> orc_field_name_to_index;
-                    orc_field_name_to_index.reserve(orc_type->getSubtypeCount());
-                    for (size_t struct_i = 0; struct_i < orc_type->getSubtypeCount(); ++struct_i)
-                    {
-                        String field_name = orc_type->getFieldName(struct_i);
-                        if (ignore_case)
-                            boost::to_lower(field_name);
-
-                        orc_field_name_to_index[field_name] = struct_i;
-                    }
-
-                    const auto & element_names = tuple_type->getElementNames();
-                    for (size_t tuple_i = 0; tuple_i < element_names.size(); ++tuple_i)
-                    {
-                        String element_name = element_names[tuple_i];
-                        if (ignore_case)
-                            boost::to_lower(element_name);
-
-                        if (orc_field_name_to_index.contains(element_name))
-                        {
-                            updateIncludeTypeIds(
-                                tuple_type->getElement(tuple_i),
-                                orc_type->getSubtype(orc_field_name_to_index[element_name]),
-                                ignore_case,
-                                include_typeids);
-                        }
-                    }
-                }
-                else
-                {
-                    for (size_t i = 0; i < tuple_type->getElements().size() && i < orc_type->getSubtypeCount(); ++i)
-                        updateIncludeTypeIds(
-                            tuple_type->getElement(i), orc_type->getSubtype(i), ignore_case, include_typeids);
-                }
-            }
-            return;
-        }
-        default:
-            return;
+        bool skipped = false;
+        DataTypePtr type = parseORCType(orc_type, format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference, skipped);
+        if (!skipped)
+            header.insert(ColumnWithTypeAndName{type, name});
     }
 }
 
@@ -850,7 +233,8 @@ NativeORCBlockInputFormat::NativeORCBlockInputFormat(ReadBuffer & in_, Block hea
 
 void NativeORCBlockInputFormat::prepareFileReader()
 {
-    getFileReader(*in, file_reader, format_settings, is_stopped);
+    Block schema;
+    getFileReaderAndSchema(*in, file_reader, schema, format_settings, is_stopped);
     if (is_stopped)
         return;
 
@@ -864,21 +248,13 @@ void NativeORCBlockInputFormat::prepareFileReader()
         format_settings.orc.case_insensitive_column_matching);
 
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
-    const auto & header = getPort().getHeader();
-    const auto & file_schema = file_reader->getType();
-    std::unordered_set<UInt64> include_typeids;
-    for (const auto & column : header)
-    {
-        auto adjusted_type = column.type;
-        const auto * orc_type = traverseDownORCTypeByName(column.name, &file_schema, adjusted_type, ignore_case);
-        if (orc_type)
-            updateIncludeTypeIds(adjusted_type, orc_type, ignore_case, include_typeids);
-    }
-    include_indices.assign(include_typeids.begin(), include_typeids.end());
+    std::unordered_set<String> nested_table_names = Nested::getAllTableNames(getPort().getHeader(), ignore_case);
 
-    if (format_settings.orc.filter_push_down && key_condition && !sarg)
+    for (size_t i = 0; i < schema.columns(); ++i)
     {
-        sarg = buildORCSearchArgument(*key_condition, getPort().getHeader(), file_reader->getType(), format_settings);
+        const auto & name = schema.getByPosition(i).name;
+        if (getPort().getHeader().has(name, ignore_case) || nested_table_names.contains(ignore_case ? boost::to_lower_copy(name) : name))
+            include_indices.push_back(static_cast<int>(i));
     }
 }
 
@@ -899,19 +275,17 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
         throw Exception(ErrorCodes::INCORRECT_DATA, "ORC stripe {} has no rows", current_stripe);
 
     orc::RowReaderOptions row_reader_options;
-    row_reader_options.includeTypes(include_indices);
-    row_reader_options.setTimezoneName(format_settings.orc.reader_time_zone_name);
+    row_reader_options.include(include_indices);
     row_reader_options.range(current_stripe_info->getOffset(), current_stripe_info->getLength());
-    if (format_settings.orc.filter_push_down && sarg)
-    {
-        row_reader_options.searchArgument(sarg);
-    }
-
     stripe_reader = file_reader->createRowReader(row_reader_options);
+
+    if (!batch)
+        batch = stripe_reader->createRowBatch(format_settings.orc.row_batch_size);
+
     return true;
 }
 
-Chunk NativeORCBlockInputFormat::read()
+Chunk NativeORCBlockInputFormat::generate()
 {
     block_missing_values.clear();
 
@@ -939,9 +313,6 @@ Chunk NativeORCBlockInputFormat::read()
     if (is_stopped)
         return {};
 
-    /// TODO: figure out why reuse batch would cause asan fatals in https://s3.amazonaws.com/clickhouse-test-reports/55330/be39d23af2d7e27f5ec7f168947cf75aeaabf674/stateless_tests__asan__[4_4].html
-    /// Not sure if it is a false positive case. Notice that reusing batch will speed up reading ORC by 1.15x.
-    auto batch = stripe_reader->createRowBatch(format_settings.orc.row_batch_size);
     while (true)
     {
         bool ok = stripe_reader->next(*batch);
@@ -969,7 +340,7 @@ void NativeORCBlockInputFormat::resetParser()
     file_reader.reset();
     stripe_reader.reset();
     include_indices.clear();
-    sarg.reset();
+    batch.reset();
     block_missing_values.clear();
 }
 
@@ -985,27 +356,16 @@ NativeORCSchemaReader::NativeORCSchemaReader(ReadBuffer & in_, const FormatSetti
 
 NamesAndTypesList NativeORCSchemaReader::readSchema()
 {
+    Block header;
     std::unique_ptr<orc::Reader> file_reader;
     std::atomic<int> is_stopped = 0;
-    getFileReader(in, file_reader, format_settings, is_stopped);
-
-    const auto & schema = file_reader->getType();
-    Block header;
-    for (size_t i = 0; i < schema.getSubtypeCount(); ++i)
-    {
-        const std::string & name = schema.getFieldName(i);
-        const orc::Type * orc_type = schema.getSubtype(i);
-
-        bool skipped = false;
-        DataTypePtr type = parseORCType(orc_type, format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference, skipped);
-        if (!skipped)
-            header.insert(ColumnWithTypeAndName{type, name});
-    }
+    getFileReaderAndSchema(in, file_reader, header, format_settings, is_stopped);
 
     if (format_settings.schema_inference_make_columns_nullable)
         return getNamesAndRecursivelyNullableTypes(header);
     return header.getNamesAndTypesList();
 }
+
 
 ORCColumnToCHColumn::ORCColumnToCHColumn(
     const Block & header_, bool allow_missing_columns_, bool null_as_default_, bool case_insensitive_matching_)
@@ -1443,8 +803,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
             return readColumnWithNumericData<Float64, orc::DoubleVectorBatch>(orc_column, orc_type, column_name);
         case orc::DATE:
             return readColumnWithDateData(orc_column, orc_type, column_name, type_hint);
-        case orc::TIMESTAMP: [[fallthrough]];
-        case orc::TIMESTAMP_INSTANT:
+        case orc::TIMESTAMP:
             return readColumnWithTimestampData(orc_column, orc_type, column_name);
         case orc::DECIMAL: {
             auto interal_type = parseORCType(orc_type, false, skipped);
@@ -1499,6 +858,14 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
             if (skipped)
                 return {};
 
+            if (value_type_hint && !value_type_hint->equals(*value_column.type))
+            {
+                /// Cast value column to target type, because it can happen
+                /// that parsed type cannot be ClickHouse Map value type.
+                value_column.column = castColumn(value_column, value_type_hint);
+                value_column.type = value_type_hint;
+            }
+
             auto offsets_column = readOffsetsFromORCListColumn(orc_map_column);
             auto map_column = ColumnMap::create(key_column.column, value_column.column, offsets_column);
             auto map_type = std::make_shared<DataTypeMap>(key_column.type, value_column.type);
@@ -1538,8 +905,8 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
             Columns tuple_elements;
             DataTypes tuple_types;
             std::vector<String> tuple_names;
-
             const auto * tuple_type_hint = type_hint ? typeid_cast<const DataTypeTuple *>(type_hint.get()) : nullptr;
+
             const auto * orc_struct_column = dynamic_cast<const orc::StructVectorBatch *>(orc_column);
             for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
             {
@@ -1554,7 +921,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
                         if (pos)
                             nested_type_hint = tuple_type_hint->getElement(*pos);
                     }
-                    else if (i < tuple_type_hint->getElements().size())
+                    else if (size_t(i) < tuple_type_hint->getElements().size())
                         nested_type_hint = tuple_type_hint->getElement(i);
                 }
 

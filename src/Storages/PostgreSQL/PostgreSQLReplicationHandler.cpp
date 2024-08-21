@@ -17,14 +17,12 @@
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <boost/algorithm/string/trim.hpp>
-#include <Poco/String.h>
 
 
 namespace DB
 {
 
 static const auto CLEANUP_RESCHEDULE_MS = 600000 * 3; /// 30 min
-static constexpr size_t replication_slot_name_max_size = 64;
 
 namespace ErrorCodes
 {
@@ -58,92 +56,28 @@ private:
 };
 
 
-namespace
-{
-    /// There can be several replication slots per publication, but one publication per table/database replication.
-    /// Replication slot might be unique (contain uuid) to allow have multiple replicas for the same PostgreSQL table/database.
-
-    String getPublicationName(const String & postgres_database, const String & postgres_table)
-    {
-        return fmt::format(
-            "{}_ch_publication",
-            postgres_table.empty() ? postgres_database : fmt::format("{}_{}", postgres_database, postgres_table));
-    }
-
-    void checkReplicationSlot(String name)
-    {
-        for (const auto & c : name)
-        {
-            const bool ok = (std::isalpha(c) && std::islower(c)) || std::isdigit(c) || c == '_';
-            if (!ok)
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Replication slot can contain lower-case letters, numbers, and the underscore character. "
-                    "Got: {}", name);
-            }
-        }
-
-        if (name.size() > replication_slot_name_max_size)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Too big replication slot size: {}", name);
-    }
-
-    String normalizeReplicationSlot(String name)
-    {
-        name = Poco::toLower(name);
-        for (auto & c : name)
-            if (c == '-')
-                c = '_';
-        return name;
-    }
-
-    String getReplicationSlotName(
-        const String & postgres_database,
-        const String & postgres_table,
-        const String & clickhouse_uuid,
-        const MaterializedPostgreSQLSettings & replication_settings)
-    {
-        String slot_name = replication_settings.materialized_postgresql_replication_slot;
-        if (slot_name.empty())
-        {
-            if (replication_settings.materialized_postgresql_use_unique_replication_consumer_identifier)
-                slot_name = clickhouse_uuid;
-            else
-                slot_name = postgres_table.empty() ? postgres_database : fmt::format("{}_{}_ch_replication_slot", postgres_database, postgres_table);
-
-            slot_name = normalizeReplicationSlot(slot_name);
-        }
-        return slot_name;
-    }
-}
-
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
+    const String & replication_identifier,
     const String & postgres_database_,
-    const String & postgres_table_,
-    const String & clickhouse_database_,
-    const String & clickhouse_uuid_,
+    const String & current_database_name_,
     const postgres::ConnectionInfo & connection_info_,
     ContextPtr context_,
     bool is_attach_,
     const MaterializedPostgreSQLSettings & replication_settings,
     bool is_materialized_postgresql_database_)
     : WithContext(context_->getGlobalContext())
-    , log(getLogger("PostgreSQLReplicationHandler"))
+    , log(&Poco::Logger::get("PostgreSQLReplicationHandler"))
     , is_attach(is_attach_)
     , postgres_database(postgres_database_)
     , postgres_schema(replication_settings.materialized_postgresql_schema)
-    , current_database_name(clickhouse_database_)
+    , current_database_name(current_database_name_)
     , connection_info(connection_info_)
     , max_block_size(replication_settings.materialized_postgresql_max_block_size)
     , is_materialized_postgresql_database(is_materialized_postgresql_database_)
     , tables_list(replication_settings.materialized_postgresql_tables_list)
     , schema_list(replication_settings.materialized_postgresql_schema_list)
     , schema_as_a_part_of_table_name(!schema_list.empty() || replication_settings.materialized_postgresql_tables_list_with_schema)
-    , user_managed_slot(!replication_settings.materialized_postgresql_replication_slot.value.empty())
     , user_provided_snapshot(replication_settings.materialized_postgresql_snapshot)
-    , replication_slot(getReplicationSlotName(postgres_database_, postgres_table_, clickhouse_uuid_, replication_settings))
-    , tmp_replication_slot(replication_slot + "_tmp")
-    , publication_name(getPublicationName(postgres_database_, postgres_table_))
     , reschedule_backoff_min_ms(replication_settings.materialized_postgresql_backoff_min_ms)
     , reschedule_backoff_max_ms(replication_settings.materialized_postgresql_backoff_max_ms)
     , reschedule_backoff_factor(replication_settings.materialized_postgresql_backoff_factor)
@@ -155,9 +89,13 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     if (!schema_list.empty() && !postgres_schema.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot have schema list and common schema at the same time");
 
-    checkReplicationSlot(replication_slot);
-
-    LOG_INFO(log, "Using replication slot {} and publication {}", replication_slot, publication_name);
+    replication_slot = replication_settings.materialized_postgresql_replication_slot;
+    if (replication_slot.empty())
+    {
+        user_managed_slot = false;
+        replication_slot = fmt::format("{}_ch_replication_slot", replication_identifier);
+    }
+    publication_name = fmt::format("{}_ch_publication", replication_identifier);
 
     startup_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
     consumer_task = getContext()->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ consumerFunc(); });
@@ -337,7 +275,6 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             dropReplicationSlot(tx);
 
         initial_sync();
-        LOG_DEBUG(log, "Loaded {} tables", nested_storages.size());
     }
     /// Synchronization and initial load already took place - do not create any new tables, just fetch StoragePtr's
     /// and pass them to replication consumer.
@@ -415,18 +352,16 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
     tx->exec(query_str);
 
-    auto table_structure = fetchTableStructure(*tx, table_name);
-    if (!table_structure->physical_columns)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No table attributes");
-
-    auto table_attributes = table_structure->physical_columns->attributes;
-
     /// Load from snapshot, which will show table state before creation of replication slot.
     /// Already connected to needed database, no need to add it to query.
     auto quoted_name = doubleQuoteWithSchema(table_name);
     query_str = fmt::format("SELECT * FROM ONLY {}", quoted_name);
-
     LOG_DEBUG(log, "Loading PostgreSQL table {}.{}", postgres_database, quoted_name);
+
+    auto table_structure = fetchTableStructure(*tx, table_name);
+    if (!table_structure->physical_columns)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No table attributes");
+    auto table_attributes = table_structure->physical_columns->attributes;
 
     auto table_override = tryGetTableOverride(current_database_name, table_name);
     materialized_storage->createNestedIfNeeded(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
@@ -437,13 +372,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
 
     auto insert_context = materialized_storage->getNestedTableContext();
 
-    InterpreterInsertQuery interpreter(
-        insert,
-        insert_context,
-        /* allow_materialized */ false,
-        /* no_squash */ false,
-        /* no_destination */ false,
-        /* async_isnert */ false);
+    InterpreterInsertQuery interpreter(insert, insert_context);
     auto block_io = interpreter.execute();
 
     const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();
@@ -458,9 +387,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
 
     materialized_storage->set(nested_storage);
     auto nested_table_id = nested_storage->getStorageID();
-
-    LOG_DEBUG(log, "Loaded table {}.{} (uuid: {})",
-              nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid));
+    LOG_DEBUG(log, "Loaded table {}.{} (uuid: {})", nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid));
 
     return StorageInfo(nested_storage, std::move(table_attributes));
 }
@@ -569,7 +496,7 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No table found to be replicated");
 
         /// 'ONLY' means just a table, without descendants.
-        std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", doubleQuoteString(publication_name), tables_list);
+        std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", publication_name, tables_list);
         try
         {
             tx.exec(query_str);
@@ -592,7 +519,7 @@ bool PostgreSQLReplicationHandler::isReplicationSlotExist(pqxx::nontransaction &
 {
     String slot_name;
     if (temporary)
-        slot_name = tmp_replication_slot;
+        slot_name = replication_slot + "_tmp";
     else
         slot_name = replication_slot;
 
@@ -619,11 +546,11 @@ void PostgreSQLReplicationHandler::createReplicationSlot(
 
     String query_str, slot_name;
     if (temporary)
-        slot_name = tmp_replication_slot;
+        slot_name = replication_slot + "_tmp";
     else
         slot_name = replication_slot;
 
-    query_str = fmt::format("CREATE_REPLICATION_SLOT {} LOGICAL pgoutput EXPORT_SNAPSHOT", doubleQuoteString(slot_name));
+    query_str = fmt::format("CREATE_REPLICATION_SLOT {} LOGICAL pgoutput EXPORT_SNAPSHOT", slot_name);
 
     try
     {
@@ -646,7 +573,7 @@ void PostgreSQLReplicationHandler::dropReplicationSlot(pqxx::nontransaction & tx
 
     std::string slot_name;
     if (temporary)
-        slot_name = tmp_replication_slot;
+        slot_name = replication_slot + "_tmp";
     else
         slot_name = replication_slot;
 
@@ -659,7 +586,7 @@ void PostgreSQLReplicationHandler::dropReplicationSlot(pqxx::nontransaction & tx
 
 void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 {
-    std::string query_str = fmt::format("DROP PUBLICATION IF EXISTS {}", doubleQuoteString(publication_name));
+    std::string query_str = fmt::format("DROP PUBLICATION IF EXISTS {}", publication_name);
     tx.exec(query_str);
     LOG_DEBUG(log, "Dropped publication: {}", publication_name);
 }
@@ -667,7 +594,7 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 
 void PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & ntx, const String & table_name)
 {
-    std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", doubleQuoteString(publication_name), doubleQuoteWithSchema(table_name));
+    std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", publication_name, doubleQuoteWithSchema(table_name));
     ntx.exec(query_str);
     LOG_TRACE(log, "Added table {} to publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
 }
@@ -725,9 +652,11 @@ void PostgreSQLReplicationHandler::shutdownFinal()
                 dropReplicationSlot(tx, /* temporary */false);
         });
     }
-    catch (...)
+    catch (Exception & e)
     {
-        LOG_ERROR(log, "Failed to drop replication slot: {}. It must be dropped manually. Error: {}", replication_slot, getCurrentExceptionMessage(true));
+        e.addMessage("while dropping replication slot: {}", replication_slot);
+        LOG_ERROR(log, "Failed to drop replication slot: {}. It must be dropped manually.", replication_slot);
+        throw;
     }
 }
 

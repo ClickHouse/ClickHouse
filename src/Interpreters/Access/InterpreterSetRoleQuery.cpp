@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
 #include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
@@ -29,12 +28,33 @@ BlockIO InterpreterSetRoleQuery::execute()
 
 void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
 {
+    auto & access_control = getContext()->getAccessControl();
     auto session_context = getContext()->getSessionContext();
+    auto user = session_context->getUser();
 
     if (query.kind == ASTSetRoleQuery::Kind::SET_ROLE_DEFAULT)
+    {
         session_context->setCurrentRolesDefault();
+    }
     else
-        session_context->setCurrentRoles(RolesOrUsersSet{*query.roles, session_context->getAccessControl()});
+    {
+        RolesOrUsersSet roles_from_query{*query.roles, access_control};
+        std::vector<UUID> new_current_roles;
+        if (roles_from_query.all)
+        {
+            new_current_roles = user->granted_roles.findGranted(roles_from_query);
+        }
+        else
+        {
+            for (const auto & id : roles_from_query.getMatchingIDs())
+            {
+                if (!user->granted_roles.isGranted(id))
+                    throw Exception(ErrorCodes::SET_NON_GRANTED_ROLE, "Role should be granted to set current");
+                new_current_roles.emplace_back(id);
+            }
+        }
+        session_context->setCurrentRoles(new_current_roles);
+    }
 }
 
 
@@ -68,15 +88,6 @@ void InterpreterSetRoleQuery::updateUserSetDefaultRoles(User & user, const Roles
         }
     }
     user.default_roles = roles_from_query;
-}
-
-void registerInterpreterSetRoleQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterSetRoleQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterSetRoleQuery", create_fn);
 }
 
 }

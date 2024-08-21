@@ -23,6 +23,7 @@ public:
     DataTypeObject(const String & schema_format_, bool is_nullable_);
 
     const char * getFamilyName() const override { return "Object"; }
+    String getSQLCompatibleName() const override { return "JSON"; }
     String doGetName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::Object; }
 
@@ -36,7 +37,7 @@ public:
     bool haveSubtypes() const override { return false; }
     bool equals(const IDataType & rhs) const override;
     bool isParametric() const override { return true; }
-    bool hasDynamicSubcolumnsDeprecated() const override { return true; }
+    bool hasDynamicSubcolumns() const override { return true; }
 
     SerializationPtr doGetDefaultSerialization() const override;
 

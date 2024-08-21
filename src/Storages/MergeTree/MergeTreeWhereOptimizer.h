@@ -4,7 +4,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -38,21 +37,19 @@ public:
     MergeTreeWhereOptimizer(
         std::unordered_map<std::string, UInt64> column_sizes_,
         const StorageMetadataPtr & metadata_snapshot,
-        const ConditionSelectivityEstimator & estimator_,
         const Names & queried_columns_,
         const std::optional<NameSet> & supported_columns_,
-        LoggerPtr log_);
+        Poco::Logger * log_);
 
     void optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const;
 
     struct FilterActionsOptimizeResult
     {
-        std::unordered_set<const ActionsDAG::Node *> prewhere_nodes;
-        std::list<const ActionsDAG::Node *> prewhere_nodes_list; /// Keep insertion order of moved prewhere_nodes
-        bool fully_moved_to_prewhere = false;
+        ActionsDAGPtr filter_actions;
+        ActionsDAGPtr prewhere_filter_actions;
     };
 
-    FilterActionsOptimizeResult optimize(const ActionsDAG & filter_dag,
+    std::optional<FilterActionsOptimizeResult> optimize(const ActionsDAGPtr & filter_dag,
         const std::string & filter_column_name,
         const ContextPtr & context,
         bool is_final);
@@ -75,9 +72,6 @@ private:
         /// Does the condition presumably have good selectivity?
         bool good = false;
 
-        /// the lower the better
-        Float64 estimated_row_count = 0;
-
         /// Does the condition contain primary key column?
         /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
         /// column in this condition because this condition have bigger chances to be already satisfied by PK analysis.
@@ -85,7 +79,7 @@ private:
 
         auto tuple() const
         {
-            return std::make_tuple(!viable, !good, -min_position_in_primary_key, estimated_row_count, columns_size, table_columns.size());
+            return std::make_tuple(!viable, !good, -min_position_in_primary_key, columns_size, table_columns.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
@@ -104,7 +98,6 @@ private:
         bool move_all_conditions_to_prewhere = false;
         bool move_primary_key_columns_to_end_of_prewhere = false;
         bool is_final = false;
-        bool use_statistics = false;
     };
 
     struct OptimizeResult
@@ -122,6 +115,9 @@ private:
 
     /// Reconstruct AST from conditions
     static ASTPtr reconstructAST(const Conditions & conditions);
+
+    /// Reconstruct DAG from conditions
+    static ActionsDAGPtr reconstructDAG(const Conditions & conditions, const ContextPtr & context);
 
     void optimizeArbitrary(ASTSelectQuery & select) const;
 
@@ -147,14 +143,12 @@ private:
 
     static NameSet determineArrayJoinedNames(const ASTSelectQuery & select);
 
-    const ConditionSelectivityEstimator estimator;
-
     const NameSet table_columns;
     const Names queried_columns;
     const std::optional<NameSet> supported_columns;
     const NameSet sorting_key_names;
     const NameToIndexMap primary_key_names_positions;
-    LoggerPtr log;
+    Poco::Logger * log;
     std::unordered_map<std::string, UInt64> column_sizes;
     UInt64 total_size_of_queried_columns = 0;
 };

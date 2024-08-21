@@ -14,7 +14,7 @@ ExpressionTransform
           (Expression)
           ExpressionTransform × 2
             (ReadFromMergeTree)
-            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+            MergeTreeInOrder × 2 0 → 1
 2020-10-01	9
 2020-10-01	9
 2020-10-01	9
@@ -32,9 +32,9 @@ ExpressionTransform
           ExpressionTransform × 2
             (ReadFromMergeTree)
             ReverseTransform
-              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+              MergeTreeReverse 0 → 1
                 ReverseTransform
-                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+                  MergeTreeReverse 0 → 1
 2020-10-01	9
 2020-10-01	9
 2020-10-01	9
@@ -51,7 +51,7 @@ ExpressionTransform
           (Expression)
           ExpressionTransform × 2
             (ReadFromMergeTree)
-            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+            MergeTreeInOrder × 2 0 → 1
 2020-10-11	0
 2020-10-11	0
 2020-10-11	0
@@ -64,10 +64,8 @@ ExpressionTransform
     (Sorting)
       (Expression)
       ExpressionTransform
-        (Expression)
-        ExpressionTransform
-          (ReadFromMergeTree)
-          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+        (ReadFromMergeTree)
+        MergeTreeInOrder 0 → 1
 (Expression)
 ExpressionTransform
   (Limit)
@@ -78,7 +76,8 @@ ExpressionTransform
         (Expression)
         ExpressionTransform
           (ReadFromMergeTree)
-          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+          ExpressionTransform
+            MergeTreeInOrder 0 → 1
 2020-10-11	0	0
 2020-10-11	0	10
 2020-10-11	0	20
@@ -93,10 +92,8 @@ ExpressionTransform
       PartialSortingTransform
         (Expression)
         ExpressionTransform
-          (Expression)
-          ExpressionTransform
-            (ReadFromMergeTree)
-            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+          (ReadFromMergeTree)
+          MergeTreeInOrder 0 → 1
 (Expression)
 ExpressionTransform
   (Limit)
@@ -109,7 +106,8 @@ ExpressionTransform
           (Expression)
           ExpressionTransform
             (ReadFromMergeTree)
-            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+            ExpressionTransform
+              MergeTreeInOrder 0 → 1
 2020-10-12	0
 2020-10-12	1
 2020-10-12	2
@@ -119,7 +117,7 @@ SELECT
     date,
     i
 FROM t_read_in_order
-WHERE date = \'2020-10-12\'
+PREWHERE date = \'2020-10-12\'
 ORDER BY i DESC
 LIMIT 5
 (Expression)
@@ -129,11 +127,9 @@ ExpressionTransform
     (Sorting)
       (Expression)
       ExpressionTransform
-        (Expression)
-        ExpressionTransform
-          (ReadFromMergeTree)
-          ReverseTransform
-            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+        (ReadFromMergeTree)
+        ReverseTransform
+          MergeTreeReverse 0 → 1
 (Expression)
 ExpressionTransform
   (Limit)
@@ -144,8 +140,9 @@ ExpressionTransform
         (Expression)
         ExpressionTransform
           (ReadFromMergeTree)
-          ReverseTransform
-            MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+          ExpressionTransform
+            ReverseTransform
+              MergeTreeReverse 0 → 1
 2020-10-12	99999
 2020-10-12	99998
 2020-10-12	99997
@@ -172,7 +169,7 @@ ExpressionTransform
       (Expression)
       ExpressionTransform
         (ReadFromMergeTree)
-        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+        MergeTreeInOrder 0 → 1
 2020-10-10 00:00:00	0.01
 2020-10-10 00:00:00	0.01
 2020-10-10 00:00:00	0.01
@@ -186,7 +183,7 @@ ExpressionTransform
       (Expression)
       ExpressionTransform
         (ReadFromMergeTree)
-        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+        MergeTreeInOrder 0 → 1
 2020-10-10 00:00:00	0.01
 2020-10-10 00:00:00	0.01
 2020-10-10 00:00:00	0.01

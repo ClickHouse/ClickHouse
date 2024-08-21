@@ -4,13 +4,14 @@
 #include <string>
 #include <atomic>
 
+#include <re2/re2.h>
+
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Common/logger_useful.h>
-#include <Common/re2.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/ProfileEvents.h>
 
 #ifndef NDEBUG
@@ -60,7 +61,7 @@ public:
         , replacement(replacement_string)
     {
         if (!regexp.ok())
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+            throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
                 "SensitiveDataMasker: cannot compile re2: {}, error: {}. "
                 "Look at https://github.com/google/re2/wiki/Syntax for reference.",
                 regexp_string_, regexp.error());
@@ -85,25 +86,20 @@ public:
 
 SensitiveDataMasker::~SensitiveDataMasker() = default;
 
-SensitiveDataMasker::MaskerMultiVersion SensitiveDataMasker::sensitive_data_masker{};
+std::unique_ptr<SensitiveDataMasker> SensitiveDataMasker::sensitive_data_masker = nullptr;
 
-void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker>&& sensitive_data_masker_)
+void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_)
 {
-
     if (!sensitive_data_masker_)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The 'sensitive_data_masker' is not set");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: the 'sensitive_data_masker' is not set");
 
     if (sensitive_data_masker_->rulesCount() > 0)
     {
-        sensitive_data_masker.set(std::move(sensitive_data_masker_));
-    }
-    else
-    {
-        sensitive_data_masker.set(nullptr);
+        sensitive_data_masker = std::move(sensitive_data_masker_);
     }
 }
 
-SensitiveDataMasker::MaskerMultiVersion::Version SensitiveDataMasker::getInstance()
+SensitiveDataMasker * SensitiveDataMasker::getInstance()
 {
     return sensitive_data_masker.get();
 }
@@ -112,7 +108,7 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
-    LoggerPtr logger = getLogger("SensitiveDataMaskerConfigRead");
+    Poco::Logger * logger = &Poco::Logger::get("SensitiveDataMaskerConfigRead");
 
     std::set<std::string> used_names;
 
@@ -202,7 +198,7 @@ std::string wipeSensitiveDataAndCutToLength(const std::string & str, size_t max_
 {
     std::string res = str;
 
-    if (auto masker = SensitiveDataMasker::getInstance())
+    if (auto * masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
 
     size_t length = res.length();

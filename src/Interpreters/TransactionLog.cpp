@@ -7,7 +7,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
@@ -22,7 +21,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
-static void tryWriteEventToSystemLog(LoggerPtr log, ContextPtr context,
+static void tryWriteEventToSystemLog(Poco::Logger * log, ContextPtr context,
                                      TransactionsInfoLogElement::Type type, const TransactionID & tid, CSN csn = Tx::UnknownCSN)
 try
 {
@@ -45,7 +44,7 @@ catch (...)
 
 TransactionLog::TransactionLog()
     : global_context(Context::getGlobalContextInstance())
-    , log(getLogger("TransactionLog"))
+    , log(&Poco::Logger::get("TransactionLog"))
     , zookeeper_path(global_context->getConfigRef().getString("transaction_log.zookeeper_path", "/clickhouse/txn"))
     , zookeeper_path_log(zookeeper_path + "/log")
     , fault_probability_before_commit(global_context->getConfigRef().getDouble("transaction_log.fault_probability_before_commit", 0))
@@ -406,15 +405,22 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
         String csn_path_created;
         try
         {
-            Coordination::SimpleFaultInjection fault(fault_probability_before_commit, fault_probability_after_commit, "commit");
-
-            Coordination::Requests requests;
-            requests.push_back(zkutil::makeCreateRequest(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential));
+            if (unlikely(fault_probability_before_commit > 0.0))
+            {
+                std::bernoulli_distribution fault(fault_probability_before_commit);
+                if (fault(thread_local_rng))
+                    throw Coordination::Exception::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (before commit)");
+            }
 
             /// Commit point
-            auto res = current_zookeeper->multi(requests, /* check_session_valid */ true);
+            csn_path_created = current_zookeeper->create(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential);
 
-            csn_path_created = dynamic_cast<const Coordination::CreateResponse *>(res.back().get())->path_created;
+            if (unlikely(fault_probability_after_commit > 0.0))
+            {
+                std::bernoulli_distribution fault(fault_probability_after_commit);
+                if (fault(thread_local_rng))
+                    throw Coordination::Exception::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (after commit)");
+            }
         }
         catch (const Coordination::Exception & e)
         {
@@ -452,7 +458,6 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
 CSN TransactionLog::finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN allocated_csn, scope_guard & state_guard) noexcept
 {
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
-    auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     chassert(!allocated_csn == txn->isReadOnly());
     if (allocated_csn)
     {

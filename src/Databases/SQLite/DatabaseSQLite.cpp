@@ -3,14 +3,13 @@
 #if USE_SQLITE
 
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Databases/DatabaseFactory.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
+#include <Interpreters/Context.h>
 #include <Storages/StorageSQLite.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 
@@ -22,7 +21,6 @@ namespace ErrorCodes
 {
     extern const int SQLITE_ENGINE_ERROR;
     extern const int UNKNOWN_TABLE;
-    extern const int BAD_ARGUMENTS;
 }
 
 DatabaseSQLite::DatabaseSQLite(
@@ -34,7 +32,7 @@ DatabaseSQLite::DatabaseSQLite(
     , WithContext(context_->getGlobalContext())
     , database_engine_define(database_engine_define_->clone())
     , database_path(database_path_)
-    , log(getLogger("DatabaseSQLite"))
+    , log(&Poco::Logger::get("DatabaseSQLite"))
 {
     sqlite_db = openSQLiteDB(database_path_, context_, !is_attach_);
 }
@@ -47,7 +45,7 @@ bool DatabaseSQLite::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &, bool) const
+DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &) const
 {
     std::lock_guard lock(mutex);
 
@@ -154,7 +152,6 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
         table_name,
         ColumnsDescription{*columns},
         ConstraintsDescription{},
-        /* comment = */ "",
         local_context);
 
     return storage;
@@ -196,32 +193,14 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     /// Add table_name to engine arguments
     storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 1, std::make_shared<ASTLiteral>(table_id.table_name));
 
-    const Settings & settings = getContext()->getSettingsRef();
-
+    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
     auto create_table_query = DB::getCreateQueryFromStorage(storage, table_storage_define, true,
-        static_cast<uint32_t>(settings.max_parser_depth), static_cast<uint32_t>(settings.max_parser_backtracks), throw_on_error);
+                                                            max_parser_depth,
+                                                            throw_on_error);
 
     return create_table_query;
 }
 
-void registerDatabaseSQLite(DatabaseFactory & factory)
-{
-    auto create_fn = [](const DatabaseFactory::Arguments & args)
-    {
-        auto * engine_define = args.create_query.storage;
-        const ASTFunction * engine = engine_define->engine;
-
-        if (!engine->arguments || engine->arguments->children.size() != 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "SQLite database requires 1 argument: database path");
-
-        const auto & arguments = engine->arguments->children;
-
-        String database_path = safeGetLiteralValue<String>(arguments[0], "SQLite");
-
-        return std::make_shared<DatabaseSQLite>(args.context, engine_define, args.create_query.attach, database_path);
-    };
-    factory.registerDatabase("SQLite", create_fn);
-}
 }
 
 #endif

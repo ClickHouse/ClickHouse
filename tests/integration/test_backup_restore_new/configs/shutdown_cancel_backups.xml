@@ -1,3 +1,0 @@
-<clickhouse>
-    <shutdown_wait_backups_and_restores>false</shutdown_wait_backups_and_restores>
-</clickhouse>

@@ -2,7 +2,6 @@
 #include <Server/TCPServer.h>
 
 #include <Poco/Net/NetException.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -12,10 +11,8 @@ HTTPServerConnection::HTTPServerConnection(
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket,
     Poco::Net::HTTPServerParams::Ptr params_,
-    HTTPRequestHandlerFactoryPtr factory_,
-    const ProfileEvents::Event & read_event_,
-    const ProfileEvents::Event & write_event_)
-    : TCPServerConnection(socket), context(std::move(context_)), tcp_server(tcp_server_), params(params_), factory(factory_), read_event(read_event_), write_event(write_event_), stopped(false)
+    HTTPRequestHandlerFactoryPtr factory_)
+    : TCPServerConnection(socket), context(std::move(context_)), tcp_server(tcp_server_), params(params_), factory(factory_), stopped(false)
 {
     poco_check_ptr(factory);
 }
@@ -33,7 +30,7 @@ void HTTPServerConnection::run()
             if (!stopped && tcp_server.isOpen() && session.connected())
             {
                 HTTPServerResponse response(session);
-                HTTPServerRequest request(context, response, session, read_event);
+                HTTPServerRequest request(context, response, session);
 
                 Poco::Timestamp now;
 
@@ -68,7 +65,7 @@ void HTTPServerConnection::run()
                         if (request.getExpectContinue() && response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
                             response.sendContinue();
 
-                        handler->handleRequest(request, response, write_event);
+                        handler->handleRequest(request, response);
                         session.setKeepAlive(params->getKeepAlive() && response.getKeepAlive() && session.canKeepAlive());
                     }
                     else
@@ -82,7 +79,7 @@ void HTTPServerConnection::run()
                         {
                             sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
                         }
-                        catch (...) // NOLINT(bugprone-empty-catch)
+                        catch (...)
                         {
                         }
                     }
@@ -98,21 +95,6 @@ void HTTPServerConnection::run()
         {
             sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
         }
-        catch (const Poco::Net::NetException & e)
-        {
-            /// Do not spam logs with messages related to connection reset by peer.
-            if (e.code() == POCO_ENOTCONN)
-            {
-                LOG_DEBUG(LogFrequencyLimiter(getLogger("HTTPServerConnection"), 10), "Connection reset by peer while processing HTTP request: {}", e.message());
-                break;
-            }
-
-            if (session.networkException())
-                session.networkException()->rethrow();
-            else
-                throw;
-        }
-
         catch (const Poco::Exception &)
         {
             if (session.networkException())

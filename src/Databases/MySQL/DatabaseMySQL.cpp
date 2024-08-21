@@ -2,8 +2,6 @@
 
 #if USE_MYSQL
 #    include <string>
-#    include <base/isSharedPtrUnique.h>
-#    include <Databases/DatabaseFactory.h>
 #    include <DataTypes/DataTypeDateTime.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypeString.h>
@@ -16,7 +14,6 @@
 #    include <QueryPipeline/QueryPipelineBuilder.h>
 #    include <IO/Operators.h>
 #    include <Interpreters/Context.h>
-#    include <Interpreters/evaluateConstantExpression.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Parsers/ASTFunction.h>
 #    include <Parsers/ParserCreateQuery.h>
@@ -24,13 +21,9 @@
 #    include <Parsers/queryToString.h>
 #    include <Storages/StorageMySQL.h>
 #    include <Storages/MySQL/MySQLSettings.h>
-#    include <Storages/MySQL/MySQLHelpers.h>
-#    include <Storages/NamedCollectionsHelpers.h>
 #    include <Common/escapeForFileName.h>
 #    include <Common/parseAddress.h>
-#    include <Common/parseRemoteDescription.h>
 #    include <Common/setThreadName.h>
-#    include <Core/Settings.h>
 #    include <filesystem>
 #    include <Common/filesystemHelpers.h>
 #    include <Parsers/ASTIdentifier.h>
@@ -48,8 +41,6 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNEXPECTED_AST_STRUCTURE;
-    extern const int CANNOT_CREATE_DATABASE;
-    extern const int BAD_ARGUMENTS;
 }
 
 constexpr static const auto suffix = ".remove_flag";
@@ -107,7 +98,7 @@ bool DatabaseMySQL::empty() const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
+DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name) const
 {
     Tables tables;
     std::lock_guard lock(mutex);
@@ -176,14 +167,12 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         ast_storage->settings = nullptr;
     }
 
-    const Settings & settings = getContext()->getSettingsRef();
-    auto create_table_query = DB::getCreateQueryFromStorage(
-        storage,
-        table_storage_define,
-        true,
-        static_cast<unsigned>(settings.max_parser_depth),
-        static_cast<unsigned>(settings.max_parser_backtracks),
-        throw_on_error);
+    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
+    auto create_table_query = DB::getCreateQueryFromStorage(storage,
+                                                            table_storage_define,
+                                                            true,
+                                                            max_parser_depth,
+                                                            throw_on_error);
     return create_table_query;
 }
 
@@ -343,7 +332,7 @@ void DatabaseMySQL::shutdown()
 
 void DatabaseMySQL::drop(ContextPtr /*context*/)
 {
-    (void)fs::remove_all(getMetadataPath());
+    fs::remove_all(getMetadataPath());
 }
 
 void DatabaseMySQL::cleanOutdatedTables()
@@ -356,7 +345,7 @@ void DatabaseMySQL::cleanOutdatedTables()
     {
         for (auto iterator = outdated_tables.begin(); iterator != outdated_tables.end();)
         {
-            if (!isSharedPtrUnique(*iterator))
+            if (!iterator->unique())
                 ++iterator;
             else
             {
@@ -392,7 +381,7 @@ void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_
     fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
 
     if (fs::exists(remove_flag))
-        (void)fs::remove(remove_flag);
+        fs::remove(remove_flag);
 }
 
 StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & table_name)
@@ -418,6 +407,7 @@ String DatabaseMySQL::getMetadataPath() const
 
 void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/)
 {
+
     std::lock_guard lock{mutex};
     fs::directory_iterator iter(getMetadataPath());
 
@@ -442,7 +432,7 @@ void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
     if (fs::exists(remove_flag))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The remove flag file already exists but the {}.{} does not exist remove tables, it is bug.",
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The remove flag file already exists but the {}.{} does not exists remove tables, it is bug.",
                         backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
     auto table_iter = local_tables_cache.find(table_name);
@@ -515,77 +505,6 @@ void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_n
     attachTable(local_context, table_name, storage, {});
 }
 
-void registerDatabaseMySQL(DatabaseFactory & factory)
-{
-    auto create_fn = [](const DatabaseFactory::Arguments & args)
-    {
-        auto * engine_define = args.create_query.storage;
-        const ASTFunction * engine = engine_define->engine;
-        const String & engine_name = engine_define->engine->name;
-        if (!engine->arguments)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
-
-        StorageMySQL::Configuration configuration;
-        ASTs & arguments = engine->arguments->children;
-        auto mysql_settings = std::make_unique<MySQLSettings>();
-
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(arguments, args.context))
-        {
-            configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, args.context, false);
-        }
-        else
-        {
-            if (arguments.size() != 4)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
-
-
-            arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], args.context);
-            const auto & host_port = safeGetLiteralValue<String>(arguments[0], engine_name);
-
-            if (engine_name == "MySQL")
-            {
-                size_t max_addresses = args.context->getSettingsRef().glob_expansion_max_elements;
-                configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
-            }
-            else
-            {
-                const auto & [remote_host, remote_port] = parseAddress(host_port, 3306);
-                configuration.host = remote_host;
-                configuration.port = remote_port;
-            }
-
-            configuration.database = safeGetLiteralValue<String>(arguments[1], engine_name);
-            configuration.username = safeGetLiteralValue<String>(arguments[2], engine_name);
-            configuration.password = safeGetLiteralValue<String>(arguments[3], engine_name);
-        }
-        mysql_settings->loadFromQueryContext(args.context, *engine_define);
-        if (engine_define->settings)
-            mysql_settings->loadFromQuery(*engine_define);
-
-        auto mysql_pool = createMySQLPoolWithFailover(configuration, *mysql_settings);
-
-        try
-        {
-            return make_shared<DatabaseMySQL>(
-                args.context,
-                args.database_name,
-                args.metadata_path,
-                engine_define,
-                configuration.database,
-                std::move(mysql_settings),
-                std::move(mysql_pool),
-                args.create_query.attach);
-        }
-        catch (...)
-        {
-            const auto & exception_message = getCurrentExceptionMessage(true);
-            throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Cannot create MySQL database, because {}", exception_message);
-        }
-    };
-    factory.registerDatabase("MySQL", create_fn);
-}
 }
 
 #endif

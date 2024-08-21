@@ -1,9 +1,7 @@
 #include <Interpreters/JoinedTables.h>
 
-#include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
@@ -274,7 +272,7 @@ void JoinedTables::makeFakeTable(StoragePtr storage, const StorageMetadataPtr & 
         auto & table = tables_with_columns.back();
         table.addHiddenColumns(storage_columns.getMaterialized());
         table.addHiddenColumns(storage_columns.getAliases());
-        table.addHiddenColumns(storage->getVirtualsList());
+        table.addHiddenColumns(storage->getVirtuals());
     }
     else
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, source_header.getNamesAndTypesList());
@@ -308,10 +306,9 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     if (tables_with_columns.size() < 2)
         return {};
 
-    const auto & settings = context->getSettingsRef();
+    auto settings = context->getSettingsRef();
     MultiEnum<JoinAlgorithm> join_algorithm = settings.join_algorithm;
-    bool try_use_direct_join = join_algorithm.isSet(JoinAlgorithm::DIRECT) || join_algorithm.isSet(JoinAlgorithm::DEFAULT);
-    auto table_join = std::make_shared<TableJoin>(settings, context->getGlobalTemporaryVolume(), context->getTempDataOnDisk());
+    auto table_join = std::make_shared<TableJoin>(settings, context->getGlobalTemporaryVolume());
 
     const ASTTablesInSelectQueryElement * ast_join = select_query_.join();
     const auto & table_to_join = ast_join->table_expression->as<ASTTableExpression &>();
@@ -328,8 +325,8 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
                 table_join->setStorageJoin(storage_join);
             }
 
-            auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage);
-            if (storage_dict && try_use_direct_join && storage_dict->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
+            if (auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage);
+                storage_dict && join_algorithm.isSet(JoinAlgorithm::DIRECT))
             {
                 FunctionDictHelper dictionary_helper(context);
 
@@ -337,12 +334,12 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
                 auto dictionary = dictionary_helper.getDictionary(dictionary_name);
                 if (!dictionary)
                 {
-                    LOG_TRACE(getLogger("JoinedTables"), "Can't use dictionary join: dictionary '{}' was not found", dictionary_name);
+                    LOG_TRACE(&Poco::Logger::get("JoinedTables"), "Can't use dictionary join: dictionary '{}' was not found", dictionary_name);
                     return nullptr;
                 }
                 if (dictionary->getSpecialKeyType() == DictionarySpecialKeyType::Range)
                 {
-                    LOG_TRACE(getLogger("JoinedTables"), "Can't use dictionary join: dictionary '{}' is a range dictionary", dictionary_name);
+                    LOG_TRACE(&Poco::Logger::get("JoinedTables"), "Can't use dictionary join: dictionary '{}' is a range dictionary", dictionary_name);
                     return nullptr;
                 }
 
@@ -350,7 +347,8 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
                 table_join->setStorageJoin(dictionary_kv);
             }
 
-            if (auto storage_kv = std::dynamic_pointer_cast<IKeyValueEntity>(storage); storage_kv && try_use_direct_join)
+            if (auto storage_kv = std::dynamic_pointer_cast<IKeyValueEntity>(storage);
+                storage_kv && join_algorithm.isSet(JoinAlgorithm::DIRECT))
             {
                 table_join->setStorageJoin(storage_kv);
             }

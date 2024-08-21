@@ -11,10 +11,13 @@ namespace DB
 class EnvironmentProxyConfigurationResolver : public ProxyConfigurationResolver
 {
 public:
-    explicit EnvironmentProxyConfigurationResolver(Protocol request_protocol, bool disable_tunneling_for_https_requests_over_http_proxy_ = false);
+    explicit EnvironmentProxyConfigurationResolver(Protocol protocol_);
 
     ProxyConfiguration resolve() override;
     void errorReport(const ProxyConfiguration &) override {}
+
+private:
+    Protocol protocol;
 };
 
 }

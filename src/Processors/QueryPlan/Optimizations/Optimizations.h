@@ -46,16 +46,9 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes);
 /// Replace chain `FilterStep -> ExpressionStep` to single FilterStep
 size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &);
 
-/// Replace chain `FilterStep -> FilterStep` to single FilterStep
-/// Note: this breaks short-circuit logic, so it is disabled for now.
-size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &);
-
 /// Move FilterStep down if possible.
 /// May split FilterStep and push down only part of it.
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
-
-/// Convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
-size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
 /// Move ExpressionStep after SortingStep if possible.
 /// May split ExpressionStep and lift up only a part of it.
@@ -74,7 +67,7 @@ void tryRemoveRedundantSorting(QueryPlan::Node * root);
 /// Remove redundant distinct steps
 size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
-/// Put some steps under union, so that plan optimization could be applied to union parts separately.
+/// Put some steps under union, so that plan optimisation could be applied to union parts separately.
 /// For example, the plan can be rewritten like:
 ///                      - Something -                    - Expression - Something -
 /// - Expression - Union - Something -     =>     - Union - Expression - Something -
@@ -85,18 +78,20 @@ size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::No
 
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 12> optimizations = {{
-        {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
-        {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
-        {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
-        {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::merge_expressions},
-        {tryMergeFilters, "mergeFilters", &QueryPlanOptimizationSettings::merge_filters},
+    static const std::array<Optimization, 10> optimizations = {{
+        {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::optimize_plan},
+        {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::optimize_plan},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
-        {tryConvertOuterJoinToInnerJoin, "convertOuterJoinToInnerJoin", &QueryPlanOptimizationSettings::convert_outer_join_to_inner_join},
-        {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::execute_functions_after_sorting},
-        {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::reuse_storage_ordering_for_window_functions},
-        {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::lift_up_union},
-        {tryAggregatePartitionsIndependently, "aggregatePartitionsIndependently", &QueryPlanOptimizationSettings::aggregate_partitions_independently},
+        {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryReuseStorageOrderingForWindowFunctions,
+         "reuseStorageOrderingForWindowFunctions",
+         &QueryPlanOptimizationSettings::optimize_plan},
+        {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryAggregatePartitionsIndependently,
+         "aggregatePartitionsIndependently",
+         &QueryPlanOptimizationSettings::aggregate_partitions_independently},
         {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
     }};
 
@@ -112,15 +107,12 @@ struct Frame
 using Stack = std::vector<Frame>;
 
 /// Second pass optimizations
-void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
+void optimizePrimaryKeyCondition(const Stack & stack);
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
-
-/// Returns the name of used projection or nullopt if no projection is used.
-std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections);
-std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes);
-
+bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections);
+bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes);
 bool addPlansForSets(QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 
 /// Enable memory bound merging of aggregation states for remote queries

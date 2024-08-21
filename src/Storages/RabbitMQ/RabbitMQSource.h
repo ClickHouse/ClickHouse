@@ -19,16 +19,12 @@ public:
             const Names & columns,
             size_t max_block_size_,
             UInt64 max_execution_time_,
-            StreamingHandleErrorMode handle_error_mode_,
-            bool nack_broken_messages_,
-            bool ack_in_suffix,
-            LoggerPtr log_);
+            bool ack_in_suffix = false);
 
     ~RabbitMQSource() override;
 
     String getName() const override { return storage.getName(); }
     void updateChannel(RabbitMQConnection & connection) { consumer->updateChannel(connection); }
-    String getChannelID() const { return consumer->getChannelID(); }
 
     Chunk generate() override;
 
@@ -42,17 +38,15 @@ private:
     StorageRabbitMQ & storage;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
-    const Names column_names;
+    Names column_names;
     const size_t max_block_size;
-    const StreamingHandleErrorMode handle_error_mode;
-    const bool ack_in_suffix;
-    const bool nack_broken_messages;
+    bool ack_in_suffix;
 
     bool is_finished = false;
     const Block non_virtual_header;
     const Block virtual_header;
 
-    LoggerPtr log;
+    Poco::Logger * log;
     RabbitMQConsumerPtr consumer;
 
     uint64_t max_execution_time_ms = 0;
@@ -68,10 +62,7 @@ private:
         const Names & columns,
         size_t max_block_size_,
         UInt64 max_execution_time_,
-        StreamingHandleErrorMode handle_error_mode_,
-        bool nack_broken_messages_,
-        bool ack_in_suffix,
-        LoggerPtr log_);
+        bool ack_in_suffix);
 
     Chunk generateImpl();
 };

@@ -20,9 +20,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/DateLUT.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <base/errnoToString.h>
-#include <Core/ServerSettings.h>
 
 #if defined(OS_LINUX)
 #   include <Common/hasLinuxCapability.h>
@@ -49,15 +47,7 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_err
     , query_context(query_context_)
     , global_context(query_context_->getGlobalContext())
     , fatal_error_callback(fatal_error_callback_)
-{
-    shared_data.query_is_canceled_predicate = [this] () -> bool {
-            if (auto context_locked = query_context.lock())
-            {
-                return context_locked->isCurrentQueryKilled();
-            }
-            return false;
-    };
-}
+{}
 
 std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const
 {
@@ -71,27 +61,10 @@ std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const
     return res;
 }
 
-size_t ThreadGroup::getPeakThreadsUsage() const
+void ThreadGroup::linkThread(UInt64 thread_it)
 {
     std::lock_guard lock(mutex);
-    return peak_threads_usage;
-}
-
-
-void ThreadGroup::linkThread(UInt64 thread_id)
-{
-    std::lock_guard lock(mutex);
-    thread_ids.insert(thread_id);
-
-    ++active_thread_count;
-    peak_threads_usage = std::max(peak_threads_usage, active_thread_count);
-}
-
-void ThreadGroup::unlinkThread()
-{
-    std::lock_guard lock(mutex);
-    chassert(active_thread_count > 0);
-    --active_thread_count;
+    thread_ids.insert(thread_it);
 }
 
 ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
@@ -122,7 +95,7 @@ ThreadGroupPtr ThreadGroup::createForBackgroundProcess(ContextPtr storage_contex
 
 void ThreadGroup::attachQueryForLog(const String & query_, UInt64 normalized_hash)
 {
-    auto hash = normalized_hash ? normalized_hash : normalizedQueryHash(query_, false);
+    auto hash = normalized_hash ? normalized_hash : normalizedQueryHash<false>(query_);
 
     std::lock_guard lock(mutex);
     shared_data.query_for_logs = query_;
@@ -132,7 +105,7 @@ void ThreadGroup::attachQueryForLog(const String & query_, UInt64 normalized_has
 void ThreadStatus::attachQueryForLog(const String & query_)
 {
     local_data.query_for_logs = query_;
-    local_data.normalized_query_hash = normalizedQueryHash(query_, false);
+    local_data.normalized_query_hash = normalizedQueryHash<false>(query_);
 
     if (!thread_group)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No thread group attached to the thread {}", thread_id);
@@ -223,7 +196,7 @@ void ThreadStatus::applyQuerySettings()
         LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
 
         if (0 != setpriority(PRIO_PROCESS, static_cast<unsigned>(thread_id), new_os_thread_priority))
-            throw ErrnoException(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, "Cannot 'setpriority'");
+            throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
 
         os_thread_priority = new_os_thread_priority;
     }
@@ -234,8 +207,7 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 {
     /// Attach or init current thread to thread group and copy useful information from it
     thread_group = thread_group_;
-    if (!internal_thread)
-        thread_group->linkThread(thread_id);
+    thread_group->linkThread(thread_id);
 
     performance_counters.setParent(&thread_group->performance_counters);
     memory_tracker.setParent(&thread_group->memory_tracker);
@@ -270,9 +242,6 @@ void ThreadStatus::detachFromGroup()
     memory_tracker.reset();
     /// Extract MemoryTracker out from query and user context
     memory_tracker.setParent(&total_memory_tracker);
-
-    if (!internal_thread)
-        thread_group->unlinkThread();
 
     thread_group.reset();
 
@@ -461,31 +430,6 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
         taskstats->reset();
 }
 
-void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
-{
-#if !defined(SANITIZER) && !defined(__APPLE__)
-    /// profilers are useless without trace collector
-    auto context = Context::getGlobalContextInstance();
-    if (!context->hasTraceCollector())
-        return;
-
-    try
-    {
-        if (global_profiler_real_time_period > 0)
-            query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
-                /* period= */ static_cast<UInt32>(global_profiler_real_time_period));
-
-        if (global_profiler_cpu_time_period > 0)
-            query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
-                /* period= */ static_cast<UInt32>(global_profiler_cpu_time_period));
-    }
-    catch (...)
-    {
-        tryLogCurrentException("ThreadStatus", "Cannot initialize GlobalProfiler");
-    }
-#endif
-}
-
 void ThreadStatus::initQueryProfiler()
 {
     if (internal_thread)
@@ -503,22 +447,12 @@ void ThreadStatus::initQueryProfiler()
     try
     {
         if (settings.query_profiler_real_time_period_ns > 0)
-        {
-            if (!query_profiler_real)
-                query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
-                   /* period= */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
-            else
-                query_profiler_real->setPeriod(static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
-        }
+            query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
+                /* period= */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
 
         if (settings.query_profiler_cpu_time_period_ns > 0)
-        {
-            if (!query_profiler_cpu)
-                query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
-                  /* period= */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
-            else
-                query_profiler_cpu->setPeriod(static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
-        }
+            query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
+                /* period= */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
     }
     catch (...)
     {
@@ -585,7 +519,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
 static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 {
     String res = serializeAST(*q);
-    if (auto masker = SensitiveDataMasker::getInstance())
+    if (auto * masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
 
     res = res.substr(0, context->getSettingsRef().log_queries_cut_to_length);

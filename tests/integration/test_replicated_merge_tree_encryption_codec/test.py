@@ -91,16 +91,9 @@ def test_different_keys():
     copy_keys(node2, "key_b")
     create_table()
 
-    # Insert two blocks without duplicated blocks to force each replica to actually fetch parts from another replica.
-    node1.query("INSERT INTO tbl VALUES (1, 'str1')")
-    node2.query("INSERT INTO tbl VALUES (2, 'str2')")
-    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
-
-    # After "SYSTEM SYNC REPLICA" we expect node1 and node2 here both having a part for (1, 'str1') encrypted with "key_a",
-    # and a part for (2, 'str2') encrypted with "key_b".
-    # So the command "SELECT * from tbl" must fail on both nodes because each node has only one encryption key.
-    assert "OPENSSL_ERROR" in node1.query_and_get_error("SELECT * FROM tbl")
-    assert "OPENSSL_ERROR" in node2.query_and_get_error("SELECT * FROM tbl")
+    insert_data()
+    assert "BAD_DECRYPT" in node1.query_and_get_error("SELECT * FROM tbl")
+    assert "BAD_DECRYPT" in node2.query_and_get_error("SELECT * FROM tbl")
 
     # Hang?
     # optimize_table()

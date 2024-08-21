@@ -12,7 +12,6 @@
 #include <Columns/IColumn.h>
 
 #include <Common/assert_cast.h>
-#include "DataTypes/IDataType.h"
 
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -36,12 +35,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-
 constexpr auto FORMAT_NAME = "Prometheus";
 
-bool isDataTypeMapString(const DataTypePtr & type)
+static bool isDataTypeMapString(const DataTypePtr & type)
 {
     if (!isMap(type))
         return false;
@@ -49,8 +45,8 @@ bool isDataTypeMapString(const DataTypePtr & type)
     return isStringOrFixedString(type_map->getKeyType()) && isStringOrFixedString(type_map->getValueType());
 }
 
-template <typename ResType>
-void getColumnPos(const Block & header, const String & col_name, bool (*pred)(const DataTypePtr &), ResType & res)
+template <typename ResType, typename Pred>
+static void getColumnPos(const Block & header, const String & col_name, Pred pred, ResType & res)
 {
     static_assert(std::is_same_v<ResType, size_t> || std::is_same_v<ResType, std::optional<size_t>>, "Illegal ResType");
 
@@ -75,14 +71,12 @@ void getColumnPos(const Block & header, const String & col_name, bool (*pred)(co
     }
 }
 
-Float64 tryParseFloat(const String & s)
+static Float64 tryParseFloat(const String & s)
 {
     Float64 t = 0;
     ReadBufferFromString buf(s);
     tryReadFloatText(t, buf);
     return t;
-}
-
 }
 
 PrometheusTextOutputFormat::PrometheusTextOutputFormat(
@@ -95,12 +89,12 @@ PrometheusTextOutputFormat::PrometheusTextOutputFormat(
 {
     const Block & header = getPort(PortKind::Main).getHeader();
 
-    getColumnPos(header, "name", isStringOrFixedString, pos.name);
-    getColumnPos(header, "value", isNumber, pos.value);
+    getColumnPos(header, "name", isStringOrFixedString<DataTypePtr>, pos.name);
+    getColumnPos(header, "value", isNumber<DataTypePtr>, pos.value);
 
-    getColumnPos(header, "help", isStringOrFixedString, pos.help);
-    getColumnPos(header, "type", isStringOrFixedString, pos.type);
-    getColumnPos(header, "timestamp", isNumber, pos.timestamp);
+    getColumnPos(header, "help", isStringOrFixedString<DataTypePtr>, pos.help);
+    getColumnPos(header, "type", isStringOrFixedString<DataTypePtr>, pos.type);
+    getColumnPos(header, "timestamp", isNumber<DataTypePtr>, pos.timestamp);
     getColumnPos(header, "labels", isDataTypeMapString, pos.labels);
 }
 
@@ -286,10 +280,10 @@ static void columnMapToContainer(const ColumnMap * col_map, size_t row_num, Cont
 {
     Field field;
     col_map->get(row_num, field);
-    const auto & map_field = field.safeGet<Map>();
+    const auto & map_field = field.get<Map>();
     for (const auto & map_element : map_field)
     {
-        const auto & map_entry = map_element.safeGet<Tuple>();
+        const auto & map_entry = map_element.get<Tuple>();
 
         String entry_key;
         String entry_value;

@@ -4,10 +4,9 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTExplainQuery.h>
-#include <Parsers/CommonParsers.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/TokenIterator.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 #include <base/find_symbols.h>
@@ -93,7 +92,7 @@ void writeQueryWithHighlightedErrorPositions(
         }
         else
         {
-            ssize_t bytes_to_hilite = std::min<ssize_t>(UTF8::seqLength(*current_position_to_hilite), end - current_position_to_hilite);
+            size_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
 
             /// Bright on red background.
             out << "\033[41;1m";
@@ -225,32 +224,6 @@ std::string getUnmatchedParenthesesErrorMessage(
 }
 
 
-static ASTInsertQuery * getInsertAST(const ASTPtr & ast)
-{
-    /// Either it is INSERT or EXPLAIN INSERT.
-    if (auto * explain = ast->as<ASTExplainQuery>())
-    {
-        if (auto explained_query = explain->getExplainedQuery())
-        {
-            return explained_query->as<ASTInsertQuery>();
-        }
-    }
-    else
-    {
-        return ast->as<ASTInsertQuery>();
-    }
-
-    return nullptr;
-}
-
-const char * getInsertData(const ASTPtr & ast)
-{
-    if (const ASTInsertQuery * insert = getInsertAST(ast))
-        return insert->data;
-    return nullptr;
-}
-
-
 ASTPtr tryParseQuery(
     IParser & parser,
     const char * & _out_query_end, /* also query begin as input parameter */
@@ -261,13 +234,12 @@ ASTPtr tryParseQuery(
     bool allow_multi_statements,
     size_t max_query_size,
     size_t max_parser_depth,
-    size_t max_parser_backtracks,
     bool skip_insignificant)
 {
     const char * query_begin = _out_query_end;
     Tokens tokens(query_begin, all_queries_end, max_query_size, skip_insignificant);
     /// NOTE: consider use UInt32 for max_parser_depth setting.
-    IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
+    IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth));
 
     if (token_iterator->isEnd()
         || token_iterator->type == TokenType::Semicolon)
@@ -286,47 +258,34 @@ ASTPtr tryParseQuery(
     }
 
     Expected expected;
-
-    /** A shortcut - if Lexer found invalid tokens, fail early without full parsing.
-      * But there are certain cases when invalid tokens are permitted:
-      * 1. INSERT queries can have arbitrary data after the FORMAT clause, that is parsed by a different parser.
-      * 2. It can also be the case when there are multiple queries separated by semicolons, and the first queries are ok
-      * while subsequent queries have syntax errors.
-      *
-      * This shortcut is needed to avoid complex backtracking in case of obviously erroneous queries.
-      */
-    IParser::Pos lookahead(token_iterator);
-    if (!ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
-    {
-        while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
-        {
-            if (lookahead->isError())
-            {
-                out_error_message = getLexicalErrorMessage(query_begin, all_queries_end, *lookahead, hilite, query_description);
-                return nullptr;
-            }
-
-            ++lookahead;
-        }
-
-        /// We should not spoil the info about maximum parsed position in the original iterator.
-        tokens.reset();
-    }
-
     ASTPtr res;
     const bool parse_res = parser.parse(token_iterator, res, expected);
     const auto last_token = token_iterator.max();
     _out_query_end = last_token.end;
 
-    /// Also check on the AST level, because the generated AST depth can be greater than the recursion depth of the parser.
-    if (res && max_parser_depth)
-        res->checkDepth(max_parser_depth);
+    ASTInsertQuery * insert = nullptr;
+    if (parse_res)
+    {
+        if (auto * explain = res->as<ASTExplainQuery>())
+        {
+            if (auto explained_query = explain->getExplainedQuery())
+            {
+                insert = explained_query->as<ASTInsertQuery>();
+            }
+        }
+        else
+        {
+            insert = res->as<ASTInsertQuery>();
+        }
+    }
 
-    /// If parsed query ends at data for insertion. Data for insertion could be
-    /// in any format and not necessary be lexical correct, so we can't perform
-    /// most of the checks.
-    if (res && getInsertData(res))
+    // If parsed query ends at data for insertion. Data for insertion could be
+    // in any format and not necessary be lexical correct, so we can't perform
+    // most of the checks.
+    if (insert && insert->data)
+    {
         return res;
+    }
 
     // More granular checks for queries other than INSERT w/inline data.
     /// Lexical error
@@ -393,13 +352,10 @@ ASTPtr parseQueryAndMovePosition(
     const std::string & query_description,
     bool allow_multi_statements,
     size_t max_query_size,
-    size_t max_parser_depth,
-    size_t max_parser_backtracks)
+    size_t max_parser_depth)
 {
     std::string error_message;
-    ASTPtr res = tryParseQuery(
-        parser, pos, end, error_message, false, query_description, allow_multi_statements,
-        max_query_size, max_parser_depth, max_parser_backtracks, true);
+    ASTPtr res = tryParseQuery(parser, pos, end, error_message, false, query_description, allow_multi_statements, max_query_size, max_parser_depth);
 
     if (res)
         return res;
@@ -414,10 +370,9 @@ ASTPtr parseQuery(
     const char * end,
     const std::string & query_description,
     size_t max_query_size,
-    size_t max_parser_depth,
-    size_t max_parser_backtracks)
+    size_t max_parser_depth)
 {
-    return parseQueryAndMovePosition(parser, begin, end, query_description, false, max_query_size, max_parser_depth, max_parser_backtracks);
+    return parseQueryAndMovePosition(parser, begin, end, query_description, false, max_query_size, max_parser_depth);
 }
 
 
@@ -426,10 +381,9 @@ ASTPtr parseQuery(
     const std::string & query,
     const std::string & query_description,
     size_t max_query_size,
-    size_t max_parser_depth,
-    size_t max_parser_backtracks)
+    size_t max_parser_depth)
 {
-    return parseQuery(parser, query.data(), query.data() + query.size(), query_description, max_query_size, max_parser_depth, max_parser_backtracks);
+    return parseQuery(parser, query.data(), query.data() + query.size(), query_description, max_query_size, max_parser_depth);
 }
 
 
@@ -437,10 +391,9 @@ ASTPtr parseQuery(
     IParser & parser,
     const std::string & query,
     size_t max_query_size,
-    size_t max_parser_depth,
-    size_t max_parser_backtracks)
+    size_t max_parser_depth)
 {
-    return parseQuery(parser, query.data(), query.data() + query.size(), parser.getName(), max_query_size, max_parser_depth, max_parser_backtracks);
+    return parseQuery(parser, query.data(), query.data() + query.size(), parser.getName(), max_query_size, max_parser_depth);
 }
 
 
@@ -449,7 +402,6 @@ std::pair<const char *, bool> splitMultipartQuery(
     std::vector<std::string> & queries_list,
     size_t max_query_size,
     size_t max_parser_depth,
-    size_t max_parser_backtracks,
     bool allow_settings_after_format_in_insert)
 {
     ASTPtr ast;
@@ -466,11 +418,13 @@ std::pair<const char *, bool> splitMultipartQuery(
     {
         begin = pos;
 
-        ast = parseQueryAndMovePosition(parser, pos, end, "", true, max_query_size, max_parser_depth, max_parser_backtracks);
+        ast = parseQueryAndMovePosition(parser, pos, end, "", true, max_query_size, max_parser_depth);
 
-        if (ASTInsertQuery * insert = getInsertAST(ast))
+        auto * insert = ast->as<ASTInsertQuery>();
+
+        if (insert && insert->data)
         {
-            /// Data for INSERT is broken on the new line
+            /// Data for INSERT is broken on new line
             pos = insert->data;
             while (*pos && *pos != '\n')
                 ++pos;

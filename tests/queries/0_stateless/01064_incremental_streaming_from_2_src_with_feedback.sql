@@ -1,8 +1,5 @@
 SET joined_subquery_requires_alias = 0;
 SET max_threads = 1;
--- It affects number of read rows and max_rows_to_read.
-SET max_bytes_before_external_sort = 0;
-SET max_bytes_before_external_group_by = 0;
 
 -- incremental streaming usecase
 -- that has sense only if data filling order has guarantees of chronological order
@@ -25,8 +22,7 @@ AS
      minState( toUInt64(-1) ) as fastest_session,
      maxState( toUInt64(0) ) as biggest_inactivity_period
 FROM numbers(50000)
-GROUP BY id
-SETTINGS max_insert_threads=1;
+GROUP BY id;
 
 -- source table #1
 

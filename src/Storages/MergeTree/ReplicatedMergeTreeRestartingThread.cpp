@@ -1,11 +1,9 @@
 #include <IO/Operators.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Interpreters/Context.h>
-#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/randomSeed.h>
 #include <Core/ServerUUID.h>
@@ -26,11 +24,6 @@ namespace ErrorCodes
     extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
 
-namespace FailPoints
-{
-    extern const char finish_clean_quorum_failed_parts[];
-};
-
 /// Used to check whether it's us who set node `is_active`, or not.
 static String generateActiveNodeIdentifier()
 {
@@ -40,7 +33,7 @@ static String generateActiveNodeIdentifier()
 ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeRestartingThread)")
-    , log(getLogger(log_name))
+    , log(&Poco::Logger::get(log_name))
     , active_node_identifier(generateActiveNodeIdentifier())
 {
     const auto storage_settings = storage.getSettings();
@@ -248,7 +241,6 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
             storage.queue.removeFailedQuorumPart(part->info);
         }
     }
-    FailPointInjection::disableFailPoint(FailPoints::finish_clean_quorum_failed_parts);
 }
 
 
@@ -298,7 +290,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     ReplicatedMergeTreeAddress address = storage.getReplicatedMergeTreeAddress();
 
     String is_active_path = fs::path(storage.replica_path) / "is_active";
-    zookeeper->deleteEphemeralNodeIfContentMatches(is_active_path, active_node_identifier);
+    zookeeper->handleEphemeralNodeExistence(is_active_path, active_node_identifier);
 
     /// Simultaneously declare that this replica is active, and update the host.
     Coordination::Requests ops;
@@ -344,7 +336,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
 void ReplicatedMergeTreeRestartingThread::shutdown(bool part_of_full_shutdown)
 {
     /// Stop restarting_thread before stopping other tasks - so that it won't restart them again.
-    need_stop = part_of_full_shutdown;
+    need_stop = true;
     task->deactivate();
 
     /// Explicitly set the event, because the restarting thread will not set it again

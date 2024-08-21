@@ -1,15 +1,15 @@
 #include <Storages/IStorage.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/formatAST.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/BlockIO.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
@@ -92,8 +92,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
     {
         auto & create = create_query->as<ASTCreateQuery &>();
         create.uuid = UUIDHelpers::Nil;
-        if (create.targets)
-            create.targets->resetInnerUUIDs();
+        create.to_inner_uuid = UUIDHelpers::Nil;
     }
 
     MutableColumnPtr column = ColumnString::create();
@@ -105,13 +104,4 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         "statement"}}));
 }
 
-void registerInterpreterShowCreateQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterShowCreateQuery>(args.query, args.context);
-    };
-
-    factory.registerInterpreter("InterpreterShowCreateQuery", create_fn);
-}
 }

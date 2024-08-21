@@ -2,8 +2,6 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
-#include <Common/iota.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -12,6 +10,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashSet.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <numeric>
 
 
@@ -20,12 +19,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int DUPLICATE_COLUMN;
-    extern const int EXPERIMENTAL_FEATURE_ERROR;
+    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
+    extern const int DUPLICATE_COLUMN;
     extern const int NUMBER_OF_DIMENSIONS_MISMATCHED;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -247,7 +246,7 @@ void ColumnObject::Subcolumn::checkTypes() const
         prefix_types.push_back(current_type);
         auto prefix_common_type = getLeastSupertype(prefix_types);
         if (!prefix_common_type->equals(*current_type))
-            throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Data type {} of column at position {} cannot represent all columns from i-th prefix",
                 current_type->getName(), i);
     }
@@ -334,18 +333,7 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
     if (type_changed || info.need_convert)
         field = convertFieldToTypeOrThrow(field, *least_common_type.get());
 
-    if (!data.back()->tryInsert(field))
-    {
-        /** Normalization of the field above is pretty complicated (it uses several FieldVisitors),
-          * so in the case of a bug, we may get mismatched types.
-          * The `IColumn::insert` method does not check the type of the inserted field, and it can lead to a segmentation fault.
-          * Therefore, we use the safer `tryInsert` method to get an exception instead of a segmentation fault.
-          */
-        throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
-            "Cannot insert field {} to column {}",
-            field.dump(), data.back()->dumpStructure());
-    }
-
+    data.back()->insert(field);
     ++num_rows;
 }
 
@@ -486,7 +474,7 @@ void ColumnObject::Subcolumn::finalize()
             {
                 auto values = part->index(*offsets, offsets->size());
                 values = castColumn({values, from_type, ""}, to_type);
-                part = values->createWithOffsets(offsets_data, *createColumnConstWithDefaultValue(result_column->getPtr()), part_size, /*shift=*/ 0);
+                part = values->createWithOffsets(offsets_data, to_type->getDefault(), part_size, /*shift=*/ 0);
             }
         }
 
@@ -646,7 +634,7 @@ void ColumnObject::checkConsistency() const
     {
         if (num_rows != leaf->data.size())
         {
-            throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR, "Sizes of subcolumns are inconsistent in ColumnObject."
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of subcolumns are inconsistent in ColumnObject."
                 " Subcolumn '{}' has {} rows, but expected size is {}",
                 leaf->path.getPath(), leaf->data.size(), num_rows);
         }
@@ -698,7 +686,7 @@ void ColumnObject::forEachSubcolumnRecursively(RecursiveMutableColumnCallback ca
 
 void ColumnObject::insert(const Field & field)
 {
-    const auto & object = field.safeGet<const Object &>();
+    const auto & object = field.get<const Object &>();
 
     HashSet<StringRef, StringRefHash> inserted_paths;
     size_t old_size = size();
@@ -726,15 +714,6 @@ void ColumnObject::insert(const Field & field)
     ++num_rows;
 }
 
-bool ColumnObject::tryInsert(const Field & field)
-{
-    if (field.getType() != Field::Types::Which::Object)
-        return false;
-
-    insert(field);
-    return true;
-}
-
 void ColumnObject::insertDefault()
 {
     for (auto & entry : subcolumns)
@@ -754,7 +733,7 @@ void ColumnObject::get(size_t n, Field & res) const
 {
     assert(n < size());
     res = Object();
-    auto & object = res.safeGet<Object &>();
+    auto & object = res.get<Object &>();
 
     for (const auto & entry : subcolumns)
     {
@@ -763,20 +742,12 @@ void ColumnObject::get(size_t n, Field & res) const
     }
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnObject::insertFrom(const IColumn & src, size_t n)
-#else
-void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
-#endif
 {
     insert(src[n]);
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
-#else
-void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
-#endif
 {
     const auto & src_object = assert_cast<const ColumnObject &>(src);
 
@@ -867,7 +838,15 @@ MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
 void ColumnObject::getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const
 {
     res.resize(num_rows);
-    iota(res.data(), res.size(), size_t(0));
+    std::iota(res.begin(), res.end(), 0);
+}
+
+void ColumnObject::compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                                 PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                                 int direction, int nan_direction_hint) const
+{
+    return doCompareColumn<ColumnObject>(assert_cast<const ColumnObject &>(rhs), rhs_row_num, row_indexes,
+                                        compare_results, direction, nan_direction_hint);
 }
 
 void ColumnObject::getExtremes(Field & min, Field & max) const
@@ -882,6 +861,16 @@ void ColumnObject::getExtremes(Field & min, Field & max) const
         get(0, min);
         get(0, max);
     }
+}
+
+MutableColumns ColumnObject::scatter(ColumnIndex num_columns, const Selector & selector) const
+{
+    return scatterImpl<ColumnObject>(num_columns, selector);
+}
+
+void ColumnObject::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
 }
 
 const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & key) const
@@ -938,7 +927,7 @@ void ColumnObject::addSubcolumn(const PathInData & key, size_t new_size)
 void ColumnObject::addNestedSubcolumn(const PathInData & key, const FieldInfo & field_info, size_t new_size)
 {
     if (!key.hasNested())
-        throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Cannot add Nested subcolumn, because path doesn't contain Nested");
 
     bool inserted = false;
@@ -948,7 +937,7 @@ void ColumnObject::addNestedSubcolumn(const PathInData & key, const FieldInfo & 
     if (nested_node)
     {
         /// Find any leaf of Nested subcolumn.
-        const auto * leaf = Subcolumns::findLeaf(nested_node, [&](const auto &) { return true; });
+        const auto * leaf = subcolumns.findLeaf(nested_node, [&](const auto &) { return true; });
         assert(leaf);
 
         /// Recreate subcolumn with default values and the same sizes of arrays.
@@ -991,7 +980,7 @@ const ColumnObject::Subcolumns::Node * ColumnObject::getLeafOfTheSameNested(cons
     while (current_node)
     {
         /// Try to find the first Nested up to the current node.
-        const auto * node_nested = Subcolumns::findParent(current_node,
+        const auto * node_nested = subcolumns.findParent(current_node,
             [](const auto & candidate) { return candidate.isNested(); });
 
         if (!node_nested)
@@ -1001,7 +990,7 @@ const ColumnObject::Subcolumns::Node * ColumnObject::getLeafOfTheSameNested(cons
         /// for the last rows.
         /// If there are no leaves, skip current node and find
         /// the next node up to the current.
-        leaf = Subcolumns::findLeaf(node_nested,
+        leaf = subcolumns.findLeaf(node_nested,
             [&](const auto & candidate)
             {
                 return candidate.data.size() > old_size;
@@ -1101,10 +1090,4 @@ void ColumnObject::finalize()
     checkObjectHasNoAmbiguosPaths(getKeys());
 }
 
-void ColumnObject::updateHashFast(SipHash & hash) const
-{
-    for (const auto & entry : subcolumns)
-        for (auto & part : entry->data.data)
-            part->updateHashFast(hash);
-}
 }

@@ -16,11 +16,6 @@ using Processors = std::vector<ProcessorPtr>;
 
 namespace JSONBuilder { class JSONMap; }
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 /// Description of data stream.
 /// Single logical data stream may relate to many ports of pipeline.
 class DataStream
@@ -28,8 +23,11 @@ class DataStream
 public:
     Block header;
 
+    /// QueryPipeline has single port. Totals or extremes ports are not counted.
+    bool has_single_port = false;
+
     /// Sorting scope. Please keep the mutual order (more strong mode should have greater value).
-    enum class SortScope : uint8_t
+    enum class SortScope
     {
         None   = 0,
         Chunk  = 1, /// Separate chunks are sorted
@@ -48,7 +46,8 @@ public:
 
     bool hasEqualPropertiesWith(const DataStream & other) const
     {
-        return sort_description == other.sort_description
+        return has_single_port == other.has_single_port
+            && sort_description == other.sort_description
             && (sort_description.empty() || sort_scope == other.sort_scope);
     }
 
@@ -59,9 +58,6 @@ public:
 };
 
 using DataStreams = std::vector<DataStream>;
-
-class QueryPlan;
-using QueryPlanRawPtrs = std::list<QueryPlan *>;
 
 /// Single step of query plan.
 class IQueryPlanStep
@@ -108,36 +104,10 @@ public:
     /// Get description of processors added in current step. Should be called after updatePipeline().
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
-    /// Get child plans contained inside some steps (e.g ReadFromMerge) so that they are visible when doing EXPLAIN.
-    virtual QueryPlanRawPtrs getChildPlans() { return {}; }
-
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);
 
-    /// Updates the input streams of the given step. Used during query plan optimizations.
-    /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
-    /// (e.g. you update data stream traits or correctly remove / add columns).
-    void updateInputStreams(DataStreams input_streams_)
-    {
-        chassert(canUpdateInputStream());
-        input_streams = std::move(input_streams_);
-        updateOutputStream();
-    }
-
-    void updateInputStream(DataStream input_stream) { updateInputStreams(DataStreams{input_stream}); }
-
-    void updateInputStream(DataStream input_stream, size_t idx)
-    {
-        chassert(canUpdateInputStream() && idx < input_streams.size());
-        input_streams[idx] = input_stream;
-        updateOutputStream();
-    }
-
-    virtual bool canUpdateInputStream() const { return false; }
-
 protected:
-    virtual void updateOutputStream() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
-
     DataStreams input_streams;
     std::optional<DataStream> output_stream;
 

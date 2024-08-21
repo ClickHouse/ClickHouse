@@ -9,7 +9,6 @@
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 
-#include <algorithm>
 #include <set>
 
 
@@ -28,7 +27,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int INVALID_CONFIG_PARAMETER;
     extern const int UNKNOWN_POLICY;
     extern const int UNKNOWN_VOLUME;
     extern const int LOGICAL_ERROR;
@@ -42,7 +40,7 @@ StoragePolicy::StoragePolicy(
     const String & config_prefix,
     DiskSelectorPtr disks)
     : name(std::move(name_))
-    , log(getLogger("StoragePolicy (" + name + ")"))
+    , log(&Poco::Logger::get("StoragePolicy (" + name + ")"))
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     String volumes_prefix = config_prefix + ".volumes";
@@ -57,8 +55,6 @@ StoragePolicy::StoragePolicy(
         config.keys(volumes_prefix, keys);
     }
 
-    std::set<UInt64> volume_priorities;
-
     for (const auto & attr_name : keys)
     {
         if (!std::all_of(attr_name.begin(), attr_name.end(), isWordCharASCII))
@@ -66,27 +62,6 @@ StoragePolicy::StoragePolicy(
                             "Volume name can contain only alphanumeric and '_' in storage policy {} ({})",
                             backQuote(name), attr_name);
         volumes.emplace_back(createVolumeFromConfig(attr_name, config, volumes_prefix + "." + attr_name, disks));
-
-        UInt64 last_priority = volumes.back()->volume_priority;
-        if (last_priority != std::numeric_limits<UInt64>::max() && !volume_priorities.insert(last_priority).second)
-        {
-            throw Exception(
-                ErrorCodes::INVALID_CONFIG_PARAMETER,
-                "volume_priority values must be unique across the policy");
-        }
-    }
-
-    if (!volume_priorities.empty())
-    {
-        /// Check that priority values cover the range from 1 to N (lowest explicit priority)
-        if (*volume_priorities.begin() != 1 || *volume_priorities.rbegin() != volume_priorities.size())
-            throw Exception(
-                ErrorCodes::INVALID_CONFIG_PARAMETER,
-                "volume_priority values must cover the range from 1 to N (lowest priority specified) without gaps");
-
-        std::stable_sort(
-            volumes.begin(), volumes.end(),
-            [](const VolumePtr a, const VolumePtr b) { return a->volume_priority < b->volume_priority; });
     }
 
     if (volumes.empty() && name == DEFAULT_STORAGE_POLICY_NAME)
@@ -96,8 +71,7 @@ StoragePolicy::StoragePolicy(
             /* max_data_part_size_= */ 0,
             /* are_merges_avoided_= */ false,
             /* perform_ttl_move_on_insert_= */ true,
-            VolumeLoadBalancing::ROUND_ROBIN,
-            /* least_used_ttl_ms_= */ 60'000);
+            VolumeLoadBalancing::ROUND_ROBIN);
         volumes.emplace_back(std::move(default_volume));
     }
 
@@ -120,7 +94,7 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
     : volumes(std::move(volumes_))
     , name(std::move(name_))
     , move_factor(move_factor_)
-    , log(getLogger("StoragePolicy (" + name + ")"))
+    , log(&Poco::Logger::get("StoragePolicy (" + name + ")"))
 {
     if (volumes.empty())
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Storage policy {} must contain at least one Volume.", backQuote(name));
@@ -442,7 +416,7 @@ StoragePolicySelector::StoragePolicySelector(
          */
 
         policies.emplace(name, std::make_shared<StoragePolicy>(name, config, config_prefix + "." + name, disks));
-        LOG_INFO(getLogger("StoragePolicySelector"), "Storage policy {} loaded", backQuote(name));
+        LOG_INFO(&Poco::Logger::get("StoragePolicySelector"), "Storage policy {} loaded", backQuote(name));
     }
 
     /// Add default policy if it isn't explicitly specified.
@@ -454,26 +428,20 @@ StoragePolicySelector::StoragePolicySelector(
 }
 
 
-StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks, Strings & new_disks) const
+StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks) const
 {
     std::shared_ptr<StoragePolicySelector> result = std::make_shared<StoragePolicySelector>(config, config_prefix, disks);
-    std::set<String> disks_before_reload;
-    std::set<String> disks_after_reload;
+
     /// First pass, check.
     for (const auto & [name, policy] : policies)
     {
-        if (!name.starts_with(TMP_STORAGE_POLICY_PREFIX))
-        {
-            if (!result->policies.contains(name))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage policy {} is missing in new configuration", backQuote(name));
+        if (name.starts_with(TMP_STORAGE_POLICY_PREFIX))
+            continue;
 
-            policy->checkCompatibleWith(result->policies[name]);
-        }
+        if (!result->policies.contains(name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage policy {} is missing in new configuration", backQuote(name));
 
-        for (const auto & disk : policy->getDisks())
-        {
-            disks_before_reload.insert(disk->getName());
-        }
+        policy->checkCompatibleWith(result->policies[name]);
     }
 
     /// Second pass, load.
@@ -484,17 +452,7 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
             result->policies[name] = policy;
         else
             result->policies[name] = std::make_shared<StoragePolicy>(policy, config, config_prefix + "." + name, disks);
-
-        for (const auto & disk : result->policies[name]->getDisks())
-            disks_after_reload.insert(disk->getName());
     }
-
-    std::set_difference(
-        disks_after_reload.begin(),
-        disks_after_reload.end(),
-        disks_before_reload.begin(),
-        disks_before_reload.end(),
-        std::back_inserter(new_disks));
 
     return result;
 }

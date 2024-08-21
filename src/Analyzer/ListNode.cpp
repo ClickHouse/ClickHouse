@@ -38,13 +38,13 @@ void ListNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
     }
 }
 
-bool ListNode::isEqualImpl(const IQueryTreeNode &, CompareOptions) const
+bool ListNode::isEqualImpl(const IQueryTreeNode &) const
 {
     /// No state
     return true;
 }
 
-void ListNode::updateTreeHashImpl(HashState &, CompareOptions) const
+void ListNode::updateTreeHashImpl(HashState &) const
 {
     /// No state
 }

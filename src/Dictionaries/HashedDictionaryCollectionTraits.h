@@ -7,7 +7,10 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/PackedHashMap.h>
 
-namespace DB::HashedDictionaryImpl
+namespace DB
+{
+
+namespace HashedDictionaryImpl
 {
 
 /// sparse_hash_map/sparse_hash_set
@@ -98,5 +101,7 @@ template <typename C> auto resizeContainer(C & c, size_t size) requires (IsBuilt
 template <typename C> void clearContainer(C & c) requires (IsBuiltinHashTable<C>) { return c.clearAndShrink(); }
 
 // NOLINTEND(*)
+
+}
 
 }

@@ -7,8 +7,6 @@
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnDefault.h>
-#include <Common/SettingsChanges.h>
-#include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
 
 #include <boost/multi_index/member.hpp>
@@ -29,19 +27,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-enum class VirtualsKind : UInt8
-{
-    None = 0,
-    Ephemeral = 1,
-    Persistent = 2,
-    All = Ephemeral | Persistent,
-};
-
 struct GetColumnsOptions
 {
     enum Kind : UInt8
     {
-        None = 0,
         Ordinary = 1,
         Materialized = 2,
         Aliases = 4,
@@ -52,7 +41,7 @@ struct GetColumnsOptions
         All = AllPhysical | Aliases | Ephemeral,
     };
 
-    GetColumnsOptions(Kind kind_) : kind(kind_) {} /// NOLINT(google-explicit-constructor)
+    GetColumnsOptions(Kind kind_) : kind(kind_) {}
 
     GetColumnsOptions & withSubcolumns(bool value = true)
     {
@@ -60,9 +49,9 @@ struct GetColumnsOptions
         return *this;
     }
 
-    GetColumnsOptions & withVirtuals(VirtualsKind value = VirtualsKind::All)
+    GetColumnsOptions & withVirtuals(bool value = true)
     {
-        virtuals_kind = value;
+        with_virtuals = value;
         return *this;
     }
 
@@ -72,11 +61,17 @@ struct GetColumnsOptions
         return *this;
     }
 
-    Kind kind;
-    VirtualsKind virtuals_kind = VirtualsKind::None;
+    GetColumnsOptions & withSystemColumns(bool value = true)
+    {
+        with_system_columns = value;
+        return *this;
+    }
 
+    Kind kind;
     bool with_subcolumns = false;
+    bool with_virtuals = false;
     bool with_extended_objects = false;
+    bool with_system_columns = false;
 };
 
 /// Description of a single table column (in CREATE TABLE for example).
@@ -87,19 +82,12 @@ struct ColumnDescription
     ColumnDefault default_desc;
     String comment;
     ASTPtr codec;
-    SettingsChanges settings;
     ASTPtr ttl;
-    ColumnStatisticsDescription statistics;
 
     ColumnDescription() = default;
-    ColumnDescription(const ColumnDescription & other) { *this = other; }
-    ColumnDescription & operator=(const ColumnDescription & other);
-    ColumnDescription(ColumnDescription && other) noexcept { *this = std::move(other); }
-    ColumnDescription & operator=(ColumnDescription && other) noexcept;
-
+    ColumnDescription(ColumnDescription &&) = default;
+    ColumnDescription(const ColumnDescription &) = default;
     ColumnDescription(String name_, DataTypePtr type_);
-    ColumnDescription(String name_, DataTypePtr type_, String comment_);
-    ColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_);
 
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
@@ -110,20 +98,13 @@ struct ColumnDescription
 
 
 /// Description of multiple table columns (in CREATE TABLE for example).
-class ColumnsDescription : public IHints<>
+class ColumnsDescription : public IHints<1, ColumnsDescription>
 {
 public:
     ColumnsDescription() = default;
-
-    static ColumnsDescription fromNamesAndTypes(NamesAndTypes ordinary);
-
     explicit ColumnsDescription(NamesAndTypesList ordinary);
 
-    ColumnsDescription(std::initializer_list<ColumnDescription> ordinary);
-
     explicit ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases);
-
-    void setAliases(NamesAndAliases aliases);
 
     /// `after_column` can be a Nested column name;
     void add(ColumnDescription column, const String & after_column = String(), bool first = false, bool add_subcolumns = true);
@@ -166,7 +147,6 @@ public:
     bool hasNested(const String & column_name) const;
     bool hasSubcolumn(const String & column_name) const;
     const ColumnDescription & get(const String & column_name) const;
-    const ColumnDescription * tryGet(const String & column_name) const;
 
     template <typename F>
     void modify(const String & column_name, F && f)
@@ -195,12 +175,9 @@ public:
     Names getNamesOfPhysical() const;
 
     bool hasPhysical(const String & column_name) const;
-    bool hasNotAlias(const String & column_name) const;
     bool hasAlias(const String & column_name) const;
     bool hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     bool hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const;
-
-    bool hasOnlyOrdinary() const;
 
     NameAndTypePair getPhysical(const String & column_name) const;
     NameAndTypePair getColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
@@ -220,6 +197,9 @@ public:
 
     /// Does column has non default specified compression codec
     bool hasCompressionCodec(const String & column_name) const;
+    CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
+    CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
+    ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
 
     String toString() const;
     static ColumnsDescription parse(const String & str);
@@ -273,5 +253,4 @@ private:
 /// don't have strange constructions in default expression like SELECT query or
 /// arrayJoin function.
 Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);
-
 }

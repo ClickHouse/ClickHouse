@@ -32,8 +32,7 @@ public:
         const ZooKeeperPtr & zookeeper_,
         const std::string & lock_prefix_,
         const std::string & lock_name_,
-        const std::string & lock_message_ = "",
-        bool throw_if_lost_ = true);
+        const std::string & lock_message_ = "");
 
     ~ZooKeeperLock();
 
@@ -47,13 +46,12 @@ private:
 
     std::string lock_path;
     std::string lock_message;
-    bool throw_if_lost{true};
-    LoggerPtr log;
+    Poco::Logger * log;
     bool locked = false;
 
 };
 
 std::unique_ptr<ZooKeeperLock> createSimpleZooKeeperLock(
-    const ZooKeeperPtr & zookeeper, const String & lock_prefix, const String & lock_name, const String & lock_message, bool throw_if_lost = true);
+    const ZooKeeperPtr & zookeeper, const String & lock_prefix, const String & lock_name, const String & lock_message);
 
 }

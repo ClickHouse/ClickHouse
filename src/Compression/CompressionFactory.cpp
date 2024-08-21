@@ -1,19 +1,17 @@
+#include "config.h"
+
 #include <Compression/CompressionFactory.h>
-#include <Compression/CompressionCodecMultiple.h>
-#include <Compression/CompressionCodecNone.h>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Poco/String.h>
+#include <IO/ReadBuffer.h>
+#include <Parsers/queryToString.h>
+#include <Compression/CompressionCodecMultiple.h>
+#include <Compression/CompressionCodecNone.h>
+#include <IO/WriteHelpers.h>
 
 #include <boost/algorithm/string/join.hpp>
-
-#include "config.h"
 
 namespace DB
 {
@@ -46,12 +44,6 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
     }
 }
 
-CompressionCodecPtr CompressionCodecFactory::get(const String & compression_codec) const
-{
-    ParserCodec codec_parser;
-    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    return CompressionCodecFactory::instance().get(ast, nullptr);
-}
 
 CompressionCodecPtr CompressionCodecFactory::get(
     const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default, bool only_generic) const
@@ -175,44 +167,38 @@ void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
-#if USE_QATLIB
-void registerCodecZSTDQAT(CompressionCodecFactory & factory);
-#endif
 void registerCodecMultiple(CompressionCodecFactory & factory);
-#if USE_QPL
 void registerCodecDeflateQpl(CompressionCodecFactory & factory);
-#endif
 
 /// Keeper use only general-purpose codecs, so we don't need these special codecs
 /// in standalone build
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 void registerCodecDelta(CompressionCodecFactory & factory);
 void registerCodecT64(CompressionCodecFactory & factory);
 void registerCodecDoubleDelta(CompressionCodecFactory & factory);
 void registerCodecGorilla(CompressionCodecFactory & factory);
 void registerCodecEncrypted(CompressionCodecFactory & factory);
 void registerCodecFPC(CompressionCodecFactory & factory);
-void registerCodecGCD(CompressionCodecFactory & factory);
+#endif
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
     registerCodecNone(*this);
     registerCodecLZ4(*this);
     registerCodecZSTD(*this);
-#if USE_QATLIB
-    registerCodecZSTDQAT(*this);
-#endif
     registerCodecLZ4HC(*this);
     registerCodecMultiple(*this);
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     registerCodecDelta(*this);
     registerCodecT64(*this);
     registerCodecDoubleDelta(*this);
     registerCodecGorilla(*this);
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
-#if USE_QPL
+#ifdef ENABLE_QPL_COMPRESSION
     registerCodecDeflateQpl(*this);
 #endif
-    registerCodecGCD(*this);
+#endif
 
     default_codec = get("LZ4", {});
 }

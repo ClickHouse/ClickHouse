@@ -1,0 +1,10 @@
+2021.12.13 10:12:26.940169 [ 38398 ] {} <Warning> Access(local directory): File /var/lib/clickhouse/access/users.list doesn't exist
+2021.12.13 10:12:26.940204 [ 38398 ] {} <Warning> Access(local directory): Recovering lists in directory /var/lib/clickhouse/access/
+2021.12.13 10:12:40.649453 [ 38445 ] {} <Error> Access(user directories): from: 127.0.0.1, user: default: Authentication failed: Code: 193. DB::Exception: Invalid credentials. (WRONG_PASSWORD), Stack trace (when copying this message, always include the lines below):
+
+0. DB::Exception::Exception(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > const&, int, bool) @ 0x9b722d4 in /usr/bin/clickhouse
+1. DB::IAccessStorage::throwInvalidCredentials() @ 0x119d9b27 in /usr/bin/clickhouse
+2. DB::IAccessStorage::loginImpl(DB::Credentials const&, Poco::Net::IPAddress const&, DB::ExternalAuthenticators const&) const @ 0x119d98d7 in /usr/bin/clickhouse
+3. DB::IAccessStorage::login(DB::Credentials const&, Poco::Net::IPAddress const&, DB::ExternalAuthenticators const&, bool) const @ 0x119d9084 in /usr/bin/clickhouse
+4. DB::MultipleAccessStorage::loginImpl(DB::Credentials const&, Poco::Net::IPAddress const&, DB::ExternalAuthenticators const&) const @ 0x119ff93c in /usr/bin/clickhouse
+5. DB::IAccessStorage::login(DB::Credentials const&, Poco::Net::IPAddress const&, DB::ExternalAuthenticators const&, bool) const @ 0x119d9084 in /usr/bin/clickhouse

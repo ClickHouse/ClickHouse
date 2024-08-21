@@ -1,11 +1,8 @@
-#include <base/getThreadId.h>
-#include <base/defines.h> /// THREAD_SANITIZER
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
-#include <Common/Fiber.h>
-#include <sys/resource.h>
+#include <base/scope_guard.h>
+#include <base/defines.h> /// THREAD_SANITIZER
 #include <pthread.h>
-#include <unistd.h>
 #include <cstdint>
 
 #if defined(OS_FREEBSD)
@@ -54,7 +51,7 @@ static size_t getStackSize(void ** out_address)
 #   if defined(OS_FREEBSD) || defined(OS_SUNOS)
     pthread_attr_init(&attr);
     if (0 != pthread_attr_get_np(pthread_self(), &attr))
-        throw ErrnoException(ErrorCodes::CANNOT_PTHREAD_ATTR, "Cannot pthread_attr_get_np");
+        throwFromErrno("Cannot pthread_attr_get_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
 #   else
     if (0 != pthread_getattr_np(pthread_self(), &attr))
     {
@@ -64,38 +61,15 @@ static size_t getStackSize(void ** out_address)
             return 0;
         }
         else
-            throw ErrnoException(ErrorCodes::CANNOT_PTHREAD_ATTR, "Cannot pthread_getattr_np");
+            throwFromErrno("Cannot pthread_getattr_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
     }
 #   endif
 
     SCOPE_EXIT({ pthread_attr_destroy(&attr); });
 
     if (0 != pthread_attr_getstack(&attr, &address, &size))
-        throw ErrnoException(ErrorCodes::CANNOT_PTHREAD_ATTR, "Cannot pthread_attr_getstack");
-
-#ifdef USE_MUSL
-    /// Adjust stack size for the main thread under musl.
-    /// musl returns not the maximum available stack, but current stack.
-    ///
-    /// TL;DR;
-    ///
-    /// musl uses mremap() and calls it until it returns ENOMEM, but after the
-    /// available stack there will be a guard page (that is handled by the
-    /// kernel to expand the stack), and when you will try to mremap() on it
-    /// you will get EFAULT.
-    if (static_cast<pid_t>(getThreadId()) == getpid())
-    {
-        ::rlimit rlimit{};
-        if (::getrlimit(RLIMIT_STACK, &rlimit))
-            return 0;
-
-        address = reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(address) + size);
-        size = rlimit.rlim_cur;
-        address = reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(address) - size);
-    }
-#endif
-
-#endif
+        throwFromErrno("Cannot pthread_getattr_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
+#endif // OS_DARWIN
 
     if (out_address)
         *out_address = address;
@@ -113,10 +87,6 @@ static size_t getStackSize(void ** out_address)
 __attribute__((__weak__)) void checkStackSize()
 {
     using namespace DB;
-
-    /// Not implemented for coroutines.
-    if (Fiber::getCurrentFiber())
-        return;
 
     if (!stack_address)
         max_stack_size = getStackSize(&stack_address);
@@ -140,7 +110,7 @@ __attribute__((__weak__)) void checkStackSize()
 
     /// We assume that stack grows towards lower addresses. And that it starts to grow from the end of a chunk of memory of max_stack_size.
     if (int_frame_address > int_stack_address + max_stack_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Frame address is greater than stack begin address");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: frame address is greater than stack begin address");
 
     size_t stack_size = int_stack_address + max_stack_size - int_frame_address;
     size_t max_stack_size_allowed = static_cast<size_t>(max_stack_size * STACK_SIZE_FREE_RATIO);

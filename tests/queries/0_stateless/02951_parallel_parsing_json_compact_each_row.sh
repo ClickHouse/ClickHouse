@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_LOCAL} --input-format-parallel-parsing 1 --query "
+${CLICKHOUSE_LOCAL} --input-format-parallel-parsing 1 --input_format_json_read_numbers_as_strings 1 --query "
     SELECT sum(cityHash64(*)) FROM file('$CUR_DIR/02951_data.jsonl.zst', JSONCompactEachRow, '
             time_offset Decimal64(3),
             lat Float64,

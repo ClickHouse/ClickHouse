@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterShowPrivilegesQuery.h>
 #include <Interpreters/executeQuery.h>
 
@@ -13,17 +12,7 @@ InterpreterShowPrivilegesQuery::InterpreterShowPrivilegesQuery(const ASTPtr & qu
 
 BlockIO InterpreterShowPrivilegesQuery::execute()
 {
-    return executeQuery("SELECT * FROM system.privileges", context, QueryFlags{ .internal = true }).second;
+    return executeQuery("SELECT * FROM system.privileges", context, true);
 }
-
-void registerInterpreterShowPrivilegesQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterShowPrivilegesQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterShowPrivilegesQuery", create_fn);
-}
-
 
 }

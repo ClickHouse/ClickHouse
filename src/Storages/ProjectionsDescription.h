@@ -22,7 +22,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 /// Description of projections for Storage
 struct ProjectionDescription
 {
-    enum class Type : uint8_t
+    enum class Type
     {
         Normal,
         Aggregate,
@@ -55,6 +55,8 @@ struct ProjectionDescription
     StorageMetadataPtr metadata;
 
     size_t key_size = 0;
+
+    bool is_minmax_count_projection = false;
 
     /// If a primary key expression is used in the minmax_count projection, store the name of max expression.
     String primary_key_max_column_name;
@@ -104,7 +106,7 @@ struct ProjectionDescription
 using ProjectionDescriptionRawPtr = const ProjectionDescription *;
 
 /// All projections in storage
-struct ProjectionsDescription : public IHints<>
+struct ProjectionsDescription : public IHints<1, ProjectionsDescription>
 {
     ProjectionsDescription() = default;
     ProjectionsDescription(ProjectionsDescription && other) = default;

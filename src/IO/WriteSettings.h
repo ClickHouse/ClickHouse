@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/Throttler_fwd.h>
-#include <Common/Scheduler/ResourceLink.h>
+#include <IO/ResourceLink.h>
 
 namespace DB
 {
@@ -20,10 +20,11 @@ struct WriteSettings
     bool enable_filesystem_cache_on_write_operations = false;
     bool enable_filesystem_cache_log = false;
     bool throw_on_error_from_cache = false;
-    size_t filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
 
     bool s3_allow_parallel_part_upload = true;
-    bool azure_allow_parallel_part_upload = true;
+
+    /// Monitoring
+    bool for_object_storage = false; // to choose which profile events should be incremented
 
     bool operator==(const WriteSettings & other) const = default;
 };

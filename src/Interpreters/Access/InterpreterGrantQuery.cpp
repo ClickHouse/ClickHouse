@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterGrantQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
@@ -118,7 +117,7 @@ namespace
     /// Checks if the current user has enough access rights granted with grant option to grant or revoke specified access rights.
     void checkGrantOption(
         const AccessControl & access_control,
-        const ContextAccessWrapper & current_user_access,
+        const ContextAccess & current_user_access,
         const std::vector<UUID> & grantees_from_query,
         bool & need_check_grantees_are_allowed,
         const AccessRightsElements & elements_to_grant,
@@ -168,7 +167,7 @@ namespace
         access_to_revoke.grant(elements_to_revoke);
         access_to_revoke.makeIntersection(all_granted_access);
 
-        /// Build more accurate list of elements to revoke, now we use an intersection of the initial list of elements to revoke
+        /// Build more accurate list of elements to revoke, now we use an intesection of the initial list of elements to revoke
         /// and all the granted access rights to these grantees.
         bool grant_option = !elements_to_revoke.empty() && elements_to_revoke[0].grant_option;
         elements_to_revoke.clear();
@@ -178,29 +177,13 @@ namespace
                 elements_to_revoke.emplace_back(std::move(element_to_revoke));
         }
 
-        /// Additional check for REVOKE
-        ///
-        /// If user1 has the rights
-        /// GRANT SELECT ON *.* TO user1;
-        /// REVOKE SELECT ON system.* FROM user1;
-        /// REVOKE SELECT ON mydb.* FROM user1;
-        ///
-        /// And user2 has the rights
-        /// GRANT SELECT ON *.* TO user2;
-        /// REVOKE SELECT ON system.* FROM user2;
-        ///
-        /// the query `REVOKE SELECT ON *.* FROM user1` executed by user2 should succeed.
-        if (current_user_access.getAccessRights()->containsWithGrantOption(access_to_revoke))
-            return;
-
-        /// Technically, this check always fails if `containsWithGrantOption` returns `false`. But we still call it to get a nice exception message.
         current_user_access.checkGrantOption(elements_to_revoke);
     }
 
     /// Checks if the current user has enough roles granted with admin option to grant or revoke specified roles.
     void checkAdminOption(
         const AccessControl & access_control,
-        const ContextAccessWrapper & current_user_access,
+        const ContextAccess & current_user_access,
         const std::vector<UUID> & grantees_from_query,
         bool & need_check_grantees_are_allowed,
         const std::vector<UUID> & roles_to_grant,
@@ -255,7 +238,7 @@ namespace
         if (roles_to_revoke.all)
             boost::range::set_difference(all_granted_roles_set, roles_to_revoke.except_ids, std::back_inserter(roles_to_revoke_ids));
         else
-            std::erase_if(roles_to_revoke_ids, [&](const UUID & id) { return !all_granted_roles_set.count(id); });
+            boost::range::remove_erase_if(roles_to_revoke_ids, [&](const UUID & id) { return !all_granted_roles_set.count(id); });
 
         roles_to_revoke = roles_to_revoke_ids;
         current_user_access.checkAdminOption(roles_to_revoke_ids);
@@ -277,7 +260,7 @@ namespace
     /// This function is less accurate than checkAdminOption() because it cannot use any information about
     /// granted roles the grantees currently have (due to those grantees are located on multiple nodes,
     /// we just don't have the full information about them).
-    void checkAdminOptionForExecutingOnCluster(const ContextAccessWrapper & current_user_access,
+    void checkAdminOptionForExecutingOnCluster(const ContextAccess & current_user_access,
                                                const std::vector<UUID> roles_to_grant,
                                                const RolesOrUsersSet & roles_to_revoke)
     {
@@ -376,7 +359,7 @@ namespace
     /// Calculates all available rights to grant with current user intersection.
     void calculateCurrentGrantRightsWithIntersection(
         AccessRights & rights,
-        std::shared_ptr<const ContextAccessWrapper> current_user_access,
+        std::shared_ptr<const ContextAccess> current_user_access,
         const AccessRightsElements & elements_to_grant)
     {
         AccessRightsElements current_user_grantable_elements;
@@ -498,15 +481,6 @@ void InterpreterGrantQuery::updateUserFromQuery(User & user, const ASTGrantQuery
 void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery & query)
 {
     updateFromQuery(role, query);
-}
-
-void registerInterpreterGrantQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterGrantQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterGrantQuery", create_fn);
 }
 
 }

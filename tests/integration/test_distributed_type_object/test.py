@@ -31,9 +31,6 @@ def started_cluster():
 
 
 def test_distributed_type_object(started_cluster):
-    node1.query("TRUNCATE TABLE local_table")
-    node2.query("TRUNCATE TABLE local_table")
-
     node1.query(
         'INSERT INTO local_table FORMAT JSONEachRow {"id": 1, "data": {"k1": 10}}'
     )
@@ -62,14 +59,7 @@ def test_distributed_type_object(started_cluster):
     )
 
     expected = TSV("120\n")
-    assert (
-        TSV(
-            node1.query(
-                "SELECT sum(data.k2 * id) FROM dist_table SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0"
-            )
-        )
-        == expected
-    )
+    assert TSV(node1.query("SELECT sum(data.k2 * id) FROM dist_table")) == expected
 
     node1.query("TRUNCATE TABLE local_table")
     node2.query("TRUNCATE TABLE local_table")
@@ -88,11 +78,10 @@ def test_distributed_type_object(started_cluster):
 3\t\t\t\tfoo"""
     )
 
-    # The following query is not supported by analyzer now
     assert (
         TSV(
             node1.query(
-                "SELECT id, data.k1, data.k2.k3, data.k2.k4, data.k5 FROM dist_table ORDER BY id SETTINGS enable_analyzer = 0"
+                "SELECT id, data.k1, data.k2.k3, data.k2.k4, data.k5 FROM dist_table ORDER BY id"
             )
         )
         == expected

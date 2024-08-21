@@ -1,11 +1,9 @@
 {
-    "docker/packager/binary-builder": {
+    "docker/packager/binary": {
         "name": "clickhouse/binary-builder",
-        "dependent": []
-    },
-    "docker/packager/cctools": {
-        "name": "clickhouse/cctools",
-        "dependent": []
+        "dependent": [
+            "docker/test/codebrowser"
+        ]
     },
     "docker/test/compatibility/centos": {
         "name": "clickhouse/test-old-centos",
@@ -23,10 +21,6 @@
         "name": "clickhouse/fuzzer",
         "dependent": []
     },
-    "docker/test/libfuzzer": {
-        "name": "clickhouse/libfuzzer",
-        "dependent": []
-    },
     "docker/test/performance-comparison": {
         "name": "clickhouse/performance-comparison",
         "dependent": []
@@ -34,6 +28,7 @@
     "docker/test/util": {
         "name": "clickhouse/test-util",
         "dependent": [
+            "docker/packager/binary",
             "docker/test/base",
             "docker/test/fasttest"
         ]
@@ -63,15 +58,18 @@
         "name": "clickhouse/upgrade-check",
         "dependent": []
     },
+    "docker/test/codebrowser": {
+        "name": "clickhouse/codebrowser",
+        "dependent": []
+    },
     "docker/test/integration/runner": {
+        "only_amd64": true,
         "name": "clickhouse/integration-tests-runner",
         "dependent": []
     },
     "docker/test/fasttest": {
         "name": "clickhouse/fasttest",
-        "dependent": [
-            "docker/packager/binary-builder"
-        ]
+        "dependent": []
     },
     "docker/test/style": {
         "name": "clickhouse/style-test",
@@ -121,11 +119,9 @@
     "docker/test/base": {
          "name": "clickhouse/test-base",
          "dependent": [
-            "docker/test/clickbench",
             "docker/test/fuzzer",
             "docker/test/integration/base",
             "docker/test/keeper-jepsen",
-            "docker/test/libfuzzer",
             "docker/test/server-jepsen",
             "docker/test/sqllogic",
             "docker/test/sqltest",
@@ -148,10 +144,6 @@
     },
     "docker/test/server-jepsen": {
         "name": "clickhouse/server-jepsen-test",
-        "dependent": []
-    },
-    "docker/test/clickbench": {
-        "name": "clickhouse/clickbench",
         "dependent": []
     },
     "docker/test/install/deb": {

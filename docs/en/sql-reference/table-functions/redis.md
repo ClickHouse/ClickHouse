@@ -34,7 +34,6 @@ redis(host:port, key, structure[, db_index[, password[, pool_size]]])
 
 - queries with key equals or in filtering will be optimized to multi keys lookup from Redis. If queries without filtering key full table scan will happen which is a heavy operation.
 
-[Named collections](/docs/en/operations/named-collections.md) are not supported for `redis` table function at the moment.
 
 **Returned Value**
 
@@ -42,7 +41,17 @@ A table object with key as Redis key, other columns packaged together as Redis v
 
 ## Usage Example {#usage-example}
 
-Read from Redis:
+Create a table in ClickHouse which allows to read data from Redis:
+
+``` sql
+CREATE TABLE redis_table
+(
+    `k` String,
+    `m` String,
+    `n` UInt32
+)
+ENGINE = Redis('redis1:6379') PRIMARY KEY(k);
+```
 
 ```sql
 SELECT * FROM redis(
@@ -50,15 +59,6 @@ SELECT * FROM redis(
     'key',
     'key String, v1 String, v2 UInt32'
 )
-```
-
-Insert into Redis:
-
-```sql
-INSERT INTO TABLE FUNCTION redis(
-    'redis1:6379',
-    'key',
-    'key String, v1 String, v2 UInt32') values ('1', '1', 1);
 ```
 
 **See Also**

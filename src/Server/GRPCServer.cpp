@@ -1,7 +1,6 @@
 #include "GRPCServer.h"
 #include <limits>
 #include <memory>
-#include <Poco/Net/SocketAddress.h>
 #if USE_GRPC
 
 #include <Columns/ColumnString.h>
@@ -11,11 +10,9 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
@@ -79,7 +76,7 @@ namespace
         static std::once_flag once_flag;
         std::call_once(once_flag, [&config]
         {
-            static LoggerRawPtr logger = getRawLogger("grpc");
+            static Poco::Logger * logger = &Poco::Logger::get("grpc");
             gpr_set_log_function([](gpr_log_func_args* args)
             {
                 if (args->severity == GPR_LOG_SEVERITY_DEBUG)
@@ -164,7 +161,7 @@ namespace
                     case GRPCObsoleteTransportCompression::NO_COMPRESSION: res.algorithm = GRPC_COMPRESS_NONE; break;
                     case GRPCObsoleteTransportCompression::DEFLATE: res.algorithm = GRPC_COMPRESS_DEFLATE; break;
                     case GRPCObsoleteTransportCompression::GZIP: res.algorithm = GRPC_COMPRESS_GZIP; break;
-                    case GRPCObsoleteTransportCompression::STREAM_GZIP: throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "STREAM_GZIP is no longer supported"); /// was flagged experimental in gRPC, removed as per v1.44
+                    case GRPCObsoleteTransportCompression::STREAM_GZIP: res.algorithm = GRPC_COMPRESS_STREAM_GZIP; break;
                     default: throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "Unknown compression algorithm: {}", GRPCObsoleteTransportCompression::CompressionAlgorithm_Name(query_info.obsolete_result_compression().algorithm()));
                 }
 
@@ -209,7 +206,7 @@ namespace
             else if (str == "gzip")
                 algorithm = GRPC_COMPRESS_GZIP;
             else if (str == "stream_gzip")
-                throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "STREAM_GZIP is no longer supported"); /// was flagged experimental in gRPC, removed as per v1.44
+                algorithm = GRPC_COMPRESS_STREAM_GZIP;
             else
                 throw Exception(error_code, "Unknown compression algorithm: '{}'", str);
         }
@@ -322,27 +319,8 @@ namespace
 
         Poco::Net::SocketAddress getClientAddress() const
         {
-            /// Returns a string like ipv4:127.0.0.1:55930 or ipv6:%5B::1%5D:55930
-            String uri_encoded_peer = grpc_context.peer();
-
-            constexpr const std::string_view ipv4_prefix = "ipv4:";
-            constexpr const std::string_view ipv6_prefix = "ipv6:";
-
-            bool ipv4 = uri_encoded_peer.starts_with(ipv4_prefix);
-            bool ipv6 = uri_encoded_peer.starts_with(ipv6_prefix);
-
-            if (!ipv4 && !ipv6)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ipv4 or ipv6 protocol in peer address, got {}", uri_encoded_peer);
-
-            auto prefix = ipv4 ? ipv4_prefix : ipv6_prefix;
-            auto family = ipv4 ? Poco::Net::AddressFamily::Family::IPv4 : Poco::Net::AddressFamily::Family::IPv6;
-
-            uri_encoded_peer= uri_encoded_peer.substr(prefix.length());
-
-            String peer;
-            Poco::URI::decode(uri_encoded_peer, peer);
-
-            return Poco::Net::SocketAddress{family, peer};
+            String peer = grpc_context.peer();
+            return Poco::Net::SocketAddress{peer.substr(peer.find(':') + 1)};
         }
 
         std::optional<String> getClientHeader(const String & key) const
@@ -441,11 +419,7 @@ namespace
         void read(GRPCQueryInfo & query_info_, const CompletionCallback & callback) override
         {
             if (!query_info.has_value())
-            {
                 callback(false);
-                return;
-            }
-
             query_info_ = std::move(query_info).value();
             query_info.reset();
             callback(true);
@@ -512,11 +486,7 @@ namespace
         void read(GRPCQueryInfo & query_info_, const CompletionCallback & callback) override
         {
             if (!query_info.has_value())
-            {
                 callback(false);
-                return;
-            }
-
             query_info_ = std::move(query_info).value();
             query_info.reset();
             callback(true);
@@ -597,7 +567,7 @@ namespace
             std::tie(new_pos, new_size) = callback();
             if (!new_size)
                 return false;
-            BufferBase::set(static_cast<BufferBase::Position>(const_cast<char *>(static_cast<const char *>(new_pos))), new_size, 0);
+            BufferBase::set(static_cast<BufferBase::Position>(const_cast<void *>(new_pos)), new_size, 0);
             return true;
         }
 
@@ -640,10 +610,10 @@ namespace
 
 
     /// Handles a connection after a responder is started (i.e. after getting a new call).
-    class Call // NOLINT(clang-analyzer-optin.performance.Padding)
+    class Call
     {
     public:
-        Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_);
+        Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, Poco::Logger * log_);
         ~Call();
 
         void start(const std::function<void(void)> & on_finish_call_callback);
@@ -685,7 +655,7 @@ namespace
         const CallType call_type;
         std::unique_ptr<BaseResponder> responder;
         IServer & iserver;
-        LoggerRawPtr log = nullptr;
+        Poco::Logger * log = nullptr;
 
         std::optional<Session> session;
         ContextMutablePtr query_context;
@@ -746,7 +716,7 @@ namespace
         ThreadFromGlobalPool call_thread;
     };
 
-    Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_)
+    Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, Poco::Logger * log_)
         : call_type(call_type_), responder(std::move(responder_)), iserver(iserver_), log(log_)
     {
     }
@@ -874,7 +844,7 @@ namespace
             query_context->getClientInfo().client_trace_context,
             query_context->getSettingsRef(),
             query_context->getOpenTelemetrySpanLog());
-        thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+        thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
 
         /// Prepare for sending exceptions and logs.
         const Settings & settings = query_context->getSettingsRef();
@@ -905,7 +875,7 @@ namespace
         const char * begin = query_text.data();
         const char * end = begin + query_text.size();
         ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
-        ast = parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+        ast = parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth);
 
         /// Choose input format.
         insert_query = ast->as<ASTInsertQuery>();
@@ -977,7 +947,7 @@ namespace
             query_end = insert_query->data;
         }
         String query(begin, query_end);
-        io = ::DB::executeQuery(query, query_context).second;
+        io = ::DB::executeQuery(true, query, query_context);
     }
 
     void Call::processInput()
@@ -1083,8 +1053,8 @@ namespace
         read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), input_compression_method);
 
         assert(!pipeline);
-        auto source
-            = query_context->getInputFormat(input_format, *read_buffer, header, query_context->getSettingsRef().max_insert_block_size);
+        auto source = query_context->getInputFormat(
+            input_format, *read_buffer, header, query_context->getSettings().max_insert_block_size);
 
         pipeline = std::make_unique<QueryPipeline>(std::move(source));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -1152,7 +1122,8 @@ namespace
                         external_table_context->applySettingsChanges(settings_changes);
                     }
                     auto in = external_table_context->getInputFormat(
-                        format, *buf, metadata_snapshot->getSampleBlock(), external_table_context->getSettingsRef().max_insert_block_size);
+                        format, *buf, metadata_snapshot->getSampleBlock(),
+                        external_table_context->getSettings().max_insert_block_size);
 
                     QueryPipelineBuilder cur_pipeline;
                     cur_pipeline.init(Pipe(std::move(in)));
@@ -1367,7 +1338,7 @@ namespace
                 addLogsToResult();
                 sendResult();
             }
-            catch (...) // NOLINT(bugprone-empty-catch)
+            catch (...)
             {
             }
         }
@@ -1577,8 +1548,6 @@ namespace
         stats.set_allocated_bytes(info.bytes);
         stats.set_applied_limit(info.hasAppliedLimit());
         stats.set_rows_before_limit(info.getRowsBeforeLimit());
-        stats.set_applied_aggregation(info.hasAppliedAggregation());
-        stats.set_rows_before_aggregation(info.getRowsBeforeAggregation());
     }
 
     void Call::addLogsToResult()
@@ -1737,19 +1706,10 @@ namespace
 class GRPCServer::Runner
 {
 public:
-    explicit Runner(GRPCServer & owner_) : owner(owner_), log(owner.log) {}
+    explicit Runner(GRPCServer & owner_) : owner(owner_) {}
 
     ~Runner()
     {
-        try
-        {
-            stop();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "~Runner");
-        }
-
         if (queue_thread.joinable())
             queue_thread.join();
     }
@@ -1767,27 +1727,13 @@ public:
             }
             catch (...)
             {
-                tryLogCurrentException(log, "run");
+                tryLogCurrentException("GRPCServer");
             }
         };
         queue_thread = ThreadFromGlobalPool{runner_function};
     }
 
-    void stop()
-    {
-        std::lock_guard lock{mutex};
-        should_stop = true;
-
-        if (current_calls.empty())
-        {
-            /// If there are no current calls then we call shutdownQueue() to signal the queue to stop waiting for next events.
-            /// The following line will make CompletionQueue::Next() stop waiting if the queue is empty and return false instead.
-            shutdownQueue();
-
-            /// If there are some current calls then we can't call shutdownQueue() right now because we want to let the current calls finish.
-            /// In this case function shutdownQueue() will be called later in run().
-        }
-    }
+    void stop() { stopReceivingNewCalls(); }
 
     size_t getNumCurrentCalls() const
     {
@@ -1812,6 +1758,12 @@ private:
         responders_for_new_calls[call_type]->start(
             owner.grpc_service, *owner.queue, *owner.queue,
             [this, call_type](bool ok) { onNewCall(call_type, ok); });
+    }
+
+    void stopReceivingNewCalls()
+    {
+        std::lock_guard lock{mutex};
+        should_stop = true;
     }
 
     void onNewCall(CallType call_type, bool responder_started_ok)
@@ -1846,47 +1798,38 @@ private:
     void run()
     {
         setThreadName("GRPCServerQueue");
-
-        bool ok = false;
-        void * tag = nullptr;
-
-        while (owner.queue->Next(&tag, &ok))
+        while (true)
         {
+            {
+                std::lock_guard lock{mutex};
+                finished_calls.clear(); /// Destroy finished calls.
+
+                /// If (should_stop == true) we continue processing until there is no active calls.
+                if (should_stop && current_calls.empty())
+                {
+                    bool all_responders_gone = std::all_of(
+                        responders_for_new_calls.begin(), responders_for_new_calls.end(),
+                        [](std::unique_ptr<BaseResponder> & responder) { return !responder; });
+                    if (all_responders_gone)
+                        break;
+                }
+            }
+
+            bool ok = false;
+            void * tag = nullptr;
+            if (!owner.queue->Next(&tag, &ok))
+            {
+                /// Queue shutted down.
+                break;
+            }
+
             auto & callback = *static_cast<CompletionCallback *>(tag);
             callback(ok);
-
-            std::lock_guard lock{mutex};
-            finished_calls.clear(); /// Destroy finished calls.
-
-            /// If (should_stop == true) we continue processing while there are current calls.
-            if (should_stop && current_calls.empty())
-                shutdownQueue();
         }
-
-        /// CompletionQueue::Next() returns false if the queue is fully drained and shut down.
-    }
-
-    /// Shutdown the queue if that isn't done yet.
-    void shutdownQueue()
-    {
-        chassert(should_stop);
-        if (queue_is_shut_down)
-            return;
-
-        queue_is_shut_down = true;
-
-        /// Server should be shut down before CompletionQueue.
-        if (owner.grpc_server)
-            owner.grpc_server->Shutdown();
-
-        if (owner.queue)
-            owner.queue->Shutdown();
     }
 
     GRPCServer & owner;
-    LoggerRawPtr log;
     ThreadFromGlobalPool queue_thread;
-    bool queue_is_shut_down = false;
     std::vector<std::unique_ptr<BaseResponder>> responders_for_new_calls;
     std::map<Call *, std::unique_ptr<Call>> current_calls;
     std::vector<std::unique_ptr<Call>> finished_calls;
@@ -1898,12 +1841,22 @@ private:
 GRPCServer::GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_)
     : iserver(iserver_)
     , address_to_listen(address_to_listen_)
-    , log(getRawLogger("GRPCServer"))
+    , log(&Poco::Logger::get("GRPCServer"))
     , runner(std::make_unique<Runner>(*this))
 {}
 
 GRPCServer::~GRPCServer()
 {
+    /// Server should be shutdown before CompletionQueue.
+    if (grpc_server)
+        grpc_server->Shutdown();
+
+    /// Completion Queue should be shutdown before destroying the runner,
+    /// because the runner is now probably executing CompletionQueue::Next() on queue_thread
+    /// which is blocked until an event is available or the queue is shutting down.
+    if (queue)
+        queue->Shutdown();
+
     runner.reset();
 }
 

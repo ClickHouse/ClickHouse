@@ -15,10 +15,10 @@ namespace DB
   * In memory, it is represented as one column of a nested type, whose size is equal to the sum of the sizes of all arrays,
   *  and as an array of offsets in it, which allows you to get each element.
   */
-class ColumnArray final : public COWHelper<IColumnHelper<ColumnArray>, ColumnArray>
+class ColumnArray final : public COWHelper<IColumn, ColumnArray>
 {
 private:
-    friend class COWHelper<IColumnHelper<ColumnArray>, ColumnArray>;
+    friend class COWHelper<IColumn, ColumnArray>;
 
     /** Create an array column with specified values and offsets. */
     ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && offsets_column);
@@ -48,7 +48,7 @@ public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
-    using Base = COWHelper<IColumnHelper<ColumnArray>, ColumnArray>;
+    using Base = COWHelper<IColumn, ColumnArray>;
 
     static Ptr create(const ColumnPtr & nested_column, const ColumnPtr & offsets_column)
     {
@@ -77,25 +77,15 @@ public:
     StringRef getDataAt(size_t n) const override;
     bool isDefaultAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    char * serializeValueIntoMemory(size_t, char * memory) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    WeakHash32 getWeakHash32() const override;
+    void updateWeakHash32(WeakHash32 & hash) const override;
     void updateHashFast(SipHash & hash) const override;
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-#else
-    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-#endif
     void insert(const Field & x) override;
-    bool tryInsert(const Field & x) override;
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t n) override;
-#else
-    void doInsertFrom(const IColumn & src_, size_t n) override;
-#endif
     void insertDefault() override;
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
@@ -103,12 +93,12 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     template <typename Type> ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
-#else
-    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
-#endif
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                       int direction, int nan_direction_hint) const override;
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator & collator) const override;
+    bool hasEqualValues() const override;
     void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
                             size_t limit, int nan_direction_hint, Permutation & res) const override;
     void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
@@ -118,8 +108,6 @@ public:
     void updatePermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
     void reserve(size_t n) override;
-    void prepareForSquashing(const Columns & source_columns) override;
-    void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
@@ -154,9 +142,12 @@ public:
     const ColumnPtr & getOffsetsPtr() const { return offsets; }
     ColumnPtr & getOffsetsPtr() { return offsets; }
 
-    /// Returns a copy of the data column's part corresponding to a specified range of rows.
-    /// For example, `getDataInRange(0, size())` is the same as `getDataPtr()->clone()`.
-    MutableColumnPtr getDataInRange(size_t start, size_t length) const;
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
+    {
+        return scatterImpl<ColumnArray>(num_columns, selector);
+    }
+
+    void gather(ColumnGathererStream & gatherer_stream) override;
 
     ColumnPtr compress() const override;
 
@@ -181,15 +172,17 @@ public:
         return false;
     }
 
+    double getRatioOfDefaultRows(double sample_ratio) const override;
+    UInt64 getNumberOfDefaultRows() const override;
+
+    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
+
     void finalize() override { data->finalize(); }
     bool isFinalized() const override { return data->isFinalized(); }
 
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
 
     size_t getNumberOfDimensions() const;
-
-    bool hasDynamicStructure() const override { return getData().hasDynamicStructure(); }
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 
 private:
     WrappedPtr data;

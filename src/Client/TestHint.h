@@ -6,7 +6,6 @@
 #include <fmt/format.h>
 
 #include <Core/Types.h>
-#include <Common/Exception.h>
 
 
 namespace DB
@@ -54,7 +53,7 @@ class TestHint
 {
 public:
     using ErrorVector = std::vector<int>;
-    explicit TestHint(const String & query_);
+    TestHint(const String & query_);
 
     const auto & serverErrors() const { return server_errors; }
     const auto & clientErrors() const { return client_errors; }
@@ -66,16 +65,11 @@ public:
     bool hasExpectedClientError(int error);
     bool hasExpectedServerError(int error);
 
-    bool needRetry(const std::unique_ptr<Exception> & server_exception, size_t * retries_counter);
-
 private:
     const String & query;
     ErrorVector server_errors{};
     ErrorVector client_errors{};
     std::optional<bool> echo;
-
-    size_t max_retries = 0;
-    bool retry_until = false;
 
     void parse(Lexer & comment_lexer, bool is_leading_hint);
 
@@ -83,12 +77,12 @@ private:
     {
         if (actual_server_error && std::find(server_errors.begin(), server_errors.end(), actual_server_error) == server_errors.end())
             return false;
-        if (!actual_server_error && !server_errors.empty())
+        if (!actual_server_error && server_errors.size())
             return false;
 
         if (actual_client_error && std::find(client_errors.begin(), client_errors.end(), actual_client_error) == client_errors.end())
             return false;
-        if (!actual_client_error && !client_errors.empty())
+        if (!actual_client_error && client_errors.size())
             return false;
 
         return true;
@@ -96,7 +90,7 @@ private:
 
     bool lostExpectedError(int actual_server_error, int actual_client_error) const
     {
-        return (!server_errors.empty() && !actual_server_error) || (!client_errors.empty() && !actual_client_error);
+        return (server_errors.size() && !actual_server_error) || (client_errors.size() && !actual_client_error);
     }
 };
 
@@ -118,7 +112,7 @@ struct fmt::formatter<DB::TestHint::ErrorVector>
     }
 
     template <typename FormatContext>
-    auto format(const DB::TestHint::ErrorVector & ErrorVector, FormatContext & ctx) const
+    auto format(const DB::TestHint::ErrorVector & ErrorVector, FormatContext & ctx)
     {
         if (ErrorVector.empty())
             return fmt::format_to(ctx.out(), "{}", 0);

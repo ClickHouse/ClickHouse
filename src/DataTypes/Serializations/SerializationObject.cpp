@@ -5,11 +5,13 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/NestedUtils.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/JSONParsers/RapidJSONParser.h>
+#include <Common/HashTable/HashSet.h>
 #include <Columns/ColumnObject.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
+#include <Functions/FunctionsConversion.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -27,8 +29,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int CANNOT_PARSE_TEXT;
-    extern const int EXPERIMENTAL_FEATURE_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 template <typename Parser>
@@ -104,9 +105,9 @@ void SerializationObject<Parser>::deserializeWholeText(IColumn & column, ReadBuf
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationObject<Parser>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    deserializeTextImpl(column, [&](String & s) { settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(s, istr) : readEscapedString(s, istr); });
+    deserializeTextImpl(column, [&](String & s) { readEscapedString(s, istr); });
 }
 
 template <typename Parser>
@@ -176,7 +177,7 @@ void SerializationObject<Parser>::serializeBinaryBulkStatePrefix(
     auto * stream = settings.getter(settings.path);
 
     if (!stream)
-        throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR, "Missing stream for kind of binary serialization");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for kind of binary serialization");
 
     auto [tuple_column, tuple_type] = unflattenObjectToTuple(column_object);
 
@@ -210,8 +211,7 @@ void SerializationObject<Parser>::serializeBinaryBulkStateSuffix(
 template <typename Parser>
 void SerializationObject<Parser>::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state,
-    SubstreamsDeserializeStatesCache * cache) const
+    DeserializeBinaryBulkStatePtr & state) const
 {
     checkSerializationIsSupported(settings);
     if (state)
@@ -259,7 +259,7 @@ void SerializationObject<Parser>::deserializeBinaryBulkStatePrefix(
     }
 
     settings.path.push_back(Substream::ObjectData);
-    state_object->nested_serialization->deserializeBinaryBulkStatePrefix(settings, state_object->nested_state, cache);
+    state_object->nested_serialization->deserializeBinaryBulkStatePrefix(settings, state_object->nested_state);
     settings.path.pop_back();
 
     state = std::move(state_object);
@@ -288,7 +288,7 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
 
     if (!state_object->nested_type->equals(*tuple_type))
     {
-        throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Types of internal column of Object mismatched. Expected: {}, Got: {}",
             state_object->nested_type->getName(), tuple_type->getName());
     }
@@ -344,20 +344,7 @@ void SerializationObject<Parser>::deserializeBinaryBulkFromString(
     state.nested_serialization->deserializeBinaryBulkWithMultipleStreams(
         column_string, limit, settings, state.nested_state, cache);
 
-    size_t input_rows_count = column_string->size();
-    column_object.reserve(input_rows_count);
-
-    FormatSettings format_settings;
-    for (size_t i = 0; i < input_rows_count; ++i)
-    {
-        const auto & val = column_string->getDataAt(i);
-        ReadBufferFromMemory read_buffer(val.data, val.size);
-        deserializeWholeText(column_object, read_buffer, format_settings);
-
-        if (!read_buffer.eof())
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
-                "Cannot parse string to column Object. Expected eof");
-    }
+    ConvertImplGenericFromString<ColumnString>::executeImpl(*column_string, column_object, *this, column_string->size());
 }
 
 template <typename Parser>
@@ -524,22 +511,6 @@ void SerializationObject<Parser>::serializeTextCSV(const IColumn & column, size_
     WriteBufferFromOwnString ostr_str;
     serializeTextImpl(column, row_num, ostr_str, settings);
     writeCSVString(ostr_str.str(), ostr);
-}
-
-template <typename Parser>
-void SerializationObject<Parser>::serializeTextMarkdown(
-    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    if (settings.markdown.escape_special_characters)
-    {
-        WriteBufferFromOwnString ostr_str;
-        serializeTextImpl(column, row_num, ostr_str, settings);
-        writeMarkdownEscapedString(ostr_str.str(), ostr);
-    }
-    else
-    {
-        serializeTextEscaped(column, row_num, ostr, settings);
-    }
 }
 
 template <typename Parser>

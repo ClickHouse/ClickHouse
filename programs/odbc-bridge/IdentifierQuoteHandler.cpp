@@ -7,11 +7,13 @@
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ParserQueryWithOutput.h>
+#include <Parsers/parseQuery.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
+#include <base/scope_guard.h>
 #include "getIdentifierQuote.h"
 #include "validateODBCConnectionString.h"
 #include "ODBCPooledConnectionFactory.h"
@@ -19,7 +21,7 @@
 
 namespace DB
 {
-void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     HTMLForm params(getContext()->getSettingsRef(), request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
@@ -28,7 +30,7 @@ void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServ
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
-            response.send()->writeln(message);
+            *response.send() << message << std::endl;
         LOG_WARNING(log, fmt::runtime(message));
     };
 
@@ -74,7 +76,7 @@ void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServ
 
         auto identifier = getIdentifierQuote(std::move(connection));
 
-        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
+        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
         try
         {
             writeStringBinary(identifier, out);

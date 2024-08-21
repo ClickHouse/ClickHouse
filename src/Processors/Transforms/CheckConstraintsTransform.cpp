@@ -10,7 +10,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <Storages/VirtualColumnUtils.h>
 
 
 namespace DB
@@ -32,7 +31,6 @@ CheckConstraintsTransform::CheckConstraintsTransform(
     , table_id(table_id_)
     , constraints_to_check(constraints_.filterConstraints(ConstraintsDescription::ConstraintType::CHECK))
     , expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
-    , context(std::move(context_))
 {
 }
 
@@ -41,10 +39,6 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
 {
     if (chunk.getNumRows() > 0)
     {
-        if (rows_written == 0)
-            for (const auto & expression : expressions)
-                VirtualColumnUtils::buildSetsForDAG(expression->getActionsDAG(), context);
-
         Block block_to_calculate = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
         for (size_t i = 0; i < expressions.size(); ++i)
         {
@@ -63,7 +57,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
 
             auto result_column = res_column.column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
 
-            if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&*result_column))
+            if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(*result_column))
             {
                 const auto & nested_column = column_nullable->getNestedColumnPtr();
 

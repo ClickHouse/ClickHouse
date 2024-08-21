@@ -15,7 +15,7 @@ class TableJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
 class RowBitmaps;
-enum class JoinTableSide : uint8_t;
+enum class JoinTableSide;
 
 class MergeJoin : public IJoin
 {
@@ -117,7 +117,7 @@ private:
 
     Names lowcard_right_keys;
 
-    LoggerPtr log;
+    Poco::Logger * log;
 
     void changeLeftColumns(Block & block, MutableColumns && columns) const;
     void addRightColumns(Block & block, MutableColumns && columns);

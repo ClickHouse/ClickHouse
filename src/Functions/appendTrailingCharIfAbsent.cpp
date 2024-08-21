@@ -1,10 +1,10 @@
 #include <Columns/ColumnString.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <base/range.h>
-#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -46,10 +46,10 @@ private:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the first argument of function {}", arguments[0]->getName(), getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
         if (!isString(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the second argument of function {}", arguments[1]->getName(), getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[1]->getName(), getName());
 
         return std::make_shared<DataTypeString>();
     }
@@ -57,7 +57,7 @@ private:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const auto & column = arguments[0].column;
         const auto & column_char = arguments[1].column;
@@ -80,13 +80,14 @@ private:
             auto & dst_data = col_res->getChars();
             auto & dst_offsets = col_res->getOffsets();
 
-            dst_data.resize(src_data.size() + input_rows_count);
-            dst_offsets.resize(input_rows_count);
+            const auto size = src_offsets.size();
+            dst_data.resize(src_data.size() + size);
+            dst_offsets.resize(size);
 
             ColumnString::Offset src_offset{};
             ColumnString::Offset dst_offset{};
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (const auto i : collections::range(0, size))
             {
                 const auto src_length = src_offsets[i] - src_offset;
                 memcpySmallAllowReadWriteOverflow15(&dst_data[dst_offset], &src_data[src_offset], src_length);

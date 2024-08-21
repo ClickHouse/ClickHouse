@@ -9,7 +9,11 @@ namespace DB
 class PingHandler : public HTTPRequestHandler
 {
 public:
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    explicit PingHandler(size_t keep_alive_timeout_) : keep_alive_timeout(keep_alive_timeout_) {}
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
+
+private:
+    size_t keep_alive_timeout;
 };
 
 }

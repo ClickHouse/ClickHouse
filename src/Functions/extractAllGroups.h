@@ -25,7 +25,7 @@ namespace ErrorCodes
 }
 
 
-enum class ExtractAllGroupsResultKind : uint8_t
+enum class ExtractAllGroupsResultKind
 {
     VERTICAL,
     HORIZONTAL
@@ -71,10 +71,10 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "const String or const FixedString"},
-            {"needle", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or const FixedString"},
+            {"haystack", &isStringOrFixedString<IDataType>, nullptr, "const String or const FixedString"},
+            {"needle", &isStringOrFixedString<IDataType>, isColumnConst, "const String or const FixedString"},
         };
-        validateFunctionArguments(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         /// Two-dimensional array of strings, each `row` of top array represents matching groups.
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
@@ -92,7 +92,7 @@ public:
         if (needle.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Length of 'needle' argument must be greater than 0.");
 
-        const OptimizedRegularExpression holder = Regexps::createRegexp<false, false, false>(needle);
+        const Regexps::Regexp holder = Regexps::createRegexp<false, false, false>(needle);
         const auto & regexp = holder.getRE2();
 
         if (!regexp)

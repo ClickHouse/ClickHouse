@@ -1,4 +1,5 @@
 #include "IOUringReader.h"
+#include <memory>
 
 #if USE_LIBURING
 
@@ -12,18 +13,15 @@
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <future>
-#include <memory>
 
 namespace ProfileEvents
 {
     extern const Event ReadBufferFromFileDescriptorRead;
     extern const Event ReadBufferFromFileDescriptorReadFailed;
     extern const Event ReadBufferFromFileDescriptorReadBytes;
-    extern const Event AsynchronousReaderIgnoredBytes;
 
     extern const Event IOUringSQEsSubmitted;
-    extern const Event IOUringSQEsResubmitsAsync;
-    extern const Event IOUringSQEsResubmitsSync;
+    extern const Event IOUringSQEsResubmits;
     extern const Event IOUringCQEsCompleted;
     extern const Event IOUringCQEsFailed;
 }
@@ -47,7 +45,7 @@ namespace ErrorCodes
 }
 
 IOUringReader::IOUringReader(uint32_t entries_)
-    : log(getLogger("IOUringReader"))
+    : log(&Poco::Logger::get("IOUringReader"))
 {
     struct io_uring_probe * probe = io_uring_get_probe();
     if (!probe)
@@ -78,7 +76,7 @@ IOUringReader::IOUringReader(uint32_t entries_)
 
     int ret = io_uring_queue_init_params(entries_, &ring, &params);
     if (ret < 0)
-        ErrnoException::throwWithErrno(ErrorCodes::IO_URING_INIT_FAILED, -ret, "Failed initializing io_uring");
+        throwFromErrno("Failed initializing io_uring", ErrorCodes::IO_URING_INIT_FAILED, -ret);
 
     cq_entries = params.cq_entries;
     ring_completion_monitor = std::make_unique<ThreadFromGlobalPool>([this] { monitorRing(); });
@@ -150,12 +148,10 @@ int IOUringReader::submitToRing(EnqueuedRequest & enqueued)
     io_uring_prep_read(sqe, fd, request.buf, static_cast<unsigned>(request.size - enqueued.bytes_read), request.offset + enqueued.bytes_read);
     int ret = 0;
 
-    ret = io_uring_submit(&ring);
-    while (ret == -EINTR || ret == -EAGAIN)
+    do
     {
-        ProfileEvents::increment(ProfileEvents::IOUringSQEsResubmitsSync);
         ret = io_uring_submit(&ring);
-    }
+    } while (ret == -EINTR || ret == -EAGAIN);
 
     if (ret > 0 && !enqueued.resubmitting)
     {
@@ -269,7 +265,7 @@ void IOUringReader::monitorRing()
         if (cqe->res == -EAGAIN || cqe->res == -EINTR)
         {
             enqueued.resubmitting = true;
-            ProfileEvents::increment(ProfileEvents::IOUringSQEsResubmitsAsync);
+            ProfileEvents::increment(ProfileEvents::IOUringSQEsResubmits);
 
             ret = submitToRing(enqueued);
             if (ret <= 0)
@@ -313,7 +309,6 @@ void IOUringReader::monitorRing()
             // potential short read, re-submit
             enqueued.resubmitting = true;
             enqueued.bytes_read += bytes_read;
-            ProfileEvents::increment(ProfileEvents::IOUringSQEsResubmitsAsync);
 
             ret = submitToRing(enqueued);
             if (ret <= 0)
@@ -324,7 +319,6 @@ void IOUringReader::monitorRing()
         }
         else
         {
-            ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, enqueued.request.ignore);
             enqueued.promise.set_value(Result{ .size = total_bytes_read, .offset = enqueued.request.ignore });
             finalizeRequest(it);
         }

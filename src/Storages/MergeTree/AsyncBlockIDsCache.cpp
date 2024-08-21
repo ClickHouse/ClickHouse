@@ -1,8 +1,7 @@
-#include <Storages/MergeTree/AsyncBlockIDsCache.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <Storages/MergeTree/AsyncBlockIDsCache.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 
 #include <unordered_set>
 
@@ -19,7 +18,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-static constexpr int FAILURE_RETRY_MS = 3000;
 
 template <typename TStorage>
 struct AsyncBlockIDsCache<TStorage>::Cache : public std::unordered_set<String>
@@ -32,11 +30,34 @@ struct AsyncBlockIDsCache<TStorage>::Cache : public std::unordered_set<String>
 };
 
 template <typename TStorage>
+std::vector<String> AsyncBlockIDsCache<TStorage>::getChildren()
+{
+    auto zookeeper = storage.getZooKeeper();
+
+    auto watch_callback = [last_time = this->last_updatetime.load()
+                           , my_update_min_interval = this->update_min_interval
+                           , my_task = task->shared_from_this()](const Coordination::WatchResponse &)
+    {
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_time < my_update_min_interval)
+        {
+            std::chrono::milliseconds sleep_time = std::chrono::duration_cast<std::chrono::milliseconds>(my_update_min_interval - (now - last_time));
+            my_task->scheduleAfter(sleep_time.count());
+        }
+        else
+            my_task->schedule();
+    };
+    std::vector<String> children;
+    Coordination::Stat stat;
+    zookeeper->tryGetChildrenWatch(path, children, &stat, watch_callback);
+    return children;
+}
+
+template <typename TStorage>
 void AsyncBlockIDsCache<TStorage>::update()
 try
 {
-    auto zookeeper = storage.getZooKeeper();
-    std::vector<String> paths = zookeeper->getChildren(path);
+    std::vector<String> paths = getChildren();
     std::unordered_set<String> set;
     for (String & p : paths)
     {
@@ -48,20 +69,21 @@ try
         ++version;
     }
     cv.notify_all();
+    last_updatetime = std::chrono::steady_clock::now();
 }
 catch (...)
 {
     LOG_INFO(log, "Updating async block ids cache failed. Reason: {}", getCurrentExceptionMessage(false));
-    task->scheduleAfter(FAILURE_RETRY_MS);
+    task->scheduleAfter(update_min_interval.count());
 }
 
 template <typename TStorage>
 AsyncBlockIDsCache<TStorage>::AsyncBlockIDsCache(TStorage & storage_)
-    : storage(storage_)
-    , update_wait(storage.getSettings()->async_block_ids_cache_update_wait_ms)
-    , path(storage.getZooKeeperPath() + "/async_blocks")
-    , log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)")
-    , log(getLogger(log_name))
+    : storage(storage_),
+    update_min_interval(storage.getSettings()->async_block_ids_cache_min_update_interval_ms),
+    path(storage.getZooKeeperPath() + "/async_blocks"),
+    log_name(storage.getStorageID().getFullTableName() + " (AsyncBlockIDsCache)"),
+    log(&Poco::Logger::get(log_name))
 {
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ update(); });
 }
@@ -73,16 +95,6 @@ void AsyncBlockIDsCache<TStorage>::start()
         task->activateAndSchedule();
 }
 
-template <typename TStorage>
-void AsyncBlockIDsCache<TStorage>::triggerCacheUpdate()
-{
-    /// Trigger task update. Watch-based updates may produce a lot of
-    /// redundant work in case of multiple replicas, so we use manually controlled updates
-    /// in case of duplicates
-    if (!task->schedule())
-        LOG_TRACE(log, "Task is already scheduled, will wait for update for {}ms", update_wait.count());
-}
-
 /// Caller will keep the version of last call. When the caller calls again, it will wait util gets a newer version.
 template <typename TStorage>
 Strings AsyncBlockIDsCache<TStorage>::detectConflicts(const Strings & paths, UInt64 & last_version)
@@ -90,20 +102,21 @@ Strings AsyncBlockIDsCache<TStorage>::detectConflicts(const Strings & paths, UIn
     if (!storage.getSettings()->use_async_block_ids_cache)
         return {};
 
+    std::unique_lock lk(mu);
+    /// For first time access of this cache, the `last_version` is zero, so it will not block here.
+    /// For retrying request, We compare the request version and cache version, because zk only returns
+    /// incomplete information of duplication, we need to update the cache to find out more duplication.
+    /// The timeout here is to prevent deadlock, just in case.
+    cv.wait_for(lk, update_min_interval * 2, [&]{return version != last_version;});
+
+    if (version == last_version)
+        LOG_INFO(log, "Read cache with a old version {}", last_version);
+
     CachePtr cur_cache;
-    {
-        std::unique_lock lk(mu);
-        /// For first time access of this cache, the `last_version` is zero, so it will not block here.
-        /// For retrying request, We compare the request version and cache version, because zk only returns
-        /// incomplete information of duplication, we need to update the cache to find out more duplication.
-        cv.wait_for(lk, update_wait, [&]{return version != last_version;});
+    cur_cache = cache_ptr;
+    last_version = version;
 
-        if (version == last_version)
-            LOG_INFO(log, "Read cache with a old version {}", last_version);
-
-        cur_cache = cache_ptr;
-        last_version = version;
-    }
+    lk.unlock();
 
     if (cur_cache == nullptr)
         return {};

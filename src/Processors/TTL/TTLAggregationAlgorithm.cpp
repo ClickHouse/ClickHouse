@@ -1,19 +1,17 @@
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
 
 TTLAggregationAlgorithm::TTLAggregationAlgorithm(
-    const TTLExpressions & ttl_expressions_,
     const TTLDescription & description_,
     const TTLInfo & old_ttl_info_,
     time_t current_time_,
     bool force_,
     const Block & header_,
     const MergeTreeData & storage_)
-    : ITTLAlgorithm(ttl_expressions_, description_, old_ttl_info_, current_time_, force_)
+    : ITTLAlgorithm(description_, old_ttl_info_, current_time_, force_)
     , header(header_)
 {
     current_key_value.resize(description.group_by_keys.size());
@@ -32,8 +30,8 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         false,
         settings.max_rows_to_group_by,
         settings.group_by_overflow_mode,
-        /*group_by_two_level_threshold*/0,
-        /*group_by_two_level_threshold_bytes*/0,
+        0,
+        0,
         settings.max_bytes_before_external_group_by,
         settings.empty_result_for_aggregation_by_empty_set,
         storage_.getContext()->getTempDataOnDisk(),
@@ -43,10 +41,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         settings.min_count_to_compile_aggregate_expression,
         settings.max_block_size,
         settings.enable_software_prefetch_in_aggregation,
-        /*only_merge=*/ false,
-        settings.optimize_group_by_constant_keys,
-        settings.min_chunk_bytes_for_parallel_parsing,
-        /*stats_collecting_params=*/ {});
+        false /* only_merge */);
 
     aggregator = std::make_unique<Aggregator>(header, params);
 
@@ -77,8 +72,8 @@ void TTLAggregationAlgorithm::execute(Block & block)
         const auto & column_names = header.getNames();
         MutableColumns aggregate_columns = header.cloneEmptyColumns();
 
-        auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
-        auto where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
+        auto ttl_column = executeExpressionAndGetColumn(description.expression, block, description.result_column);
+        auto where_column = executeExpressionAndGetColumn(description.where_expression, block, description.where_result_column);
 
         size_t rows_aggregated = 0;
         size_t current_key_start = 0;
@@ -102,17 +97,7 @@ void TTLAggregationAlgorithm::execute(Block & block)
                 }
             }
 
-            /// We are observing the row with new the aggregation key.
-            /// In this case we definitely need to finish the current aggregation for the previuos key and
-            /// write results to `result_columns`.
-            const bool observing_new_key = !same_as_current;
-            /// We are observing the row with the same aggregation key, but TTL is not expired anymore.
-            /// In this case we need to finish aggregation here. The current row has to be written as is.
-            const bool no_new_rows_to_aggregate_within_the_same_key = same_as_current && !ttl_expired;
-            /// The aggregation for this aggregation key is done.
-            const bool need_to_flush_aggregation_state = observing_new_key || no_new_rows_to_aggregate_within_the_same_key;
-
-            if (need_to_flush_aggregation_state)
+            if (!same_as_current)
             {
                 if (rows_with_current_key)
                 {
@@ -159,8 +144,8 @@ void TTLAggregationAlgorithm::execute(Block & block)
     /// If some rows were aggregated we have to recalculate ttl info's
     if (some_rows_were_aggregated)
     {
-        auto ttl_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
-        auto where_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
+        auto ttl_column_after_aggregation = executeExpressionAndGetColumn(description.expression, block, description.result_column);
+        auto where_column_after_aggregation = executeExpressionAndGetColumn(description.where_expression, block, description.where_result_column);
         for (size_t i = 0; i < block.rows(); ++i)
         {
             bool where_filter_passed = !where_column_after_aggregation || where_column_after_aggregation->getBool(i);

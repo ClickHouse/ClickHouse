@@ -35,7 +35,8 @@ TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & p
     if (!disk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk is not specified");
 
-    disk->createDirectories((fs::path("") / prefix).parent_path());
+    if (fs::path prefix_path(prefix); prefix_path.has_parent_path())
+        disk->createDirectories(prefix_path.parent_path());
 
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
 
@@ -58,8 +59,7 @@ TemporaryFileOnDisk::~TemporaryFileOnDisk()
 
         if (!disk->exists(relative_path))
         {
-            if (show_warning_if_removed)
-                LOG_WARNING(getLogger("TemporaryFileOnDisk"), "Temporary path '{}' does not exist in '{}'", relative_path, disk->getPath());
+            LOG_WARNING(&Poco::Logger::get("TemporaryFileOnDisk"), "Temporary path '{}' does not exist in '{}'", relative_path, disk->getPath());
             return;
         }
 

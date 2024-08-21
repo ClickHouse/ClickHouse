@@ -1,12 +1,8 @@
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBuffer.h>
-#include <Common/logger_useful.h>
 
-namespace ProfileEvents
-{
-    extern const Event MergingSortedMilliseconds;
-}
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -21,6 +17,7 @@ MergingSortedTransform::MergingSortedTransform(
     UInt64 limit_,
     bool always_read_till_end_,
     WriteBuffer * out_row_sources_buf_,
+    bool quiet_,
     bool use_average_block_sizes,
     bool have_all_inputs_)
     : IMergingTransform(
@@ -39,6 +36,7 @@ MergingSortedTransform::MergingSortedTransform(
         limit_,
         out_row_sources_buf_,
         use_average_block_sizes)
+    , quiet(quiet_)
 {
 }
 
@@ -49,7 +47,22 @@ void MergingSortedTransform::onNewInput()
 
 void MergingSortedTransform::onFinish()
 {
-    logMergedStats(ProfileEvents::MergingSortedMilliseconds, "Merged sorted", getLogger("MergingSortedTransform"));
+    if (quiet)
+        return;
+
+    const auto & merged_data = algorithm.getMergedData();
+
+    auto * log = &Poco::Logger::get("MergingSortedTransform");
+
+    double seconds = total_stopwatch.elapsedSeconds();
+
+    if (seconds == 0.0)
+        LOG_DEBUG(log, "Merge sorted {} blocks, {} rows in 0 sec.", merged_data.totalChunks(), merged_data.totalMergedRows());
+    else
+        LOG_DEBUG(log, "Merge sorted {} blocks, {} rows in {} sec., {} rows/sec., {}/sec",
+            merged_data.totalChunks(), merged_data.totalMergedRows(), seconds,
+            merged_data.totalMergedRows() / seconds,
+            ReadableSize(merged_data.totalAllocatedBytes() / seconds));
 }
 
 }

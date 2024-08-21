@@ -39,7 +39,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int UNKNOWN_TYPE;
-    extern const int TYPE_MISMATCH;
 }
 
 namespace
@@ -119,7 +118,7 @@ static UInt8 readBSONType(ReadBuffer & in)
 static size_t readBSONSize(ReadBuffer & in)
 {
     BSONSizeT size;
-    readBinaryLittleEndian(size, in);
+    readBinary(size, in);
     return size;
 }
 
@@ -132,19 +131,19 @@ static void readAndInsertInteger(ReadBuffer & in, IColumn & column, const DataTy
     if (bson_type == BSONType::INT32)
     {
         UInt32 value;
-        readBinaryLittleEndian(value, in);
+        readBinary(value, in);
         assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
     }
     else if (bson_type == BSONType::INT64)
     {
         UInt64 value;
-        readBinaryLittleEndian(value, in);
+        readBinary(value, in);
         assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
     }
     else if (bson_type == BSONType::BOOL)
     {
         UInt8 value;
-        readBinaryLittleEndian(value, in);
+        readBinary(value, in);
         assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
     }
     else
@@ -161,7 +160,7 @@ static void readAndInsertIPv4(ReadBuffer & in, IColumn & column, BSONType bson_t
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON Int32 into column with type IPv4");
 
     UInt32 value;
-    readBinaryLittleEndian(value, in);
+    readBinary(value, in);
     assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(value));
 }
 
@@ -173,7 +172,7 @@ static void readAndInsertDouble(ReadBuffer & in, IColumn & column, const DataTyp
                         getBSONTypeName(bson_type), data_type->getName());
 
     Float64 value;
-    readBinaryLittleEndian(value, in);
+    readBinary(value, in);
     assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
 }
 
@@ -185,7 +184,7 @@ static void readAndInsertSmallDecimal(ReadBuffer & in, IColumn & column, const D
                         getBSONTypeName(bson_type), data_type->getName());
 
     DecimalType value;
-    readBinaryLittleEndian(value, in);
+    readBinary(value, in);
     assert_cast<ColumnDecimal<DecimalType> &>(column).insertValue(value);
 }
 
@@ -195,7 +194,7 @@ static void readAndInsertDateTime64(ReadBuffer & in, IColumn & column, BSONType 
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into DateTime64 column", getBSONTypeName(bson_type));
 
     DateTime64 value;
-    readBinaryLittleEndian(value, in);
+    readBinary(value, in);
     assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(value);
 }
 
@@ -223,7 +222,7 @@ static void readAndInsertBigInteger(ReadBuffer & in, IColumn & column, const Dat
             sizeof(ValueType));
 
     ValueType value;
-    readBinaryLittleEndian(value, in);
+    readBinary(value, in);
     assert_cast<ColumnType &>(column).insertValue(value);
 }
 
@@ -356,7 +355,7 @@ static void readAndInsertUUID(ReadBuffer & in, IColumn & column, BSONType bson_t
             sizeof(UUID));
 
     UUID value;
-    readBinaryLittleEndian(value, in);
+    readBinary(value, in);
     assert_cast<ColumnUUID &>(column).insertValue(value);
 }
 
@@ -372,7 +371,7 @@ void BSONEachRowRowInputFormat::readArray(IColumn & column, const DataTypePtr & 
 
     size_t document_start = in->count();
     BSONSizeT document_size;
-    readBinaryLittleEndian(document_size, *in);
+    readBinary(document_size, *in);
     if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
 
@@ -402,7 +401,7 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
 
     size_t document_start = in->count();
     BSONSizeT document_size;
-    readBinaryLittleEndian(document_size, *in);
+    readBinary(document_size, *in);
     if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
 
@@ -463,7 +462,7 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
 
     size_t document_start = in->count();
     BSONSizeT document_size;
-    readBinaryLittleEndian(document_size, *in);
+    readBinary(document_size, *in);
     if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
 
@@ -697,7 +696,7 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         case BSONType::STRING:
         {
             BSONSizeT size;
-            readBinaryLittleEndian(size, in);
+            readBinary(size, in);
             in.ignore(size);
             break;
         }
@@ -705,7 +704,7 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         case BSONType::ARRAY:
         {
             BSONSizeT size;
-            readBinaryLittleEndian(size, in);
+            readBinary(size, in);
             if (size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", size);
             in.ignore(size - sizeof(size));
@@ -714,7 +713,7 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         case BSONType::BINARY:
         {
             BSONSizeT size;
-            readBinaryLittleEndian(size, in);
+            readBinary(size, in);
             in.ignore(size + 1);
             break;
         }
@@ -739,14 +738,14 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         case BSONType::DB_POINTER:
         {
             BSONSizeT size;
-            readBinaryLittleEndian(size, in);
+            readBinary(size, in);
             in.ignore(size + BSON_DB_POINTER_SIZE);
             break;
         }
         case BSONType::JAVA_SCRIPT_CODE_W_SCOPE:
         {
             BSONSizeT size;
-            readBinaryLittleEndian(size, in);
+            readBinary(size, in);
             if (size < sizeof(BSONSizeT))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid java code_w_scope size: {}", size);
             in.ignore(size - sizeof(size));
@@ -788,7 +787,7 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     size_t key_index = 0;
 
     current_document_start = in->count();
-    readBinaryLittleEndian(current_document_size, *in);
+    readBinary(current_document_size, *in);
     if (current_document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", current_document_size);
 
@@ -821,13 +820,7 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     /// Fill non-visited columns with the default values.
     for (size_t i = 0; i < num_columns; ++i)
         if (!seen_columns[i])
-        {
-            const auto & type = header.getByPosition(i).type;
-            if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(type))
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column of type '{}' at index {}", type->getName(), i);
-            else
-                type->insertDefaultInto(*columns[i]);
-        }
+            header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
     if (format_settings.defaults_for_omitted_fields)
         ext.read_columns = read_columns;
@@ -851,7 +844,7 @@ size_t BSONEachRowRowInputFormat::countRows(size_t max_block_size)
     BSONSizeT document_size;
     while (!in->eof() && num_rows < max_block_size)
     {
-        readBinaryLittleEndian(document_size, *in);
+        readBinary(document_size, *in);
         if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
         in->ignore(document_size - sizeof(BSONSizeT));
@@ -900,11 +893,11 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         case BSONType::STRING:
         {
             BSONSizeT size;
-            readBinaryLittleEndian(size, in);
+            readBinary(size, in);
             in.ignore(size);
             return std::make_shared<DataTypeString>();
         }
-        case BSONType::OBJECT_ID:
+        case BSONType::OBJECT_ID:;
         {
             in.ignore(BSON_OBJECT_ID_SIZE);
             return makeNullable(std::make_shared<DataTypeFixedString>(BSON_OBJECT_ID_SIZE));
@@ -954,7 +947,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         case BSONType::BINARY:
         {
             BSONSizeT size;
-            readBinaryLittleEndian(size, in);
+            readBinary(size, in);
             auto subtype = getBSONBinarySubtype(readBSONType(in));
             in.ignore(size);
             switch (subtype)
@@ -989,7 +982,7 @@ NamesAndTypesList BSONEachRowSchemaReader::getDataTypesFromBSONDocument(bool all
 {
     size_t document_start = in.count();
     BSONSizeT document_size;
-    readBinaryLittleEndian(document_size, in);
+    readBinary(document_size, in);
     NamesAndTypesList names_and_types;
     while (in.count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
     {
@@ -1035,24 +1028,24 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
     while (!in.eof() && memory.size() < min_bytes && number_of_rows < max_rows)
     {
         BSONSizeT document_size;
-        readBinaryLittleEndian(document_size, in);
+        readBinary(document_size, in);
 
         if (document_size < sizeof(document_size))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
+            throw ParsingException(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
 
         if (min_bytes != 0 && document_size > 10 * min_bytes)
-            throw Exception(
+            throw ParsingException(
                 ErrorCodes::INCORRECT_DATA,
                 "Size of BSON document is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. Increase "
                 "the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, most likely BSON is malformed",
                 min_bytes, document_size);
 
         if (document_size < sizeof(document_size))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
+            throw ParsingException(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
 
         size_t old_size = memory.size();
         memory.resize(old_size + document_size);
-        unalignedStoreLittleEndian<BSONSizeT>(memory.data() + old_size, document_size);
+        unalignedStore<BSONSizeT>(memory.data() + old_size, document_size);
         in.readStrict(memory.data() + old_size + sizeof(document_size), document_size - sizeof(document_size));
         ++number_of_rows;
     }

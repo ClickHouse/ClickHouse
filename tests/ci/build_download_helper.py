@@ -6,28 +6,14 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Union
+from typing import Any, Callable, List, Union
 
-import requests
+import requests  # type: ignore
 
-from ci_config import CI
-
-try:
-    # A work around for scripts using this downloading module without required deps
-    import get_robot_token as grt  # we need an updated ROBOT_TOKEN
-except ImportError:
-
-    class grt:  # type: ignore
-        ROBOT_TOKEN = None
-
-        @staticmethod
-        def get_best_robot_token() -> str:
-            return ""
-
+import get_robot_token as grt  # we need an updated ROBOT_TOKEN
+from ci_config import CI_CONFIG
 
 DOWNLOAD_RETRIES_COUNT = 5
-
-logger = logging.getLogger(__name__)
 
 
 class DownloadException(Exception):
@@ -44,19 +30,18 @@ def get_with_retries(
     sleep: int = 3,
     **kwargs: Any,
 ) -> requests.Response:
-    logger.info(
+    logging.info(
         "Getting URL with %i tries and sleep %i in between: %s", retries, sleep, url
     )
     exc = Exception("A placeholder to satisfy typing and avoid nesting")
-    timeout = kwargs.pop("timeout", 30)
     for i in range(retries):
         try:
-            response = requests.get(url, timeout=timeout, **kwargs)
+            response = requests.get(url, **kwargs)
             response.raise_for_status()
             return response
         except Exception as e:
             if i + 1 < retries:
-                logger.info("Exception '%s' while getting, retry %i", e, i + 1)
+                logging.info("Exception '%s' while getting, retry %i", e, i + 1)
                 time.sleep(sleep)
 
             exc = e
@@ -77,10 +62,15 @@ def get_gh_api(
     """
 
     def set_auth_header():
-        headers = kwargs.get("headers", {})
-        if "Authorization" not in headers:
-            headers["Authorization"] = f"Bearer {grt.get_best_robot_token()}"
-        kwargs["headers"] = headers
+        if "headers" in kwargs:
+            if "Authorization" not in kwargs["headers"]:
+                kwargs["headers"][
+                    "Authorization"
+                ] = f"Bearer {grt.get_best_robot_token()}"
+        else:
+            kwargs["headers"] = {
+                "Authorization": f"Bearer {grt.get_best_robot_token()}"
+            }
 
     if grt.ROBOT_TOKEN is not None:
         set_auth_header()
@@ -88,11 +78,10 @@ def get_gh_api(
     token_is_set = "Authorization" in kwargs.get("headers", {})
     exc = Exception("A placeholder to satisfy typing and avoid nesting")
     try_cnt = 0
-    timeout = kwargs.pop("timeout", 30)
     while try_cnt < retries:
         try_cnt += 1
         try:
-            response = requests.get(url, timeout=timeout, **kwargs)
+            response = requests.get(url, **kwargs)
             response.raise_for_status()
             return response
         except requests.HTTPError as e:
@@ -100,12 +89,11 @@ def get_gh_api(
             ratelimit_exceeded = (
                 e.response.status_code == 403
                 and b"rate limit exceeded"
-                # pylint:disable-next=protected-access
-                in (e.response._content or b"")
+                in e.response._content  # pylint:disable=protected-access
             )
             try_auth = e.response.status_code == 404
             if (ratelimit_exceeded or try_auth) and not token_is_set:
-                logger.warning(
+                logging.warning(
                     "Received rate limit exception, setting the auth header and retry"
                 )
                 set_auth_header()
@@ -116,35 +104,35 @@ def get_gh_api(
             exc = e
 
         if try_cnt < retries:
-            logger.info("Exception '%s' while getting, retry %i", exc, try_cnt)
+            logging.info("Exception '%s' while getting, retry %i", exc, try_cnt)
             time.sleep(sleep)
 
-    raise APIException(f"Unable to request data from GH API: {url}") from exc
+    raise APIException("Unable to request data from GH API") from exc
+
+
+def get_build_name_for_check(check_name: str) -> str:
+    return CI_CONFIG.test_configs[check_name].required_build
 
 
 def read_build_urls(build_name: str, reports_path: Union[Path, str]) -> List[str]:
     for root, _, files in os.walk(reports_path):
-        for file in files:
-            if file.endswith(f"_{build_name}.json"):
-                logger.info("Found build report json %s for %s", file, build_name)
-                with open(
-                    os.path.join(root, file), "r", encoding="utf-8"
-                ) as file_handler:
+        for f in files:
+            if build_name in f:
+                logging.info("Found build report json %s", f)
+                with open(os.path.join(root, f), "r", encoding="utf-8") as file_handler:
                     build_report = json.load(file_handler)
                     return build_report["build_urls"]  # type: ignore
-
-    logger.info("A build report is not found for %s", build_name)
     return []
 
 
 def download_build_with_progress(url: str, path: Path) -> None:
-    logger.info("Downloading from %s to temp path %s", url, path)
+    logging.info("Downloading from %s to temp path %s", url, path)
     for i in range(DOWNLOAD_RETRIES_COUNT):
         try:
             response = get_with_retries(url, retries=1, stream=True)
             total_length = int(response.headers.get("content-length", 0))
             if path.is_file() and total_length and path.stat().st_size == total_length:
-                logger.info(
+                logging.info(
                     "The file %s already exists and have a proper size %s",
                     path,
                     total_length,
@@ -153,14 +141,14 @@ def download_build_with_progress(url: str, path: Path) -> None:
 
             with open(path, "wb") as f:
                 if total_length == 0:
-                    logger.info(
+                    logging.info(
                         "No content-length, will download file without progress"
                     )
                     f.write(response.content)
                 else:
                     dl = 0
 
-                    logger.info("Content length is %ld bytes", total_length)
+                    logging.info("Content length is %ld bytes", total_length)
                     for data in response.iter_content(chunk_size=4096):
                         dl += len(data)
                         f.write(data)
@@ -175,8 +163,8 @@ def download_build_with_progress(url: str, path: Path) -> None:
         except Exception as e:
             if sys.stdout.isatty():
                 sys.stdout.write("\n")
-            if path.exists():
-                path.unlink()
+            if os.path.exists(path):
+                os.remove(path)
 
             if i + 1 < DOWNLOAD_RETRIES_COUNT:
                 time.sleep(3)
@@ -187,28 +175,25 @@ def download_build_with_progress(url: str, path: Path) -> None:
 
     if sys.stdout.isatty():
         sys.stdout.write("\n")
-    logger.info("Downloading finished")
+    logging.info("Downloading finished")
 
 
 def download_builds(
-    result_path: Path, build_urls: List[str], filter_fn: Callable[[str], bool]
+    result_path: str, build_urls: List[str], filter_fn: Callable[[str], bool]
 ) -> None:
     for url in build_urls:
         if filter_fn(url):
             fname = os.path.basename(url.replace("%2B", "+").replace("%20", " "))
-            logger.info("Will download %s to %s", fname, result_path)
-            download_build_with_progress(url, result_path / fname)
+            logging.info("Will download %s to %s", fname, result_path)
+            download_build_with_progress(url, Path(result_path) / fname)
 
 
 def download_builds_filter(
-    check_name: str,
-    reports_path: Union[Path, str],
-    result_path: Path,
-    filter_fn: Callable[[str], bool] = lambda _: True,
-) -> None:
-    build_name = CI.get_required_build_name(check_name)
+    check_name, reports_path, result_path, filter_fn=lambda _: True
+):
+    build_name = get_build_name_for_check(check_name)
     urls = read_build_urls(build_name, reports_path)
-    logger.info("The build report for %s contains the next URLs: %s", build_name, urls)
+    print(urls)
 
     if not urls:
         raise DownloadException("No build URLs found")
@@ -216,64 +201,28 @@ def download_builds_filter(
     download_builds(result_path, urls, filter_fn)
 
 
-def download_all_deb_packages(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
+def download_all_deb_packages(check_name, reports_path, result_path):
     download_builds_filter(
         check_name, reports_path, result_path, lambda x: x.endswith("deb")
     )
 
 
-def download_unit_tests(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
+def download_unit_tests(check_name, reports_path, result_path):
     download_builds_filter(
         check_name, reports_path, result_path, lambda x: x.endswith("unit_tests_dbms")
     )
 
 
-def download_clickhouse_binary(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
+def download_clickhouse_binary(check_name, reports_path, result_path):
     download_builds_filter(
         check_name, reports_path, result_path, lambda x: x.endswith("clickhouse")
     )
 
 
-def get_clickhouse_binary_url(
-    check_name: str, reports_path: Union[Path, str]
-) -> Optional[str]:
-    build_name = CI.get_required_build_name(check_name)
-    urls = read_build_urls(build_name, reports_path)
-    logger.info("The build report for %s contains the next URLs: %s", build_name, urls)
-    for url in urls:
-        check_url = url
-        if "?" in check_url:
-            check_url = check_url.split("?")[0]
-
-        if check_url.endswith("clickhouse"):
-            return url
-
-    return None
-
-
-def download_performance_build(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
+def download_performance_build(check_name, reports_path, result_path):
     download_builds_filter(
         check_name,
         reports_path,
         result_path,
         lambda x: x.endswith("performance.tar.zst"),
-    )
-
-
-def download_fuzzers(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
-    download_builds_filter(
-        check_name,
-        reports_path,
-        result_path,
-        lambda x: x.endswith(("_fuzzer", ".dict", ".options", "_seed_corpus.zip")),
     )

@@ -5,6 +5,6 @@
 namespace DB
 {
 
-bool tryQuoteUnrecognizedTokens(String & query);
+bool tryQuoteUnrecognizedTokens(const String & query, String & res);
 
 }

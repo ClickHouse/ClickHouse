@@ -6,9 +6,6 @@
 
 #include <string>
 #include <filesystem>
-#include <list>
-#include <unordered_map>
-#include <mutex>
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -17,7 +14,6 @@
 #include <Poco/Crypto/RSAKey.h>
 #include <Poco/Crypto/X509Certificate.h>
 #include <Common/MultiVersion.h>
-#include <Common/Logger.h>
 
 
 namespace DB
@@ -34,37 +30,6 @@ class CertificateReloader
 public:
     using stat_t = struct stat;
 
-    struct Data
-    {
-        Poco::Crypto::X509Certificate::List certs_chain;
-        Poco::Crypto::EVPPKey key;
-
-        Data(std::string cert_path, std::string key_path, std::string pass_phrase);
-    };
-
-    struct File
-    {
-        const char * description;
-        explicit File(const char * description_) : description(description_) {}
-
-        std::string path;
-        std::filesystem::file_time_type modification_time;
-
-        bool changeIfModified(std::string new_path, LoggerPtr logger);
-    };
-
-    struct MultiData
-    {
-        SSL_CTX * ctx = nullptr;
-        MultiVersion<Data> data;
-        bool init_was_not_made = true;
-
-        File cert_file{"certificate"};
-        File key_file{"key"};
-
-        explicit MultiData(SSL_CTX * ctx_) : ctx(ctx_) {}
-    };
-
     /// Singleton
     CertificateReloader(CertificateReloader const &) = delete;
     void operator=(CertificateReloader const &) = delete;
@@ -74,34 +39,44 @@ public:
         return instance;
     }
 
-    /// Handle configuration reload for default path
-    void tryLoad(const Poco::Util::AbstractConfiguration & config);
+    /// Initialize the callback and perform the initial cert loading
+    void init();
 
     /// Handle configuration reload
-    void tryLoad(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix);
-
-    /// Handle configuration reload for all contexts
-    void tryReloadAll(const Poco::Util::AbstractConfiguration & config);
+    void tryLoad(const Poco::Util::AbstractConfiguration & config);
 
     /// A callback for OpenSSL
-    int setCertificate(SSL * ssl, const MultiData * pdata);
+    int setCertificate(SSL * ssl);
 
 private:
     CertificateReloader() = default;
 
-    /// Initialize the callback and perform the initial cert loading
-    void init(MultiData * pdata) TSA_REQUIRES(data_mutex);
+    Poco::Logger * log = &Poco::Logger::get("CertificateReloader");
 
-    /// Unsafe implementation
-    void tryLoadImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
+    struct File
+    {
+        const char * description;
+        explicit File(const char * description_) : description(description_) {}
 
-    std::list<MultiData>::iterator findOrInsert(SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
+        std::string path;
+        std::filesystem::file_time_type modification_time;
 
-    LoggerPtr log = getLogger("CertificateReloader");
+        bool changeIfModified(std::string new_path, Poco::Logger * logger);
+    };
 
-    std::list<MultiData> data TSA_GUARDED_BY(data_mutex);
-    std::unordered_map<std::string, std::list<MultiData>::iterator> data_index TSA_GUARDED_BY(data_mutex);
-    mutable std::mutex data_mutex;
+    File cert_file{"certificate"};
+    File key_file{"key"};
+
+    struct Data
+    {
+        Poco::Crypto::X509Certificate::List certs_chain;
+        Poco::Crypto::EVPPKey key;
+
+        Data(std::string cert_path, std::string key_path, std::string pass_phrase);
+    };
+
+    MultiVersion<Data> data;
+    bool init_was_not_made = true;
 };
 
 }

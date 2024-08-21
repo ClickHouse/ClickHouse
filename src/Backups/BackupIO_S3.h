@@ -4,12 +4,11 @@
 
 #if USE_AWS_S3
 #include <Backups/BackupIO_Default.h>
-#include <Common/Logger.h>
 #include <Disks/DiskType.h>
 #include <IO/S3Common.h>
-#include <IO/S3Settings.h>
+#include <Storages/StorageS3Settings.h>
 #include <Interpreters/Context_fwd.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+
 
 namespace DB
 {
@@ -18,15 +17,7 @@ namespace DB
 class BackupReaderS3 : public BackupReaderDefault
 {
 public:
-    BackupReaderS3(
-        const S3::URI & s3_uri_,
-        const String & access_key_id_,
-        const String & secret_access_key_,
-        bool allow_s3_native_copy,
-        const ReadSettings & read_settings_,
-        const WriteSettings & write_settings_,
-        const ContextPtr & context_,
-        bool is_internal_backup);
+    BackupReaderS3(const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool allow_s3_native_copy, const ReadSettings & read_settings_, const WriteSettings & write_settings_, const ContextPtr & context_);
     ~BackupReaderS3() override;
 
     bool fileExists(const String & file_name) override;
@@ -38,27 +29,16 @@ public:
 
 private:
     const S3::URI s3_uri;
+    const std::shared_ptr<S3::Client> client;
+    S3Settings::RequestSettings request_settings;
     const DataSourceDescription data_source_description;
-    S3Settings s3_settings;
-    std::shared_ptr<S3::Client> client;
-
-    BlobStorageLogWriterPtr blob_storage_log;
 };
 
 
 class BackupWriterS3 : public BackupWriterDefault
 {
 public:
-    BackupWriterS3(
-        const S3::URI & s3_uri_,
-        const String & access_key_id_,
-        const String & secret_access_key_,
-        bool allow_s3_native_copy,
-        const String & storage_class_name,
-        const ReadSettings & read_settings_,
-        const WriteSettings & write_settings_,
-        const ContextPtr & context_,
-        bool is_internal_backup);
+    BackupWriterS3(const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool allow_s3_native_copy, const String & storage_class_name, const ReadSettings & read_settings_, const WriteSettings & write_settings_, const ContextPtr & context_);
     ~BackupWriterS3() override;
 
     bool fileExists(const String & file_name) override;
@@ -69,8 +49,6 @@ public:
     void copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
                           bool copy_encrypted, UInt64 start_pos, UInt64 length) override;
 
-    void copyFile(const String & destination, const String & source, size_t size) override;
-
     void removeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;
 
@@ -79,12 +57,10 @@ private:
     void removeFilesBatch(const Strings & file_names);
 
     const S3::URI s3_uri;
-    const DataSourceDescription data_source_description;
-    S3Settings s3_settings;
-    std::shared_ptr<S3::Client> client;
+    const std::shared_ptr<S3::Client> client;
+    S3Settings::RequestSettings request_settings;
     std::optional<bool> supports_batch_delete;
-
-    BlobStorageLogWriterPtr blob_storage_log;
+    const DataSourceDescription data_source_description;
 };
 
 }

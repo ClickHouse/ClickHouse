@@ -83,31 +83,25 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         IAST::QueryKind query_kind = ast->getQueryKind();
 
         const auto queue_max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
-        UInt64 waiting_queries = waiting_queries_amount.load();
-        if (!is_unlimited_query && max_size && processes.size() >= max_size + waiting_queries)
+        if (!is_unlimited_query && max_size && processes.size() >= max_size)
         {
             if (queue_max_wait_ms)
-                LOG_WARNING(getLogger("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
-            if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
-                    [&]{ waiting_queries = waiting_queries_amount.load(); return processes.size() < max_size + waiting_queries; }))
-                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                "Too many simultaneous queries. Maximum: {}{}",
-                                max_size, waiting_queries == 0 ? "" : fmt::format(", waiting: {}", waiting_queries));
+                LOG_WARNING(&Poco::Logger::get("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
+            if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms), [&]{ return processes.size() < max_size; }))
+                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries. Maximum: {}", max_size);
         }
 
         if (!is_unlimited_query)
         {
             QueryAmount amount = getQueryKindAmount(query_kind);
-            UInt64 waiting_inserts = waiting_insert_queries_amount.load();
-            UInt64 waiting_selects = waiting_select_queries_amount.load();
-            if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert && amount >= max_insert_queries_amount + waiting_inserts)
+            if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert && amount >= max_insert_queries_amount)
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                "Too many simultaneous insert queries. Maximum: {}, current: {}{}",
-                                max_insert_queries_amount, amount, waiting_inserts == 0 ? "" : fmt::format(", waiting: {}", waiting_inserts));
-            if (max_select_queries_amount && query_kind == IAST::QueryKind::Select && amount >= max_select_queries_amount + waiting_selects)
+                                "Too many simultaneous insert queries. Maximum: {}, current: {}",
+                                max_insert_queries_amount, amount);
+            if (max_select_queries_amount && query_kind == IAST::QueryKind::Select && amount >= max_select_queries_amount)
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                "Too many simultaneous select queries. Maximum: {}, current: {}{}",
-                                max_select_queries_amount, amount, waiting_selects == 0 ? "" : fmt::format(", waiting: {}", waiting_selects));
+                                "Too many simultaneous select queries. Maximum: {}, current: {}",
+                                max_select_queries_amount, amount);
         }
 
         {
@@ -130,12 +124,10 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
              * once is already processing 50+ concurrent queries (including analysts or any other users).
              */
 
-            waiting_queries = waiting_queries_amount.load();
             if (!is_unlimited_query && settings.max_concurrent_queries_for_all_users
-                && processes.size() >= settings.max_concurrent_queries_for_all_users + waiting_queries_amount)
+                && processes.size() >= settings.max_concurrent_queries_for_all_users)
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries for all users. "
-                    "Current: {}, maximum: {}{}", processes.size(), settings.max_concurrent_queries_for_all_users.toString(),
-                    waiting_queries == 0 ? "" : fmt::format(", waiting: {}", waiting_queries));
+                    "Current: {}, maximum: {}", processes.size(), settings.max_concurrent_queries_for_all_users.toString());
         }
 
         /** Why we use current user?
@@ -153,15 +145,13 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
 
             if (user_process_list != user_to_queries.end())
             {
-                UInt64 user_waiting_queries = user_process_list->second.waiting_queries_amount.load();
                 if (!is_unlimited_query && settings.max_concurrent_queries_for_user
-                    && user_process_list->second.queries.size() >= settings.max_concurrent_queries_for_user + user_waiting_queries)
+                    && user_process_list->second.queries.size() >= settings.max_concurrent_queries_for_user)
                     throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                     "Too many simultaneous queries for user {}. "
-                                    "Current: {}, maximum: {}{}",
+                                    "Current: {}, maximum: {}",
                                     client_info.current_user, user_process_list->second.queries.size(),
-                                    settings.max_concurrent_queries_for_user.toString(),
-                                    user_waiting_queries == 0 ? "" : fmt::format(", waiting: {}", user_waiting_queries));
+                                    settings.max_concurrent_queries_for_user.toString());
 
                 auto running_query = user_process_list->second.queries.find(client_info.current_query_id);
 
@@ -193,11 +183,14 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         }
 
         /// Check other users running query with our query_id
-        if (auto query_user = queries_to_user.find(client_info.current_query_id); query_user != queries_to_user.end() && query_user->second != client_info.current_user)
+        for (const auto & user_process_list : user_to_queries)
         {
-            throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
-                            "Query with id = {} is already running by user {}",
-                            client_info.current_query_id, query_user->second);
+            if (user_process_list.first == client_info.current_user)
+                continue;
+            if (auto running_query = user_process_list.second.queries.find(client_info.current_query_id); running_query != user_process_list.second.queries.end())
+                throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
+                                "Query with id = {} is already running by user {}",
+                                client_info.current_query_id, user_process_list.first);
         }
 
         auto user_process_list_it = user_to_queries.find(client_info.current_user);
@@ -218,13 +211,8 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
             {
-                TemporaryDataOnDiskSettings temporary_data_on_disk_settings
-                {
-                    .max_size_on_disk = settings.max_temporary_data_on_disk_size_for_query,
-                    .compression_codec = settings.temporary_files_codec
-                };
                 query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
-                    user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
+                    user_process_list.user_temp_data_on_disk, settings.max_temporary_data_on_disk_size_for_query));
             }
 
             /// Set query-level memory trackers
@@ -269,10 +257,8 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         res = std::make_shared<Entry>(*this, process_it);
 
         (*process_it)->setUserProcessList(&user_process_list);
-        (*process_it)->setProcessListEntry(res);
 
         user_process_list.queries.emplace(client_info.current_query_id, res->getQueryStatus());
-        queries_to_user.emplace(client_info.current_query_id, client_info.current_user);
 
         /// Track memory usage for all simultaneously running queries from single user.
         user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_user);
@@ -310,7 +296,7 @@ ProcessListEntry::~ProcessListEntry()
     auto user_process_list_it = parent.user_to_queries.find(user);
     if (user_process_list_it == parent.user_to_queries.end())
     {
-        LOG_ERROR(getLogger("ProcessList"), "Cannot find user in ProcessList");
+        LOG_ERROR(&Poco::Logger::get("ProcessList"), "Logical error: cannot find user in ProcessList");
         std::terminate();
     }
 
@@ -330,15 +316,12 @@ ProcessListEntry::~ProcessListEntry()
     /// Wait for the query if it is in the cancellation right now.
     parent.cancelled_cv.wait(lock.lock, [&]() { return process_list_element_ptr->is_cancelling == false; });
 
-    if (auto query_user = parent.queries_to_user.find(query_id); query_user != parent.queries_to_user.end())
-        parent.queries_to_user.erase(query_user);
-
     /// This removes the memory_tracker of one request.
     parent.processes.erase(it);
 
     if (!found)
     {
-        LOG_ERROR(getLogger("ProcessList"), "Cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
+        LOG_ERROR(&Poco::Logger::get("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
         std::terminate();
     }
 
@@ -497,22 +480,6 @@ void QueryStatus::setUserProcessList(ProcessListForUser * user_process_list_)
 }
 
 
-void QueryStatus::setProcessListEntry(std::weak_ptr<ProcessListEntry> process_list_entry_)
-{
-    /// Synchronization is not required here because this function is only called from ProcessList::insert()
-    /// when `ProcessList::mutex` is locked.
-    if (!process_list_entry.expired() && !process_list_entry_.expired())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Two entries in the process list cannot both use the same query status");
-    process_list_entry = process_list_entry_;
-}
-
-
-std::shared_ptr<ProcessListEntry> QueryStatus::getProcessListEntry() const
-{
-    return process_list_entry.lock();
-}
-
-
 ThrottlerPtr QueryStatus::getUserNetworkThrottler()
 {
     if (!user_process_list)
@@ -558,28 +525,6 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
         elem = tryGetProcessListElement(current_query_id, current_user);
         if (!elem)
             return CancellationCode::NotFound;
-        elem->is_cancelling = true;
-    }
-
-    SCOPE_EXIT({
-        DENY_ALLOCATIONS_IN_SCOPE;
-
-        auto lock = unsafeLock();
-        elem->is_cancelling = false;
-        cancelled_cv.notify_all();
-    });
-
-    return elem->cancelQuery(kill);
-}
-
-
-CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem, bool kill)
-{
-    /// Cancelling the query should be done without the lock.
-    /// So here we first set is_cancelling, and later reset it.
-    /// The ProcessListEntry cannot be destroy if is_cancelling is true.
-    {
-        auto lock = safeLock();
         elem->is_cancelling = true;
     }
 
@@ -645,10 +590,8 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         res.peak_memory_usage = thread_group->memory_tracker.getPeak();
 
         if (get_thread_list)
-        {
             res.thread_ids = thread_group->getInvolvedThreadIds();
-            res.peak_threads_usage = thread_group->getPeakThreadsUsage();
-        }
+
         if (get_profile_events)
             res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
     }
@@ -657,7 +600,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     {
         if (auto ctx = context.lock())
         {
-            res.query_settings = std::make_shared<Settings>(ctx->getSettingsCopy());
+            res.query_settings = std::make_shared<Settings>(ctx->getSettings());
             res.current_database = ctx->getCurrentDatabase();
         }
     }
@@ -697,15 +640,8 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
 
     if (global_context)
     {
-        const auto & settings = global_context->getSettingsRef();
-        TemporaryDataOnDiskSettings temporary_data_on_disk_settings
-        {
-            .max_size_on_disk = settings.max_temporary_data_on_disk_size_for_user,
-            .compression_codec = settings.temporary_files_codec
-        };
-
-        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(),
-            std::move(temporary_data_on_disk_settings));
+        size_t size_limit = global_context->getSettingsRef().max_temporary_data_on_disk_size_for_user;
+        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(), size_limit);
     }
 }
 
@@ -765,71 +701,6 @@ ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind &
     if (found == query_kind_amounts.end())
         return 0;
     return found->second;
-}
-
-void ProcessList::increaseWaitingQueryAmount(const QueryStatusPtr & status)
-{
-    UInt64 limit = max_waiting_queries_amount.load();
-    UInt64 value = waiting_queries_amount.load();
-    while (true)
-    {
-        if (value >= limit)
-            throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                            "Too many simultaneous waiting queries. Maximum: {}, waiting: {}",
-                            limit, value);
-        if (waiting_queries_amount.compare_exchange_strong(value, value + 1))
-            break;
-    }
-
-    // WARNING: After this point we should not throw, otherwise corresponding `decreaseWaitingQueryAmount` will not be called.
-
-    // Update query kind counters
-    if (status->query_kind == IAST::QueryKind::Insert)
-        waiting_insert_queries_amount.fetch_add(1);
-    if (status->query_kind == IAST::QueryKind::Select)
-        waiting_select_queries_amount.fetch_add(1);
-
-    // Update per-user counter
-    status->getUserProcessList()->waiting_queries_amount.fetch_add(1);
-
-    // We have to notify because some queries might be waiting on `have_space`
-    // and this query leaves its space by transitioning to waiting state
-    have_space.notify_all();
-}
-
-void ProcessList::decreaseWaitingQueryAmount(const QueryStatusPtr & status)
-{
-    if (status->getUserProcessList()->waiting_queries_amount.fetch_sub(1) == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong insert waiting query amount for user: decrease to negative");
-
-    if (status->query_kind == IAST::QueryKind::Insert && waiting_insert_queries_amount.fetch_sub(1) == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong insert waiting query amount: decrease to negative");
-
-    if (status->query_kind == IAST::QueryKind::Select && waiting_select_queries_amount.fetch_sub(1) == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong select waiting query amount: decrease to negative");
-
-    if (waiting_queries_amount.fetch_sub(1) == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting query amount: decrease to negative");
-}
-
-void ProcessList::incrementWaiters()
-{
-    ContextPtr context = CurrentThread::getQueryContext();
-    QueryStatusPtr status = context->getProcessListElement();
-
-    // Query became "waiting" with the first thread that waits
-    if (status->waiting_threads.fetch_add(1) == 0)
-        increaseWaitingQueryAmount(status);
-}
-
-void ProcessList::decrementWaiters()
-{
-    ContextPtr context = CurrentThread::getQueryContext();
-    QueryStatusPtr status = context->getProcessListElement();
-
-    // Query became "non-waiting" with the last thread that no longer waits
-    if (status->waiting_threads.fetch_sub(1) == 1)
-        decreaseWaitingQueryAmount(status);
 }
 
 }

@@ -29,8 +29,8 @@ public:
 
     TypeIndex getTypeId() const override { return TypeIndex::Map; }
     std::string doGetName() const override;
-    std::string doGetPrettyName(size_t indent) const override;
     const char * getFamilyName() const override { return "Map"; }
+    String getSQLCompatibleName() const override { return "JSON"; }
 
     bool canBeInsideNullable() const override { return false; }
 
@@ -42,7 +42,7 @@ public:
     bool isComparable() const override { return key_type->isComparable() && value_type->isComparable(); }
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
-    bool hasDynamicSubcolumnsDeprecated() const override { return nested->hasDynamicSubcolumnsDeprecated(); }
+    bool hasDynamicSubcolumns() const override { return nested->hasDynamicSubcolumns(); }
 
     const DataTypePtr & getKeyType() const { return key_type; }
     const DataTypePtr & getValueType() const { return value_type; }
@@ -52,9 +52,7 @@ public:
 
     SerializationPtr doGetDefaultSerialization() const override;
 
-    static bool isValidKeyType(DataTypePtr key_type);
-
-    void forEachChild(const ChildCallback & callback) const override;
+    static bool checkKeyType(DataTypePtr key_type);
 
 private:
     void assertKeyType() const;

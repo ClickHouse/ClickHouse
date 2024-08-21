@@ -1,13 +1,11 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
-#include <Common/Config/ConfigHelper.h>
 
 #include <boost/core/noncopyable.hpp>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
-
-#include "config.h"
+#include <optional>
 
 namespace DB
 {
@@ -17,7 +15,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 };
 
-#if USE_LIBFIU
+#if FIU_ENABLE
 static struct InitFiu
 {
     InitFiu()
@@ -29,41 +27,17 @@ static struct InitFiu
 
 /// We should define different types of failpoints here. There are four types of them:
 /// - ONCE: the failpoint will only be triggered once.
-/// - REGULAR: the failpoint will always be triggered until disableFailPoint is called.
-/// - PAUSEABLE_ONCE: the failpoint will be blocked one time when pauseFailPoint is called, util disableFailPoint is called.
-/// - PAUSEABLE: the failpoint will be blocked every time when pauseFailPoint is called, util disableFailPoint is called.
+/// - REGULAR: the failpoint will always be triggered util disableFailPoint is called.
+/// - PAUSAEBLE_ONCE: the failpoint will be blocked one time when pauseFailPoint is called, util disableFailPoint is called.
+/// - PAUSAEBLE: the failpoint will be blocked every time when pauseFailPoint is called, util disableFailPoint is called.
 
 #define APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE) \
     ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
-    ONCE(replicated_queue_fail_next_entry) \
-    REGULAR(replicated_queue_unfail_entries) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
-    REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(use_delayed_remote_source) \
-    REGULAR(cluster_discovery_faults) \
-    REGULAR(replicated_sends_failpoint) \
-    REGULAR(stripe_log_sink_write_fallpoint)\
-    ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
-    ONCE(smt_commit_merge_mutate_zk_fail_before_op) \
-    ONCE(smt_commit_write_zk_fail_after_op) \
-    ONCE(smt_commit_write_zk_fail_before_op) \
-    ONCE(smt_commit_merge_change_version_before_op) \
-    ONCE(smt_merge_mutate_intention_freeze_in_destructor) \
-    ONCE(meta_in_keeper_create_metadata_failure) \
-    REGULAR(cache_warmer_stall) \
-    REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
-    REGULAR(prefetched_reader_pool_failpoint) \
-    PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
-    PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
-    PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
-    PAUSEABLE(dummy_pausable_failpoint) \
-    ONCE(execute_query_calling_empty_set_result_func_on_exception) \
-    ONCE(receive_timeout_on_table_status_response) \
-    REGULAR(keepermap_fail_drop_data) \
-    REGULAR(lazy_pipe_fds_fail_close) \
-    PAUSEABLE(infinite_sleep) \
-
+    PAUSEABLE_ONCE(dummy_pausable_failpoint_once) \
+    PAUSEABLE(dummy_pausable_failpoint)
 
 namespace FailPoints
 {
@@ -137,7 +111,7 @@ void FailPointInjection::pauseFailPoint(const String & fail_point_name)
 
 void FailPointInjection::enableFailPoint(const String & fail_point_name)
 {
-#if USE_LIBFIU
+#if FIU_ENABLE
 #define SUB_M(NAME, flags, pause)                                                                               \
     if (fail_point_name == FailPoints::NAME)                                                                    \
     {                                                                                                           \
@@ -189,21 +163,6 @@ void FailPointInjection::wait(const String & fail_point_name)
         auto ptr = iter->second;
         ptr->wait();
     }
-}
-
-void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config)
-{
-    String root_key = "fail_points_active";
-
-    Poco::Util::AbstractConfiguration::Keys fail_point_names;
-    config.keys(root_key, fail_point_names);
-
-    for (const auto & fail_point_name : fail_point_names)
-    {
-        if (ConfigHelper::getBool(config, root_key + "." + fail_point_name))
-            FailPointInjection::enableFailPoint(fail_point_name);
-    }
-}
-
+};
 
 }

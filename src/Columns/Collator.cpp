@@ -8,8 +8,10 @@
 #    include <unicode/ucol.h>
 #    include <unicode/unistr.h>
 #else
-#    pragma clang diagnostic ignored "-Wunused-private-field"
-#    pragma clang diagnostic ignored "-Wmissing-noreturn"
+#    if defined(__clang__)
+#        pragma clang diagnostic ignored "-Wunused-private-field"
+#        pragma clang diagnostic ignored "-Wmissing-noreturn"
+#    endif
 #endif
 
 #include <Common/Exception.h>

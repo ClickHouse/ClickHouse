@@ -11,7 +11,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/VirtualColumnsDescription.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/ActionLock.h>
@@ -20,6 +19,7 @@
 #include <Common/TypePromotion.h>
 
 #include <optional>
+#include <compare>
 
 
 namespace DB
@@ -68,8 +68,6 @@ using DatabaseAndTableName = std::pair<String, String>;
 class BackupEntriesCollector;
 class RestorerFromBackup;
 
-class ConditionSelectivityEstimator;
-
 struct ColumnSize
 {
     size_t marks = 0;
@@ -93,12 +91,14 @@ using IndexSize = ColumnSize;
   * - data storage structure (compression, etc.)
   * - concurrent access to data (locks, etc.)
   */
-class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>, public IHints<>
+class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>, public IHints<1, IStorage>
 {
 public:
     IStorage() = delete;
     /// Storage metadata can be set separately in setInMemoryMetadata method
-    explicit IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_ = nullptr);
+    explicit IStorage(StorageID storage_id_)
+        : storage_id(std::move(storage_id_))
+        , metadata(std::make_unique<StorageInMemoryMetadata>()) {}
 
     IStorage(const IStorage &) = delete;
     IStorage & operator=(const IStorage &) = delete;
@@ -135,8 +135,6 @@ public:
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
-    virtual ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const;
-
     /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
     virtual std::optional<NameSet> supportedPrewhereColumns() const { return std::nullopt; }
@@ -165,18 +163,14 @@ public:
 
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
-    /// Returns true if storage supports optimizations of functions by reading subcolumns.
-    virtual bool supportsOptimizationToSubcolumns() const { return supportsSubcolumns(); }
 
     /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
     /// Storage may throw an exception later if some query kind is not fully supported.
     /// This method can return true for readonly engines that return the same rows for reading (such as SystemNumbers)
     virtual bool supportsTransactions() const { return false; }
 
-    /// Returns true if the storage supports storing of data type Object.
-    virtual bool supportsDynamicSubcolumnsDeprecated() const { return false; }
-
     /// Returns true if the storage supports storing of dynamic subcolumns.
+    /// For now it makes sense only for data type Object.
     virtual bool supportsDynamicSubcolumns() const { return false; }
 
     /// Requires squashing small blocks to large for optimal storage.
@@ -217,10 +211,6 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
-    void setVirtuals(VirtualColumnsDescription virtuals_)
-    {
-        virtuals.set(std::make_unique<VirtualColumnsDescription>(std::move(virtuals_)));
-    }
 
     /// Return list of virtual columns (like _part, _table, etc). In the vast
     /// majority of cases virtual columns are static constant part of Storage
@@ -232,9 +222,7 @@ public:
     /// virtual column will be overridden and inaccessible.
     ///
     /// By default return empty list of columns.
-    VirtualsDescriptionPtr getVirtualsPtr() const { return virtuals.get(); }
-    NamesAndTypesList getVirtualsList() const { return virtuals.get()->getNamesAndTypesList(); }
-    Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
+    virtual NamesAndTypesList getVirtuals() const;
 
     Names getAllRegisteredNames() const override;
 
@@ -262,30 +250,23 @@ public:
     /// Return true if storage can execute lightweight delete mutations.
     virtual bool supportsLightweightDelete() const { return false; }
 
-    /// Return true if storage has any projection.
-    virtual bool hasProjection() const { return false; }
-
     /// Return true if storage can execute 'DELETE FROM' mutations. This is different from lightweight delete
     /// because those are internally translated into 'ALTER UDPATE' mutations.
     virtual bool supportsDelete() const { return false; }
 
     /// Return true if the trivial count query could be optimized without reading the data at all
     /// in totalRows() or totalRowsByPartitionPredicate() methods or with optimized reading in read() method.
-    virtual bool supportsTrivialCountOptimization(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*query_context*/) const
-    {
-        return false;
-    }
+    virtual bool supportsTrivialCountOptimization() const { return false; }
 
 private:
+
     StorageID storage_id;
 
     mutable std::mutex id_mutex;
 
-    /// Multiversion storage metadata. Allows to read/write storage metadata without locks.
+    /// Multiversion storage metadata. Allows to read/write storage metadata
+    /// without locks.
     MultiVersionStorageMetadataPtr metadata;
-
-    /// Description of virtual columns. Optional, may be set in constructor.
-    MultiVersionVirtualsDescriptionPtr virtuals;
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(
@@ -514,11 +495,7 @@ public:
         ContextPtr /* context */);
 
     /// Checks that partition commands can be applied to storage.
-    virtual void checkAlterPartitionIsPossible(
-        const PartitionCommands & commands,
-        const StorageMetadataPtr & metadata_snapshot,
-        const Settings & settings,
-        ContextPtr context) const;
+    virtual void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const;
 
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
@@ -583,10 +560,10 @@ public:
       * @see shutdown()
       * @see flushAndPrepareForShutdown()
       */
-    void flushAndShutdown(bool is_drop = false)
+    void flushAndShutdown()
     {
         flushAndPrepareForShutdown();
-        shutdown(is_drop);
+        shutdown();
     }
 
     /** If the table have to do some complicated work when destroying an object - do it in advance.
@@ -594,7 +571,7 @@ public:
       * By default, does nothing.
       * Can be called simultaneously from different threads, even after a call to drop().
       */
-    virtual void shutdown(bool is_drop = false) { UNUSED(is_drop); } // NOLINT
+    virtual void shutdown() {}
 
     /// Called before shutdown() to flush data to underlying storage
     /// Data in memory need to be persistent
@@ -612,47 +589,15 @@ public:
 
     std::atomic<bool> is_dropped{false};
     std::atomic<bool> is_detached{false};
-    std::atomic<bool> is_being_restarted{false};
 
-    /** A list of tasks to check a validity of data.
-      * Each IStorage implementation may interpret this task in its own way.
-      * E.g. for some storages it's a list of files in filesystem, for others it can be a list of parts.
-      * Also it may hold resources (e.g. locks) required during check.
-      */
-    struct DataValidationTasksBase
-    {
-        /// Number of entries left to check.
-        /// It decreases after each call to checkDataNext().
-        virtual size_t size() const = 0;
-        virtual ~DataValidationTasksBase() = default;
-    };
+    /// Does table support index for IN sections
+    virtual bool supportsIndexForIn() const { return false; }
 
-    using DataValidationTasksPtr = std::shared_ptr<DataValidationTasksBase>;
+    /// Provides a hint that the storage engine may evaluate the IN-condition by using an index.
+    virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, ContextPtr /* query_context */, const StorageMetadataPtr & /* metadata_snapshot */) const { return false; }
 
-    /// Specifies to check all data / partition / part
-    using CheckTaskFilter = std::variant<std::monostate, ASTPtr, String>;
-    virtual DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & /* check_task_filter */, ContextPtr /* context */);
-
-    /** Executes one task from the list.
-      * If no tasks left - returns nullopt.
-      * Note: Function `checkDataNext` is accessing `check_task_list` thread-safely,
-      *   and can be called simultaneously for the same `getCheckTaskList` result
-      *   to process different tasks in parallel.
-      * Usage:
-      *
-      * auto check_task_list = storage.getCheckTaskList({}, context);
-      * size_t total_tasks = check_task_list->size();
-      * while (true)
-      * {
-      *     size_t tasks_left = check_task_list->size();
-      *     std::cout << "Checking data: " << (total_tasks - tasks_left) << " / " << total_tasks << " tasks done." << std::endl;
-      *     auto result = storage.checkDataNext(check_task_list);
-      *     if (!result)
-      *         break;
-      *     doSomething(*result);
-      * }
-      */
-    virtual std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list);
+    /// Checks validity of the data
+    virtual CheckResults checkData(const ASTPtr & /* query */, ContextPtr /* context */) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Check query is not supported for {} storage", getName()); }
 
     /// Checks that table could be dropped right now
     /// Otherwise - throws an exception with detailed information.
@@ -684,7 +629,7 @@ public:
     virtual std::optional<UInt64> totalRows(const Settings &) const { return {}; }
 
     /// Same as above but also take partition predicate into account.
-    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG &, ContextPtr) const { return {}; }
+    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const { return {}; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)
@@ -700,15 +645,6 @@ public:
     /// In particular, alloctedBytes() is preferable over bytes()
     /// when considering in-memory blocks.
     virtual std::optional<UInt64> totalBytes(const Settings &) const { return {}; }
-
-    /// If it is possible to quickly determine exact number of uncompressed bytes for the table on storage:
-    /// - disk (uncompressed)
-    ///
-    /// Used for:
-    /// - For total_bytes_uncompressed column in system.tables
-    ///
-    /// Does not take underlying Storage (if any) into account
-    virtual std::optional<UInt64> totalBytesUncompressed(const Settings &) const { return {}; }
 
     /// Number of rows INSERTed since server start.
     ///
@@ -737,9 +673,6 @@ public:
     {
         return getStorageSnapshot(metadata_snapshot, query_context);
     }
-
-    /// Re initialize disks in case the underlying storage policy changed
-    virtual bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) { return true; }
 
     /// A helper to implement read()
     static void readFromPipe(

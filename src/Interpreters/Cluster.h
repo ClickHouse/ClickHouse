@@ -114,8 +114,6 @@ public:
         UInt16 port{0};
         String user;
         String password;
-        String proto_send_chunked = "notchunked";
-        String proto_recv_chunked = "notchunked";
         String quota_key;
 
         /// For inter-server authorization
@@ -219,6 +217,7 @@ public:
         UInt32 shard_num = 0;
         UInt32 weight = 1;
         Addresses local_addresses;
+        Addresses all_addresses;
         /// nullptr if there are no remote addresses
         ConnectionPoolWithFailoverPtr pool;
         /// Connection pool for each replica, contains nullptr for local replicas
@@ -293,14 +292,8 @@ private:
     struct ReplicasAsShardsTag {};
     Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings, size_t max_replicas_from_shard);
 
-    void addShard(
-        const Settings & settings,
-        Addresses addresses,
-        bool treat_local_as_remote,
-        UInt32 current_shard_num,
-        UInt32 weight = 1,
-        ShardInfoInsertPathForInternalReplication insert_paths = {},
-        bool internal_replication = false);
+    void addShard(const Settings & settings, Addresses && addresses, bool treat_local_as_remote, UInt32 current_shard_num,
+                  ShardInfoInsertPathForInternalReplication && insert_paths = {}, UInt32 weight = 1, bool internal_replication = false);
 
     /// Inter-server secret
     String secret;

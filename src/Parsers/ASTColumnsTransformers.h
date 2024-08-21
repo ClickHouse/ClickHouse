@@ -2,7 +2,6 @@
 
 #include <Parsers/IAST.h>
 
-
 namespace re2
 {
     class RE2;
@@ -49,7 +48,7 @@ public:
     }
     void transform(ASTs & nodes) const override;
     void appendColumnName(WriteBuffer & ostr) const override;
-    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void updateTreeHashImpl(SipHash & hash_state) const override;
 
     // Case 1  APPLY (quantile(0.9))
     String func_name;
@@ -77,14 +76,16 @@ public:
         return clone;
     }
     void transform(ASTs & nodes) const override;
-    void setPattern(String pattern_);
-    std::shared_ptr<re2::RE2> getMatcher() const;
+    void setPattern(String pattern);
+    const std::shared_ptr<re2::RE2> & getMatcher() const;
+    bool isColumnMatching(const String & column_name) const;
     void appendColumnName(WriteBuffer & ostr) const override;
-    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
-    std::optional<String> pattern;
+    std::shared_ptr<re2::RE2> column_matcher;
+    String original_pattern;
 };
 
 class ASTColumnsReplaceTransformer : public IASTColumnsTransformer
@@ -102,7 +103,7 @@ public:
         }
 
         void appendColumnName(WriteBuffer & ostr) const override;
-        void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+        void updateTreeHashImpl(SipHash & hash_state) const override;
 
         String name;
 
@@ -120,7 +121,7 @@ public:
     }
     void transform(ASTs & nodes) const override;
     void appendColumnName(WriteBuffer & ostr) const override;
-    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

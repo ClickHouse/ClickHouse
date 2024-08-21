@@ -32,9 +32,9 @@ public:
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 protected:
-    Chunk read() override;
+    Chunk generate() override;
 
-    void onCancel() noexcept override
+    void onCancel() override
     {
         is_stopped = 1;
     }

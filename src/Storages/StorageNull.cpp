@@ -2,9 +2,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
 
-#include <Databases/IDatabase.h>
+#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
+#include <Databases/IDatabase.h>
 
 #include <IO/WriteHelpers.h>
 

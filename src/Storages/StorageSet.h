@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage.h>
+#include <Storages/SetSettings.h>
 
 
 namespace DB
@@ -78,7 +79,7 @@ public:
     String getName() const override { return "Set"; }
 
     /// Access the insides.
-    SetPtr getSet() const;
+    SetPtr & getSet() { return set; }
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
@@ -86,9 +87,7 @@ public:
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
 private:
-    /// Allows to concurrently truncate the set and work (read/fill) the existing set.
-    mutable std::mutex mutex;
-    SetPtr set TSA_GUARDED_BY(mutex);
+    SetPtr set;
 
     void insertBlock(const Block & block, ContextPtr) override;
     void finishInsert() override;

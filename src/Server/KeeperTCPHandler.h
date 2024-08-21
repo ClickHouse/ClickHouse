@@ -17,8 +17,6 @@
 #include <unordered_map>
 #include <Coordination/KeeperConnectionStats.h>
 #include <Poco/Timestamp.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
 
 namespace DB
 {
@@ -26,13 +24,7 @@ namespace DB
 struct SocketInterruptablePollWrapper;
 using SocketInterruptablePollWrapperPtr = std::unique_ptr<SocketInterruptablePollWrapper>;
 
-struct RequestWithResponse
-{
-    Coordination::ZooKeeperResponsePtr response;
-    Coordination::ZooKeeperRequestPtr request; /// it can be nullptr for some responses
-};
-
-using ThreadSafeResponseQueue = ConcurrentBoundedQueue<RequestWithResponse>;
+using ThreadSafeResponseQueue = ConcurrentBoundedQueue<Coordination::ZooKeeperResponsePtr>;
 using ThreadSafeResponseQueuePtr = std::shared_ptr<ThreadSafeResponseQueue>;
 
 struct LastOp;
@@ -69,7 +61,7 @@ public:
     ~KeeperTCPHandler() override;
 
 private:
-    LoggerPtr log;
+    Poco::Logger * log;
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
     Poco::Timespan operation_timeout;
     Poco::Timespan min_session_timeout;
@@ -86,21 +78,15 @@ private:
     Coordination::XID close_xid = Coordination::CLOSE_XID;
 
     /// Streams for reading/writing from/to client connection socket.
-    std::optional<ReadBufferFromPocoSocket> in;
-    std::optional<WriteBufferFromPocoSocket> out;
-    std::optional<CompressedReadBuffer> compressed_in;
-    std::optional<CompressedWriteBuffer> compressed_out;
+    std::shared_ptr<ReadBufferFromPocoSocket> in;
+    std::shared_ptr<WriteBufferFromPocoSocket> out;
 
     std::atomic<bool> connected{false};
 
     void runImpl();
 
-    WriteBuffer & getWriteBuffer();
-    void flushWriteBuffer();
-    ReadBuffer & getReadBuffer();
-
-    void sendHandshake(bool has_leader, bool & use_compression);
-    Poco::Timespan receiveHandshake(int32_t handshake_length, bool & use_compression);
+    void sendHandshake(bool has_leader);
+    Poco::Timespan receiveHandshake(int32_t handshake_length);
 
     static bool isHandShake(int32_t handshake_length);
     bool tryExecuteFourLetterWordCmd(int32_t command);
@@ -110,7 +96,7 @@ private:
     void packageSent();
     void packageReceived();
 
-    void updateStats(Coordination::ZooKeeperResponsePtr & response, const Coordination::ZooKeeperRequestPtr & request);
+    void updateStats(Coordination::ZooKeeperResponsePtr & response);
 
     Poco::Timestamp established;
 

@@ -1,30 +1,4 @@
 #include <IO/S3/Credentials.h>
-#include <Common/Exception.h>
-
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int UNSUPPORTED_METHOD;
-}
-
-namespace S3
-{
-    std::string tryGetRunningAvailabilityZone()
-    {
-        try
-        {
-            return getRunningAvailabilityZone();
-        }
-        catch (...)
-        {
-            tryLogCurrentException("tryGetRunningAvailabilityZone");
-            return "";
-        }
-    }
-}
-}
 
 #if USE_AWS_S3
 
@@ -37,23 +11,13 @@ namespace S3
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 
-#    include <aws/core/utils/HashingUtils.h>
-#    include <aws/core/platform/FileSystem.h>
-
 #    include <Common/logger_useful.h>
+
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <IO/S3/Client.h>
 
 #    include <fstream>
-
-#    include <boost/algorithm/string/split.hpp>
-#    include <boost/algorithm/string/classification.hpp>
-#    include <Poco/Exception.h>
-#    include <Poco/URI.h>
-#    include <Poco/Net/HTTPClientSession.h>
-#    include <Poco/Net/HTTPRequest.h>
-#    include <Poco/Net/HTTPResponse.h>
-#    include <Poco/StreamCopier.h>
+#    include <base/EnumReflection.h>
 
 
 namespace DB
@@ -62,7 +26,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int AWS_ERROR;
-    extern const int GCP_ERROR;
 }
 
 namespace S3
@@ -80,15 +43,12 @@ bool areCredentialsEmptyOrExpired(const Aws::Auth::AWSCredentials & credentials,
     return now >= credentials.GetExpiration() - std::chrono::seconds(expiration_window_seconds);
 }
 
-const char SSO_CREDENTIALS_PROVIDER_LOG_TAG[] = "SSOCredentialsProvider";
-constexpr int AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS = 3;
-
 }
 
 AWSEC2MetadataClient::AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration, const char * endpoint_)
     : Aws::Internal::AWSHttpResourceClient(client_configuration)
     , endpoint(endpoint_)
-    , logger(getLogger("AWSEC2InstanceProfileConfigLoader"))
+    , logger(&Poco::Logger::get("AWSEC2InstanceProfileConfigLoader"))
 {
 }
 
@@ -186,6 +146,30 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentialsSecurely() const
     return GetResourceWithAWSWebServiceResult(credentials_request).GetPayload();
 }
 
+Aws::String AWSEC2MetadataClient::getCurrentAvailabilityZone() const
+{
+    String user_agent_string = awsComputeUserAgentString();
+    auto [new_token, response_code] = getEC2MetadataToken(user_agent_string);
+    if (response_code != Aws::Http::HttpResponseCode::OK || new_token.empty())
+        throw DB::Exception(ErrorCodes::AWS_ERROR,
+            "Failed to make token request. HTTP response code: {}", response_code);
+
+    token = std::move(new_token);
+    const String url = endpoint + EC2_AVAILABILITY_ZONE_RESOURCE;
+    std::shared_ptr<Aws::Http::HttpRequest> profile_request(
+        Aws::Http::CreateHttpRequest(url, Aws::Http::HttpMethod::HTTP_GET, Aws::Utils::Stream::DefaultResponseStreamFactoryMethod));
+
+    profile_request->SetHeaderValue(EC2_IMDS_TOKEN_HEADER, token);
+    profile_request->SetUserAgent(user_agent_string);
+
+    const auto result = GetResourceWithAWSWebServiceResult(profile_request);
+    if (result.GetResponseCode() != Aws::Http::HttpResponseCode::OK)
+        throw DB::Exception(ErrorCodes::AWS_ERROR,
+            "Failed to get availability zone. HTTP response code: {}", result.GetResponseCode());
+
+    return Aws::Utils::StringUtils::Trim(result.GetPayload().c_str());
+}
+
 std::pair<Aws::String, Aws::Http::HttpResponseCode> AWSEC2MetadataClient::getEC2MetadataToken(const std::string & user_agent_string) const
 {
     std::lock_guard locker(token_mutex);
@@ -210,14 +194,14 @@ Aws::String AWSEC2MetadataClient::getCurrentRegion() const
     return Aws::Region::AWS_GLOBAL;
 }
 
-static Aws::String getAWSMetadataEndpoint()
+std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
 {
-    auto logger = getLogger("AWSEC2InstanceProfileConfigLoader");
     Aws::String ec2_metadata_service_endpoint = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT");
+    auto * logger = &Poco::Logger::get("AWSEC2InstanceProfileConfigLoader");
     if (ec2_metadata_service_endpoint.empty())
     {
         Aws::String ec2_metadata_service_endpoint_mode = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE");
-        if (ec2_metadata_service_endpoint_mode.empty())
+        if (ec2_metadata_service_endpoint_mode.length() == 0)
         {
             ec2_metadata_service_endpoint = "http://169.254.169.254"; //default to IPv4 default endpoint
         }
@@ -244,85 +228,14 @@ static Aws::String getAWSMetadataEndpoint()
             }
         }
     }
-    return ec2_metadata_service_endpoint;
+    LOG_INFO(logger, "Using IMDS endpoint: {}", ec2_metadata_service_endpoint);
+    return std::make_shared<AWSEC2MetadataClient>(client_configuration, ec2_metadata_service_endpoint.c_str());
 }
-
-std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
-{
-    auto endpoint = getAWSMetadataEndpoint();
-    return std::make_shared<AWSEC2MetadataClient>(client_configuration, endpoint.c_str());
-}
-
-String AWSEC2MetadataClient::getAvailabilityZoneOrException()
-{
-    Poco::URI uri(getAWSMetadataEndpoint() + EC2_AVAILABILITY_ZONE_RESOURCE);
-    Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
-    session.setTimeout(Poco::Timespan(AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS, 0));
-
-    Poco::Net::HTTPResponse response;
-    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
-    session.sendRequest(request);
-
-    std::istream & rs = session.receiveResponse(response);
-    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
-        throw DB::Exception(ErrorCodes::AWS_ERROR, "Failed to get AWS availability zone. HTTP response code: {}", response.getStatus());
-    String response_data;
-    Poco::StreamCopier::copyToString(rs, response_data);
-    return response_data;
-}
-
-String getGCPAvailabilityZoneOrException()
-{
-    Poco::URI uri(String(GCP_METADATA_SERVICE_ENDPOINT) + "/computeMetadata/v1/instance/zone");
-    Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
-    session.setTimeout(Poco::Timespan(AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS, 0));
-
-    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
-    Poco::Net::HTTPResponse response;
-    request.set("Metadata-Flavor", "Google");
-
-    session.sendRequest(request);
-    std::istream & rs = session.receiveResponse(response);
-    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
-        throw DB::Exception(ErrorCodes::GCP_ERROR, "Failed to get GCP availability zone. HTTP response code: {}", response.getStatus());
-    String response_data;
-    Poco::StreamCopier::copyToString(rs, response_data);
-    Strings zone_info;
-    boost::split(zone_info, response_data, boost::is_any_of("/"));
-    /// We expect GCP returns a string as "projects/123456789/zones/us-central1a".
-    if (zone_info.size() != 4)
-        throw DB::Exception(ErrorCodes::GCP_ERROR, "Invalid format of GCP zone information, expect projects/<project-number>/zones/<zone-value>");
-    return zone_info[3];
-}
-
-String getRunningAvailabilityZone()
-{
-    LOG_INFO(getLogger("Application"), "Trying to detect the availability zone.");
-    try
-    {
-        return AWSEC2MetadataClient::getAvailabilityZoneOrException();
-    }
-    catch (...)
-    {
-        auto aws_ex_msg = getExceptionMessage(std::current_exception(), false);
-        try
-        {
-            return getGCPAvailabilityZoneOrException();
-        }
-        catch (...)
-        {
-            auto gcp_ex_msg = getExceptionMessage(std::current_exception(), false);
-            throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Failed to find the availability zone, tried AWS and GCP. AWS Error: {}\nGCP Error: {}", aws_ex_msg, gcp_ex_msg);
-        }
-    }
-}
-
 
 AWSEC2InstanceProfileConfigLoader::AWSEC2InstanceProfileConfigLoader(const std::shared_ptr<AWSEC2MetadataClient> & client_, bool use_secure_pull_)
     : client(client_)
     , use_secure_pull(use_secure_pull_)
-    , logger(getLogger("AWSEC2InstanceProfileConfigLoader"))
+    , logger(&Poco::Logger::get("AWSEC2InstanceProfileConfigLoader"))
 {
 }
 
@@ -364,7 +277,7 @@ bool AWSEC2InstanceProfileConfigLoader::LoadInternal()
 AWSInstanceProfileCredentialsProvider::AWSInstanceProfileCredentialsProvider(const std::shared_ptr<AWSEC2InstanceProfileConfigLoader> & config_loader)
     : ec2_metadata_config_loader(config_loader)
     , load_frequency_ms(Aws::Auth::REFRESH_THRESHOLD)
-    , logger(getLogger("AWSInstanceProfileCredentialsProvider"))
+    , logger(&Poco::Logger::get("AWSInstanceProfileCredentialsProvider"))
 {
     LOG_INFO(logger, "Creating Instance with injected EC2MetadataClient and refresh rate.");
 }
@@ -408,7 +321,7 @@ void AWSInstanceProfileCredentialsProvider::refreshIfExpired()
 
 AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(
     DB::S3::PocoHTTPClientConfiguration & aws_client_configuration, uint64_t expiration_window_seconds_)
-    : logger(getLogger("AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider"))
+    : logger(&Poco::Logger::get("AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider"))
     , expiration_window_seconds(expiration_window_seconds_)
 {
     // check environment variables
@@ -536,142 +449,12 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::refreshIfExpired()
     Reload();
 }
 
-
-SSOCredentialsProvider::SSOCredentialsProvider(DB::S3::PocoHTTPClientConfiguration aws_client_configuration_, uint64_t expiration_window_seconds_)
-    : profile_to_use(Aws::Auth::GetConfigProfileName())
-    , aws_client_configuration(std::move(aws_client_configuration_))
-    , expiration_window_seconds(expiration_window_seconds_)
-    , logger(getLogger(SSO_CREDENTIALS_PROVIDER_LOG_TAG))
-{
-    LOG_TRACE(logger, "Setting sso credentials provider to read config from {}", profile_to_use);
-}
-
-Aws::Auth::AWSCredentials SSOCredentialsProvider::GetAWSCredentials()
-{
-    refreshIfExpired();
-    Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
-    return credentials;
-}
-
-void SSOCredentialsProvider::Reload()
-{
-    auto profile = Aws::Config::GetCachedConfigProfile(profile_to_use);
-    const auto access_token = [&]
-    {
-        // If we have an SSO Session set, use the refreshed token.
-        if (profile.IsSsoSessionSet())
-        {
-            sso_region = profile.GetSsoSession().GetSsoRegion();
-            auto token = bearer_token_provider.GetAWSBearerToken();
-            expires_at = token.GetExpiration();
-            return token.GetToken();
-        }
-
-        Aws::String hashed_start_url = Aws::Utils::HashingUtils::HexEncode(Aws::Utils::HashingUtils::CalculateSHA1(profile.GetSsoStartUrl()));
-        auto profile_directory = Aws::Auth::ProfileConfigFileAWSCredentialsProvider::GetProfileDirectory();
-        Aws::StringStream ss_token;
-        ss_token << profile_directory;
-        ss_token << Aws::FileSystem::PATH_DELIM << "sso"  << Aws::FileSystem::PATH_DELIM << "cache" << Aws::FileSystem::PATH_DELIM << hashed_start_url << ".json";
-        auto sso_token_path = ss_token.str();
-        LOG_TEST(logger, "Loading token from: {}", sso_token_path);
-        sso_region = profile.GetSsoRegion();
-        return loadAccessTokenFile(sso_token_path);
-    }();
-
-    if (access_token.empty())
-        return;
-
-    if (expires_at < Aws::Utils::DateTime::Now())
-    {
-        LOG_TRACE(logger, "Cached Token expired at {}", expires_at.ToGmtString(Aws::Utils::DateFormat::ISO_8601));
-        return;
-    }
-
-    Aws::Internal::SSOCredentialsClient::SSOGetRoleCredentialsRequest request;
-    request.m_ssoAccountId = profile.GetSsoAccountId();
-    request.m_ssoRoleName = profile.GetSsoRoleName();
-    request.m_accessToken = access_token;
-
-    aws_client_configuration.scheme = Aws::Http::Scheme::HTTPS;
-    aws_client_configuration.region = sso_region;
-    LOG_TEST(logger, "Passing config to client for region: {}", sso_region);
-
-    Aws::Vector<Aws::String> retryable_errors;
-    retryable_errors.push_back("TooManyRequestsException");
-
-    aws_client_configuration.retryStrategy = Aws::MakeShared<Aws::Client::SpecifiedRetryableErrorsRetryStrategy>(SSO_CREDENTIALS_PROVIDER_LOG_TAG, retryable_errors, /*maxRetries=*/3);
-    client = Aws::MakeUnique<Aws::Internal::SSOCredentialsClient>(SSO_CREDENTIALS_PROVIDER_LOG_TAG, aws_client_configuration);
-
-    LOG_TRACE(logger, "Requesting credentials with AWS_ACCESS_KEY: {}", sso_account_id);
-    auto result = client->GetSSOCredentials(request);
-    LOG_TRACE(logger, "Successfully retrieved credentials with AWS_ACCESS_KEY: {}", result.creds.GetAWSAccessKeyId());
-
-    credentials = result.creds;
-}
-
-void SSOCredentialsProvider::refreshIfExpired()
-{
-    Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
-    if (!areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
-        return;
-
-    guard.UpgradeToWriterLock();
-
-    if (!areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
-        return;
-
-    Reload();
-}
-
-Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_access_token_path)
-{
-    LOG_TEST(logger, "Preparing to load token from: {}", sso_access_token_path);
-
-    Aws::IFStream input_file(sso_access_token_path.c_str());
-
-    if (input_file)
-    {
-        LOG_TEST(logger, "Reading content from token file: {}", sso_access_token_path);
-
-        Aws::Utils::Json::JsonValue token_doc(input_file);
-        if (!token_doc.WasParseSuccessful())
-        {
-            LOG_TRACE(logger, "Failed to parse token file: {}", sso_access_token_path);
-            return "";
-        }
-        Aws::Utils::Json::JsonView token_view(token_doc);
-        Aws::String tmp_access_token, expiration_str;
-        tmp_access_token = token_view.GetString("accessToken");
-        expiration_str = token_view.GetString("expiresAt");
-        Aws::Utils::DateTime expiration(expiration_str, Aws::Utils::DateFormat::ISO_8601);
-
-        LOG_TEST(logger, "Token cache file contains accessToken [{}], expiration [{}]", tmp_access_token, expiration_str);
-
-        if (tmp_access_token.empty() || !expiration.WasParseSuccessful())
-        {
-            LOG_TRACE(
-                logger,
-                "Token cache file failed because {}{}",
-                (tmp_access_token.empty() ? "AccessToken was empty " : ""),
-                (!expiration.WasParseSuccessful() ? "failed to parse expiration" : ""));
-            return "";
-        }
-        expires_at = expiration;
-        return tmp_access_token;
-    }
-    else
-    {
-        LOG_TEST(logger, "Unable to open token file on path: {}", sso_access_token_path);
-        return "";
-    }
-}
-
 S3CredentialsProviderChain::S3CredentialsProviderChain(
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
         CredentialsConfiguration credentials_configuration)
 {
-    auto logger = getLogger("S3CredentialsProviderChain");
+    auto * logger = &Poco::Logger::get("S3CredentialsProviderChain");
 
     /// we don't provide any credentials to avoid signing
     if (credentials_configuration.no_sign_request)
@@ -702,7 +485,6 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.region,
                 configuration.remote_host_filter,
                 configuration.s3_max_redirects,
-                configuration.s3_retry_attempts,
                 configuration.enable_s3_requests_logging,
                 configuration.for_disk_s3,
                 configuration.get_request_throttler,
@@ -712,19 +494,6 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
 
         AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
 
-        {
-            DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-                configuration.region,
-                configuration.remote_host_filter,
-                configuration.s3_max_redirects,
-                configuration.s3_retry_attempts,
-                configuration.enable_s3_requests_logging,
-                configuration.for_disk_s3,
-                configuration.get_request_throttler,
-                configuration.put_request_throttler);
-            AddProvider(std::make_shared<SSOCredentialsProvider>(
-                std::move(aws_client_configuration), credentials_configuration.expiration_window_seconds));
-        }
 
         /// ECS TaskRole Credentials only available when ENVIRONMENT VARIABLE is set.
         const auto relative_uri = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI);
@@ -760,14 +529,13 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.region,
                 configuration.remote_host_filter,
                 configuration.s3_max_redirects,
-                configuration.s3_retry_attempts,
                 configuration.enable_s3_requests_logging,
                 configuration.for_disk_s3,
                 configuration.get_request_throttler,
                 configuration.put_request_throttler,
                 Aws::Http::SchemeMapper::ToString(Aws::Http::Scheme::HTTP));
 
-            /// See MakeDefaultHTTPResourceClientConfiguration().
+            /// See MakeDefaultHttpResourceClientConfiguration().
             /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
             /// of contrib/aws/aws-cpp-sdk-core/source/internal/AWSHttpResourceClient.cpp
             aws_client_configuration.maxConnections = 2;
@@ -785,6 +553,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
             aws_client_configuration.requestTimeoutMs = 1000;
 
             aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
+
             auto ec2_metadata_client = InitEC2MetadataClient(aws_client_configuration);
             auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, !credentials_configuration.use_insecure_imds_request);
 
@@ -796,23 +565,6 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     /// Quite verbose provider (argues if file with credentials doesn't exist) so iut's the last one
     /// in chain.
     AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
-}
-
-}
-
-}
-
-#else
-
-namespace DB
-{
-
-namespace S3
-{
-
-std::string getRunningAvailabilityZone()
-{
-    throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD, "Does not support availability zone detection for non-cloud environment");
 }
 
 }

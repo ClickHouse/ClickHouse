@@ -50,6 +50,11 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
 # Broken symlinks
 find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symlinks found"
 
+# Double whitespaces
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
+    grep -vP $EXCLUDE_DIRS |
+    while read i; do $ROOT_PATH/utils/check-style/double-whitespaces.pl < $i || echo -e "^ File $i contains double whitespaces\n"; done
+
 # Unused/Undefined/Duplicates ErrorCodes/ProfileEvents/CurrentMetrics
 declare -A EXTERN_TYPES
 EXTERN_TYPES[ErrorCodes]=int
@@ -65,14 +70,12 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::increment
     ProfileEvents::incrementForLogMessage
     ProfileEvents::getName
-    ProfileEvents::Timer
     ProfileEvents::Type
     ProfileEvents::TypeEnum
     ProfileEvents::dumpToMapColumn
     ProfileEvents::getProfileEvents
     ProfileEvents::ThreadIdToCountersSnapshot
     ProfileEvents::LOCAL_NAME
-    ProfileEvents::keeper_profile_events
     ProfileEvents::CountersIncrement
 
     CurrentMetrics::add
@@ -84,7 +87,6 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::Metric
     CurrentMetrics::values
     CurrentMetrics::Value
-    CurrentMetrics::keeper_metrics
 
     ErrorCodes::ErrorCode
     ErrorCodes::getName
@@ -93,7 +95,6 @@ EXTERN_TYPES_EXCLUDES=(
     ErrorCodes::values
     ErrorCodes::values[i]
     ErrorCodes::getErrorCodeByName
-    ErrorCodes::Value
 )
 for extern_type in ${!EXTERN_TYPES[@]}; do
     type_of_extern=${EXTERN_TYPES[$extern_type]}
@@ -105,7 +106,7 @@ for extern_type in ${!EXTERN_TYPES[@]}; do
     find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
         # NOTE: the check is pretty dumb and distinguish only by the type_of_extern,
         # and this matches with zkutil::CreateMode
-        grep -v -e 'src/Common/ZooKeeper/Types.h' -e 'src/Coordination/KeeperConstants.cpp'
+        grep -v 'src/Common/ZooKeeper/Types.h'
     } | {
         grep -vP $EXCLUDE_DIRS | xargs grep -l -P "extern const $type_of_extern $allowed_chars"
     } | while read file; do
@@ -154,6 +155,9 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
     grep -vP $EXCLUDE_DIRS |
     xargs xmllint --noout --nonet
 
+# FIXME: for now only clickhouse-test
+pylint --rcfile=$ROOT_PATH/.pylintrc --persistent=no --score=n $ROOT_PATH/tests/clickhouse-test $ROOT_PATH/tests/ci/*.py
+
 find $ROOT_PATH -not -path $ROOT_PATH'/contrib*' \( -name '*.yaml' -or -name '*.yml' \) -type f |
     grep -vP $EXCLUDE_DIRS |
     xargs yamllint --config-file=$ROOT_PATH/.yamllint
@@ -173,8 +177,6 @@ for test_case in "${tests_with_query_log[@]}"; do
         grep -qE 'current_database.*\$CLICKHOUSE_DATABASE' "$test_case"
     } || echo "Queries to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
 done
-
-grep -iE 'SYSTEM STOP MERGES;?$' -R $ROOT_PATH/tests/queries && echo "Merges cannot be disabled globally in fast/stateful/stateless tests, because it will break concurrently running queries"
 
 # There shouldn't be large jumps between test numbers (since they should be consecutive)
 max_diff=$(
@@ -242,22 +244,8 @@ for test_case in "${tests_with_replicated_merge_tree[@]}"; do
     esac
 done
 
-# All submodules should be from https://github.com/
-git config --file "$ROOT_PATH/.gitmodules" --get-regexp 'submodule\..+\.url' | \
-while read -r line; do
-    name=${line#submodule.}; name=${name%.url*}
-    url=${line#* }
-    [[ "$url" != 'https://github.com/'* ]] && echo "All submodules should be from https://github.com/, submodule '$name' has '$url'"
-done
-
-# All submodules should be of this form: [submodule "contrib/libxyz"] (for consistency, the submodule name does matter too much)
-# - restrict the check to top-level .gitmodules file
-git config --file "$ROOT_PATH/.gitmodules" --get-regexp 'submodule\..+\.path' | \
-while read -r line; do
-    name=${line#submodule.}; name=${name%.path*}
-    path=${line#* }
-    [ "$name" != "$path" ] && echo "Submodule name '$name' is not equal to it's path '$path'"
-done
+# All the submodules should be from https://github.com/
+find $ROOT_PATH -name '.gitmodules' | while read i; do grep -F 'url = ' $i | grep -v -F 'https://github.com/' && echo 'All the submodules should be from https://github.com/'; done
 
 # There shouldn't be any code snippets under GPL or LGPL
 find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | xargs grep -i -F 'General Public License' && echo "There shouldn't be any code snippets under GPL or LGPL"
@@ -286,11 +274,6 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     xargs grep -F '!!!' | grep -P '.' && echo "Too many exclamation marks (looks dirty, unconfident)."
 
-# Exclamation mark in a message
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs grep -F '!",' | grep -P '.' && echo "No need for an exclamation mark (looks dirty, unconfident)."
-
 # Trailing whitespaces
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
@@ -306,6 +289,8 @@ std_cerr_cout_excludes=(
     /examples/
     /tests/
     _fuzzer
+    # DUMP()
+    base/base/iostream_debug_helpers.h
     # OK
     src/Common/ProgressIndication.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests
@@ -318,19 +303,13 @@ std_cerr_cout_excludes=(
     src/Interpreters/Context.cpp
     # IProcessor::dump()
     src/Processors/IProcessor.cpp
-    src/Client/ClientApplicationBase.cpp
     src/Client/ClientBase.cpp
     src/Client/LineReader.cpp
     src/Client/QueryFuzzer.cpp
     src/Client/Suggest.cpp
-    src/Client/ClientBase.h
-    src/Client/LineReader.h
-    src/Client/ReplxxLineReader.h
     src/Bridge/IBridge.cpp
     src/Daemon/BaseDaemon.cpp
     src/Loggers/Loggers.cpp
-    src/Common/GWPAsan.cpp
-    src/Common/ProgressIndication.h
 )
 sources_with_std_cerr_cout=( $(
     find $ROOT_PATH/{src,base} -name '*.h' -or -name '*.cpp' | \
@@ -362,7 +341,7 @@ done
 
 expect_tests=( $(find $ROOT_PATH/tests/queries -name '*.expect') )
 for test_case in "${expect_tests[@]}"; do
-    pattern="^exp_internal -f \$CLICKHOUSE_TMP/\$basename.debuglog 0$"
+    pattern="^exp_internal -f \$env(CLICKHOUSE_TMP)/\$basename.debuglog 0$"
     grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
 
     if grep -q "^spawn.*CLICKHOUSE_CLIENT_BINARY$" "$test_case"; then
@@ -415,11 +394,6 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     xargs grep -P '__builtin_unreachable' && echo "Use UNREACHABLE() from defines.h instead"
 
-# Forbid mt19937() and random_device() which are outdated and slow
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs grep -P '(std::mt19937|std::mersenne_twister_engine|std::random_device)' && echo "Use pcg64_fast (from pcg_random.h) and randomSeed (from Common/randomSeed.h) instead"
-
 # Require checking return value of close(),
 # since it can hide fd misuse and break other places.
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
@@ -441,29 +415,5 @@ find $ROOT_PATH/tests/queries/1_stateful -name '*.sql' -or -name '*.sh' | grep -
 # Check for bad punctuation: whitespace before comma.
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number '\w ,' | grep -v 'bad punctuation is ok here' && echo "^ There is bad punctuation: whitespace before comma. You should write it like this: 'Hello, world!'"
 
-# Check usage of std::regex which is too bloated and slow.
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number 'std::regex' | grep -P '.' && echo "^ Please use re2 instead of std::regex"
-
 # Cyrillic characters hiding inside Latin.
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number '[a-zA-Z][а-яА-ЯёЁ]|[а-яА-ЯёЁ][a-zA-Z]' && echo "^ Cyrillic characters found in unexpected place."
-
-# Orphaned header files.
-join -v1 <(find $ROOT_PATH/{src,programs,utils} -name '*.h' -printf '%f\n' | sort | uniq) <(find $ROOT_PATH/{src,programs,utils} -name '*.cpp' -or -name '*.c' -or -name '*.h' -or -name '*.S' | xargs grep --no-filename -o -P '[\w-]+\.h' | sort | uniq) |
-    grep . && echo '^ Found orphan header files.'
-
-# Don't allow dynamic compiler check with CMake, because we are using hermetic, reproducible, cross-compiled, static (TLDR, good) builds.
-ls -1d $ROOT_PATH/contrib/*-cmake | xargs -I@ find @ -name 'CMakeLists.txt' -or -name '*.cmake' | xargs grep --with-filename -i -P 'check_c_compiler_flag|check_cxx_compiler_flag|check_c_source_compiles|check_cxx_source_compiles|check_include_file|check_symbol_exists|cmake_push_check_state|cmake_pop_check_state|find_package|CMAKE_REQUIRED_FLAGS|CheckIncludeFile|CheckCCompilerFlag|CheckCXXCompilerFlag|CheckCSourceCompiles|CheckCXXSourceCompiles|CheckCSymbolExists|CheckCXXSymbolExists' | grep -v Rust && echo "^ It's not allowed to have dynamic compiler checks with CMake."
-
-# DOS/Windows newlines
-find $ROOT_PATH/{base,src,programs,utils,docs} -name '*.md' -or -name '*.h' -or -name '*.cpp' -or -name '*.js' -or -name '*.py' -or -name '*.html' | xargs grep -l -P '\r$' && echo "^ Files contain DOS/Windows newlines (\r\n instead of \n)."
-
-# Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs grep -P 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -P 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3' &&
-    echo "Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
-
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs grep -F -i 'ErrorCodes::LOGICAL_ERROR, "Logical error:' &&
-    echo "If an exception has LOGICAL_ERROR code, there is no need to include the text 'Logical error' in the exception message, because then the phrase 'Logical error' will be printed twice."

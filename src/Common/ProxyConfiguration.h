@@ -1,22 +1,17 @@
 #pragma once
 
 #include <string>
-#include <Common/Exception.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 struct ProxyConfiguration
 {
-    enum class Protocol : uint8_t
+    enum class Protocol
     {
         HTTP,
-        HTTPS
+        HTTPS,
+        ANY
     };
 
     static auto protocolFromString(const std::string & str)
@@ -29,8 +24,10 @@ struct ProxyConfiguration
         {
             return Protocol::HTTPS;
         }
-
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown proxy protocol: {}", str);
+        else
+        {
+            return Protocol::ANY;
+        }
     }
 
     static auto protocolToString(Protocol protocol)
@@ -41,23 +38,14 @@ struct ProxyConfiguration
                 return "http";
             case Protocol::HTTPS:
                 return "https";
+            case Protocol::ANY:
+                return "any";
         }
     }
 
-    static bool useTunneling(Protocol request_protocol, Protocol proxy_protocol, bool disable_tunneling_for_https_requests_over_http_proxy)
-    {
-        bool is_https_request_over_http_proxy = request_protocol == Protocol::HTTPS && proxy_protocol == Protocol::HTTP;
-        return is_https_request_over_http_proxy && !disable_tunneling_for_https_requests_over_http_proxy;
-    }
-
-    std::string host = std::string{};
-    Protocol protocol = Protocol::HTTP;
-    uint16_t port = 0;
-    bool tunneling = false;
-    Protocol original_request_protocol = Protocol::HTTP;
-    std::string no_proxy_hosts = std::string{};
-
-    bool isEmpty() const { return host.empty(); }
+    std::string host;
+    Protocol protocol;
+    uint16_t port;
 };
 
 }
