@@ -38,6 +38,9 @@ Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateGreat
 Float64 ConditionSelectivityEstimator::ColumnSelectivityEstimator::estimateEqual(const Field & val, Float64 rows) const
 {
     if (part_statistics.empty())
+    {
+        return default_cond_equal_factor * rows;
+    }
         return default_cond_equal_factor * rows;
 
     Float64 result = 0;

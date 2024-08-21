@@ -243,7 +243,7 @@ private:
                 }
                 case MoveType::Index:
                 {
-                    Int64 index = (*arguments[j + 1].column)[row].get<Int64>();
+                    Int64 index = (*arguments[j + 1].column)[row].safeGet<Int64>();
                     if (!moveToElementByIndex<JSONParser>(res_element, static_cast<int>(index), key))
                         return false;
                     break;
@@ -739,7 +739,7 @@ public:
     {
         NumberType value;
 
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, convert_bool_to_integer, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, convert_bool_to_integer, /*allow_type_conversion=*/true, error))
             return false;
         auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
         col_vec.insertValue(value);

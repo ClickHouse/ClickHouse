@@ -2,7 +2,6 @@
 
 #include <Storages/Statistics/Statistics.h>
 #include <AggregateFunctions/QuantileTDigest.h>
-#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -10,7 +9,7 @@ namespace DB
 class StatisticsTDigest : public IStatistics
 {
 public:
-    explicit StatisticsTDigest(const SingleStatisticsDescription & statistics_description, DataTypePtr data_type_);
+    explicit StatisticsTDigest(const SingleStatisticsDescription & stat_);
 
     void update(const ColumnPtr & column) override;
 
@@ -25,7 +24,7 @@ private:
     DataTypePtr data_type;
 };
 
-void tdigestStatisticsValidator(const SingleStatisticsDescription & statistics_description, DataTypePtr data_type);
-StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & statistics_description, DataTypePtr);
+void tdigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type);
+StatisticsPtr tdigestCreator(const SingleStatisticsDescription & stat, DataTypePtr);
 
 }

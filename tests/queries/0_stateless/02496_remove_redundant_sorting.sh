@@ -8,8 +8,8 @@ if [ -z ${ENABLE_ANALYZER+x} ]; then
     ENABLE_ANALYZER=0
 fi
 
-DISABLE_OPTIMIZATION="SET allow_experimental_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=0;SET optimize_duplicate_order_by_and_distinct=0"
-ENABLE_OPTIMIZATION="SET allow_experimental_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=1;SET optimize_duplicate_order_by_and_distinct=0"
+DISABLE_OPTIMIZATION="SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=0;SET optimize_duplicate_order_by_and_distinct=0"
+ENABLE_OPTIMIZATION="SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=1;SET optimize_duplicate_order_by_and_distinct=0"
 
 echo "-- Disabled query_plan_remove_redundant_sorting"
 echo "-- ORDER BY clauses in subqueries are untouched"
@@ -26,15 +26,15 @@ FROM
     ORDER BY number DESC
 )
 ORDER BY number ASC"
-$CLICKHOUSE_CLIENT -nq "$DISABLE_OPTIMIZATION;EXPLAIN $query"
+$CLICKHOUSE_CLIENT -q "$DISABLE_OPTIMIZATION;EXPLAIN $query"
 
 function run_query {
     echo "-- query"
     echo "$1"
     echo "-- explain"
-    $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;EXPLAIN $1"
+    $CLICKHOUSE_CLIENT -q "$ENABLE_OPTIMIZATION;EXPLAIN $1"
     echo "-- execute"
-    $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;$1"
+    $CLICKHOUSE_CLIENT -q "$ENABLE_OPTIMIZATION;$1"
 }
 
 echo "-- Enabled query_plan_remove_redundant_sorting"
@@ -300,6 +300,27 @@ FROM
     )
     ORDER BY v ASC
 )"
+run_query "$query"
+
+echo "-- presence of an inner OFFSET retains the ORDER BY"
+query="WITH
+  t1 AS (
+    SELECT a, b
+    FROM
+      VALUES (
+        'b UInt32, a Int32',
+        (1, 1),
+        (2, 0)
+      )
+  )
+SELECT
+  SUM(a)
+FROM (
+  SELECT a, b
+  FROM t1
+  ORDER BY 1 DESC, 2
+  OFFSET 1
+) t2"
 run_query "$query"
 
 echo "-- disable common optimization to avoid functions to be lifted up (liftUpFunctions optimization), needed for testing with stateful function"

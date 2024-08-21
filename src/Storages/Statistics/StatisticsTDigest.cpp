@@ -1,8 +1,6 @@
 #include <Storages/Statistics/StatisticsTDigest.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Common/FieldVisitorConvertToNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -11,8 +9,8 @@ namespace ErrorCodes
 extern const int ILLEGAL_STATISTICS;
 }
 
-StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & statistics_description, DataTypePtr data_type_)
-    : IStatistics(statistics_description)
+StatisticsTDigest::StatisticsTDigest(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
+    : IStatistics(description)
     , data_type(data_type_)
 {
 }
@@ -55,17 +53,17 @@ Float64 StatisticsTDigest::estimateEqual(const Field & val) const
     return t_digest.getCountEqual(*val_as_float);
 }
 
-void tdigestStatisticsValidator(const SingleStatisticsDescription & /*statistics_description*/, DataTypePtr data_type)
+void tdigestValidator(const SingleStatisticsDescription &, DataTypePtr data_type)
 {
-    data_type = removeNullable(data_type);
-    data_type = removeLowCardinalityAndNullable(data_type);
-    if (!data_type->isValueRepresentedByNumber())
+    DataTypePtr inner_data_type = removeNullable(data_type);
+    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
+    if (!inner_data_type->isValueRepresentedByNumber())
         throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'tdigest' do not support type {}", data_type->getName());
 }
 
-StatisticsPtr tdigestStatisticsCreator(const SingleStatisticsDescription & statistics_description, DataTypePtr data_type)
+StatisticsPtr tdigestCreator(const SingleStatisticsDescription & stat, DataTypePtr)
 {
-    return std::make_shared<StatisticsTDigest>(statistics_description, data_type);
+    return std::make_shared<StatisticsTDigest>(stat);
 }
 
 }
