@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 # Sanity check to ensure that the server is up and running
-for i in {1..10}; do
+for _ in {1..10}; do
     echo 'SELECT 1' | ${CLICKHOUSE_CURL_COMMAND} -s "${CLICKHOUSE_URL}" --data-binary @- > /dev/null
     if [ $? -eq 0 ]; then
         break
