@@ -83,7 +83,7 @@ RUN arch=${TARGETARCH:-amd64} \
 
 # Give suid to gdb to grant it attach permissions
 # chmod 777 to make the container user independent
-RUN chmod u+s /usr/bin/gdb \
+RUN chmod u+s /opt/gdb/bin/gdb \
   && mkdir -p /var/lib/clickhouse \
   && chmod 777 /var/lib/clickhouse
 
@@ -93,6 +93,3 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 ENV COMMIT_SHA=''
 ENV PULL_REQUEST_NUMBER=''
 ENV COPY_CLICKHOUSE_BINARY_TO_OUTPUT=0
-
-COPY run.sh /
-CMD ["/bin/bash", "/run.sh"]

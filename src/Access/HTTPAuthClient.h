@@ -82,7 +82,8 @@ public:
 
     Result authenticate(const String & user_name, const String & password) const
     {
-        Poco::Net::HTTPRequest request{Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery()};
+        Poco::Net::HTTPRequest request{
+            Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1};
         Poco::Net::HTTPBasicCredentials basic_credentials{user_name, password};
         basic_credentials.authenticate(request);
 
