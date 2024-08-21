@@ -68,12 +68,12 @@ public:
 
     /// Only collect the required fields' indices. Eg. when just read a field of a struct,
     /// don't need to collect the whole indices in this struct.
-    std::vector<std::pair<std::string, int>> findRequiredIndices(
+    std::unordered_map<std::string, int> findRequiredIndices(
         const Block & header,
         const arrow::Schema & schema,
         const parquet::FileMetaData & file)
     {
-        std::vector<std::pair<std::string, int>> required_indices;
+        std::unordered_map<std::string, int> required_indices;
         std::unordered_set<int> added_indices;
         /// Flat all named fields' index information into a map.
         auto fields_indices = calculateFieldIndices(schema);
@@ -176,7 +176,7 @@ private:
         DataTypePtr data_type,
         const std::unordered_map<std::string, std::pair<int, int>> & field_indices,
         std::unordered_set<int> & added_indices,
-        std::vector<std::pair<std::string, int>> & required_indices,
+        std::unordered_map<std::string, int> & required_indices,
         const parquet::FileMetaData & file)
     {
         auto nested_type = removeNullable(data_type);
@@ -221,7 +221,7 @@ private:
                 auto index = it->second.first + j;
                 if (added_indices.insert(index).second)
                 {
-                    required_indices.emplace_back(file.schema()->Column(index)->path()->ToDotString(), index);
+                    required_indices[file.schema()->Column(index)->path()->ToDotString()] = index;
                 }
             }
         }

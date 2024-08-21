@@ -3,6 +3,7 @@
 #if USE_PARQUET
 
 #include <parquet/bloom_filter.h>
+#include <parquet/xxhasher.h>
 
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -38,7 +39,7 @@ namespace
         }
     }
 
-    ColumnPtr hash(const IColumn * data_column, const std::unique_ptr<parquet::BloomFilter> & bloom_filter)
+    ColumnPtr hash(const IColumn * data_column)
     {
         static constexpr uint32_t buffer_size = 32;
         uint8_t buffer[buffer_size] = {0};
@@ -48,13 +49,14 @@ namespace
         auto hashes_column = ColumnUInt64::create(column_size);
         ColumnUInt64::Container & hashes_internal_data = hashes_column->getData();
 
+        parquet::XxHasher hasher;
         for (size_t i = 0; i < column_size; ++i)
         {
             const auto data_view = data_column->getDataAt(i).toView();
 
             const auto ba = createByteArray(data_view, data_column->getDataType(), buffer, buffer_size);
 
-            const auto hash = bloom_filter->Hash(&ba);
+            const auto hash = hasher.Hash(&ba);
 
             hashes_internal_data[i] = hash;
         }
@@ -104,12 +106,12 @@ namespace
     }
 }
 
-ParquetBloomFilterCondition::ParquetBloomFilterCondition(const std::vector<ConditionElement> & condition_)
-: condition(condition_)
+ParquetBloomFilterCondition::ParquetBloomFilterCondition(const std::vector<ConditionElement> & condition_, const Block & header_)
+: condition(condition_), header(header_)
 {
 }
 
-bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const IndexColumnToColumnBF & column_index_to_column_bf) const
+bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const ColumnIndexToBF & column_index_to_column_bf) const
 {
     using Function = ConditionElement::Function;
     std::vector<BoolMask> rpn_stack;
@@ -125,7 +127,6 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const IndexColumnToColumnB
 
             if (element.function == Function::FUNCTION_NOT_EQUALS)
                 rpn_stack.back() = !rpn_stack.back();
-
         }
         else if (element.function == Function::FUNCTION_IN
                  || element.function == Function::FUNCTION_NOT_IN)
@@ -178,17 +179,48 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const IndexColumnToColumnB
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::mayBeTrueInRange");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::mayBeTrueOnRowGroup");
 
     return rpn_stack[0].can_be_true;
 }
 
+std::unordered_set<std::string> ParquetBloomFilterCondition::getFilteringColumnNames() const
+{
+    std::unordered_set<std::string> column_names;
+
+    using F = ConditionElement::Function;
+
+    for (const auto & element : condition)
+    {
+        auto function = element.function;
+        bool has_column =
+            function == F::FUNCTION_EQUALS
+            || function == F::FUNCTION_NOT_EQUALS
+            || function == F::FUNCTION_IN
+            || function == F::FUNCTION_NOT_IN;
+
+        if (!has_column)
+        {
+            continue;
+        }
+
+        for (const auto & index : element.key_columns)
+        {
+            column_names.insert(header.getByPosition(index).name);
+        }
+    }
+
+    return column_names;
+}
+
 std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParquetBloomFilterCondition(
     const std::vector<KeyCondition::RPNElement> & rpn,
-    const std::vector<DataTypePtr> & data_types,
-    const ParquetBloomFilterCondition::IndexColumnToColumnBF & column_index_to_column_bf)
+    const Block & header,
+    const std::unordered_map<std::string, int> & column_name_to_index,
+    const std::unique_ptr<parquet::RowGroupMetaData> & parquet_rg_metadata)
 {
     std::vector<ParquetBloomFilterCondition::ConditionElement> condition_elements;
+    const auto & data_types = header.getDataTypes();
 
     using RPNElement = KeyCondition::RPNElement;
     using Function = ParquetBloomFilterCondition::ConditionElement::Function;
@@ -206,7 +238,10 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                 continue;
             }
 
-            if (!column_index_to_column_bf.contains(rpn_element.key_column))
+            auto parquet_column_index = column_name_to_index.at(header.getByPosition(rpn_element.key_column).name);
+
+            bool column_has_bloom_filter = parquet_rg_metadata->ColumnChunk(parquet_column_index)->bloom_filter_offset().has_value();
+            if (!column_has_bloom_filter)
             {
                 condition_elements.emplace_back(Function::ALWAYS_TRUE);
                 continue;
@@ -223,7 +258,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
             auto column = actual_type->createColumn();
             column->insert(rpn_element.range.left);
 
-            auto hashed = hash(column.get(), column_index_to_column_bf.at(rpn_element.key_column));
+            auto hashed = hash(column.get());
             columns.emplace_back(std::move(hashed));
 
             auto function = rpn_element.function == RPNElement::FUNCTION_IN_RANGE
@@ -249,13 +284,15 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
             {
                 const auto & set_column = ordered_set[i];
 
-                if (!column_index_to_column_bf.contains(indexes_mapping[i].key_index))
+                auto parquet_column_index = column_name_to_index.at(header.getByPosition(indexes_mapping[i].key_index).name);
+                bool column_has_bloom_filter = parquet_rg_metadata->ColumnChunk(parquet_column_index)->bloom_filter_offset().has_value();
+                if (!column_has_bloom_filter)
                 {
                     bloom_filter_missing = true;
                     break;
                 }
 
-                columns.emplace_back(hash(set_column.get(), column_index_to_column_bf.at(indexes_mapping[i].key_index)));
+                columns.emplace_back(hash(set_column.get()));
                 key_columns.push_back(indexes_mapping[i].key_index);
             }
 

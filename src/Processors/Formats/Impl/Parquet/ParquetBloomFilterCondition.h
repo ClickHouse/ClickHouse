@@ -5,6 +5,7 @@
 #if USE_PARQUET
 
 #include <Storages/MergeTree/KeyCondition.h>
+#include <parquet/metadata.h>
 
 namespace parquet
 {
@@ -48,20 +49,23 @@ public:
     };
 
     using RPNElement = KeyCondition::RPNElement;
-    using IndexColumnToColumnBF = std::unordered_map<std::size_t, std::unique_ptr<parquet::BloomFilter>>;
+    using ColumnIndexToBF = std::unordered_map<std::size_t, std::unique_ptr<parquet::BloomFilter>>;
 
-    explicit ParquetBloomFilterCondition(const std::vector<ConditionElement> & condition_);
+    explicit ParquetBloomFilterCondition(const std::vector<ConditionElement> & condition_, const Block & header_);
 
-    bool mayBeTrueOnRowGroup(const IndexColumnToColumnBF & column_index_to_column_bf) const;
+    bool mayBeTrueOnRowGroup(const ColumnIndexToBF & column_index_to_column_bf) const;
+    std::unordered_set<std::string> getFilteringColumnNames() const;
 
 private:
     std::vector<ParquetBloomFilterCondition::ConditionElement> condition;
+    Block header;
 };
 
 std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParquetBloomFilterCondition(
     const std::vector<KeyCondition::RPNElement> & rpn,
-    const std::vector<DataTypePtr> & data_types,
-    const ParquetBloomFilterCondition::IndexColumnToColumnBF & column_index_to_column_bf);
+    const Block & header,
+    const std::unordered_map<std::string, int> & column_name_to_index,
+    const std::unique_ptr<parquet::RowGroupMetaData> & parquet_rg_metadata);
 
 }
 
