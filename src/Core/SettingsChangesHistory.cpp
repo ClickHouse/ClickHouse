@@ -72,11 +72,13 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     {"24.9",
         {
             {"input_format_try_infer_variants", false, false, "Try to infer Variant type in text formats when there is more than one possible type for column/array elements"},
+            {"allow_experimental_vector_similarity_index", false, false, "Added new setting to allow experimental vector similarity indexes"},
+            {"allow_experimental_vector_similarity_index", false, false, "Added new setting to allow experimental vector similarity indexes"},
+            {"create_if_not_exists", false, false, "New setting."},
         }
     },
     {"24.8",
         {
-            {"create_if_not_exists", false, false, "New setting."},
             {"rows_before_aggregation", true, true, "Provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation"},
             {"restore_replace_external_table_functions_to_null", false, false, "New setting."},
             {"restore_replace_external_engines_to_null", false, false, "New setting."},
@@ -93,7 +95,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"allow_experimental_json_type", false, false, "Add new experimental JSON type"},
             {"use_json_alias_for_old_object_type", true, false, "Use JSON type alias to create new JSON type"},
             {"type_json_skip_duplicated_paths", false, false, "Allow to skip duplicated paths during JSON parsing"},
-            {"join_output_by_rowlist_perkey_rows_threshold", 0, 5, "The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join."},
             {"allow_experimental_vector_similarity_index", false, false, "Added new setting to allow experimental vector similarity indexes"},
             {"input_format_try_infer_datetimes_only_datetime64", true, false, "Allow to infer DateTime instead of DateTime64 in data formats"}
         }
