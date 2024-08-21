@@ -1263,13 +1263,19 @@ def test_hive_partitioning_with_one_parameter(started_cluster):
     assert hdfs_api.read_data(f"/column0=Elizabeth/parquet_1") == f"Elizabeth\tGordon\n"
 
     r = node1.query(
-        "SELECT _column0 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/parquet_1', 'TSV')",
+        "SELECT column0 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/parquet_1', 'TSV')",
         settings={"use_hive_partitioning": 1},
     )
     assert r == f"Elizabeth\n"
 
+    r = node1.query(
+        "SELECT column1 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/parquet_1', 'TSV')",
+        settings={"use_hive_partitioning": 1},
+    )
+    assert r == f"Gordon\n"
 
-def test_hive_partitioning_with_two_parameters(started_cluster):
+
+def test_hive_partitioning_with_all_parameters(started_cluster):
     hdfs_api = started_cluster.hdfs_api
     hdfs_api.write_data(
         f"/column0=Elizabeth/column1=Gordon/parquet_2", f"Elizabeth\tGordon\n"
@@ -1279,11 +1285,13 @@ def test_hive_partitioning_with_two_parameters(started_cluster):
         == f"Elizabeth\tGordon\n"
     )
 
-    r = node1.query(
-        "SELECT _column1 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/column1=Gordon/parquet_2', 'TSV');",
-        settings={"use_hive_partitioning": 1},
-    )
-    assert r == f"Gordon\n"
+    pattern = r"DB::Exception: Cannot implement partition by all columns in a file"
+
+    with pytest.raises(QueryRuntimeException, match=pattern):
+        node1.query(
+            f"SELECT _column1 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/column1=Gordon/parquet_2', 'TSV');",
+            settings={"use_hive_partitioning": 1},
+        )
 
 
 def test_hive_partitioning_without_setting(started_cluster):
@@ -1301,7 +1309,7 @@ def test_hive_partitioning_without_setting(started_cluster):
 
     with pytest.raises(QueryRuntimeException, match=pattern):
         node1.query(
-            f"SELECT _column1 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/column1=Gordon/parquet_2', 'TSV');",
+            f"SELECT column1 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/column1=Gordon/parquet_2', 'TSV');",
             settings={"use_hive_partitioning": 0},
         )
 

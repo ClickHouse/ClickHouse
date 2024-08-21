@@ -162,7 +162,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
                 return;
 
             if (storage_columns.size() == 1)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot use a file with one column {}, that is ised during hive partitioning", name);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot implement partition by all columns in a file");
             auto local_type = storage_columns.get(name).type;
             storage_columns.remove(name);
             desc.addEphemeral(name, local_type, "");

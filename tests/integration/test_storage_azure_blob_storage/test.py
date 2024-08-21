@@ -1518,14 +1518,14 @@ def test_hive_partitioning_with_one_parameter(cluster):
     )
 
     query = (
-        f"SELECT column1, column2, _file, _path, _column1 FROM azureBlobStorage(azure_conf2, "
+        f"SELECT column1, column2, _file, _path FROM azureBlobStorage(azure_conf2, "
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
         f"blob_path='{path}', format='CSV', structure='{table_format}')"
     )
     assert azure_query(
         node, query, settings={"use_hive_partitioning": 1}
     ).splitlines() == [
-        "Elizabeth\tGordon\tsample.csv\t{bucket}/{max_path}\tElizabeth".format(
+        "Elizabeth\tGordon\tsample.csv\t{bucket}/{max_path}".format(
             bucket="cont", max_path=path
         )
     ]
@@ -1533,14 +1533,14 @@ def test_hive_partitioning_with_one_parameter(cluster):
     query = (
         f"SELECT column2 FROM azureBlobStorage(azure_conf2, "
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
-        f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column1=_column1;"
+        f"blob_path='{path}', format='CSV', structure='{table_format}');"
     )
     assert azure_query(
         node, query, settings={"use_hive_partitioning": 1}
     ).splitlines() == ["Gordon"]
 
 
-def test_hive_partitioning_with_two_parameters(cluster):
+def test_hive_partitioning_with_all_parameters(cluster):
     # type: (ClickHouseCluster) -> None
     node = cluster.instances["node"]  # type: ClickHouseInstance
     table_format = "column1 String, column2 String"
@@ -1556,35 +1556,14 @@ def test_hive_partitioning_with_two_parameters(cluster):
     )
 
     query = (
-        f"SELECT column1, column2, _file, _path, _column1, _column2 FROM azureBlobStorage(azure_conf2, "
+        f"SELECT column1, column2, _file, _path FROM azureBlobStorage(azure_conf2, "
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
-        f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column1=_column1;"
+        f"blob_path='{path}', format='CSV', structure='{table_format}');"
     )
-    assert azure_query(
-        node, query, settings={"use_hive_partitioning": 1}
-    ).splitlines() == [
-        "Elizabeth\tGordon\tsample.csv\t{bucket}/{max_path}\tElizabeth\tGordon".format(
-            bucket="cont", max_path=path
-        )
-    ]
+    pattern = r"DB::Exception: Cannot implement partition by all columns in a file"
 
-    query = (
-        f"SELECT column1 FROM azureBlobStorage(azure_conf2, "
-        f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
-        f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column2=_column2;"
-    )
-    assert azure_query(
-        node, query, settings={"use_hive_partitioning": 1}
-    ).splitlines() == ["Elizabeth"]
-
-    query = (
-        f"SELECT column1 FROM azureBlobStorage(azure_conf2, "
-        f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
-        f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column2=_column2 AND column1=_column1;"
-    )
-    assert azure_query(
-        node, query, settings={"use_hive_partitioning": 1}
-    ).splitlines() == ["Elizabeth"]
+    with pytest.raises(Exception, match=pattern):
+        azure_query(node, query, settings={"use_hive_partitioning": 1})
 
 
 def test_hive_partitioning_without_setting(cluster):
@@ -1603,9 +1582,9 @@ def test_hive_partitioning_without_setting(cluster):
     )
 
     query = (
-        f"SELECT column1, column2, _file, _path, _column1, _column2 FROM azureBlobStorage(azure_conf2, "
+        f"SELECT column1, column2, _file, _path FROM azureBlobStorage(azure_conf2, "
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
-        f"blob_path='{path}', format='CSV', structure='{table_format}') WHERE column1=_column1;"
+        f"blob_path='{path}', format='CSV', structure='{table_format}');"
     )
     pattern = re.compile(
         r"DB::Exception: Unknown expression identifier '.*' in scope.*", re.DOTALL
