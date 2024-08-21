@@ -85,18 +85,6 @@ RUN curl -L --no-verbose -O 'https://archive.apache.org/dist/hadoop/common/hadoo
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 ENV EXPORT_S3_STORAGE_POLICIES=1
-ENV CLICKHOUSE_GRPC_CLIENT="/usr/share/clickhouse-utils/grpc-client/clickhouse-grpc-client.py"
 
 RUN npm install -g azurite@3.30.0 \
     && npm install -g tslib && npm install -g node
-
-COPY run.sh /
-COPY setup_minio.sh /
-COPY setup_hdfs_minicluster.sh /
-COPY attach_gdb.lib /
-COPY utils.lib /
-
-# We store stress_tests.lib in stateless image to avoid duplication of this file in stress and upgrade tests
-COPY stress_tests.lib /
-
-CMD ["/bin/bash", "/run.sh"]
