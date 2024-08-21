@@ -143,6 +143,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
+    , enable_analyzer(settings.allow_experimental_analyzer)
 {
 }
 
@@ -161,6 +162,8 @@ void TableJoin::resetCollected()
     clauses.clear();
     columns_from_joined_table.clear();
     columns_added_by_join.clear();
+    columns_from_left_table.clear();
+    result_columns_from_left_table.clear();
     original_names.clear();
     renames.clear();
     left_type_map.clear();
@@ -201,6 +204,20 @@ size_t TableJoin::rightKeyInclusion(const String & name) const
     for (const auto & clause : clauses)
         count += std::count(clause.key_names_right.begin(), clause.key_names_right.end(), name);
     return count;
+}
+
+void TableJoin::setInputColumns(NamesAndTypesList left_output_columns, NamesAndTypesList right_output_columns)
+{
+    columns_from_left_table = left_output_columns;
+    columns_from_joined_table = right_output_columns;
+}
+
+
+const NamesAndTypesList & TableJoin::getOutputColumns(JoinTableSide side)
+{
+    if (side == JoinTableSide::Left)
+        return result_columns_from_left_table;
+    return columns_added_by_join;
 }
 
 void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix)
@@ -351,9 +368,18 @@ bool TableJoin::rightBecomeNullable(const DataTypePtr & column_type) const
     return forceNullableRight() && JoinCommon::canBecomeNullable(column_type);
 }
 
+void TableJoin::setUsedColumn(const NameAndTypePair & joined_column, JoinTableSide side)
+{
+    if (side == JoinTableSide::Left)
+        result_columns_from_left_table.push_back(joined_column);
+    else
+        columns_added_by_join.push_back(joined_column);
+
+}
+
 void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 {
-    columns_added_by_join.emplace_back(joined_column);
+    setUsedColumn(joined_column, JoinTableSide::Right);
 }
 
 NamesAndTypesList TableJoin::correctedColumnsAddedByJoin() const
@@ -995,5 +1021,32 @@ size_t TableJoin::getMaxMemoryUsage() const
     return max_memory_usage;
 }
 
+void TableJoin::swapSides()
+{
+    assertEnableEnalyzer();
+
+    std::swap(key_asts_left, key_asts_right);
+    std::swap(left_type_map, right_type_map);
+    for (auto & clause : clauses)
+    {
+        std::swap(clause.key_names_left, clause.key_names_right);
+        std::swap(clause.on_filter_condition_left, clause.on_filter_condition_right);
+        std::swap(clause.analyzer_left_filter_condition_column_name, clause.analyzer_right_filter_condition_column_name);
+    }
+
+    std::swap(columns_from_left_table, columns_from_joined_table);
+    std::swap(result_columns_from_left_table, columns_added_by_join);
+
+    if (table_join.kind == JoinKind::Left)
+        table_join.kind = JoinKind::Right;
+    else if (table_join.kind == JoinKind::Right)
+        table_join.kind = JoinKind::Left;
+}
+
+void TableJoin::assertEnableEnalyzer() const
+{
+    if (!enable_analyzer)
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "TableJoin: analyzer is disabled");
+}
 
 }

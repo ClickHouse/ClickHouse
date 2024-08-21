@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Core/Joins.h>
 
 namespace DB
 {
@@ -35,6 +36,9 @@ public:
     bool allowPushDownToRight() const;
 
     bool canUpdateInputStream() const override { return true; }
+
+    JoinInnerTableSelectionMode inner_table_selection_mode = JoinInnerTableSelectionMode::Right;
+    bool swap_streams = false;
 
 private:
     void updateOutputStream() override;

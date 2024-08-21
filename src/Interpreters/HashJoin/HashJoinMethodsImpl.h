@@ -56,7 +56,6 @@ Block HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         const auto & key_names = !is_join_get ? onexprs[i].key_names_left : onexprs[i].key_names_right;
         join_on_keys.emplace_back(block, key_names, onexprs[i].condColumnNames().first, join.key_sizes[i]);
     }
-    size_t existing_columns = block.columns();
 
     /** If you use FULL or RIGHT JOIN, then the columns from the "left" table must be materialized.
       * Because if they are constants, then in the "not joined" rows, they may have different values
@@ -99,6 +98,23 @@ Block HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         added_columns.buildJoinGetOutput();
     else
         added_columns.buildOutput();
+
+    const auto & table_join = join.table_join;
+    if (table_join->enableEnalyzer())
+    {
+        std::unordered_set<String> left_output_columns;
+        for (const auto & out_column : table_join->getOutputColumns(JoinTableSide::Left))
+            left_output_columns.insert(out_column.name);
+        std::set<size_t> to_erase;
+        for (size_t i = 0; i < block.columns(); ++i)
+        {
+            if (!left_output_columns.contains(block.getByPosition(i).name))
+                to_erase.insert(i);
+        }
+        block.erase(to_erase);
+    }
+    size_t existing_columns = block.columns();
+
     for (size_t i = 0; i < added_columns.size(); ++i)
         block.insert(added_columns.moveColumn(i));
 

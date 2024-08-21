@@ -119,4 +119,15 @@ enum class JoinTableSide : uint8_t
 
 const char * toString(JoinTableSide join_table_side);
 
+/// Setting to choose which table to use as the inner table in hash join
+enum class JoinInnerTableSelectionMode : uint8_t
+{
+    /// Use left table
+    Left,
+    /// Use right table
+    Right,
+    /// Use the table with the smallest number of rows
+    Auto,
+};
+
 }

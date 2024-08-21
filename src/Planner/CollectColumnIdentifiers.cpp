@@ -2,6 +2,7 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/JoinNode.h>
 
 #include <Planner/PlannerContext.h>
 
@@ -33,6 +34,27 @@ public:
 
     void visitImpl(const QueryTreeNodePtr & node)
     {
+        // if (node->getNodeType() == QueryTreeNodeType::QUERY)
+        // {
+        //     const auto * join_node = node->as<const QueryNode &>().getJoinTree()->as<JoinNode>();
+        //     if (!join_node || !join_node->isUsingJoinExpression())
+        //         return;
+
+        //     const auto & using_list = join_node->getJoinExpression()->as<ListNode &>();
+
+        //     for (const auto & join_using_node : using_list.getNodes())
+        //     {
+        //         const auto & join_using_expression = join_using_node->as<const ColumnNode &>().getExpression();
+        //         if (!join_using_expression)
+        //             return;
+        //         const auto & using_join_columns_list = join_using_expression->as<const ListNode &>().getNodes();
+        //         if (const auto * left_identifier = planner_context->getColumnNodeIdentifierOrNull(using_join_columns_list.at(0)))
+        //             used_identifiers.insert(*left_identifier);
+        //         if (const auto * right_identifier = planner_context->getColumnNodeIdentifierOrNull(using_join_columns_list.at(1)))
+        //             used_identifiers.insert(*right_identifier);
+        //     }
+        // }
+
         if (node->getNodeType() != QueryTreeNodeType::COLUMN)
             return;
 
