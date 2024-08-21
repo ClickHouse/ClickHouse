@@ -17,6 +17,17 @@ def cluster():
         cluster.start()
         logging.info("Cluster started")
 
+        node = cluster.instances["node"]
+        node.query(
+            """
+            CREATE TABLE tab
+            (
+                a DateTime,
+                pk String
+            ) Engine = MergeTree() ORDER BY pk;
+            """
+        )
+
         yield cluster
     finally:
         cluster.shutdown()
@@ -28,16 +39,6 @@ def test_incorrect_datetime_format(cluster):
     """
 
     node = cluster.instances["node"]
-
-    node.query(
-        """
-        CREATE TABLE tab
-        (
-            a DateTime,
-            pk String
-        ) Engine = MergeTree() ORDER BY pk;
-        """
-    )
 
     res = node.query("SELECT count(*) FROM tab WHERE a = '2024-08-06 09:58:09'").strip()
     assert res == "0"
