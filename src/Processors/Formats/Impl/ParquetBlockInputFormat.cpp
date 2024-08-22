@@ -535,6 +535,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         return;
     }
 
+    const auto bf_reader_properties = parquet::default_reader_properties();
     std::unique_ptr<parquet::BloomFilterReader> bf_reader;
 
     row_group_batches.reserve(num_row_groups);
@@ -563,7 +564,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
     if (format_settings.parquet.bloom_filter_push_down && key_condition)
     {
-        bf_reader = parquet::BloomFilterReader::Make(arrow_file, metadata, parquet::default_reader_properties(), nullptr);
+        bf_reader = parquet::BloomFilterReader::Make(arrow_file, metadata, bf_reader_properties, nullptr);
 
         const auto parquet_conditions = keyConditionRPNToParquetBloomFilterCondition(
             key_condition->getRPN(),
