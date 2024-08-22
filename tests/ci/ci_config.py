@@ -163,7 +163,7 @@ class CI:
                 tidy=True,
                 comment="clang-tidy is used for static analysis",
             ),
-            timeout=10800,
+            timeout=14400,
         ),
         BuildNames.BINARY_DARWIN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
@@ -400,7 +400,10 @@ class CI:
             required_builds=[BuildNames.PACKAGE_DEBUG], pr_only=True
         ),
         JobNames.INTEGRATION_TEST_ASAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], release_only=True, num_batches=4
+            required_builds=[BuildNames.PACKAGE_ASAN],
+            release_only=True,
+            num_batches=4,
+            timeout=10800,
         ),
         JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
@@ -535,7 +538,10 @@ class CI:
         JobNames.FAST_TEST: JobConfig(
             pr_only=True,
             digest=DigestConfig(
-                include_paths=["./tests/queries/0_stateless/"],
+                include_paths=[
+                    "./tests/queries/0_stateless/",
+                    "./tests/docker_scripts/",
+                ],
                 exclude_files=[".md"],
                 docker=["clickhouse/fasttest"],
             ),

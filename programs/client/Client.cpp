@@ -1166,9 +1166,6 @@ void Client::processOptions(const OptionsDescription & options_description,
     /// (There is no need to copy the context because clickhouse-client has no background tasks so it won't use that context in parallel.)
     client_context = global_context;
     initClientContext();
-
-    /// Allow to pass-through unknown settings to the server.
-    client_context->getAccessControl().allowAllSettings();
 }
 
 

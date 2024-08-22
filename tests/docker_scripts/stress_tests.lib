@@ -42,7 +42,7 @@ function configure()
     # install test configs
     export USE_DATABASE_ORDINARY=1
     export EXPORT_S3_STORAGE_POLICIES=1
-    /usr/share/clickhouse-test/config/install.sh
+    /repo/tests/config/install.sh
 
     # avoid too slow startup
     sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
@@ -273,7 +273,7 @@ function check_logs_for_critical_errors()
     [ -s /test_output/no_such_key_errors.txt ] || rm /test_output/no_such_key_errors.txt
 
     # Crash
-    rg -Fa "########################################" /var/log/clickhouse-server/clickhouse-server*.log > /dev/null \
+    rg -Fa "###################""#####################" /var/log/clickhouse-server/clickhouse-server*.log > /dev/null \
         && echo -e "Killed by signal (in clickhouse-server.log)$FAIL" >> /test_output/test_results.tsv \
         || echo -e "Not crashed$OK" >> /test_output/test_results.tsv
 
@@ -285,7 +285,7 @@ function check_logs_for_critical_errors()
     # Remove file fatal_messages.txt if it's empty
     [ -s /test_output/fatal_messages.txt ] || rm /test_output/fatal_messages.txt
 
-    rg -Faz "########################################" /test_output/* > /dev/null \
+    rg -Faz "####################""####################" /test_output/* > /dev/null \
       && echo -e "Killed by signal (output files)$FAIL" >> /test_output/test_results.tsv
 
     function get_gdb_log_context()
