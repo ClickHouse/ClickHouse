@@ -61,6 +61,7 @@ pg_manager = PostgresManager()
 pg_manager2 = PostgresManager()
 pg_manager_instance2 = PostgresManager()
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -918,7 +919,7 @@ def test_failed_load_from_snapshot(started_cluster):
 
 def test_symbols_in_publication_name(started_cluster):
     id = uuid.uuid4()
-    db = f'test_{id}'
+    db = f"test_{id}"
     table = f"test_symbols_in_publication_name"
 
     pg_manager3 = PostgresManager()
