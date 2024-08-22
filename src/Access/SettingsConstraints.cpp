@@ -219,8 +219,8 @@ void SettingsConstraints::clamp(const Settings & current_settings, SettingsChang
         });
 }
 
-template <typename SettingsT>
-bool getNewValueToCheck(const SettingsT & current_settings, SettingChange & change, Field & new_value, bool throw_on_failure)
+template <class T>
+bool getNewValueToCheck(const T & current_settings, SettingChange & change, Field & new_value, bool throw_on_failure)
 {
     Field current_value;
     bool has_current_value = current_settings.tryGet(change.name, current_value);
@@ -230,12 +230,12 @@ bool getNewValueToCheck(const SettingsT & current_settings, SettingChange & chan
         return false;
 
     if (throw_on_failure)
-        new_value = SettingsT::castValueUtil(change.name, change.value);
+        new_value = T::castValueUtil(change.name, change.value);
     else
     {
         try
         {
-            new_value = SettingsT::castValueUtil(change.name, change.value);
+            new_value = T::castValueUtil(change.name, change.value);
         }
         catch (...)
         {
