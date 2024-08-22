@@ -90,7 +90,8 @@ namespace
             user.authentication_methods.emplace_back(backup_authentication_method);
         }
 
-        if (!authentication_methods.empty())
+        // max_number_of_authentication_methods == 0 means unlimited
+        if (!authentication_methods.empty() && max_number_of_authentication_methods != 0)
         {
             // we only check if user exceeds the allowed quantity of authentication methods in case the create/alter query includes
             // authentication information. Otherwise, we can bypass this check to avoid blocking non-authentication related alters.
