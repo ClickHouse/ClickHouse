@@ -512,8 +512,6 @@ nullIf
 nullIn
 nullInIgnoreSet
 or
-overlay
-overlayUTF8
 parseDateTime
 parseDateTime32BestEffort
 parseDateTime32BestEffortOrNull

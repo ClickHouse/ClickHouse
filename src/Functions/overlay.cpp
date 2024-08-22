@@ -201,14 +201,14 @@ private:
     {
         if (offset > 0)
         {
-            if (static_cast<size_t>(offset) > input_size + 1) [[unlikely]]
+            if (static_cast<size_t>(offset) > input_size + 1)
                 return input_size;
             else
                 return offset - 1;
         }
         else
         {
-            if (input_size < -static_cast<size_t>(offset)) [[unlikely]]
+            if (input_size < -static_cast<size_t>(offset))
                 return 0;
             else
                 return input_size + offset;
@@ -704,14 +704,14 @@ REGISTER_FUNCTION(Overlay)
 {
     factory.registerFunction<FunctionOverlay<false>>(
         {.description = R"(
-Replace a part of a string `s` with another string `replace`, starting at 1-based index `offset`. By default, the number of bytes removed from `s` equals the length of `replace`. If `length` (the optional fourth argument) is specified, a different number of bytes is removed.
+Replace a part of a string `input` with another string `replace`, starting at 1-based index `offset`. By default, the number of bytes removed from `input` equals the length of `replace`. If `length` (the optional fourth argument) is specified, a different number of bytes is removed.
 )",
          .categories{"String"}},
         FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionOverlay<true>>(
         {.description = R"(
-Replace a part of a string `s` with another string `replace`, starting at 1-based index `offset`. By default, the number of bytes removed from `s` equals the length of `replace`. If `length` (the optional fourth argument) is specified, a different number of bytes is removed.
+Replace a part of a string `input` with another string `replace`, starting at 1-based index `offset`. By default, the number of characters removed from `input` equals the length of `replace`. If `length` (the optional fourth argument) is specified, a different number of characters is removed.
 
 Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 )",
