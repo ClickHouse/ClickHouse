@@ -154,7 +154,9 @@ void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void MergingAggregatedStep::updateOutputStream()
 {
-    output_stream = createOutputStream(input_streams.front(), params.getHeader(input_streams.front().header, final), getDataStreamTraits());
+    const auto & in_header = input_streams.front().header;
+    output_stream = createOutputStream(input_streams.front(),
+        MergingAggregatedTransform::appendGroupingIfNeeded(in_header, params.getHeader(in_header, final)), getDataStreamTraits());
     if (is_order_overwritten)  /// overwrite order again
         applyOrder(group_by_sort_description, overwritten_sort_scope);
 }
