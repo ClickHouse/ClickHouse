@@ -929,6 +929,9 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                 }
                 virtual_columns[6]->insert(headers_names);
                 virtual_columns[7]->insert(headers_values);
+
+                LOG_DEBUG(&Poco::Logger::get("StorageKafka2"), "pollConsumer");
+
                 if (getHandleKafkaErrorMode() == ExtStreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)

@@ -49,6 +49,7 @@ KafkaSource::KafkaSource(
     , virtual_header(storage.getVirtualsHeader())
     , handle_error_mode(storage.getHandleErrorMode())
 {
+    LOG_DEBUG(&Poco::Logger::get("KafkaSource"), "ctor");
 }
 
 KafkaSource::~KafkaSource()
@@ -77,6 +78,7 @@ bool KafkaSource::checkTimeLimit() const
 
 Chunk KafkaSource::generateImpl()
 {
+    LOG_DEBUG(&Poco::Logger::get("KafkaSource"), "actual top");
     if (!consumer)
     {
         auto timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
@@ -93,6 +95,7 @@ Chunk KafkaSource::generateImpl()
     if (is_finished)
         return {};
 
+    LOG_DEBUG(&Poco::Logger::get("KafkaSource"), "generateImpl: top");
     is_finished = true;
     // now it's one-time usage InputStream
     // one block of the needed size (or with desired flush timeout) is formed in one internal iteration
@@ -146,6 +149,7 @@ Chunk KafkaSource::generateImpl()
 
     while (true)
     {
+        LOG_DEBUG(&Poco::Logger::get("KafkaSource"), "generateImpl: top of while");
         size_t new_rows = 0;
         exception_message.reset();
         if (auto buf = consumer->consume())
@@ -165,6 +169,7 @@ Chunk KafkaSource::generateImpl()
 
             ProfileEvents::increment(ProfileEvents::KafkaRowsRead, new_rows);
 
+            LOG_DEBUG(&Poco::Logger::get("KafkaSource"), "generateImpl: new_rows");
             consumer->storeLastReadMessageOffset();
 
             auto topic         = consumer->currentTopic();
@@ -190,6 +195,7 @@ Chunk KafkaSource::generateImpl()
 
             for (size_t i = 0; i < new_rows; ++i)
             {
+                LOG_DEBUG(&Poco::Logger::get("KafkaSource"), "generateImpl: top of for");
                 virtual_columns[0]->insert(topic);
                 virtual_columns[1]->insert(key);
                 virtual_columns[2]->insert(offset);
@@ -221,21 +227,31 @@ Chunk KafkaSource::generateImpl()
                         virtual_columns[9]->insertDefault();
                     }
                 }
-                else if (handle_error_mode == ExtStreamingHandleErrorMode::STREAM && exception_message)
+                else if (handle_error_mode == ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE)
                 {
-                    const auto time_now = std::chrono::system_clock::now();
-                    auto storage_id = storage.getStorageID();
+                    LOG_DEBUG(&Poco::Logger::get("KafkaSource"), "generateImpl: DEAD_LETTER_QUEUE");
+                    if (exception_message)
+                    {
 
-                    auto dead_letter_queue = context->getDeadLetterQueue();
-                    dead_letter_queue->add(
-                        DeadLetterQueueElement{
-                            .event_time = timeInSeconds(time_now),
-                            .event_time_microseconds = timeInMicroseconds(time_now),
-                            .database_name = storage_id.database_name,
-                            .table_name = storage_id.table_name,
-                            .raw_message = consumer->currentPayload(),
-                            .error = exception_message.value(),
-                        });
+                        const auto time_now = std::chrono::system_clock::now();
+                        auto storage_id = storage.getStorageID();
+
+                        auto dead_letter_queue = context->getDeadLetterQueue();
+                        LOG_DEBUG(&Poco::Logger::get("KafkaSource"), "generateImpl: calling dead_letter_queue->add");
+                        dead_letter_queue->add(
+                            DeadLetterQueueElement{
+                                .event_time = timeInSeconds(time_now),
+                                .event_time_microseconds = timeInMicroseconds(time_now),
+                                .database_name = storage_id.database_name,
+                                .table_name = storage_id.table_name,
+                                .topic_name = consumer->currentTopic(),
+                                .partition = consumer->currentPartition(),
+                                .offset = consumer->currentPartition(),
+                                .raw_message = consumer->currentPayload(),
+                                .error = exception_message.value(),
+                            });
+                    }
+
                 }
             }
 
