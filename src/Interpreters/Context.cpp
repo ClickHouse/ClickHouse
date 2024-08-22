@@ -3225,12 +3225,12 @@ QueryCachePtr Context::getQueryCache() const
     return shared->query_cache;
 }
 
-void Context::clearQueryCache() const
+void Context::clearQueryCache(const std::optional<String> & tag) const
 {
     std::lock_guard lock(shared->mutex);
 
     if (shared->query_cache)
-        shared->query_cache->clear();
+        shared->query_cache->clear(tag);
 }
 
 void Context::clearCaches() const
