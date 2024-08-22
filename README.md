@@ -45,8 +45,16 @@ The following upcoming meetups are featuring creator of ClickHouse & CTO, Alexey
 * [ClickHouse Guangzhou User Group Meetup](https://mp.weixin.qq.com/s/GSvo-7xUoVzCsuUvlLTpCw) - August 25
 * [San Francisco Meetup (Cloudflare)](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/302540575) - September 5
 * [Raleigh Meetup (Deutsche Bank)](https://www.meetup.com/clickhouse-nc-meetup-group/events/302557230) - September 9
-* [New York Meetup (Ramp)](https://www.meetup.com/clickhouse-new-york-user-group/events/302575342) - September 10
+* [New York Meetup (Rokt)](https://www.meetup.com/clickhouse-new-york-user-group/events/302575342) - September 10
 * [Chicago Meetup (Jump Capital)](https://lu.ma/43tvmrfw) - September 12
+
+Other upcoming meetups
+* [Seattle Meetup (Statsig)](https://www.meetup.com/clickhouse-seattle-user-group/events/302518075/) - August 27
+* [Melbourne Meetup](https://www.meetup.com/clickhouse-australia-user-group/events/302732666/) - August 27
+* [Sydney Meetup](https://www.meetup.com/clickhouse-australia-user-group/events/302862966/) - September 5
+* [Zurich Meetup](https://www.meetup.com/clickhouse-switzerland-meetup-group/events/302267429/) - September 5
+* [Toronto Meetup (Shopify)](https://www.meetup.com/clickhouse-toronto-user-group/events/301490855/) - September 10
+* [London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/302977267) - September 17
 
 ## Recent Recordings
 * **Recent Meetup Videos**: [Meetup Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3iNDUzpY1S3L_iV4nARda_U) Whenever possible recordings of the ClickHouse Community Meetups are edited and presented as individual talks. Current featuring "Modern SQL in 2023", "Fast, Concurrent, and Consistent Asynchronous INSERTS in ClickHouse", and "Full-Text Indices: Design and Experiments"
