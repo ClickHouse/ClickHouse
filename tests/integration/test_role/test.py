@@ -418,72 +418,43 @@ def test_function_current_roles():
     )
 
 
-def test_role_expiration():
-    instance.query("CREATE USER ure")
+@pytest.mark.parametrize("with_extra_role", [False, True])
+def test_role_expiration(with_extra_role):
     instance.query("CREATE ROLE rre")
-    instance.query("GRANT rre TO ure")
+    instance.query("CREATE USER ure DEFAULT ROLE rre")
 
-    instance.query("CREATE TABLE IF NOT EXISTS tre (id Int) Engine=Log")
-    instance.query("INSERT INTO tre VALUES (0)")
+    instance.query("CREATE TABLE table1 (id Int) Engine=Log")
+    instance.query("CREATE TABLE table2 (id Int) Engine=Log")
+    instance.query("INSERT INTO table1 VALUES (1)")
+    instance.query("INSERT INTO table2 VALUES (2)")
 
+    instance.query("GRANT SELECT ON table1 TO rre")
+
+    assert instance.query("SELECT * FROM table1", user="ure") == "1\n"
     assert "Not enough privileges" in instance.query_and_get_error(
-        "SELECT * FROM tre", user="ure"
+        "SELECT * FROM table2", user="ure"
     )
-
-    instance.query("GRANT SELECT ON tre TO rre")
-
-    assert instance.query("SELECT * FROM tre", user="ure") == "0\n"
 
     # access_control_improvements/role_cache_expiration_time_seconds value is 2 for the test
     # so we wait >2 seconds until the role is expired
     time.sleep(5)
 
-    instance.query("CREATE TABLE IF NOT EXISTS tre1 (id Int) Engine=Log")
-    instance.query("INSERT INTO tre1 VALUES (0)")
-    instance.query("GRANT SELECT ON tre1 TO rre")
+    if with_extra_role:
+        # Expiration of role "rre" from the role cache can be caused by another role being used.
+        instance.query("CREATE ROLE extra_role")
+        instance.query("CREATE USER extra_user DEFAULT ROLE extra_role")
+        instance.query("GRANT SELECT ON table1 TO extra_role")
+        assert instance.query("SELECT * FROM table1", user="extra_user") == "1\n"
 
-    assert instance.query("SELECT * from tre1", user="ure") == "0\n"
+    instance.query("GRANT SELECT ON table2 TO rre")
+    assert instance.query("SELECT * FROM table1", user="ure") == "1\n"
+    assert instance.query("SELECT * FROM table2", user="ure") == "2\n"
 
-    instance.query("DROP USER ure")
     instance.query("DROP ROLE rre")
-    instance.query("DROP TABLE tre")
-    instance.query("DROP TABLE tre1")
-
-
-def test_two_roles_expiration():
-    instance.query("CREATE USER ure")
-    instance.query("CREATE ROLE rre")
-    instance.query("GRANT rre TO ure")
-
-    instance.query("CREATE ROLE rre_second")
-
-    instance.query("CREATE TABLE IF NOT EXISTS tre (id Int) Engine=Log")
-    instance.query("INSERT INTO tre VALUES (0)")
-
-    assert "Not enough privileges" in instance.query_and_get_error(
-        "SELECT * FROM tre", user="ure"
-    )
-
-    instance.query("GRANT SELECT ON tre TO rre")
-
-    assert instance.query("SELECT * FROM tre", user="ure") == "0\n"
-
-    # access_control_improvements/role_cache_expiration_time_seconds value is 2 for the test
-    # so we wait >2 seconds until the roles are expired
-    time.sleep(5)
-
-    instance.query(
-        "GRANT SELECT ON tre1 TO rre_second"
-    )  # we expect that both rre and rre_second are gone from cache upon this operation
-
-    instance.query("CREATE TABLE IF NOT EXISTS tre1 (id Int) Engine=Log")
-    instance.query("INSERT INTO tre1 VALUES (0)")
-    instance.query("GRANT SELECT ON tre1 TO rre")
-
-    assert instance.query("SELECT * from tre1", user="ure") == "0\n"
-
     instance.query("DROP USER ure")
-    instance.query("DROP ROLE rre")
-    instance.query("DROP ROLE rre_second")
-    instance.query("DROP TABLE tre")
-    instance.query("DROP TABLE tre1")
+    instance.query("DROP TABLE table1")
+    instance.query("DROP TABLE table2")
+
+    if with_extra_role:
+        instance.query("DROP ROLE extra_role")
+        instance.query("DROP USER extra_user")
