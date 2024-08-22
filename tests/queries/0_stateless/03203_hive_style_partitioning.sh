@@ -32,7 +32,7 @@ SELECT a FROM file('$CURDIR/data_hive/partitioning/a=b/a=b/sample.parquet') LIMI
 $CLICKHOUSE_LOCAL -n -q """
 set use_hive_partitioning = 1;
 
-SELECT *, _column0 FROM file('$CURDIR/data_hive/partitioning/column0=Elizabeth/column0=Elizabeth1/sample.parquet') LIMIT 10;
+SELECT *, column0 FROM file('$CURDIR/data_hive/partitioning/column0=Elizabeth/column0=Elizabeth1/sample.parquet') LIMIT 10;
 """ 2>&1 | grep -c "INCORRECT_DATA"
 
 $CLICKHOUSE_LOCAL -n -q """
