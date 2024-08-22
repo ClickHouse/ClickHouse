@@ -90,6 +90,21 @@ public:
 
 };
 
+
+class ScopedUnlocker {
+public:
+    explicit ScopedUnlocker(std::unique_lock<std::mutex>& lock) : lock_(lock) {  lock_.unlock();  }
+
+    ~ScopedUnlocker() {  lock_.lock();  }
+
+    ScopedUnlocker(const ScopedUnlocker&) = delete;
+    ScopedUnlocker& operator=(const ScopedUnlocker&) = delete;
+
+private:
+    std::unique_lock<std::mutex>& lock_;
+};
+
+
 static constexpr auto DEFAULT_THREAD_NAME = "ThreadPool";
 
 template <typename Thread>
@@ -237,46 +252,62 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         /// Check if there are enough threads to process job.
         if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
         {
+            bool push_successful = false;
+            std::promise<typename std::list<Thread>::iterator> promise_thread_it;
+            std::shared_future<typename std::list<Thread>::iterator> future_thread_id = promise_thread_it.get_future().share();
+            std::unique_ptr<Thread> thread_ptr;
+
             try
             {
-                std::promise<typename std::list<Thread>::iterator> promise_thread_it;
-                std::shared_future<typename std::list<Thread>::iterator> future_thread_id = promise_thread_it.get_future().share();
-                std::unique_ptr<Thread> thread_ptr;
-
-                lock.unlock();
-
-                /// in certain conditions thread creation can be slow, so we need to do that out of the critical section,
-                /// otherwise it may lead to huge delays in thread pool
-
-                Stopwatch watch2;
-
-                ///  we use future here for 2 reasons:
-                ///  1) just passing a ref to list iterator after adding the thread to the list
-                ///  2) hold the thread work until the thread is added to the list, otherwise
-                ///     is can get the lock faster and then can wait for a cond_variable forever
-                thread_ptr = std::make_unique<Thread>([this, ft = std::move(future_thread_id)] mutable
                 {
-                    auto thread_it = ft.get();
-                    worker(thread_it);
-                });
+                    ScopedUnlocker unlocker(lock);
 
-                ProfileEvents::increment(
-                    std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolThreadCreationMicroseconds : ProfileEvents::LocalThreadPoolThreadCreationMicroseconds,
-                    watch2.elapsedMicroseconds());
+                    /// in certain conditions thread creation can be slow, so we need to do that out of the critical section,
+                    /// otherwise it may lead to huge delays in thread pool
 
-                lock.lock();
+                    Stopwatch watch2;
+
+                    ///  we use future here for 2 reasons:
+                    ///  1) just passing a ref to list iterator after adding the thread to the list
+                    ///  2) hold the thread work until the thread is added to the list, otherwise
+                    ///     is can get the lock faster and then can wait for a cond_variable forever
+                    thread_ptr = std::make_unique<Thread>([this, ft = std::move(future_thread_id)] mutable
+                    {
+                        auto thread_it = ft.get();
+                        worker(thread_it);
+                    });
+
+                    ProfileEvents::increment(
+                        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolThreadCreationMicroseconds : ProfileEvents::LocalThreadPoolThreadCreationMicroseconds,
+                        watch2.elapsedMicroseconds());
+
+                }
 
                 threads.push_front(std::move(*thread_ptr));
+                push_successful = true;
                 promise_thread_it.set_value(threads.begin());
-
-                ProfileEvents::increment(
-                    std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions);
             }
             catch (...)
             {
-                threads.pop_front();
+                // Set exception in the promise, so the thread will be stopped with exception
+                promise_thread_it.set_exception(std::current_exception());
+                if (push_successful)
+                {
+                    if (threads.front().joinable())
+                        threads.front().join();
+
+                    threads.pop_front();
+                }
+                else if (thread_ptr && thread_ptr->joinable())
+                {
+                    thread_ptr->join();
+                }
+
                 return on_error("cannot allocate thread");
             }
+            ProfileEvents::increment(
+                    std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions);
+
         }
 
         jobs.emplace(std::move(job),
