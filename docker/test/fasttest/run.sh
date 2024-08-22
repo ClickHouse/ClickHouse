@@ -325,7 +325,7 @@ case "$stage" in
     ;&
 "run_tests")
     run_tests ||:
-    /repo/tests/docker_scripts/process_functional_tests_result.py --in-results-dir "$FASTTEST_OUTPUT/" \
+    /process_functional_tests_result.py --in-results-dir "$FASTTEST_OUTPUT/" \
         --out-results-file "$FASTTEST_OUTPUT/test_results.tsv" \
         --out-status-file "$FASTTEST_OUTPUT/check_status.tsv" || echo -e "failure\tCannot parse results" > "$FASTTEST_OUTPUT/check_status.tsv"
     ;;

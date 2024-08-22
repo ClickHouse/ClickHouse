@@ -119,24 +119,24 @@ def get_run_command(
     envs += [f"-e {e}" for e in additional_envs]
 
     env_str = " ".join(envs)
-
-    if "stateful" in check_name.lower():
-        run_script = "/repo/tests/docker_scripts/stateful_runner.sh"
-    elif "stateless" in check_name.lower():
-        run_script = "/repo/tests/docker_scripts/stateless_runner.sh"
-    else:
-        assert False
+    volume_with_broken_test = (
+        f"--volume={repo_path}/tests/analyzer_tech_debt.txt:/analyzer_tech_debt.txt "
+        if "analyzer" not in check_name
+        else ""
+    )
 
     return (
         f"docker run --rm --name func-tester --volume={builds_path}:/package_folder "
         # For dmesg and sysctl
         "--privileged "
-        f"{ci_logs_args} "
-        f"--volume={repo_path}:/repo "
+        f"{ci_logs_args}"
+        f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
+        f"--volume={repo_path}/utils/grpc-client:/usr/share/clickhouse-utils/grpc-client "
+        f"{volume_with_broken_test}"
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "
         "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
-        f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image} {run_script}"
+        f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
     )
 
 

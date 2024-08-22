@@ -3,25 +3,26 @@
 # shellcheck disable=SC2086
 # shellcheck disable=SC2024
 
-set -x
-
 # Avoid overlaps with previous runs
 dmesg --clear
 # shellcheck disable=SC1091
 source /setup_export_logs.sh
 
-ln -s /repo/tests/clickhouse-test/ci/stress.py /usr/bin/stress
-ln -s /repo/tests/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
+set -x
+
+# we mount tests folder from repo to /usr/share
+ln -s /usr/share/clickhouse-test/ci/stress.py /usr/bin/stress
+ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
 # shellcheck source=../stateless/attach_gdb.lib
-source /repo/tests/docker_scripts/attach_gdb.lib
+source /attach_gdb.lib
 # shellcheck source=../stateless/stress_tests.lib
-source /repo/tests/docker_scripts/stress_tests.lib
+source /stress_tests.lib
 
 # shellcheck disable=SC1091
-source /repo/tests/docker_scripts/utils.lib
+source /utils.lib
 
 install_packages package_folder
 
@@ -54,7 +55,7 @@ export ZOOKEEPER_FAULT_INJECTION=1
 # available for dump via clickhouse-local
 configure
 
-/repo/tests/docker_scripts/setup_minio.sh stateless # to have a proper environment
+./setup_minio.sh stateless # to have a proper environment
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
@@ -63,7 +64,7 @@ start_server
 setup_logs_replication
 
 clickhouse-client --query "CREATE DATABASE datasets"
-clickhouse-client --multiquery < /repo/tests/docker_scripts/create.sql
+clickhouse-client --multiquery < create.sql
 clickhouse-client --query "SHOW TABLES FROM datasets"
 
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
@@ -266,7 +267,7 @@ fi
 
 start_server
 
-python3 /repo/tests/ci/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 \
+stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 

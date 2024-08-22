@@ -1,5 +1,5 @@
 # rebuild in #33610
-# docker build -t clickhouse/stress-test .
+# docker build -t clickhouse/upgrade-check .
 ARG FROM_TAG=latest
 FROM clickhouse/stateful-test:$FROM_TAG
 

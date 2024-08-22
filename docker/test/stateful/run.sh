@@ -14,17 +14,17 @@ dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
 
-ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
+ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 # shellcheck disable=SC1091
-source /repo/tests/docker_scripts/utils.lib
+source /utils.lib
 
 # install test configs
-/repo/tests/config/install.sh
+/usr/share/clickhouse-test/config/install.sh
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence &
 
-/repo/tests/docker_scripts/setup_minio.sh stateful
+./setup_minio.sh stateful
 ./mc admin trace clickminio > /test_output/minio.log &
 MC_ADMIN_PID=$!
 
@@ -105,7 +105,7 @@ setup_logs_replication
 
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "CREATE DATABASE datasets"
-clickhouse-client --multiquery < /repo/tests/docker_scripts/create.sql
+clickhouse-client --multiquery < create.sql
 clickhouse-client --query "SHOW TABLES FROM datasets"
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
@@ -237,7 +237,6 @@ function run_tests()
         --hung-check
         --print-time
         --capture-client-stacktrace
-        --queries "/repo/tests/queries"
         "${ADDITIONAL_OPTIONS[@]}"
         "$SKIP_TESTS_OPTION"
     )
@@ -260,7 +259,7 @@ ls -la ./
 echo "Files in root directory"
 ls -la /
 
-/repo/tests/docker_scripts/process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
+/process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 
 sudo clickhouse stop ||:
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then

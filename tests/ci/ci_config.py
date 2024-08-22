@@ -538,10 +538,7 @@ class CI:
         JobNames.FAST_TEST: JobConfig(
             pr_only=True,
             digest=DigestConfig(
-                include_paths=[
-                    "./tests/queries/0_stateless/",
-                    "./tests/docker_scripts/",
-                ],
+                include_paths=["./tests/queries/0_stateless/"],
                 exclude_files=[".md"],
                 docker=["clickhouse/fasttest"],
             ),

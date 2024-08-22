@@ -32,7 +32,7 @@ def process_test_log(log_path, broken_tests):
     success_finish = False
     test_results = []
     test_end = True
-    with open(log_path, "r", encoding="utf-8") as test_file:
+    with open(log_path, "r") as test_file:
         for line in test_file:
             original_line = line
             line = line.strip()
@@ -150,7 +150,7 @@ def process_result(result_path, broken_tests):
 
     if result_path and os.path.exists(result_path):
         (
-            _total,
+            total,
             skipped,
             unknown,
             failed,
@@ -191,11 +191,11 @@ def process_result(result_path, broken_tests):
         else:
             description = ""
 
-        description += f"fail: {failed}, passed: {success}"
+        description += "fail: {}, passed: {}".format(failed, success)
         if skipped != 0:
-            description += f", skipped: {skipped}"
+            description += ", skipped: {}".format(skipped)
         if unknown != 0:
-            description += f", unknown: {unknown}"
+            description += ", unknown: {}".format(unknown)
     else:
         state = "failure"
         description = "Output log doesn't exist"
@@ -205,10 +205,10 @@ def process_result(result_path, broken_tests):
 
 
 def write_results(results_file, status_file, results, status):
-    with open(results_file, "w", encoding="utf-8") as f:
+    with open(results_file, "w") as f:
         out = csv.writer(f, delimiter="\t")
         out.writerows(results)
-    with open(status_file, "w", encoding="utf-8") as f:
+    with open(status_file, "w") as f:
         out = csv.writer(f, delimiter="\t")
         out.writerow(status)
 
@@ -221,15 +221,15 @@ if __name__ == "__main__":
     parser.add_argument("--in-results-dir", default="/test_output/")
     parser.add_argument("--out-results-file", default="/test_output/test_results.tsv")
     parser.add_argument("--out-status-file", default="/test_output/check_status.tsv")
-    parser.add_argument("--broken-tests", default="/repo/tests/analyzer_tech_debt.txt")
+    parser.add_argument("--broken-tests", default="/analyzer_tech_debt.txt")
     args = parser.parse_args()
 
-    broken_tests = []
+    broken_tests = list()
     if os.path.exists(args.broken_tests):
-        print(f"File {args.broken_tests} with broken tests found")
-        with open(args.broken_tests, encoding="utf-8") as f:
+        logging.info(f"File {args.broken_tests} with broken tests found")
+        with open(args.broken_tests) as f:
             broken_tests = f.read().splitlines()
-        print(f"Broken tests in the list: {len(broken_tests)}")
+        logging.info(f"Broken tests in the list: {len(broken_tests)}")
 
     state, description, test_results = process_result(args.in_results_dir, broken_tests)
     logging.info("Result parsed")
