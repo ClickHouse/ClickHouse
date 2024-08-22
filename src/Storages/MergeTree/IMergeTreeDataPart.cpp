@@ -1662,11 +1662,9 @@ void IMergeTreeDataPart::loadColumns(bool require)
 }
 
 
-/// Project part / part with project parts / compact part doesn't support LWD.
 bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
 {
-    return (part_type == MergeTreeDataPartType::Wide || part_type == MergeTreeDataPartType::Compact) &&
-        parent_part == nullptr && projection_parts.empty();
+    return (part_type == MergeTreeDataPartType::Wide || part_type == MergeTreeDataPartType::Compact);
 }
 
 bool IMergeTreeDataPart::hasLightweightDelete() const

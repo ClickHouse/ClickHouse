@@ -60,7 +60,7 @@ public:
             L2
         };
 
-        std::vector<Float32> reference_vector;
+        std::vector<Float64> reference_vector;
         DistanceFunction distance_function;
         String column_name;
         UInt64 limit;
@@ -70,7 +70,7 @@ public:
     /// Returns false if query can be speeded up by an ANN index, true otherwise.
     bool alwaysUnknownOrTrue(String distance_function) const;
 
-    std::vector<float> getReferenceVector() const;
+    std::vector<Float64> getReferenceVector() const;
     size_t getDimensions() const;
     String getColumnName() const;
     Info::DistanceFunction getDistanceFunction() const;

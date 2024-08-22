@@ -102,21 +102,29 @@ class GH:
         assert len(commit_sha) == 40
         assert Utils.is_hex(commit_sha)
         assert not Utils.is_hex(token)
-        url = f"https://api.github.com/repos/{Envs.GITHUB_REPOSITORY}/commits/{commit_sha}/statuses?per_page={200}"
+
+        url = f"https://api.github.com/repos/{Envs.GITHUB_REPOSITORY}/commits/{commit_sha}/statuses"
         headers = {
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github.v3+json",
         }
-        response = requests.get(url, headers=headers, timeout=5)
 
         if isinstance(status_name, str):
             status_name = (status_name,)
-        if response.status_code == 200:
-            assert "next" not in response.links, "Response truncated"
-            statuses = response.json()
-            for status in statuses:
-                if status["context"] in status_name:
-                    return status["state"]  # type: ignore
+
+        while url:
+            response = requests.get(url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                statuses = response.json()
+                for status in statuses:
+                    if status["context"] in status_name:
+                        return status["state"]  # type: ignore
+
+                # Check if there is a next page
+                url = response.links.get("next", {}).get("url")
+            else:
+                break
+
         return ""
 
     @staticmethod
@@ -166,6 +174,11 @@ class GH:
     def is_latest_release_branch(branch):
         latest_branch = Shell.get_output(
             'gh pr list --label release --repo ClickHouse/ClickHouse --search "sort:created" -L1 --json headRefName'
+        )
+        if latest_branch:
+            latest_branch = json.loads(latest_branch)[0]["headRefName"]
+        print(
+            f"Latest branch [{latest_branch}], release branch [{branch}], release latest [{latest_branch == branch}]"
         )
         return latest_branch == branch
 

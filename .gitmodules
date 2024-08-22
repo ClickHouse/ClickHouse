@@ -108,7 +108,7 @@
 	url = https://github.com/ClickHouse/icudata
 [submodule "contrib/icu"]
 	path = contrib/icu
-	url = https://github.com/unicode-org/icu
+	url = https://github.com/ClickHouse/icu
 [submodule "contrib/flatbuffers"]
 	path = contrib/flatbuffers
 	url = https://github.com/ClickHouse/flatbuffers
@@ -345,9 +345,6 @@
 [submodule "contrib/FP16"]
 	path = contrib/FP16
 	url = https://github.com/Maratyszcza/FP16.git
-[submodule "contrib/robin-map"]
-	path = contrib/robin-map
-	url = https://github.com/Tessil/robin-map.git
 [submodule "contrib/aklomp-base64"]
 	path = contrib/aklomp-base64
 	url = https://github.com/aklomp/base64.git
