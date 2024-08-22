@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -193,6 +194,8 @@ struct IdentifierResolveScope
 
     /// Subquery depth
     size_t subquery_depth = 0;
+
+    size_t scope_depth = 1;
 
     /** Scope join tree node for expression.
       * Valid only during analysis construction for single expression.

@@ -9,10 +9,7 @@ namespace DB
 struct ScopeAliases
 {
     /// Alias name to query expression node
-    std::unordered_map<std::string, QueryTreeNodePtr> alias_name_to_expression_node_before_group_by;
-    std::unordered_map<std::string, QueryTreeNodePtr> alias_name_to_expression_node_after_group_by;
-
-    std::unordered_map<std::string, QueryTreeNodePtr> * alias_name_to_expression_node = nullptr;
+    std::unordered_map<std::string, QueryTreeNodePtr> alias_name_to_expression_node;
 
     /// Alias name to lambda node
     std::unordered_map<std::string, QueryTreeNodePtr> alias_name_to_lambda_node;
@@ -35,7 +32,7 @@ struct ScopeAliases
     {
         switch (lookup_context)
         {
-            case IdentifierLookupContext::EXPRESSION: return *alias_name_to_expression_node;
+            case IdentifierLookupContext::EXPRESSION: return alias_name_to_expression_node;
             case IdentifierLookupContext::FUNCTION: return alias_name_to_lambda_node;
             case IdentifierLookupContext::TABLE_EXPRESSION: return alias_name_to_table_expression_node;
         }

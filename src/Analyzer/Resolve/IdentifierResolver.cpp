@@ -221,7 +221,7 @@ void IdentifierResolver::collectScopeValidIdentifiersForTypoCorrection(
 
     if (allow_expression_identifiers)
     {
-        for (const auto & [name, expression] : *scope.aliases.alias_name_to_expression_node)
+        for (const auto & [name, expression] : scope.aliases.alias_name_to_expression_node)
         {
             assert(expression);
             auto expression_identifier = Identifier(name);
@@ -251,7 +251,7 @@ void IdentifierResolver::collectScopeValidIdentifiersForTypoCorrection(
     {
         if (allow_function_identifiers)
         {
-            for (const auto & [name, _] : *scope.aliases.alias_name_to_expression_node)
+            for (const auto & [name, _] : scope.aliases.alias_name_to_expression_node)
                 valid_identifiers_result.insert(Identifier(name));
         }
 
@@ -706,7 +706,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
         {
             if (auto dynamic_subcolumn_type = jt->second->getColumnType()->tryGetSubcolumnType(dynamic_subcolumn_name))
             {
-                result_column_node = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, dynamic_subcolumn_type}, jt->second->getColumnSource());
+                result_column_node = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, dynamic_subcolumn_type}, jt->second->getColumnSource(), &scope);
                 can_resolve_directly_from_storage = true;
                 is_subcolumn = true;
             }
@@ -1303,7 +1303,7 @@ QueryTreeNodePtr IdentifierResolver::matchArrayJoinSubcolumns(
     if (!startsWith(resolved_subcolumn_path, array_join_subcolumn_prefix))
         return {};
 
-    auto column_node = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(), array_join_column_expression_typed.getColumnSource());
+    auto column_node = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(), array_join_column_expression_typed.getColumnSource(), &scope);
 
     return wrapExpressionNodeInSubcolumn(std::move(column_node), resolved_subcolumn_path.substr(array_join_subcolumn_prefix.size()), scope.context);
 }
@@ -1354,7 +1354,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpression
                         continue;
 
                     auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
-                        array_join_column_expression_typed.getColumnSource());
+                        array_join_column_expression_typed.getColumnSource(), &scope);
 
                     const auto & nested_key_name = nested_keys_names[i - 1].safeGet<String &>();
                     Identifier nested_identifier = Identifier(nested_key_name);
@@ -1370,7 +1370,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpression
         if (array_join_column_inner_expression->isEqual(*resolved_expression))
         {
             array_join_resolved_expression = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
-                array_join_column_expression_typed.getColumnSource());
+                array_join_column_expression_typed.getColumnSource(), &scope);
             break;
         }
 
@@ -1423,7 +1423,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
         if (identifier_view.empty())
         {
             auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
-                array_join_column_expression_typed.getColumnSource());
+                array_join_column_expression_typed.getColumnSource(), &scope);
             return { .resolved_identifier = array_join_column, .scope = &scope, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
         }
 

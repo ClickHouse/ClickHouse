@@ -48,7 +48,7 @@ TEST(QueryTreeNode, Clone)
         auto source_node = std::make_shared<SourceNode>();
 
         NameAndTypePair column_name_and_type("value", std::make_shared<DataTypeUInt64>());
-        auto column_node = std::make_shared<ColumnNode>(column_name_and_type, source_node);
+        auto column_node = std::make_shared<ColumnNode>(column_name_and_type, source_node, nullptr);
 
         ASSERT_EQ(column_node->getColumnSource().get(), source_node.get());
 
@@ -63,7 +63,7 @@ TEST(QueryTreeNode, Clone)
         auto source_node = std::make_shared<SourceNode>();
 
         NameAndTypePair column_name_and_type("value", std::make_shared<DataTypeUInt64>());
-        auto column_node = std::make_shared<ColumnNode>(column_name_and_type, source_node);
+        auto column_node = std::make_shared<ColumnNode>(column_name_and_type, source_node, nullptr);
 
         root_node->getNodes().push_back(source_node);
         root_node->getNodes().push_back(column_node);

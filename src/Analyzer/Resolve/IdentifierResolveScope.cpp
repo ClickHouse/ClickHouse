@@ -21,6 +21,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         subquery_depth = parent_scope->subquery_depth;
         context = parent_scope->context;
         projection_mask_map = parent_scope->projection_mask_map;
+        scope_depth = parent_scope->scope_depth + 1;
     }
     else
         projection_mask_map = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>();
@@ -40,8 +41,6 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         join_use_nulls = context->getSettingsRef().join_use_nulls;
     else if (parent_scope)
         join_use_nulls = parent_scope->join_use_nulls;
-
-    aliases.alias_name_to_expression_node = &aliases.alias_name_to_expression_node_before_group_by;
 }
 
 [[maybe_unused]] const IdentifierResolveScope * IdentifierResolveScope::getNearestQueryScope() const
@@ -102,18 +101,12 @@ const AnalysisTableExpressionData & IdentifierResolveScope::getTableExpressionDa
 
 void IdentifierResolveScope::pushExpressionNode(const QueryTreeNodePtr & node)
 {
-    bool had_aggregate_function = expressions_in_resolve_process_stack.hasAggregateFunction();
     expressions_in_resolve_process_stack.push(node);
-    if (group_by_use_nulls && had_aggregate_function != expressions_in_resolve_process_stack.hasAggregateFunction())
-        aliases.alias_name_to_expression_node = &aliases.alias_name_to_expression_node_before_group_by;
 }
 
 void IdentifierResolveScope::popExpressionNode()
 {
-    bool had_aggregate_function = expressions_in_resolve_process_stack.hasAggregateFunction();
     expressions_in_resolve_process_stack.pop();
-    if (group_by_use_nulls && had_aggregate_function != expressions_in_resolve_process_stack.hasAggregateFunction())
-        aliases.alias_name_to_expression_node = &aliases.alias_name_to_expression_node_after_group_by;
 }
 
 /// Dump identifier resolve scope
@@ -148,8 +141,8 @@ void IdentifierResolveScope::popExpressionNode()
     for (const auto & [alias_name, node] : expression_argument_name_to_node)
         buffer << "Alias name " << alias_name << " node " << node->formatASTForErrorMessage() << '\n';
 
-    buffer << "Alias name to expression node table size " << aliases.alias_name_to_expression_node->size() << '\n';
-    for (const auto & [alias_name, node] : *aliases.alias_name_to_expression_node)
+    buffer << "Alias name to expression node table size " << aliases.alias_name_to_expression_node.size() << '\n';
+    for (const auto & [alias_name, node] : aliases.alias_name_to_expression_node)
         buffer << "Alias name " << alias_name << " expression node " << node->dumpTree() << '\n';
 
     buffer << "Alias name to function node table size " << aliases.alias_name_to_lambda_node.size() << '\n';

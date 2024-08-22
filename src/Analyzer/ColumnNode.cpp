@@ -1,5 +1,6 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -16,18 +17,27 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnNode::ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node_, QueryTreeNodeWeakPtr column_source_)
+ColumnNode::ColumnNode(
+    NameAndTypePair column_,
+    QueryTreeNodePtr expression_node_,
+    QueryTreeNodeWeakPtr column_source_,
+    IdentifierResolveScope * origin_scope_
+)
     : IQueryTreeNode(children_size, weak_pointers_size)
     , column(std::move(column_))
+    , origin_scope_depth(origin_scope_ ? origin_scope_->scope_depth : 0)
 {
     children[expression_child_index] = std::move(expression_node_);
     getSourceWeakPointer() = std::move(column_source_);
 }
 
-ColumnNode::ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_)
-    : ColumnNode(std::move(column_), nullptr /*expression_node*/, std::move(column_source_))
-{
-}
+ColumnNode::ColumnNode(
+    NameAndTypePair column_,
+    QueryTreeNodeWeakPtr column_source_,
+    IdentifierResolveScope * origin_scope_
+)
+    : ColumnNode(std::move(column_), nullptr /*expression_node*/, std::move(column_source_), origin_scope_)
+{}
 
 QueryTreeNodePtr ColumnNode::getColumnSource() const
 {
@@ -92,7 +102,9 @@ void ColumnNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compa
 
 QueryTreeNodePtr ColumnNode::cloneImpl() const
 {
-    return std::make_shared<ColumnNode>(column, getSourceWeakPointer());
+    auto result = std::make_shared<ColumnNode>(column, getSourceWeakPointer(), nullptr);
+    result->origin_scope_depth = origin_scope_depth;
+    return result;
 }
 
 ASTPtr ColumnNode::toASTImpl(const ConvertToASTOptions & options) const

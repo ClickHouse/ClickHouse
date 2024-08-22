@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <Core/NamesAndTypes.h>
 
 #include <Analyzer/IQueryTreeNode.h>
@@ -32,14 +33,25 @@ namespace ErrorCodes
 class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 
+struct IdentifierResolveScope;
+
 class ColumnNode final : public IQueryTreeNode
 {
 public:
     /// Construct column node with column name, type, column expression and column source weak pointer
-    ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node_, QueryTreeNodeWeakPtr column_source_);
+    ColumnNode(
+        NameAndTypePair column_,
+        QueryTreeNodePtr expression_node_,
+        QueryTreeNodeWeakPtr column_source_,
+        IdentifierResolveScope * origin_scope_
+    );
 
     /// Construct column node with column name, type and column source weak pointer
-    ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_);
+    ColumnNode(
+        NameAndTypePair column_,
+        QueryTreeNodeWeakPtr column_source_,
+        IdentifierResolveScope * origin_scope_
+    );
 
     /// Get column
     const NameAndTypePair & getColumn() const
@@ -113,6 +125,13 @@ public:
         getSourceWeakPointer() = source;
     }
 
+    size_t getOriginScopeDepth() const
+    {
+        if (origin_scope_depth == 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Origin scope depth is not set");
+        return origin_scope_depth;
+    }
+
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::COLUMN;
@@ -151,6 +170,7 @@ private:
     }
 
     NameAndTypePair column;
+    size_t origin_scope_depth = 0;
 
     static constexpr size_t expression_child_index = 0;
     static constexpr size_t children_size = expression_child_index + 1;

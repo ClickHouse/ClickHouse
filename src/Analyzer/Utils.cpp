@@ -885,7 +885,7 @@ QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes 
     subquery_projection_nodes.reserve(projection_columns.size());
 
     for (const auto & column : projection_columns)
-        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(column, table_expression));
+        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(column, table_expression, nullptr));
 
     if (subquery_projection_nodes.empty())
     {
