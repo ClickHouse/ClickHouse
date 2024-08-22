@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeEnum.h>
 
 
 namespace DB
@@ -15,8 +16,14 @@ ColumnsDescription DeadLetterQueueElement::getColumnsDescription()
 {
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
+    auto stream_type = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values{
+            {"Kafka", static_cast<Int8>(StreamType::Kafka)},
+        });
+
     return ColumnsDescription
     {
+        {"stream_type", stream_type, "Stream type. Possible values: 'Kafka'."},
         {"event_date", std::make_shared<DataTypeDate>(), "Message consuming date."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Message consuming time."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Query starting time with microseconds precision."},
@@ -34,6 +41,7 @@ void DeadLetterQueueElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
+    columns[i++]->insert(static_cast<Int8>(stream_type));
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);

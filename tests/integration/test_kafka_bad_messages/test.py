@@ -126,6 +126,7 @@ def view_test(expected_num_messages):
     attempt = 0
     rows = 0
     while attempt < 500:
+        time.sleep(0.1)
         rows = int(instance.query("SELECT count() FROM view"))
         if rows == expected_num_messages:
             break
@@ -134,21 +135,7 @@ def view_test(expected_num_messages):
     assert rows == expected_num_messages
 
 def dead_letter_queue_test(expected_num_messages):
-    # attempt = 0
-    # rows = 0
-    # while attempt < 500:
-    #     rows = int(instance.query("SELECT count() FROM view"))
-    #     if rows == expected_num_messages:
-    #         break
-    #     attempt += 1
-
-    # assert rows == expected_num_messages
-    time.sleep(2)
-
-    rows = instance.query("SELECT count() FROM view")
-    logging.debug(f"system.dead_letter_queue - views contains {rows} rows")
-
-    instance.query("SYSTEM FLUSH LOGS")
+    view_test(expected_num_messages)
 
     result = instance.query("SELECT * FROM system.dead_letter_queue")
     logging.debug(f"system.dead_letter_queue contains {result}")

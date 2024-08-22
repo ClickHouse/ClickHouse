@@ -240,6 +240,7 @@ Chunk KafkaSource::generateImpl()
                         LOG_DEBUG(&Poco::Logger::get("KafkaSource"), "generateImpl: calling dead_letter_queue->add");
                         dead_letter_queue->add(
                             DeadLetterQueueElement{
+                                .stream_type = DeadLetterQueueElement::StreamType::Kafka,
                                 .event_time = timeInSeconds(time_now),
                                 .event_time_microseconds = timeInMicroseconds(time_now),
                                 .database_name = storage_id.database_name,
