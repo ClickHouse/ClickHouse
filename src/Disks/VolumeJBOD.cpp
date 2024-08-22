@@ -1,6 +1,6 @@
 #include "VolumeJBOD.h"
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
@@ -112,7 +112,6 @@ DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
             return disks_by_size.top().disk;
         }
     }
-    UNREACHABLE();
 }
 
 ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
@@ -164,7 +163,6 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
             return reservation;
         }
     }
-    UNREACHABLE();
 }
 
 bool VolumeJBOD::areMergesAvoided() const

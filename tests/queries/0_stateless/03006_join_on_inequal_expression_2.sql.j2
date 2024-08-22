@@ -1,0 +1,82 @@
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+
+
+CREATE TABLE t1 (
+    key UInt32,
+    a UInt32,
+    attr String
+) ENGINE = MergeTree ORDER BY key;
+
+CREATE TABLE t2 (
+    key UInt32,
+    a UInt32,
+    attr String
+) ENGINE = MergeTree ORDER BY key;
+
+INSERT INTO t1 (key, a, attr) VALUES (1, 10, 'alpha'), (2, 15, 'beta'), (3, 20, 'gamma');
+INSERT INTO t2 (key, a, attr) VALUES (1, 5, 'ALPHA'), (2, 10, 'beta'), (4, 25, 'delta');
+
+
+SET enable_analyzer=1;
+SET allow_experimental_join_condition=1;
+SET join_use_nulls=0;
+-- { echoOn }
+-- inequality operation
+{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for algorithm in ['hash', 'grace_hash'] -%}
+SET join_algorithm='{{ algorithm }}';
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND (t1.attr != t2.attr) ORDER BY ALL;
+{% endfor -%}
+{% endfor -%}
+
+--
+{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for algorithm in ['hash', 'grace_hash'] -%}
+SET join_algorithm='{{ algorithm }}';
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a > t2.key AND t1.key + t2.a > 1 ORDER BY ALL;
+{% endfor -%}
+{% endfor -%}
+
+--
+{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for algorithm in ['hash', 'grace_hash'] -%}
+SET join_algorithm='{{ algorithm }}';
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND (t1.key < t2.a OR t1.a % 2 = 0) ORDER BY ALL;
+{% endfor -%}
+{% endfor -%}
+
+-- BETWEEN
+{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for algorithm in ['hash', 'grace_hash'] -%}
+SET join_algorithm='{{ algorithm }}';
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND (t2.a BETWEEN 8 AND t1.a) ORDER BY ALL;
+{% endfor -%}
+{% endfor -%}
+
+--
+{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for algorithm in ['hash', 'grace_hash'] -%}
+SET join_algorithm='{{ algorithm }}';
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND (t1.a IN (SELECT a FROM t2 WHERE a = 10)) ORDER BY ALL;
+{% endfor -%}
+{% endfor -%}
+
+-- Stupid condition
+{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for algorithm in ['hash', 'grace_hash'] -%}
+SET join_algorithm='{{ algorithm }}';
+SELECT t1.*, t2.* FROM t1 {{ join_type }} JOIN t2 ON t1.key == t2.key AND (t1.a * length(t2.attr) / length(t1.attr) <> t2.a + t1.key - t2.key) ORDER BY ALL;
+{% endfor -%}
+{% endfor -%}
+
+-- Window functions with stupid condition
+{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for algorithm in ['hash', 'grace_hash'] -%}
+SET join_algorithm='{{ algorithm }}';
+SELECT t1.*, t2.*, AVG(t1.a) OVER () AS avg_b, SUM(t2.key) OVER () AS sum_c FROM t1 {{ join_type }} JOIN t2 ON t1.key == t2.key AND (t1.a * length(t2.attr) / length(t1.attr) <> t2.a + t1.key - t2.key) ORDER BY ALL;
+{% endfor -%}
+{% endfor -%}
+
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;

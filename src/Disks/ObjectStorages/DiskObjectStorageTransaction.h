@@ -92,6 +92,8 @@ public:
 
     void createFile(const String & path) override;
 
+    void truncateFile(const String & path, size_t size) override;
+
     void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
 
     /// writeFile is a difficult function for transactions.

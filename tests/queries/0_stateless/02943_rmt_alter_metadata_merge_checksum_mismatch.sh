@@ -26,7 +26,7 @@ function wait_part()
 function restore_failpoints()
 {
     # restore entry error with failpoints (to avoid endless errors in logs)
-    $CLICKHOUSE_CLIENT -nm -q "
+    $CLICKHOUSE_CLIENT -m -q "
         system enable failpoint replicated_queue_unfail_entries;
         system sync replica $failed_replica;
         system disable failpoint replicated_queue_unfail_entries;
@@ -34,7 +34,7 @@ function restore_failpoints()
 }
 trap restore_failpoints EXIT
 
-$CLICKHOUSE_CLIENT -nm --insert_keeper_fault_injection_probability=0 -q "
+$CLICKHOUSE_CLIENT -m --insert_keeper_fault_injection_probability=0 -q "
     drop table if exists data_r1;
     drop table if exists data_r2;
 
@@ -45,7 +45,7 @@ $CLICKHOUSE_CLIENT -nm --insert_keeper_fault_injection_probability=0 -q "
 "
 
 # will fail ALTER_METADATA on one of replicas
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     system enable failpoint replicated_queue_fail_next_entry;
     alter table data_r1 drop index value_idx settings alter_sync=0; -- part all_0_0_0_1
 
@@ -80,7 +80,7 @@ fi
 # This will create MERGE_PARTS, on failed replica it will be fetched from source replica (since it does not have all parts to execute merge)
 $CLICKHOUSE_CLIENT -q "optimize table $success_replica final settings optimize_throw_if_noop=1, alter_sync=1" # part all_0_0_1_1
 
-$CLICKHOUSE_CLIENT -nm --insert_keeper_fault_injection_probability=0 -q "
+$CLICKHOUSE_CLIENT -m --insert_keeper_fault_injection_probability=0 -q "
     insert into $success_replica (key) values (2); -- part all_2_2_0
     -- Avoid 'Cannot select parts for optimization: Entry for part all_2_2_0 hasn't been read from the replication log yet'
     system sync replica $success_replica pull;

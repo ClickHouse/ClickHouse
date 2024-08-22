@@ -39,7 +39,7 @@ ORDER BY (created_at, id0, id1);
 
 SET send_logs_level = 'fatal';
 
-ALTER TABLE uuid MODIFY COLUMN id0 UUID; -- { serverError 524 }
-ALTER TABLE uuid MODIFY COLUMN id1 UUID; -- { serverError 524 }
+ALTER TABLE uuid MODIFY COLUMN id0 UUID; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE uuid MODIFY COLUMN id1 UUID; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 
 DROP TABLE uuid;

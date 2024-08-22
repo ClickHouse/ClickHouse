@@ -19,6 +19,8 @@ public:
     ~SharedMutex() = default;
     SharedMutex(const SharedMutex &) = delete;
     SharedMutex & operator=(const SharedMutex &) = delete;
+    SharedMutex(SharedMutex &&) = delete;
+    SharedMutex & operator=(SharedMutex &&) = delete;
 
     // Exclusive ownership
     void lock() TSA_ACQUIRE();
@@ -36,6 +38,8 @@ private:
 
     alignas(64) std::atomic<UInt64> state;
     std::atomic<UInt32> waiters;
+    /// Is set while the lock is held (or is in the process of being acquired) in exclusive mode only to facilitate debugging
+    std::atomic<UInt64> writer_thread_id;
 };
 
 }

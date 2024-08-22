@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Core/ShortCircuitFunctionEvaluation.h>
 #include <Interpreters/Context_fwd.h>
-#include <Core/SettingsEnums.h>
 
 #include <cstddef>
 

@@ -3,7 +3,7 @@ slug: /zh/sql-reference/data-types/simpleaggregatefunction
 ---
 # SimpleAggregateFunction {#data-type-simpleaggregatefunction}
 
-`SimpleAggregateFunction(name, types_of_arguments…)` 数据类型存储聚合函数的当前值, 并不像 [`AggregateFunction`](../../sql-reference/data-types/aggregatefunction.md) 那样存储其全部状态。这种优化可以应用于具有以下属性函数: 将函数 `f` 应用于行集合 `S1 UNION ALL S2` 的结果，可以通过将 `f` 分别应用于行集合的部分, 然后再将 `f` 应用于结果来获得: `f(S1 UNION ALL S2) = f(f(S1) UNION ALL f(S2))`。 这个属性保证了部分聚合结果足以计算出合并的结果，所以我们不必存储和处理任何额外的数据。
+`SimpleAggregateFunction(name, types_of_arguments...)` 数据类型存储聚合函数的当前值, 并不像 [`AggregateFunction`](../../sql-reference/data-types/aggregatefunction.md) 那样存储其全部状态。这种优化可以应用于具有以下属性函数: 将函数 `f` 应用于行集合 `S1 UNION ALL S2` 的结果，可以通过将 `f` 分别应用于行集合的部分, 然后再将 `f` 应用于结果来获得: `f(S1 UNION ALL S2) = f(f(S1) UNION ALL f(S2))`。 这个属性保证了部分聚合结果足以计算出合并的结果，所以我们不必存储和处理任何额外的数据。
 
 支持以下聚合函数:
 

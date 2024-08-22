@@ -65,41 +65,41 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
 
     /// These synonyms are added for compatibility.
 
-    factory.registerAlias("TINYINT", "Int8", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("INT1", "Int8", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("BYTE", "Int8", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("TINYINT SIGNED", "Int8", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("INT1 SIGNED", "Int8", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("SMALLINT", "Int16", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("SMALLINT SIGNED", "Int16", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("INT", "Int32", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("INTEGER", "Int32", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("MEDIUMINT", "Int32", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("MEDIUMINT SIGNED", "Int32", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("INT SIGNED", "Int32", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("INTEGER SIGNED", "Int32", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("BIGINT", "Int64", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("SIGNED", "Int64", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("BIGINT SIGNED", "Int64", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("TIME", "Int64", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("TINYINT", "Int8", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("INT1", "Int8", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("BYTE", "Int8", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("TINYINT SIGNED", "Int8", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("INT1 SIGNED", "Int8", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("SMALLINT", "Int16", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("SMALLINT SIGNED", "Int16", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("INT", "Int32", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("INTEGER", "Int32", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("MEDIUMINT", "Int32", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("MEDIUMINT SIGNED", "Int32", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("INT SIGNED", "Int32", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("INTEGER SIGNED", "Int32", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("BIGINT", "Int64", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("SIGNED", "Int64", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("BIGINT SIGNED", "Int64", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("TIME", "Int64", DataTypeFactory::Case::Insensitive);
 
-    factory.registerAlias("TINYINT UNSIGNED", "UInt8", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("INT1 UNSIGNED", "UInt8", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("SMALLINT UNSIGNED", "UInt16", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("YEAR", "UInt16", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("MEDIUMINT UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("INT UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("INTEGER UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("UNSIGNED", "UInt64", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("BIGINT UNSIGNED", "UInt64", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("BIT", "UInt64", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("SET", "UInt64", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("TINYINT UNSIGNED", "UInt8", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("INT1 UNSIGNED", "UInt8", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("SMALLINT UNSIGNED", "UInt16", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("YEAR", "UInt16", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("MEDIUMINT UNSIGNED", "UInt32", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("INT UNSIGNED", "UInt32", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("INTEGER UNSIGNED", "UInt32", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("UNSIGNED", "UInt64", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("BIGINT UNSIGNED", "UInt64", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("BIT", "UInt64", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("SET", "UInt64", DataTypeFactory::Case::Insensitive);
 
-    factory.registerAlias("FLOAT", "Float32", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("REAL", "Float32", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("SINGLE", "Float32", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("DOUBLE", "Float64", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("DOUBLE PRECISION", "Float64", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("FLOAT", "Float32", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("REAL", "Float32", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("SINGLE", "Float32", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("DOUBLE", "Float64", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("DOUBLE PRECISION", "Float64", DataTypeFactory::Case::Insensitive);
 }
 
 /// Explicit template instantiations.

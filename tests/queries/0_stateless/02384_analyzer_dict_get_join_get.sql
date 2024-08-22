@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table
@@ -30,7 +30,7 @@ SELECT dictGet(test_dictionary, 'value', toUInt64(0));
 
 WITH 'test_dictionary' AS dictionary SELECT dictGet(dictionary, 'value', toUInt64(0));
 
-WITH 'invalid_dictionary' AS dictionary SELECT dictGet(dictionary, 'value', toUInt64(0)); -- { serverError 36 }
+WITH 'invalid_dictionary' AS dictionary SELECT dictGet(dictionary, 'value', toUInt64(0)); -- { serverError BAD_ARGUMENTS }
 
 DROP DICTIONARY test_dictionary;
 DROP TABLE test_table;
@@ -54,6 +54,6 @@ SELECT joinGet(test_table_join, 'value', toUInt64(0));
 
 WITH 'test_table_join' AS join_table SELECT joinGet(join_table, 'value', toUInt64(0));
 
-WITH 'invalid_test_table_join' AS join_table SELECT joinGet(join_table, 'value', toUInt64(0)); -- { serverError 60 }
+WITH 'invalid_test_table_join' AS join_table SELECT joinGet(join_table, 'value', toUInt64(0)); -- { serverError UNKNOWN_TABLE }
 
 DROP TABLE test_table_join;

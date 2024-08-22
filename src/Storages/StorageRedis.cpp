@@ -147,7 +147,7 @@ class RedisSink : public SinkToStorage
 public:
     RedisSink(StorageRedis & storage_, const StorageMetadataPtr & metadata_snapshot_);
 
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     String getName() const override { return "RedisSink"; }
 
 private:
@@ -169,10 +169,10 @@ RedisSink::RedisSink(StorageRedis & storage_, const StorageMetadataPtr & metadat
     }
 }
 
-void RedisSink::consume(Chunk chunk)
+void RedisSink::consume(Chunk & chunk)
 {
     auto rows = chunk.getNumRows();
-    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+    auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
     WriteBufferFromOwnString wb_key;
     WriteBufferFromOwnString wb_value;
@@ -567,7 +567,8 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
     Block block;
     while (executor.pull(block))
     {
-        sink->consume(Chunk{block.getColumns(), block.rows()});
+        Chunk chunk(block.getColumns(), block.rows());
+        sink->consume(chunk);
     }
 }
 

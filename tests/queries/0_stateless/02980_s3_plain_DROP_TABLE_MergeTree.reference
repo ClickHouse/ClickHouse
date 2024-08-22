@@ -3,28 +3,28 @@ data after ATTACH	1
 Files before DETACH TABLE
 all_1_1_0
 
-backups/ordinary_default/data/ordinary_default/data/all_1_1_0:
-primary.cidx
-serialization.json
-metadata_version.txt
-default_compression_codec.txt
+/backups/ordinary_default/data/ordinary_default/data/all_1_1_0:
+checksums.txt
+columns.txt
+count.txt
 data.bin
 data.cmrk3
-count.txt
-columns.txt
-checksums.txt
+default_compression_codec.txt
+metadata_version.txt
+primary.cidx
+serialization.json
 
 Files after DETACH TABLE
 all_1_1_0
 
-backups/ordinary_default/data/ordinary_default/data/all_1_1_0:
-primary.cidx
-serialization.json
-metadata_version.txt
-default_compression_codec.txt
+/backups/ordinary_default/data/ordinary_default/data/all_1_1_0:
+checksums.txt
+columns.txt
+count.txt
 data.bin
 data.cmrk3
-count.txt
-columns.txt
-checksums.txt
+default_compression_codec.txt
+metadata_version.txt
+primary.cidx
+serialization.json
 

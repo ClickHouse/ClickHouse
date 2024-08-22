@@ -25,8 +25,8 @@ SELECT * FROM 01760_db.example_simple_key_dictionary;
 
 SELECT name, database, key.names, key.types, attribute.names, attribute.types, status FROM system.dictionaries WHERE database='01760_db';
 
-DROP TABLE 01760_db.example_simple_key_source;
 DROP DICTIONARY 01760_db.example_simple_key_dictionary;
+DROP TABLE 01760_db.example_simple_key_source;
 
 SELECT name, database, key.names, key.types, attribute.names, attribute.types, status FROM system.dictionaries WHERE database='01760_db';
 
@@ -53,7 +53,7 @@ SELECT * FROM 01760_db.example_complex_key_dictionary;
 
 SELECT name, database, key.names, key.types, attribute.names, attribute.types, status FROM system.dictionaries WHERE database='01760_db';
 
-DROP TABLE 01760_db.example_complex_key_source;
 DROP DICTIONARY 01760_db.example_complex_key_dictionary;
+DROP TABLE 01760_db.example_complex_key_source;
 
 DROP DATABASE 01760_db;

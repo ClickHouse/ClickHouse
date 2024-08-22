@@ -1,0 +1,26 @@
+1	2024-01-01	Date	false
+2	1704056400	Decimal(18, 3)	false
+3	1	Float32	true
+4	2	Float64	true
+
+1	2024-01-01	Date	false
+1	2024-01-01	Date	false
+2	1704056400	Decimal(18, 3)	false
+2	1704056400	Decimal(18, 3)	false
+3	1	Float32	false
+3	1	Float32	false
+4	2	Float64	false
+4	2	Float64	false
+
+1	2024-01-01	Date	true
+1	2024-01-01	Date	true
+1	2024-01-01	Date	true
+2	1704056400	Decimal(18, 3)	true
+2	1704056400	Decimal(18, 3)	true
+2	1704056400	Decimal(18, 3)	true
+3	1	Float32	true
+3	1	Float32	true
+3	1	Float32	true
+4	2	Float64	true
+4	2	Float64	true
+4	2	Float64	true

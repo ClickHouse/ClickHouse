@@ -3,6 +3,7 @@
 -- no-fasttest: json type needs rapidjson library, geo types need s2 geometry
 
 SET allow_experimental_object_type = 1;
+SET allow_experimental_json_type = 1;
 SET allow_suspicious_low_cardinality_types=1;
 
 SELECT '-- Const string + non-const arbitrary type';
@@ -40,6 +41,7 @@ SELECT format('The {0} to all questions is {1}.', 'answer', materialize('2023-11
 SELECT format('The {0} to all questions is {1}.', 'answer', materialize('2023-11-14 05:50:12.123' :: DateTime64(3, 'Europe/Amsterdam')));
 SELECT format('The {0} to all questions is {1}.', 'answer', materialize('hallo' :: Enum('hallo' = 1)));
 SELECT format('The {0} to all questions is {1}.', 'answer', materialize(['foo', 'bar'] :: Array(String)));
+SELECT format('The {0} to all questions is {1}.', 'answer', materialize('{"foo": "bar"}' :: Object('json')));
 SELECT format('The {0} to all questions is {1}.', 'answer', materialize('{"foo": "bar"}' :: JSON));
 SELECT format('The {0} to all questions is {1}.', 'answer', materialize((42, 'foo') :: Tuple(Int32, String)));
 SELECT format('The {0} to all questions is {1}.', 'answer', materialize(map(42, 'foo') :: Map(Int32, String)));

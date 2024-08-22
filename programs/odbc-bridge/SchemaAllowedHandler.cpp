@@ -2,8 +2,10 @@
 
 #if USE_ODBC
 
+#include <Core/Settings.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
@@ -86,7 +88,7 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
 
         bool result = isSchemaAllowed(std::move(connection));
 
-        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
         try
         {
             writeBoolText(result, out);

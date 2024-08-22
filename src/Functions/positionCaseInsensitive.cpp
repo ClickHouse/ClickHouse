@@ -20,6 +20,6 @@ using FunctionPositionCaseInsensitive = FunctionsStringSearch<PositionImpl<NameP
 REGISTER_FUNCTION(PositionCaseInsensitive)
 {
     factory.registerFunction<FunctionPositionCaseInsensitive>();
-    factory.registerAlias("instr", NamePositionCaseInsensitive::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("instr", NamePositionCaseInsensitive::name, FunctionFactory::Case::Insensitive);
 }
 }

@@ -14,7 +14,7 @@ using FunctionAtan = FunctionMathUnary<UnaryFunctionVectorized<AtanName, atan>>;
 
 REGISTER_FUNCTION(Atan)
 {
-    factory.registerFunction<FunctionAtan>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionAtan>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

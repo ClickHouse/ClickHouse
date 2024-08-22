@@ -143,14 +143,14 @@ protected:
     /// Container of PipelineExecutors to be cancelled when a cancelQuery is received
     std::unordered_map<PipelineExecutor *, ExecutorHolderPtr> executors;
 
-    enum QueryStreamsStatus
+    enum class QueryStreamsStatus : uint8_t
     {
         NotInitialized,
         Initialized,
         Released
     };
 
-    QueryStreamsStatus query_streams_status{NotInitialized};
+    QueryStreamsStatus query_streams_status{QueryStreamsStatus::NotInitialized};
 
     ProcessListForUser * user_process_list = nullptr;
 

@@ -45,7 +45,7 @@ protected:
 class ParserKQLTableFunction : public IParserBase
 {
 protected:
-    const char * getName() const override { return "KQL() function"; }
+    const char * getName() const override { return "KQL function"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

@@ -2,6 +2,8 @@
 -- Tag: no-fasttest -- requires S3
 -- Tag: no-replicated-database -- ALTER MOVE PARTITION TO should not be replicated (will be fixed separatelly)
 
+SET optimize_trivial_insert_select = 1;
+
 CREATE TABLE test_move_partition_throttling (key UInt64 CODEC(NONE)) ENGINE = MergeTree ORDER BY tuple() SETTINGS storage_policy='local_remote';
 INSERT INTO test_move_partition_throttling SELECT number FROM numbers(1e6);
 SELECT disk_name, partition, rows FROM system.parts WHERE database = currentDatabase() AND table = 'test_move_partition_throttling' and active;

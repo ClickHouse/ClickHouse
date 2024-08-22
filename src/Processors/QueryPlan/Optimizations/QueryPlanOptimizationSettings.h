@@ -31,6 +31,9 @@ struct QueryPlanOptimizationSettings
     /// If merge-expressions optimization is enabled.
     bool merge_expressions = true;
 
+    /// If merge-filters optimization is enabled.
+    bool merge_filters = false;
+
     /// If filter push down optimization is enabled.
     bool filter_push_down = true;
 

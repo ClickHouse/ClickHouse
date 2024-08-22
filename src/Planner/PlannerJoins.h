@@ -182,15 +182,15 @@ struct JoinClausesAndActions
     /// Join clauses. Actions dag nodes point into join_expression_actions.
     JoinClauses join_clauses;
     /// Whole JOIN ON section expressions
-    ActionsDAGPtr left_join_tmp_expression_actions;
-    ActionsDAGPtr right_join_tmp_expression_actions;
+    ActionsDAG left_join_tmp_expression_actions;
+    ActionsDAG right_join_tmp_expression_actions;
     /// Left join expressions actions
-    ActionsDAGPtr left_join_expressions_actions;
+    ActionsDAG left_join_expressions_actions;
     /// Right join expressions actions
-    ActionsDAGPtr right_join_expressions_actions;
+    ActionsDAG right_join_expressions_actions;
     /// Originally used for inequal join. it's the total join expression.
     /// If there is no inequal join conditions, it's null.
-    ActionsDAGPtr mixed_join_expressions_actions;
+    std::optional<ActionsDAG> mixed_join_expressions_actions;
 };
 
 /** Calculate join clauses and actions for JOIN ON section.

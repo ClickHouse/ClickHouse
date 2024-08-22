@@ -4,6 +4,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 
 namespace DB
 {
@@ -55,10 +56,25 @@ std::vector<String> BinaryFormatReader<with_defaults>::readNames()
 template <bool with_defaults>
 std::vector<String> BinaryFormatReader<with_defaults>::readTypes()
 {
-    auto types = readHeaderRow();
-    for (const auto & type_name : types)
-        read_data_types.push_back(DataTypeFactory::instance().get(type_name));
-    return types;
+    read_data_types.reserve(read_columns);
+    Names type_names;
+    if (format_settings.binary.decode_types_in_binary_format)
+    {
+        type_names.reserve(read_columns);
+        for (size_t i = 0; i < read_columns; ++i)
+        {
+            read_data_types.push_back(decodeDataType(*in));
+            type_names.push_back(read_data_types.back()->getName());
+        }
+    }
+    else
+    {
+        type_names = readHeaderRow();
+        for (const auto & type_name : type_names)
+            read_data_types.push_back(DataTypeFactory::instance().get(type_name));
+    }
+
+    return type_names;
 }
 
 template <bool with_defaults>

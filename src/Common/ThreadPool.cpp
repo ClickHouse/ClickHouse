@@ -5,7 +5,6 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/noexcept_scope.h>
 
-#include <cassert>
 #include <type_traits>
 
 #include <Poco/Util/Application.h>
@@ -52,7 +51,7 @@ public:
         if (!capture_frame_pointers)
             return;
         /// Save all previous jobs call stacks and append with current
-        frame_pointers = DB::Exception::thread_frame_pointers;
+        frame_pointers = DB::Exception::getThreadFramePointers();
         frame_pointers.push_back(StackTrace().getFramePointers());
     }
 
@@ -437,6 +436,11 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
             if (shutdown)
             {
+                {
+                    ALLOW_ALLOCATIONS_IN_SCOPE;
+                    /// job can contain packaged_task which can set exception during destruction
+                    job_data.reset();
+                }
                 job_is_done = true;
                 continue;
             }
@@ -451,7 +455,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         try
         {
             if (DB::Exception::enable_job_stack_trace)
-                DB::Exception::thread_frame_pointers = std::move(job_data->frame_pointers);
+                DB::Exception::setThreadFramePointers(std::move(job_data->frame_pointers));
 
             CurrentMetrics::Increment metric_active_pool_threads(metric_active_threads);
 
@@ -494,8 +498,10 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
 template class ThreadPoolImpl<std::thread>;
 template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, true>>;
+template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false, false>>;
 template class ThreadFromGlobalPoolImpl<true, true>;
 template class ThreadFromGlobalPoolImpl<true, false>;
+template class ThreadFromGlobalPoolImpl<false, false>;
 
 std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 

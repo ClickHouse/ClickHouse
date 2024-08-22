@@ -323,6 +323,8 @@ struct StringSource
             return {&elements[prev_offset], length + elem_size > offset ? std::min(elem_size, length + elem_size - offset) : 0};
         return {&elements[prev_offset + elem_size - offset], std::min(length, offset)};
     }
+
+    const ColumnString::Chars & getElements() const { return elements; }
 };
 
 /// Treats Enum values as Strings, modeled after StringSource
@@ -517,11 +519,12 @@ struct FixedStringSource
     const UInt8 * pos;
     const UInt8 * end;
     size_t string_size;
+    const typename ColumnString::Chars & elements;
+
     size_t row_num = 0;
     size_t column_size = 0;
 
-    explicit FixedStringSource(const ColumnFixedString & col)
-        : string_size(col.getN())
+    explicit FixedStringSource(const ColumnFixedString & col) : string_size(col.getN()), elements(col.getChars())
     {
         const auto & chars = col.getChars();
         pos = chars.data();
@@ -592,6 +595,8 @@ struct FixedStringSource
             return {pos, length + string_size > offset ? std::min(string_size, length + string_size - offset) : 0};
         return {pos + string_size - offset, std::min(length, offset)};
     }
+
+    const ColumnString::Chars & getElements() const { return elements; }
 };
 
 

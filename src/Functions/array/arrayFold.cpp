@@ -170,8 +170,7 @@ public:
         {
             selector[i] = cur_element_in_cur_array;
             ++cur_element_in_cur_array;
-            if (cur_element_in_cur_array > max_array_size)
-                max_array_size = cur_element_in_cur_array;
+            max_array_size = std::max(cur_element_in_cur_array, max_array_size);
             while (first_row_with_non_empty_array < num_rows && cur_element_in_cur_array >= offsets[first_row_with_non_empty_array] - offsets[first_row_with_non_empty_array - 1])
             {
                 ++first_row_with_non_empty_array;

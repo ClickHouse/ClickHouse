@@ -138,5 +138,4 @@ size_t computeBytesBeforeWidth(const UInt8 * data, size_t size, size_t prefix, s
 
 }
 
-
 }

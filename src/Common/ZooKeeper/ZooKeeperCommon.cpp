@@ -9,7 +9,6 @@
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
 #include <Common/logger_useful.h>
-#include <array>
 
 
 namespace Coordination
@@ -29,7 +28,7 @@ void ZooKeeperResponse::write(WriteBuffer & out) const
     Coordination::write(buf.str(), out);
 }
 
-std::string ZooKeeperRequest::toString() const
+std::string ZooKeeperRequest::toString(bool short_format) const
 {
     return fmt::format(
         "XID = {}\n"
@@ -37,7 +36,7 @@ std::string ZooKeeperRequest::toString() const
         "Additional info:\n{}",
         xid,
         getOpNum(),
-        toStringImpl());
+        toStringImpl(short_format));
 }
 
 void ZooKeeperRequest::write(WriteBuffer & out) const
@@ -60,7 +59,7 @@ void ZooKeeperSyncRequest::readImpl(ReadBuffer & in)
     Coordination::read(path, in);
 }
 
-std::string ZooKeeperSyncRequest::toStringImpl() const
+std::string ZooKeeperSyncRequest::toStringImpl(bool /*short_format*/) const
 {
     return fmt::format("path = {}", path);
 }
@@ -91,7 +90,7 @@ void ZooKeeperReconfigRequest::readImpl(ReadBuffer & in)
     Coordination::read(version, in);
 }
 
-std::string ZooKeeperReconfigRequest::toStringImpl() const
+std::string ZooKeeperReconfigRequest::toStringImpl(bool /*short_format*/) const
 {
     return fmt::format(
         "joining = {}\nleaving = {}\nnew_members = {}\nversion = {}",
@@ -145,7 +144,7 @@ void ZooKeeperAuthRequest::readImpl(ReadBuffer & in)
     Coordination::read(data, in);
 }
 
-std::string ZooKeeperAuthRequest::toStringImpl() const
+std::string ZooKeeperAuthRequest::toStringImpl(bool /*short_format*/) const
 {
     return fmt::format(
         "type = {}\n"
@@ -191,7 +190,7 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
         is_sequential = true;
 }
 
-std::string ZooKeeperCreateRequest::toStringImpl() const
+std::string ZooKeeperCreateRequest::toStringImpl(bool /*short_format*/) const
 {
     return fmt::format(
         "path = {}\n"
@@ -218,7 +217,7 @@ void ZooKeeperRemoveRequest::writeImpl(WriteBuffer & out) const
     Coordination::write(version, out);
 }
 
-std::string ZooKeeperRemoveRequest::toStringImpl() const
+std::string ZooKeeperRemoveRequest::toStringImpl(bool /*short_format*/) const
 {
     return fmt::format(
         "path = {}\n"
@@ -245,7 +244,7 @@ void ZooKeeperExistsRequest::readImpl(ReadBuffer & in)
     Coordination::read(has_watch, in);
 }
 
-std::string ZooKeeperExistsRequest::toStringImpl() const
+std::string ZooKeeperExistsRequest::toStringImpl(bool /*short_format*/) const
 {
     return fmt::format("path = {}", path);
 }
@@ -272,7 +271,7 @@ void ZooKeeperGetRequest::readImpl(ReadBuffer & in)
     Coordination::read(has_watch, in);
 }
 
-std::string ZooKeeperGetRequest::toStringImpl() const
+std::string ZooKeeperGetRequest::toStringImpl(bool /*short_format*/) const
 {
     return fmt::format("path = {}", path);
 }
@@ -303,7 +302,7 @@ void ZooKeeperSetRequest::readImpl(ReadBuffer & in)
     Coordination::read(version, in);
 }
 
-std::string ZooKeeperSetRequest::toStringImpl() const
+std::string ZooKeeperSetRequest::toStringImpl(bool /*short_format*/) const
 {
     return fmt::format(
         "path = {}\n"
@@ -334,7 +333,7 @@ void ZooKeeperListRequest::readImpl(ReadBuffer & in)
     Coordination::read(has_watch, in);
 }
 
-std::string ZooKeeperListRequest::toStringImpl() const
+std::string ZooKeeperListRequest::toStringImpl(bool /*short_format*/) const
 {
     return fmt::format("path = {}", path);
 }
@@ -356,7 +355,7 @@ void ZooKeeperFilteredListRequest::readImpl(ReadBuffer & in)
     list_request_type = static_cast<ListRequestType>(read_request_type);
 }
 
-std::string ZooKeeperFilteredListRequest::toStringImpl() const
+std::string ZooKeeperFilteredListRequest::toStringImpl(bool /*short_format*/) const
 {
     return fmt::format(
             "path = {}\n"
@@ -401,7 +400,7 @@ void ZooKeeperSetACLRequest::readImpl(ReadBuffer & in)
     Coordination::read(version, in);
 }
 
-std::string ZooKeeperSetACLRequest::toStringImpl() const
+std::string ZooKeeperSetACLRequest::toStringImpl(bool /*short_format*/) const
 {
     return fmt::format("path = {}\nversion = {}", path, version);
 }
@@ -426,7 +425,7 @@ void ZooKeeperGetACLRequest::writeImpl(WriteBuffer & out) const
     Coordination::write(path, out);
 }
 
-std::string ZooKeeperGetACLRequest::toStringImpl() const
+std::string ZooKeeperGetACLRequest::toStringImpl(bool /*short_format*/) const
 {
     return fmt::format("path = {}", path);
 }
@@ -455,7 +454,7 @@ void ZooKeeperCheckRequest::readImpl(ReadBuffer & in)
     Coordination::read(version, in);
 }
 
-std::string ZooKeeperCheckRequest::toStringImpl() const
+std::string ZooKeeperCheckRequest::toStringImpl(bool /*short_format*/) const
 {
     return fmt::format("path = {}\nversion = {}", path, version);
 }
@@ -600,8 +599,11 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
     }
 }
 
-std::string ZooKeeperMultiRequest::toStringImpl() const
+std::string ZooKeeperMultiRequest::toStringImpl(bool short_format) const
 {
+    if (short_format)
+        return fmt::format("Subrequests size = {}", requests.size());
+
     auto out = fmt::memory_buffer();
     for (const auto & request : requests)
     {

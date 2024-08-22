@@ -1,9 +1,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionStringToString.h>
-#include <Functions/LowerUpperUTF8Impl.h>
 #include <Functions/FunctionFactory.h>
 #include <Poco/Unicode.h>
-
+#include <Common/UTF8Helpers.h>
 
 namespace DB
 {
@@ -22,7 +21,8 @@ struct InitcapUTF8Impl
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t /*input_rows_count*/)
     {
         if (data.empty())
             return;
@@ -31,7 +31,7 @@ struct InitcapUTF8Impl
         array(data.data(), data.data() + data.size(), offsets, res_data.data());
     }
 
-    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function initcapUTF8 cannot work with FixedString argument");
     }

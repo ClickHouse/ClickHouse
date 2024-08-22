@@ -204,7 +204,7 @@ SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world']);
 **语法**
 
 ```sql
-multiSearchFirstPosition(haystack, [needle1, needle2, …, needleN])
+multiSearchFirstPosition(haystack, [needle1, needle2, ..., needleN])
 ```
 
 ## multiSearchFirstIndex
@@ -216,7 +216,7 @@ multiSearchFirstPosition(haystack, [needle1, needle2, …, needleN])
 **语法**
 
 ```sql
-multiSearchFirstIndex(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\])
+multiSearchFirstIndex(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>\])
 ```
 
 ## multiSearchAny {#multisearchany}
@@ -229,7 +229,7 @@ multiSearchFirstIndex(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, n
 **语法**
 
 ```sql
-multiSearchAny(haystack, [needle1, needle2, …, needleN])
+multiSearchAny(haystack, [needle1, needle2, ..., needleN])
 ```
 
 ## match {#match}
@@ -273,7 +273,7 @@ Hyperscan 通常容易受到正则表达式拒绝服务 (ReDoS) 攻击。有关�
 **语法**
 
 ```sql
-multiMatchAny(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiMatchAny(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## multiMatchAnyIndex
@@ -283,7 +283,7 @@ multiMatchAny(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern
 **语法**
 
 ```sql
-multiMatchAnyIndex(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiMatchAnyIndex(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## multiMatchAllIndices
@@ -293,7 +293,7 @@ multiMatchAnyIndex(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pa
 **语法**
 
 ```sql
-multiMatchAllIndices(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiMatchAllIndices(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## multiFuzzyMatchAny
@@ -307,7 +307,7 @@ multiMatchAllIndices(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, 
 **语法**
 
 ```sql
-multiFuzzyMatchAny(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiFuzzyMatchAny(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## multiFuzzyMatchAnyIndex
@@ -317,7 +317,7 @@ multiFuzzyMatchAny(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub
 **语法**
 
 ```sql
-multiFuzzyMatchAnyIndex(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiFuzzyMatchAnyIndex(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## multiFuzzyMatchAllIndices
@@ -327,7 +327,7 @@ multiFuzzyMatchAnyIndex(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2
 **语法**
 
 ```sql
-multiFuzzyMatchAllIndices(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+multiFuzzyMatchAllIndices(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
 ## extract

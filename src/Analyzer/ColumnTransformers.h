@@ -61,7 +61,7 @@ namespace DB
   */
 
 /// Column transformer type
-enum class ColumnTransfomerType
+enum class ColumnTransfomerType : uint8_t
 {
     APPLY,
     EXCEPT,
@@ -98,7 +98,7 @@ protected:
     explicit IColumnTransformerNode(size_t children_size);
 };
 
-enum class ApplyColumnTransformerType
+enum class ApplyColumnTransformerType : uint8_t
 {
     LAMBDA,
     FUNCTION
@@ -153,7 +153,7 @@ private:
 };
 
 /// Except column transformer type
-enum class ExceptColumnTransformerType
+enum class ExceptColumnTransformerType : uint8_t
 {
     REGEXP,
     COLUMN_LIST,

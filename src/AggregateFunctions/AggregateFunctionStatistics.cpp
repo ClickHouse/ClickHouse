@@ -104,7 +104,7 @@ struct AggregateFunctionVarianceData
     Float64 m2 = 0.0;
 };
 
-enum class VarKind
+enum class VarKind : uint8_t
 {
     varSampStable,
     stddevSampStable,
@@ -343,7 +343,7 @@ struct CovarianceData : public BaseCovarianceData<compute_marginal_moments>
     Float64 co_moment = 0.0;
 };
 
-enum class CovarKind
+enum class CovarKind : uint8_t
 {
     covarSampStable,
     covarPopStable,

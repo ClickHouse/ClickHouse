@@ -31,11 +31,11 @@ create table r2 (n int)
 function get_shared_locks()
 {
   table_shared_id="$1"
-  for part in $($CLICKHOUSE_KEEPER_CLIENT -q "ls /clickhouse/zero_copy/zero_copy_s3/${table_shared_id}")
+  for part in $($CLICKHOUSE_KEEPER_CLIENT -q "ls '/clickhouse/zero_copy/zero_copy_s3/${table_shared_id}'")
   do
-    for blob in $($CLICKHOUSE_KEEPER_CLIENT -q "ls /clickhouse/zero_copy/zero_copy_s3/${table_shared_id}/${part}")
+    for blob in $($CLICKHOUSE_KEEPER_CLIENT -q "ls '/clickhouse/zero_copy/zero_copy_s3/${table_shared_id}/${part}'")
     do
-      for lock in $($CLICKHOUSE_KEEPER_CLIENT -q "ls /clickhouse/zero_copy/zero_copy_s3/${table_shared_id}/${part}/${blob}")
+      for lock in $($CLICKHOUSE_KEEPER_CLIENT -q "ls '/clickhouse/zero_copy/zero_copy_s3/${table_shared_id}/${part}/${blob}'")
       do
         echo "/clickhouse/zero_copy/zero_copy_s3/${table_shared_id}/${part}/${blob}/${lock}"
       done
@@ -48,7 +48,7 @@ function filter_temporary_locks()
 {
   while read -r lock
   do
-    owner="$($CLICKHOUSE_KEEPER_CLIENT -q "get_stat ${lock}" | grep 'ephemeralOwner' | sed 's/.*= //')"
+    owner="$($CLICKHOUSE_KEEPER_CLIENT -q "get_stat '${lock}'" | grep 'ephemeralOwner' | sed 's/.*= //')"
     if [[ "${owner}" -eq "0" ]]
     then
       echo "${lock}"
@@ -58,9 +58,9 @@ function filter_temporary_locks()
 
 
 function insert_duplicates() {
-  $CLICKHOUSE_CLIENT -q "insert into r1 values(1);" --send_logs_level="error"  &
+  $CLICKHOUSE_CLIENT -q "insert into r1 values(1);" --allow_repeated_settings --send_logs_level="error"  &
 
-  $CLICKHOUSE_CLIENT -q "insert into r2 values(1);" --send_logs_level="error"
+  $CLICKHOUSE_CLIENT -q "insert into r2 values(1);" --allow_repeated_settings --send_logs_level="error"
 
   wait
 
@@ -111,7 +111,7 @@ export -f insert_duplicates
 export -f get_shared_locks
 export -f loop
 
-table_shared_id="$($CLICKHOUSE_KEEPER_CLIENT -q "get /test/02922/${CLICKHOUSE_DATABASE}/table/table_shared_id")"
+table_shared_id="$($CLICKHOUSE_KEEPER_CLIENT -q "get '/test/02922/${CLICKHOUSE_DATABASE}/table/table_shared_id'")"
 
 exit_code=0
 timeout 40 bash -c "loop '${table_shared_id}'" || exit_code="${?}"
@@ -128,17 +128,17 @@ function list_keeper_nodes() {
   table_shared_id=$1
 
   echo "zero_copy:"
-  $CLICKHOUSE_KEEPER_CLIENT -q "ls /clickhouse/zero_copy/zero_copy_s3" | grep -o "${table_shared_id}" | \
+  $CLICKHOUSE_KEEPER_CLIENT -q "ls '/clickhouse/zero_copy/zero_copy_s3'" | grep -o "${table_shared_id}" | \
     sed "s/${table_shared_id}/<table_shared_id>/g" || :
 
   echo "tables:"
-  $CLICKHOUSE_KEEPER_CLIENT -q "ls /test/02922/${CLICKHOUSE_DATABASE}" | grep -o "table" || :
+  $CLICKHOUSE_KEEPER_CLIENT -q "ls '/test/02922/${CLICKHOUSE_DATABASE}'" | grep -o "table" || :
 }
 
 list_keeper_nodes "${table_shared_id}"
 
-$CLICKHOUSE_CLIENT -nm -q "drop table r1;" --send_logs_level="error"  &
-$CLICKHOUSE_CLIENT -nm -q "drop table r2;" --send_logs_level="error"  &
+$CLICKHOUSE_CLIENT -nm -q "drop table r1;" --allow_repeated_settings --send_logs_level="error"  &
+$CLICKHOUSE_CLIENT -nm -q "drop table r2;" --allow_repeated_settings --send_logs_level="error"  &
 wait
 
 list_keeper_nodes "${table_shared_id}"

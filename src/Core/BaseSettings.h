@@ -20,10 +20,10 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
-enum class SettingsWriteFormat
+enum class SettingsWriteFormat : uint8_t
 {
-    BINARY,             /// Part of the settings are serialized as strings, and other part as variants. This is the old behaviour.
-    STRINGS_WITH_FLAGS, /// All settings are serialized as strings. Before each value the flag `is_important` is serialized.
+    BINARY = 0,             /// Part of the settings are serialized as strings, and other part as variants. This is the old behaviour.
+    STRINGS_WITH_FLAGS = 1, /// All settings are serialized as strings. Before each value the flag `is_important` is serialized.
     DEFAULT = STRINGS_WITH_FLAGS,
 };
 
@@ -108,6 +108,7 @@ public:
     public:
         const String & getName() const;
         Field getValue() const;
+        void setValue(const Field & value);
         Field getDefaultValue() const;
         String getValueString() const;
         String getDefaultValueString() const;
@@ -122,10 +123,10 @@ public:
 
     private:
         friend class BaseSettings;
-        const BaseSettings * settings;
+        BaseSettings * settings;
         const typename Traits::Accessor * accessor;
         size_t index;
-        std::conditional_t<Traits::allow_custom_settings, const CustomSettingMap::mapped_type*, boost::blank> custom_setting;
+        std::conditional_t<Traits::allow_custom_settings, CustomSettingMap::mapped_type*, boost::blank> custom_setting;
     };
 
     enum SkipFlags
@@ -144,35 +145,50 @@ public:
         Iterator & operator++();
         Iterator operator++(int); /// NOLINT
         const SettingFieldRef & operator *() const { return field_ref; }
+        SettingFieldRef & operator *() { return field_ref; }
 
         bool operator ==(const Iterator & other) const;
         bool operator !=(const Iterator & other) const { return !(*this == other); }
 
     private:
         friend class BaseSettings;
-        Iterator(const BaseSettings & settings_, const typename Traits::Accessor & accessor_, SkipFlags skip_flags_);
+        Iterator(BaseSettings & settings_, const typename Traits::Accessor & accessor_, SkipFlags skip_flags_);
         void doSkip();
         void setPointerToCustomSetting();
 
         SettingFieldRef field_ref;
-        std::conditional_t<Traits::allow_custom_settings, CustomSettingMap::const_iterator, boost::blank> custom_settings_iterator;
+        std::conditional_t<Traits::allow_custom_settings, CustomSettingMap::iterator, boost::blank> custom_settings_iterator;
         SkipFlags skip_flags;
     };
 
     class Range
     {
     public:
-        Range(const BaseSettings & settings_, SkipFlags skip_flags_) : settings(settings_), accessor(Traits::Accessor::instance()), skip_flags(skip_flags_) {}
+        Range(BaseSettings & settings_, SkipFlags skip_flags_) : settings(settings_), accessor(Traits::Accessor::instance()), skip_flags(skip_flags_) {}
         Iterator begin() const { return Iterator(settings, accessor, skip_flags); }
         Iterator end() const { return Iterator(settings, accessor, SKIP_ALL); }
 
     private:
-        const BaseSettings & settings;
+        BaseSettings & settings;
         const typename Traits::Accessor & accessor;
         SkipFlags skip_flags;
     };
 
-    Range all(SkipFlags skip_flags = SKIP_NONE) const { return Range{*this, skip_flags}; }
+    class MutableRange
+    {
+    public:
+        MutableRange(BaseSettings & settings_, SkipFlags skip_flags_) : settings(settings_), accessor(Traits::Accessor::instance()), skip_flags(skip_flags_) {}
+        Iterator begin() { return Iterator(settings, accessor, skip_flags); }
+        Iterator end() { return Iterator(settings, accessor, SKIP_ALL); }
+
+    private:
+        BaseSettings & settings;
+        const typename Traits::Accessor & accessor;
+        SkipFlags skip_flags;
+    };
+
+    Range all(SkipFlags skip_flags = SKIP_NONE) const { return Range{const_cast<BaseSettings<Traits> &>(*this), skip_flags}; }
+    MutableRange allMutable(SkipFlags skip_flags = SKIP_NONE) { return MutableRange{*this, skip_flags}; }
     Range allChanged() const { return all(SKIP_UNCHANGED); }
     Range allUnchanged() const { return all(SKIP_CHANGED); }
     Range allBuiltin() const { return all(SKIP_CUSTOM); }
@@ -608,7 +624,7 @@ const SettingFieldCustom * BaseSettings<TTraits>::tryGetCustomSetting(std::strin
 }
 
 template <typename TTraits>
-BaseSettings<TTraits>::Iterator::Iterator(const BaseSettings & settings_, const typename Traits::Accessor & accessor_, SkipFlags skip_flags_)
+BaseSettings<TTraits>::Iterator::Iterator(BaseSettings & settings_, const typename Traits::Accessor & accessor_, SkipFlags skip_flags_)
     : skip_flags(skip_flags_)
 {
     field_ref.settings = &settings_;
@@ -739,6 +755,18 @@ Field BaseSettings<TTraits>::SettingFieldRef::getValue() const
             return static_cast<Field>(custom_setting->second);
     }
     return accessor->getValue(*settings, index);
+}
+
+template <typename TTraits>
+void BaseSettings<TTraits>::SettingFieldRef::setValue(const Field & value)
+{
+    if constexpr (Traits::allow_custom_settings)
+    {
+        if (custom_setting)
+            custom_setting->second = value;
+    }
+    else
+        accessor->setValue(*settings, index, value);
 }
 
 template <typename TTraits>

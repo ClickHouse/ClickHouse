@@ -1,0 +1,32 @@
+-- Reproducer result:
+\N	Mark	50
+1	John	33
+2	Ksenia	48
+
+-- Read in order, no sort required:
+0	0
+1	\N
+4	4
+\N	2
+\N	\N
+
+-- Read in order, partial sort for second key:
+0	0
+1	\N
+4	4
+\N	\N
+\N	2
+
+-- No reading in order, sort for first key:
+\N	2
+\N	\N
+0	0
+1	\N
+4	4
+
+-- Reverse order, partial sort for the second key:
+\N	2
+\N	\N
+4	4
+1	\N
+0	0

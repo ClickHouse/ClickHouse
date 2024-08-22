@@ -254,7 +254,7 @@ struct SetVariantsTemplate: public Variant
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
 
-    enum class Type
+    enum class Type : uint8_t
     {
         EMPTY,
 

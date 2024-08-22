@@ -1,10 +1,7 @@
-configure_file(GitHash.cpp.in GitHash.generated.cpp)
-
 add_library (daemon
     BaseDaemon.cpp
     GraphiteWriter.cpp
     SentryWriter.cpp
-    GitHash.generated.cpp
 )
 
 target_link_libraries (daemon PUBLIC loggers common PRIVATE clickhouse_parsers clickhouse_common_io clickhouse_common_config)

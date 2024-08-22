@@ -53,6 +53,9 @@ def create_tables(cluster, table_name):
     node1.query(f"INSERT INTO {table_name} SELECT number, number FROM numbers(1000)")
     node2.query(f"INSERT INTO {table_name} SELECT -number, -number FROM numbers(1000)")
     node1.query(f"INSERT INTO {table_name} SELECT number, number FROM numbers(3)")
+    # need to sync replicas to have consistent result
+    node1.query(f"SYSTEM SYNC REPLICA {table_name}")
+    node2.query(f"SYSTEM SYNC REPLICA {table_name}")
 
 
 @pytest.mark.parametrize(

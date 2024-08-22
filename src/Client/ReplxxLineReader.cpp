@@ -294,11 +294,19 @@ ReplxxLineReader::ReplxxLineReader(
     Suggest & suggest,
     const String & history_file_path_,
     bool multiline_,
+    bool ignore_shell_suspend,
     Patterns extenders_,
     Patterns delimiters_,
     const char word_break_characters_[],
-    replxx::Replxx::highlighter_callback_t highlighter_)
-    : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_)), highlighter(std::move(highlighter_))
+    replxx::Replxx::highlighter_callback_t highlighter_,
+    [[ maybe_unused ]] std::istream & input_stream_,
+    [[ maybe_unused ]] std::ostream & output_stream_,
+    [[ maybe_unused ]] int in_fd_,
+    [[ maybe_unused ]] int out_fd_,
+    [[ maybe_unused ]] int err_fd_
+)
+    : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_), input_stream_, output_stream_, in_fd_)
+    , highlighter(std::move(highlighter_))
     , word_break_characters(word_break_characters_)
     , editor(getEditor())
 {
@@ -354,6 +362,10 @@ ReplxxLineReader::ReplxxLineReader(
     /// bind C-p/C-n to history-previous/history-next like readline.
     rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_NEXT, code); });
     rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code); });
+
+    /// We don't want the default, "suspend" behavior, it confuses people.
+    if (ignore_shell_suspend)
+        rx.bind_key_internal(replxx::Replxx::KEY::control('Z'), "insert_character");
 
     auto commit_action = [this](char32_t code)
     {
@@ -471,7 +483,7 @@ ReplxxLineReader::ReplxxLineReader(
 
 ReplxxLineReader::~ReplxxLineReader()
 {
-    if (close(history_file_fd))
+    if (history_file_fd >= 0 && close(history_file_fd))
         rx.print("Close of history file failed: %s\n", errnoToString().c_str());
 }
 
@@ -496,7 +508,7 @@ void ReplxxLineReader::addToHistory(const String & line)
     // but replxx::Replxx::history_load() does not
     // and that is why flock() is added here.
     bool locked = false;
-    if (flock(history_file_fd, LOCK_EX))
+    if (history_file_fd >= 0 && flock(history_file_fd, LOCK_EX))
         rx.print("Lock of history file failed: %s\n", errnoToString().c_str());
     else
         locked = true;
@@ -507,7 +519,7 @@ void ReplxxLineReader::addToHistory(const String & line)
     if (!rx.history_save(history_file_path))
         rx.print("Saving history failed: %s\n", errnoToString().c_str());
 
-    if (locked && 0 != flock(history_file_fd, LOCK_UN))
+    if (history_file_fd >= 0 && locked && 0 != flock(history_file_fd, LOCK_UN))
         rx.print("Unlock of history file failed: %s\n", errnoToString().c_str());
 }
 

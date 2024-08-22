@@ -1,0 +1,10 @@
+<test>
+    <create_query>CREATE TABLE test (id Int32, x1 Nullable(Int32), x2 Nullable(Float32)) ENGINE = MergeTree() ORDER BY id</create_query>
+
+    <fill_query>INSERT INTO test SELECT number, number+1, number + 2 FROM numbers(1000000)</fill_query>
+
+    <query tag='LEAST'>SELECT COUNT(1) FROM test WHERE least(x1, x2) > 1</query>
+    <query tag='GREATEST'>SELECT COUNT(1) FROM test WHERE GREATEST(x1, x2) > 1</query>
+    
+    <drop_query>DROP TABLE IF EXISTS test</drop_query>
+</test>

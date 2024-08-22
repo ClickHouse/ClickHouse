@@ -1,4 +1,4 @@
- <yandex>
+ <clickhouse>
     <profiles>
         <default>
         </default>
@@ -9,4 +9,4 @@
              <password>123</password>
          </postgresql>
      </users>
- </yandex>
+ </clickhouse>

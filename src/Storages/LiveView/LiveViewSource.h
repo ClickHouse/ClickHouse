@@ -36,7 +36,7 @@ public:
 
     String getName() const override { return "LiveViewSource"; }
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         if (storage->shutdown_called)
             return;

@@ -15,13 +15,13 @@ slug: /zh/sql-reference/functions/higher-order-functions
 
 除了’arrayMap’和’arrayFilter’以外的所有其他函数，都可以省略第一个参数（lambda函数）。在这种情况下，默认返回数组元素本身。
 
-### arrayMap(func, arr1, …) {#higher_order_functions-array-map}
+### arrayMap(func, arr1, ...) {#higher_order_functions-array-map}
 
 将arr
 将从’func’函数的原始应用程序获得的数组返回到’arr’数组中的每个元素。
 返回从原始应用程序获得的数组 ‘func’ 函数中的每个元素 ‘arr’ 阵列。
 
-### arrayFilter(func, arr1, …) {#arrayfilterfunc-arr1}
+### arrayFilter(func, arr1, ...) {#arrayfilterfunc-arr1}
 
 返回一个仅包含以下元素的数组 ‘arr1’ 对于哪个 ‘func’ 返回0以外的内容。
 
@@ -48,31 +48,31 @@ SELECT
     │ [2] │
     └─────┘
 
-### arrayCount(\[func,\] arr1, …) {#arraycountfunc-arr1}
+### arrayCount(\[func,\] arr1, ...) {#arraycountfunc-arr1}
 
 返回数组arr中非零元素的数量，如果指定了’func’，则通过’func’的返回值确定元素是否为非零元素。
 
-### arrayExists(\[func,\] arr1, …) {#arrayexistsfunc-arr1}
+### arrayExists(\[func,\] arr1, ...) {#arrayexistsfunc-arr1}
 
 返回数组’arr’中是否存在非零元素，如果指定了’func’，则使用’func’的返回值确定元素是否为非零元素。
 
-### arrayAll(\[func,\] arr1, …) {#arrayallfunc-arr1}
+### arrayAll(\[func,\] arr1, ...) {#arrayallfunc-arr1}
 
 返回数组’arr’中是否存在为零的元素，如果指定了’func’，则使用’func’的返回值确定元素是否为零元素。
 
-### arraySum(\[func,\] arr1, …) {#arraysumfunc-arr1}
+### arraySum(\[func,\] arr1, ...) {#arraysumfunc-arr1}
 
 计算arr数组的总和，如果指定了’func’，则通过’func’的返回值计算数组的总和。
 
-### arrayFirst(func, arr1, …) {#arrayfirstfunc-arr1}
+### arrayFirst(func, arr1, ...) {#arrayfirstfunc-arr1}
 
 返回数组中第一个匹配的元素，函数使用’func’匹配所有元素，直到找到第一个匹配的元素。
 
-### arrayFirstIndex(func, arr1, …) {#arrayfirstindexfunc-arr1}
+### arrayFirstIndex(func, arr1, ...) {#arrayfirstindexfunc-arr1}
 
 返回数组中第一个匹配的元素的下标索引，函数使用’func’匹配所有元素，直到找到第一个匹配的元素。
 
-### arrayCumSum(\[func,\] arr1, …) {#arraycumsumfunc-arr1}
+### arrayCumSum(\[func,\] arr1, ...) {#arraycumsumfunc-arr1}
 
 返回源数组部分数据的总和，如果指定了`func`函数，则使用`func`的返回值计算总和。
 
@@ -98,7 +98,7 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
     │ [1,2,0,1] │
     └───────────┘
 
-### arraySort(\[func,\] arr1, …) {#arraysortfunc-arr1}
+### arraySort(\[func,\] arr1, ...) {#arraysortfunc-arr1}
 
 返回升序排序`arr1`的结果。如果指定了`func`函数，则排序顺序由`func`的结果决定。
 
@@ -124,7 +124,7 @@ SELECT arraySort([1, nan, 2, NULL, 3, nan, 4, NULL])
     │ [1,2,3,4,nan,nan,NULL,NULL]                   │
     └───────────────────────────────────────────────┘
 
-### arrayReverseSort(\[func,\] arr1, …) {#arrayreversesortfunc-arr1}
+### arrayReverseSort(\[func,\] arr1, ...) {#arrayreversesortfunc-arr1}
 
 返回降序排序`arr1`的结果。如果指定了`func`函数，则排序顺序由`func`的结果决定。
 

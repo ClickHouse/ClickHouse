@@ -9,6 +9,7 @@
 #
 # Caveats for generic entry "fun":
 # - does not work for __attribute__((__always_inline__))
+# - and may not work for functions that had been inlined
 # - requires asterisk at the beginning *and* end for static functions
 #
 [undefined]

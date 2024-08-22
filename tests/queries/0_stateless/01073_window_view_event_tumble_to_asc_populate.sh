@@ -5,10 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 opts=(
-    "--allow_experimental_analyzer=0"
+    "--enable_analyzer=0"
 )
 
-$CLICKHOUSE_CLIENT "${opts[@]}" --multiquery <<EOF
+$CLICKHOUSE_CLIENT "${opts[@]}" <<EOF
 SET allow_experimental_window_view = 1;
 DROP TABLE IF EXISTS mt;
 DROP TABLE IF EXISTS dst;
@@ -33,7 +33,7 @@ while true; do
 	$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count(*) FROM dst" | grep -q "7" && break || sleep .5 ||:
 done
 
-$CLICKHOUSE_CLIENT "${opts[@]}" --multiquery <<EOF
+$CLICKHOUSE_CLIENT "${opts[@]}" <<EOF
 SELECT * FROM dst ORDER BY market, w_end;
 INSERT INTO mt VALUES (1, 8, '1990/01/01 12:00:35');
 INSERT INTO mt VALUES (1, 8, '1990/01/01 12:00:37');

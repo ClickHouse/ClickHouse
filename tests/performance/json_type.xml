@@ -27,9 +27,9 @@
         </substitution>
     </substitutions>
 
-    <create_query>CREATE TABLE t_json_1(data JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE t_json_2(data JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE t_json_3(data JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE t_json_1(data Object('json')) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE t_json_2(data Object('json')) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE t_json_3(data Object('json')) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
     <query>INSERT INTO t_json_1 SELECT materialize({json1}) FROM numbers(200000)</query>
     <query>INSERT INTO t_json_2 SELECT {json2} FROM numbers(100000)</query>

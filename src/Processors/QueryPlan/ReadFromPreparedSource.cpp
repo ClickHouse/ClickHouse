@@ -1,6 +1,5 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/SourceWithKeyCondition.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB

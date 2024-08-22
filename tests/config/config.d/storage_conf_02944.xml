@@ -19,6 +19,7 @@
                 <boundary_alignment>10</boundary_alignment>
                 <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
                 <cache_on_write_operations>0</cache_on_write_operations>
+                <load_metadata_asynchronously>0</load_metadata_asynchronously>
             </s3_cache_02944>
         </disks>
     </storage_configuration>

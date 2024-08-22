@@ -48,14 +48,14 @@ public:
     };
 
 private:
-    static inline constexpr const char * languages[] =
+    static constexpr const char * languages[] =
     {
         #define M(NAME, FALLBACK, NUM) #NAME,
         FOR_EACH_LANGUAGE(M)
         #undef M
     };
 
-    static inline constexpr Language fallbacks[] =
+    static constexpr Language fallbacks[] =
     {
         #define M(NAME, FALLBACK, NUM) Language::FALLBACK,
         FOR_EACH_LANGUAGE(M)

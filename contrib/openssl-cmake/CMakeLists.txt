@@ -32,9 +32,16 @@ set(OPENSSLDIR "/etc/ssl" CACHE PATH "Set the default openssl directory")
 set(OPENSSL_ENGINESDIR "/usr/local/lib/engines-3" CACHE PATH "Set the default openssl directory for engines")
 set(OPENSSL_MODULESDIR "/usr/local/lib/ossl-modules" CACHE PATH "Set the default openssl directory for modules")
 
-add_definitions(-DOPENSSL_NO_KTLS -DOPENSSLDIR="${OPENSSLDIR}" -DENGINESDIR="${OPENSSL_ENGINESDIR}" -DMODULESDIR="${OPENSSL_MODULESDIR}" -DOPENSSL_USE_NODELETE -DOPENSSL_PIC)
-target_compile_options(global-group INTERFACE "-Wno-deprecated-declarations")
-target_compile_options(global-group INTERFACE "-Wno-poison-system-directories")
+# special type of build during cross-compilation
+if(OPENSSL_AUX_BUILD_FOR_CROSS_COMPILATION)
+    add_definitions(-DOPENSSL_NO_KTLS -DOPENSSLDIR="\\\"${OPENSSLDIR}\\\"" -DENGINESDIR="\\\"${OPENSSL_ENGINESDIR}\\\"" -DMODULESDIR="\\\"${OPENSSL_MODULESDIR}\\\"" -DOPENSSL_USE_NODELETE -DOPENSSL_PIC)
+    add_compile_options("-Wno-deprecated-declarations")
+    add_compile_options("-Wno-poison-system-directories")
+else()
+    add_definitions(-DOPENSSL_NO_KTLS -DOPENSSLDIR="${OPENSSLDIR}" -DENGINESDIR="${OPENSSL_ENGINESDIR}" -DMODULESDIR="${OPENSSL_MODULESDIR}" -DOPENSSL_USE_NODELETE -DOPENSSL_PIC)
+    target_compile_options(global-group INTERFACE "-Wno-deprecated-declarations")
+    target_compile_options(global-group INTERFACE "-Wno-poison-system-directories")
+endif()
 
 if(ARCH_AMD64)
     if(OS_DARWIN)
@@ -60,6 +67,9 @@ elseif(ARCH_S390X)
     add_definitions(-DAES_CTR_ASM -DOPENSSL_CPUID_OBJ -DB_ENDIAN)
 elseif(ARCH_RISCV64)
     set(PLATFORM_DIRECTORY linux_riscv64)
+    add_definitions(-DOPENSSL_CPUID_OBJ -DL_ENDIAN)
+elseif(ARCH_LOONGARCH64)
+    set(PLATFORM_DIRECTORY linux_loongarch64)
     add_definitions(-DOPENSSL_CPUID_OBJ -DL_ENDIAN)
 endif()
 
@@ -204,6 +214,13 @@ elseif(ARCH_RISCV64)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/riscv64cpuid.pl ${OPENSSL_BINARY_DIR}/crypto/riscv64cpuid.S)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aes-riscv64-zkn.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aes-riscv64-zkn.S)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/modes/asm/ghash-riscv64.pl ${OPENSSL_BINARY_DIR}/crypto/modes/ghash-riscv64.S)
+elseif(ARCH_LOONGARCH64)
+    macro(perl_generate_asm FILE_IN FILE_OUT)
+        add_custom_command(OUTPUT ${FILE_OUT}
+            COMMAND ${CMAKE_COMMAND} -E env "CC=${CMAKE_CXX_COMPILER}" /usr/bin/env perl ${FILE_IN} "linux64" ${FILE_OUT})
+    endmacro()
+
+    perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/loongarch64cpuid.pl ${OPENSSL_BINARY_DIR}/crypto/loongarch64cpuid.S)
 endif()
 
 set(CRYPTO_SRC
@@ -1281,7 +1298,6 @@ elseif(ARCH_PPC64LE)
         ${OPENSSL_SOURCE_DIR}/crypto/camellia/camellia.c
         ${OPENSSL_SOURCE_DIR}/crypto/camellia/cmll_cbc.c
         ${OPENSSL_SOURCE_DIR}/crypto/chacha/chacha_enc.c
-        ${OPENSSL_SOURCE_DIR}/crypto/mem_clr.c
         ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_enc.c
         ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_skey.c
         ${OPENSSL_SOURCE_DIR}/crypto/sha/keccak1600.c
@@ -1323,6 +1339,24 @@ elseif(ARCH_RISCV64)
         ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_enc.c
         ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_skey.c
         ${OPENSSL_SOURCE_DIR}/crypto/riscvcap.c
+    )
+elseif(ARCH_LOONGARCH64)
+    set(CRYPTO_SRC ${CRYPTO_SRC}
+        ${OPENSSL_BINARY_DIR}/crypto/loongarch64cpuid.S
+        ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_cbc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_core.c
+        ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_asm.c
+        ${OPENSSL_SOURCE_DIR}/crypto/chacha/chacha_enc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/sha/keccak1600.c
+        ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_block.c
+        ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_dgst.c
+        ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistz256.c
+        ${OPENSSL_SOURCE_DIR}/crypto/camellia/camellia.c
+        ${OPENSSL_SOURCE_DIR}/crypto/camellia/cmll_cbc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/mem_clr.c
+        ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_enc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_skey.c
+        ${OPENSSL_SOURCE_DIR}/crypto/loongarchcap.c
     )
 endif()
 
@@ -1445,4 +1479,9 @@ target_link_libraries(ssl crypto)
 add_library(OpenSSL::Crypto ALIAS crypto)
 add_library(OpenSSL::SSL ALIAS ssl)
 
-install(FILES openssl.conf fipsmodule.conf DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-server" COMPONENT clickhouse)
+if(OPENSSL_AUX_BUILD_FOR_CROSS_COMPILATION)
+    install(DIRECTORY "${PLATFORM_DIRECTORY}/include" DESTINATION "${CMAKE_BINARY_DIR}")
+    install(DIRECTORY "${OPENSSL_SOURCE_DIR}/include" DESTINATION "${CMAKE_BINARY_DIR}")
+else()
+    install(FILES openssl.conf fipsmodule.conf DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-server" COMPONENT clickhouse)
+endif()

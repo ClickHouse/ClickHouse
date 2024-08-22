@@ -13,7 +13,7 @@ using FunctionSqrt = FunctionMathUnary<UnaryFunctionVectorized<SqrtName, sqrt>>;
 
 REGISTER_FUNCTION(Sqrt)
 {
-    factory.registerFunction<FunctionSqrt>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionSqrt>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

@@ -29,9 +29,10 @@ void SerializationWrapper::serializeBinaryBulkStateSuffix(
 
 void SerializationWrapper::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsDeserializeStatesCache * cache) const
 {
-    nested_serialization->deserializeBinaryBulkStatePrefix(settings, state);
+    nested_serialization->deserializeBinaryBulkStatePrefix(settings, state, cache);
 }
 
 void SerializationWrapper::serializeBinaryBulkWithMultipleStreams(

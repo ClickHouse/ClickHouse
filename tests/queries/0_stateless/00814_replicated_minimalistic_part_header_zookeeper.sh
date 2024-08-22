@@ -10,7 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SHARD=$($CLICKHOUSE_CLIENT --query "Select getMacro('shard')")
 REPLICA=$($CLICKHOUSE_CLIENT --query "Select getMacro('replica')")
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
 
 DROP TABLE IF EXISTS part_header_r1;
 DROP TABLE IF EXISTS part_header_r2;
@@ -62,7 +62,7 @@ do
     [[ $count1 == 1 && $count2 == 1 ]] && break
 done
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
 
 SELECT '*** Test part removal ***';
 SELECT '*** replica 1 ***';

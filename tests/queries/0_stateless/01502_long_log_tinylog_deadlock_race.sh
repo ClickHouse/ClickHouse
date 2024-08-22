@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: deadlock
+# Tags: deadlock, no-parallel
 
 set -e
 

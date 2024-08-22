@@ -1,0 +1,195 @@
+JSON with no arguments
+{"a":{"b":{"c":"1","d":["0","1"]}},"b":"2020-01-01","c":"42","d":{"e":{"f":["s1","s2"]}}}
+{"a":{"b":{"c":"2","d":["2","3"]}},"b":["1","2","3"],"d":{"e":{"g":"43"}}}
+{"a":{"b":{"c":"3","d":["4","5"]}},"e":"Hello, World!"}
+{"a":{"b":{"c":"4","d":["6","7"]}},"c":"43"}
+{"a":{"b":{"c":"5","d":["8","9"]}},"b":["b1","b2"],"d":{"e":{"f":["s3","s4"],"g":"44","h":"2020-02-02 10:00:00"}}}
+{'a.b.c':'Int64','a.b.d':'Array(Nullable(Int64))','b':'Date','c':'Int64','d.e.f':'Array(Nullable(String))'}	{'a.b.c':'Int64','a.b.d':'Array(Nullable(Int64))','b':'Date','c':'Int64','d.e.f':'Array(Nullable(String))'}	{}
+{'a.b.c':'Int64','a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(Int64))','d.e.g':'Int64'}	{'a.b.c':'Int64','a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(Int64))','d.e.g':'Int64'}	{}
+{'a.b.c':'Int64','a.b.d':'Array(Nullable(Int64))','e':'String'}	{'a.b.c':'Int64','a.b.d':'Array(Nullable(Int64))','e':'String'}	{}
+{'a.b.c':'Int64','a.b.d':'Array(Nullable(Int64))','c':'Int64'}	{'a.b.c':'Int64','a.b.d':'Array(Nullable(Int64))','c':'Int64'}	{}
+{'a.b.c':'Int64','a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(String))','d.e.f':'Array(Nullable(String))','d.e.g':'Int64','d.e.h':'DateTime'}	{'a.b.c':'Int64','a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(String))','d.e.f':'Array(Nullable(String))','d.e.g':'Int64','d.e.h':'DateTime'}	{}
+1	2020-01-01	{"e":{"f":["s1","s2"]}}
+2	[1,2,3]	{"e":{"g":"43"}}
+3	\N	{}
+4	\N	{}
+5	['b1','b2']	{"e":{"f":["s3","s4"],"g":"44","h":"2020-02-02 10:00:00"}}
+JSON(a.b Tuple(c UInt32, d Array(Bool)), SKIP d.e, SKIP c, SKIP REGEXP '.*h.*')
+{"a":{"b":{"c":1,"d":[false,true]}},"b":"2020-01-01"}
+{"a":{"b":{"c":2,"d":[true,true]}},"b":["1","2","3"]}
+{"a":{"b":{"c":3,"d":[true,true]}},"e":"Hello, World!"}
+{"a":{"b":{"c":4,"d":[true,true]}}}
+{"a":{"b":{"c":5,"d":[true,true]}},"b":["b1","b2"]}
+{'a.b':'Tuple(c UInt32, d Array(Bool))','b':'Date'}	{'b':'Date'}	{}
+{'a.b':'Tuple(c UInt32, d Array(Bool))','b':'Array(Nullable(Int64))'}	{'b':'Array(Nullable(Int64))'}	{}
+{'a.b':'Tuple(c UInt32, d Array(Bool))','e':'String'}	{'e':'String'}	{}
+{'a.b':'Tuple(c UInt32, d Array(Bool))'}	{}	{}
+{'a.b':'Tuple(c UInt32, d Array(Bool))','b':'Array(Nullable(String))'}	{'b':'Array(Nullable(String))'}	{}
+JSON(a.b.c UInt32, max_dynamic_paths=2)
+{"a":{"b":{"c":1,"d":["0","1"]}},"b":"2020-01-01","c":"42","d":{"e":{"f":["s1","s2"]}}}
+{"a":{"b":{"c":2,"d":["2","3"]}},"b":["1","2","3"],"d":{"e":{"g":"43"}}}
+{"a":{"b":{"c":3,"d":["4","5"]}},"e":"Hello, World!"}
+{"a":{"b":{"c":4,"d":["6","7"]}},"c":"43"}
+{"a":{"b":{"c":5,"d":["8","9"]}},"b":["b1","b2"],"d":{"e":{"f":["s3","s4"],"g":"44","h":"2020-02-02 10:00:00"}}}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','b':'Date','c':'Int64','d.e.f':'Array(Nullable(String))'}	{'a.b.d':'Array(Nullable(Int64))','b':'Date'}	{'c':'Int64','d.e.f':'Array(Nullable(String))'}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(Int64))','d.e.g':'Int64'}	{'a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(Int64))'}	{'d.e.g':'Int64'}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','e':'String'}	{'a.b.d':'Array(Nullable(Int64))'}	{'e':'String'}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','c':'Int64'}	{'a.b.d':'Array(Nullable(Int64))'}	{'c':'Int64'}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(String))','d.e.f':'Array(Nullable(String))','d.e.g':'Int64','d.e.h':'DateTime'}	{'a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(String))'}	{'d.e.f':'Array(Nullable(String))','d.e.g':'Int64','d.e.h':'DateTime'}
+JSON(a.b.c UInt32, max_dynamic_paths=0)
+{"a":{"b":{"c":1,"d":["0","1"]}},"b":"2020-01-01","c":"42","d":{"e":{"f":["s1","s2"]}}}
+{"a":{"b":{"c":2,"d":["2","3"]}},"b":["1","2","3"],"d":{"e":{"g":"43"}}}
+{"a":{"b":{"c":3,"d":["4","5"]}},"e":"Hello, World!"}
+{"a":{"b":{"c":4,"d":["6","7"]}},"c":"43"}
+{"a":{"b":{"c":5,"d":["8","9"]}},"b":["b1","b2"],"d":{"e":{"f":["s3","s4"],"g":"44","h":"2020-02-02 10:00:00"}}}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','b':'Date','c':'Int64','d.e.f':'Array(Nullable(String))'}	{}	{'a.b.d':'Array(Nullable(Int64))','b':'Date','c':'Int64','d.e.f':'Array(Nullable(String))'}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(Int64))','d.e.g':'Int64'}	{}	{'a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(Int64))','d.e.g':'Int64'}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','e':'String'}	{}	{'a.b.d':'Array(Nullable(Int64))','e':'String'}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','c':'Int64'}	{}	{'a.b.d':'Array(Nullable(Int64))','c':'Int64'}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(String))','d.e.f':'Array(Nullable(String))','d.e.g':'Int64','d.e.h':'DateTime'}	{}	{'a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(String))','d.e.f':'Array(Nullable(String))','d.e.g':'Int64','d.e.h':'DateTime'}
+JSON(a.b.c UInt32, max_dynamic_types=1)
+{"a":{"b":{"c":1,"d":["0","1"]}},"b":"2020-01-01","c":"42","d":{"e":{"f":["s1","s2"]}}}
+{"a":{"b":{"c":2,"d":["2","3"]}},"b":["1","2","3"],"d":{"e":{"g":"43"}}}
+{"a":{"b":{"c":3,"d":["4","5"]}},"e":"Hello, World!"}
+{"a":{"b":{"c":4,"d":["6","7"]}},"c":"43"}
+{"a":{"b":{"c":5,"d":["8","9"]}},"b":["b1","b2"],"d":{"e":{"f":["s3","s4"],"g":"44","h":"2020-02-02 10:00:00"}}}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','b':'Date','c':'Int64','d.e.f':'Array(Nullable(String))'}	{'a.b.d':'Array(Nullable(Int64))','b':'Date','c':'Int64','d.e.f':'Array(Nullable(String))'}	{}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(Int64))','d.e.g':'Int64'}	{'a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(Int64))','d.e.g':'Int64'}	{}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','e':'String'}	{'a.b.d':'Array(Nullable(Int64))','e':'String'}	{}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','c':'Int64'}	{'a.b.d':'Array(Nullable(Int64))','c':'Int64'}	{}
+{'a.b.c':'UInt32','a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(String))','d.e.f':'Array(Nullable(String))','d.e.g':'Int64','d.e.h':'DateTime'}	{'a.b.d':'Array(Nullable(Int64))','b':'Array(Nullable(String))','d.e.f':'Array(Nullable(String))','d.e.g':'Int64','d.e.h':'DateTime'}	{}
+Test small max_read_buffer_size
+{"a":{"b":{"c":"1","d":["0","1"]}},"b":"2020-01-01","c":"42","d":{"e":{"f":["s1","s2"]}}}
+{"a":{"b":{"c":"2","d":["2","3"]}},"b":["1","2","3"],"d":{"e":{"g":"43"}}}
+{"a":{"b":{"c":"3","d":["4","5"]}},"e":"Hello, World!"}
+{"a":{"b":{"c":"4","d":["6","7"]}},"c":"43"}
+{"a":{"b":{"c":"5","d":["8","9"]}},"b":["b1","b2"],"d":{"e":{"f":["s3","s4"],"g":"44","h":"2020-02-02 10:00:00"}}}
+{"a":{"b":{"c":"1","d":["0","1"]}},"b":"2020-01-01","c":"42","d":{"e":{"f":["s1","s2"]}}}
+{"a":{"b":{"c":"2","d":["2","3"]}},"b":["1","2","3"],"d":{"e":{"g":"43"}}}
+{"a":{"b":{"c":"3","d":["4","5"]}},"e":"Hello, World!"}
+{"a":{"b":{"c":"4","d":["6","7"]}},"c":"43"}
+{"a":{"b":{"c":"5","d":["8","9"]}},"b":["b1","b2"],"d":{"e":{"f":["s3","s4"],"g":"44","h":"2020-02-02 10:00:00"}}}
+{"a":{"b":{"c":"1","d":["0","1"]}},"b":"2020-01-01","c":"42","d":{"e":{"f":["s1","s2"]}}}
+{"a":{"b":{"c":"2","d":["2","3"]}},"b":["1","2","3"],"d":{"e":{"g":"43"}}}
+{"a":{"b":{"c":"3","d":["4","5"]}},"e":"Hello, World!"}
+{"a":{"b":{"c":"4","d":["6","7"]}},"c":"43"}
+{"a":{"b":{"c":"5","d":["8","9"]}},"b":["b1","b2"],"d":{"e":{"f":["s3","s4"],"g":"44","h":"2020-02-02 10:00:00"}}}
+{"a":{"b":{"c":"1","d":["0","1"]}},"b":"2020-01-01","c":"42","d":{"e":{"f":["s1","s2"]}}}
+{"a":{"b":{"c":"2","d":["2","3"]}},"b":["1","2","3"],"d":{"e":{"g":"43"}}}
+{"a":{"b":{"c":"3","d":["4","5"]}},"e":"Hello, World!"}
+{"a":{"b":{"c":"4","d":["6","7"]}},"c":"43"}
+{"a":{"b":{"c":"5","d":["8","9"]}},"b":["b1","b2"],"d":{"e":{"f":["s3","s4"],"g":"44","h":"2020-02-02 10:00:00"}}}
+Test PrettyJSONEachRow
+{
+    "json": {
+        "a" : {
+            "b" : {
+                "c" : "1",
+                "d" : [
+                    "0",
+                    "1"
+                ]
+            }
+        },
+        "b" : "2020-01-01",
+        "c" : "42",
+        "d" : {
+            "e" : {
+                "f" : [
+                    "s1",
+                    "s2"
+                ]
+            }
+        }
+    }
+}
+{
+    "json": {
+        "a" : {
+            "b" : {
+                "c" : "2",
+                "d" : [
+                    "2",
+                    "3"
+                ]
+            }
+        },
+        "b" : [
+            "1",
+            "2",
+            "3"
+        ],
+        "d" : {
+            "e" : {
+                "g" : "43"
+            }
+        }
+    }
+}
+{
+    "json": {
+        "a" : {
+            "b" : {
+                "c" : "3",
+                "d" : [
+                    "4",
+                    "5"
+                ]
+            }
+        },
+        "e" : "Hello, World!"
+    }
+}
+{
+    "json": {
+        "a" : {
+            "b" : {
+                "c" : "4",
+                "d" : [
+                    "6",
+                    "7"
+                ]
+            }
+        },
+        "c" : "43"
+    }
+}
+{
+    "json": {
+        "a" : {
+            "b" : {
+                "c" : "5",
+                "d" : [
+                    "8",
+                    "9"
+                ]
+            }
+        },
+        "b" : [
+            "b1",
+            "b2"
+        ],
+        "d" : {
+            "e" : {
+                "f" : [
+                    "s3",
+                    "s4"
+                ],
+                "g" : "44",
+                "h" : "2020-02-02 10:00:00"
+            }
+        }
+    }
+}
+Test TSV
+{"a":{"b":{"c":"1","d":["0","1"]}},"b":"2020-01-01","c":"42","d":{"e":{"f":["s1","s2"]}}}
+{"a":{"b":{"c":"2","d":["2","3"]}},"b":["1","2","3"],"d":{"e":{"g":"43"}}}
+{"a":{"b":{"c":"3","d":["4","5"]}},"e":"Hello, World!"}
+{"a":{"b":{"c":"4","d":["6","7"]}},"c":"43"}
+{"a":{"b":{"c":"5","d":["8","9"]}},"b":["b1","b2"],"d":{"e":{"f":["s3","s4"],"g":"44","h":"2020-02-02 10:00:00"}}}
+Test CSV
+"{""a"":{""b"":{""c"":""1"",""d"":[""0"",""1""]}},""b"":""2020-01-01"",""c"":""42"",""d"":{""e"":{""f"":[""s1"",""s2""]}}}"
+"{""a"":{""b"":{""c"":""2"",""d"":[""2"",""3""]}},""b"":[""1"",""2"",""3""],""d"":{""e"":{""g"":""43""}}}"
+"{""a"":{""b"":{""c"":""3"",""d"":[""4"",""5""]}},""e"":""Hello, World!""}"
+"{""a"":{""b"":{""c"":""4"",""d"":[""6"",""7""]}},""c"":""43""}"
+"{""a"":{""b"":{""c"":""5"",""d"":[""8"",""9""]}},""b"":[""b1"",""b2""],""d"":{""e"":{""f"":[""s3"",""s4""],""g"":""44"",""h"":""2020-02-02 10:00:00""}}}"

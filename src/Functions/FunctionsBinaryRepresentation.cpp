@@ -3,14 +3,14 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/BitHelpers.h>
-#include <Common/BinStringDecodeHelper.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
+#include <Common/BinStringDecodeHelper.h>
+#include <Common/BitHelpers.h>
 
 namespace DB
 {
@@ -218,10 +218,7 @@ struct UnbinImpl
     static constexpr auto name = "unbin";
     static constexpr size_t word_size = 8;
 
-    static void decode(const char * pos, const char * end, char *& out)
-    {
-        binStringDecode(pos, end, out);
-    }
+    static void decode(const char * pos, const char * end, char *& out) { binStringDecode(pos, end, out, word_size); }
 };
 
 /// Encode number or string to string with binary or hexadecimal representation
@@ -635,7 +632,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & column = arguments[0].column;
 
@@ -649,18 +646,26 @@ public:
             const ColumnString::Chars & in_vec = col->getChars();
             const ColumnString::Offsets & in_offsets = col->getOffsets();
 
-            size_t size = in_offsets.size();
-            out_offsets.resize(size);
-            out_vec.resize(in_vec.size() / word_size + size);
+            out_offsets.resize(input_rows_count);
+
+            size_t max_out_len = 0;
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const size_t len = in_offsets[i] - (i == 0 ? 0 : in_offsets[i - 1])
+                    - /* trailing zero symbol that is always added in ColumnString and that is ignored while decoding */ 1;
+                max_out_len += (len + word_size - 1) / word_size + /* trailing zero symbol that is always added by Impl::decode */ 1;
+            }
+            out_vec.resize(max_out_len);
 
             char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
             size_t prev_offset = 0;
 
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 size_t new_offset = in_offsets[i];
 
+                /// `new_offset - 1` because in ColumnString each string is stored with trailing zero byte
                 Impl::decode(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset - 1]), pos);
 
                 out_offsets[i] = pos - begin;
@@ -668,6 +673,9 @@ public:
                 prev_offset = new_offset;
             }
 
+            chassert(
+                static_cast<size_t>(pos - begin) <= out_vec.size(),
+                fmt::format("too small amount of memory was preallocated: needed {}, but have only {}", pos - begin, out_vec.size()));
             out_vec.resize(pos - begin);
 
             return col_res;
@@ -680,20 +688,20 @@ public:
             ColumnString::Offsets & out_offsets = col_res->getOffsets();
 
             const ColumnString::Chars & in_vec = col_fix_string->getChars();
-            size_t n = col_fix_string->getN();
+            const size_t n = col_fix_string->getN();
 
-            size_t size = col_fix_string->size();
-            out_offsets.resize(size);
-            out_vec.resize(in_vec.size() / word_size + size);
+            out_offsets.resize(input_rows_count);
+            out_vec.resize(((n + word_size - 1) / word_size + /* trailing zero symbol that is always added by Impl::decode */ 1) * input_rows_count);
 
             char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
             size_t prev_offset = 0;
 
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 size_t new_offset = prev_offset + n;
 
+                /// here we don't subtract 1 from `new_offset` because in ColumnFixedString strings are stored without trailing zero byte
                 Impl::decode(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
 
                 out_offsets[i] = pos - begin;
@@ -701,6 +709,9 @@ public:
                 prev_offset = new_offset;
             }
 
+            chassert(
+                static_cast<size_t>(pos - begin) <= out_vec.size(),
+                fmt::format("too small amount of memory was preallocated: needed {}, but have only {}", pos - begin, out_vec.size()));
             out_vec.resize(pos - begin);
 
             return col_res;
@@ -715,10 +726,10 @@ public:
 
 REGISTER_FUNCTION(BinaryRepr)
 {
-    factory.registerFunction<EncodeToBinaryRepresentation<HexImpl>>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<DecodeFromBinaryRepresentation<UnhexImpl>>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<EncodeToBinaryRepresentation<BinImpl>>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<DecodeFromBinaryRepresentation<UnbinImpl>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<EncodeToBinaryRepresentation<HexImpl>>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<DecodeFromBinaryRepresentation<UnhexImpl>>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<EncodeToBinaryRepresentation<BinImpl>>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<DecodeFromBinaryRepresentation<UnbinImpl>>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

@@ -26,15 +26,15 @@ struct KeyState
         : state(state_)
     {}
 
-    inline bool isFound() const { return state == State::found; }
-    inline bool isExpired() const { return state == State::expired; }
-    inline bool isNotFound() const { return state == State::not_found; }
-    inline bool isDefault() const { return is_default; }
-    inline void setDefault() { is_default = true; }
-    inline void setDefaultValue(bool is_default_value) { is_default = is_default_value; }
+    bool isFound() const { return state == State::found; }
+    bool isExpired() const { return state == State::expired; }
+    bool isNotFound() const { return state == State::not_found; }
+    bool isDefault() const { return is_default; }
+    void setDefault() { is_default = true; }
+    void setDefaultValue(bool is_default_value) { is_default = is_default_value; }
     /// Valid only if keyState is found or expired
-    inline size_t getFetchedColumnIndex() const { return fetched_column_index; }
-    inline void setFetchedColumnIndex(size_t fetched_column_index_value) { fetched_column_index = fetched_column_index_value; }
+    size_t getFetchedColumnIndex() const { return fetched_column_index; }
+    void setFetchedColumnIndex(size_t fetched_column_index_value) { fetched_column_index = fetched_column_index_value; }
 private:
     State state = not_found;
     size_t fetched_column_index = 0;

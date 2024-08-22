@@ -1,0 +1,11 @@
+<clickhouse>
+    <remote_servers>
+        <test_cluster>
+            <shard>
+                <replica>
+                    <host>node</host>
+                </replica>
+            </shard>
+        </test_cluster>
+    </remote_servers>
+</clickhouse>

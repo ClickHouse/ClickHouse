@@ -29,7 +29,7 @@ void SerializationEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffe
     {
         /// NOTE It would be nice to do without creating a temporary object - at least extract std::string out.
         std::string field_name;
-        readEscapedString(field_name, istr);
+        settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(field_name, istr) : readEscapedString(field_name, istr);
         assert_cast<ColumnType &>(column).getData().push_back(ref_enum_values.getValue(StringRef(field_name), true));
     }
 }

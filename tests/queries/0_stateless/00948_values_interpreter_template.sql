@@ -23,9 +23,9 @@ INSERT INTO values_template VALUES ((1), lower(replaceAll('Hella', 'a', 'o')), 1
 
 INSERT INTO values_template_nullable VALUES ((1), lower(replaceAll('Hella', 'a', 'o')), 1 + 2 + 3, arraySort(x -> assumeNotNull(x), [null, NULL::Nullable(UInt8)])),   ((2), lower(replaceAll('Warld', 'b', 'o')), 4 - 5 + 6, arraySort(x -> assumeNotNull(x), [+1, -1, Null])),   ((3), lower(replaceAll('Test', 'c', 'o')), 3 + 2 - 1, arraySort(x -> assumeNotNull(x), [1, nUlL, 3.14])),   ((4), lower(replaceAll(null, 'c', 'o')), 6 + 5 - null, arraySort(x -> assumeNotNull(x), [3, 2, 1]));
 
-INSERT INTO values_template_fallback VALUES (1 + x); -- { clientError 62 }
-INSERT INTO values_template_fallback VALUES (abs(functionThatDoesNotExists(42))); -- { clientError 46 }
-INSERT INTO values_template_fallback VALUES ([1]); -- { clientError 43 }
+INSERT INTO values_template_fallback VALUES (1 + x); -- { clientError SYNTAX_ERROR }
+INSERT INTO values_template_fallback VALUES (abs(functionThatDoesNotExists(42))); -- { clientError UNKNOWN_FUNCTION }
+INSERT INTO values_template_fallback VALUES ([1]); -- { clientError ILLEGAL_TYPE_OF_ARGUMENT }
 
 INSERT INTO values_template_fallback VALUES (CAST(1, 'UInt8')), (CAST('2', 'UInt8'));
 SET input_format_values_accurate_types_of_literals = 0;

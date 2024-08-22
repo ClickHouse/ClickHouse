@@ -11,7 +11,7 @@ namespace detail
 template <is_enum E, class F, size_t ...I>
 constexpr void static_for(F && f, std::index_sequence<I...>)
 {
-    (std::forward<F>(f)(std::integral_constant<E, magic_enum::enum_value<E>(I)>()) , ...);
+    (f(std::integral_constant<E, magic_enum::enum_value<E>(I)>()) , ...);
 }
 }
 
@@ -32,7 +32,7 @@ constexpr void static_for(F && f)
 template <is_enum T>
 struct fmt::formatter<T> : fmt::formatter<std::string_view>
 {
-    constexpr auto format(T value, auto& format_context)
+    constexpr auto format(T value, auto& format_context) const
     {
         return formatter<string_view>::format(magic_enum::enum_name(value), format_context);
     }

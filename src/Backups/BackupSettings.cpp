@@ -27,7 +27,9 @@ namespace ErrorCodes
     M(Bool, decrypt_files_from_encrypted_disks) \
     M(Bool, deduplicate_files) \
     M(Bool, allow_s3_native_copy) \
+    M(Bool, allow_azure_native_copy) \
     M(Bool, use_same_s3_credentials_for_base_backup) \
+    M(Bool, use_same_password_for_base_backup) \
     M(Bool, azure_attempt_to_create_container) \
     M(Bool, read_from_filesystem_cache) \
     M(UInt64, shard_num) \
@@ -124,7 +126,7 @@ std::vector<Strings> BackupSettings::Util::clusterHostIDsFromAST(const IAST & as
                 throw Exception(
                     ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS,
                     "Setting cluster_host_ids has wrong format, must be array of arrays of string literals");
-            const auto & replicas = array_of_replicas->value.get<const Array &>();
+            const auto & replicas = array_of_replicas->value.safeGet<const Array &>();
             res[i].resize(replicas.size());
             for (size_t j = 0; j != replicas.size(); ++j)
             {
@@ -133,7 +135,7 @@ std::vector<Strings> BackupSettings::Util::clusterHostIDsFromAST(const IAST & as
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS,
                         "Setting cluster_host_ids has wrong format, must be array of arrays of string literals");
-                res[i][j] = replica.get<const String &>();
+                res[i][j] = replica.safeGet<const String &>();
             }
         }
     }

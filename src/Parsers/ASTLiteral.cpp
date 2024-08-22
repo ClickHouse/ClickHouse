@@ -73,8 +73,8 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     /// Special case for very large arrays and tuples. Instead of listing all elements, will use hash of them.
     /// (Otherwise column name will be too long, that will lead to significant slowdown of expression analysis.)
     auto type = value.getType();
-    if ((type == Field::Types::Array && value.get<const Array &>().size() > min_elements_for_hashing)
-        || (type == Field::Types::Tuple && value.get<const Tuple &>().size() > min_elements_for_hashing))
+    if ((type == Field::Types::Array && value.safeGet<const Array &>().size() > min_elements_for_hashing)
+        || (type == Field::Types::Tuple && value.safeGet<const Tuple &>().size() > min_elements_for_hashing))
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
@@ -92,7 +92,7 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
         /// for tons of literals as it creates temporary String.
         if (value.getType() == Field::Types::String)
         {
-            writeQuoted(value.get<String>(), ostr);
+            writeQuoted(value.safeGet<String>(), ostr);
         }
         else
         {
@@ -110,7 +110,7 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     /// Special case for very large arrays. Instead of listing all elements, will use hash of them.
     /// (Otherwise column name will be too long, that will lead to significant slowdown of expression analysis.)
     auto type = value.getType();
-    if ((type == Field::Types::Array && value.get<const Array &>().size() > min_elements_for_hashing))
+    if ((type == Field::Types::Array && value.safeGet<const Array &>().size() > min_elements_for_hashing))
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);

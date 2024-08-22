@@ -17,6 +17,7 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/escapeForFileName.h>
+#include <Core/Settings.h>
 
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -689,7 +690,13 @@ bool BackupEntriesCollector::compareWithPrevious(String & mismatch_description)
         previous_tables_metadata = std::move(tables_metadata);
     });
 
-    enum class MismatchType { ADDED, REMOVED, CHANGED, NONE };
+    enum class MismatchType : uint8_t
+    {
+        ADDED,
+        REMOVED,
+        CHANGED,
+        NONE
+    };
 
     /// Helper function - used to compare the metadata of databases and tables.
     auto find_mismatch = [](const auto & metadata, const auto & previous_metadata)

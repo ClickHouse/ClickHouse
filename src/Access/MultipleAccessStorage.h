@@ -21,6 +21,8 @@ public:
     explicit MultipleAccessStorage(const String & storage_name_ = STORAGE_TYPE);
     ~MultipleAccessStorage() override;
 
+    void shutdown() override;
+
     const char * getStorageType() const override { return STORAGE_TYPE; }
     bool isReadOnly() const override;
     bool isReadOnly(const UUID & id) const override;
@@ -32,6 +34,7 @@ public:
     void setStorages(const std::vector<StoragePtr> & storages);
     void addStorage(const StoragePtr & new_storage);
     void removeStorage(const StoragePtr & storage_to_remove);
+    void removeAllStorages();
     std::vector<StoragePtr> getStorages();
     std::vector<ConstStoragePtr> getStorages() const;
     std::shared_ptr<const std::vector<StoragePtr>> getStoragesPtr();

@@ -1,2 +1,2 @@
-CREATE TABLE default.`table`\n(\n    `key` String\n)\nENGINE = File(\'TSVWithNamesAndTypes\', \'/dev/null\')
-CREATE TABLE foo.`table`\n(\n    `key` String\n)\nENGINE = File(\'TSVWithNamesAndTypes\', \'/dev/null\')
+CREATE TEMPORARY TABLE `table`\n(\n    `key` String\n)\nENGINE = File(TSVWithNamesAndTypes, \'/dev/null\')
+CREATE TEMPORARY TABLE `table`\n(\n    `key` String\n)\nENGINE = File(TSVWithNamesAndTypes, \'/dev/null\')

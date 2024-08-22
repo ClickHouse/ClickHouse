@@ -2,6 +2,7 @@
 This test makes sure interserver cluster queries handle invalid DNS
 records for replicas.
 """
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 

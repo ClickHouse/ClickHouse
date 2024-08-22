@@ -7,6 +7,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTHelpers.h>
 #include <Common/assert_cast.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 
 namespace DB
@@ -20,8 +21,9 @@ namespace ErrorCodes
 class FunctionParameterValuesVisitor
 {
 public:
-    explicit FunctionParameterValuesVisitor(NameToNameMap & parameter_values_)
+    explicit FunctionParameterValuesVisitor(NameToNameMap & parameter_values_, ContextPtr context_)
         : parameter_values(parameter_values_)
+         , context(context_)
     {
     }
 
@@ -35,6 +37,7 @@ public:
 
 private:
     NameToNameMap & parameter_values;
+    ContextPtr context;
 
     void visitFunction(const ASTFunction & parameter_function)
     {
@@ -64,15 +67,20 @@ private:
                         parameter_values[identifier->name()] = convertFieldToString(cast_literal->value);
                     }
                 }
+                else
+                {
+                    ASTPtr res = evaluateConstantExpressionOrIdentifierAsLiteral(expression_list->children[1], context);
+                    parameter_values[identifier->name()] = convertFieldToString(res->as<ASTLiteral>()->value);
+                }
             }
         }
     }
 };
 
-NameToNameMap analyzeFunctionParamValues(const ASTPtr & ast)
+NameToNameMap analyzeFunctionParamValues(const ASTPtr & ast, ContextPtr context)
 {
     NameToNameMap parameter_values;
-    FunctionParameterValuesVisitor(parameter_values).visit(ast);
+    FunctionParameterValuesVisitor(parameter_values, context).visit(ast);
     return parameter_values;
 }
 

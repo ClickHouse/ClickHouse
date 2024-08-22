@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/quantile
-sidebar_position: 200
+sidebar_position: 170
 ---
 
 # quantile

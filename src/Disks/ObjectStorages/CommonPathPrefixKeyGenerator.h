@@ -1,14 +1,15 @@
 #pragma once
 
 #include <Common/ObjectStorageKeyGenerator.h>
-#include <Common/SharedMutex.h>
 
 #include <filesystem>
 #include <map>
+#include <optional>
 
 namespace DB
 {
 
+/// Deprecated. Used for backward compatibility with plain rewritable disks without a separate metadata layout.
 /// Object storage key generator used specifically with the
 /// MetadataStorageFromPlainObjectStorage if multiple writes are allowed.
 
@@ -18,15 +19,16 @@ namespace DB
 ///
 /// The key generator ensures that the original directory hierarchy is
 /// preserved, which is required for the MergeTree family.
+
+struct InMemoryPathMap;
 class CommonPathPrefixKeyGenerator : public IObjectStorageKeysGenerator
 {
 public:
     /// Local to remote path map. Leverages filesystem::path comparator for paths.
-    using PathMap = std::map<std::filesystem::path, std::string>;
 
-    explicit CommonPathPrefixKeyGenerator(String key_prefix_, SharedMutex & shared_mutex_, std::weak_ptr<PathMap> path_map_);
+    explicit CommonPathPrefixKeyGenerator(String key_prefix_, std::weak_ptr<InMemoryPathMap> path_map_);
 
-    ObjectStorageKey generate(const String & path, bool is_directory) const override;
+    ObjectStorageKey generate(const String & path, bool is_directory, const std::optional<String> & key_prefix) const override;
 
 private:
     /// Longest key prefix and unresolved parts of the source path.
@@ -34,8 +36,7 @@ private:
 
     const String storage_key_prefix;
 
-    SharedMutex & shared_mutex;
-    std::weak_ptr<PathMap> path_map;
+    std::weak_ptr<InMemoryPathMap> path_map;
 };
 
 }

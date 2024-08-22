@@ -21,7 +21,6 @@ public:
         UInt64 limit_ = 0,
         bool always_read_till_end_ = false,
         WriteBuffer * out_row_sources_buf_ = nullptr,
-        bool quiet_ = false,
         bool use_average_block_sizes = false,
         bool have_all_inputs_ = true);
 
@@ -30,9 +29,6 @@ public:
 protected:
     void onNewInput() override;
     void onFinish() override;
-
-private:
-    bool quiet = false;
 };
 
 }

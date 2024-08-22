@@ -6,7 +6,7 @@ Generate github token:
 Dependencies:
 ```
 sudo apt-get update
-sudo apt-get install git python3 python3-fuzzywuzzy python3-github
+sudo apt-get install git python3 python3-thefuzz python3-github
 python3 changelog.py -h
 ```
 
@@ -15,10 +15,7 @@ Usage example:
 Note: The working directory is ClickHouse/utils/changelog
 
 ```bash
-export GITHUB_TOKEN="<your token>"
-
-git fetch --tags # changelog.py depends on having the tags available, this will fetch them.  
-                 # If you are working from a branch in your personal fork, then you may need `git fetch --all`
+GITHUB_TOKEN="<your token>"
 
 python3 changelog.py --output=changelog-v22.4.1.2305-prestable.md --gh-user-or-token="$GITHUB_TOKEN" v21.6.2.7-prestable
 python3 changelog.py --output=changelog-v22.4.1.2305-prestable.md --gh-user-or-token="$USER" --gh-password="$PASSWORD" v21.6.2.7-prestable

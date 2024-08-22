@@ -1,6 +1,6 @@
 -- { echoOn }
 
-explain pipeline select * from (select * from numbers(1e8) group by number) group by number;
+explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0;
 (Expression)
 ExpressionTransform × 16
   (Aggregating)
@@ -16,7 +16,7 @@ ExpressionTransform × 16
               ExpressionTransform
                 (ReadFromSystemNumbers)
                 NumbersRange 0 → 1
-explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0;
 (Expression)
 ExpressionTransform × 16
   (Aggregating)
@@ -32,7 +32,7 @@ ExpressionTransform × 16
               ExpressionTransform × 16
                 (ReadFromSystemNumbers)
                 NumbersRange × 16 0 → 1
-explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0;
 (Expression)
 ExpressionTransform
   (Sorting)

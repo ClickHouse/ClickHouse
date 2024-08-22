@@ -24,7 +24,7 @@ public:
 
     String getName() const override { return "ExpressionTransform"; }
 
-    static Block transformHeader(Block header, const ActionsDAG & expression);
+    static Block transformHeader(const Block & header, const ActionsDAG & expression);
 
 protected:
     void transform(Chunk & chunk) override;

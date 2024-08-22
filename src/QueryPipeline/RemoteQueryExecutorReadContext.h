@@ -39,6 +39,8 @@ public:
 
     Packet getPacket() { return std::move(packet); }
 
+    UInt64 getPacketType() const { return packet.type; }
+
 private:
     bool checkTimeout(bool blocking = false);
 
@@ -69,7 +71,7 @@ private:
     /// * timer is a timerfd descriptor to manually check socket timeout
     /// * pipe_fd is a pipe we use to cancel query and socket polling by executor.
     /// We put those descriptors into our own epoll which is used by external executor.
-    TimerDescriptor timer{CLOCK_MONOTONIC, 0};
+    TimerDescriptor timer;
     Poco::Timespan timeout;
     AsyncEventTimeoutType timeout_type;
     std::atomic_bool is_timer_alarmed = false;

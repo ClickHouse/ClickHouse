@@ -19,7 +19,7 @@ function thread_insert()
     set -e
     val=1
     while true; do
-        $CLICKHOUSE_CLIENT --multiquery --query "
+        $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         INSERT INTO src VALUES /* ($val, 1) */ ($val, 1);
         INSERT INTO src VALUES /* ($val, 2) */ ($val, 2);
@@ -40,7 +40,7 @@ function thread_partition_src_to_dst()
     sum=0
     for i in {1..20}; do
         out=$(
-        $CLICKHOUSE_CLIENT --multiquery --query "
+        $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         INSERT INTO src VALUES /* ($i, 3) */ ($i, 3);
         INSERT INTO dst SELECT * FROM src;
@@ -49,7 +49,7 @@ function thread_partition_src_to_dst()
         SELECT throwIf((SELECT (count(), sum(n)) FROM merge(currentDatabase(), '') WHERE type=3) != ($count + 1, $sum + $i)) FORMAT Null;
         COMMIT;" 2>&1) ||:
 
-        echo "$out" | grep -Fv "SERIALIZATION_ERROR" | grep -F "Received from " && $CLICKHOUSE_CLIENT --multiquery --query "
+        echo "$out" | grep -Fv "SERIALIZATION_ERROR" | grep -F "Received from " && $CLICKHOUSE_CLIENT --query "
                                                                                    begin transaction;
                                                                                    set transaction snapshot 3;
                                                                                    select $i, 'src', type, n, _part from src order by type, n;
@@ -68,7 +68,7 @@ function thread_partition_dst_to_src()
         if (( i % 2 )); then
             action="COMMIT"
         fi
-        $CLICKHOUSE_CLIENT --multiquery --query "
+        $CLICKHOUSE_CLIENT --query "
         SYSTEM STOP MERGES dst;
         ALTER TABLE dst DROP PARTITION ID 'nonexistent';  -- STOP MERGES doesn't wait for started merges to finish, so we use this trick
         SYSTEM SYNC TRANSACTION LOG;
@@ -87,7 +87,7 @@ function thread_select()
 {
     set -e
     while true; do
-        $CLICKHOUSE_CLIENT --multiquery --query "
+        $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         -- no duplicates
         SELECT type, throwIf(count(n) != countDistinct(n)) FROM src GROUP BY type FORMAT Null;

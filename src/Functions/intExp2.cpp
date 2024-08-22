@@ -20,7 +20,7 @@ struct IntExp2Impl
     using ResultType = UInt64;
     static constexpr bool allow_string_or_fixed_string = false;
 
-    static inline ResultType apply([[maybe_unused]] A a)
+    static ResultType apply([[maybe_unused]] A a)
     {
         if constexpr (is_big_int_v<A>)
             throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "intExp2 not implemented for big integers");
@@ -31,7 +31,7 @@ struct IntExp2Impl
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = true;
 
-    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
     {
         if (!arg->getType()->isIntegerTy())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "IntExp2Impl expected an integral type");

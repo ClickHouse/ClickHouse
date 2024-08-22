@@ -1,0 +1,68 @@
+Negative test of overlay
+Test with 3 arguments and various combinations of const/non-const columns
+Spark_SQL	Spark_SQL和CH
+Spark_SQL	Spark_SQL和CH
+Spark_SQL	Spark_SQL和CH
+Spark_SQL	Spark_SQL和CH
+Spark_SQL	Spark_SQL和CH
+Spark_SQL	Spark_SQL和CH
+Spark_SQL	Spark_SQL和CH
+Spark_SQL	Spark_SQL和CH
+Test with 4 arguments and various combinations of const/non-const columns
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Spark ANSI SQL	Spark ANSI SQL和CH
+Test with special offset values
+-12	__ark SQL	之park SQL和CH
+-11	__ark SQL	S之ark SQL和CH
+-10	__ark SQL	Sp之rk SQL和CH
+-9	__ark SQL	Spa之k SQL和CH
+-8	S__rk SQL	Spar之 SQL和CH
+-7	Sp__k SQL	Spark之SQL和CH
+-6	Spa__ SQL	Spark 之QL和CH
+-5	Spar__SQL	Spark S之L和CH
+-4	Spark__QL	Spark SQ之和CH
+-3	Spark __L	Spark SQL之CH
+-2	Spark S__	Spark SQL和之H
+-1	Spark SQ__	Spark SQL和C之
+0	Spark SQL__	Spark SQL和CH之
+1	__ark SQL	之park SQL和CH
+2	S__rk SQL	S之ark SQL和CH
+3	Sp__k SQL	Sp之rk SQL和CH
+4	Spa__ SQL	Spa之k SQL和CH
+5	Spar__SQL	Spar之 SQL和CH
+6	Spark__QL	Spark之SQL和CH
+7	Spark __L	Spark 之QL和CH
+8	Spark S__	Spark S之L和CH
+9	Spark SQ__	Spark SQ之和CH
+10	Spark SQL__	Spark SQL之CH
+11	Spark SQL__	Spark SQL和之H
+12	Spark SQL__	Spark SQL和C之
+13	Spark SQL__	Spark SQL和CH之
+Test with special length values
+-1	Spark ANSI 	Spark ANSI H
+0	Spark ANSI SQL	Spark ANSI SQL和CH
+1	Spark ANSI QL	Spark ANSI QL和CH
+2	Spark ANSI L	Spark ANSI L和CH
+3	Spark ANSI 	Spark ANSI 和CH
+4	Spark ANSI 	Spark ANSI CH
+5	Spark ANSI 	Spark ANSI H
+6	Spark ANSI 	Spark ANSI 
+Test with special input and replace values
+_	_
+Spark SQL	Spark SQL和CH
+ANSI 	ANSI 
+Spark SQL	Spark SQL和CH

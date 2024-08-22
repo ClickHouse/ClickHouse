@@ -21,12 +21,14 @@ limitations under the License. */
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
+#include <Core/Settings.h>
 #include <base/hex.h>
 
 #include <Storages/LiveView/StorageLiveView.h>
@@ -330,7 +332,7 @@ Pipe StorageLiveView::watch(
     return reader;
 }
 
-void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
+void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Chunk::ChunkInfoCollection && chunk_infos, ContextPtr local_context)
 {
     auto output = std::make_shared<LiveViewSink>(*this);
 
@@ -406,6 +408,21 @@ void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
                 QueryProcessingStage::WithMergeableState);
             builder = interpreter.buildQueryPipeline();
         }
+
+        builder.addSimpleTransform([&](const Block & cur_header)
+        {
+            return std::make_shared<RestoreChunkInfosTransform>(chunk_infos.clone(), cur_header);
+        });
+
+        String live_view_id = live_view.getStorageID().hasUUID() ? toString(live_view.getStorageID().uuid) : live_view.getStorageID().getFullNameNotQuoted();
+        builder.addSimpleTransform([&](const Block & stream_header)
+        {
+            return std::make_shared<DeduplicationToken::SetViewIDTransform>(live_view_id, stream_header);
+        });
+        builder.addSimpleTransform([&](const Block & stream_header)
+        {
+            return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
+        });
 
         builder.addSimpleTransform([&](const Block & cur_header)
         {
@@ -626,7 +643,7 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
     /// and two-level aggregation is triggered).
     builder.addSimpleTransform([&](const Block & cur_header)
     {
-        return std::make_shared<SquashingChunksTransform>(
+        return std::make_shared<SquashingTransform>(
             cur_header,
             getContext()->getSettingsRef().min_insert_block_size_rows,
             getContext()->getSettingsRef().min_insert_block_size_bytes);

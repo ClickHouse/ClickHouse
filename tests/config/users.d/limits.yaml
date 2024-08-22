@@ -1,0 +1,56 @@
+profiles:
+  default:
+    max_memory_usage: 5G
+    max_rows_to_read: 20000000
+
+    # Also set every other limit to a high value, so it will not limit anything, but we will test that code around it.
+    s3_max_get_rps: 1000000
+    s3_max_get_burst: 2000000
+    s3_max_put_rps: 1000000
+    s3_max_put_burst: 2000000
+    max_remote_read_network_bandwidth: 1T
+    max_remote_write_network_bandwidth: 1T
+    max_local_read_bandwidth: 1T
+    max_local_write_bandwidth: 1T
+    use_index_for_in_with_subqueries_max_values: 1G
+    max_bytes_to_read: 1T
+    max_bytes_to_read_leaf: 1T
+    max_rows_to_group_by: 10G
+    max_bytes_before_external_group_by: 10G
+    max_rows_to_sort: 10G
+    max_bytes_to_sort: 10G
+    max_bytes_before_external_sort: 10G
+    max_result_rows: 1G
+    max_result_bytes: 1G
+    max_execution_time: 600
+    max_execution_time_leaf: 600
+    max_execution_speed: 100G
+    max_execution_speed_bytes: 10T
+    timeout_before_checking_execution_speed: 300
+    max_estimated_execution_time: 600
+    max_columns_to_read: 20K
+    max_temporary_columns: 20K
+    max_temporary_non_const_columns: 20K
+    max_rows_in_set: 10G
+    max_bytes_in_set: 10G
+    max_rows_in_join: 10G
+    max_bytes_in_join: 10G
+    max_rows_to_transfer: 1G
+    max_bytes_to_transfer: 1G
+    max_rows_in_distinct: 10G
+    max_bytes_in_distinct: 10G
+    max_memory_usage_for_user: 32G
+    max_network_bandwidth: 100G
+    max_network_bytes: 1T
+    max_network_bandwidth_for_user: 100G
+    max_network_bandwidth_for_all_users: 100G
+    max_temporary_data_on_disk_size_for_user: 100G
+    max_temporary_data_on_disk_size_for_query: 100G
+    max_backup_bandwidth: 100G
+    max_hyperscan_regexp_length: 1M
+    max_hyperscan_regexp_total_length: 10M
+    query_cache_max_size_in_bytes: 10M
+    query_cache_max_entries: 100K
+    external_storage_max_read_rows: 10G
+    external_storage_max_read_bytes: 10G
+    max_streams_for_merge_tree_reading: 1000

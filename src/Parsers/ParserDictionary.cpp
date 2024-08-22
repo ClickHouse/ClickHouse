@@ -33,7 +33,7 @@ bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         if (literal.value.getType() != Field::Types::UInt64)
             return false;
 
-        res->max_sec = literal.value.get<UInt64>();
+        res->max_sec = literal.value.safeGet<UInt64>();
         node = res;
         return true;
     }
@@ -58,10 +58,10 @@ bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             return false;
 
         if (pair.first == "min")
-            res->min_sec = literal->value.get<UInt64>();
+            res->min_sec = literal->value.safeGet<UInt64>();
         else if (pair.first == "max")
         {
-            res->max_sec = literal->value.get<UInt64>();
+            res->max_sec = literal->value.safeGet<UInt64>();
             initialized_max = true;
         }
         else

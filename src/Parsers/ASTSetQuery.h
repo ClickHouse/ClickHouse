@@ -39,7 +39,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Set; }
 
     void appendColumnName(WriteBuffer & ostr) const override;
-    void appendColumnNameWithoutAlias(WriteBuffer & ostr) const override { return appendColumnName(ostr); }
+    void appendColumnNameWithoutAlias(WriteBuffer & ostr) const override { appendColumnName(ostr); }
 };
 
 }

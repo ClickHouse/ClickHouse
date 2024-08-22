@@ -36,8 +36,8 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE c"
 echo
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE root (d UInt64) ENGINE = Null"
 ${CLICKHOUSE_CLIENT} --query "CREATE MATERIALIZED VIEW d (d UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/d', '1') ORDER BY d AS SELECT * FROM root"
-${CLICKHOUSE_CLIENT} --query "INSERT INTO root VALUES (1)";
-${CLICKHOUSE_CLIENT} --query "INSERT INTO root VALUES (1)";
+${CLICKHOUSE_CLIENT} --query "INSERT INTO root SETTINGS deduplicate_blocks_in_dependent_materialized_views=1 VALUES (1)";
+${CLICKHOUSE_CLIENT} --query "INSERT INTO root SETTINGS deduplicate_blocks_in_dependent_materialized_views=1 VALUES (1)";
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM d";
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE root"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE d"

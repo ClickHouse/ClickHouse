@@ -4,7 +4,7 @@
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 

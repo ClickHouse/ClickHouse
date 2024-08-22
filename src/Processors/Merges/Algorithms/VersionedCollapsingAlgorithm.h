@@ -29,8 +29,6 @@ public:
     Status merge() override;
 
 private:
-    MergedData merged_data;
-
     size_t sign_column_number = 0;
 
     const size_t max_rows_in_queue;

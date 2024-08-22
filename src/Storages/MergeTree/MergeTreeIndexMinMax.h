@@ -50,7 +50,7 @@ class MergeTreeIndexConditionMinMax final : public IMergeTreeIndexCondition
 public:
     MergeTreeIndexConditionMinMax(
         const IndexDescription & index,
-        const ActionsDAGPtr & filter_actions_dag,
+        const ActionsDAG * filter_actions_dag,
         ContextPtr context);
 
     bool alwaysUnknownOrTrue() const override;
@@ -77,7 +77,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-        const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const override;
+        const ActionsDAG * filter_actions_dag, ContextPtr context) const override;
 
     const char* getSerializedFileExtension() const override { return ".idx2"; }
     MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & path_prefix) const override; /// NOLINT

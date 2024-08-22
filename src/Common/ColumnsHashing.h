@@ -235,7 +235,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 {
     using Base = SingleColumnMethod;
 
-    enum class VisitValue
+    enum class VisitValue : uint8_t
     {
         Empty = 0,
         Found = 1,

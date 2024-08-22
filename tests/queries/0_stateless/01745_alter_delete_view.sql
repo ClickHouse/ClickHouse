@@ -20,7 +20,7 @@ INSERT INTO test_table (f1, f2, pk) VALUES (1,1,1), (1,1,2), (2,1,1), (2,1,2);
 
 SELECT * FROM test_view ORDER BY f1, f2;
 
-ALTER TABLE test_view DELETE WHERE pk = 2; --{serverError 48}
+ALTER TABLE test_view DELETE WHERE pk = 2; --{serverError NOT_IMPLEMENTED}
 
 SELECT * FROM test_view ORDER BY f1, f2;
 

@@ -10,7 +10,7 @@
 
 namespace DB
 {
-enum class LocalFSReadMethod
+enum class LocalFSReadMethod : uint8_t
 {
     /**
      * Simple synchronous reads with 'read'.
@@ -54,7 +54,7 @@ enum class LocalFSReadMethod
     pread_fake_async
 };
 
-enum class RemoteFSReadMethod
+enum class RemoteFSReadMethod : uint8_t
 {
     read,
     threadpool,

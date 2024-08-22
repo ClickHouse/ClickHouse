@@ -1,5 +1,4 @@
 #include <TableFunctions/ITableFunction.h>
-#include <Interpreters/Context.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableFunction.h>
 #include <Access/Common/AccessFlags.h>
@@ -36,7 +35,7 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     if (cached_columns.empty())
         return executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
 
-    if (hasStaticStructure() && cached_columns == getActualTableStructure(context,is_insert_query))
+    if (hasStaticStructure() && cached_columns == getActualTableStructure(context, is_insert_query))
         return executeImpl(ast_function, context_to_use, table_name, std::move(cached_columns), is_insert_query);
 
     auto this_table_function = shared_from_this();

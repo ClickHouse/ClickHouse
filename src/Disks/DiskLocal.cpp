@@ -297,7 +297,7 @@ void DiskLocal::createDirectories(const String & path)
 void DiskLocal::clearDirectory(const String & path)
 {
     for (const auto & entry : fs::directory_iterator(fs::path(disk_path) / path))
-        fs::remove(entry.path());
+        (void)fs::remove(entry.path());
 }
 
 void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
@@ -377,7 +377,7 @@ void DiskLocal::removeDirectory(const String & path)
 
 void DiskLocal::removeRecursive(const String & path)
 {
-    fs::remove_all(fs::path(disk_path) / path);
+    (void)fs::remove_all(fs::path(disk_path) / path);
 }
 
 void DiskLocal::listFiles(const String & path, std::vector<String> & file_names) const

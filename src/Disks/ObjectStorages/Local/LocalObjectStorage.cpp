@@ -1,15 +1,15 @@
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 
-#include <Interpreters/Context.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/logger_useful.h>
+#include <filesystem>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
+#include <Interpreters/Context.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
-#include <filesystem>
+#include <Common/logger_useful.h>
 
 namespace fs = std::filesystem;
 
@@ -172,7 +172,7 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path) c
     return object_metadata;
 }
 
-void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int /* max_keys */) const
+void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t/* max_keys */) const
 {
     for (const auto & entry : fs::directory_iterator(path))
     {
@@ -182,8 +182,7 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
             continue;
         }
 
-        auto metadata = getObjectMetadata(entry.path());
-        children.emplace_back(entry.path(), std::move(metadata));
+        children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry.path(), getObjectMetadata(entry.path())));
     }
 }
 
@@ -223,12 +222,8 @@ std::unique_ptr<IObjectStorage> LocalObjectStorage::cloneObjectStorage(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage() is not implemented for LocalObjectStorage");
 }
 
-void LocalObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & /* config */, const std::string & /* config_prefix */, ContextPtr /* context */)
-{
-}
-
-ObjectStorageKey LocalObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
+ObjectStorageKey
+LocalObjectStorage::generateObjectKeyForPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
 {
     constexpr size_t key_name_total_size = 32;
     return ObjectStorageKey::createAsRelative(key_prefix, getRandomASCIIString(key_name_total_size));

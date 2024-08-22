@@ -39,6 +39,6 @@ CHECK TABLE mt_table PARTITION 201902 SETTINGS max_threads = 1;
 
 SELECT '========';
 
-CHECK TABLE mt_table PART '201801_1_1_0';
+CHECK TABLE mt_table PART '201801_1_1_2';
 
 DROP TABLE IF EXISTS mt_table;

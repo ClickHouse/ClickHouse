@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 WITH
     ( SELECT sleep(0.0001) FROM system.one ) as a1,
@@ -28,7 +28,7 @@ WITH
     ( SELECT sleep(0.0001) FROM system.one ) as a5
 SELECT '02177_CTE_NEW_ANALYZER', a1, a2, a3, a4, a5 FROM system.numbers LIMIT 100
         FORMAT Null
-SETTINGS allow_experimental_analyzer = 1;
+SETTINGS enable_analyzer = 1;
 
 SYSTEM FLUSH LOGS;
 SELECT

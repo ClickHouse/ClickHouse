@@ -138,7 +138,7 @@ class QuantileTDigest
             compress();
     }
 
-    inline bool canBeMerged(const BetterFloat & l_mean, const Value & r_mean)
+    bool canBeMerged(const BetterFloat & l_mean, const Value & r_mean)
     {
         return l_mean == r_mean || (!std::isinf(l_mean) && !std::isinf(r_mean));
     }
@@ -234,8 +234,7 @@ public:
                 BetterFloat qr = (sum + l_count + r->count * 0.5) / count;
                 BetterFloat err2 = qr * (1 - qr);
 
-                if (err > err2)
-                    err = err2;
+                err = std::min(err, err2);
 
                 BetterFloat k = count_epsilon_4 * err;
 
@@ -333,6 +332,18 @@ public:
         centroids.erase(it, centroids.end());
 
         compress(); // Allows reading/writing TDigests with different epsilon/max_centroids params
+    }
+
+    Float64 getCountEqual(Float64 value) const
+    {
+        Float64 result = 0;
+        for (const auto & c : centroids)
+        {
+            /// std::cerr << "c "<< c.mean << " "<< c.count << std::endl;
+            if (value == c.mean)
+                result += c.count;
+        }
+        return result;
     }
 
     Float64 getCountLessThan(Float64 value) const

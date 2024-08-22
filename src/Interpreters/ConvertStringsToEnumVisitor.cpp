@@ -33,8 +33,8 @@ String makeStringsEnum(const std::set<String> & values)
 
 void changeIfArguments(ASTPtr & first, ASTPtr & second)
 {
-    String first_value = first->as<ASTLiteral>()->value.get<String>();
-    String second_value = second->as<ASTLiteral>()->value.get<String>();
+    String first_value = first->as<ASTLiteral>()->value.safeGet<String>();
+    String second_value = second->as<ASTLiteral>()->value.safeGet<String>();
 
     std::set<String> values;
     values.insert(first_value);
@@ -59,9 +59,9 @@ void changeTransformArguments(ASTPtr & array_to, ASTPtr & other)
 {
     std::set<String> values;
 
-    for (const auto & item : array_to->as<ASTLiteral>()->value.get<Array>())
-        values.insert(item.get<String>());
-    values.insert(other->as<ASTLiteral>()->value.get<String>());
+    for (const auto & item : array_to->as<ASTLiteral>()->value.safeGet<Array>())
+        values.insert(item.safeGet<String>());
+    values.insert(other->as<ASTLiteral>()->value.safeGet<String>());
 
     String enum_string = makeStringsEnum(values);
 
@@ -168,7 +168,7 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
         if (literal_to->value.getTypeName() != "Array" || literal_other->value.getTypeName() != "String")
             return;
 
-        Array array_to = literal_to->value.get<Array>();
+        Array array_to = literal_to->value.safeGet<Array>();
         if (array_to.empty())
             return;
 

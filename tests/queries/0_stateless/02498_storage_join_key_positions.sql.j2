@@ -13,7 +13,7 @@ INSERT INTO tjj VALUES (11, 11, 11, 1000), (21, 21, 21, 2000), (31, 31, 31, 3000
 
 
 {% for use_analyzer in [0, 1] -%}
-SET allow_experimental_analyzer = '{{ use_analyzer }}';
+SET enable_analyzer = '{{ use_analyzer }}';
 
 SELECT '--- using ---';
 SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3) ORDER BY key1;

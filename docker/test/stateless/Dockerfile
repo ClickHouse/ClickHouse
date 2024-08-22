@@ -25,10 +25,7 @@ RUN apt-get update -y \
             openssl \
             postgresql-client \
             python3 \
-            python3-lxml \
             python3-pip \
-            python3-requests \
-            python3-termcolor \
             qemu-user-static \
             sqlite3 \
             sudo \
@@ -51,7 +48,8 @@ RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PR
     && unzip protoc-${PROTOC_VERSION}-linux-x86_64.zip -d /usr/local \
     && rm protoc-${PROTOC_VERSION}-linux-x86_64.zip
 
-RUN pip3 install numpy==1.26.3 scipy==1.12.0 pandas==1.5.3 Jinja2==3.1.3 pyarrow==15.0.0
+COPY requirements.txt /
+RUN pip3 install --no-cache-dir -r /requirements.txt
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && cd /tmp/clickhouse-odbc-tmp \
@@ -67,12 +65,11 @@ ENV TZ=Europe/Amsterdam
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV NUM_TRIES=1
-ENV MAX_RUN_TIME=0
 
 # Unrelated to vars in setup_minio.sh, but should be the same there
 # to have the same binaries for local running scenario
-ARG MINIO_SERVER_VERSION=2022-01-03T18-22-58Z
-ARG MINIO_CLIENT_VERSION=2022-01-05T23-52-51Z
+ARG MINIO_SERVER_VERSION=2024-08-03T04-33-23Z
+ARG MINIO_CLIENT_VERSION=2024-07-31T15-58-33Z
 ARG TARGETARCH
 
 # Download Minio-related binaries
@@ -91,14 +88,3 @@ ENV EXPORT_S3_STORAGE_POLICIES=1
 
 RUN npm install -g azurite@3.30.0 \
     && npm install -g tslib && npm install -g node
-
-COPY run.sh /
-COPY setup_minio.sh /
-COPY setup_hdfs_minicluster.sh /
-COPY attach_gdb.lib /
-COPY utils.lib /
-
-# We store stress_tests.lib in stateless image to avoid duplication of this file in stress and upgrade tests
-COPY stress_tests.lib /
-
-CMD ["/bin/bash", "/run.sh"]

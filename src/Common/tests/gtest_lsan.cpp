@@ -14,20 +14,21 @@
 /// because of broken getauxval() [1].
 ///
 ///   [1]: https://github.com/ClickHouse/ClickHouse/pull/33957
-TEST(Common, LSan)
+TEST(SanitizerDeathTest, LSan)
 {
-    int sanitizers_exit_code = 1;
-
-    ASSERT_EXIT({
-        std::thread leak_in_thread([]()
+    EXPECT_DEATH(
         {
-            void * leak = malloc(4096);
-            ASSERT_NE(leak, nullptr);
-        });
-        leak_in_thread.join();
+            std::thread leak_in_thread(
+                []()
+                {
+                    void * leak = malloc(4096);
+                    ASSERT_NE(leak, nullptr);
+                });
+            leak_in_thread.join();
 
-        __lsan_do_leak_check();
-    }, ::testing::ExitedWithCode(sanitizers_exit_code), ".*LeakSanitizer: detected memory leaks.*");
+            __lsan_do_leak_check();
+        },
+        ".*LeakSanitizer: detected memory leaks.*");
 }
 
 #endif

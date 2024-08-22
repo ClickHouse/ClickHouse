@@ -79,7 +79,7 @@ bool checkBatchRemove(S3ObjectStorage & storage)
     /// We are using generateObjectKeyForPath() which returns random object key.
     /// That generated key is placed in a right directory where we should have write access.
     const String path = fmt::format("clickhouse_remove_objects_capability_{}", getServerUUID());
-    const auto key = storage.generateObjectKeyForPath(path);
+    const auto key = storage.generateObjectKeyForPath(path, {} /* key_prefix */);
     StoredObject object(key.serialize(), path);
     try
     {

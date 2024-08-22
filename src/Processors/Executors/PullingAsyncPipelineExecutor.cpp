@@ -147,13 +147,10 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
 
     block = lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns());
 
-    if (auto chunk_info = chunk.getChunkInfo())
+    if (auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())
     {
-        if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(chunk_info.get()))
-        {
-            block.info.bucket_num = agg_info->bucket_num;
-            block.info.is_overflows = agg_info->is_overflows;
-        }
+         block.info.bucket_num = agg_info->bucket_num;
+         block.info.is_overflows = agg_info->is_overflows;
     }
 
     return true;

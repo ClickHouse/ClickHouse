@@ -7,7 +7,7 @@ namespace DB
 
 void ASTSQLSecurity::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    if (!type.has_value())
+    if (!type)
         return;
 
     if (definer || is_definer_current_user)

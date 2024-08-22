@@ -5,6 +5,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <IO/Operators.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>

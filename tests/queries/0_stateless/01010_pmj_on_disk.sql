@@ -16,7 +16,7 @@ ANY LEFT JOIN (
     FROM numbers(4000)
 ) js2
 USING n
-ORDER BY n; -- { serverError 191 }
+ORDER BY n; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
 SET join_algorithm = 'partial_merge';
 

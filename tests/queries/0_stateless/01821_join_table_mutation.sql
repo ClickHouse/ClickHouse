@@ -20,7 +20,7 @@ SELECT name FROM join_table_mutation WHERE id = 10;
 
 ALTER TABLE join_table_mutation DELETE WHERE id % 2 = 0;
 
-ALTER TABLE join_table_mutation UPDATE name = 'some' WHERE 1; -- {serverError 48}
+ALTER TABLE join_table_mutation UPDATE name = 'some' WHERE 1; -- {serverError NOT_IMPLEMENTED}
 
 SELECT count() FROM join_table_mutation;
 

@@ -12,7 +12,6 @@ namespace DB
 std::optional<std::string> getClientConfigPath(const std::string & home_path)
 {
     std::string config_path;
-    bool found = false;
 
     std::vector<std::string> names;
     names.emplace_back("./clickhouse-client");
@@ -28,17 +27,9 @@ std::optional<std::string> getClientConfigPath(const std::string & home_path)
 
             std::error_code ec;
             if (fs::exists(config_path, ec))
-            {
-                found = true;
-                break;
-            }
+                return config_path;
         }
-        if (found)
-            break;
     }
-
-    if (found)
-        return config_path;
 
     return std::nullopt;
 }

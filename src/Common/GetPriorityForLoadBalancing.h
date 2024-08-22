@@ -1,6 +1,10 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
+#include <Common/Priority.h>
+#include <Core/LoadBalancing.h>
+
+#include <functional>
+#include <vector>
 
 namespace DB
 {
@@ -29,6 +33,8 @@ public:
     }
 
     Func getPriorityFunc(LoadBalancing load_balance, size_t offset, size_t pool_size) const;
+
+    bool hasOptimalNode() const;
 
     std::vector<size_t> hostname_prefix_distance; /// Prefix distances from name of this host to the names of hosts of pools.
     std::vector<size_t> hostname_levenshtein_distance; /// Levenshtein Distances from name of this host to the names of hosts of pools.

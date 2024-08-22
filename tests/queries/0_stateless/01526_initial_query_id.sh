@@ -15,7 +15,7 @@ ${CLICKHOUSE_CURL} \
     --get \
     --data-urlencode "query=select 1 format Null"
 
-${CLICKHOUSE_CLIENT} -n -q "
+${CLICKHOUSE_CLIENT} -q "
 system flush logs;
 select interface, initial_query_id = query_id
     from system.query_log

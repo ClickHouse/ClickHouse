@@ -42,8 +42,6 @@ public:
     Status merge() override;
 
 private:
-    MergedData merged_data;
-
     const size_t sign_column_number;
     const bool only_positive_sign;
 

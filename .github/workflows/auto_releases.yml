@@ -1,0 +1,99 @@
+name: AutoReleases
+
+env:
+  PYTHONUNBUFFERED: 1
+
+concurrency:
+  group: autoreleases
+
+on:
+  #  schedule:
+  #    - cron: '0 9 * * *'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Dry run'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  AutoReleaseInfo:
+    runs-on: [self-hosted, release-maker]
+    outputs:
+      data: ${{ steps.info.outputs.AUTO_RELEASE_PARAMS }}
+      dry_run: ${{ steps.info.outputs.DRY_RUN }}
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
+          ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
+          RCSK
+          EOF
+          echo "DRY_RUN=true" >> "$GITHUB_ENV"
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          fetch-depth: 0  # full history needed
+      - name: Debug Info
+        uses: ./.github/actions/debug
+      - name: Prepare Info
+        id: info
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 auto_release.py --prepare
+          echo "::group::Auto Release Info"
+          python3 -m json.tool /tmp/autorelease_info.json
+          echo "::endgroup::"
+          {
+              echo 'AUTO_RELEASE_PARAMS<<EOF'
+              cat  /tmp/autorelease_params.json
+              echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            echo "DRY_RUN=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "DRY_RUN=${{ github.event.inputs.dry-run }}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Post Release Branch statuses
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 auto_release.py --post-status
+      - name: Clean up
+        uses: ./.github/actions/clean
+
+  Releases:
+    needs: AutoReleaseInfo
+    strategy:
+      matrix:
+        release_params: ${{ fromJson(needs.AutoReleaseInfo.outputs.data).releases }}
+      max-parallel: 1
+    name: Release ${{ matrix.release_params.release_branch }}
+    uses: ./.github/workflows/create_release.yml
+    with:
+      ref: ${{ matrix.release_params.commit_sha }}
+      type: patch
+      dry-run: ${{ fromJson(needs.AutoReleaseInfo.outputs.dry_run) }}
+    secrets:
+      ROBOT_CLICKHOUSE_COMMIT_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
+
+  CleanUp:
+    needs: [Releases]
+    runs-on: [self-hosted, release-maker]
+    steps:
+      - uses: ./.github/actions/clean
+        with:
+          images: true
+
+#  PostSlackMessage:
+#    needs: [Releases]
+#    runs-on: [self-hosted, release-maker]
+#    if: ${{ !cancelled() }}
+#    steps:
+#      - name: Check out repository code
+#        uses: ClickHouse/checkout@v1
+#      - name: Post
+#        run: |
+#          cd "$GITHUB_WORKSPACE/tests/ci"
+#          python3 auto_release.py --post-auto-release-complete --wf-status ${{ job.status }}

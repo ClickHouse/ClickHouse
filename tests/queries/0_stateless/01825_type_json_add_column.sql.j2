@@ -9,7 +9,7 @@ SET allow_experimental_object_type = 1;
 CREATE TABLE t_json_add_column (id UInt64) ENGINE = {{ storage }} ORDER BY tuple();
 
 INSERT INTO t_json_add_column VALUES (1);
-ALTER TABLE t_json_add_column ADD COLUMN s JSON;
+ALTER TABLE t_json_add_column ADD COLUMN s Object('json');
 
 INSERT INTO t_json_add_column VALUES(2, '{"k1": 100}');
 

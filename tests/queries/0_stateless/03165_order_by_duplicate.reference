@@ -1,0 +1,39 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    id UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: id, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.test, final: 1
+  WHERE
+    FUNCTION id: 4, function_name: in, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          COLUMN id: 2, column_name: id, result_type: UInt64, source_id: 3
+          QUERY id: 6, is_subquery: 1, is_distinct: 1
+            PROJECTION COLUMNS
+              id UInt64
+            PROJECTION
+              LIST id: 7, nodes: 1
+                COLUMN id: 8, column_name: id, result_type: UInt64, source_id: 9
+            JOIN TREE
+              TABLE id: 9, alias: __table1, table_name: default.test, final: 1
+            ORDER BY
+              LIST id: 10, nodes: 1
+                SORT id: 11, sort_direction: ASCENDING, with_fill: 0
+                  EXPRESSION
+                    COLUMN id: 8, column_name: id, result_type: UInt64, source_id: 9
+            LIMIT
+              CONSTANT id: 12, constant_value: UInt64_4, constant_value_type: UInt64
+  ORDER BY
+    LIST id: 13, nodes: 1
+      SORT id: 14, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION
+          COLUMN id: 2, column_name: id, result_type: UInt64, source_id: 3
+  LIMIT BY LIMIT
+    CONSTANT id: 15, constant_value: UInt64_1, constant_value_type: UInt64
+  LIMIT BY
+    LIST id: 16, nodes: 1
+      COLUMN id: 2, column_name: id, result_type: UInt64, source_id: 3
+  SETTINGS enable_analyzer=1

@@ -3,6 +3,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
@@ -310,8 +311,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     auto table_id = storage.getStorageID();
 
     task_context = Context::createCopy(storage.getContext());
-    task_context->makeQueryContext();
+    task_context->makeQueryContextForMerge(*storage.getSettings());
     task_context->setCurrentQueryId(getQueryId());
+    task_context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MERGE);
 
     /// Add merge to list
     merge_mutate_entry = storage.getContext()->getMergeList().insert(

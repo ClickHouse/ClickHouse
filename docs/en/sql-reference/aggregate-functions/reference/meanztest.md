@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/meanztest
-sidebar_position: 303
+sidebar_position: 166
 sidebar_label: meanZTest
 ---
 

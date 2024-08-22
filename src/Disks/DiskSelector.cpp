@@ -7,7 +7,6 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 
-#include <set>
 
 namespace DB
 {
@@ -27,7 +26,8 @@ void DiskSelector::assertInitialized() const
 }
 
 
-void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, DiskValidator disk_validator)
+void DiskSelector::initialize(
+    const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, DiskValidator disk_validator)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -36,6 +36,8 @@ void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, 
 
     constexpr auto default_disk_name = "default";
     bool has_default_disk = false;
+    constexpr auto local_disk_name = "local";
+    bool has_local_disk = false;
     for (const auto & disk_name : keys)
     {
         if (!std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
@@ -44,21 +46,31 @@ void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, 
         if (disk_name == default_disk_name)
             has_default_disk = true;
 
+        if (disk_name == local_disk_name)
+            has_local_disk = true;
+
         const auto disk_config_prefix = config_prefix + "." + disk_name;
 
         if (disk_validator && !disk_validator(config, disk_config_prefix, disk_name))
             continue;
-
-        disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context, disks));
+        auto created_disk
+            = factory.create(disk_name, config, disk_config_prefix, context, disks, /*attach*/ false, /*custom_disk*/ false, skip_types);
+        if (created_disk.get())
+        {
+            disks.emplace(disk_name, std::move(created_disk));
+        }
     }
     if (!has_default_disk)
     {
         disks.emplace(
-            default_disk_name,
-            std::make_shared<DiskLocal>(
-                default_disk_name, context->getPath(), 0, context, config, config_prefix));
+            default_disk_name, std::make_shared<DiskLocal>(default_disk_name, context->getPath(), 0, context, config, config_prefix));
     }
 
+    if (!has_local_disk && (context->getApplicationType() == Context::ApplicationType::DISKS))
+    {
+        throw_away_local_on_update = true;
+        disks.emplace(local_disk_name, std::make_shared<DiskLocal>(local_disk_name, "/", 0, context, config, config_prefix));
+    }
     is_initialized = true;
 }
 
@@ -76,6 +88,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
     std::shared_ptr<DiskSelector> result = std::make_shared<DiskSelector>(*this);
 
     constexpr auto default_disk_name = "default";
+    constexpr auto local_disk_name = "local";
     DisksMap old_disks_minus_new_disks(result->getDisksMap());
 
     for (const auto & disk_name : keys)
@@ -86,7 +99,12 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         auto disk_config_prefix = config_prefix + "." + disk_name;
         if (!result->getDisksMap().contains(disk_name))
         {
-            result->addToDiskMap(disk_name, factory.create(disk_name, config, disk_config_prefix, context, result->getDisksMap()));
+            auto created_disk = factory.create(
+                disk_name, config, disk_config_prefix, context, result->getDisksMap(), /*attach*/ false, /*custom_disk*/ false, skip_types);
+            if (created_disk)
+            {
+                result->addToDiskMap(disk_name, created_disk);
+            }
         }
         else
         {
@@ -99,6 +117,10 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
     }
 
     old_disks_minus_new_disks.erase(default_disk_name);
+    if (throw_away_local_on_update)
+    {
+        old_disks_minus_new_disks.erase(local_disk_name);
+    }
 
     if (!old_disks_minus_new_disks.empty())
     {

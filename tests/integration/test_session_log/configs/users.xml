@@ -7,17 +7,5 @@
     <users>
         <default>
         </default>
-        <mysql_user>
-            <password>pass</password>
-        </mysql_user>
-        <postgres_user>
-            <password>pass</password>
-        </postgres_user>
-        <grpc_user>
-            <password>pass</password>
-        </grpc_user>
-        <parallel_user>
-            <password>pass</password>
-        </parallel_user>
     </users>
 </clickhouse>

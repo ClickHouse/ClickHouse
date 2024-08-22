@@ -173,11 +173,6 @@ namespace DB
         return true;
     }
 
-    void CaresPTRResolver::cancel_requests(ares_channel channel)
-    {
-        ares_cancel(channel);
-    }
-
     std::span<pollfd> CaresPTRResolver::get_readable_sockets(int * sockets, pollfd * pollfd, ares_channel channel)
     {
         int sockets_bitmask = ares_getsock(channel, sockets, ARES_GETSOCK_MAXNUM);

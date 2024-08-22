@@ -173,7 +173,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
 
     auto date_type_cast = [&](String & src)
     {
-        Tokens tokens(src.c_str(), src.c_str() + src.size());
+        Tokens tokens(src.data(), src.data() + src.size(), 0, true);
         IParser::Pos pos(tokens, max_depth, max_backtracks);
         String res;
         while (isValidKQLPos(pos))
@@ -200,7 +200,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     auto get_group_expression_alias = [&]
     {
         std::vector<String> group_expression_tokens;
-        Tokens tokens(group_expression.c_str(), group_expression.c_str() + group_expression.size());
+        Tokens tokens(group_expression.data(), group_expression.data() + group_expression.size(), 0, true);
         IParser::Pos pos(tokens, max_depth, max_backtracks);
         while (isValidKQLPos(pos))
         {
@@ -413,7 +413,7 @@ bool ParserKQLMakeSeries ::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     makeSeries(kql_make_series, node, pos.max_depth, pos.max_backtracks);
 
-    Tokens token_main_query(kql_make_series.main_query.c_str(), kql_make_series.main_query.c_str() + kql_make_series.main_query.size());
+    Tokens token_main_query(kql_make_series.main_query.data(), kql_make_series.main_query.data() + kql_make_series.main_query.size(), 0, true);
     IParser::Pos pos_main_query(token_main_query, pos.max_depth, pos.max_backtracks);
 
     if (!ParserNotEmptyExpressionList(true).parse(pos_main_query, select_expression_list, expected))

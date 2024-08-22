@@ -22,7 +22,7 @@ ASTs splitTuple(const ASTPtr & node)
     if (const auto * literal = node->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::Tuple)
     {
         ASTs result;
-        const auto & tuple = literal->value.get<const Tuple &>();
+        const auto & tuple = literal->value.safeGet<const Tuple &>();
         for (const auto & child : tuple)
             result.emplace_back(std::make_shared<ASTLiteral>(child));
         return result;

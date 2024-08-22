@@ -120,8 +120,7 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
             // the end index of next bucket
             size_t end_index = 1 + static_cast<int>(floor(single_bucket_size * (i + 2)));
             // current bucket is the last bucket
-            if (end_index > this->x.size())
-                end_index = this->x.size();
+            end_index = std::min(end_index, this->x.size());
 
             // Compute the average point in the next bucket
             Float64 avg_x = 0;
@@ -182,7 +181,7 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require first parameter to be a UInt64", getName());
 
-        total_buckets = params[0].get<UInt64>();
+        total_buckets = params[0].safeGet<UInt64>();
 
         this->x_type = WhichDataType(arguments[0]).idx;
         this->y_type = WhichDataType(arguments[1]).idx;

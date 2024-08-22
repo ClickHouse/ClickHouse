@@ -14,12 +14,12 @@ namespace ErrorCodes
 
 Block JoiningTransform::transformHeader(Block header, const JoinPtr & join)
 {
-    LOG_DEBUG(getLogger("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
+    LOG_TEST(getLogger("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
     join->checkTypesOfKeys(header);
     join->initialize(header);
     ExtraBlockPtr tmp;
     join->joinBlock(header, tmp);
-    LOG_DEBUG(getLogger("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
+    LOG_TEST(getLogger("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
     return header;
 }
 
@@ -365,10 +365,9 @@ IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
             return Status::Finished;
         }
 
-        if (!data.chunk.hasChunkInfo())
+        task = data.chunk.getChunkInfos().get<DelayedBlocksTask>();
+        if (!task)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform must have chunk info");
-
-        task = std::dynamic_pointer_cast<const DelayedBlocksTask>(data.chunk.getChunkInfo());
     }
     else
     {
@@ -479,7 +478,7 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
             if (output.isFinished())
                 continue;
             Chunk chunk;
-            chunk.setChunkInfo(std::make_shared<DelayedBlocksTask>());
+            chunk.getChunkInfos().add(std::make_shared<DelayedBlocksTask>());
             output.push(std::move(chunk));
             output.finish();
         }
@@ -496,7 +495,7 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
         {
             Chunk chunk;
             auto task = std::make_shared<DelayedBlocksTask>(delayed_blocks, left_delayed_stream_finished_counter);
-            chunk.setChunkInfo(task);
+            chunk.getChunkInfos().add(std::move(task));
             output.push(std::move(chunk));
         }
         delayed_blocks = nullptr;

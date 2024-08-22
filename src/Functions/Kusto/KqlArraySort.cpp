@@ -73,13 +73,11 @@ public:
         size_t array_count = arguments.size();
         const auto & last_arg = arguments[array_count - 1];
 
-        size_t input_rows_count_local = input_rows_count;
-
         bool null_last = true;
         if (!isArray(last_arg.type))
         {
             --array_count;
-            null_last = check_condition(last_arg, context, input_rows_count_local);
+            null_last = check_condition(last_arg, context, input_rows_count);
         }
 
         ColumnsWithTypeAndName new_args;
@@ -119,11 +117,11 @@ public:
         }
 
         auto zipped
-            = FunctionFactory::instance().get("arrayZip", context)->build(new_args)->execute(new_args, result_type, input_rows_count_local);
+            = FunctionFactory::instance().get("arrayZip", context)->build(new_args)->execute(new_args, result_type, input_rows_count);
 
         ColumnsWithTypeAndName sort_arg({{zipped, std::make_shared<DataTypeArray>(result_type), "zipped"}});
         auto sorted_tuple
-            = FunctionFactory::instance().get(sort_function, context)->build(sort_arg)->execute(sort_arg, result_type, input_rows_count_local);
+            = FunctionFactory::instance().get(sort_function, context)->build(sort_arg)->execute(sort_arg, result_type, input_rows_count);
 
         auto null_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt8>());
 
@@ -139,10 +137,10 @@ public:
                     = std::make_shared<DataTypeArray>(makeNullable(nested_types[i]));
 
                 ColumnsWithTypeAndName null_array_arg({
-                    {null_type->createColumnConstWithDefaultValue(input_rows_count_local), null_type, "NULL"},
+                    {null_type->createColumnConstWithDefaultValue(input_rows_count), null_type, "NULL"},
                 });
 
-                tuple_columns[i] = fun_array->build(null_array_arg)->execute(null_array_arg, arg_type, input_rows_count_local);
+                tuple_columns[i] = fun_array->build(null_array_arg)->execute(null_array_arg, arg_type, input_rows_count);
                 tuple_columns[i] = tuple_columns[i]->convertToFullColumnIfConst();
             }
             else
@@ -153,7 +151,7 @@ public:
                 auto tuple_coulmn = FunctionFactory::instance()
                                         .get("tupleElement", context)
                                         ->build(untuple_args)
-                                        ->execute(untuple_args, result_type, input_rows_count_local);
+                                        ->execute(untuple_args, result_type, input_rows_count);
 
                 auto out_tmp = ColumnArray::create(nested_types[i]->createColumn());
 
@@ -183,7 +181,7 @@ public:
             auto inside_null_type = nested_types[0];
             ColumnsWithTypeAndName indexof_args({
                 arg_of_index,
-                {inside_null_type->createColumnConstWithDefaultValue(input_rows_count_local), inside_null_type, "NULL"},
+                {inside_null_type->createColumnConstWithDefaultValue(input_rows_count), inside_null_type, "NULL"},
             });
 
             auto null_index_datetype = std::make_shared<DataTypeUInt64>();
@@ -192,7 +190,7 @@ public:
             slice_index.column = FunctionFactory::instance()
                                      .get("indexOf", context)
                                      ->build(indexof_args)
-                                     ->execute(indexof_args, result_type, input_rows_count_local);
+                                     ->execute(indexof_args, result_type, input_rows_count);
 
             auto null_index_in_array = slice_index.column->get64(0);
             if (null_index_in_array > 0)
@@ -220,15 +218,15 @@ public:
                         ColumnsWithTypeAndName slice_args_right(
                             {{ColumnWithTypeAndName(tuple_columns[i], arg_type, "array")}, slice_index});
                         ColumnWithTypeAndName arr_left{
-                            fun_slice->build(slice_args_left)->execute(slice_args_left, arg_type, input_rows_count_local), arg_type, ""};
+                            fun_slice->build(slice_args_left)->execute(slice_args_left, arg_type, input_rows_count), arg_type, ""};
                         ColumnWithTypeAndName arr_right{
-                            fun_slice->build(slice_args_right)->execute(slice_args_right, arg_type, input_rows_count_local), arg_type, ""};
+                            fun_slice->build(slice_args_right)->execute(slice_args_right, arg_type, input_rows_count), arg_type, ""};
 
                         ColumnsWithTypeAndName arr_cancat({arr_right, arr_left});
                         auto out_tmp = FunctionFactory::instance()
                                            .get("arrayConcat", context)
                                            ->build(arr_cancat)
-                                           ->execute(arr_cancat, arg_type, input_rows_count_local);
+                                           ->execute(arr_cancat, arg_type, input_rows_count);
                         adjusted_columns[i] = std::move(out_tmp);
                     }
                 }

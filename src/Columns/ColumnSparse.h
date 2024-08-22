@@ -81,10 +81,18 @@ public:
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char *) const override;
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#else
+    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+#endif
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src, size_t n) override;
+#else
+    void doInsertFrom(const IColumn & src, size_t n) override;
+#endif
     void insertDefault() override;
     void insertManyDefaults(size_t length) override;
 
@@ -98,7 +106,11 @@ public:
     template <typename Type>
     ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
+#else
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
+#endif
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
@@ -127,7 +139,7 @@ public:
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max) const override;
 
@@ -147,6 +159,9 @@ public:
     bool valuesHaveFixedSize() const override { return values->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return values->sizeOfValueIfFixed() + values->sizeOfValueIfFixed(); }
     bool isCollationSupported() const override { return values->isCollationSupported(); }
+
+    bool hasDynamicStructure() const override { return values->hasDynamicStructure(); }
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 
     size_t getNumberOfTrailingDefaults() const
     {
@@ -178,14 +193,16 @@ public:
     {
     public:
         Iterator(const PaddedPODArray<UInt64> & offsets_, size_t size_, size_t current_offset_, size_t current_row_)
-            : offsets(offsets_), size(size_), current_offset(current_offset_), current_row(current_row_)
+            : offsets(offsets_), offsets_size(offsets.size()), size(size_), current_offset(current_offset_), current_row(current_row_)
         {
         }
 
-        bool ALWAYS_INLINE isDefault() const { return current_offset == offsets.size() || current_row != offsets[current_offset]; }
+        bool ALWAYS_INLINE isDefault() const { return current_offset == offsets_size || current_row != offsets[current_offset]; }
         size_t ALWAYS_INLINE getValueIndex() const { return isDefault() ? 0 : current_offset + 1; }
         size_t ALWAYS_INLINE getCurrentRow() const { return current_row; }
         size_t ALWAYS_INLINE getCurrentOffset() const { return current_offset; }
+        size_t ALWAYS_INLINE increaseCurrentRow() { return ++current_row; }
+        size_t ALWAYS_INLINE increaseCurrentOffset() { return ++current_offset; }
 
         bool operator==(const Iterator & other) const
         {
@@ -206,6 +223,7 @@ public:
 
     private:
         const PaddedPODArray<UInt64> & offsets;
+        const size_t offsets_size;
         const size_t size;
         size_t current_offset;
         size_t current_row;

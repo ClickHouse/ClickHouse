@@ -9,5 +9,6 @@ namespace DB
 ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & requested_column);
 
 ColumnPtr tryGetColumnFromBlock(const Block & block, const NameAndTypePair & requested_column);
+ColumnPtr tryGetSubcolumnFromBlock(const Block & block, const DataTypePtr & requested_column_type, const NameAndTypePair & requested_subcolumn);
 
 }

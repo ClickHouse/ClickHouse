@@ -36,9 +36,9 @@ If you anticipate frequent deletes, consider using a [custom partitioning key](/
 
 ## Limitations of lightweight `DELETE`
 
-### Lightweight `DELETE`s do not work with projections
+### Lightweight `DELETE`s with projections
 
-Currently, `DELETE` does not work for tables with projections. This is because rows in a projection may be affected by a `DELETE` operation and may require the projection to be rebuilt, negatively affecting `DELETE` performance.
+By default, `DELETE` does not work for tables with projections. This is because rows in a projection may be affected by a `DELETE` operation. But there is a [MergeTree setting](https://clickhouse.com/docs/en/operations/settings/merge-tree-settings) `lightweight_mutation_projection_mode` can change the behavior.
 
 ## Performance considerations when using lightweight `DELETE`
 

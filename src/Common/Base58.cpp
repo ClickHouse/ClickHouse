@@ -46,14 +46,14 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst)
     size_t c_idx = idx >> 1;
     for (size_t i = 0; i < c_idx; ++i)
     {
-        char s = base58_encoding_alphabet[static_cast<UInt8>(dst[i])];
-        dst[i] = base58_encoding_alphabet[static_cast<UInt8>(dst[idx - (i + 1)])];
+        char s = base58_encoding_alphabet[dst[i]];
+        dst[i] = base58_encoding_alphabet[dst[idx - (i + 1)]];
         dst[idx - (i + 1)] = s;
     }
 
     if ((idx & 1))
     {
-        dst[c_idx] = base58_encoding_alphabet[static_cast<UInt8>(dst[c_idx])];
+        dst[c_idx] = base58_encoding_alphabet[dst[c_idx]];
     }
 
     return zeros + idx;
@@ -105,7 +105,7 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
         }
         for (size_t j = 0; j < idx; ++j)
         {
-            carry += static_cast<UInt8>(dst[j]) * 58;
+            carry += dst[j] * 58;
             dst[j] = static_cast<UInt8>(carry & 0xFF);
             carry >>= 8;
         }

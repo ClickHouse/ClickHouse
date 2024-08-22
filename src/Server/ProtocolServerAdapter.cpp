@@ -1,7 +1,7 @@
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/TCPServer.h>
 
-#if USE_GRPC && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_GRPC
 #include <Server/GRPCServer.h>
 #endif
 
@@ -20,6 +20,7 @@ public:
     UInt16 portNumber() const override { return tcp_server->portNumber(); }
     size_t currentConnections() const override { return tcp_server->currentConnections(); }
     size_t currentThreads() const override { return tcp_server->currentThreads(); }
+    size_t refusedConnections() const override { return tcp_server->refusedConnections(); }
 
 private:
     std::unique_ptr<TCPServer> tcp_server;
@@ -37,7 +38,7 @@ ProtocolServerAdapter::ProtocolServerAdapter(
 {
 }
 
-#if USE_GRPC && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_GRPC
 class ProtocolServerAdapter::GRPCServerAdapterImpl : public Impl
 {
 public:
@@ -54,6 +55,7 @@ public:
     UInt16 portNumber() const override { return grpc_server->portNumber(); }
     size_t currentConnections() const override { return grpc_server->currentConnections(); }
     size_t currentThreads() const override { return grpc_server->currentThreads(); }
+    size_t refusedConnections() const override { return 0; }
 
 private:
     std::unique_ptr<GRPCServer> grpc_server;

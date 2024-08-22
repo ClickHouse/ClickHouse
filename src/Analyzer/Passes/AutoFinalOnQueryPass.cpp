@@ -8,6 +8,8 @@
 #include <Analyzer/TableExpressionModifiers.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 
+#include <Core/Settings.h>
+
 namespace DB
 {
 
@@ -42,7 +44,7 @@ private:
             return;
 
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-        bool is_final_supported = storage && storage->supportsFinal();
+        bool is_final_supported = storage && !storage->isRemote() && storage->supportsFinal();
         if (!is_final_supported)
             return;
 

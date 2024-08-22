@@ -56,6 +56,30 @@ std::string toString(const ColumnDefaultKind kind)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid ColumnDefaultKind");
 }
 
+ColumnDefault & ColumnDefault::operator=(const ColumnDefault & other)
+{
+    if (this == &other)
+        return *this;
+
+    kind = other.kind;
+    expression = other.expression ? other.expression->clone() : nullptr;
+    ephemeral_default = other.ephemeral_default;
+
+    return *this;
+}
+
+ColumnDefault & ColumnDefault::operator=(ColumnDefault && other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    kind = std::exchange(other.kind, ColumnDefaultKind{});
+    expression = other.expression ? other.expression->clone() : nullptr;
+    other.expression.reset();
+    ephemeral_default = std::exchange(other.ephemeral_default, false);
+
+    return *this;
+}
 
 bool operator==(const ColumnDefault & lhs, const ColumnDefault & rhs)
 {

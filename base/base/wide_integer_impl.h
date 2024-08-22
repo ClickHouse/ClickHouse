@@ -1246,7 +1246,8 @@ constexpr integer<Bits, Signed>::operator bool() const noexcept
 }
 
 template <size_t Bits, typename Signed>
-template <class T, class>
+template <class T>
+requires(std::is_arithmetic_v<T>)
 constexpr integer<Bits, Signed>::operator T() const noexcept
 {
     static_assert(std::numeric_limits<T>::is_integer);

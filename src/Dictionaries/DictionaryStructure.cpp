@@ -7,7 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 #include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
@@ -58,15 +58,6 @@ std::optional<AttributeUnderlyingType> tryGetAttributeUnderlyingType(TypeIndex i
 
 }
 
-
-DictionarySpecialAttribute::DictionarySpecialAttribute(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
-    : name{config.getString(config_prefix + ".name", "")}, expression{config.getString(config_prefix + ".expression", "")}
-{
-    if (name.empty() && !expression.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element {}.name is empty", config_prefix);
-}
-
-
 DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
     std::string structure_prefix = config_prefix + ".structure";
@@ -79,7 +70,8 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
 
     if (has_id)
     {
-        id.emplace(config, structure_prefix + ".id");
+        static constexpr auto id_default_type = "UInt64";
+        id.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".id", id_default_type));
     }
     else if (has_key)
     {

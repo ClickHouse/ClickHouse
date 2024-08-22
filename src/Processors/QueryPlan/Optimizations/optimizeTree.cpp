@@ -12,6 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
     extern const int PROJECTION_NOT_USED;
 }
@@ -106,7 +107,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
-    size_t num_applied_projection = 0;
+    std::unordered_set<String> applied_projection_names;
     bool has_reading_from_mt = false;
 
     Stack stack;
@@ -114,10 +115,10 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
     while (!stack.empty())
     {
-        optimizePrimaryKeyCondition(stack);
+        optimizePrimaryKeyConditionAndLimit(stack);
 
         /// NOTE: optimizePrewhere can modify the stack.
-        /// Prewhere optimization relies on PK optimization (getConditionEstimatorByPredicate)
+        /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
         if (optimization_settings.optimize_prewhere)
             optimizePrewhere(stack, nodes);
 
@@ -159,9 +160,11 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
                 /// Projection optimization relies on PK optimization
                 if (optimization_settings.optimize_projection)
-                    num_applied_projection
-                        += optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings.optimize_use_implicit_projections);
-
+                {
+                    auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings.optimize_use_implicit_projections);
+                    if (applied_projection)
+                        applied_projection_names.insert(*applied_projection);
+                }
 
                 if (optimization_settings.aggregation_in_order)
                     optimizeAggregationInOrder(*frame.node, nodes);
@@ -180,11 +183,11 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
         if (optimization_settings.optimize_projection)
         {
             /// Projection optimization relies on PK optimization
-            if (optimizeUseNormalProjections(stack, nodes))
+            if (auto applied_projection = optimizeUseNormalProjections(stack, nodes))
             {
-                ++num_applied_projection;
+                applied_projection_names.insert(*applied_projection);
 
-                if (max_optimizations_to_apply && max_optimizations_to_apply < num_applied_projection)
+                if (max_optimizations_to_apply && max_optimizations_to_apply < applied_projection_names.size())
                     throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
                                     "Too many projection optimizations applied to query plan. Current limit {}",
                                     max_optimizations_to_apply);
@@ -201,10 +204,16 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
         stack.pop_back();
     }
 
-    if (optimization_settings.force_use_projection && has_reading_from_mt && num_applied_projection == 0)
+    if (optimization_settings.force_use_projection && has_reading_from_mt && applied_projection_names.empty())
         throw Exception(
             ErrorCodes::PROJECTION_NOT_USED,
             "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
+
+    if (!optimization_settings.force_projection_name.empty() && has_reading_from_mt && !applied_projection_names.contains(optimization_settings.force_projection_name))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Projection {} is specified in setting force_optimize_projection_name but not used",
+             optimization_settings.force_projection_name);
 }
 
 void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
