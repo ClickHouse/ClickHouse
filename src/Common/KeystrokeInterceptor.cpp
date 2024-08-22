@@ -4,14 +4,13 @@
 
 #include <termios.h>
 #include <unistd.h>
+#include <base/defines.h>
 
 namespace DB
 {
 
-KeystrokeInterceptor::KeystrokeInterceptor(int fd_) : fd(fd_), orig_termios(std::make_unique<struct termios>())
+KeystrokeInterceptor::KeystrokeInterceptor(int fd_) : fd(fd_)
 {
-    /// TODO: process errors.
-    tcgetattr(fd, orig_termios.get());
 }
 
 KeystrokeInterceptor::~KeystrokeInterceptor()
@@ -28,11 +27,13 @@ void KeystrokeInterceptor::startIntercept()
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    if (auto running = intercept_thread && intercept_thread->joinable())
+    if (intercept_thread && intercept_thread->joinable())
         return;
 
+    chassert(!orig_termios);
+
     /// Save terminal state.
-    /// TODO: process errors.
+    orig_termios = std::make_unique<struct termios>();
     tcgetattr(fd, orig_termios.get());
 
     /// Enable raw terminal mode.
@@ -51,14 +52,18 @@ void KeystrokeInterceptor::stopIntercept()
 
     std::lock_guard<std::mutex> lock(mutex);
 
-    if (auto running = intercept_thread && intercept_thread->joinable())
+    if (intercept_thread && intercept_thread->joinable())
     {
         intercept_thread->join();
         intercept_thread.reset();
     }
 
     /// Reset original terminal mode.
-    tcsetattr(fd, TCSAFLUSH, orig_termios.get());
+    if (orig_termios)
+    {
+        tcsetattr(fd, TCSAFLUSH, orig_termios.get());
+        orig_termios.reset();
+    }
 }
 
 void KeystrokeInterceptor::run(KeystrokeInterceptor::CallbackMap map)

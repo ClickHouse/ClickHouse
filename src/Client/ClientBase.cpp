@@ -463,7 +463,7 @@ void ClientBase::onLogData(Block & block)
     initLogsOutputStream();
     if (need_render_progress && tty_buf)
         progress_indication.clearProgressOutput(*tty_buf);
-    if (need_render_progress_table)
+    if (need_render_progress_table && tty_buf)
         progress_table.clearTableOutput(*tty_buf);
     logs_out_stream->writeLogs(block);
     logs_out_stream->flush();
@@ -864,7 +864,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
 
 void ClientBase::initKeystrokeInterceptor()
 {
-    if (is_interactive && need_render_progress_table)
+    if (is_interactive && need_render_progress_table && getClientConfiguration().getBool("progress-interactive", true))
     {
         keystroke_interceptor = std::make_unique<KeystrokeInterceptor>(in_fd);
         keystroke_interceptor->registerCallback(' ', [this]() { show_progress_table = !show_progress_table; });

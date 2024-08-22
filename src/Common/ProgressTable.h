@@ -21,13 +21,8 @@ class Block;
 class ProgressTable
 {
 public:
-    explicit ProgressTable(
-            std::ostream & output_stream_ = std::cout,
-            int in_fd_ = STDIN_FILENO,
-            int err_fd_ = STDERR_FILENO)
-        : output_stream(output_stream_)
-        , in_fd(in_fd_)
-        , err_fd(err_fd_)
+    explicit ProgressTable(std::ostream & output_stream_, int in_fd_ = STDIN_FILENO, int err_fd_ = STDERR_FILENO)
+        : output_stream(output_stream_), in_fd(in_fd_), err_fd(err_fd_)
     {}
 
     /// Write progress table with metrics.
