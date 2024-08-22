@@ -332,6 +332,9 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
         if (!s)
             continue;
 
+        if (s->descr()->schema_node()->is_repeated())
+            continue;
+
         auto path = c->path_in_schema()->ToDotVector();
         if (path.size() != 1)
             continue; // compound types not supported
