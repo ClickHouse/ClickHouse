@@ -34,7 +34,7 @@ curl https://clickhouse.com/ | sh
 
 Every month we get together with the community (users, contributors, customers, those interested in learning more about ClickHouse) to discuss what is coming in the latest release. If you are interested in sharing what you've built on ClickHouse, let us know.
 
-* [v24.8 Community Call](https://clickhouse.com/company/events/v24-8-community-release-call) - August 20
+* [v24.9 Community Call](https://clickhouse.com/company/events/v24-9-community-release-call) - September 26
 
 ## Upcoming Events
 
@@ -58,7 +58,7 @@ Other upcoming meetups
 
 ## Recent Recordings
 * **Recent Meetup Videos**: [Meetup Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3iNDUzpY1S3L_iV4nARda_U) Whenever possible recordings of the ClickHouse Community Meetups are edited and presented as individual talks. Current featuring "Modern SQL in 2023", "Fast, Concurrent, and Consistent Asynchronous INSERTS in ClickHouse", and "Full-Text Indices: Design and Experiments"
-* **Recording available**: [**v24.4 Release Call**](https://www.youtube.com/watch?v=dtUqgcfOGmE) All the features of 24.4, one convenient video! Watch it now!
+* **Recording available**: [**v24.8 LTS Release Call**](https://www.youtube.com/watch?v=AeLmp2jc51k) All the features of 24.8 LTS, one convenient video! Watch it now!
   
  ## Interested in joining ClickHouse and making it your full-time job? 
   
