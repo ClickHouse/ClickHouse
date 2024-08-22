@@ -9,9 +9,7 @@
 #include <absl/container/flat_hash_set.h>
 
 #include "config.h"
-#if USE_ROCKSDB
 #include <Coordination/RocksDBContainer.h>
-#endif
 
 namespace DB
 {

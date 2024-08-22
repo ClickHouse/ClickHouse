@@ -1,6 +1,7 @@
 #include <chrono>
 #include <gtest/gtest.h>
 
+#include "Coordination/RocksDBContainer.h"
 #include "config.h"
 
 #if USE_NURAFT
@@ -1538,11 +1539,11 @@ void addNode(Storage & storage, const std::string & path, const std::string & da
     Node node{};
     node.setData(data);
     node.setEphemeralOwner(ephemeral_owner);
-    storage.container.insertOrReplace(path, node);
-    auto child_it = storage.container.find(path);
+    storage.container.insertOrReplace(DB::getEncodedKey<Storage::use_rocksdb>(path), node);
+    auto child_it = storage.container.find(DB::getEncodedKey<Storage::use_rocksdb>(path));
     auto child_path = DB::getBaseNodeName(child_it->key);
     storage.container.updateValue(
-        DB::parentNodePath(StringRef{path}),
+        DB::getEncodedKey<Storage::use_rocksdb>(DB::parentNodePath(StringRef{path}).toString()),
         [&](auto & parent)
         {
             parent.addChild(child_path);
@@ -1730,7 +1731,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMode)
         for (size_t i = 0; i < 50; ++i)
         {
             if (i % 2 == 0)
-                storage.container.erase("/hello_" + std::to_string(i));
+                storage.container.erase(DB::getEncodedKey<Storage::use_rocksdb>("/hello_" + std::to_string(i)));
         }
         EXPECT_EQ(storage.container.size(), 29);
         if constexpr (Storage::use_rocksdb)
@@ -1750,7 +1751,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotMode)
         if (i % 2 != 0)
             EXPECT_EQ(storage.container.getValue("/hello_" + std::to_string(i)).getData(), "wlrd_" + std::to_string(i));
         else
-            EXPECT_FALSE(storage.container.contains("/hello_" + std::to_string(i)));
+            EXPECT_FALSE(storage.container.contains(DB::getEncodedKey<Storage::use_rocksdb>("/hello_" + std::to_string(i))));
     }
 
     auto [restored_storage, meta, _] = manager.restoreFromLatestSnapshot();
@@ -2077,15 +2078,15 @@ TYPED_TEST(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecomm
     state_machine->pre_commit(2, create_entry->get_buf());
 
     const auto & uncommitted_state = state_machine->getStorageUnsafe().uncommitted_state;
-    ASSERT_TRUE(uncommitted_state.nodes.contains(node_path));
+    ASSERT_TRUE(uncommitted_state.nodes.contains(DB::getEncodedKey<Storage::use_rocksdb>(node_path)));
 
     // commit log entries
     state_machine->commit(1, auth_entry->get_buf());
     state_machine->commit(2, create_entry->get_buf());
 
-    auto node = uncommitted_state.getNode(node_path);
+    auto node = uncommitted_state.getNode(DB::getEncodedKey<Storage::use_rocksdb>(node_path));
     ASSERT_NE(node, nullptr);
-    auto acls = uncommitted_state.getACLs(node_path);
+    auto acls = uncommitted_state.getACLs(DB::getEncodedKey<Storage::use_rocksdb>(node_path));
     ASSERT_EQ(acls.size(), 1);
     EXPECT_EQ(acls[0].scheme, "digest");
     EXPECT_EQ(acls[0].id, digest);
@@ -2133,7 +2134,7 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         auto create_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), create_req);
         state_machine->pre_commit(2, create_entry->get_buf());
         state_machine->commit(2, create_entry->get_buf());
-        ASSERT_TRUE(storage.container.contains(node_without_acl));
+        ASSERT_TRUE(storage.container.contains(DB::getEncodedKey<Storage::use_rocksdb>(node_without_acl)));
     }
 
     std::string node_with_acl = "/node_with_acl";
@@ -2145,7 +2146,7 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         auto create_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), create_req);
         state_machine->pre_commit(3, create_entry->get_buf());
         state_machine->commit(3, create_entry->get_buf());
-        ASSERT_TRUE(storage.container.contains(node_with_acl));
+        ASSERT_TRUE(storage.container.contains(DB::getEncodedKey<Storage::use_rocksdb>(node_with_acl)));
     }
 
     auto set_req_with_acl = std::make_shared<ZooKeeperSetRequest>();
@@ -2157,7 +2158,7 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
     set_req_without_acl->data = "modified";
 
     const auto reset_node_value
-        = [&](const auto & path) { storage.container.updateValue(path, [](auto & node) { node.setData("notmodified"); }); };
+        = [&](const auto & path) { storage.container.updateValue(DB::getEncodedKey<Storage::use_rocksdb>(path), [](auto & node) { node.setData("notmodified"); }); };
 
     auto close_req = std::make_shared<ZooKeeperCloseRequest>();
 
@@ -2168,13 +2169,13 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         auto set_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_with_acl);
         state_machine->pre_commit(5, set_entry->get_buf());
         state_machine->commit(5, set_entry->get_buf());
-        ASSERT_TRUE(storage.container.find(node_with_acl)->value.getData() == "modified");
+        ASSERT_TRUE(storage.container.find(DB::getEncodedKey<Storage::use_rocksdb>(node_with_acl))->value.getData() == "modified");
         reset_node_value(node_with_acl);
 
         set_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_without_acl);
         state_machine->pre_commit(6, set_entry->get_buf());
         state_machine->commit(6, set_entry->get_buf());
-        ASSERT_TRUE(storage.container.find(node_without_acl)->value.getData() == "modified");
+        ASSERT_TRUE(storage.container.find(DB::getEncodedKey<Storage::use_rocksdb>(node_without_acl))->value.getData() == "modified");
         reset_node_value(node_without_acl);
 
         auto close_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), close_req);
@@ -2190,8 +2191,8 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         auto set_entry_without_acl = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_without_acl);
         state_machine->pre_commit(9, set_entry_without_acl->get_buf());
 
-        ASSERT_TRUE(uncommitted_state.getNode(node_with_acl)->getData() == "notmodified");
-        ASSERT_TRUE(uncommitted_state.getNode(node_without_acl)->getData() == "modified");
+        ASSERT_TRUE(uncommitted_state.getNode(DB::getEncodedKey<Storage::use_rocksdb>(node_with_acl))->getData() == "notmodified");
+        ASSERT_TRUE(uncommitted_state.getNode(DB::getEncodedKey<Storage::use_rocksdb>(node_without_acl))->getData() == "modified");
 
         state_machine->rollback(9, set_entry_without_acl->get_buf());
         state_machine->rollback(8, set_entry_with_acl->get_buf());
@@ -2207,14 +2208,14 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         set_entry_without_acl = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_without_acl);
         state_machine->pre_commit(9, set_entry_without_acl->get_buf());
 
-        ASSERT_TRUE(uncommitted_state.getNode(node_with_acl)->getData() == "notmodified");
-        ASSERT_TRUE(uncommitted_state.getNode(node_without_acl)->getData() == "modified");
+        ASSERT_TRUE(uncommitted_state.getNode(DB::getEncodedKey<Storage::use_rocksdb>(node_with_acl))->getData() == "notmodified");
+        ASSERT_TRUE(uncommitted_state.getNode(DB::getEncodedKey<Storage::use_rocksdb>(node_without_acl))->getData() == "modified");
 
         state_machine->commit(8, set_entry_with_acl->get_buf());
         state_machine->commit(9, set_entry_without_acl->get_buf());
 
-        ASSERT_TRUE(storage.container.find(node_with_acl)->value.getData() == "notmodified");
-        ASSERT_TRUE(storage.container.find(node_without_acl)->value.getData() == "modified");
+        ASSERT_TRUE(storage.container.find(DB::getEncodedKey<Storage::use_rocksdb>(node_with_acl))->value.getData() == "notmodified");
+        ASSERT_TRUE(storage.container.find(DB::getEncodedKey<Storage::use_rocksdb>(node_without_acl))->value.getData() == "modified");
 
         reset_node_value(node_without_acl);
     }
@@ -2226,12 +2227,12 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         auto set_entry = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_with_acl);
         state_machine->pre_commit(10, set_entry->get_buf());
         state_machine->commit(10, set_entry->get_buf());
-        ASSERT_TRUE(storage.container.find(node_with_acl)->value.getData() == "notmodified");
+        ASSERT_TRUE(storage.container.find(DB::getEncodedKey<Storage::use_rocksdb>(node_with_acl))->value.getData() == "notmodified");
 
         set_entry = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_without_acl);
         state_machine->pre_commit(11, set_entry->get_buf());
         state_machine->commit(11, set_entry->get_buf());
-        ASSERT_TRUE(storage.container.find(node_without_acl)->value.getData() == "modified");
+        ASSERT_TRUE(storage.container.find(DB::getEncodedKey<Storage::use_rocksdb>(node_without_acl))->value.getData() == "modified");
         reset_node_value(node_without_acl);
 
         auto close_entry = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), close_req);
@@ -2247,8 +2248,8 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         auto set_entry_without_acl = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_without_acl);
         state_machine->pre_commit(14, set_entry_without_acl->get_buf());
 
-        ASSERT_TRUE(uncommitted_state.getNode(node_with_acl)->getData() == "notmodified");
-        ASSERT_TRUE(uncommitted_state.getNode(node_without_acl)->getData() == "modified");
+        ASSERT_TRUE(uncommitted_state.getNode(DB::getEncodedKey<Storage::use_rocksdb>(node_with_acl))->getData() == "notmodified");
+        ASSERT_TRUE(uncommitted_state.getNode(DB::getEncodedKey<Storage::use_rocksdb>(node_without_acl))->getData() == "modified");
 
         state_machine->rollback(14, set_entry_without_acl->get_buf());
         state_machine->rollback(13, set_entry_with_acl->get_buf());
@@ -2264,14 +2265,14 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         set_entry_without_acl = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_without_acl);
         state_machine->pre_commit(14, set_entry_without_acl->get_buf());
 
-        ASSERT_TRUE(uncommitted_state.getNode(node_with_acl)->getData() == "notmodified");
-        ASSERT_TRUE(uncommitted_state.getNode(node_without_acl)->getData() == "modified");
+        ASSERT_TRUE(uncommitted_state.getNode(DB::getEncodedKey<Storage::use_rocksdb>(node_with_acl))->getData() == "notmodified");
+        ASSERT_TRUE(uncommitted_state.getNode(DB::getEncodedKey<Storage::use_rocksdb>(node_without_acl))->getData() == "modified");
 
         state_machine->commit(13, set_entry_with_acl->get_buf());
         state_machine->commit(14, set_entry_without_acl->get_buf());
 
-        ASSERT_TRUE(storage.container.find(node_with_acl)->value.getData() == "notmodified");
-        ASSERT_TRUE(storage.container.find(node_without_acl)->value.getData() == "modified");
+        ASSERT_TRUE(storage.container.find(DB::getEncodedKey<Storage::use_rocksdb>(node_with_acl))->value.getData() == "notmodified");
+        ASSERT_TRUE(storage.container.find(DB::getEncodedKey<Storage::use_rocksdb>(node_without_acl))->value.getData() == "modified");
 
         reset_node_value(node_without_acl);
     }
@@ -2328,10 +2329,10 @@ TYPED_TEST(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitte
     state_machine->commit(3, set_acl_entry->get_buf());
 
     const auto & uncommitted_state = state_machine->getStorageUnsafe().uncommitted_state;
-    auto node = uncommitted_state.getNode(node_path);
+    auto node = uncommitted_state.getNode(getEncodedKey<Storage::use_rocksdb>(node_path));
 
     ASSERT_NE(node, nullptr);
-    auto acls = uncommitted_state.getACLs(node_path);
+    auto acls = uncommitted_state.getACLs(getEncodedKey<Storage::use_rocksdb>(node_path));
     ASSERT_EQ(acls.size(), 1);
     EXPECT_EQ(acls[0].scheme, "digest");
     EXPECT_EQ(acls[0].id, digest);
@@ -3252,7 +3253,7 @@ TYPED_TEST(CoordinationTest, TestCheckNotExistsRequest)
     }
 
     create_path("/test_node");
-    auto node_it = storage.container.find("/test_node");
+    auto node_it = storage.container.find(getEncodedKey<Storage::use_rocksdb>(std::string("/test_node")));
     ASSERT_NE(node_it, storage.container.end());
     auto node_version = node_it->value.version;
 

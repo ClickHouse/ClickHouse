@@ -20,6 +20,7 @@
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
+#include "Coordination/RocksDBContainer.h"
 
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperCommon.h>
@@ -456,7 +457,7 @@ KeeperStorage<Container>::KeeperStorage(
     if constexpr (use_rocksdb)
         container.initialize(keeper_context);
     Node root_node;
-    container.insert("/", root_node);
+    container.insert(getEncodedKey<use_rocksdb>(String("/")), root_node);
     if constexpr (!use_rocksdb)
         addDigest(root_node, "/");
 
@@ -471,22 +472,22 @@ void KeeperStorage<Container>::initializeSystemNodes()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes initialized twice");
 
     // insert root system path if it isn't already inserted
-    if (container.find(keeper_system_path) == container.end())
+    if (container.find(getEncodedKey<use_rocksdb>(keeper_system_path)) == container.end())
     {
         Node system_node;
-        container.insert(keeper_system_path, system_node);
+        container.insert(getEncodedKey<use_rocksdb>(keeper_system_path), system_node);
         // store digest for the empty node because we won't update
         // its stats
         if constexpr (!use_rocksdb)
             addDigest(system_node, keeper_system_path);
 
         // update root and the digest based on it
-        auto current_root_it = container.find("/");
+        auto current_root_it = container.find(getEncodedKey<use_rocksdb>(String("/")));
         chassert(current_root_it != container.end());
         if constexpr (!use_rocksdb)
             removeDigest(current_root_it->value, "/");
         auto updated_root_it = container.updateValue(
-            "/",
+            getEncodedKey<use_rocksdb>(String("/")),
             [](KeeperStorage::Node & node)
             {
                 node.increaseNumChildren();
@@ -505,7 +506,9 @@ void KeeperStorage<Container>::initializeSystemNodes()
         Node child_system_node;
         child_system_node.setData(data);
         if constexpr (use_rocksdb)
-            container.insert(std::string{path}, child_system_node);
+        {
+            container.insert(getEncodedKey(path), child_system_node);
+        }
         else
         {
             auto [map_key, _] = container.insert(std::string{path}, child_system_node);
@@ -762,7 +765,7 @@ void KeeperStorage<Container>::UncommittedState::rollback(int64_t rollback_zxid)
                     else if constexpr (std::same_as<DeltaType, RemoveNodeDelta>)
                     {
                         if (operation.ephemeral_owner != 0)
-                            storage.ephemerals[operation.ephemeral_owner].emplace(delta_it->path);
+                            storage.ephemerals[operation.ephemeral_owner].emplace(getDecodedKey<use_rocksdb>(delta_it->path));
                     }
                 },
                 delta_it->operation);
@@ -1021,17 +1024,22 @@ bool KeeperStorage<Container>::createNode(
     const Coordination::Stat & stat,
     Coordination::ACLs node_acls)
 {
-    auto parent_path = parentNodePath(path);
-    auto node_it = container.find(parent_path);
+    /// We don't check this for rocks keeper to improve performance.
+    StringRef parent_path;
+    if (!use_rocksdb)
+    {
+        parent_path = parentNodePath(path);
+        auto node_it = container.find(parent_path);
 
-    if (node_it == container.end())
-        return false;
+        if (node_it == container.end())
+            return false;
 
-    if (node_it->value.isEphemeral())
-        return false;
+        if (node_it->value.isEphemeral())
+            return false;
 
-    if (container.contains(path))
-        return false;
+        if (container.contains(path))
+            return false;
+    }
 
     Node created_node;
 
@@ -1198,6 +1206,12 @@ void handleSystemNodeModification(const KeeperContext & keeper_context, std::str
 template<typename Container>
 bool KeeperStorage<Container>::checkACL(StringRef path, int32_t permission, int64_t session_id, bool is_local)
 {
+    String encoded_path;
+    if constexpr (use_rocksdb)
+    {
+        encoded_path = getEncodedKey(path.toView());
+        path = encoded_path;
+    }
     const auto node_acls = getNodeACLs(*this, path, is_local);
     if (node_acls.empty())
         return true;
@@ -1230,7 +1244,8 @@ void KeeperStorage<Container>::unregisterEphemeralPath(int64_t session_id, const
     if (ephemerals_it == ephemerals.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Session {} is missing ephemeral path", session_id);
 
-    ephemerals_it->second.erase(path);
+    /// We store original path in ephemerals map.
+    ephemerals_it->second.erase(getDecodedKey<use_rocksdb>(path));
     if (ephemerals_it->second.empty())
         ephemerals.erase(ephemerals_it);
 }
@@ -1260,7 +1275,15 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
 
         std::vector<typename Storage::Delta> new_deltas;
 
-        auto parent_path = parentNodePath(request.path);
+        String encoded_parent_path;
+
+        StringRef parent_path = parentNodePath(request.path);
+        if constexpr (Storage::use_rocksdb)
+        {
+            encoded_parent_path = getEncodedKey(parent_path.toView());
+            parent_path = StringRef(encoded_parent_path);
+        }
+
         auto parent_node = storage.uncommitted_state.getNode(parent_path);
         if (parent_node == nullptr)
             return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
@@ -1269,6 +1292,8 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             return {typename Storage::Delta{zxid, Coordination::Error::ZNOCHILDRENFOREPHEMERALS}};
 
         std::string path_created = request.path;
+        if constexpr (Storage::use_rocksdb)
+            path_created = getEncodedKey(request.path);
         if (request.is_sequential)
         {
             if (request.not_exists)
@@ -1283,7 +1308,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             path_created += seq_num_str.str();
         }
 
-        if (Coordination::matchPath(path_created, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
+        if (Coordination::matchPath(request.path, keeper_system_path) != Coordination::PathMatchResult::NOT_MATCH)
         {
             auto error_msg = fmt::format("Trying to create a node inside the internal Keeper path ({}) which is not allowed. Path: {}", keeper_system_path, path_created);
 
@@ -1307,7 +1332,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             return {typename Storage::Delta{zxid, Coordination::Error::ZINVALIDACL}};
 
         if (request.is_ephemeral)
-            storage.ephemerals[session_id].emplace(path_created);
+            storage.ephemerals[session_id].emplace(getDecodedKey<Storage::use_rocksdb>(path_created));
 
         int32_t parent_cversion = request.parent_cversion;
 
@@ -1372,7 +1397,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             [zxid](const auto & delta)
             { return delta.zxid == zxid && std::holds_alternative<typename Storage::CreateNodeDelta>(delta.operation); });
 
-        response.path_created = create_delta_it->path;
+        response.path_created = getDecodedKey<Storage::use_rocksdb>(create_delta_it->path);
         response.error = Coordination::Error::ZOK;
         return response_ptr;
     }
@@ -1398,8 +1423,14 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
             || request.path == Coordination::keeper_config_path
             || request.path == Coordination::keeper_availability_zone_path)
             return {};
-
-        if (!storage.uncommitted_state.getNode(request.path))
+        String encoded_path;
+        StringRef path = request.path;
+        if constexpr (Storage::use_rocksdb)
+        {
+            encoded_path = getEncodedKey(path.toView());
+            path = StringRef(encoded_path);
+        }
+        if (!storage.uncommitted_state.getNode(path))
             return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
 
         return {};
@@ -1429,8 +1460,15 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
             return response_ptr;
         }
 
+        String encoded_path;
+        StringRef path = request.path;
+        if constexpr (Storage::use_rocksdb)
+        {
+            encoded_path = getEncodedKey(path.toView());
+            path = StringRef(encoded_path);
+        }
         auto & container = storage.container;
-        auto node_it = container.find(request.path);
+        auto node_it = container.find(path);
         if (node_it == container.end())
         {
             if constexpr (local)
@@ -1488,9 +1526,25 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
             return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
         }
 
+        String encoded_parent_path;
+
+        StringRef parent_path = parentNodePath(request.path);
+        if constexpr (Storage::use_rocksdb)
+        {
+            encoded_parent_path = getEncodedKey(parent_path.toView());
+            parent_path = StringRef(encoded_parent_path);
+        }
+
+        String encoded_path;
+        StringRef request_path = request.path;
+        if constexpr (Storage::use_rocksdb)
+        {
+            encoded_path = getEncodedKey(request_path.toView());
+            request_path = encoded_path;
+        }
+
         const auto update_parent_pzxid = [&]()
         {
-            auto parent_path = parentNodePath(request.path);
             if (!storage.uncommitted_state.getNode(parent_path))
                 return;
 
@@ -1507,7 +1561,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
             );
         };
 
-        auto node = storage.uncommitted_state.getNode(request.path);
+        auto node = storage.uncommitted_state.getNode(request_path);
 
         if (!node)
         {
@@ -1524,7 +1578,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
             update_parent_pzxid();
 
         new_deltas.emplace_back(
-            std::string{parentNodePath(request.path)},
+            parent_path.toString(),
             zxid,
             typename Storage::UpdateNodeDelta{[](typename Storage::Node & parent)
                                            {
@@ -1532,7 +1586,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                                                parent.decreaseNumChildren();
                                            }});
 
-        new_deltas.emplace_back(request.path, zxid, typename Storage::RemoveNodeDelta{request.version, node->ephemeralOwner()});
+        new_deltas.emplace_back(request_path.toString(), zxid, typename Storage::RemoveNodeDelta{request.version, node->ephemeralOwner()});
 
         if (node->isEphemeral())
             storage.unregisterEphemeralPath(node->ephemeralOwner(), request.path);
@@ -1569,7 +1623,15 @@ struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestPr
         ProfileEvents::increment(ProfileEvents::KeeperExistsRequest);
         Coordination::ZooKeeperExistsRequest & request = dynamic_cast<Coordination::ZooKeeperExistsRequest &>(*this->zk_request);
 
-        if (!storage.uncommitted_state.getNode(request.path))
+        String encoded_path;
+        StringRef request_path = request.path;
+        if constexpr (Storage::use_rocksdb)
+        {
+            encoded_path = getEncodedKey(request_path.toView());
+            request_path = encoded_path;
+        }
+
+        if (!storage.uncommitted_state.getNode(request_path))
             return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
 
         return {};
@@ -1591,8 +1653,16 @@ struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestPr
             }
         }
 
+        String encoded_path;
+        StringRef request_path = request.path;
+        if constexpr (Storage::use_rocksdb)
+        {
+            encoded_path = getEncodedKey(request_path.toView());
+            request_path = encoded_path;
+        }
+
         auto & container = storage.container;
-        auto node_it = container.find(request.path);
+        auto node_it = container.find(request_path);
         if (node_it == container.end())
         {
             if constexpr (local)
@@ -1647,16 +1717,24 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
             return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
         }
 
-        if (!storage.uncommitted_state.getNode(request.path))
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
+        String encoded_path;
+        StringRef request_path = request.path;
+        if constexpr (Storage::use_rocksdb)
+        {
+            encoded_path = getEncodedKey(request_path.toView());
+            request_path = encoded_path;
+        }
 
-        auto node = storage.uncommitted_state.getNode(request.path);
+        auto node = storage.uncommitted_state.getNode(request_path);
+
+        if (node == nullptr)
+            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
 
         if (request.version != -1 && request.version != node->version)
             return {typename Storage::Delta{zxid, Coordination::Error::ZBADVERSION}};
 
         new_deltas.emplace_back(
-            request.path,
+            request_path.toString(),
             zxid,
             typename Storage::UpdateNodeDelta{
                 [zxid, data = request.data, time](typename Storage::Node & value)
@@ -1668,8 +1746,22 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
                 },
                 request.version});
 
+        node->setResponseStat(response_stat);
+        response_stat.version++;
+        response_stat.mzxid = zxid;
+        response_stat.mtime = time;
+
+        String encoded_parent_path;
+
+        StringRef parent_path = parentNodePath(request.path);
+        if constexpr (Storage::use_rocksdb)
+        {
+            encoded_parent_path = getEncodedKey(parent_path.toView());
+            parent_path = StringRef(encoded_parent_path);
+        }
+
         new_deltas.emplace_back(
-                parentNodePath(request.path).toString(),
+                parent_path.toString(),
                 zxid,
                 typename Storage::UpdateNodeDelta
                 {
@@ -1686,11 +1778,8 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
 
     Coordination::ZooKeeperResponsePtr process(Storage & storage, int64_t zxid) const override
     {
-        auto & container = storage.container;
-
         Coordination::ZooKeeperResponsePtr response_ptr = this->zk_request->makeResponse();
         Coordination::ZooKeeperSetResponse & response = dynamic_cast<Coordination::ZooKeeperSetResponse &>(*response_ptr);
-        Coordination::ZooKeeperSetRequest & request = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*this->zk_request);
 
         if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)
         {
@@ -1698,11 +1787,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
             return response_ptr;
         }
 
-        auto node_it = container.find(request.path);
-        if (node_it == container.end())
-            onStorageInconsistency();
-
-        node_it->value.setResponseStat(response.stat);
+        response.stat = response_stat;
         response.error = Coordination::Error::ZOK;
 
         return response_ptr;
@@ -1713,6 +1798,9 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
     {
         return processWatchesImpl(this->zk_request->getPath(), watches, list_watches, Coordination::Event::CHANGED);
     }
+
+private:
+    mutable Coordination::Stat response_stat;
 };
 
 template<typename Storage>
@@ -1731,7 +1819,15 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         ProfileEvents::increment(ProfileEvents::KeeperListRequest);
         Coordination::ZooKeeperListRequest & request = dynamic_cast<Coordination::ZooKeeperListRequest &>(*this->zk_request);
 
-        if (!storage.uncommitted_state.getNode(request.path))
+        String encoded_path;
+        StringRef request_path = request.path;
+        if constexpr (Storage::use_rocksdb)
+        {
+            encoded_path = getEncodedKey(request_path.toView());
+            request_path = encoded_path;
+        }
+
+        if (!storage.uncommitted_state.getNode(request_path))
             return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
 
         return {};
@@ -1755,7 +1851,15 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
 
         auto & container = storage.container;
 
-        auto node_it = container.find(request.path);
+        String encoded_path;
+        StringRef request_path = request.path;
+        if constexpr (Storage::use_rocksdb)
+        {
+            encoded_path = getEncodedKey(request_path.toView());
+            request_path = encoded_path;
+        }
+
+        auto node_it = container.find(request_path);
         if (node_it == container.end())
         {
             if constexpr (local)
@@ -1765,14 +1869,12 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         }
         else
         {
-            auto path_prefix = request.path;
-            if (path_prefix.empty())
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Path cannot be empty");
-
             const auto & get_children = [&]()
             {
                 if constexpr (Storage::use_rocksdb)
-                    return container.getChildren(request.path);
+                {
+                    return container.getChildren(getEncodedKey<true, true>(request.path));
+                }
                 else
                     return node_it->value.getChildren();
             };
@@ -1861,7 +1963,7 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
 
         Coordination::ZooKeeperCheckRequest & request = dynamic_cast<Coordination::ZooKeeperCheckRequest &>(*this->zk_request);
 
-        auto node = storage.uncommitted_state.getNode(request.path);
+        auto node = storage.uncommitted_state.getNode(getEncodedKey<Storage::use_rocksdb>(request.path));
         if (check_not_exists)
         {
             if (node && (request.version == -1 || request.version == node->version))
@@ -1903,24 +2005,31 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
                 onStorageInconsistency();
         };
 
-        auto & container = storage.container;
-        auto node_it = container.find(request.path);
-
-        if (check_not_exists)
+        if (Storage::use_rocksdb)
         {
-            if (node_it != container.end() && (request.version == -1 || request.version == node_it->value.version))
-                on_error(Coordination::Error::ZNODEEXISTS);
-            else
-                response.error = Coordination::Error::ZOK;
+            response.error = Coordination::Error::ZOK;
         }
         else
         {
-            if (node_it == container.end())
-                on_error(Coordination::Error::ZNONODE);
-            else if (request.version != -1 && request.version != node_it->value.version)
-                on_error(Coordination::Error::ZBADVERSION);
+            auto & container = storage.container;
+            auto node_it = container.find(request.path);
+
+            if (check_not_exists)
+            {
+                if (node_it != container.end() && (request.version == -1 || request.version == node_it->value.version))
+                    on_error(Coordination::Error::ZNODEEXISTS);
+                else
+                    response.error = Coordination::Error::ZOK;
+            }
             else
-                response.error = Coordination::Error::ZOK;
+            {
+                if (node_it == container.end())
+                    on_error(Coordination::Error::ZNONODE);
+                else if (request.version != -1 && request.version != node_it->value.version)
+                    on_error(Coordination::Error::ZBADVERSION);
+                else
+                    response.error = Coordination::Error::ZOK;
+            }
         }
 
         return response_ptr;
@@ -1965,11 +2074,18 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
             return {typename Storage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
         }
 
+        StringRef path = request.path;
+        String encoded_path;
+        if constexpr (Storage::use_rocksdb)
+        {
+            encoded_path = getEncodedKey(path.toView());
+            path = encoded_path;
+        }
         auto & uncommitted_state = storage.uncommitted_state;
-        if (!uncommitted_state.getNode(request.path))
-            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
 
-        auto node = uncommitted_state.getNode(request.path);
+        auto node = uncommitted_state.getNode(path);
+        if (!node)
+            return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};
 
         if (request.version != -1 && request.version != node->aversion)
             return {typename Storage::Delta{zxid, Coordination::Error::ZBADVERSION}};
@@ -1982,12 +2098,12 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
         std::vector<typename Storage::Delta> new_deltas
         {
             {
-                request.path,
+                path.toString(),
                 zxid,
                 typename Storage::SetACLDelta{std::move(node_acls), request.version}
             },
             {
-                request.path,
+                path.toString(),
                 zxid,
                 typename Storage::UpdateNodeDelta
                 {
@@ -2013,7 +2129,14 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
             return response_ptr;
         }
 
-        auto node_it = storage.container.find(request.path);
+        StringRef path = request.path;
+        String encoded_path;
+        if constexpr (Storage::use_rocksdb)
+        {
+            encoded_path = getEncodedKey(path.toView());
+            path = encoded_path;
+        }
+        auto node_it = storage.container.find(path);
         if (node_it == storage.container.end())
             onStorageInconsistency();
         node_it->value.setResponseStat(response.stat);
@@ -2550,7 +2673,7 @@ void KeeperStorage<Container>::preprocessRequest(
             {
                 new_deltas.emplace_back
                 (
-                    parentNodePath(ephemeral_path).toString(),
+                    getEncodedKey<use_rocksdb>(parentNodePath(ephemeral_path).toString()),
                     new_last_zxid,
                     UpdateNodeDelta
                     {
