@@ -31,9 +31,17 @@ curl -fsSL 'https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key' | s
 echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb stable main" | sudo tee \
     /etc/apt/sources.list.d/clickhouse.list
 sudo apt-get update
+```
 
+#### Установка ClickHouse server и client
+
+```bash
 sudo apt-get install -y clickhouse-server clickhouse-client
+```
 
+#### Запуск ClickHouse server
+
+```bash
 sudo service clickhouse-server start
 clickhouse-client # or "clickhouse-client --password" if you've set up a password.
 ```
