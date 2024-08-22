@@ -1274,7 +1274,6 @@ def test_hive_partitioning_with_one_parameter(started_cluster):
     assert r == f"Elizabeth\n"
 
 
-
 def test_hive_partitioning_without_setting(started_cluster):
     hdfs_api = started_cluster.hdfs_api
     hdfs_api.write_data(
