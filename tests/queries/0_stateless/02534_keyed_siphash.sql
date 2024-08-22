@@ -346,7 +346,7 @@ INSERT INTO sipHashKeyed_keys FORMAT VALUES ({'a':'b', 'c':'d'}), ({'e':'f', 'g'
 SELECT hex(sipHash128ReferenceKeyed((0::UInt64, materialize(0::UInt64)), a)) FROM sipHashKeyed_keys ORDER BY a;
 DROP TABLE sipHashKeyed_keys;
 
-SELECT 'Test emtpy arrays and maps';
+SELECT 'Test empty arrays and maps';
 SELECT sipHash64Keyed((1::UInt64, 2::UInt64), []);
 SELECT hex(sipHash128Keyed((1::UInt64, 2::UInt64), []));
 SELECT sipHash64Keyed((1::UInt64, 2::UInt64), mapFromArrays([], []));
