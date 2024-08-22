@@ -532,6 +532,7 @@ def test_current_database():
     assert "Not enough privileges" in instance.query_and_get_error(
         "SELECT * FROM table", user="A"
     )
+    instance.query("DROP TABLE default.table SYNC")
 
 
 def test_grant_with_replace_option():
