@@ -125,7 +125,8 @@ SELECT hex(sipHash128('foo', '\x01', 3));
 ```
 
 ## ripeMD160
-Генерирует [RIPEMD-160](https://en.wikipedia.org/wiki/RIPEMD) хеш строки и возвращает полученный набор байт в виде [FixedString](../data-types/fixedstring.md).
+
+Генерирует [RIPEMD-160](https://en.wikipedia.org/wiki/RIPEMD) хеш строки.
 
 **Синтаксис**
 
@@ -139,7 +140,7 @@ ripeMD160('input')
 
 **Возвращаемое значение**
 
-- [UInt256](../data-types/int-uint.md) хеш-значение
+- [UInt256](../data-types/int-uint.md), где 160-битный хеш RIPEMD-160 хранится в первых 20 байтах. Оставшиеся 12 байт заполняются нулями.
 
 **Пример**
 Используйте функцию [hex](../functions/encoding-functions.md#hex) для представления результата в виде строки с шестнадцатеричной кодировкой
