@@ -470,6 +470,16 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             res->seconds = seconds->as<ASTLiteral>()->value.safeGet<UInt64>();
             break;
         }
+        case Type::DROP_QUERY_CACHE:
+        {
+            ParserLiteral tag_parser;
+            ASTPtr ast;
+            if (ParserKeyword{Keyword::TAG}.ignore(pos, expected) && tag_parser.parse(pos, ast, expected))
+                res->query_cache_tag = std::make_optional<String>(ast->as<ASTLiteral>()->value.safeGet<String>());
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+            break;
+        }
         case Type::DROP_FILESYSTEM_CACHE:
         {
             ParserLiteral path_parser;
