@@ -1,5 +1,3 @@
-import time
-
 import pytest
 from helpers.cluster import ClickHouseCluster
 
@@ -9,7 +7,7 @@ def fill_nodes(nodes, shard):
         node.query(
             """
                 CREATE DATABASE test;
-    
+
                 CREATE TABLE test.test_table(date Date, id UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{shard}/replicated/test_table', '{replica}') ORDER BY id PARTITION BY toYYYYMM(date);
             """.format(
@@ -50,7 +48,8 @@ def test_truncate_database_replicated(start_cluster):
     node1.query(
         "INSERT INTO test.test_table SELECT number, toString(number) FROM numbers(100)"
     )
-    assert node2.query("SELECT id FROM test.test_table LIMIT 1") == "0\n"
+    assert node2.query("SELECT min(id) FROM test.test_table") == "0\n"
+    assert node2.query("SELECT id FROM test.test_table ORDER BY id LIMIT 1") == "0\n"
     assert node3.query("SHOW DATABASES LIKE 'test'") == "test\n"
     node3.query("TRUNCATE DATABASE test ON CLUSTER test_cluster SYNC")
     assert node2.query("SHOW TABLES FROM test") == ""
