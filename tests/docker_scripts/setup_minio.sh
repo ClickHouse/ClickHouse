@@ -143,7 +143,7 @@ main() {
   fi
   start_minio
   setup_minio "$1"
-  upload_data "${query_dir}" "${2:-/usr/share/clickhouse-test}"
+  upload_data "${query_dir}" "${2:-/repo/tests/}"
   setup_aws_credentials
 }
 

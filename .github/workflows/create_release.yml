@@ -47,6 +47,8 @@ concurrency:
         required: false
         default: false
         type: boolean
+    secrets:
+      ROBOT_CLICKHOUSE_COMMIT_TOKEN:
 
 jobs:
   CreateRelease:
