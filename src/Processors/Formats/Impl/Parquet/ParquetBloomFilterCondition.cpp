@@ -277,7 +277,6 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
             const auto & ordered_set = set_index->getOrderedSet();
             const auto & indexes_mapping = set_index->getIndexesMapping();
 
-            bool bloom_filter_missing = false;
             std::vector<std::size_t> key_columns;
 
             for (auto i = 0u; i < ordered_set.size(); i++)
@@ -288,15 +287,14 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                 bool column_has_bloom_filter = parquet_rg_metadata->ColumnChunk(parquet_column_index)->bloom_filter_offset().has_value();
                 if (!column_has_bloom_filter)
                 {
-                    bloom_filter_missing = true;
-                    break;
+                    continue;
                 }
 
                 columns.emplace_back(hash(set_column.get()));
                 key_columns.push_back(indexes_mapping[i].key_index);
             }
 
-            if (bloom_filter_missing)
+            if (columns.empty())
             {
                 condition_elements.emplace_back(Function::FUNCTION_UNKNOWN, columns);
                 continue;
