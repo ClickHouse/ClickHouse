@@ -1113,19 +1113,23 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 
     alias_node = alias_node->clone();
 
-    // if (auto root_expression_with_alias = scope.expressions_in_resolve_process_stack.getExpressionWithAlias(identifier_bind_part))
-    // {
-    //     const auto top_expression = scope.expressions_in_resolve_process_stack.getTop();
+    /* Do not use alias to resolve identifier when it's part of aliased expression. This is required to support queries like:
+     * 1. SELECT dummy + 1 AS dummy
+     * 2. SELECT avg(a) OVER () AS a, id FROM test
+     */
+    if (auto root_expression_with_alias = scope.expressions_in_resolve_process_stack.getExpressionWithAlias(identifier_bind_part))
+    {
+        const auto top_expression = scope.expressions_in_resolve_process_stack.getTop();
 
-    //     if (!isNodePartOfTree(top_expression.get(), root_expression_with_alias.get()))
-    //         throw Exception(ErrorCodes::CYCLIC_ALIASES,
-    //             "Cyclic aliases for identifier '{}'. In scope {}",
-    //             identifier_lookup.identifier.getFullName(),
-    //             scope.scope_node->formatASTForErrorMessage());
+        if (!isNodePartOfTree(top_expression.get(), root_expression_with_alias.get()))
+            throw Exception(ErrorCodes::CYCLIC_ALIASES,
+                "Cyclic aliases for identifier '{}'. In scope {}",
+                identifier_lookup.identifier.getFullName(),
+                scope.scope_node->formatASTForErrorMessage());
 
-    //     scope.non_cached_identifier_lookups_during_expression_resolve.insert(identifier_lookup);
-    //     return {};
-    // }
+        scope.non_cached_identifier_lookups_during_expression_resolve.insert(identifier_lookup);
+        return {};
+    }
 
     auto node_type = alias_node->getNodeType();
 
