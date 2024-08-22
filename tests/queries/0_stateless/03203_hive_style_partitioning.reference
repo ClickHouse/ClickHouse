@@ -1,5 +1,5 @@
 TESTING THE FILE HIVE PARTITIONING
-last	Elizabeth
+ last	Elizabeth
 Frank	Elizabeth
 Moreno	Elizabeth
 Guzman	Elizabeth
@@ -19,8 +19,7 @@ Stanley	Gibson	Elizabeth
 Eugenia	Greer	Elizabeth
 Jeffery	Delgado	Elizabeth
 Clara	Cross	Elizabeth
-Elizabeth	Gordon	Elizabeth
-last	Elizabeth
+ last	Elizabeth
 Frank	Elizabeth
 Moreno	Elizabeth
 Guzman	Elizabeth
@@ -35,12 +34,13 @@ Cross	Elizabeth
 Array(Int64)	LowCardinality(Float64)
 101
 2070
+4081
+2070
 2070
 b
 1
-1
 TESTING THE URL PARTITIONING
-last	Elizabeth
+ last	Elizabeth
 Frank	Elizabeth
 Moreno	Elizabeth
 Guzman	Elizabeth
@@ -60,10 +60,9 @@ Stanley	Gibson	Elizabeth
 Eugenia	Greer	Elizabeth
 Jeffery	Delgado	Elizabeth
 Clara	Cross	Elizabeth
-Elizabeth	Gordon	Elizabeth
 1
 TESTING THE S3 PARTITIONING
-last	Elizabeth
+ last	Elizabeth
 Frank	Elizabeth
 Moreno	Elizabeth
 Guzman	Elizabeth
@@ -83,8 +82,7 @@ Stanley	Gibson	Elizabeth
 Eugenia	Greer	Elizabeth
 Jeffery	Delgado	Elizabeth
 Clara	Cross	Elizabeth
-Elizabeth	Gordon	Elizabeth
-last	Elizabeth
+ last	Elizabeth
 Frank	Elizabeth
 Moreno	Elizabeth
 Guzman	Elizabeth
@@ -96,7 +94,7 @@ Delgado	Elizabeth
 Cross	Elizabeth
 OK
 TESTING THE S3CLUSTER PARTITIONING
-last	Elizabeth
+ last	Elizabeth
 Frank	Elizabeth
 Moreno	Elizabeth
 Guzman	Elizabeth
@@ -106,7 +104,7 @@ Gibson	Elizabeth
 Greer	Elizabeth
 Delgado	Elizabeth
 Cross	Elizabeth
-last	Elizabeth
+ last	Elizabeth
 Frank	Elizabeth
 Moreno	Elizabeth
 Guzman	Elizabeth

@@ -1513,14 +1513,14 @@ def test_hive_partitioning_with_one_parameter(cluster):
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values}",
+        f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values}",
         settings={"azure_truncate_on_insert": 1},
     )
 
     query = (
         f"SELECT column2, _file, _path, column1 FROM azureBlobStorage(azure_conf2, "
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
-        f"blob_path='{path}', format='CSV', structure='{table_format}')"
+        f"blob_path='{path}', format='CSVWithNames', structure='{table_format}')"
     )
     assert azure_query(
         node, query, settings={"use_hive_partitioning": 1}
@@ -1533,7 +1533,7 @@ def test_hive_partitioning_with_one_parameter(cluster):
     query = (
         f"SELECT column2 FROM azureBlobStorage(azure_conf2, "
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
-        f"blob_path='{path}', format='CSV', structure='{table_format}');"
+        f"blob_path='{path}', format='CSVWithNames', structure='{table_format}');"
     )
     assert azure_query(
         node, query, settings={"use_hive_partitioning": 1}
@@ -1551,14 +1551,14 @@ def test_hive_partitioning_with_all_parameters(cluster):
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
+        f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
         settings={"azure_truncate_on_insert": 1},
     )
 
     query = (
         f"SELECT column1, column2, _file, _path FROM azureBlobStorage(azure_conf2, "
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
-        f"blob_path='{path}', format='CSV', structure='{table_format}');"
+        f"blob_path='{path}', format='CSVWithNames', structure='{table_format}');"
     )
     pattern = r"DB::Exception: Cannot use hive partitioning for file"
 
@@ -1577,14 +1577,14 @@ def test_hive_partitioning_without_setting(cluster):
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
+        f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
         settings={"azure_truncate_on_insert": 1},
     )
 
     query = (
         f"SELECT column1, column2, _file, _path, column3 FROM azureBlobStorage(azure_conf2, "
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
-        f"blob_path='{path}', format='CSV', structure='{table_format}');"
+        f"blob_path='{path}', format='CSVWithNames', structure='{table_format}');"
     )
     pattern = re.compile(
         r"DB::Exception: Unknown expression identifier '.*' in scope.*", re.DOTALL
