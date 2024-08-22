@@ -25,34 +25,34 @@ Spark ANSI SQL	Spark ANSI SQL和CH
 Spark ANSI SQL	Spark ANSI SQL和CH
 Spark ANSI SQL	Spark ANSI SQL和CH
 Spark ANSI SQL	Spark ANSI SQL和CH
-Test with different offset values
--12	_park SQL	_park SQL和CH
--11	_park SQL	S_ark SQL和CH
--10	_park SQL	Sp_rk SQL和CH
--9	_park SQL	Spa_k SQL和CH
--8	S_ark SQL	Spar_ SQL和CH
--7	Sp_rk SQL	Spark_SQL和CH
--6	Spa_k SQL	Spark _QL和CH
--5	Spar_ SQL	Spark S_L和CH
--4	Spark_SQL	Spark SQ_和CH
--3	Spark _QL	Spark SQL_CH
--2	Spark S_L	Spark SQL和_H
--1	Spark SQ_	Spark SQL和C_
-0	Spark SQL_	Spark SQL和CH_
-1	_park SQL	_park SQL和CH
-2	S_ark SQL	S_ark SQL和CH
-3	Sp_rk SQL	Sp_rk SQL和CH
-4	Spa_k SQL	Spa_k SQL和CH
-5	Spar_ SQL	Spar_ SQL和CH
-6	Spark_SQL	Spark_SQL和CH
-7	Spark _QL	Spark _QL和CH
-8	Spark S_L	Spark S_L和CH
-9	Spark SQ_	Spark SQ_和CH
-10	Spark SQL_	Spark SQL_CH
-11	Spark SQL_	Spark SQL和_H
-12	Spark SQL_	Spark SQL和C_
-13	Spark SQL_	Spark SQL和CH_
-Test with different length values
+Test with special offset values
+-12	__ark SQL	之park SQL和CH
+-11	__ark SQL	S之ark SQL和CH
+-10	__ark SQL	Sp之rk SQL和CH
+-9	__ark SQL	Spa之k SQL和CH
+-8	S__rk SQL	Spar之 SQL和CH
+-7	Sp__k SQL	Spark之SQL和CH
+-6	Spa__ SQL	Spark 之QL和CH
+-5	Spar__SQL	Spark S之L和CH
+-4	Spark__QL	Spark SQ之和CH
+-3	Spark __L	Spark SQL之CH
+-2	Spark S__	Spark SQL和之H
+-1	Spark SQ__	Spark SQL和C之
+0	Spark SQL__	Spark SQL和CH之
+1	__ark SQL	之park SQL和CH
+2	S__rk SQL	S之ark SQL和CH
+3	Sp__k SQL	Sp之rk SQL和CH
+4	Spa__ SQL	Spa之k SQL和CH
+5	Spar__SQL	Spar之 SQL和CH
+6	Spark__QL	Spark之SQL和CH
+7	Spark __L	Spark 之QL和CH
+8	Spark S__	Spark S之L和CH
+9	Spark SQ__	Spark SQ之和CH
+10	Spark SQL__	Spark SQL之CH
+11	Spark SQL__	Spark SQL和之H
+12	Spark SQL__	Spark SQL和C之
+13	Spark SQL__	Spark SQL和CH之
+Test with special length values
 -1	Spark ANSI 	Spark ANSI H
 0	Spark ANSI SQL	Spark ANSI SQL和CH
 1	Spark ANSI QL	Spark ANSI QL和CH
@@ -61,7 +61,7 @@ Test with different length values
 4	Spark ANSI 	Spark ANSI CH
 5	Spark ANSI 	Spark ANSI H
 6	Spark ANSI 	Spark ANSI 
-Test with different input and replace values
+Test with special input and replace values
 _	_
 Spark SQL	Spark SQL和CH
 ANSI 	ANSI 
