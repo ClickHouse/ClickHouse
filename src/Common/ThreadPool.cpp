@@ -11,6 +11,7 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/demangle.h>
+#include <future>
 
 namespace DB
 {
@@ -238,21 +239,36 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         {
             try
             {
-                threads.emplace_front();
-            }
-            catch (...)
-            {
-                /// Most likely this is a std::bad_alloc exception
-                return on_error("cannot allocate thread slot");
-            }
+                std::promise<typename std::list<Thread>::iterator> promise_thread_it;
+                std::shared_future<typename std::list<Thread>::iterator> future_thread_id = promise_thread_it.get_future().share();
+                std::unique_ptr<Thread> thread_ptr;
 
-            try
-            {
+                lock.unlock();
+
+                /// in certain conditions thread creation can be slow, so we need to do that out of the critical section,
+                /// otherwise it may lead to huge delays in thread pool
+
                 Stopwatch watch2;
-                threads.front() = Thread([this, it = threads.begin()] { worker(it); });
+
+                ///  we use future here for 2 reasons:
+                ///  1) just passing a ref to list iterator after adding the thread to the list
+                ///  2) hold the thread work until the thread is added to the list, otherwise
+                ///     is can get the lock faster and then can wait for a cond_variable forever
+                thread_ptr = std::make_unique<Thread>([this, ft = std::move(future_thread_id)] mutable
+                {
+                    auto thread_it = ft.get();
+                    worker(thread_it);
+                });
+
                 ProfileEvents::increment(
                     std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolThreadCreationMicroseconds : ProfileEvents::LocalThreadPoolThreadCreationMicroseconds,
                     watch2.elapsedMicroseconds());
+
+                lock.lock();
+
+                threads.push_front(std::move(*thread_ptr));
+                promise_thread_it.set_value(threads.begin());
+
                 ProfileEvents::increment(
                     std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions);
             }
