@@ -80,6 +80,9 @@ fi
 
 export IS_FLAKY_CHECK=0
 
+# Export NUM_TRIES so python scripts will see its value as env variable
+export NUM_TRIES
+
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
     export IS_FLAKY_CHECK=1
