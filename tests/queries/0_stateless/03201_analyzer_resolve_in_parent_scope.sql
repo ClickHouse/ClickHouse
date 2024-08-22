@@ -1,7 +1,7 @@
-CREATE VIEW fake AS SELECT table, database, name FROM system.tables;
+CREATE VIEW fake AS SELECT table, database, name FROM system.tables WHERE database = currentDatabase();
 
 WITH
-(`database` LIKE 'system' and `name` = 'one') AS `$condition`,
+(`database` NOT LIKE 'system' and `name` = 'fake') AS `$condition`,
 `$main` AS (SELECT DISTINCT table FROM fake WHERE `$condition`)
 SELECT * FROM `$main`;
 
