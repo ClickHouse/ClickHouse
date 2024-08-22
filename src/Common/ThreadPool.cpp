@@ -91,11 +91,12 @@ public:
 };
 
 
-class ScopedUnlocker {
+class ScopedUnlocker
+{
 public:
-    explicit ScopedUnlocker(std::unique_lock<std::mutex>& lock) : lock_(lock) {  lock_.unlock();  }
+    explicit ScopedUnlocker(std::unique_lock<std::mutex>& lock) : lock_(lock) { lock_.unlock(); }
 
-    ~ScopedUnlocker() {  lock_.lock();  }
+    ~ScopedUnlocker() { lock_.lock(); }
 
     ScopedUnlocker(const ScopedUnlocker&) = delete;
     ScopedUnlocker& operator=(const ScopedUnlocker&) = delete;
