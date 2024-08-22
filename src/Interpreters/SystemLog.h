@@ -134,7 +134,7 @@ public:
 protected:
     LoggerPtr log;
 
-   using Base::queue;
+    using Base::queue;
 
     StoragePtr getStorage() const;
 
