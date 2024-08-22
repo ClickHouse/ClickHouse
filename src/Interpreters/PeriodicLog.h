@@ -36,7 +36,7 @@ protected:
 private:
     void threadFunction();
 
-    std::unique_ptr<ThreadFromGlobalPool> flush_thread;
+    std::unique_ptr<ThreadFromGlobalPool> collecting_thread;
     size_t collect_interval_milliseconds;
     std::atomic<bool> is_shutdown_metric_thread{false};
 };
