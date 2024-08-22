@@ -2,6 +2,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Common/logger_useful.h>
+#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
@@ -10,11 +11,104 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+Block MergingAggregatedTransform::appendGroupingIfNeeded(const Block & in_header, Block out_header)
+{
+    if (in_header.has("__grouping_set"))
+        out_header.insert(0, in_header.getByName("__grouping_set"));
+
+    return out_header;
+}
+
 MergingAggregatedTransform::MergingAggregatedTransform(
     Block header_, AggregatingTransformParamsPtr params_, size_t max_threads_)
-    : IAccumulatingTransform(std::move(header_), params_->getHeader())
-    , params(std::move(params_)), max_threads(max_threads_)
+    : IAccumulatingTransform(header_, appendGroupingIfNeeded(header_, params_->getHeader()))
+    , params(std::move(params_)), max_threads(max_threads_), has_grouping_sets(header_.has("__grouping_set"))
 {
+}
+
+void MergingAggregatedTransform::addBlock(Block block)
+{
+    if (!has_grouping_sets)
+    {
+        auto & bucket_to_blocks = grouping_sets[0];
+        bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(block));
+        return;
+    }
+
+    auto grouping_position = block.getPositionByName("__grouping_set");
+    auto grouping_column = block.getByPosition(grouping_position).column;
+    block.erase(grouping_position);
+
+    const auto * grouping_column_typed = typeid_cast<const ColumnUInt64 *>(grouping_column.get());
+    if (!grouping_column_typed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected UInt64 column for __grouping_set, got {}", grouping_column->getName());
+
+    const auto & grouping_data = grouping_column_typed->getData();
+    std::map<UInt64, size_t> enumerated_groups;
+    IColumn::Selector selector;
+
+    size_t num_rows = grouping_data.size();
+    UInt64 last_group = grouping_data[0];
+    for (size_t row = 1; row < num_rows; ++row)
+    {
+        auto group = grouping_data[row];
+        if (last_group == group)
+            continue;
+
+        if (enumerated_groups.empty())
+        {
+            selector.reserve(num_rows);
+            enumerated_groups.emplace(last_group, enumerated_groups.size());
+        }
+
+        selector.resize_fill(row, enumerated_groups[last_group]);
+        enumerated_groups.emplace(last_group, enumerated_groups.size());
+    }
+
+    if (enumerated_groups.empty())
+    {
+        auto & bucket_to_blocks = grouping_sets[last_group];
+        bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(block));
+        return;
+    }
+
+    selector.resize_fill(num_rows, enumerated_groups[last_group]);
+
+    const size_t num_groups = enumerated_groups.size();
+    Blocks splitted_blocks(num_groups);
+
+    for (size_t group_id = 0; group_id < num_groups; ++group_id)
+        splitted_blocks[group_id] = block.cloneEmpty();
+
+    size_t columns_in_block = block.columns();
+    for (size_t col_idx_in_block = 0; col_idx_in_block < columns_in_block; ++col_idx_in_block)
+    {
+        MutableColumns splitted_columns = block.getByPosition(col_idx_in_block).column->scatter(num_groups, selector);
+        for (size_t group_id = 0; group_id < num_groups; ++group_id)
+            splitted_blocks[group_id].getByPosition(col_idx_in_block).column = std::move(splitted_columns[group_id]);
+    }
+
+    for (auto [group, group_id] : enumerated_groups)
+    {
+        auto & bucket_to_blocks = grouping_sets[group];
+        auto & splitted_block = splitted_blocks[group_id];
+        splitted_block.info = block.info;
+        bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(splitted_block));
+    }
+}
+
+void MergingAggregatedTransform::appendGroupingColumn(UInt64 group, BlocksList & block_list)
+{
+    auto grouping_position = getOutputPort().getHeader().getPositionByName("__grouping_set");
+    for (auto & block : block_list)
+    {
+        auto num_rows = block.rows();
+        ColumnWithTypeAndName col;
+        col.type = std::make_shared<DataTypeUInt64>();
+        col.name = "__grouping_set";
+        col.column = ColumnUInt64::create(num_rows, group);
+        block.insert(grouping_position, std::move(col));
+    }
 }
 
 void MergingAggregatedTransform::consume(Chunk chunk)
@@ -46,7 +140,7 @@ void MergingAggregatedTransform::consume(Chunk chunk)
         block.info.is_overflows = agg_info->is_overflows;
         block.info.bucket_num = agg_info->bucket_num;
 
-        bucket_to_blocks[agg_info->bucket_num].emplace_back(std::move(block));
+        addBlock(std::move(block));
     }
     else if (chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
     {
@@ -54,7 +148,7 @@ void MergingAggregatedTransform::consume(Chunk chunk)
         block.info.is_overflows = false;
         block.info.bucket_num = -1;
 
-        bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(block));
+        addBlock(std::move(block));
     }
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo in MergingAggregatedTransform.");
@@ -70,9 +164,19 @@ Chunk MergingAggregatedTransform::generate()
         /// Exception safety. Make iterator valid in case any method below throws.
         next_block = blocks.begin();
 
-        /// TODO: this operation can be made async. Add async for IAccumulatingTransform.
-        params->aggregator.mergeBlocks(std::move(bucket_to_blocks), data_variants, max_threads, is_cancelled);
-        blocks = params->aggregator.convertToBlocks(data_variants, params->final, max_threads);
+        for (auto & [group, group_blocks] : grouping_sets)
+        {
+            /// TODO: this operation can be made async. Add async for IAccumulatingTransform.
+            AggregatedDataVariants data_variants;
+            params->aggregator.mergeBlocks(std::move(group_blocks), data_variants, max_threads, is_cancelled);
+            auto merged_blocks = params->aggregator.convertToBlocks(data_variants, params->final, max_threads);
+
+            if (has_grouping_sets)
+                appendGroupingColumn(group, merged_blocks);
+
+            blocks.splice(blocks.end(), std::move(merged_blocks));
+        }
+
         next_block = blocks.begin();
     }
 

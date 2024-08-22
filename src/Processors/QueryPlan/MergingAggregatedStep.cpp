@@ -48,7 +48,7 @@ MergingAggregatedStep::MergingAggregatedStep(
     bool memory_bound_merging_of_aggregation_results_enabled_)
     : ITransformingStep(
         input_stream_,
-        params_.getHeader(input_stream_.header, final_),
+        MergingAggregatedTransform::appendGroupingIfNeeded(input_stream_.header, params_.getHeader(input_stream_.header, final_)),
         getTraits(should_produce_results_in_order_of_bucket_number_))
     , params(std::move(params_))
     , final(final_)

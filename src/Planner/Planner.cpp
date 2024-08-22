@@ -504,8 +504,6 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
       */
 
     auto keys = aggregation_analysis_result.aggregation_keys;
-    if (!aggregation_analysis_result.grouping_sets_parameters_list.empty())
-        keys.insert(keys.begin(), "__grouping_set");
 
     Aggregator::Params params(keys,
         aggregation_analysis_result.aggregate_descriptions,

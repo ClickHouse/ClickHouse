@@ -15,6 +15,8 @@ public:
     MergingAggregatedTransform(Block header_, AggregatingTransformParamsPtr params_, size_t max_threads_);
     String getName() const override { return "MergingAggregatedTransform"; }
 
+    static Block appendGroupingIfNeeded(const Block & in_header, Block out_header);
+
 protected:
     void consume(Chunk chunk) override;
     Chunk generate() override;
@@ -24,8 +26,9 @@ private:
     LoggerPtr log = getLogger("MergingAggregatedTransform");
     size_t max_threads;
 
-    AggregatedDataVariants data_variants;
-    Aggregator::BucketToBlocks bucket_to_blocks;
+    using GroupingSets = std::unordered_map<UInt64, Aggregator::BucketToBlocks>;
+    GroupingSets grouping_sets;
+    const bool has_grouping_sets;
 
     UInt64 total_input_rows = 0;
     UInt64 total_input_blocks = 0;
@@ -35,6 +38,9 @@ private:
 
     bool consume_started = false;
     bool generate_started = false;
+
+    void addBlock(Block block);
+    void appendGroupingColumn(UInt64 group, BlocksList & block_list);
 };
 
 }

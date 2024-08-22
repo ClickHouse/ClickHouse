@@ -2010,8 +2010,6 @@ static void executeMergeAggregatedImpl(
     SortDescription group_by_sort_description)
 {
     auto keys = aggregation_keys.getNames();
-    if (has_grouping_sets)
-        keys.insert(keys.begin(), "__grouping_set");
 
     /** There are two modes of distributed aggregation.
       *
