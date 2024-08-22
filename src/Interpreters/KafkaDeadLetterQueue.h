@@ -22,6 +22,12 @@ namespace DB
 
 struct DeadLetterQueueElement
 {
+    enum class StreamType : int8_t
+    {
+        Kafka = 1,
+    };
+
+    StreamType stream_type;
     UInt64 event_time{};
     Decimal64 event_time_microseconds{};
 
