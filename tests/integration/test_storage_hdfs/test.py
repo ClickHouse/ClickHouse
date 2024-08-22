@@ -1259,14 +1259,20 @@ def test_respect_object_existence_on_partitioned_write(started_cluster):
 
 def test_hive_partitioning_with_one_parameter(started_cluster):
     hdfs_api = started_cluster.hdfs_api
-    hdfs_api.write_data(f"/column0=Elizabeth/file_1", f"column0,column1\nElizabeth,Gordon\n")
-    assert hdfs_api.read_data(f"/column0=Elizabeth/file_1") == f"column0,column1\nElizabeth,Gordon\n"
+    hdfs_api.write_data(
+        f"/column0=Elizabeth/file_1", f"column0,column1\nElizabeth,Gordon\n"
+    )
+    assert (
+        hdfs_api.read_data(f"/column0=Elizabeth/file_1")
+        == f"column0,column1\nElizabeth,Gordon\n"
+    )
 
     r = node1.query(
         "SELECT column0 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/file_1', 'CSVWithNames')",
         settings={"use_hive_partitioning": 1},
     )
     assert r == f"Elizabeth\n"
+
 
 
 def test_hive_partitioning_without_setting(started_cluster):
