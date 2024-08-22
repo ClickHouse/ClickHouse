@@ -50,7 +50,6 @@ from github_helper import GitHub
 from pr_info import PRInfo
 from report import (
     ERROR,
-    FAILURE,
     PENDING,
     SUCCESS,
     BuildResult,
@@ -62,11 +61,11 @@ from report import (
     FAIL,
 )
 from s3_helper import S3Helper
-from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from ci_cache import CiCache
 from ci_settings import CiSettings
 from ci_buddy import CIBuddy
+from stopwatch import Stopwatch
 from version_helper import get_version_from_repo
 
 # pylint: disable=too-many-lines
@@ -370,8 +369,8 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
                 # skip_status = SUCCESS already there
                 GH.print_in_group("Commit Status Data", job_status)
 
-    # create pre report
-    jr = JobReport.create_pre_report(status=skip_status, job_skipped=to_be_skipped)
+    # create dummy report
+    jr = JobReport.create_dummy(status=skip_status, job_skipped=to_be_skipped)
     jr.dump()
 
     if not to_be_skipped:
@@ -990,19 +989,21 @@ def _run_test(job_name: str, run_command: str) -> int:
     stopwatch = Stopwatch()
     job_log = Path(TEMP_PATH) / "job_log.txt"
     with TeePopen(run_command, job_log, env, timeout) as process:
+        print(f"Job process started, pid [{process.process.pid}]")
         retcode = process.wait()
         if retcode != 0:
             print(f"Run action failed for: [{job_name}] with exit code [{retcode}]")
-            if timeout and process.timeout_exceeded:
-                print(f"Timeout {timeout} exceeded, dumping the job report")
-                JobReport(
-                    status=FAILURE,
-                    description=f"Timeout {timeout} exceeded",
-                    test_results=[TestResult.create_check_timeout_expired(timeout)],
-                    start_time=stopwatch.start_time_str,
-                    duration=stopwatch.duration_seconds,
-                    additional_files=[job_log],
-                ).dump()
+        if process.timeout_exceeded:
+            print(f"Job timed out: [{job_name}] exit code [{retcode}]")
+            assert JobReport.exist(), "JobReport real or dummy must be present"
+            jr = JobReport.load()
+            if jr.dummy:
+                print(
+                    f"ERROR: Run action failed with timeout and did not generate JobReport - update dummy report with execution time"
+                )
+                jr.test_results = [TestResult.create_check_timeout_expired()]
+                jr.duration = stopwatch.duration_seconds
+                jr.additional_files += [job_log]
 
     print(f"Run action done for: [{job_name}]")
     return retcode
@@ -1205,7 +1206,7 @@ def main() -> int:
             job_report
         ), "BUG. There must be job report either real report, or pre-report if job was killed"
         error_description = ""
-        if not job_report.pre_report:
+        if not job_report.dummy:
             # it's a real job report
             ch_helper = ClickHouseHelper()
             check_url = ""
@@ -1329,10 +1330,20 @@ def main() -> int:
             if CI.is_test_job(args.job_name):
                 gh = GitHub(get_best_robot_token(), per_page=100)
                 commit = get_commit(gh, pr_info.sha)
+                check_url = ""
+                if job_report.test_results or job_report.additional_files:
+                    check_url = upload_result_helper.upload_results(
+                        s3,
+                        pr_info.number,
+                        pr_info.sha,
+                        job_report.test_results,
+                        job_report.additional_files,
+                        job_report.check_name or _get_ext_check_name(args.job_name),
+                    )
                 post_commit_status(
                     commit,
                     ERROR,
-                    "",
+                    check_url,
                     "Error: " + error_description,
                     _get_ext_check_name(args.job_name),
                     pr_info,

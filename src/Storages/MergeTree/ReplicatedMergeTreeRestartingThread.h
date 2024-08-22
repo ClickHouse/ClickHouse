@@ -24,16 +24,9 @@ class ReplicatedMergeTreeRestartingThread
 public:
     explicit ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
 
-    void start(bool schedule = true)
-    {
-        LOG_TRACE(log, "Starting restating thread, schedule: {}", schedule);
-        if (schedule)
-            task->activateAndSchedule();
-        else
-            task->activate();
-    }
+    void start(bool schedule);
 
-    void wakeup() { task->schedule(); }
+    void wakeup();
 
     void shutdown(bool part_of_full_shutdown);
 
