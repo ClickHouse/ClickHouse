@@ -724,6 +724,7 @@ const char * auto_contributors[] {
     "Max Akhmedov",
     "Max Bruce",
     "Max K",
+    "Max K.",
     "Max Kainov",
     "Max Vetrov",
     "MaxTheHuman",
