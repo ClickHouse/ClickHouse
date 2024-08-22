@@ -234,7 +234,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
         {
             if (rpn_element.range.left != rpn_element.range.right)
             {
-                condition_elements.emplace_back(Function::ALWAYS_TRUE);
+                condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
                 continue;
             }
 
@@ -243,13 +243,13 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
             bool column_has_bloom_filter = parquet_rg_metadata->ColumnChunk(parquet_column_index)->bloom_filter_offset().has_value();
             if (!column_has_bloom_filter)
             {
-                condition_elements.emplace_back(Function::ALWAYS_TRUE);
+                condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
                 continue;
             }
 
             if (rpn_element.key_column >= data_types.size())
             {
-                condition_elements.emplace_back(Function::ALWAYS_TRUE);
+                condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
                 continue;
             }
 
@@ -298,7 +298,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
 
             if (bloom_filter_missing)
             {
-                condition_elements.emplace_back(Function::ALWAYS_TRUE, columns);
+                condition_elements.emplace_back(Function::FUNCTION_UNKNOWN, columns);
                 continue;
             }
 
