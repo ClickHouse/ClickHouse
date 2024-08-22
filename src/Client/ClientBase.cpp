@@ -331,7 +331,11 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     {
         output_stream << std::endl;
         WriteBufferFromOStream res_buf(output_stream, 4096);
-        formatAST(*res, res_buf);
+        IAST::FormatSettings format_settings(res_buf, /* one_line */ false);
+        format_settings.hilite = true;
+        format_settings.show_secrets = true;
+        format_settings.print_pretty_type_names = true;
+        res->format(format_settings);
         res_buf.finalize();
         output_stream << std::endl << std::endl;
     }
@@ -2550,6 +2554,7 @@ void ClientBase::runInteractive()
         *suggest,
         history_file,
         getClientConfiguration().has("multiline"),
+        getClientConfiguration().getBool("ignore_shell_suspend", true),
         query_extenders,
         query_delimiters,
         word_break_characters,

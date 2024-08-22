@@ -241,6 +241,10 @@ public:
     {
         SubstreamPath path;
         bool position_independent_encoding = true;
+        /// If set to false, don't enumerate dynamic subcolumns
+        /// (such as dynamic types in Dynamic column or dynamic paths in JSON column).
+        /// It may be needed when dynamic subcolumns are processed separately.
+        bool enumerate_dynamic_streams = true;
     };
 
     virtual void enumerateStreams(
