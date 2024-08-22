@@ -22,12 +22,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NETWORK_ERROR;
-    extern const int CANNOT_OPEN_FILE;
-    extern const int CANNOT_SEEK_THROUGH_FILE;
-    extern const int SEEK_POSITION_OUT_OF_BOUND;
-    extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_FILE_SIZE;
+extern const int HDFS_ERROR;
+extern const int CANNOT_OPEN_FILE;
+extern const int CANNOT_SEEK_THROUGH_FILE;
+extern const int SEEK_POSITION_OUT_OF_BOUND;
+extern const int LOGICAL_ERROR;
+extern const int UNKNOWN_FILE_SIZE;
 }
 
 
@@ -135,9 +135,12 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         if (bytes_read < 0)
         {
             read_settings.resource_link.accumulate(num_bytes_to_read); // We assume no resource was used in case of failure
-            throw Exception(ErrorCodes::NETWORK_ERROR,
+            throw Exception(
+                ErrorCodes::HDFS_ERROR,
                 "Fail to read from HDFS: {}, file path: {}. Error: {}",
-                hdfs_uri, hdfs_file_path, std::string(hdfsGetLastError()));
+                hdfs_uri,
+                hdfs_file_path,
+                std::string(hdfsGetLastError()));
         }
         read_settings.resource_link.adjust(num_bytes_to_read, bytes_read);
 
