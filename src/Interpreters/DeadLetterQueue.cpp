@@ -1,4 +1,4 @@
-#include <Interpreters/KafkaDeadLetterQueue.h>
+#include <Interpreters/DeadLetterQueue.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
