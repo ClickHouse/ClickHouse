@@ -11,3 +11,5 @@
 {"data":["c", "1"]}
 {"totals": ["", "3"]}
 {"statistics": {"rows":3, "elapsed":ELAPSED, "rows_read":3, "bytes_read":30}}
+3
+Value passed to 'throwIf' function is non-zero:
