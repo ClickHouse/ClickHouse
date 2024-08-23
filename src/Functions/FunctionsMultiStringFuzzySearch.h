@@ -71,7 +71,7 @@ public:
         return Impl::getReturnType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & haystack_ptr = arguments[0].column;
         const ColumnPtr & edit_distance_ptr = arguments[1].column;
@@ -114,14 +114,16 @@ public:
                 col_needles_const->getValue<Array>(),
                 vec_res, offsets_res,
                 edit_distance,
-                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps);
+                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps,
+                input_rows_count);
         else
             Impl::vectorVector(
                 col_haystack_vector->getChars(), col_haystack_vector->getOffsets(),
                 col_needles_vector->getData(), col_needles_vector->getOffsets(),
                 vec_res, offsets_res,
                 edit_distance,
-                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps);
+                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps,
+                input_rows_count);
 
         // the combination of const haystack + const needle is not implemented because
         // useDefaultImplementationForConstants() == true makes upper layers convert both to

@@ -285,6 +285,8 @@ static bool formatNamedArgWithHiddenValue(IAST * arg, const IAST::FormatSettings
 void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.expression_list_prepend_whitespace = false;
+    if (kind == Kind::CODEC || kind == Kind::STATISTICS || kind == Kind::BACKUP_NAME)
+        frame.allow_operators = false;
     FormatStateStacked nested_need_parens = frame;
     FormatStateStacked nested_dont_need_parens = frame;
     nested_need_parens.need_parens = true;
@@ -308,7 +310,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
     /// Should this function to be written as operator?
     bool written = false;
-    if (arguments && !parameters && nulls_action == NullsAction::EMPTY)
+    if (arguments && !parameters && frame.allow_operators && nulls_action == NullsAction::EMPTY)
     {
         /// Unary prefix operators.
         if (arguments->children.size() == 1)
@@ -520,7 +522,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 if (tuple_arguments_valid && lit_right)
                 {
                     if (isInt64OrUInt64FieldType(lit_right->value.getType())
-                        && lit_right->value.get<Int64>() >= 0)
+                        && lit_right->value.safeGet<Int64>() >= 0)
                     {
                         if (frame.need_parens)
                             settings.ostr << '(';

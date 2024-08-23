@@ -52,6 +52,7 @@ public:
 
     static std::shared_ptr<IIterator> createFileIterator(
         ConfigurationPtr configuration,
+        const StorageObjectStorage::QuerySettings & query_settings,
         ObjectStoragePtr object_storage,
         bool distributed_processing,
         const ContextPtr & local_context,

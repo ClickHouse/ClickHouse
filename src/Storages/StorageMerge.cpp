@@ -602,7 +602,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 ASTPtr required_columns_expr_list = std::make_shared<ASTExpressionList>();
                 ASTPtr column_expr;
 
-                auto sample_block = merge_storage_snapshot->getMetadataForQuery()->getSampleBlock();
+                auto sample_block = merge_storage_snapshot->metadata->getSampleBlock();
 
                 for (const auto & column : real_column_names)
                 {
@@ -642,10 +642,6 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()).name);
             }
         }
-        else
-        {
-
-        }
 
         auto child = createPlanForTable(
             nested_storage_snaphsot,
@@ -657,6 +653,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             row_policy_data_opt,
             modified_context,
             current_streams);
+
         child.plan.addInterpreterContext(modified_context);
 
         if (child.plan.isInitialized())
@@ -914,12 +911,14 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         modified_query_info.table_expression = replacement_table_expression;
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
-        if (storage_snapshot_->storage.supportsSubcolumns())
-            get_column_options.withSubcolumns();
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All)
+            .withExtendedObjects()
+            .withSubcolumns(storage_snapshot_->storage.supportsSubcolumns());
 
         std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
 
+        /// Consider only non-virtual columns of storage while checking for _table and _database columns.
+        /// I.e. always override virtual columns with these names from underlying table (if any).
         if (!storage_snapshot_->tryGetColumn(get_column_options, "_table"))
         {
             auto table_name_node = std::make_shared<ConstantNode>(current_storage_id.table_name);
@@ -946,6 +945,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             column_name_to_node.emplace("_database", function_node);
         }
 
+        get_column_options.withVirtuals();
         auto storage_columns = storage_snapshot_->metadata->getColumns();
 
         bool with_aliases = /* common_processed_stage == QueryProcessingStage::FetchColumns && */ !storage_columns.getAliases().empty();

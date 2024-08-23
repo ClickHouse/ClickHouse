@@ -346,12 +346,42 @@ Result:
 ## materialize
 
 Turns a constant into a full column containing a single value.
-Full columns and constants are represented differently in memory. Functions usually execute different code for normal and constant arguments, although the result should typically be the same. This function can be used to debug this behavior.
+Full columns and constants are represented differently in memory.
+Functions usually execute different code for normal and constant arguments, although the result should typically be the same. 
+This function can be used to debug this behavior.
 
 **Syntax**
 
 ```sql
 materialize(x)
+```
+
+**Parameters**
+
+- `x` — A constant. [Constant](../functions/index.md/#constants).
+
+**Returned value**
+
+- A column containing a single value `x`.
+
+**Example**
+
+In the example below the `countMatches` function expects a constant second argument. 
+This behaviour can be debugged by using the `materialize` function to turn a constant into a full column, 
+verifying that the function throws an error for a non-constant argument.
+
+Query:
+
+```sql
+SELECT countMatches('foobarfoo', 'foo');
+SELECT countMatches('foobarfoo', materialize('foo'));
+```
+
+Result:
+
+```response
+2
+Code: 44. DB::Exception: Received from localhost:9000. DB::Exception: Illegal type of argument #2 'pattern' of function countMatches, expected constant String, got String
 ```
 
 ## ignore
@@ -4159,3 +4189,94 @@ Result:
 │                          32 │
 └─────────────────────────────┘
 ```
+
+## getSubcolumn
+
+Takes a table expression or identifier and constant string with the name of the sub-column, and returns the requested sub-column extracted from the expression.
+
+**Syntax**
+
+```sql
+getSubcolumn(col_name, subcol_name)
+```
+
+**Arguments**
+
+- `col_name` — Table expression or identifier. [Expression](../syntax.md/#expressions), [Identifier](../syntax.md/#identifiers).
+- `subcol_name` — The name of the sub-column. [String](../data-types/string.md).
+
+**Returned value**
+
+- Returns the extracted sub-column.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE t_arr (arr Array(Tuple(subcolumn1 UInt32, subcolumn2 String))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_arr VALUES ([(1, 'Hello'), (2, 'World')]), ([(3, 'This'), (4, 'is'), (5, 'subcolumn')]);
+SELECT getSubcolumn(arr, 'subcolumn1'), getSubcolumn(arr, 'subcolumn2') FROM t_arr;
+```
+
+Result:
+
+```response
+   ┌─getSubcolumn(arr, 'subcolumn1')─┬─getSubcolumn(arr, 'subcolumn2')─┐
+1. │ [1,2]                           │ ['Hello','World']               │
+2. │ [3,4,5]                         │ ['This','is','subcolumn']       │
+   └─────────────────────────────────┴─────────────────────────────────┘
+```
+
+## getTypeSerializationStreams
+
+Enumerates stream paths of a data type.
+
+:::note
+This function is intended for use by developers.
+:::
+
+**Syntax**
+
+```sql
+getTypeSerializationStreams(col)
+```
+
+**Arguments**
+
+- `col` — Column or string representation of a data-type from which the data type will be detected.
+
+**Returned value**
+
+- Returns an array with all the serialization sub-stream paths.[Array](../data-types/array.md)([String](../data-types/string.md)).
+
+**Examples**
+
+Query:
+
+```sql
+SELECT getTypeSerializationStreams(tuple('a', 1, 'b', 2));
+```
+
+Result:
+
+```response
+   ┌─getTypeSerializationStreams(('a', 1, 'b', 2))─────────────────────────────────────────────────────────────────────────┐
+1. │ ['{TupleElement(1), Regular}','{TupleElement(2), Regular}','{TupleElement(3), Regular}','{TupleElement(4), Regular}'] │
+   └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT getTypeSerializationStreams('Map(String, Int64)');
+```
+
+Result:
+
+```response
+   ┌─getTypeSerializationStreams('Map(String, Int64)')────────────────────────────────────────────────────────────────┐
+1. │ ['{ArraySizes}','{ArrayElements, TupleElement(keys), Regular}','{ArrayElements, TupleElement(values), Regular}'] │
+   └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+

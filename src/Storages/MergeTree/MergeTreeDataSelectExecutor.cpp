@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
+#include <Storages/MergeTree/VectorSimilarityCondition.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTIdentifier.h>
@@ -48,7 +49,6 @@
 #include <Functions/IFunction.h>
 
 #include <IO/WriteBufferFromOStream.h>
-#include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
 namespace CurrentMetrics
 {
@@ -369,7 +369,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             /// If sample and final are used together no need to calculate sampling expression twice.
             /// The first time it was calculated for final, because sample key is a part of the PK.
             /// So, assume that we already have calculated column.
-            ASTPtr sampling_key_ast = metadata_snapshot->getSamplingKeyAST();
+            ASTPtr sampling_key_ast;
 
             if (final)
             {
@@ -377,6 +377,12 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
                 /// We do spoil available_real_columns here, but it is not used later.
                 available_real_columns.emplace_back(sampling_key.column_names[0], std::move(sampling_column_type));
             }
+            else
+            {
+                sampling_key_ast = metadata_snapshot->getSamplingKeyAST()->clone();
+            }
+
+            chassert(sampling_key_ast != nullptr);
 
             if (has_lower_limit)
             {
@@ -1406,11 +1412,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 reader.read(granule);
 
-            auto ann_condition = std::dynamic_pointer_cast<IMergeTreeIndexConditionApproximateNearestNeighbor>(condition);
-            if (ann_condition != nullptr)
+            if (index_helper->isVectorSimilarityIndex())
             {
                 /// An array of indices of useful ranges.
-                auto result = ann_condition->getUsefulRanges(granule);
+                auto result = condition->getUsefulRanges(granule);
 
                 for (auto range : result)
                 {
