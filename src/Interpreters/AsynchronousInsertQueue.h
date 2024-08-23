@@ -293,6 +293,11 @@ private:
         const ContextPtr & insert_context,
         LogFunc && add_to_async_insert_log);
 
+    static NameToNameMap getQueriesByFormat(
+        const ASTPtr & query,
+        const std::list<InsertData::EntryPtr> & entries,
+        const ContextPtr & insert_context);
+
     template <typename E>
     static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception);
 
