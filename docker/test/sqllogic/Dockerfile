@@ -40,6 +40,3 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 ARG sqllogic_test_repo="https://github.com/gregrahn/sqllogictest.git"
 
 RUN git clone --recursive ${sqllogic_test_repo}
-
-COPY run.sh /
-CMD ["/bin/bash", "/run.sh"]

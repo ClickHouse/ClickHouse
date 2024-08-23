@@ -18,6 +18,7 @@ class Envs:
     )
     S3_BUILDS_BUCKET = os.getenv("S3_BUILDS_BUCKET", "clickhouse-builds")
     GITHUB_WORKFLOW = os.getenv("GITHUB_WORKFLOW", "")
+    GITHUB_ACTOR = os.getenv("GITHUB_ACTOR", "")
 
 
 class WithIter(type):
@@ -282,3 +283,7 @@ class Utils:
         ):
             res = res.replace(*r)
         return res
+
+    @staticmethod
+    def is_job_triggered_manually():
+        return "robot" not in Envs.GITHUB_ACTOR
