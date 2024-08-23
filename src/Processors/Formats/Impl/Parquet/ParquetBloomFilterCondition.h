@@ -54,7 +54,7 @@ public:
     explicit ParquetBloomFilterCondition(const std::vector<ConditionElement> & condition_, const Block & header_);
 
     bool mayBeTrueOnRowGroup(const ColumnIndexToBF & column_index_to_column_bf) const;
-    std::unordered_set<std::string> getFilteringColumnNames() const;
+    std::unordered_set<std::size_t> getFilteringColumnKeys() const;
 
 private:
     std::vector<ParquetBloomFilterCondition::ConditionElement> condition;
@@ -64,7 +64,7 @@ private:
 std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParquetBloomFilterCondition(
     const std::vector<KeyCondition::RPNElement> & rpn,
     const Block & header,
-    const std::unordered_map<std::string, int> & column_name_to_index,
+    const std::unordered_map<std::size_t, int> & clickhouse_column_index_to_parquet_index,
     const std::unique_ptr<parquet::RowGroupMetaData> & parquet_rg_metadata);
 
 }
