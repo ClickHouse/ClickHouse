@@ -27,18 +27,34 @@ class PartitionManager:
         self._check_instance(instance)
 
         self._add_rule(
-            {"source": instance.ipv4_address, "destination_port": 2181, "action": action}
+            {
+                "source": instance.ipv4_address,
+                "destination_port": 2181,
+                "action": action,
+            }
         )
         self._add_rule(
-            {"destination": instance.ipv4_address, "source_port": 2181, "action": action}
+            {
+                "destination": instance.ipv4_address,
+                "source_port": 2181,
+                "action": action,
+            }
         )
 
         if instance.ipv6_address:
             self._add_rule(
-                {"source": instance.ipv6_address, "destination_port": 2181, "action": action}
+                {
+                    "source": instance.ipv6_address,
+                    "destination_port": 2181,
+                    "action": action,
+                }
             )
             self._add_rule(
-                {"destination": instance.ipv6_address, "source_port": 2181, "action": action}
+                {
+                    "destination": instance.ipv6_address,
+                    "source_port": 2181,
+                    "action": action,
+                }
             )
 
     def dump_rules(self):
@@ -51,18 +67,34 @@ class PartitionManager:
         self._check_instance(instance)
 
         self._delete_rule(
-            {"source": instance.ipv4_address, "destination_port": 2181, "action": action}
+            {
+                "source": instance.ipv4_address,
+                "destination_port": 2181,
+                "action": action,
+            }
         )
         self._delete_rule(
-            {"destination": instance.ipv4_address, "source_port": 2181, "action": action}
+            {
+                "destination": instance.ipv4_address,
+                "source_port": 2181,
+                "action": action,
+            }
         )
 
         if instance.ipv6_address:
             self._delete_rule(
-                {"source": instance.ipv6_address, "destination_port": 2181, "action": action}
+                {
+                    "source": instance.ipv6_address,
+                    "destination_port": 2181,
+                    "action": action,
+                }
             )
             self._delete_rule(
-                {"destination": instance.ipv6_address, "source_port": 2181, "action": action}
+                {
+                    "destination": instance.ipv6_address,
+                    "source_port": 2181,
+                    "action": action,
+                }
             )
 
     def partition_instances(self, left, right, port=None, action="DROP"):
@@ -103,7 +135,9 @@ class PartitionManager:
         while self._iptables_rules:
             rule = self._iptables_rules.pop()
 
-            is_ipv6 = ":" in rule.get("source", "") or ":" in rule.get("destination", "")
+            is_ipv6 = ":" in rule.get("source", "") or ":" in rule.get(
+                "destination", ""
+            )
             if is_ipv6:
                 _NetworkManager.get().delete_ip6tables_rule(**rule)
             else:
@@ -324,7 +358,9 @@ class _NetworkManager:
 
     def _ensure_container(self):
         if self._container is None or self._container_expire_time <= time.time():
-            image_name = "clickhouse/integration-helper:1da3ba479c0d-amd64" #+ os.getenv(
+            image_name = (
+                "clickhouse/integration-helper:1da3ba479c0d-amd64"  # + os.getenv(
+            )
             #     "DOCKER_HELPER_TAG", "7449e3274613"
             # )
             for i in range(5):
