@@ -705,9 +705,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
         auto stats_vec = ColumnStatisticsDescription::fromAST(statistics_decl, metadata.columns);
-        for (const auto & stats : stats_vec)
+        for (const auto & [stats_column_name, stats] : stats_vec)
         {
-            metadata.columns.modify(stats.column_name,
+            metadata.columns.modify(stats_column_name,
                 [&](ColumnDescription & column) { column.statistics.merge(stats, column.name, column.type, if_not_exists); });
         }
     }
@@ -739,9 +739,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
         auto stats_vec = ColumnStatisticsDescription::fromAST(statistics_decl, metadata.columns);
-        for (const auto & stats : stats_vec)
+        for (const auto & [stats_column_name, stats] : stats_vec)
         {
-            metadata.columns.modify(stats.column_name,
+            metadata.columns.modify(stats_column_name,
                 [&](ColumnDescription & column) { column.statistics.assign(stats); });
         }
     }
@@ -866,8 +866,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                     rename_visitor.visit(column_to_modify.default_desc.expression);
                 if (column_to_modify.ttl)
                     rename_visitor.visit(column_to_modify.ttl);
-                if (column_to_modify.name == column_name && !column_to_modify.statistics.empty())
-                    column_to_modify.statistics.column_name = rename_to;
             });
         }
         if (metadata.table_ttl.definition_ast)

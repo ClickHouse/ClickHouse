@@ -546,7 +546,7 @@ static std::set<ColumnStatisticsPtr> getStatisticsToRecalculate(const StorageMet
     {
         if (!col_desc.statistics.empty() && materialized_stats.contains(col_desc.name))
         {
-            stats_to_recalc.insert(stats_factory.get(col_desc.statistics));
+            stats_to_recalc.insert(stats_factory.get(col_desc));
         }
     }
     return stats_to_recalc;
@@ -1530,7 +1530,7 @@ private:
 
             if (ctx->materialized_statistics.contains(col.name))
             {
-                stats_to_rewrite.push_back(MergeTreeStatisticsFactory::instance().get(col.statistics));
+                stats_to_rewrite.push_back(MergeTreeStatisticsFactory::instance().get(col));
             }
             else
             {
