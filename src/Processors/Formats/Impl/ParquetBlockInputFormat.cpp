@@ -270,9 +270,9 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
 static ParquetBloomFilterCondition::ColumnIndexToBF buildColumnIndexToBF(
     parquet::BloomFilterReader & bf_reader,
     int row_group,
-    const Block & header,
-    const std::unordered_map<std::string, int> & column_name_to_index,
-    const std::unordered_set<std::string> & filtering_columns
+    const parquet::SchemaDescriptor * parquet_schema_descriptor,
+    const std::unordered_map<std::size_t, int> & clickhouse_column_index_to_parquet_index,
+    const std::unordered_set<std::size_t> & filtering_columns
 )
 {
     auto rg_bf = bf_reader.RowGroup(row_group);
@@ -284,27 +284,27 @@ static ParquetBloomFilterCondition::ColumnIndexToBF buildColumnIndexToBF(
 
     ParquetBloomFilterCondition::ColumnIndexToBF index_to_column_bf;
 
-    for (const auto & [column_name, index] : column_name_to_index)
+    for (const auto & [clickhouse_index, parquet_index] : clickhouse_column_index_to_parquet_index)
     {
-        if (!header.has(column_name))
-        {
-            // complex types, not supported for now
-            continue;
-        }
-
-        if (!filtering_columns.contains(column_name))
+        if (!filtering_columns.contains(clickhouse_index))
         {
             continue;
         }
 
-        auto bf = rg_bf->GetColumnBloomFilter(index);
+        // Complex / nested types are named with dots in parquet. We don't support those.
+        if (parquet_schema_descriptor->Column(parquet_index)->path()->ToDotVector().size() != 1)
+        {
+            continue;
+        }
+
+        auto bf = rg_bf->GetColumnBloomFilter(parquet_index);
 
         if (!bf)
         {
             continue;
         }
 
-        index_to_column_bf[header.getPositionByName(column_name)] = std::move(bf);
+        index_to_column_bf[clickhouse_index] = std::move(bf);
     }
 
     return index_to_column_bf;
@@ -521,11 +521,11 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         format_settings.parquet.case_insensitive_column_matching,
         format_settings.parquet.allow_missing_columns);
 
-    auto column_name_to_index = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata);
+    auto clickhouse_column_index_to_parquet_index = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata);
 
-    for (auto & [column_name, index] : column_name_to_index)
+    for (auto & [clickhouse_index, parquet_index] : clickhouse_column_index_to_parquet_index)
     {
-        column_indices.push_back(index);
+        column_indices.push_back(parquet_index);
     }
 
     int num_row_groups = metadata->num_row_groups();
@@ -560,7 +560,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
     std::unique_ptr<ParquetBloomFilterCondition> parquet_bloom_filter_condition;
 
-    std::unordered_set<std::string> filtering_columns;
+    std::unordered_set<std::size_t> filtering_columns;
 
     if (format_settings.parquet.bloom_filter_push_down && key_condition)
     {
@@ -569,11 +569,11 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         const auto parquet_conditions = keyConditionRPNToParquetBloomFilterCondition(
             key_condition->getRPN(),
             getPort().getHeader(),
-            column_name_to_index,
+            clickhouse_column_index_to_parquet_index,
             metadata->RowGroup(0));
         parquet_bloom_filter_condition = std::make_unique<ParquetBloomFilterCondition>(parquet_conditions, getPort().getHeader());
 
-        filtering_columns = parquet_bloom_filter_condition->getFilteringColumnNames();
+        filtering_columns = parquet_bloom_filter_condition->getFilteringColumnKeys();
     }
 
     for (int row_group = 0; row_group < num_row_groups; ++row_group)
@@ -583,7 +583,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
         if (parquet_bloom_filter_condition)
         {
-            const auto column_index_to_bf = buildColumnIndexToBF(*bf_reader, row_group, getPort().getHeader(), column_name_to_index, filtering_columns);
+            const auto column_index_to_bf = buildColumnIndexToBF(*bf_reader, row_group, metadata->schema(), clickhouse_column_index_to_parquet_index, filtering_columns);
 
             if (!parquet_bloom_filter_condition->mayBeTrueOnRowGroup(column_index_to_bf))
             {

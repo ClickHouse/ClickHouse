@@ -121,6 +121,9 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const ColumnIndexToBF & co
         if (element.function == Function::FUNCTION_EQUALS
                  || element.function == Function::FUNCTION_NOT_EQUALS)
         {
+            // hash data
+            // rpn -> header indexes
+            // bloom filter structure -> parquet index
             bool maybe_true = maybeTrueOnBloomFilter(element.columns[0], column_index_to_column_bf.at(element.key_columns[0]), false);
 
             rpn_stack.emplace_back(maybe_true, true);
@@ -184,9 +187,9 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const ColumnIndexToBF & co
     return rpn_stack[0].can_be_true;
 }
 
-std::unordered_set<std::string> ParquetBloomFilterCondition::getFilteringColumnNames() const
+std::unordered_set<std::size_t> ParquetBloomFilterCondition::getFilteringColumnKeys() const
 {
-    std::unordered_set<std::string> column_names;
+    std::unordered_set<std::size_t> column_keys;
 
     using F = ConditionElement::Function;
 
@@ -206,17 +209,17 @@ std::unordered_set<std::string> ParquetBloomFilterCondition::getFilteringColumnN
 
         for (const auto & index : element.key_columns)
         {
-            column_names.insert(header.getByPosition(index).name);
+            column_keys.insert(index);
         }
     }
 
-    return column_names;
+    return column_keys;
 }
 
 std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParquetBloomFilterCondition(
     const std::vector<KeyCondition::RPNElement> & rpn,
     const Block & header,
-    const std::unordered_map<std::string, int> & column_name_to_index,
+    const std::unordered_map<std::size_t, int> & clickhouse_column_index_to_parquet_index,
     const std::unique_ptr<parquet::RowGroupMetaData> & parquet_rg_metadata)
 {
     std::vector<ParquetBloomFilterCondition::ConditionElement> condition_elements;
@@ -238,7 +241,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                 continue;
             }
 
-            auto parquet_column_index = column_name_to_index.at(header.getByPosition(rpn_element.key_column).name);
+            auto parquet_column_index = clickhouse_column_index_to_parquet_index.at(rpn_element.key_column);
 
             bool column_has_bloom_filter = parquet_rg_metadata->ColumnChunk(parquet_column_index)->bloom_filter_offset().has_value();
             if (!column_has_bloom_filter)
@@ -283,7 +286,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
             {
                 const auto & set_column = ordered_set[i];
 
-                auto parquet_column_index = column_name_to_index.at(header.getByPosition(indexes_mapping[i].key_index).name);
+                auto parquet_column_index = clickhouse_column_index_to_parquet_index.at(indexes_mapping[i].key_index);
                 bool column_has_bloom_filter = parquet_rg_metadata->ColumnChunk(parquet_column_index)->bloom_filter_offset().has_value();
                 if (!column_has_bloom_filter)
                 {
