@@ -135,10 +135,7 @@ class PartitionManager:
         while self._iptables_rules:
             rule = self._iptables_rules.pop()
 
-            is_ipv6 = ":" in rule.get("source", "") or ":" in rule.get(
-                "destination", ""
-            )
-            if is_ipv6:
+            if self._is_ipv6_rule(rule):
                 _NetworkManager.get().delete_ip6tables_rule(**rule)
             else:
                 _NetworkManager.get().delete_iptables_rule(**rule)
@@ -165,21 +162,26 @@ class PartitionManager:
         if instance.ip_address is None:
             raise Exception("Instance + " + instance.name + " is not launched!")
 
-    def _add_rule(self, rule):
-        # ghetto check
-        is_ipv6 = ":" in rule.get("source", "") or ":" in rule.get("destination", "")
+    @staticmethod
+    def _is_ipv6_rule(rule):
+        is_ipv6 = False
 
-        if is_ipv6:
+        if "source" in rule:
+            is_ipv6 = ipaddress.ip_address(rule["source"]).version == 6
+        if "destination" in rule:
+            is_ipv6 = ipaddress.ip_address(rule["source"]).version == 6
+
+        return is_ipv6
+
+    def _add_rule(self, rule):
+        if self._is_ipv6_rule(rule):
             _NetworkManager.get().add_ip6tables_rule(**rule)
         else:
             _NetworkManager.get().add_iptables_rule(**rule)
         self._iptables_rules.append(rule)
 
     def _delete_rule(self, rule):
-        # ghetto check
-        is_ipv6 = ":" in rule.get("source", "") or ":" in rule.get("destination", "")
-
-        if is_ipv6:
+        if self._is_ipv6_rule(rule):
             _NetworkManager.get().delete_ip6tables_rule(**rule)
         else:
             _NetworkManager.get().delete_iptables_rule(**rule)
