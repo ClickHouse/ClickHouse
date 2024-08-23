@@ -283,6 +283,8 @@ public:
     ColumnPtr compress() const override;
 
     void reserve(size_t n) override;
+    size_t capacity() const override;
+    void prepareForSquashing(const Columns & source_columns) override;
     void shrinkToFit() override;
 
     void getExtremes(Field & min, Field & max) const override;

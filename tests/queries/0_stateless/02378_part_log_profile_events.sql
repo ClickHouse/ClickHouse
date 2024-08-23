@@ -39,7 +39,7 @@ SYSTEM FLUSH LOGS;
 
 SELECT
     if(count() == 2, 'Ok', 'Error: ' || toString(count())),
-    if(SUM(ProfileEvents['MergedRows']) == 512, 'Ok', 'Error: ' || toString(SUM(ProfileEvents['MergedRows']))),
+    if(SUM(ProfileEvents['MutatedRows']) == 512, 'Ok', 'Error: ' || toString(SUM(ProfileEvents['MutatedRows']))),
     if(SUM(ProfileEvents['FileOpen']) > 1, 'Ok', 'Error: ' || toString(SUM(ProfileEvents['FileOpen'])))
 FROM system.part_log
 WHERE event_time > now() - INTERVAL 10 MINUTE

@@ -2351,7 +2351,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
                         /// We don't control the amount of refs for temporary parts so we cannot decide can we remove blobs
                         /// or not. So we are not doing it
                         bool keep_shared = false;
-                        if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
+                        if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication && supportsReplication())
                         {
                             LOG_WARNING(log, "Since zero-copy replication is enabled we are not going to remove blobs from shared storage for {}", full_path);
                             keep_shared = true;
@@ -3517,7 +3517,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                         const auto & new_column = new_metadata.getColumns().get(command.column_name);
                         if (!old_column.type->equals(*new_column.type))
                             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                                            "ALTER types of column {} with statistics is not not safe "
+                                            "ALTER types of column {} with statistics is not safe "
                                             "because it can change the representation of statistics",
                                             backQuoteIfNeed(command.column_name));
                     }

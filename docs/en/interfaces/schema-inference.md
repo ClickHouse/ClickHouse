@@ -359,13 +359,14 @@ DESC format(JSONEachRow, '{"int" : 42, "float" : 42.42, "string" : "Hello, World
 Dates, DateTimes:
 
 ```sql
-DESC format(JSONEachRow, '{"date" : "2022-01-01", "datetime" : "2022-01-01 00:00:00"}')
+DESC format(JSONEachRow, '{"date" : "2022-01-01", "datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}')
 ```
 ```response
-┌─name─────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ date     │ Nullable(Date)          │              │                    │         │                  │                │
-│ datetime │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
-└──────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+┌─name───────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ date       │ Nullable(Date)          │              │                    │         │                  │                │
+│ datetime   │ Nullable(DateTime)      │              │                    │         │                  │                │
+│ datetime64 │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+└────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
 Arrays:
@@ -759,12 +760,13 @@ DESC format(CSV, 'Hello world!,World hello!')
 Dates, DateTimes:
 
 ```sql
-DESC format(CSV, '"2020-01-01","2020-01-01 00:00:00"')
+DESC format(CSV, '"2020-01-01","2020-01-01 00:00:00","2022-01-01 00:00:00.000"')
 ```
 ```response
 ┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Date)          │              │                    │         │                  │                │
-│ c2   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+│ c2   │ Nullable(DateTime)      │              │                    │         │                  │                │
+│ c3   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
 └──────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
@@ -956,12 +958,13 @@ DESC format(TSKV, 'int=42	float=42.42	bool=true	string=Hello,World!\n')
 Dates, DateTimes:
 
 ```sql
-DESC format(TSV, '2020-01-01	2020-01-01 00:00:00')
+DESC format(TSV, '2020-01-01	2020-01-01 00:00:00	2022-01-01 00:00:00.000')
 ```
 ```response
 ┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Date)          │              │                    │         │                  │                │
-│ c2   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+│ c2   │ Nullable(DateTime)      │              │                    │         │                  │                │
+│ c3   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
 └──────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
@@ -1126,12 +1129,13 @@ DESC format(Values, $$(42, 42.42, true, 'Hello,World!')$$)
 Dates, DateTimes:
 
 ```sql
-DESC format(Values, $$('2020-01-01', '2020-01-01 00:00:00')$$)
-```
+ DESC format(Values, $$('2020-01-01', '2020-01-01 00:00:00', '2022-01-01 00:00:00.000')$$)
+ ```
 ```response
 ┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Date)          │              │                    │         │                  │                │
-│ c2   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+│ c2   │ Nullable(DateTime)      │              │                    │         │                  │                │
+│ c3   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
 └──────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
@@ -1504,8 +1508,8 @@ DESC format(JSONEachRow, $$
 
 #### input_format_try_infer_datetimes
 
-If enabled, ClickHouse will try to infer type `DateTime64` from string fields in schema inference for text formats.
-If all fields from a column in sample data were successfully parsed as datetimes, the result type will be `DateTime64(9)`,
+If enabled, ClickHouse will try to infer type `DateTime` or `DateTime64` from string fields in schema inference for text formats.
+If all fields from a column in sample data were successfully parsed as datetimes, the result type will be `DateTime` or `DateTime64(9)` (if any datetime had fractional part),
 if at least one field was not parsed as datetime, the result type will be `String`.
 
 Enabled by default.
@@ -1513,39 +1517,66 @@ Enabled by default.
 **Examples**
 
 ```sql
-SET input_format_try_infer_datetimes = 0
+SET input_format_try_infer_datetimes = 0;
 DESC format(JSONEachRow, $$
-                                {"datetime" : "2021-01-01 00:00:00.000"}
-                                {"datetime" : "2022-01-01 00:00:00.000"}
+                                {"datetime" : "2021-01-01 00:00:00", "datetime64" : "2021-01-01 00:00:00.000"}
+                                {"datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}
                          $$)
 ```
 ```response
-┌─name─────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ datetime │ Nullable(String) │              │                    │         │                  │                │
-└──────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ datetime   │ Nullable(String) │              │                    │         │                  │                │
+│ datetime64 │ Nullable(String) │              │                    │         │                  │                │
+└────────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 ```sql
-SET input_format_try_infer_datetimes = 1
+SET input_format_try_infer_datetimes = 1;
 DESC format(JSONEachRow, $$
-                                {"datetime" : "2021-01-01 00:00:00.000"}
-                                {"datetime" : "2022-01-01 00:00:00.000"}
+                                {"datetime" : "2021-01-01 00:00:00", "datetime64" : "2021-01-01 00:00:00.000"}
+                                {"datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}
                          $$)
 ```
 ```response
-┌─name─────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ datetime │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
-└──────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+┌─name───────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ datetime   │ Nullable(DateTime)      │              │                    │         │                  │                │
+│ datetime64 │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+└────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 ```sql
 DESC format(JSONEachRow, $$
-                                {"datetime" : "2021-01-01 00:00:00.000"}
-                                {"datetime" : "unknown"}
+                                {"datetime" : "2021-01-01 00:00:00", "datetime64" : "2021-01-01 00:00:00.000"}
+                                {"datetime" : "unknown", "datetime64" : "unknown"}
                          $$)
 ```
 ```response
-┌─name─────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ datetime │ Nullable(String) │              │                    │         │                  │                │
-└──────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ datetime   │ Nullable(String) │              │                    │         │                  │                │
+│ datetime64 │ Nullable(String) │              │                    │         │                  │                │
+└────────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+#### input_format_try_infer_datetimes_only_datetime64
+
+If enabled, ClickHouse will always infer `DateTime64(9)` when `input_format_try_infer_datetimes` is enabled even if datetime values don't contain fractional part.
+
+Disabled by default.
+
+**Examples**
+
+```sql
+SET input_format_try_infer_datetimes = 1;
+SET input_format_try_infer_datetimes_only_datetime64 = 1;
+DESC format(JSONEachRow, $$
+                                {"datetime" : "2021-01-01 00:00:00", "datetime64" : "2021-01-01 00:00:00.000"}
+                                {"datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}
+                         $$)
+```
+
+```text
+┌─name───────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ datetime   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+│ datetime64 │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+└────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
 Note: Parsing datetimes during schema inference respect setting [date_time_input_format](/docs/en/operations/settings/settings-formats.md#date_time_input_format)

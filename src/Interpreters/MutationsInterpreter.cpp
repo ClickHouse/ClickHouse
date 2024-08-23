@@ -500,6 +500,12 @@ static void validateUpdateColumns(
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", backQuote(column_name));
             }
         }
+        else if (storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->hasDynamicSubcolumns())
+        {
+            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                            "Cannot update column {} with type {}: updates of columns with dynamic subcolumns are not supported",
+                            backQuote(column_name), storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->getName());
+        }
     }
 }
 

@@ -128,7 +128,7 @@ namespace
 
 bool isQueryCacheRelatedSetting(const String & setting_name)
 {
-    return setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache");
+    return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
 }
 
 class RemoveQueryCacheSettingsMatcher
@@ -242,11 +242,18 @@ QueryCache::Key::Key(
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
     , query_string(queryStringFromAST(ast_))
+    , tag(settings.query_cache_tag)
 {
 }
 
-QueryCache::Key::Key(ASTPtr ast_, const String & current_database, const Settings & settings, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_)
-    : QueryCache::Key(ast_, current_database, settings, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST, current database, user name/roles
+QueryCache::Key::Key(
+    ASTPtr ast_,
+    const String & current_database,
+    const Settings & settings,
+    std::optional<UUID> user_id_,
+    const std::vector<UUID> & current_user_roles_)
+    : QueryCache::Key(ast_, current_database, settings, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false)
+    /// ^^ dummy values for everything != AST, current database, user name/roles
 {
 }
 
@@ -612,9 +619,18 @@ QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::millis
     return Writer(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
 
-void QueryCache::clear()
+void QueryCache::clear(const std::optional<String> & tag)
 {
-    cache.clear();
+    if (tag)
+    {
+        auto predicate = [tag](const Key & key, const Cache::MappedPtr &) { return key.tag == tag.value(); };
+        cache.remove(predicate);
+    }
+    else
+    {
+        cache.clear();
+    }
+
     std::lock_guard lock(mutex);
     times_executed.clear();
 }

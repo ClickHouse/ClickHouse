@@ -1,4 +1,4 @@
-add_compile_options($<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>)
+add_compile_options("$<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>")
 
 if (USE_INCLUDE_WHAT_YOU_USE)
     set (CMAKE_CXX_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
@@ -613,10 +613,6 @@ if (TARGET ch_contrib::rapidjson)
 endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
-
-if (TARGET ch_contrib::annoy)
-    dbms_target_link_libraries(PUBLIC ch_contrib::annoy)
-endif()
 
 if (TARGET ch_contrib::usearch)
     dbms_target_link_libraries(PUBLIC ch_contrib::usearch)

@@ -452,6 +452,27 @@ void ColumnArray::reserve(size_t n)
     getData().reserve(n); /// The average size of arrays is not taken into account here. Or it is considered to be no more than 1.
 }
 
+size_t ColumnArray::capacity() const
+{
+    return getOffsets().capacity();
+}
+
+void ColumnArray::prepareForSquashing(const Columns & source_columns)
+{
+    size_t new_size = size();
+    Columns source_data_columns;
+    source_data_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+    {
+        const auto & source_array_column = assert_cast<const ColumnArray &>(*source_column);
+        new_size += source_array_column.size();
+        source_data_columns.push_back(source_array_column.getDataPtr());
+    }
+
+    getOffsets().reserve_exact(new_size);
+    data->prepareForSquashing(source_data_columns);
+}
+
 void ColumnArray::shrinkToFit()
 {
     getOffsets().shrink_to_fit();
