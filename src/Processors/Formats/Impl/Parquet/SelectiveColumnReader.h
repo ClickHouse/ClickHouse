@@ -92,7 +92,7 @@ class PlainDecoder
 public:
     PlainDecoder(const uint8_t *& buffer_, size_t & remain_rows_) : buffer(buffer_), remain_rows(remain_rows_) { }
 
-    template <typename T>
+    template <typename T, typename S>
     void decodeFixedValue(PaddedPODArray<T> & data, const OptionalRowSet & row_set, size_t rows_to_read);
 
     void decodeString(ColumnString::Chars & chars, ColumnString::Offsets & offsets, const OptionalRowSet & row_set, size_t rows_to_read)
@@ -107,7 +107,8 @@ public:
                 offset += 4;
                 if (sets.get(i))
                 {
-                    chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
+                    if (len)
+                        chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
                     chars.push_back(0);
                     offsets.push_back(chars.size());
                     offset += len;
@@ -124,7 +125,8 @@ public:
             {
                 auto len = loadLength(buffer + offset);
                 offset += 4;
-                chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
+                if (len)
+                    chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
                 chars.push_back(0);
                 offsets.push_back(chars.size());
                 offset += len;
@@ -134,11 +136,11 @@ public:
         remain_rows -= rows_to_read;
     }
 
-    template <typename T>
+    template <typename T, typename S>
     void decodeFixedValueSpace(PaddedPODArray<T> & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read)
     {
         size_t rows_read = 0;
-        const T * start = reinterpret_cast<const T *>(buffer);
+        const S * start = reinterpret_cast<const S *>(buffer);
         size_t count = 0;
         if (!row_set.has_value())
         {
@@ -150,7 +152,7 @@ public:
                 }
                 else
                 {
-                    data.push_back(start[count]);
+                    data.push_back(static_cast<T>(start[count]));
                     count++;
                 }
             }
@@ -168,14 +170,14 @@ public:
                     }
                     else
                     {
-                        data.push_back(start[count]);
+                        data.push_back(static_cast<T>(start[count]));
                         count++;
                     }
                 }
                 rows_read++;
             }
         }
-        buffer += count * sizeof(Int64);
+        buffer += count * sizeof(S);
         remain_rows -= rows_to_read;
     }
 
@@ -206,7 +208,8 @@ public:
                 offset += 4;
                 if (sets.get(i))
                 {
-                    chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
+                    if (len)
+                        chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
                     chars.push_back(0);
                     offsets.push_back(chars.size());
                     offset += len;
@@ -229,7 +232,8 @@ public:
                 }
                 auto len = loadLength(buffer + offset);
                 offset += 4;
-                chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
+                if (len)
+                    chars.insert_assume_reserved(buffer + offset, buffer + offset + len);
                 chars.push_back(0);
                 offsets.push_back(chars.size());
                 offset += len;
@@ -362,6 +366,7 @@ public:
     }
 
     virtual size_t currentRemainRows() const { return state.remain_rows; }
+    size_t availableRows() const { return std::max(state.remain_rows - state.lazy_skip_rows, 0UL); }
 
     void skipNulls(size_t rows_to_skip);
 
@@ -391,7 +396,7 @@ protected:
     bool plain = true;
 };
 
-template <typename DataType>
+template <typename DataType, typename SerializedType>
 class NumberColumnDirectReader : public SelectiveColumnReader
 {
 public:
@@ -409,7 +414,7 @@ private:
     DataTypePtr datatype;
 };
 
-template <typename DataType>
+template <typename DataType, typename SerializedType>
 class NumberDictionaryReader : public SelectiveColumnReader
 {
 public:
@@ -529,9 +534,7 @@ public:
     bool hasMoreRows() const { return remain_rows > 0; }
     void printMetrics(std::ostream & out) const
     {
-        out << "metrics.output_rows: " << metrics.output_rows << "\n";
-        out << "metrics.filtered_rows: " << metrics.filtered_rows << "\n";
-        out << "metrics.skipped_rows: " << metrics.skipped_rows << "\n";
+        out << fmt::format("metrics.output_rows: {} \n metrics.filtered_rows: {} \n metrics.skipped_rows: {} \n", metrics.output_rows, metrics.filtered_rows, metrics.skipped_rows);
     }
 private:
     ParquetReader * parquet_reader;

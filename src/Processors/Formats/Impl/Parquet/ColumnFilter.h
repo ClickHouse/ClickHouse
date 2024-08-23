@@ -19,7 +19,7 @@ extern const int PARQUET_EXCEPTION;
 class RowSet
 {
 public:
-    explicit RowSet(size_t max_rows_) : max_rows(max_rows_) { mask.resize_fill(max_rows, 1); }
+    explicit RowSet(size_t max_rows_) : max_rows(max_rows_) { mask.resize_fill(max_rows, true); }
 
     inline void set(size_t i, bool value) { mask[i] = value; }
     inline bool get(size_t i) const { return mask[i]; }
@@ -29,6 +29,7 @@ public:
     bool any() const;
     void setAllTrue() { mask.resize(max_rows, true); }
     void setAllFalse() { mask.resize(max_rows, false); }
+    size_t count() const { return std::reduce(mask.begin(), mask.end(), 0, [](bool a, bool b) { return a+b;}); }
     PaddedPODArray<bool> & maskReference() { return mask; }
     const PaddedPODArray<bool> & maskReference() const { return mask; }
 
@@ -63,8 +64,8 @@ enum ColumnFilterKind
 class FilterHelper
 {
 public:
-    template <typename T>
-    static void filterPlainFixedData(const T * src, PaddedPODArray<T> & dst, const RowSet & row_set, size_t rows_to_read);
+    template <typename T, typename S>
+    static void filterPlainFixedData(const S * src, PaddedPODArray<T> & dst, const RowSet & row_set, size_t rows_to_read);
     template <typename T>
     static void
     gatherDictFixedValue(const PaddedPODArray<T> & dict, PaddedPODArray<T> & dst, const PaddedPODArray<Int32> & idx, size_t rows_to_read);

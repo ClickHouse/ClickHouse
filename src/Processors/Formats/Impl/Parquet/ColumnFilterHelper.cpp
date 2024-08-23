@@ -10,6 +10,7 @@ ColumnFilterCreators ColumnFilterHelper::creators = {
 };
 void pushFilterToParquetReader(const ActionsDAG& filter_expression, ParquetReader & reader)
 {
+    if (filter_expression.getOutputs().empty()) return ;
     auto split_result = ColumnFilterHelper::splitFilterForPushDown(std::move(filter_expression));
     for (const auto & item : split_result.filters)
     {

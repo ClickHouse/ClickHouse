@@ -45,11 +45,11 @@ template<> struct PhysicTypeTraits<DateTime64>
     using simd_idx_type = xsimd::batch<simd_internal_type>;
 };
 
-template <typename T>
-void FilterHelper::filterPlainFixedData(const T* src, PaddedPODArray<T> & dst, const RowSet & row_set, size_t rows_to_read)
+template <typename T, typename S>
+void FilterHelper::filterPlainFixedData(const S* src, PaddedPODArray<T> & dst, const RowSet & row_set, size_t rows_to_read)
 {
-    using batch_type = PhysicTypeTraits<T>::simd_type;
-    using bool_type = PhysicTypeTraits<T>::simd_bool_type;
+    using batch_type = PhysicTypeTraits<S>::simd_type;
+    using bool_type = PhysicTypeTraits<S>::simd_bool_type;
     auto increment = batch_type::size;
     auto num_batched = rows_to_read / increment;
     for (size_t i = 0; i < num_batched; ++i)
@@ -61,30 +61,39 @@ void FilterHelper::filterPlainFixedData(const T* src, PaddedPODArray<T> & dst, c
         else if (xsimd::all(mask))
         {
             auto old_size = dst.size();
-            auto * start = dst.data() + old_size;
             dst.resize( old_size + increment);
+            auto * start = dst.data() + old_size;
             batch_type data = batch_type::load_unaligned(src + rows);
-            data.store_unaligned(start);
+            if constexpr (std::is_same_v<T, S>)
+                data.store_unaligned(start);
+            else
+            {
+                alignas(xsimd::default_arch::alignment()) S buffer[increment];
+                data.store_aligned(buffer);
+                for (size_t j = 0; j < increment; ++j)
+                    dst.push_back(static_cast<T>(buffer[j]));
+            }
         }
         else
         {
             for (size_t j = 0; j < increment; ++j)
                 if (row_set.get(rows + j))
-                    dst.push_back(src[rows + j]);
+                    dst.push_back(static_cast<T>(src[rows + j]));
         }
     }
     for (size_t i = num_batched * increment; i < rows_to_read; ++i)
     {
         if (row_set.get(i))
-            dst.push_back(src[i]);
+            dst.push_back(static_cast<T>(src[i]));
     }
 }
 
-template void FilterHelper::filterPlainFixedData<Int32>(Int32 const*, DB::PaddedPODArray<Int32>&, DB::RowSet const&, size_t);
-template void FilterHelper::filterPlainFixedData<Int64>(const Int64* src, PaddedPODArray<Int64> & dst, const RowSet & row_set, size_t rows_to_read);
-template void FilterHelper::filterPlainFixedData<Float32>(const Float32* src, PaddedPODArray<Float32> & dst, const RowSet & row_set, size_t rows_to_read);
-template void FilterHelper::filterPlainFixedData<Float64>(const Float64* src, PaddedPODArray<Float64> & dst, const RowSet & row_set, size_t rows_to_read);
-template void FilterHelper::filterPlainFixedData<DateTime64>(const DateTime64* src, PaddedPODArray<DateTime64> & dst, const RowSet & row_set, size_t rows_to_read);
+template void FilterHelper::filterPlainFixedData<Int16, Int32>(Int32 const*, DB::PaddedPODArray<Int16>&, DB::RowSet const&, size_t);
+template void FilterHelper::filterPlainFixedData<Int32, Int32>(Int32 const*, DB::PaddedPODArray<Int32>&, DB::RowSet const&, size_t);
+template void FilterHelper::filterPlainFixedData<Int64, Int64>(const Int64* src, PaddedPODArray<Int64> & dst, const RowSet & row_set, size_t rows_to_read);
+template void FilterHelper::filterPlainFixedData<Float32, Float32>(const Float32* src, PaddedPODArray<Float32> & dst, const RowSet & row_set, size_t rows_to_read);
+template void FilterHelper::filterPlainFixedData<Float64, Float64>(const Float64* src, PaddedPODArray<Float64> & dst, const RowSet & row_set, size_t rows_to_read);
+template void FilterHelper::filterPlainFixedData<DateTime64, Int64>(const Int64* src, PaddedPODArray<DateTime64> & dst, const RowSet & row_set, size_t rows_to_read);
 
 template <typename T>
 void FilterHelper::gatherDictFixedValue(
@@ -118,6 +127,8 @@ template void FilterHelper::gatherDictFixedValue(
     const PaddedPODArray<Float64> & dict, PaddedPODArray<Float64> & data, const PaddedPODArray<Int32> & idx, size_t rows_to_read);
 template void FilterHelper::gatherDictFixedValue(
     const PaddedPODArray<DateTime64> & dict, PaddedPODArray<DateTime64> & data, const PaddedPODArray<Int32> & idx, size_t rows_to_read);
+template void FilterHelper::gatherDictFixedValue(
+    const PaddedPODArray<Int16> & dict, PaddedPODArray<Int16> & data, const PaddedPODArray<Int32> & idx, size_t rows_to_read);
 
 template <typename T>
 void FilterHelper::filterDictFixedData(const PaddedPODArray<T> & dict, PaddedPODArray<T> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read)
@@ -162,6 +173,8 @@ template void FilterHelper::filterDictFixedData(const PaddedPODArray<Int64> & di
 template void FilterHelper::filterDictFixedData(const PaddedPODArray<Float32> & dict, PaddedPODArray<Float32> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read);
 template void FilterHelper::filterDictFixedData(const PaddedPODArray<Float64> & dict, PaddedPODArray<Float64> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read);
 template void FilterHelper::filterDictFixedData(const PaddedPODArray<DateTime64> & dict, PaddedPODArray<DateTime64> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read);
+template void FilterHelper::filterDictFixedData(const PaddedPODArray<Int16> & dict, PaddedPODArray<Int16> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read);
+
 
 template<class T>
 void Int64RangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len, const T * data) const

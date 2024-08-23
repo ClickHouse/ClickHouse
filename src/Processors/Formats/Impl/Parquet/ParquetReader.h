@@ -34,6 +34,7 @@ private:
     bool loadRowGroupChunkReaderIfNeeded();
 
     std::unique_ptr<parquet::ParquetFileReader> file_reader;
+    std::mutex file_mutex;
     SeekableReadBuffer& file;
     parquet::ArrowReaderProperties arrow_properties;
 

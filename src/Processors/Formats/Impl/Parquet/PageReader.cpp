@@ -39,7 +39,6 @@ bool LazyPageReader::hasNext()
         {
             // Failed to deserialize. Double the allowed page header size and try again
             allowed_header_size *= 2;
-            std::cerr << allowed_header_size << std::endl;
             if (allowed_header_size > max_page_header_size)
             {
                 throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Deserializing page header failed: {}", e.what());

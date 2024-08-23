@@ -11,7 +11,7 @@ using ColumnFilterCreators = std::vector<ColumnFilterCreator>;
 struct FilterSplitResult
 {
     std::unordered_map<String, std::vector<ColumnFilterPtr>> filters;
-    std::optional<ActionsDAG> remain_filter;
+    std::optional<ActionsDAG> remain_filter = std::nullopt;
 };
 
 class ColumnFilterHelper
@@ -20,6 +20,8 @@ public:
 
     static FilterSplitResult splitFilterForPushDown(const ActionsDAG& filter_expression)
     {
+        if (filter_expression.getOutputs().empty())
+            return {};
         const auto * filter_node = filter_expression.getOutputs().front();
         auto conditions = ActionsDAG::extractConjunctionAtoms(filter_node);
         std::vector<ColumnFilterPtr> filters;
