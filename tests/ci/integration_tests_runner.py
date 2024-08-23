@@ -33,7 +33,7 @@ CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-odbc-bridge"
 CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-library-bridge"
 
-FLAKY_TRIES_COUNT = 10  # run whole pytest several times
+FLAKY_TRIES_COUNT = 5  # run whole pytest several times
 FLAKY_REPEAT_COUNT = 5  # runs test case in single module several times
 MAX_TIME_SECONDS = 3600
 
@@ -794,7 +794,7 @@ class ClickhouseIntegrationTestsRunner:
         }  # type: Dict
         tests_times = defaultdict(float)  # type: Dict
         tests_log_paths = defaultdict(list)
-
+        id_counter = 0
         for test_to_run in tests_to_run:
             tries_num = 1 if should_fail else FLAKY_TRIES_COUNT
             for i in range(tries_num):
@@ -805,12 +805,13 @@ class ClickhouseIntegrationTestsRunner:
                 logging.info("Running tests for the %s time", i)
                 group_counters, group_test_times, log_paths = self.try_run_test_group(
                     repo_path,
-                    "bugfix" if should_fail else "flaky",
+                    f"bugfix_{id_counter}" if should_fail else f"flaky{id_counter}",
                     [test_to_run],
                     1,
                     1,
                     FLAKY_REPEAT_COUNT,
                 )
+                id_counter = id_counter + 1
                 for counter, value in group_counters.items():
                     logging.info(
                         "Tests from group %s stats, %s count %s",
