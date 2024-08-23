@@ -6,7 +6,7 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/KafkaDeadLetterQueue.h>
+#include <Interpreters/DeadLetterQueue.h>
 
 #include <Common/ProfileEvents.h>
 
