@@ -6,11 +6,13 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
-    "node1", user_configs=["config/config.xml"], with_zookeeper=True
+    "node1", user_configs=["config/config.xml"], with_zookeeper=True,
+    macros={"replica": "a", "shard": "shard1"}
 )
 
 node2 = cluster.add_instance(
-    "node2", user_configs=["config/config.xml"], with_zookeeper=True
+    "node2", user_configs=["config/config.xml"], with_zookeeper=True,
+    macros={"replica": "b", "shard": "shard1"}
 )
 
 
@@ -183,3 +185,11 @@ def test_replicated_table_ddl(started_cluster):
     )
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_3", "a", True)
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_3", "b", True)
+
+
+def test_replicated_db(started_cluster):
+    node1.query("CREATE DATABASE test ENGINE = Replicated('/test/shared_stats', '{shard}', '{replica}')")
+    node2.query("CREATE DATABASE test ENGINE = Replicated('/test/shared_stats', '{shard}', '{replica}')")
+    node1.query("CREATE TABLE test.test_stats (a Int64, b Int64) ENGINE = ReplicatedMergeTree() ORDER BY()")
+    node2.query("ALTER TABLE test.test_stats MODIFY COLUMN b Float64")
+    node2.query("ALTER TABLE test.test_stats MODIFY STATISTICS b TYPE tdigest")

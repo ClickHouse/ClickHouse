@@ -6,7 +6,6 @@
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Poco/Logger.h>
 #include <Storages/ColumnsDescription.h>
 
 
@@ -115,8 +114,11 @@ void ColumnStatisticsDescription::merge(const ColumnStatisticsDescription & othe
 
 void ColumnStatisticsDescription::assign(const ColumnStatisticsDescription & other)
 {
+    /// If the statistics is empty, it's possible that we have not assign a column_name.
+    if (empty() && column_name == "")
+        column_name = other.column_name;
     if (other.column_name != column_name)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot assign statistics from column {} to {}", column_name, other.column_name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot assign statistics from column {} to {}", other.column_name, column_name);
 
     types_to_desc = other.types_to_desc;
     data_type = other.data_type;
