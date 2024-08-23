@@ -123,7 +123,7 @@ def kafka_cluster():
     finally:
         cluster.shutdown()
 
-def view_test(expected_num_messages):
+def view_test(expected_num_messages, *_):
     attempt = 0
     rows = 0
     while attempt < 500:
@@ -135,11 +135,15 @@ def view_test(expected_num_messages):
 
     assert rows == expected_num_messages
 
-def dead_letter_queue_test(expected_num_messages):
+def dead_letter_queue_test(expected_num_messages, topic_name):
     view_test(expected_num_messages)
+    instance.query("SYSTEM FLUSH LOGS")
 
-    result = instance.query("SELECT * FROM system.dead_letter_queue")
+    result = instance.query(f"SELECT * FROM system.dead_letter_queue WHERE topic_name = '{topic_name}'")
     logging.debug(f"system.dead_letter_queue contains {result}")
+
+    rows = int(instance.query(f"SELECT count() FROM system.dead_letter_queue WHERE topic_name = '{topic_name}'"))
+    assert rows == expected_num_messages
 
 
 def bad_messages_parsing_mode(kafka_cluster, handle_error_mode, additional_dml, check_method):
@@ -194,7 +198,7 @@ def bad_messages_parsing_mode(kafka_cluster, handle_error_mode, additional_dml, 
         messages = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
         kafka_produce(kafka_cluster, f"{topic_name}", messages)
 
-        check_method(len(messages))
+        check_method(len(messages), topic_name)
 
         kafka_delete_topic(admin_client, f"{topic_name}")
 
@@ -236,7 +240,7 @@ message Message {
         messages = ["qwertyuiop", "poiuytrewq", "zxcvbnm"]
         kafka_produce(kafka_cluster, f"{topic_name}", messages)
 
-        check_method(len(messages))
+        check_method(len(messages), topic_name)
 
         kafka_delete_topic(admin_client, f"{topic_name}")
 
@@ -277,7 +281,7 @@ struct Message
     messages = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
     kafka_produce(kafka_cluster, f"{topic_name}", messages)
 
-    check_method(len(messages))
+    check_method(len(messages), topic_name)
 
     kafka_delete_topic(admin_client, f"{topic_name}")
 
