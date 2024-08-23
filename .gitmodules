@@ -106,6 +106,9 @@
 [submodule "contrib/icudata"]
 	path = contrib/icudata
 	url = https://github.com/ClickHouse/icudata
+[submodule "contrib/icu"]
+	path = contrib/icu
+	url = https://github.com/unicode-org/icu
 [submodule "contrib/flatbuffers"]
 	path = contrib/flatbuffers
 	url = https://github.com/ClickHouse/flatbuffers
