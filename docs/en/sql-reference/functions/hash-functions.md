@@ -314,10 +314,71 @@ SELECT groupBitXor(cityHash64(*)) FROM table
 Calculates a 32-bit hash code from any type of integer.
 This is a relatively fast non-cryptographic hash function of average quality for numbers.
 
+**Syntax**
+
+```sql
+intHash32(int)
+```
+
+**Arguments**
+
+- `int` — Integer to hash. [(U)Int*](../data-types/int-uint.md).
+
+**Returned value**
+
+- 32-bit hash code. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT intHash32(42);
+```
+
+Result:
+
+```response
+┌─intHash32(42)─┐
+│    1228623923 │
+└───────────────┘
+```
+
 ## intHash64
 
 Calculates a 64-bit hash code from any type of integer.
-It works faster than intHash32. Average quality.
+This is a relatively fast non-cryptographic hash function of average quality for numbers. 
+It works faster than [intHash32](#inthash32).
+
+**Syntax**
+
+```sql
+intHash64(int)
+```
+
+**Arguments**
+
+- `int` — Integer to hash. [(U)Int*](../data-types/int-uint.md).
+
+**Returned value**
+
+- 64-bit hash code. [UInt64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT intHash64(42);
+```
+
+Result:
+
+```response
+┌────────intHash64(42)─┐
+│ 11490350930367293593 │
+└──────────────────────┘
+```
 
 ## SHA1, SHA224, SHA256, SHA512, SHA512_256
 

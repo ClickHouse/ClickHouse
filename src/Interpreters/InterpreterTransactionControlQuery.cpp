@@ -3,6 +3,7 @@
 #include <Parsers/ASTTransactionControl.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 namespace DB
 {

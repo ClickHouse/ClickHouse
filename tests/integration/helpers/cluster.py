@@ -52,6 +52,7 @@ from helpers.client import QueryRuntimeException
 import docker
 
 from .client import Client
+from .retry_decorator import retry
 
 from .config_cluster import *
 
@@ -73,7 +74,7 @@ CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.lo
 # Minimum version we use in integration tests to check compatibility with old releases
 # Keep in mind that we only support upgrading between releases that are at most 1 year different.
 # This means that this minimum need to be, at least, 1 year older than the current release
-CLICKHOUSE_CI_MIN_TESTED_VERSION = "22.8"
+CLICKHOUSE_CI_MIN_TESTED_VERSION = "23.3"
 
 
 # to create docker-compose env file
@@ -132,6 +133,52 @@ def get_free_port():
     with socket.socket() as s:
         s.bind(("", 0))
         return s.getsockname()[1]
+
+
+def is_port_free(port: int) -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("", port))
+            return True
+    except socket.error:
+        return False
+
+
+class PortPoolManager:
+    """
+    This class is used for distribution of ports allocated to single pytest-xdist worker
+    It can be used by multiple ClickHouseCluster instances
+    """
+
+    # Shared between instances
+    all_ports = None
+    free_ports = None
+
+    def __init__(self):
+        self.used_ports = []
+
+        if self.all_ports is None:
+            worker_ports = os.getenv("WORKER_FREE_PORTS")
+            ports = [int(p) for p in worker_ports.split(" ")]
+
+            # Static vars
+            PortPoolManager.all_ports = ports
+            PortPoolManager.free_ports = ports
+
+    def get_port(self):
+        for port in self.free_ports:
+            if is_port_free(port):
+                self.free_ports.remove(port)
+                self.used_ports.append(port)
+                return port
+
+        raise Exception(
+            f"No free ports: {self.all_ports}",
+        )
+
+    def return_used_ports(self):
+        self.free_ports.extend(self.used_ports)
+        self.used_ports.clear()
 
 
 def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
@@ -247,7 +294,7 @@ def check_rabbitmq_is_available(rabbitmq_id, cookie):
         ),
         stdout=subprocess.PIPE,
     )
-    p.communicate()
+    p.wait(timeout=60)
     return p.returncode == 0
 
 
@@ -434,6 +481,11 @@ class ClickHouseCluster:
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
         self.project_name = re.sub(r"[^a-z0-9]", "", project_name.lower())
         self.instances_dir_name = get_instances_dir(self.name)
+        xdist_worker = os.getenv("PYTEST_XDIST_WORKER")
+        if xdist_worker:
+            self.project_name += f"_{xdist_worker}"
+            self.instances_dir_name += f"_{xdist_worker}"
+
         self.instances_dir = p.join(self.base_dir, self.instances_dir_name)
         self.docker_logs_path = p.join(self.instances_dir, "docker.log")
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
@@ -518,6 +570,8 @@ class ClickHouseCluster:
         self.spark_session = None
 
         self.with_azurite = False
+        self.azurite_container = "azurite-container"
+        self.blob_service_client = None
         self._azurite_port = 0
 
         # available when with_hdfs == True
@@ -685,6 +739,25 @@ class ClickHouseCluster:
         self.jdbc_driver_dir = p.abspath(p.join(self.instances_dir, "jdbc_driver"))
         self.jdbc_driver_logs_dir = os.path.join(self.jdbc_driver_dir, "logs")
 
+        # available when with_prometheus == True
+        self.with_prometheus = False
+        self.prometheus_writer_host = "prometheus_writer"
+        self.prometheus_writer_port = 9090
+        self.prometheus_writer_logs_dir = p.abspath(
+            p.join(self.instances_dir, "prometheus_writer/logs")
+        )
+        self.prometheus_reader_host = "prometheus_reader"
+        self.prometheus_reader_port = 9091
+        self.prometheus_reader_logs_dir = p.abspath(
+            p.join(self.instances_dir, "prometheus_reader/logs")
+        )
+        self.prometheus_remote_write_handler_host = None
+        self.prometheus_remote_write_handler_port = 9092
+        self.prometheus_remote_write_handler_path = "/write"
+        self.prometheus_remote_read_handler_host = None
+        self.prometheus_remote_read_handler_port = 9092
+        self.prometheus_remote_read_handler_path = "/read"
+
         self.docker_client = None
         self.is_up = False
         self.env = os.environ.copy()
@@ -710,61 +783,66 @@ class ClickHouseCluster:
                 .stop()
             )
 
+        self.port_pool = PortPoolManager()
+
     @property
     def kafka_port(self):
         if self._kafka_port:
             return self._kafka_port
-        self._kafka_port = get_free_port()
+        self._kafka_port = self.port_pool.get_port()
         return self._kafka_port
 
     @property
     def schema_registry_port(self):
         if self._schema_registry_port:
             return self._schema_registry_port
-        self._schema_registry_port = get_free_port()
+        self._schema_registry_port = self.port_pool.get_port()
         return self._schema_registry_port
 
     @property
     def schema_registry_auth_port(self):
         if self._schema_registry_auth_port:
             return self._schema_registry_auth_port
-        self._schema_registry_auth_port = get_free_port()
+        self._schema_registry_auth_port = self.port_pool.get_port()
         return self._schema_registry_auth_port
 
     @property
     def kerberized_kafka_port(self):
         if self._kerberized_kafka_port:
             return self._kerberized_kafka_port
-        self._kerberized_kafka_port = get_free_port()
+        self._kerberized_kafka_port = self.port_pool.get_port()
         return self._kerberized_kafka_port
 
     @property
     def azurite_port(self):
         if self._azurite_port:
             return self._azurite_port
-        self._azurite_port = get_free_port()
+        self._azurite_port = self.port_pool.get_port()
         return self._azurite_port
 
     @property
     def mongo_port(self):
         if self._mongo_port:
             return self._mongo_port
-        self._mongo_port = get_free_port()
+        self._mongo_port = self.port_pool.get_port()
         return self._mongo_port
 
     @property
     def mongo_no_cred_port(self):
         if self._mongo_no_cred_port:
             return self._mongo_no_cred_port
-        self._mongo_no_cred_port = get_free_port()
+        self._mongo_no_cred_port = self.port_pool.get_port()
         return self._mongo_no_cred_port
 
     @property
     def redis_port(self):
         if self._redis_port:
             return self._redis_port
-        self._redis_port = get_free_port()
+        self._redis_port = self.port_pool.get_port()
         return self._redis_port
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.port_pool.return_used_ports()
 
     def print_all_docker_pieces(self):
         res_networks = subprocess.check_output(
@@ -1454,9 +1532,9 @@ class ClickHouseCluster:
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_azurite = True
         env_variables["AZURITE_PORT"] = str(self.azurite_port)
-        env_variables[
-            "AZURITE_STORAGE_ACCOUNT_URL"
-        ] = f"http://azurite1:{env_variables['AZURITE_PORT']}/devstoreaccount1"
+        env_variables["AZURITE_STORAGE_ACCOUNT_URL"] = (
+            f"http://azurite1:{env_variables['AZURITE_PORT']}/devstoreaccount1"
+        )
         env_variables["AZURITE_CONNECTION_STRING"] = (
             f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
             f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
@@ -1562,6 +1640,42 @@ class ClickHouseCluster:
         ]
         return self.base_hive_cmd
 
+    def setup_prometheus_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        env_variables["PROMETHEUS_WRITER_HOST"] = self.prometheus_writer_host
+        env_variables["PROMETHEUS_WRITER_PORT"] = str(self.prometheus_writer_port)
+        env_variables["PROMETHEUS_WRITER_LOGS"] = self.prometheus_writer_logs_dir
+        env_variables["PROMETHEUS_WRITER_LOGS_FS"] = "bind"
+        env_variables["PROMETHEUS_READER_HOST"] = self.prometheus_reader_host
+        env_variables["PROMETHEUS_READER_PORT"] = str(self.prometheus_reader_port)
+        env_variables["PROMETHEUS_READER_LOGS"] = self.prometheus_reader_logs_dir
+        env_variables["PROMETHEUS_READER_LOGS_FS"] = "bind"
+        if self.prometheus_remote_write_handler_host:
+            env_variables["PROMETHEUS_REMOTE_WRITE_HANDLER"] = (
+                f"http://{self.prometheus_remote_write_handler_host}:{self.prometheus_remote_write_handler_port}/{self.prometheus_remote_write_handler_path.strip('/')}"
+            )
+        if self.prometheus_remote_read_handler_host:
+            env_variables["PROMETHEUS_REMOTE_READ_HANDLER"] = (
+                f"http://{self.prometheus_remote_read_handler_host}:{self.prometheus_remote_read_handler_port}/{self.prometheus_remote_read_handler_path.strip('/')}"
+            )
+        if not self.with_prometheus:
+            self.with_prometheus = True
+            self.base_cmd.extend(
+                [
+                    "--file",
+                    p.join(docker_compose_yml_dir, "docker_compose_prometheus.yml"),
+                ]
+            )
+            self.base_prometheus_cmd = [
+                "docker-compose",
+                "--env-file",
+                instance.env_file,
+                "--project-name",
+                self.project_name,
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_prometheus.yml"),
+            ]
+        return self.base_prometheus_cmd
+
     def add_instance(
         self,
         name,
@@ -1602,6 +1716,9 @@ class ClickHouseCluster:
         with_jdbc_bridge=False,
         with_hive=False,
         with_coredns=False,
+        with_prometheus=False,
+        handle_prometheus_remote_write=False,
+        handle_prometheus_remote_read=False,
         use_old_analyzer=None,
         hostname=None,
         env_variables=None,
@@ -1653,9 +1770,9 @@ class ClickHouseCluster:
 
         # Code coverage files will be placed in database directory
         # (affect only WITH_COVERAGE=1 build)
-        env_variables[
-            "LLVM_PROFILE_FILE"
-        ] = "/var/lib/clickhouse/server_%h_%p_%m.profraw"
+        env_variables["LLVM_PROFILE_FILE"] = (
+            "/var/lib/clickhouse/server_%h_%p_%m.profraw"
+        )
 
         clickhouse_start_command = CLICKHOUSE_START_COMMAND
         if clickhouse_log_file:
@@ -1668,9 +1785,9 @@ class ClickHouseCluster:
             cluster=self,
             base_path=self.base_dir,
             name=name,
-            base_config_dir=base_config_dir
-            if base_config_dir
-            else self.base_config_dir,
+            base_config_dir=(
+                base_config_dir if base_config_dir else self.base_config_dir
+            ),
             custom_main_configs=main_configs or [],
             custom_user_configs=user_configs or [],
             custom_dictionaries=dictionaries or [],
@@ -1942,6 +2059,17 @@ class ClickHouseCluster:
         if with_hive:
             cmds.append(
                 self.setup_hive(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_prometheus:
+            if handle_prometheus_remote_write:
+                self.prometheus_remote_write_handler_host = instance.hostname
+            if handle_prometheus_remote_read:
+                self.prometheus_remote_read_handler_host = instance.hostname
+            cmds.append(
+                self.setup_prometheus_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
             )
 
         logging.debug(
@@ -2314,7 +2442,7 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=30):
+    def wait_rabbitmq_to_start(self, timeout=60):
         self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
@@ -2342,7 +2470,7 @@ class ClickHouseCluster:
                 )
             rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
         except Exception as e:
-            logging.debug("Unable to get logs from docker.")
+            logging.debug(f"Unable to get logs from docker: {e}.")
         raise Exception("Cannot wait RabbitMQ container")
 
     def wait_nats_is_available(self, max_retries=5):
@@ -2566,6 +2694,32 @@ class ClickHouseCluster:
                     connection_string
                 )
                 logging.debug(blob_service_client.get_account_information())
+                containers = [
+                    c
+                    for c in blob_service_client.list_containers(
+                        name_starts_with=self.azurite_container
+                    )
+                    if c.name == self.azurite_container
+                ]
+                if len(containers) > 0:
+                    for c in containers:
+                        blob_service_client.delete_container(c)
+
+                container_client = blob_service_client.get_container_client(
+                    self.azurite_container
+                )
+                if container_client.exists():
+                    logging.debug(
+                        f"azurite container '{self.azurite_container}' exist, deleting all blobs"
+                    )
+                    for b in container_client.list_blobs():
+                        container_client.delete_blob(b.name)
+                else:
+                    logging.debug(
+                        f"azurite container '{self.azurite_container}' doesn't exist, creating it"
+                    )
+                    container_client.create_container()
+
                 self.blob_service_client = blob_service_client
                 return
             except Exception as ex:
@@ -2690,15 +2844,14 @@ class ClickHouseCluster:
 
             images_pull_cmd = self.base_cmd + ["pull"]
             # sometimes dockerhub/proxy can be flaky
-            for i in range(5):
-                try:
-                    run_and_check(images_pull_cmd)
-                    break
-                except Exception as ex:
-                    if i == 4:
-                        raise ex
-                    logging.info("Got exception pulling images: %s", ex)
-                    time.sleep(i * 3)
+
+            def logging_pulling_images(**kwargs):
+                if "exception" in kwargs:
+                    logging.info(
+                        "Got exception pulling images: %s", kwargs["exception"]
+                    )
+
+            retry(log_function=logging_pulling_images)(run_and_check)(images_pull_cmd)
 
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")
@@ -2971,7 +3124,17 @@ class ClickHouseCluster:
                     "Trying to create Azurite instance by command %s",
                     " ".join(map(str, azurite_start_cmd)),
                 )
-                run_and_check(azurite_start_cmd)
+
+                def logging_azurite_initialization(exception, retry_number, sleep_time):
+                    logging.info(
+                        f"Azurite initialization failed with error: {exception}"
+                    )
+
+                retry(
+                    log_function=logging_azurite_initialization,
+                )(
+                    run_and_check
+                )(azurite_start_cmd)
                 self.up_called = True
                 logging.info("Trying to connect to Azurite")
                 self.wait_azurite_to_start()
@@ -2997,6 +3160,12 @@ class ClickHouseCluster:
                 self.wait_for_url(
                     f"http://{self.jdbc_bridge_ip}:{self.jdbc_bridge_port}/ping"
                 )
+
+            if self.with_prometheus:
+                os.makedirs(self.prometheus_writer_logs_dir)
+                os.chmod(self.prometheus_writer_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                os.makedirs(self.prometheus_reader_logs_dir)
+                os.chmod(self.prometheus_reader_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
             clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
             logging.debug(
@@ -3915,7 +4084,11 @@ class ClickHouseInstance:
         )
 
     def contains_in_log(
-        self, substring, from_host=False, filename="clickhouse-server.log"
+        self,
+        substring,
+        from_host=False,
+        filename="clickhouse-server.log",
+        exclusion_substring="",
     ):
         if from_host:
             # We check fist file exists but want to look for all rotated logs as well
@@ -3923,7 +4096,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f {self.logs_dir}/{filename} ] && zgrep -aH "{substring}" {self.logs_dir}/{filename}* || true',
+                    f'[ -f {self.logs_dir}/{filename} ] && zgrep -aH "{substring}" {self.logs_dir}/{filename}* | ( [ -z "{exclusion_substring}" ] && cat || grep -v "${exclusion_substring}" ) || true',
                 ]
             )
         else:
@@ -3931,7 +4104,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -aH "{substring}" /var/log/clickhouse-server/{filename} || true',
+                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -aH "{substring}" /var/log/clickhouse-server/{filename} | ( [ -z "{exclusion_substring}" ] && cat || grep -v "${exclusion_substring}" ) || true',
                 ]
             )
         return len(result) > 0
@@ -4414,7 +4587,7 @@ class ClickHouseInstance:
 
         use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         # If specific version was used there can be no
-        # allow_experimental_analyzer setting, so do this only if it was
+        # enable_analyzer setting, so do this only if it was
         # explicitly requested.
         if self.tag:
             use_old_analyzer = False

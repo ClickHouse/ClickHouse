@@ -21,6 +21,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Databases/MySQL/FetchTablesColumnsList.h>
 
@@ -151,9 +152,9 @@ public:
 
     String getName() const override { return "StorageMySQLSink"; }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
-        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+        auto block = getHeader().cloneWithColumns(chunk.getColumns());
         auto blocks = splitBlocks(block, max_batch_rows);
         mysqlxx::Transaction trans(entry);
         try

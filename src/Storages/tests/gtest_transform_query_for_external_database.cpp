@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -74,6 +75,7 @@ private:
                 {"a", std::make_shared<DataTypeUInt8>()},
                 {"b", std::make_shared<DataTypeDate>()},
                 {"foo", std::make_shared<DataTypeString>()},
+                {"is_value", DataTypeFactory::instance().get("Bool")},
             }),
         TableWithColumnNamesAndTypes(
             createDBAndTable("table2"),
@@ -411,6 +413,14 @@ TEST(TransformQueryForExternalDatabase, Analyzer)
         R"(SELECT "column" FROM "test"."table")");
 
     check(state, 1, {"column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo"},
-        "SELECT * FROM table WHERE (column) IN (1)",
+        "SELECT * EXCEPT (is_value) FROM table WHERE (column) IN (1)",
         R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo" FROM "test"."table" WHERE "column" IN (1))");
+
+    check(state, 1, {"is_value"},
+        "SELECT is_value FROM table WHERE is_value = true",
+        R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = true)");
+
+    check(state, 1, {"is_value"},
+        "SELECT is_value FROM table WHERE is_value = 1",
+        R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = 1)");
 }

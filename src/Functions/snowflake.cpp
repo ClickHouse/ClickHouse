@@ -8,6 +8,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 
@@ -64,7 +65,7 @@ public:
         FunctionArgumentDescriptors args{
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime), nullptr, "DateTime"}
         };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeInt64>();
     }
@@ -121,7 +122,7 @@ public:
         FunctionArgumentDescriptors optional_args{
             {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         String timezone;
         if (arguments.size() == 2)
@@ -190,7 +191,7 @@ public:
         FunctionArgumentDescriptors args{
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime64), nullptr, "DateTime64"}
         };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeInt64>();
     }
@@ -255,7 +256,7 @@ public:
         FunctionArgumentDescriptors optional_args{
             {"time_zone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
         };
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         String timezone;
         if (arguments.size() == 2)

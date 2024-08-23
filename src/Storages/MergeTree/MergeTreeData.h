@@ -18,7 +18,6 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -65,6 +64,7 @@ using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBacku
 class MergeTreeTransaction;
 using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
 
+struct MergeTreeSettings;
 struct WriteSettings;
 
 /// Auxiliary struct holding information about the future merged or mutated part.
@@ -403,7 +403,7 @@ public:
     Block getMinMaxCountProjectionBlock(
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
-        const ActionsDAGPtr & filter_dag,
+        const ActionsDAG * filter_dag,
         const DataPartsVector & parts,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
@@ -426,7 +426,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAGPtr &, ContextPtr) const override;
+    ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const override;
 
     bool supportsFinal() const override;
 
@@ -441,7 +441,7 @@ public:
 
     bool hasProjection() const override;
 
-    bool areAsynchronousInsertsEnabled() const override { return getSettings()->async_insert; }
+    bool areAsynchronousInsertsEnabled() const override;
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
 
@@ -860,12 +860,7 @@ public:
 
     /// Returns true if table can create new parts with adaptive granularity
     /// Has additional constraint in replicated version
-    virtual bool canUseAdaptiveGranularity() const
-    {
-        const auto settings = getSettings();
-        return settings->index_granularity_bytes != 0 &&
-            (settings->enable_mixed_granularity_parts || !has_non_adaptive_index_granularity_parts);
-    }
+    virtual bool canUseAdaptiveGranularity() const;
 
     /// Get constant pointer to storage settings.
     /// Copy this pointer into your scope and you will
@@ -1096,7 +1091,12 @@ public:
 
     static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
 
+    /// Unloads primary keys of all parts.
     void unloadPrimaryKeys();
+
+    /// Unloads primary keys of outdated parts that are not used by any query.
+    /// Returns the number of parts for which index was unloaded.
+    size_t unloadPrimaryKeysOfOutdatedParts();
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1143,7 +1143,7 @@ protected:
     struct TagByInfo{};
     struct TagByStateAndInfo{};
 
-    void initializeDirectoriesAndFormatVersion(const std::string & relative_data_path_, bool attach, const std::string & date_column_name, bool need_create_directories=true);
+    void initializeDirectoriesAndFormatVersion(const std::string & relative_data_path_, bool attach, const std::string & date_column_name, bool need_create_directories = true);
 
     static const MergeTreePartInfo & dataPartPtrToInfo(const DataPartPtr & part)
     {
@@ -1227,7 +1227,7 @@ protected:
         boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns);
 
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
-        const ActionsDAGPtr & filter_actions_dag, ContextPtr context, const DataPartsVector & parts) const;
+        const ActionsDAG & filter_actions_dag, ContextPtr context, const DataPartsVector & parts) const;
 
     static decltype(auto) getStateModifier(DataPartState state)
     {
@@ -1260,6 +1260,8 @@ protected:
     std::mutex grab_old_parts_mutex;
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
+    /// The same for unloadPrimaryKeysOfOutdatedParts.
+    std::mutex unload_primary_key_mutex;
 
     void checkProperties(
         const StorageInMemoryMetadata & new_metadata,
@@ -1471,7 +1473,7 @@ protected:
     /// Restores the parts of this table from backup.
     void restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
     void restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> restored_parts_holder, const MergeTreePartInfo & part_info, const String & part_path_in_backup, bool detach_if_broken) const;
-    MutableDataPartPtr loadPartRestoredFromBackup(const DiskPtr & disk, const String & temp_dir, const String & part_name, bool detach_if_broken) const;
+    MutableDataPartPtr loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const;
 
     /// Attaches restored parts to the storage.
     virtual void attachRestoredParts(MutableDataPartsVector && parts) = 0;
@@ -1727,14 +1729,6 @@ struct CurrentlySubmergingEmergingTagger
 
     ~CurrentlySubmergingEmergingTagger();
 };
-
-
-/// TODO: move it somewhere
-[[ maybe_unused ]] static bool needSyncPart(size_t input_rows, size_t input_bytes, const MergeTreeSettings & settings)
-{
-    return ((settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
-        || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
-}
 
 /// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
 /// Return true if the counter had been updated

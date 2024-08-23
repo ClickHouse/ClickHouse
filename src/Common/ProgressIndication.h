@@ -1,14 +1,15 @@
 #pragma once
 
-#include <unordered_map>
-#include <unordered_set>
-#include <mutex>
 #include <IO/Progress.h>
 #include <Interpreters/Context.h>
 #include <base/types.h>
 #include <Common/Stopwatch.h>
 #include <Common/EventRateMeter.h>
 
+#include <iostream>
+#include <mutex>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -71,11 +72,6 @@ public:
     /// How much seconds passed since query execution start.
     double elapsedSeconds() const { return getElapsedNanoseconds() / 1e9; }
 
-    void updateThreadEventData(HostToTimesMap & new_hosts_data);
-
-private:
-    double getCPUUsage();
-
     struct MemoryUsage
     {
         UInt64 total = 0;
@@ -84,6 +80,11 @@ private:
     };
 
     MemoryUsage getMemoryUsage() const;
+
+    void updateThreadEventData(HostToTimesMap & new_hosts_data);
+
+private:
+    double getCPUUsage();
 
     UInt64 getElapsedNanoseconds() const;
 
@@ -104,7 +105,7 @@ private:
 
     bool write_progress_on_update = false;
 
-    EventRateMeter cpu_usage_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/}; // average cpu utilization last 2 second
+    EventRateMeter cpu_usage_meter{static_cast<double>(clock_gettime_ns()), 2'000'000'000 /*ns*/, 4}; // average cpu utilization last 2 second, skip first 4 points
     HostToTimesMap hosts_data;
     /// In case of all of the above:
     /// - clickhouse-local

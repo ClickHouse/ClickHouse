@@ -111,10 +111,12 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(Source::ObjectInfoPt
     if (metadata->useBucketsForProcessing())
     {
         const auto bucket = metadata->getBucketForPath(object_info->relative_path);
+        std::lock_guard lock(mutex);
         listed_keys_cache[bucket].keys.emplace_front(object_info);
     }
     else
     {
+        std::lock_guard lock(mutex);
         objects_to_retry.push_back(object_info);
     }
 }
@@ -357,41 +359,38 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
 ObjectStorageQueueSource::ObjectStorageQueueSource(
     String name_,
     size_t processor_id_,
-    const Block & header_,
-    std::unique_ptr<StorageObjectStorageSource> internal_source_,
+    std::shared_ptr<FileIterator> file_iterator_,
+    ConfigurationPtr configuration_,
+    ObjectStoragePtr object_storage_,
+    const ReadFromFormatInfo & read_from_format_info_,
+    const std::optional<FormatSettings> & format_settings_,
+    const ObjectStorageQueueSettings & queue_settings_,
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
-    const ObjectStorageQueueAction & action_,
-    RemoveFileFunc remove_file_func_,
-    const NamesAndTypesList & requested_virtual_columns_,
     ContextPtr context_,
+    size_t max_block_size_,
     const std::atomic<bool> & shutdown_called_,
     const std::atomic<bool> & table_is_being_dropped_,
     std::shared_ptr<ObjectStorageQueueLog> system_queue_log_,
     const StorageID & storage_id_,
     LoggerPtr log_,
-    size_t max_processed_files_before_commit_,
-    size_t max_processed_rows_before_commit_,
-    size_t max_processed_bytes_before_commit_,
-    size_t max_processing_time_sec_before_commit_,
     bool commit_once_processed_)
-    : ISource(header_)
+    : ISource(read_from_format_info_.source_header)
     , WithContext(context_)
     , name(std::move(name_))
     , processor_id(processor_id_)
-    , action(action_)
+    , file_iterator(file_iterator_)
+    , configuration(configuration_)
+    , object_storage(object_storage_)
+    , read_from_format_info(read_from_format_info_)
+    , format_settings(format_settings_)
+    , queue_settings(queue_settings_)
     , files_metadata(files_metadata_)
-    , internal_source(std::move(internal_source_))
-    , requested_virtual_columns(requested_virtual_columns_)
+    , max_block_size(max_block_size_)
     , shutdown_called(shutdown_called_)
     , table_is_being_dropped(table_is_being_dropped_)
     , system_queue_log(system_queue_log_)
     , storage_id(storage_id_)
-    , max_processed_files_before_commit(max_processed_files_before_commit_)
-    , max_processed_rows_before_commit(max_processed_rows_before_commit_)
-    , max_processed_bytes_before_commit(max_processed_bytes_before_commit_)
-    , max_processing_time_sec_before_commit(max_processing_time_sec_before_commit_)
     , commit_once_processed(commit_once_processed_)
-    , remove_file_func(remove_file_func_)
     , log(log_)
 {
 }
@@ -399,21 +398,6 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
 String ObjectStorageQueueSource::getName() const
 {
     return name;
-}
-
-void ObjectStorageQueueSource::lazyInitialize(size_t processor)
-{
-    if (initialized)
-        return;
-
-    LOG_TEST(log, "Initializing a new reader");
-
-    internal_source->lazyInitialize(processor);
-    reader = std::move(internal_source->reader);
-    if (reader)
-        reader_future = std::move(internal_source->reader_future);
-
-    initialized = true;
 }
 
 Chunk ObjectStorageQueueSource::generate()
@@ -440,19 +424,33 @@ Chunk ObjectStorageQueueSource::generate()
 
 Chunk ObjectStorageQueueSource::generateImpl()
 {
-    lazyInitialize(processor_id);
-
     while (true)
     {
         if (!reader)
         {
-            LOG_TEST(log, "No reader");
-            break;
+            if (shutdown_called)
+            {
+                LOG_TEST(log, "Shutdown called");
+                break;
+            }
+
+            const auto context = getContext();
+            reader = StorageObjectStorageSource::createReader(
+                processor_id, file_iterator, configuration, object_storage, read_from_format_info,
+                format_settings, nullptr, context, nullptr, log, max_block_size,
+                context->getSettingsRef().max_parsing_threads.value, /* need_only_count */false);
+
+            if (!reader)
+            {
+                LOG_TEST(log, "No reader");
+                break;
+            }
         }
 
         const auto * object_info = dynamic_cast<const ObjectStorageQueueObjectInfo *>(reader.getObjectInfo().get());
         auto file_metadata = object_info->file_metadata;
         auto file_status = file_metadata->getFileStatus();
+        const auto & path = reader.getObjectInfo()->getPath();
 
         if (isCancelled())
         {
@@ -469,15 +467,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     LOG_ERROR(log, "Failed to set file {} as failed: {}",
                              object_info->relative_path, getCurrentExceptionMessage(true));
                 }
-
-                appendLogElement(reader.getObjectInfo()->getPath(), *file_status, processed_rows_from_file, false);
             }
 
             LOG_TEST(log, "Query is cancelled");
             break;
         }
-
-        const auto & path = reader.getObjectInfo()->getPath();
 
         if (shutdown_called)
         {
@@ -502,8 +496,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
                               object_info->relative_path, getCurrentExceptionMessage(true));
                 }
 
-                appendLogElement(path, *file_status, processed_rows_from_file, false);
-
                 /// Leave the file half processed. Table is being dropped, so we do not care.
                 break;
             }
@@ -512,10 +504,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
                      "Will process the file fully and then shutdown",
                      path, processed_rows_from_file);
         }
-
-        auto * prev_scope = CurrentThread::get().attachProfileCountersScope(&file_status->profile_counters);
-        SCOPE_EXIT({ CurrentThread::get().attachProfileCountersScope(prev_scope); });
-        /// FIXME:  if files are compressed, profile counters update does not work fully (object storage related counters are not saved). Why?
 
         try
         {
@@ -532,11 +520,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 total_processed_bytes += chunk.bytes();
 
                 VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
-                    chunk, requested_virtual_columns,
+                    chunk, read_from_format_info.requested_virtual_columns,
                     {
                         .path = path,
                         .size = reader.getObjectInfo()->metadata->size_bytes
-                    });
+                    }, getContext(), read_from_format_info.columns_description);
 
                 return chunk;
             }
@@ -548,13 +536,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             failed_during_read_files.push_back(file_metadata);
             file_status->onFailed(getCurrentExceptionMessage(true));
-            appendLogElement(path, *file_status, processed_rows_from_file, false);
 
             if (processed_rows_from_file == 0)
             {
-                auto * file_iterator = dynamic_cast<FileIterator *>(internal_source->file_iterator.get());
-                chassert(file_iterator);
-
                 if (file_status->retries < file_metadata->getMaxTries())
                     file_iterator->returnForRetry(reader.getObjectInfo());
 
@@ -567,15 +551,15 @@ Chunk ObjectStorageQueueSource::generateImpl()
             throw;
         }
 
-        appendLogElement(path, *file_status, processed_rows_from_file, true);
-
         file_status->setProcessingEndTime();
         file_status.reset();
+        reader = {};
 
         processed_rows_from_file = 0;
         processed_files.push_back(file_metadata);
 
-        if (processed_files.size() == max_processed_files_before_commit)
+        if (queue_settings.max_processed_files_before_commit
+            && processed_files.size() == queue_settings.max_processed_files_before_commit)
         {
             LOG_TRACE(log, "Number of max processed files before commit reached "
                       "(rows: {}, bytes: {}, files: {})",
@@ -583,67 +567,29 @@ Chunk ObjectStorageQueueSource::generateImpl()
             break;
         }
 
-        bool rows_or_bytes_or_time_limit_reached = false;
-        if (max_processed_rows_before_commit
-            && total_processed_rows == max_processed_rows_before_commit)
+        if (queue_settings.max_processed_rows_before_commit
+            && total_processed_rows == queue_settings.max_processed_rows_before_commit)
         {
             LOG_TRACE(log, "Number of max processed rows before commit reached "
                       "(rows: {}, bytes: {}, files: {})",
                       total_processed_rows, total_processed_bytes, processed_files.size());
-
-            rows_or_bytes_or_time_limit_reached = true;
+            break;
         }
-        else if (max_processed_bytes_before_commit
-                 && total_processed_bytes == max_processed_bytes_before_commit)
+        else if (queue_settings.max_processed_bytes_before_commit
+                 && total_processed_bytes == queue_settings.max_processed_bytes_before_commit)
         {
             LOG_TRACE(log, "Number of max processed bytes before commit reached "
                       "(rows: {}, bytes: {}, files: {})",
                       total_processed_rows, total_processed_bytes, processed_files.size());
-
-            rows_or_bytes_or_time_limit_reached = true;
+            break;
         }
-        else if (max_processing_time_sec_before_commit
-                 && total_stopwatch.elapsedSeconds() >= max_processing_time_sec_before_commit)
+        else if (queue_settings.max_processing_time_sec_before_commit
+                 && total_stopwatch.elapsedSeconds() >= queue_settings.max_processing_time_sec_before_commit)
         {
             LOG_TRACE(log, "Max processing time before commit reached "
                       "(rows: {}, bytes: {}, files: {})",
                       total_processed_rows, total_processed_bytes, processed_files.size());
-
-            rows_or_bytes_or_time_limit_reached = true;
-        }
-
-        if (rows_or_bytes_or_time_limit_reached)
-        {
-            if (!reader_future.valid())
-                break;
-
-            LOG_TRACE(log, "Rows or bytes limit reached, but we have one more file scheduled already, "
-                      "will process it despite the limit");
-        }
-
-        if (shutdown_called)
-        {
-            LOG_TRACE(log, "Shutdown was called, stopping sync");
             break;
-        }
-
-        chassert(reader_future.valid());
-        reader = reader_future.get();
-
-        if (!reader)
-        {
-            LOG_TEST(log, "Reader finished");
-            break;
-        }
-
-        file_status = files_metadata->getFileStatus(reader.getObjectInfo()->getPath());
-
-        if (!rows_or_bytes_or_time_limit_reached && processed_files.size() + 1 < max_processed_files_before_commit)
-        {
-            /// Even if task is finished the thread may be not freed in pool.
-            /// So wait until it will be freed before scheduling a new task.
-            internal_source->create_reader_pool->wait();
-            reader_future = internal_source->createReaderAsync(processor_id);
         }
     }
 
@@ -663,10 +609,14 @@ void ObjectStorageQueueSource::commit(bool success, const std::string & exceptio
             applyActionAfterProcessing(file_metadata->getPath());
         }
         else
+        {
             file_metadata->setFailed(
                 exception_message,
                 /* reduce_retry_count */false,
                 /* overwrite_status */true);
+
+        }
+        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), processed_rows_from_file, /* processed */success);
     }
 
     for (const auto & file_metadata : failed_during_read_files)
@@ -677,17 +627,18 @@ void ObjectStorageQueueSource::commit(bool success, const std::string & exceptio
             file_metadata->getFileStatus()->getException(),
             /* reduce_retry_count */true,
             /* overwrite_status */false);
+
+        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), processed_rows_from_file, /* processed */false);
     }
 }
 
 void ObjectStorageQueueSource::applyActionAfterProcessing(const String & path)
 {
-    switch (action)
+    switch (queue_settings.after_processing.value)
     {
         case ObjectStorageQueueAction::DELETE:
         {
-            assert(remove_file_func);
-            remove_file_func(path);
+            object_storage->removeObject(StoredObject(path));
             break;
         }
         case ObjectStorageQueueAction::KEEP:
@@ -715,7 +666,6 @@ void ObjectStorageQueueSource::appendLogElement(
             .file_name = filename,
             .rows_processed = processed_rows,
             .status = processed ? ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Processed : ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Failed,
-            .counters_snapshot = file_status_.profile_counters.getPartiallyAtomicSnapshot(),
             .processing_start_time = file_status_.processing_start_time,
             .processing_end_time = file_status_.processing_end_time,
             .exception = file_status_.getException(),

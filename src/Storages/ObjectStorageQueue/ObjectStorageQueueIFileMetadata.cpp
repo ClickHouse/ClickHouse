@@ -62,6 +62,11 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & e
     last_exception = exception;
 }
 
+void ObjectStorageQueueIFileMetadata::FileStatus::updateState(State state_)
+{
+    state = state_;
+}
+
 std::string ObjectStorageQueueIFileMetadata::FileStatus::getException() const
 {
     std::lock_guard lock(last_exception_mutex);
@@ -224,9 +229,14 @@ bool ObjectStorageQueueIFileMetadata::setProcessing()
 
     auto [success, file_state] = setProcessingImpl();
     if (success)
+    {
         file_status->onProcessing();
+    }
     else
+    {
+        LOG_TEST(log, "Updating state of {} from {} to {}", path, file_status->state.load(), file_state);
         file_status->updateState(file_state);
+    }
 
     LOG_TEST(log, "File {} has state `{}`: will {}process (processing id version: {})",
              path, file_state, success ? "" : "not ",

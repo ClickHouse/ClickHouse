@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
-
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-user_files_path=$($CLICKHOUSE_CLIENT_BINARY --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
+mkdir -p ${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}
 
-mkdir -p $user_files_path/test_02504
-
-cp $CURDIR/data_ua_parser/os.yaml ${user_files_path}/test_02504/
-cp $CURDIR/data_ua_parser/browser.yaml ${user_files_path}/test_02504/
-cp $CURDIR/data_ua_parser/device.yaml ${user_files_path}/test_02504/
+cp $CURDIR/data_ua_parser/os.yaml ${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}/
+cp $CURDIR/data_ua_parser/browser.yaml ${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}/
+cp $CURDIR/data_ua_parser/device.yaml ${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}/
 
 $CLICKHOUSE_CLIENT -n --query="
 drop dictionary if exists regexp_os;
@@ -29,7 +26,7 @@ create dictionary regexp_os
     os_v4_replacement String default '0'
 )
 PRIMARY KEY(regex)
-SOURCE(YAMLRegExpTree(PATH '${user_files_path}/test_02504/os.yaml'))
+SOURCE(YAMLRegExpTree(PATH '${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}/os.yaml'))
 LIFETIME(0)
 LAYOUT(regexp_tree);
 
@@ -41,7 +38,7 @@ create dictionary regexp_browser
     v2_replacement String default '0'
 )
 PRIMARY KEY(regex)
-SOURCE(YAMLRegExpTree(PATH '${user_files_path}/test_02504/browser.yaml'))
+SOURCE(YAMLRegExpTree(PATH '${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}/browser.yaml'))
 LIFETIME(0)
 LAYOUT(regexp_tree);
 
@@ -53,7 +50,7 @@ create dictionary regexp_device
     model_replacement String
 )
 PRIMARY KEY(regex)
-SOURCE(YAMLRegExpTree(PATH '${user_files_path}/test_02504/device.yaml'))
+SOURCE(YAMLRegExpTree(PATH '${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}/device.yaml'))
 LIFETIME(0)
 LAYOUT(regexp_tree);
 
@@ -84,4 +81,4 @@ drop dictionary if exists regexp_device;
 drop table if exists user_agents;
 "
 
-rm -rf "$user_files_path/test_02504"
+rm -rf ${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}

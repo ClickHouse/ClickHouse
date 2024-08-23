@@ -2,6 +2,7 @@
 #include <Access/ContextAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Core/Settings.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTIdentifier.h>
@@ -117,7 +118,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     if (asts.size() == 1)
         return collection_copy;
 
-    const auto allow_override_by_default = context->getSettings().allow_named_collection_override_by_default;
+    const auto allow_override_by_default = context->getSettingsRef().allow_named_collection_override_by_default;
 
     for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
     {
@@ -162,7 +163,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
-    const auto allow_override_by_default = context->getSettings().allow_named_collection_override_by_default;
+    const auto allow_override_by_default = context->getSettingsRef().allow_named_collection_override_by_default;
     for (const auto & key : keys)
     {
         if (collection_copy->isOverridable(key, allow_override_by_default))

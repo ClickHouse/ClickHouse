@@ -94,7 +94,7 @@ function run_tests()
 
 export -f run_tests
 
-timeout "${MAX_RUN_TIME:-9000}" bash -c run_tests || echo "timeout reached" >&2
+run_tests
 
 #/process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 

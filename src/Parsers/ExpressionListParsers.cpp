@@ -2388,6 +2388,24 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 }
 
+bool ParserExpressionWithOptionalArguments::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier id_p;
+    ParserFunction func_p;
+
+    if (ParserFunction(false, false).parse(pos, node, expected))
+        return true;
+
+    if (ParserIdentifier().parse(pos, node, expected))
+    {
+        node = makeASTFunction(node->as<ASTIdentifier>()->name());
+        node->as<ASTFunction &>().no_empty_args = true;
+        return true;
+    }
+
+    return false;
+}
+
 const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table
 {
     {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)},
@@ -2743,7 +2761,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     /// 'AND' can be both boolean function and part of the '... BETWEEN ... AND ...' operator
     if (op.function_name == "and" && layers.back()->between_counter)
     {
-        layers.back()->between_counter--;
+        --layers.back()->between_counter;
         op = finish_between_operator;
     }
 
@@ -2793,8 +2811,8 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     if (op.type == OperatorType::TupleElement)
     {
         ASTPtr tmp;
-        if (asterisk_parser.parse(pos, tmp, expected) ||
-            columns_matcher_parser.parse(pos, tmp, expected))
+        if (asterisk_parser.parse(pos, tmp, expected)
+            || columns_matcher_parser.parse(pos, tmp, expected))
         {
             if (auto * asterisk = tmp->as<ASTAsterisk>())
             {
@@ -2813,6 +2831,17 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
             }
 
             layers.back()->pushOperand(std::move(tmp));
+            return Action::OPERATOR;
+        }
+
+        /// If it is an identifier,
+        /// replace it with literal, because an expression `expr().elem`
+        /// should be transformed to `tupleElement(expr(), 'elem')` for query analysis,
+        /// otherwise the identifier `elem` will not be found.
+        if (ParserIdentifier().parse(pos, tmp, expected))
+        {
+            layers.back()->pushOperator(op);
+            layers.back()->pushOperand(std::make_shared<ASTLiteral>(tmp->as<ASTIdentifier>()->name()));
             return Action::OPERATOR;
         }
     }
@@ -2845,7 +2874,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         layers.push_back(std::make_unique<ArrayElementLayer>());
 
     if (op.type == OperatorType::StartBetween || op.type == OperatorType::StartNotBetween)
-        layers.back()->between_counter++;
+        ++layers.back()->between_counter;
 
     return Action::OPERAND;
 }

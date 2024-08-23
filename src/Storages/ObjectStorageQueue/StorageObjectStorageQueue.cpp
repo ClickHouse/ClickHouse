@@ -36,6 +36,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int BAD_QUERY_PARAMETER;
     extern const int QUERY_NOT_ALLOWED;
 }
 
@@ -150,7 +151,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     }
     else if (!configuration->isPathWithGlobs())
     {
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "ObjectStorageQueue url must either end with '/' or contain globs");
+        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
 
     checkAndAdjustSettings(*queue_settings, engine_args, mode > LoadingStrictnessLevel::CREATE, log);
@@ -160,14 +161,15 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     configuration->check(context_);
 
     ColumnsDescription columns{columns_};
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, context_);
+    std::string sample_path;
+    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context_);
     configuration->check(context_);
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), context_));
     setInMemoryMetadata(storage_metadata);
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
@@ -352,43 +354,14 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     ContextPtr local_context,
     bool commit_once_processed)
 {
-    auto internal_source = std::make_unique<StorageObjectStorageSource>(
-        getName(),
-        object_storage,
-        configuration,
-        info,
-        format_settings,
-        local_context,
-        max_block_size,
-        file_iterator,
-        local_context->getSettingsRef().max_download_threads,
-        false);
-
-    auto file_deleter = [=, this](const std::string & path) mutable
-    {
-        object_storage->removeObject(StoredObject(path));
-    };
-
     return std::make_shared<ObjectStorageQueueSource>(
-        getName(),
-        processor_id,
-        info.source_header,
-        std::move(internal_source),
-        files_metadata,
-        queue_settings->after_processing,
-        file_deleter,
-        info.requested_virtual_columns,
-        local_context,
-        shutdown_called,
-        table_is_being_dropped,
+        getName(), processor_id,
+        file_iterator, configuration, object_storage,
+        info, format_settings,
+        *queue_settings, files_metadata,
+        local_context, max_block_size, shutdown_called, table_is_being_dropped,
         getQueueLog(object_storage, local_context, *queue_settings),
-        getStorageID(),
-        log,
-        queue_settings->max_processed_files_before_commit,
-        queue_settings->max_processed_rows_before_commit,
-        queue_settings->max_processed_bytes_before_commit,
-        queue_settings->max_processing_time_sec_before_commit,
-        commit_once_processed);
+        getStorageID(), log, commit_once_processed);
 }
 
 bool StorageObjectStorageQueue::hasDependencies(const StorageID & table_id)
@@ -483,7 +456,13 @@ bool StorageObjectStorageQueue::streamToViews()
 
     while (!shutdown_called && !file_iterator->isFinished())
     {
-        InterpreterInsertQuery interpreter(insert, queue_context, false, true, true);
+        InterpreterInsertQuery interpreter(
+            insert,
+            queue_context,
+            /* allow_materialized */ false,
+            /* no_squash */ true,
+            /* no_destination */ true,
+            /* async_isnert */ false);
         auto block_io = interpreter.execute();
         auto read_from_format_info = prepareReadingFromFormat(
             block_io.pipeline.getHeader().getNames(),

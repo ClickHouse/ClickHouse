@@ -4,13 +4,15 @@
 #include <Interpreters/Context.h>
 #include <IO/SwapHelper.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/EmptyReadBuffer.h>
+#include <IO/ReadBufferFromEmptyFile.h>
 
 #include <base/scope_guard.h>
 
 #include <Common/CurrentThread.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -73,7 +75,8 @@ void WriteBufferToFileSegment::nextImpl()
     FileCacheReserveStat reserve_stat;
     /// In case of an error, we don't need to finalize the file segment
     /// because it will be deleted soon and completed in the holder's destructor.
-    bool ok = file_segment->reserve(bytes_to_write, reserve_space_lock_wait_timeout_milliseconds, &reserve_stat);
+    std::string failure_reason;
+    bool ok = file_segment->reserve(bytes_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason, &reserve_stat);
 
     if (!ok)
     {
@@ -82,9 +85,10 @@ void WriteBufferToFileSegment::nextImpl()
             reserve_stat_msg += fmt::format("{} hold {}, can release {}; ",
                 toString(kind), ReadableSize(stat.non_releasable_size), ReadableSize(stat.releasable_size));
 
-        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Failed to reserve {} bytes for {}: {}(segment info: {})",
+        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Failed to reserve {} bytes for {}: reason {}, {}(segment info: {})",
             bytes_to_write,
             file_segment->getKind() == FileSegmentKind::Temporary ? "temporary file" : "the file in cache",
+            failure_reason,
             reserve_stat_msg,
             file_segment->getInfoForLog()
         );
@@ -134,7 +138,7 @@ std::unique_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
     if (file_segment->getDownloadedSize() > 0)
         return std::make_unique<ReadBufferFromFile>(file_segment->getPath());
     else
-        return std::make_unique<EmptyReadBuffer>();
+        return std::make_unique<ReadBufferFromEmptyFile>();
 }
 
 }

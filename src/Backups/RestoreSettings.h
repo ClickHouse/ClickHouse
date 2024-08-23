@@ -113,6 +113,9 @@ struct RestoreSettings
     /// Whether base backup from S3 should inherit credentials from the RESTORE query.
     bool use_same_s3_credentials_for_base_backup = false;
 
+    /// Whether base backup archive should be unlocked using the same password as the incremental archive
+    bool use_same_password_for_base_backup = false;
+
     /// If it's true RESTORE won't stop on broken parts while restoring, instead they will be restored as detached parts
     /// to the `detached` folder with names starting with `broken-from-backup'.
     bool restore_broken_parts_as_detached = false;

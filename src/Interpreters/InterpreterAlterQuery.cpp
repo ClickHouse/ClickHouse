@@ -3,6 +3,9 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Common/typeid_cast.h>
+#include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
@@ -24,7 +27,6 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/StorageKeeperMap.h>
-#include <Common/typeid_cast.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -46,6 +48,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 
@@ -175,10 +178,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
 
-        if (!getContext()->getSettings().allow_experimental_statistics && (
-            command_ast->type == ASTAlterCommand::ADD_STATISTICS ||
-            command_ast->type == ASTAlterCommand::DROP_STATISTICS ||
-            command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTICS))
+        if (!getContext()->getSettingsRef().allow_experimental_statistics
+            && (command_ast->type == ASTAlterCommand::ADD_STATISTICS || command_ast->type == ASTAlterCommand::DROP_STATISTICS
+                || command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTICS))
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is now disabled. Turn on allow_experimental_statistics");
     }
 
@@ -189,6 +191,12 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         if (1 < command_types_count || mixed_settings_amd_metadata_alter)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "For Replicated databases it's not allowed "
                                                          "to execute ALTERs of different types (replicated and non replicated) in single query");
+    }
+
+    if (mutation_commands.hasNonEmptyMutationCommands() || !partition_commands.empty())
+    {
+        if (getContext()->getServerSettings().disable_insertion_and_mutation)
+            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Mutations are prohibited");
     }
 
     if (!alter_commands.empty())

@@ -51,7 +51,7 @@ public:
         if (!capture_frame_pointers)
             return;
         /// Save all previous jobs call stacks and append with current
-        frame_pointers = DB::Exception::thread_frame_pointers;
+        frame_pointers = DB::Exception::getThreadFramePointers();
         frame_pointers.push_back(StackTrace().getFramePointers());
     }
 
@@ -455,7 +455,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         try
         {
             if (DB::Exception::enable_job_stack_trace)
-                DB::Exception::thread_frame_pointers = std::move(job_data->frame_pointers);
+                DB::Exception::setThreadFramePointers(std::move(job_data->frame_pointers));
 
             CurrentMetrics::Increment metric_active_pool_threads(metric_active_threads);
 

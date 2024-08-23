@@ -5,6 +5,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/MutationCommands.h>
+#include <Core/Settings.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>

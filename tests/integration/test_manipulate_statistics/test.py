@@ -167,7 +167,8 @@ def test_replicated_table_ddl(started_cluster):
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_1", "c", False)
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_1", "d", True)
     node1.query(
-        "ALTER TABLE test_stat CLEAR STATISTICS d", settings={"alter_sync": "2"}
+        "ALTER TABLE test_stat CLEAR STATISTICS d",
+        settings={"alter_sync": "2", "mutations_sync": 2},
     )
     node1.query(
         "ALTER TABLE test_stat ADD STATISTICS b type tdigest",
@@ -177,7 +178,8 @@ def test_replicated_table_ddl(started_cluster):
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_2", "b", False)
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_2", "d", False)
     node1.query(
-        "ALTER TABLE test_stat MATERIALIZE STATISTICS b", settings={"alter_sync": "2"}
+        "ALTER TABLE test_stat MATERIALIZE STATISTICS b",
+        settings={"alter_sync": "2", "mutations_sync": 2},
     )
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_3", "a", True)
     check_stat_file_on_disk(node2, "test_stat", "all_0_0_0_3", "b", True)

@@ -1,19 +1,14 @@
 #include <Storages/StatisticsDescription.h>
 
-#include <base/defines.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Poco/Logger.h>
-#include <Storages/extractKeyExpressionList.h>
 #include <Storages/ColumnsDescription.h>
 
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -54,7 +49,9 @@ static StatisticsType stringToStatisticsType(String type)
         return StatisticsType::TDigest;
     if (type == "uniq")
         return StatisticsType::Uniq;
-    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are `tdigest` and `uniq`.", type);
+    if (type == "count_min")
+        return StatisticsType::CountMinSketch;
+    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'tdigest', 'uniq' and 'count_min'.", type);
 }
 
 String SingleStatisticsDescription::getTypeName() const
@@ -65,8 +62,10 @@ String SingleStatisticsDescription::getTypeName() const
             return "TDigest";
         case StatisticsType::Uniq:
             return "Uniq";
+        case StatisticsType::CountMinSketch:
+            return "count_min";
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are `tdigest` and `uniq`.", type);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'tdigest', 'uniq' and 'count_min'.", type);
     }
 }
 
@@ -99,10 +98,9 @@ void ColumnStatisticsDescription::merge(const ColumnStatisticsDescription & othe
     chassert(merging_column_type);
 
     if (column_name.empty())
-    {
         column_name = merging_column_name;
-        data_type = merging_column_type;
-    }
+
+    data_type = merging_column_type;
 
     for (const auto & [stats_type, stats_desc]: other.types_to_desc)
     {
@@ -121,6 +119,7 @@ void ColumnStatisticsDescription::assign(const ColumnStatisticsDescription & oth
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot assign statistics from column {} to {}", column_name, other.column_name);
 
     types_to_desc = other.types_to_desc;
+    data_type = other.data_type;
 }
 
 void ColumnStatisticsDescription::clear()
@@ -159,6 +158,7 @@ std::vector<ColumnStatisticsDescription> ColumnStatisticsDescription::fromAST(co
 
         const auto & column = columns.getPhysical(physical_column_name);
         stats.column_name = column.name;
+        stats.data_type = column.type;
         stats.types_to_desc = statistics_types;
         result.push_back(stats);
     }
@@ -193,6 +193,7 @@ ASTPtr ColumnStatisticsDescription::getAST() const
 {
     auto function_node = std::make_shared<ASTFunction>();
     function_node->name = "STATISTICS";
+    function_node->kind = ASTFunction::Kind::STATISTICS;
     function_node->arguments = std::make_shared<ASTExpressionList>();
     for (const auto & [type, desc] : types_to_desc)
     {

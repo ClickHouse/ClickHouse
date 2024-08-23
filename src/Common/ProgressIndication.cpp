@@ -1,6 +1,7 @@
 #include "ProgressIndication.h"
 #include <algorithm>
 #include <cstddef>
+#include <iostream>
 #include <numeric>
 #include <filesystem>
 #include <cmath>
