@@ -3567,7 +3567,7 @@ if __name__ == "__main__":
             f"Cannot access the specified directory with queries ({args.queries})",
             file=sys.stderr,
         )
-        sys.exit(1)
+        assert False, "No --queries provided"
 
     CAPTURE_CLIENT_STACKTRACE = args.capture_client_stacktrace
 
