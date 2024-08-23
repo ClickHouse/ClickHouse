@@ -205,6 +205,8 @@ public:
         bool use_skip_indexes,
         bool find_exact_ranges);
 
+    static void filterPartsByMarkFilterCache(const MergeTreeData & data, RangesInDataParts & parts_with_ranges, const SelectQueryInfo & query_info);
+
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.
     /// Also, update key condition with selected sampling range.

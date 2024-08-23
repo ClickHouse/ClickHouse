@@ -1,7 +1,9 @@
 #include <algorithm>
+
 #include <Processors/Transforms/FilterTransform.h>
 
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters//Cache/MarkFilterCache.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -61,7 +63,8 @@ FilterTransform::FilterTransform(
     String filter_column_name_,
     bool remove_filter_column_,
     bool on_totals_,
-    std::shared_ptr<std::atomic<size_t>> rows_filtered_)
+    std::shared_ptr<std::atomic<size_t>> rows_filtered_,
+    MarkFilterCachePtr mark_filter_cache_)
     : ISimpleTransform(
             header_,
             transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
@@ -71,6 +74,7 @@ FilterTransform::FilterTransform(
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
     , rows_filtered(rows_filtered_)
+    , mark_filter_cache(mark_filter_cache_)
 {
     transformed_header = getInputPort().getHeader();
     if (expression)
@@ -126,6 +130,11 @@ void FilterTransform::doTransform(Chunk & chunk)
     auto columns = chunk.detachColumns();
     DataTypes types;
 
+    auto mark_info = chunk.getChunkInfos().get<MarkRangesInfo>();
+    if (!mark_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Chunk should have MarkRangesInfo in FilterTransform.");
+
     {
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
         columns.clear();
@@ -139,6 +148,10 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_true || on_totals)
     {
+        if (mark_filter_cache)
+            mark_filter_cache->update(mark_info->getDataPart(), filter_column_name, mark_info->getMarkRanges(), true);
+
+        chunk.getChunkInfos();
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         removeFilterIfNeed(chunk);
         return;
@@ -155,10 +168,18 @@ void FilterTransform::doTransform(Chunk & chunk)
     constant_filter_description = ConstantFilterDescription(*filter_column);
 
     if (constant_filter_description.always_false)
+    {
+        if (mark_filter_cache)
+            mark_filter_cache->update(mark_info->getDataPart(), filter_column_name, mark_info->getMarkRanges(), false);
+
         return; /// Will finish at next prepare call
+    }
 
     if (constant_filter_description.always_true)
     {
+        if (mark_filter_cache)
+            mark_filter_cache->update(mark_info->getDataPart(), filter_column_name, mark_info->getMarkRanges(), true);
+
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         removeFilterIfNeed(chunk);
         return;
@@ -202,8 +223,12 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
+    {
+        if (mark_filter_cache)
+            mark_filter_cache->update(mark_info->getDataPart(), filter_column_name, mark_info->getMarkRanges(), false);
         /// SimpleTransform will skip it.
         return;
+    }
 
     /// If all the rows pass through the filter.
     if (num_filtered_rows == num_rows_before_filtration)
@@ -214,6 +239,9 @@ void FilterTransform::doTransform(Chunk & chunk)
             auto & type = transformed_header.getByPosition(filter_column_position).type;
             columns[filter_column_position] = type->createColumnConst(num_filtered_rows, 1u);
         }
+
+        if (mark_filter_cache)
+            mark_filter_cache->update(mark_info->getDataPart(), filter_column_name, mark_info->getMarkRanges(), true);
 
         /// No need to touch the rest of the columns.
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
@@ -246,6 +274,9 @@ void FilterTransform::doTransform(Chunk & chunk)
         else
             current_column = filter_description->filter(*current_column, num_filtered_rows);
     }
+
+    if (mark_filter_cache)
+        mark_filter_cache->update(mark_info->getDataPart(), filter_column_name, mark_info->getMarkRanges(), true);
 
     chunk.setColumns(std::move(columns), num_filtered_rows);
     removeFilterIfNeed(chunk);

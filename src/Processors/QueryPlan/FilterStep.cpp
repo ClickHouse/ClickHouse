@@ -37,7 +37,8 @@ FilterStep::FilterStep(
     const DataStream & input_stream_,
     ActionsDAG actions_dag_,
     String filter_column_name_,
-    bool remove_filter_column_)
+    bool remove_filter_column_,
+    MarkFilterCachePtr mark_filter_cache_)
     : ITransformingStep(
         input_stream_,
         FilterTransform::transformHeader(
@@ -49,6 +50,7 @@ FilterStep::FilterStep(
     , actions_dag(std::move(actions_dag_))
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
+    , mark_filter_cache(mark_filter_cache_)
 {
     actions_dag.removeAliasesForFilter(filter_column_name);
 }
@@ -60,7 +62,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals);
+        return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, mark_filter_cache);
     });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), output_stream->header))

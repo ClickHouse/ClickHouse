@@ -48,6 +48,7 @@
 #include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/MarkFilterCache.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
@@ -300,6 +301,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable QueryCachePtr query_cache TSA_GUARDED_BY(mutex);                          /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
+    mutable MarkFilterCachePtr mark_filter_cache TSA_GUARDED_BY(mutex);               /// Mark filter for caching query conditions
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
     ProcessList process_list;                                   /// Executing queries at the moment.
@@ -3234,6 +3236,22 @@ void Context::clearQueryCache(const std::optional<String> & tag) const
 
     if (shared->query_cache)
         shared->query_cache->clear(tag);
+}
+
+void Context::setMarkFilterCache(size_t max_entries)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->mark_filter_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark filter cache has been already create.");
+
+    shared->mark_filter_cache = std::make_shared<MarkFilterCache>(max_entries);
+}
+
+MarkFilterCachePtr Context::getMarkFilterCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->mark_filter_cache;
 }
 
 void Context::clearCaches() const

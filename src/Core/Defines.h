@@ -105,6 +105,7 @@ static constexpr auto DEFAULT_QUERY_CACHE_MAX_SIZE = 1_GiB;
 static constexpr auto DEFAULT_QUERY_CACHE_MAX_ENTRIES = 1024uz;
 static constexpr auto DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_BYTES = 1_MiB;
 static constexpr auto DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_ROWS = 30'000'000uz;
+static constexpr auto DEFAULT_MARK_FILTER_CACHE_MAX_ENTRIES = 1024uz;
 
 /// Query profiler cannot work with sanitizers.
 /// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)

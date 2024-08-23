@@ -1780,7 +1780,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             }
 
             if (expressions.hasWhere())
-                executeWhere(query_plan, expressions.before_where, expressions.remove_where_filter);
+            {
+                MarkFilterCachePtr mark_filter_cache = nullptr;
+                if (settings.enable_writes_to_mark_filter_cache)
+                    mark_filter_cache = context->getMarkFilterCache();
+
+                executeWhere(query_plan, expressions.before_where, expressions.remove_where_filter, mark_filter_cache);
+            }
 
             if (expressions.need_aggregate)
                 executeAggregation(
@@ -2596,14 +2602,14 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
 }
 
-void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter)
+void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter, MarkFilterCachePtr mark_filter_cache)
 {
     auto dag = expression->dag.clone();
     if (expression->project_input)
         dag.appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
     auto where_step = std::make_unique<FilterStep>(
-        query_plan.getCurrentDataStream(), std::move(dag), getSelectQuery().where()->getColumnName(), remove_filter);
+        query_plan.getCurrentDataStream(), std::move(dag), getSelectQuery().where()->getColumnName(), remove_filter, mark_filter_cache);
 
     where_step->setStepDescription("WHERE");
     query_plan.addStep(std::move(where_step));

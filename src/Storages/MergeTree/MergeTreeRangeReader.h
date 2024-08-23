@@ -242,6 +242,7 @@ public:
         void adjustLastGranule();
         void addRows(size_t rows) { num_read_rows += rows; }
         void addRange(const MarkRange & range) { started_ranges.push_back({rows_per_granule.size(), range}); }
+        void addReadRange(MarkRange mark_range) { read_mark_ranges.push_back(std::move(mark_range)); }
 
         /// Add current step filter to the result and then for each granule calculate the number of filtered rows at the end.
         /// Remove them and update filter.
@@ -270,6 +271,9 @@ public:
         Block additional_columns;
 
         RangesInfo started_ranges;
+        /// All read marks, including partially read mark.
+        MarkRanges read_mark_ranges;
+
         /// The number of rows read from each granule.
         /// Granule here is not number of rows between two marks
         /// It's amount of rows per single reading act

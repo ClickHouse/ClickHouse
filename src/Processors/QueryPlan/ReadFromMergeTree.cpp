@@ -1661,6 +1661,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             result.index_stats,
             indexes->use_skip_indexes,
             find_exact_ranges);
+
+        MergeTreeDataSelectExecutor::filterPartsByMarkFilterCache(data, result.parts_with_ranges, query_info_);
     }
 
     size_t sum_marks_pk = total_marks_pk;

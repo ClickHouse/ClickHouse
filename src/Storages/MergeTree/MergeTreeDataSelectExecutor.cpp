@@ -869,6 +869,63 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     return parts_with_ranges;
 }
 
+void MergeTreeDataSelectExecutor::filterPartsByMarkFilterCache(const MergeTreeData & data, RangesInDataParts & parts_with_ranges, const SelectQueryInfo & query_info)
+{
+    if (!query_info.filter_actions_dag)
+        return;
+
+    auto query = query_info.query->as<ASTSelectQuery &>();
+    String condition = query.where()->getColumnName();
+
+    auto table_id = data.getStorageID();
+    MarkFilterCachePtr mark_filter_cache = data.getContext()->getMarkFilterCache();
+
+    for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
+    {
+        auto & part_with_ranges = *it;
+        auto filter = mark_filter_cache->getByCondition(part_with_ranges.data_part, condition);
+        if (filter.empty())
+        {
+            ++it;
+            continue;
+        }
+
+        MarkRanges ranges;
+        for (auto & mark_range : part_with_ranges.ranges)
+        {
+            size_t begin = mark_range.begin;
+            for (size_t it = begin; it < mark_range.end; ++it)
+            {
+                if (!filter[it])
+                {
+                    if (it == begin)
+                        ++begin;
+                    else
+                    {
+                        ranges.emplace_back(begin, it);
+                        begin = it + 1;
+                    }
+                }
+            }
+
+            if (begin != mark_range.begin && begin != mark_range.end)
+                ranges.emplace_back(begin, mark_range.end);
+            else if (begin == mark_range.begin)
+                ranges.emplace_back(begin, mark_range.end);
+        }
+
+        if (ranges.empty())
+        {
+            it = parts_with_ranges.erase(it);
+        }
+        else
+            part_with_ranges.ranges = ranges;
+
+        ++it;
+    }
+}
+
+
 std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
     const MergeTreeData & data,
     const ReadFromMergeTree::AnalysisResult & result,

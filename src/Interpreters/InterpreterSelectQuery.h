@@ -173,7 +173,7 @@ private:
 
     /// Different stages of query execution.
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan);
-    void executeWhere(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter);
+    void executeWhere(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter, std::shared_ptr<MarkFilterCache> mark_filter_cache);
     void executeAggregation(
         QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
     void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final, bool has_grouping_sets);

@@ -2,6 +2,7 @@
 
 #include <Common/CollectionOfDerived.h>
 #include <Columns/IColumn.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 #include <memory>
 
@@ -173,6 +174,18 @@ private:
     /// If rows_mask_by_column_id[column_id][row_id] is true related value in Block should be replaced with column default.
     /// It could contain less columns and rows then related block.
     RowsMaskByColumnId rows_mask_by_column_id;
+};
+
+
+class MarkRangesInfo : public ChunkInfoCloneable<MarkRangesInfo>
+{
+public:
+    MarkRangesInfo(MergeTreeDataPartPtr data_part_, MarkRanges mark_ranges_);
+    MergeTreeDataPartPtr getDataPart();
+    MarkRanges & getMarkRanges();
+private:
+    MergeTreeDataPartPtr data_part;
+    MarkRanges mark_ranges;
 };
 
 /// Converts all columns to full serialization in chunk.

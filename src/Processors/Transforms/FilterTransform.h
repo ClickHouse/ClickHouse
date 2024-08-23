@@ -9,6 +9,7 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class ActionsDAG;
+class MarkFilterCache;
 
 /** Implements WHERE, HAVING operations.
   * Takes an expression, which adds to the block one ColumnUInt8 column containing the filtering conditions.
@@ -20,7 +21,7 @@ class FilterTransform : public ISimpleTransform
 public:
     FilterTransform(
         const Block & header_, ExpressionActionsPtr expression_, String filter_column_name_,
-        bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr);
+        bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr, std::shared_ptr<MarkFilterCache> mark_filter_cache_ = nullptr);
 
     static Block
     transformHeader(const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column);
@@ -36,6 +37,8 @@ private:
     String filter_column_name;
     bool remove_filter_column;
     bool on_totals;
+
+    std::shared_ptr<MarkFilterCache> mark_filter_cache;
 
     ConstantFilterDescription constant_filter_description;
     size_t filter_column_position = 0;
