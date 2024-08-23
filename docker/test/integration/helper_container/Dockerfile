@@ -2,7 +2,7 @@
 # Helper docker container to run iptables without sudo
 
 FROM alpine:3.18
-RUN apk add --no-cache -U iproute2 \
-  && for bin in iptables ip6tables iptables-restore ip6tables-restore iptables-save ip6tables-save; \
+RUN apk add --no-cache -U iproute2 ip6tables \
+  && for bin in iptables iptables-restore iptables-save; \
     do ln -sf xtables-nft-multi "/sbin/$bin"; \
   done
