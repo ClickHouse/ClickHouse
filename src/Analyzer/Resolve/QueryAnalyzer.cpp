@@ -4573,6 +4573,10 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
         if (parametrized_view_storage)
         {
+            /// Remove initial TableFunctionNode from the set. Otherwise it may lead to segfault
+            /// when IdentifierResolveScope::dump() is used.
+            scope.table_expressions_in_resolve_process.erase(table_function_node.get());
+
             auto fake_table_node = std::make_shared<TableNode>(parametrized_view_storage, scope_context);
             fake_table_node->setAlias(table_function_node->getAlias());
             table_function_node = fake_table_node;
