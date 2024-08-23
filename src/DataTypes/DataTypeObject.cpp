@@ -18,13 +18,15 @@
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 
+#include "config.h"
+
 #if USE_SIMDJSON
-#include <Common/JSONParsers/SimdJSONParser.h>
+#  include <Common/JSONParsers/SimdJSONParser.h>
+#elif USE_RAPIDJSON
+#  include <Common/JSONParsers/RapidJSONParser.h>
+#else
+#  include <Common/JSONParsers/DummyJSONParser.h>
 #endif
-#if USE_RAPIDJSON
-#include <Common/JSONParsers/RapidJSONParser.h>
-#endif
-#include <Common/JSONParsers/DummyJSONParser.h>
 
 namespace DB
 {
@@ -33,6 +35,7 @@ namespace ErrorCodes
 {
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 DataTypeObject::DataTypeObject(
@@ -49,6 +52,17 @@ DataTypeObject::DataTypeObject(
     , max_dynamic_paths(max_dynamic_paths_)
     , max_dynamic_types(max_dynamic_types_)
 {
+    /// Check if regular expressions are valid.
+    for (const auto & regexp_str : path_regexps_to_skip)
+    {
+        re2::RE2::Options options;
+        /// Don't log errors to stderr.
+        options.set_log_errors(false);
+        auto regexp = re2::RE2(regexp_str, options);
+        if (!regexp.ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Invalid regexp '{}': {}", regexp_str, regexp.error());
+    }
+
     for (const auto & [typed_path, type] : typed_paths)
     {
         for (const auto & path_to_skip : paths_to_skip)
@@ -105,7 +119,7 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
     switch (schema_format)
     {
         case SchemaFormat::JSON:
-#ifdef USE_SIMDJSON
+#if USE_SIMDJSON
             return std::make_shared<SerializationJSON<SimdJSONParser>>(
                 std::move(typed_path_serializations),
                 paths_to_skip,
