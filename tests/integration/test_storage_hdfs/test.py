@@ -3,7 +3,9 @@ import os
 import pytest
 import uuid
 import time
+import re
 from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.client import QueryRuntimeException
 from helpers.test_tools import TSV
 from pyhdfs import HdfsClient
 
@@ -1253,6 +1255,55 @@ def test_respect_object_existence_on_partitioned_write(started_cluster):
     )
 
     assert int(result) == 44
+
+
+def test_hive_partitioning_with_one_parameter(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+    hdfs_api.write_data(f"/column0=Elizabeth/parquet_1", f"Elizabeth\tGordon\n")
+    assert hdfs_api.read_data(f"/column0=Elizabeth/parquet_1") == f"Elizabeth\tGordon\n"
+
+    r = node1.query(
+        "SELECT _column0 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/parquet_1', 'TSV')",
+        settings={"use_hive_partitioning": 1},
+    )
+    assert r == f"Elizabeth\n"
+
+
+def test_hive_partitioning_with_two_parameters(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+    hdfs_api.write_data(
+        f"/column0=Elizabeth/column1=Gordon/parquet_2", f"Elizabeth\tGordon\n"
+    )
+    assert (
+        hdfs_api.read_data(f"/column0=Elizabeth/column1=Gordon/parquet_2")
+        == f"Elizabeth\tGordon\n"
+    )
+
+    r = node1.query(
+        "SELECT _column1 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/column1=Gordon/parquet_2', 'TSV');",
+        settings={"use_hive_partitioning": 1},
+    )
+    assert r == f"Gordon\n"
+
+
+def test_hive_partitioning_without_setting(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+    hdfs_api.write_data(
+        f"/column0=Elizabeth/column1=Gordon/parquet_2", f"Elizabeth\tGordon\n"
+    )
+    assert (
+        hdfs_api.read_data(f"/column0=Elizabeth/column1=Gordon/parquet_2")
+        == f"Elizabeth\tGordon\n"
+    )
+    pattern = re.compile(
+        r"DB::Exception: Unknown expression identifier '.*' in scope.*", re.DOTALL
+    )
+
+    with pytest.raises(QueryRuntimeException, match=pattern):
+        node1.query(
+            f"SELECT _column1 FROM hdfs('hdfs://hdfs1:9000/column0=Elizabeth/column1=Gordon/parquet_2', 'TSV');",
+            settings={"use_hive_partitioning": 0},
+        )
 
 
 if __name__ == "__main__":

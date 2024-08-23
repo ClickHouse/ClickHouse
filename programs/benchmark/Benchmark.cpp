@@ -75,6 +75,8 @@ public:
             const String & default_database_,
             const String & user_,
             const String & password_,
+            const String & proto_send_chunked_,
+            const String & proto_recv_chunked_,
             const String & quota_key_,
             const String & stage,
             bool randomize_,
@@ -128,7 +130,9 @@ public:
             connections.emplace_back(std::make_unique<ConnectionPool>(
                 concurrency,
                 cur_host, cur_port,
-                default_database_, user_, password_, quota_key_,
+                default_database_, user_, password_,
+                proto_send_chunked_, proto_recv_chunked_,
+                quota_key_,
                 /* cluster_= */ "",
                 /* cluster_secret_= */ "",
                 /* client_name_= */ std::string(DEFAULT_CLIENT_NAME),
@@ -662,6 +666,50 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
         Strings hosts = options.count("host") ? options["host"].as<Strings>() : Strings({"localhost"});
 
+        String proto_send_chunked {"notchunked"};
+        String proto_recv_chunked {"notchunked"};
+
+        if (options.count("proto_caps"))
+        {
+            std::string proto_caps_str = options["proto_caps"].as<std::string>();
+
+            std::vector<std::string_view> proto_caps;
+            splitInto<','>(proto_caps, proto_caps_str);
+
+            for (auto cap_str : proto_caps)
+            {
+                std::string direction;
+
+                if (cap_str.starts_with("send_"))
+                {
+                    direction = "send";
+                    cap_str = cap_str.substr(std::string_view("send_").size());
+                }
+                else if (cap_str.starts_with("recv_"))
+                {
+                    direction = "recv";
+                    cap_str = cap_str.substr(std::string_view("recv_").size());
+                }
+
+                if (cap_str != "chunked" && cap_str != "notchunked" && cap_str != "chunked_optional" && cap_str != "notchunked_optional")
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "proto_caps option is incorrect ({})", proto_caps_str);
+
+                if (direction.empty())
+                {
+                    proto_send_chunked = cap_str;
+                    proto_recv_chunked = cap_str;
+                }
+                else
+                {
+                    if (direction == "send")
+                        proto_send_chunked = cap_str;
+                    else
+                        proto_recv_chunked = cap_str;
+                }
+            }
+        }
+
+
         Benchmark benchmark(
             options["concurrency"].as<unsigned>(),
             options["delay"].as<double>(),
@@ -673,6 +721,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["database"].as<std::string>(),
             options["user"].as<std::string>(),
             options["password"].as<std::string>(),
+            proto_send_chunked,
+            proto_recv_chunked,
             options["quota_key"].as<std::string>(),
             options["stage"].as<std::string>(),
             options.count("randomize"),

@@ -262,10 +262,11 @@ struct DeltaLakeMetadataImpl
                                         partition_name, file_schema.toNamesAndTypesDescription());
                                 }
 
+                                LOG_TEST(log, "Partition {} value is {} (data type: {}, file: {})",
+                                         partition_name, value, name_and_type->type->getName(), filename);
+
                                 auto field = getFieldValue(value, name_and_type->type);
                                 current_partition_columns.emplace_back(*name_and_type, field);
-
-                                LOG_TEST(log, "Partition {} value is {} (for {})", partition_name, value, filename);
                             }
                         }
                     }
@@ -332,6 +333,8 @@ struct DeltaLakeMetadataImpl
         WhichDataType which(check_type->getTypeId());
         if (which.isStringOrFixedString())
             return value;
+        else if (isBool(check_type))
+            return parse<bool>(value);
         else if (which.isInt8())
             return parse<Int8>(value);
         else if (which.isUInt8())

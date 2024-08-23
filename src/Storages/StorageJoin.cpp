@@ -383,10 +383,10 @@ void registerStorageJoin(StorageFactory & factory)
                 else if (setting.name == "any_join_distinct_right_table_keys")
                     old_any_join = setting.value;
                 else if (setting.name == "disk")
-                    disk_name = setting.value.get<String>();
+                    disk_name = setting.value.safeGet<String>();
                 else if (setting.name == "persistent")
                 {
-                    persistent = setting.value.get<bool>();
+                    persistent = setting.value.safeGet<bool>();
                 }
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown setting {} for storage {}", setting.name, args.engine_name);
@@ -546,7 +546,11 @@ protected:
             return {};
 
         Chunk chunk;
-        if (!joinDispatch(join->kind, join->strictness, join->data->maps.front(),
+        if (!joinDispatch(
+                join->kind,
+                join->strictness,
+                join->data->maps.front(),
+                join->table_join->getMixedJoinExpression() != nullptr,
                 [&](auto kind, auto strictness, auto & map) { chunk = createChunk<kind, strictness>(map); }))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness");
         return chunk;
