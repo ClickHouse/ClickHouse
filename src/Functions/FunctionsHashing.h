@@ -93,9 +93,9 @@ namespace impl
             if (is_const)
                 i = 0;
             assert(key0->size() == key1->size());
-            if (offsets != nullptr)
+            if (offsets != nullptr && i > 0)
             {
-                const auto * const begin = offsets->begin();
+                const auto * const begin = std::upper_bound(offsets->begin(), offsets->end(), i - 1);
                 const auto * upper = std::upper_bound(begin, offsets->end(), i);
                 if (upper != offsets->end())
                     i = upper - begin;
