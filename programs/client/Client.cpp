@@ -1160,10 +1160,9 @@ void Client::processOptions(const OptionsDescription & options_description,
     if (options.count("opentelemetry-tracestate"))
         global_context->getClientTraceContext().tracestate = options["opentelemetry-tracestate"].as<std::string>();
 
-    /// The global context can be used concurrently with the client context,
-    /// for example by ParallelFormattingOutputFormat,
-    /// so we need to copy global context to client.
-    client_context = Context::createCopy(global_context);
+    /// In case of clickhouse-client the `client_context` can be just an alias for the `global_context`.
+    /// (There is no need to copy the context because clickhouse-client has no background tasks so it won't use that context in parallel.)
+    client_context = global_context;
     initClientContext();
 }
 
