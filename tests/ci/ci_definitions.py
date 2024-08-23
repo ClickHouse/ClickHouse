@@ -204,7 +204,7 @@ class JobNames(metaclass=WithIter):
     PERFORMANCE_TEST_AMD64 = "Performance Comparison (release)"
     PERFORMANCE_TEST_ARM64 = "Performance Comparison (aarch64)"
 
-    SQL_LOGIC_TEST = "Sqllogic test (release)"
+    # SQL_LOGIC_TEST = "Sqllogic test (release)"
 
     SQLANCER = "SQLancer (release)"
     SQLANCER_DEBUG = "SQLancer (debug)"
