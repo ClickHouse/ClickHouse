@@ -1181,7 +1181,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
     /// Check if the number of all dynamic types exceeds the limit.
     if (!canAddNewVariants(0, all_variants.size()))
     {
-        /// Create list of variants with their sizes and sort it.
+        /// Create a list of variants with their sizes and names and then sort it.
         std::vector<std::tuple<size_t, String, DataTypePtr>> variants_with_sizes;
         variants_with_sizes.reserve(all_variants.size());
         for (const auto & variant : all_variants)
