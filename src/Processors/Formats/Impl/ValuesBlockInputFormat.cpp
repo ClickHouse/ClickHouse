@@ -665,7 +665,7 @@ void ValuesBlockInputFormat::resetReadBuffer()
 
 void ValuesBlockInputFormat::setQueryParameters(const NameToNameMap & parameters)
 {
-    if (parameters.empty())
+    if (parameters == context->getQueryParameters())
         return;
 
     auto context_copy = Context::createCopy(context);
