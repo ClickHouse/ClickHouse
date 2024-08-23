@@ -18,10 +18,8 @@
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
 #include <Server/ServerType.h>
@@ -33,13 +31,12 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
-#include <IO/S3Settings.h>
+#include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
-#include <Disks/IO/getIOUringReader.h>
 #include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -51,6 +48,7 @@
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
+#include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -58,7 +56,6 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
-#include <Access/Role.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsProfilesInfo.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
@@ -92,14 +89,12 @@
 #include <Common/StackTrace.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/Config/ConfigReloader.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
-#include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -164,8 +159,6 @@ namespace CurrentMetrics
     extern const Metric TablesLoaderForegroundThreadsScheduled;
     extern const Metric IOWriterThreadsScheduled;
     extern const Metric AttachedTable;
-    extern const Metric AttachedView;
-    extern const Metric AttachedDictionary;
     extern const Metric AttachedDatabase;
     extern const Metric PartsActive;
 }
@@ -192,7 +185,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
-    extern const int SET_NON_GRANTED_ROLE;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -285,8 +277,6 @@ struct ContextSharedPart : boost::noncopyable
     String default_profile_name;                                /// Default profile name used for default values.
     String system_profile_name;                                 /// Profile used by system processes
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
-    String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
-    String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
     std::unique_ptr<AccessControl> access_control TSA_GUARDED_BY(mutex);
     mutable OnceFlag resource_manager_initialized;
     mutable ResourceManagerPtr resource_manager;
@@ -368,23 +358,14 @@ struct ContextSharedPart : boost::noncopyable
     /// No lock required for format_schema_path modified only during initialization
     std::atomic_size_t max_database_num_to_warn = 1000lu;
     std::atomic_size_t max_table_num_to_warn = 5000lu;
-    std::atomic_size_t max_view_num_to_warn = 10000lu;
-    std::atomic_size_t max_dictionary_num_to_warn = 1000lu;
     std::atomic_size_t max_part_num_to_warn = 100000lu;
-    /// Only for system.server_settings, actually value stored in reloader itself
-    std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
-
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     String google_protos_path; /// Path to a directory that contains the proto files for the well-known Protobuf types.
     mutable OnceFlag action_locks_manager_initialized;
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     OnceFlag system_logs_initialized;
     std::unique_ptr<SystemLogs> system_logs TSA_GUARDED_BY(mutex);                /// Used to log queries and operations on parts
-
-    mutable std::mutex dashboard_mutex;
-    std::optional<Context::Dashboards> dashboards;
-
-    std::optional<S3SettingsByEndpoint> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
+    std::optional<StorageS3Settings> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
     std::vector<String> warnings TSA_GUARDED_BY(mutex);                           /// Store warning messages about server configuration.
 
     /// Background executors for *MergeTree tables
@@ -619,12 +600,10 @@ struct ContextSharedPart : boost::noncopyable
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
           */
-        SHUTDOWN(log, "system logs", system_logs, flushAndShutdown());
+        SHUTDOWN(log, "system logs", system_logs, shutdown());
 
         LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown();
-
-        NamedCollectionFactory::instance().shutdown();
 
         delete_async_insert_queue.reset();
 
@@ -759,18 +738,12 @@ struct ContextSharedPart : boost::noncopyable
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
     {
-        if (!trace_collector.has_value())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "TraceCollector needs to be first created before initialization");
-
-        trace_collector->initialize(trace_log);
-    }
-
-    void createTraceCollector()
-    {
+        if (!trace_log)
+            return;
         if (hasTraceCollector())
             return;
 
-        trace_collector.emplace();
+        trace_collector.emplace(std::move(trace_log));
     }
 
     void addWarningMessage(const String & message) TSA_REQUIRES(mutex)
@@ -829,69 +802,8 @@ void ContextSharedMutex::lockSharedImpl()
     ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
 }
 
-ContextData::ContextData()
-{
-    settings = std::make_unique<Settings>();
-}
-ContextData::ContextData(const ContextData &o) :
-    shared(o.shared),
-    client_info(o.client_info),
-    external_tables_initializer_callback(o.external_tables_initializer_callback),
-    input_initializer_callback(o.input_initializer_callback),
-    input_blocks_reader(o.input_blocks_reader),
-    user_id(o.user_id),
-    current_roles(o.current_roles),
-    settings_constraints_and_current_profiles(o.settings_constraints_and_current_profiles),
-    access(o.access),
-    need_recalculate_access(o.need_recalculate_access),
-    current_database(o.current_database),
-    settings(std::make_unique<Settings>(*o.settings)),
-    progress_callback(o.progress_callback),
-    file_progress_callback(o.file_progress_callback),
-    process_list_elem(o.process_list_elem),
-    has_process_list_elem(o.has_process_list_elem),
-    insertion_table_info(o.insertion_table_info),
-    is_distributed(o.is_distributed),
-    default_format(o.default_format),
-    insert_format(o.insert_format),
-    external_tables_mapping(o.external_tables_mapping),
-    scalars(o.scalars),
-    special_scalars(o.special_scalars),
-    next_task_callback(o.next_task_callback),
-    merge_tree_read_task_callback(o.merge_tree_read_task_callback),
-    merge_tree_all_ranges_callback(o.merge_tree_all_ranges_callback),
-    parallel_replicas_group_uuid(o.parallel_replicas_group_uuid),
-    client_protocol_version(o.client_protocol_version),
-    query_access_info(std::make_shared<QueryAccessInfo>(*o.query_access_info)),
-    query_factories_info(o.query_factories_info),
-    query_privileges_info(o.query_privileges_info),
-    async_read_counters(o.async_read_counters),
-    view_source(o.view_source),
-    table_function_results(o.table_function_results),
-    query_context(o.query_context),
-    session_context(o.session_context),
-    global_context(o.global_context),
-    buffer_context(o.buffer_context),
-    is_internal_query(o.is_internal_query),
-    temp_data_on_disk(o.temp_data_on_disk),
-    classifier(o.classifier),
-    prepared_sets_cache(o.prepared_sets_cache),
-    offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
-    kitchen_sink(o.kitchen_sink),
-    part_uuids(o.part_uuids),
-    ignored_part_uuids(o.ignored_part_uuids),
-    query_parameters(o.query_parameters),
-    host_context(o.host_context),
-    metadata_transaction(o.metadata_transaction),
-    merge_tree_transaction(o.merge_tree_transaction),
-    merge_tree_transaction_holder(o.merge_tree_transaction_holder),
-    remote_read_query_throttler(o.remote_read_query_throttler),
-    remote_write_query_throttler(o.remote_write_query_throttler),
-    local_read_query_throttler(o.local_read_query_throttler),
-    local_write_query_throttler(o.local_write_query_throttler),
-    backups_query_throttler(o.backups_query_throttler)
-{
-}
+ContextData::ContextData() = default;
+ContextData::ContextData(const ContextData &) = default;
 
 Context::Context() = default;
 Context::Context(const Context & rhs) : ContextData(rhs), std::enable_shared_from_this<Context>(rhs) {}
@@ -910,7 +822,6 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
     auto res = std::shared_ptr<Context>(new Context);
     res->shared = shared_part;
     res->query_access_info = std::make_shared<QueryAccessInfo>();
-    res->query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     return res;
 }
 
@@ -931,6 +842,7 @@ ContextMutablePtr Context::createCopy(const ContextPtr & other)
 {
     SharedLockGuard lock(other->mutex);
     auto new_context = std::shared_ptr<Context>(new Context(*other));
+    new_context->query_access_info = std::make_shared<QueryAccessInfo>(*other->query_access_info);
     return new_context;
 }
 
@@ -1025,10 +937,6 @@ Strings Context::getWarnings() const
         common_warnings = shared->warnings;
         if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}", shared->max_table_num_to_warn));
-        if (CurrentMetrics::get(CurrentMetrics::AttachedView) > static_cast<Int64>(shared->max_view_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached views is more than {}", shared->max_view_num_to_warn));
-        if (CurrentMetrics::get(CurrentMetrics::AttachedDictionary) > static_cast<Int64>(shared->max_dictionary_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached dictionaries is more than {}", shared->max_dictionary_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_database_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
@@ -1036,7 +944,7 @@ Strings Context::getWarnings() const
     }
     /// Make setting's name ordered
     std::set<String> obsolete_settings;
-    for (const auto & setting : *settings)
+    for (const auto & setting : settings)
     {
         if (setting.isValueChanged() && setting.isObsolete())
             obsolete_settings.emplace(setting.getName());
@@ -1066,7 +974,7 @@ Strings Context::getWarnings() const
 /// TODO: remove, use `getTempDataOnDisk`
 VolumePtr Context::getGlobalTemporaryVolume() const
 {
-    SharedLockGuard lock(shared->mutex);
+    std::lock_guard lock(shared->mutex);
     /// Calling this method we just bypass the `temp_data_on_disk` and write to the file on the volume directly.
     /// Volume is the same for `root_temp_data_on_disk` (always set) and `temp_data_on_disk` (if it's set).
     if (shared->root_temp_data_on_disk)
@@ -1139,30 +1047,29 @@ try
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
-    if (fs::exists(path))
+    fs::create_directories(path);
+
+    /// Clearing old temporary files.
+    fs::directory_iterator dir_end;
+    for (fs::directory_iterator it(path); it != dir_end; ++it)
     {
-        /// Clearing old temporary files.
-        fs::directory_iterator dir_end;
-        for (fs::directory_iterator it(path); it != dir_end; ++it)
+        if (it->is_regular_file())
         {
-            if (it->is_regular_file())
+            if (startsWith(it->path().filename(), "tmp"))
             {
-                if (startsWith(it->path().filename(), "tmp"))
-                {
-                    LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
-                    fs::remove(it->path());
-                }
-                else
-                    LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
+                LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
+                fs::remove(it->path());
             }
-            /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
+            else
+                LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path().string());
         }
+        /// We skip directories (for example, 'http_buffers' - it's used for buffering of the results) and all other file types.
     }
 }
 catch (...)
 {
     DB::tryLogCurrentException(log, fmt::format(
-        "Caught exception while setting up temporary path: {}. "
+        "Caught exception while setup temporary path: {}. "
         "It is ok to skip this exception as cleaning old temporary files is not necessary", path));
 }
 
@@ -1187,7 +1094,9 @@ void Context::setTemporaryStoragePath(const String & path, size_t max_size)
     VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, shared->getConfigRefWithLock(lock));
 
     for (const auto & disk : volume->getDisks())
+    {
         setupTmpPath(shared->log, disk->getPath());
+    }
 
     TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
     temporary_data_on_disk_settings.max_size_on_disk = max_size;
@@ -1370,7 +1279,7 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(const UUID & user_id_)
+void Context::setUser(const UUID & user_id_, const std::optional<const std::vector<UUID>> & current_roles_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
     /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
@@ -1379,8 +1288,8 @@ void Context::setUser(const UUID & user_id_)
     auto & access_control = getAccessControl();
     auto user = access_control.read<User>(user_id_);
 
-    auto default_roles = user->granted_roles.findGranted(user->default_roles);
-    auto enabled_roles = access_control.getEnabledRolesInfo(default_roles, {});
+    auto new_current_roles = current_roles_ ? user->granted_roles.findGranted(*current_roles_) : user->granted_roles.findGranted(user->default_roles);
+    auto enabled_roles = access_control.getEnabledRolesInfo(new_current_roles, {});
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
 
@@ -1394,7 +1303,7 @@ void Context::setUser(const UUID & user_id_)
     /// so we shouldn't check constraints here.
     setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
 
-    setCurrentRolesWithLock(default_roles, lock);
+    setCurrentRolesWithLock(new_current_roles, lock);
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
@@ -1429,66 +1338,25 @@ std::optional<UUID> Context::getUserID() const
     return user_id;
 }
 
-void Context::setCurrentRolesWithLock(const std::vector<UUID> & new_current_roles, const std::lock_guard<ContextSharedMutex> &)
+void Context::setCurrentRolesWithLock(const std::vector<UUID> & current_roles_, const std::lock_guard<ContextSharedMutex> &)
 {
-    if (new_current_roles.empty())
+    if (current_roles_.empty())
         current_roles = nullptr;
     else
-        current_roles = std::make_shared<std::vector<UUID>>(new_current_roles);
+        current_roles = std::make_shared<std::vector<UUID>>(current_roles_);
     need_recalculate_access = true;
 }
 
-void Context::setCurrentRolesImpl(const std::vector<UUID> & new_current_roles, bool throw_if_not_granted, bool skip_if_not_granted, const std::shared_ptr<const User> & user)
+void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
 {
-    if (skip_if_not_granted)
-    {
-        auto filtered_role_ids = user->granted_roles.findGranted(new_current_roles);
-        std::lock_guard lock{mutex};
-        setCurrentRolesWithLock(filtered_role_ids, lock);
-        return;
-    }
-    if (throw_if_not_granted)
-    {
-        for (const auto & role_id : new_current_roles)
-        {
-            if (!user->granted_roles.isGranted(role_id))
-            {
-                auto role_name = getAccessControl().tryReadName(role_id);
-                throw Exception(ErrorCodes::SET_NON_GRANTED_ROLE, "Role {} should be granted to set as a current", role_name.value_or(toString(role_id)));
-            }
-        }
-    }
-    std::lock_guard lock2{mutex};
-    setCurrentRolesWithLock(new_current_roles, lock2);
-}
-
-void Context::setCurrentRoles(const std::vector<UUID> & new_current_roles, bool check_grants)
-{
-    setCurrentRolesImpl(new_current_roles, /* throw_if_not_granted= */ check_grants, /* skip_if_not_granted= */ !check_grants, getUser());
-}
-
-void Context::setCurrentRoles(const RolesOrUsersSet & new_current_roles, bool check_grants)
-{
-    if (new_current_roles.all)
-    {
-        auto user = getUser();
-        setCurrentRolesImpl(user->granted_roles.findGranted(new_current_roles), /* throw_if_not_granted= */ false, /* skip_if_not_granted= */ false, user);
-    }
-    else
-    {
-        setCurrentRoles(new_current_roles.getMatchingIDs(), check_grants);
-    }
-}
-
-void Context::setCurrentRoles(const Strings & new_current_roles, bool check_grants)
-{
-    setCurrentRoles(getAccessControl().getIDs<Role>(new_current_roles), check_grants);
+    std::lock_guard lock(mutex);
+    setCurrentRolesWithLock(current_roles_, lock);
 }
 
 void Context::setCurrentRolesDefault()
 {
     auto user = getUser();
-    setCurrentRolesImpl(user->granted_roles.findGranted(user->default_roles), /* throw_if_not_granted= */ false, /* skip_if_not_granted= */ false, user);
+    setCurrentRoles(user->granted_roles.findGranted(user->default_roles));
 }
 
 std::vector<UUID> Context::getCurrentRoles() const
@@ -1530,20 +1398,20 @@ void Context::checkAccessImpl(const Args &... args) const
     return getAccess()->checkAccess(args...);
 }
 
-void Context::checkAccess(const AccessFlags & flags) const { checkAccessImpl(flags); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database) const { checkAccessImpl(flags, database); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table) const { checkAccessImpl(flags, database, table); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const { checkAccessImpl(flags, database, table, column); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const { checkAccessImpl(flags, database, table, columns); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const { checkAccessImpl(flags, database, table, columns); }
+void Context::checkAccess(const AccessFlags & flags) const { return checkAccessImpl(flags); }
+void Context::checkAccess(const AccessFlags & flags, std::string_view database) const { return checkAccessImpl(flags, database); }
+void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table) const { return checkAccessImpl(flags, database, table); }
+void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const { return checkAccessImpl(flags, database, table, column); }
+void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const { return checkAccessImpl(flags, database, table, columns); }
+void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const { return checkAccessImpl(flags, database, table, columns); }
 void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName()); }
 void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, std::string_view column) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), column); }
 void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::vector<std::string_view> & columns) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), columns); }
 void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, const Strings & columns) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), columns); }
-void Context::checkAccess(const AccessRightsElement & element) const { checkAccessImpl(element); }
-void Context::checkAccess(const AccessRightsElements & elements) const { checkAccessImpl(elements); }
+void Context::checkAccess(const AccessRightsElement & element) const { return checkAccessImpl(element); }
+void Context::checkAccess(const AccessRightsElements & elements) const { return checkAccessImpl(elements); }
 
-std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
+std::shared_ptr<const ContextAccess> Context::getAccess() const
 {
     /// A helper function to collect parameters for calculating access rights, called with Context::getLocalSharedLock() acquired.
     auto get_params = [this]()
@@ -1551,7 +1419,7 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
         /// If setUserID() was never called then this must be the global context with the full access.
         bool full_access = !user_id;
 
-        return ContextAccessParams{user_id, full_access, /* use_default_roles= */ false, current_roles, *settings, current_database, client_info};
+        return ContextAccessParams{user_id, full_access, /* use_default_roles= */ false, current_roles, settings, current_database, client_info};
     };
 
     /// Check if the current access rights are still valid, otherwise get parameters for recalculating access rights.
@@ -1560,14 +1428,14 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
     {
         SharedLockGuard lock(mutex);
         if (access && !need_recalculate_access)
-            return std::make_shared<const ContextAccessWrapper>(access, shared_from_this()); /// No need to recalculate access rights.
+            return access; /// No need to recalculate access rights.
 
         params.emplace(get_params());
 
         if (access && (access->getParams() == *params))
         {
             need_recalculate_access = false;
-            return std::make_shared<const ContextAccessWrapper>(access, shared_from_this()); /// No need to recalculate access rights.
+            return access; /// No need to recalculate access rights.
         }
     }
 
@@ -1587,7 +1455,7 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
         }
     }
 
-    return std::make_shared<const ContextAccessWrapper>(res, shared_from_this());
+    return res;
 }
 
 RowPolicyFilterPtr Context::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
@@ -1633,7 +1501,7 @@ void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_i
         checkSettingsConstraintsWithLock(profiles_info.settings, SettingSource::PROFILE);
     applySettingsChangesWithLock(profiles_info.settings, lock);
     settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
-    contextSanityClampSettingsWithLock(*this, *settings, lock);
+    contextSanityClampSettingsWithLock(*this, settings, lock);
 }
 
 void Context::setCurrentProfile(const String & profile_name, bool check_constraints)
@@ -1679,34 +1547,9 @@ ResourceManagerPtr Context::getResourceManager() const
 ClassifierPtr Context::getWorkloadClassifier() const
 {
     std::lock_guard lock(mutex);
-    // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
     if (!classifier)
         classifier = getResourceManager()->acquire(getSettingsRef().workload);
     return classifier;
-}
-
-String Context::getMergeWorkload() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->merge_workload;
-}
-
-void Context::setMergeWorkload(const String & value)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->merge_workload = value;
-}
-
-String Context::getMutationWorkload() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->mutation_workload;
-}
-
-void Context::setMutationWorkload(const String & value)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->mutation_workload = value;
 }
 
 
@@ -1769,53 +1612,13 @@ Tables Context::getExternalTables() const
 
 void Context::addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
 {
-    addExternalTable(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
-}
-
-void Context::updateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
-{
-    updateExternalTable(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
-}
-
-void Context::addOrUpdateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
-{
-    addOrUpdateExternalTable(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
-}
-
-void Context::addExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table)
-{
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
 
     std::lock_guard lock(mutex);
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists", backQuoteIfNeed(table_name));
-
-    external_tables_mapping.emplace(table_name, std::move(temporary_table));
-}
-
-void Context::updateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
-
-    std::lock_guard lock(mutex);
-    auto it = external_tables_mapping.find(table_name);
-    if (it == external_tables_mapping.end())
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} does not exist", backQuoteIfNeed(table_name));
-
-    it->second = std::move(temporary_table);
-}
-
-void Context::addOrUpdateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
-
-    std::lock_guard lock(mutex);
-    auto [it, inserted] = external_tables_mapping.emplace(table_name, temporary_table);
-    if (!inserted)
-        it->second = std::move(temporary_table);
+    external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
 }
 
 std::shared_ptr<TemporaryTableHolder> Context::findExternalTable(const String & table_name) const
@@ -1973,15 +1776,6 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
     }
 }
 
-void Context::addQueryPrivilegesInfo(const String & privilege, bool granted) const
-{
-    std::lock_guard lock(query_privileges_info->mutex);
-    if (granted)
-        query_privileges_info->used_privileges.emplace(privilege);
-    else
-        query_privileges_info->missing_privileges.emplace(privilege);
-}
-
 static bool findIdentifier(const ASTFunction * function)
 {
     if (!function || !function->arguments)
@@ -2023,7 +1817,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {
             auto query = table->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
-            NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext());
+            NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression);
             StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
 
             ASTCreateQuery create;
@@ -2224,7 +2018,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 }
 
 
-StoragePtr Context::buildParametrizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values)
+StoragePtr Context::buildParametrizedViewStorage(const ASTPtr & table_expression, const String & database_name, const String & table_name)
 {
     if (table_name.empty())
         return nullptr;
@@ -2237,7 +2031,8 @@ StoragePtr Context::buildParametrizedViewStorage(const String & database_name, c
         return nullptr;
 
     auto query = original_view->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
-    StorageView::replaceQueryParametersIfParametrizedView(query, param_values);
+    NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression);
+    StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
 
     ASTCreateQuery create;
     create.select = query->as<ASTSelectWithUnionQuery>();
@@ -2271,18 +2066,18 @@ bool Context::displaySecretsInShowAndSelect() const
     return shared->server_settings.display_secrets_in_show_and_select;
 }
 
-Settings Context::getSettingsCopy() const
+Settings Context::getSettings() const
 {
     SharedLockGuard lock(mutex);
-    return *settings;
+    return settings;
 }
 
 void Context::setSettings(const Settings & settings_)
 {
     std::lock_guard lock(mutex);
-    *settings = settings_;
+    settings = settings_;
     need_recalculate_access = true;
-    contextSanityClampSettings(*this, *settings);
+    contextSanityClampSettings(*this, settings);
 }
 
 void Context::setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock)
@@ -2292,10 +2087,10 @@ void Context::setSettingWithLock(std::string_view name, const String & value, co
         setCurrentProfileWithLock(value, true /*check_constraints*/, lock);
         return;
     }
-    settings->set(name, value);
+    settings.set(name, value);
     if (ContextAccessParams::dependsOnSettingName(name))
         need_recalculate_access = true;
-    contextSanityClampSettingsWithLock(*this, *settings, lock);
+    contextSanityClampSettingsWithLock(*this, settings, lock);
 }
 
 void Context::setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<ContextSharedMutex> & lock)
@@ -2305,7 +2100,7 @@ void Context::setSettingWithLock(std::string_view name, const Field & value, con
         setCurrentProfileWithLock(value.safeGet<String>(), true /*check_constraints*/, lock);
         return;
     }
-    settings->set(name, value);
+    settings.set(name, value);
     if (ContextAccessParams::dependsOnSettingName(name))
         need_recalculate_access = true;
 }
@@ -2315,7 +2110,7 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
     try
     {
         setSettingWithLock(change.name, change.value, lock);
-        contextSanityClampSettingsWithLock(*this, *settings, lock);
+        contextSanityClampSettingsWithLock(*this, settings, lock);
     }
     catch (Exception & e)
     {
@@ -2330,7 +2125,7 @@ void Context::applySettingsChangesWithLock(const SettingsChanges & changes, cons
 {
     for (const SettingChange & change : changes)
         applySettingChangeWithLock(change, lock);
-    applySettingsQuirks(*settings);
+    applySettingsQuirks(settings);
 }
 
 void Context::setSetting(std::string_view name, const String & value)
@@ -2343,13 +2138,7 @@ void Context::setSetting(std::string_view name, const Field & value)
 {
     std::lock_guard lock(mutex);
     setSettingWithLock(name, value, lock);
-    contextSanityClampSettingsWithLock(*this, *settings, lock);
-}
-
-void Context::setServerSetting(std::string_view name, const Field & value)
-{
-    std::lock_guard lock(mutex);
-    shared->server_settings.set(name, value);
+    contextSanityClampSettingsWithLock(*this, settings, lock);
 }
 
 void Context::applySettingChange(const SettingChange & change)
@@ -2376,37 +2165,37 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 
 void Context::checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source)
 {
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, profile_elements, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, profile_elements, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
 void Context::checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source)
 {
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, change, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, change, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
 void Context::checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source)
 {
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
 void Context::checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source)
 {
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
 void Context::clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source)
 {
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clamp(*settings, changes, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clamp(settings, changes, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
 void Context::checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
@@ -2429,8 +2218,8 @@ void Context::checkSettingsConstraints(const SettingChange & change, SettingSour
 void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingSource source)
 {
     SharedLockGuard lock(mutex);
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
-    doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(settings, changes, source);
+    doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 }
 
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
@@ -2455,7 +2244,7 @@ void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
 {
     std::lock_guard lock(mutex);
     for (const String & name: names)
-        settings->setDefaultValue(name);
+        settings.setDefaultValue(name);
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const
@@ -2550,17 +2339,6 @@ void Context::setCurrentQueryId(const String & query_id)
 
     if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         client_info.initial_query_id = client_info.current_query_id;
-}
-
-void Context::setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType background_operation)
-{
-    chassert(background_operation != ClientInfo::BackgroundOperationType::NOT_A_BACKGROUND_OPERATION);
-    client_info.background_operation_type = background_operation;
-}
-
-bool Context::isBackgroundOperationContext() const
-{
-    return client_info.background_operation_type != ClientInfo::BackgroundOperationType::NOT_A_BACKGROUND_OPERATION;
 }
 
 void Context::killCurrentQuery() const
@@ -2668,21 +2446,6 @@ void Context::makeQueryContext()
     local_read_query_throttler.reset();
     local_write_query_throttler.reset();
     backups_query_throttler.reset();
-    query_privileges_info = std::make_shared<QueryPrivilegesInfo>(*query_privileges_info);
-}
-
-void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
-{
-    makeQueryContext();
-    classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
-    settings->workload = merge_tree_settings.merge_workload.value.empty() ? getMergeWorkload() : merge_tree_settings.merge_workload;
-}
-
-void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings)
-{
-    makeQueryContext();
-    classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
-    settings->workload = merge_tree_settings.mutation_workload.value.empty() ? getMutationWorkload() : merge_tree_settings.mutation_workload;
 }
 
 void Context::makeSessionContext()
@@ -2712,7 +2475,7 @@ AsyncLoader & Context::getAsyncLoader() const
         shared->async_loader = std::make_unique<AsyncLoader>(std::vector<AsyncLoader::PoolInitializer>{
                 // IMPORTANT: Pool declaration order should match the order in `PoolId.h` to get the indices right.
                 { // TablesLoaderForegroundPoolId
-                    "ForegroundLoad",
+                    "FgLoad",
                     CurrentMetrics::TablesLoaderForegroundThreads,
                     CurrentMetrics::TablesLoaderForegroundThreadsActive,
                     CurrentMetrics::TablesLoaderForegroundThreadsScheduled,
@@ -2720,7 +2483,7 @@ AsyncLoader & Context::getAsyncLoader() const
                     TablesLoaderForegroundPriority
                 },
                 { // TablesLoaderBackgroundLoadPoolId
-                    "BackgroundLoad",
+                    "BgLoad",
                     CurrentMetrics::TablesLoaderBackgroundThreads,
                     CurrentMetrics::TablesLoaderBackgroundThreadsActive,
                     CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
@@ -2728,7 +2491,7 @@ AsyncLoader & Context::getAsyncLoader() const
                     TablesLoaderBackgroundLoadPriority
                 },
                 { // TablesLoaderBackgroundStartupPoolId
-                    "BackgrndStartup",
+                    "BgStartup",
                     CurrentMetrics::TablesLoaderBackgroundThreads,
                     CurrentMetrics::TablesLoaderBackgroundThreadsActive,
                     CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
@@ -2957,9 +2720,6 @@ ProgressCallback Context::getProgressCallback() const
 
 void Context::setProcessListElement(QueryStatusPtr elem)
 {
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have process list element");
-
     /// Set to a session or query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
     process_list_elem = elem;
     has_process_list_elem = elem.get();
@@ -3523,6 +3283,8 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
         shared->zookeeper = zkutil::ZooKeeper::create(config, zkutil::getZooKeeperConfigName(config), getZooKeeperLog());
+    else if (shared->zookeeper->hasReachedDeadline())
+        shared->zookeeper->finalize("ZooKeeper session has reached its deadline");
 
     if (shared->zookeeper->expired())
     {
@@ -3916,18 +3678,6 @@ void Context::setMaxTableNumToWarn(size_t max_table_to_warn)
     shared->max_table_num_to_warn= max_table_to_warn;
 }
 
-void Context::setMaxViewNumToWarn(size_t max_view_to_warn)
-{
-    SharedLockGuard lock(shared->mutex);
-    shared->max_view_num_to_warn= max_view_to_warn;
-}
-
-void Context::setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn)
-{
-    SharedLockGuard lock(shared->mutex);
-    shared->max_dictionary_num_to_warn= max_dictionary_to_warn;
-}
-
 void Context::setMaxDatabaseNumToWarn(size_t max_database_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
@@ -3972,7 +3722,7 @@ void Context::reloadClusterConfig() const
         }
 
         const auto & config = cluster_config ? *cluster_config : getConfigRef();
-        auto new_clusters = std::make_shared<Clusters>(config, *settings, getMacros());
+        auto new_clusters = std::make_shared<Clusters>(config, settings, getMacros());
 
         {
             std::lock_guard lock(shared->clusters_mutex);
@@ -4007,7 +3757,7 @@ std::shared_ptr<Clusters> Context::getClustersImpl(std::lock_guard<std::mutex> &
     if (!shared->clusters)
     {
         const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
-        shared->clusters = std::make_shared<Clusters>(config, *settings, getMacros());
+        shared->clusters = std::make_shared<Clusters>(config, settings, getMacros());
     }
 
     return shared->clusters;
@@ -4039,9 +3789,9 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
     shared->clusters_config = config;
 
     if (!shared->clusters)
-        shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, *settings, getMacros(), config_name);
+        shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, settings, getMacros(), config_name);
     else
-        shared->clusters->updateClusters(*shared->clusters_config, *settings, config_name, old_clusters_config);
+        shared->clusters->updateClusters(*shared->clusters_config, settings, config_name, old_clusters_config);
 
     ++shared->clusters_version;
 }
@@ -4075,11 +3825,6 @@ void Context::initializeSystemLogs()
         std::lock_guard lock(shared->mutex);
         shared->system_logs = std::move(system_logs);
     });
-}
-
-void Context::createTraceCollector()
-{
-    shared->createTraceCollector();
 }
 
 void Context::initializeTraceCollector()
@@ -4123,6 +3868,7 @@ std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
 std::shared_ptr<QueryViewsLog> Context::getQueryViewsLog() const
 {
     SharedLockGuard lock(shared->mutex);
+
     if (!shared->system_logs)
         return {};
 
@@ -4253,22 +3999,13 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
     return shared->system_logs->filesystem_cache_log;
 }
 
-std::shared_ptr<ObjectStorageQueueLog> Context::getS3QueueLog() const
+std::shared_ptr<S3QueueLog> Context::getS3QueueLog() const
 {
     SharedLockGuard lock(shared->mutex);
     if (!shared->system_logs)
         return {};
 
-    return shared->system_logs->s3queue_log;
-}
-
-std::shared_ptr<ObjectStorageQueueLog> Context::getAzureQueueLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->azure_queue_log;
+    return shared->system_logs->s3_queue_log;
 }
 
 std::shared_ptr<FilesystemReadPrefetchesLog> Context::getFilesystemReadPrefetchesLog() const
@@ -4302,13 +4039,6 @@ std::shared_ptr<BackupLog> Context::getBackupLog() const
 
 std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
 {
-    bool enable_blob_storage_log = settings->enable_blob_storage_log;
-    if (hasQueryContext())
-        enable_blob_storage_log = getQueryContext()->getSettingsRef().enable_blob_storage_log;
-
-    if (!enable_blob_storage_log)
-        return {};
-
     SharedLockGuard lock(shared->mutex);
 
     if (!shared->system_logs)
@@ -4316,60 +4046,15 @@ std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
     return shared->system_logs->blob_storage_log;
 }
 
-SystemLogs Context::getSystemLogs() const
+std::vector<ISystemLog *> Context::getSystemLogs() const
 {
     SharedLockGuard lock(shared->mutex);
 
     if (!shared->system_logs)
         return {};
-    return *shared->system_logs;
+    return shared->system_logs->logs;
 }
 
-std::optional<Context::Dashboards> Context::getDashboards() const
-{
-    std::lock_guard lock(shared->dashboard_mutex);
-
-    if (!shared->dashboards)
-        return {};
-    return shared->dashboards;
-}
-
-namespace
-{
-
-String trim(const String & text)
-{
-    std::string_view view(text);
-    ::trim(view, '\n');
-    return String(view);
-}
-
-}
-
-void Context::setDashboardsConfig(const ConfigurationPtr & config)
-{
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config->keys("dashboards", keys);
-
-    Dashboards dashboards;
-    for (const auto & key : keys)
-    {
-        const auto & prefix = "dashboards." + key + ".";
-        dashboards.push_back({
-            { "dashboard", config->getString(prefix + "dashboard") },
-            { "title",     config->getString(prefix + "title") },
-            { "query",     trim(config->getString(prefix + "query")) },
-        });
-    }
-
-    {
-        std::lock_guard lock(shared->dashboard_mutex);
-        if (!dashboards.empty())
-            shared->dashboards.emplace(std::move(dashboards));
-        else
-            shared->dashboards.reset();
-    }
-}
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
@@ -4526,7 +4211,7 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
     {
         std::lock_guard lock(shared->mutex);
         if (shared->storage_s3_settings)
-            shared->storage_s3_settings->loadFromConfig(config, /* config_prefix */"s3", getSettingsRef());
+            shared->storage_s3_settings->loadFromConfig("s3", config, getSettingsRef());
     }
 
 }
@@ -4578,14 +4263,14 @@ const DistributedSettings & Context::getDistributedSettings() const
     return *shared->distributed_settings;
 }
 
-const S3SettingsByEndpoint & Context::getStorageS3Settings() const
+const StorageS3Settings & Context::getStorageS3Settings() const
 {
     std::lock_guard lock(shared->mutex);
 
     if (!shared->storage_s3_settings)
     {
         const auto & config = shared->getConfigRefWithLock(lock);
-        shared->storage_s3_settings.emplace().loadFromConfig(config, "s3", getSettingsRef());
+        shared->storage_s3_settings.emplace().loadFromConfig("s3", config, getSettingsRef());
     }
 
     return *shared->storage_s3_settings;
@@ -4678,16 +4363,6 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
 }
 
-void Context::setConfigReloaderInterval(size_t value_ms)
-{
-    shared->config_reload_interval_ms.store(value_ms, std::memory_order_relaxed);
-}
-
-size_t Context::getConfigReloaderInterval() const
-{
-    return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
-}
-
 InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, std::optional<size_t> max_parsing_threads) const
 {
     return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings, max_parsing_threads);
@@ -4773,7 +4448,7 @@ void Context::setApplicationType(ApplicationType type)
     /// Lock isn't required, you should set it at start
     shared->application_type = type;
 
-    if (type == ApplicationType::LOCAL || type == ApplicationType::SERVER || type == ApplicationType::DISKS)
+    if (type == ApplicationType::LOCAL || type == ApplicationType::SERVER)
         shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
 
     if (type == ApplicationType::SERVER)
@@ -4788,8 +4463,8 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
     setCurrentProfile(shared->system_profile_name);
 
-    applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
-    doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+    applySettingsQuirks(settings, getLogger("SettingsQuirks"));
+    doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = Context::createCopy(shared_from_this());
@@ -5056,6 +4731,13 @@ void Context::setConnectionClientVersion(UInt64 client_version_major, UInt64 cli
     client_info.connection_client_version_minor = client_version_minor;
     client_info.connection_client_version_patch = client_version_patch;
     client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
+}
+
+void Context::setReplicaInfo(bool collaborate_with_initiator, size_t all_replicas_count, size_t number_of_current_replica)
+{
+    client_info.collaborate_with_initiator = collaborate_with_initiator;
+    client_info.count_participating_replicas = all_replicas_count;
+    client_info.number_of_current_replica = number_of_current_replica;
 }
 
 void Context::increaseDistributedDepth()
@@ -5351,11 +5033,11 @@ AsynchronousInsertQueue * Context::tryGetAsynchronousInsertQueue() const
 
 void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr)
 {
-    AsynchronousInsertQueue::validateSettings(*settings, getLogger("Context"));
+    AsynchronousInsertQueue::validateSettings(settings, getLogger("Context"));
 
     SharedLockGuard lock(shared->mutex);
 
-    if (std::chrono::milliseconds(settings->async_insert_poll_timeout_ms) == std::chrono::milliseconds::zero())
+    if (std::chrono::milliseconds(settings.async_insert_poll_timeout_ms) == std::chrono::milliseconds::zero())
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting async_insert_poll_timeout_ms can't be zero");
 
     shared->async_insert_queue = ptr;
@@ -5474,10 +5156,10 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
 }
 
 #if USE_LIBURING
-IOUringReader & Context::getIOUringReader() const
+IOUringReader & Context::getIOURingReader() const
 {
     callOnce(shared->io_uring_reader_initialized, [&] {
-        shared->io_uring_reader = createIOUringReader();
+        shared->io_uring_reader = std::make_unique<IOUringReader>(512);
     });
 
     return *shared->io_uring_reader;
@@ -5502,69 +5184,69 @@ ReadSettings Context::getReadSettings() const
 {
     ReadSettings res;
 
-    std::string_view read_method_str = settings->local_filesystem_read_method.value;
+    std::string_view read_method_str = settings.local_filesystem_read_method.value;
 
     if (auto opt_method = magic_enum::enum_cast<LocalFSReadMethod>(read_method_str))
         res.local_fs_method = *opt_method;
     else
         throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for local filesystem", read_method_str);
 
-    read_method_str = settings->remote_filesystem_read_method.value;
+    read_method_str = settings.remote_filesystem_read_method.value;
 
     if (auto opt_method = magic_enum::enum_cast<RemoteFSReadMethod>(read_method_str))
         res.remote_fs_method = *opt_method;
     else
         throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for remote filesystem", read_method_str);
 
-    res.local_fs_prefetch = settings->local_filesystem_read_prefetch;
-    res.remote_fs_prefetch = settings->remote_filesystem_read_prefetch;
+    res.local_fs_prefetch = settings.local_filesystem_read_prefetch;
+    res.remote_fs_prefetch = settings.remote_filesystem_read_prefetch;
 
-    res.load_marks_asynchronously = settings->load_marks_asynchronously;
+    res.load_marks_asynchronously = settings.load_marks_asynchronously;
 
-    res.enable_filesystem_read_prefetches_log = settings->enable_filesystem_read_prefetches_log;
+    res.enable_filesystem_read_prefetches_log = settings.enable_filesystem_read_prefetches_log;
 
-    res.remote_fs_read_max_backoff_ms = settings->remote_fs_read_max_backoff_ms;
-    res.remote_fs_read_backoff_max_tries = settings->remote_fs_read_backoff_max_tries;
-    res.enable_filesystem_cache = settings->enable_filesystem_cache;
-    res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings->read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
-    res.enable_filesystem_cache_log = settings->enable_filesystem_cache_log;
-    res.filesystem_cache_segments_batch_size = settings->filesystem_cache_segments_batch_size;
-    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings->filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+    res.remote_fs_read_max_backoff_ms = settings.remote_fs_read_max_backoff_ms;
+    res.remote_fs_read_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;
+    res.enable_filesystem_cache = settings.enable_filesystem_cache;
+    res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
+    res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
+    res.filesystem_cache_segments_batch_size = settings.filesystem_cache_segments_batch_size;
+    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
 
-    res.filesystem_cache_max_download_size = settings->filesystem_cache_max_download_size;
-    res.skip_download_if_exceeds_query_cache = settings->skip_download_if_exceeds_query_cache;
+    res.filesystem_cache_max_download_size = settings.filesystem_cache_max_download_size;
+    res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
 
     res.page_cache = getPageCache();
-    res.use_page_cache_for_disks_without_file_cache = settings->use_page_cache_for_disks_without_file_cache;
-    res.read_from_page_cache_if_exists_otherwise_bypass_cache = settings->read_from_page_cache_if_exists_otherwise_bypass_cache;
-    res.page_cache_inject_eviction = settings->page_cache_inject_eviction;
+    res.use_page_cache_for_disks_without_file_cache = settings.use_page_cache_for_disks_without_file_cache;
+    res.read_from_page_cache_if_exists_otherwise_bypass_cache = settings.read_from_page_cache_if_exists_otherwise_bypass_cache;
+    res.page_cache_inject_eviction = settings.page_cache_inject_eviction;
 
-    res.remote_read_min_bytes_for_seek = settings->remote_read_min_bytes_for_seek;
+    res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
 
     /// Zero read buffer will not make progress.
-    if (!settings->max_read_buffer_size)
+    if (!settings.max_read_buffer_size)
     {
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-            "Invalid value '{}' for max_read_buffer_size", settings->max_read_buffer_size);
+            "Invalid value '{}' for max_read_buffer_size", settings.max_read_buffer_size);
     }
 
     res.local_fs_buffer_size
-        = settings->max_read_buffer_size_local_fs ? settings->max_read_buffer_size_local_fs : settings->max_read_buffer_size;
+        = settings.max_read_buffer_size_local_fs ? settings.max_read_buffer_size_local_fs : settings.max_read_buffer_size;
     res.remote_fs_buffer_size
-        = settings->max_read_buffer_size_remote_fs ? settings->max_read_buffer_size_remote_fs : settings->max_read_buffer_size;
-    res.prefetch_buffer_size = settings->prefetch_buffer_size;
-    res.direct_io_threshold = settings->min_bytes_to_use_direct_io;
-    res.mmap_threshold = settings->min_bytes_to_use_mmap_io;
-    res.priority = Priority{settings->read_priority};
+        = settings.max_read_buffer_size_remote_fs ? settings.max_read_buffer_size_remote_fs : settings.max_read_buffer_size;
+    res.prefetch_buffer_size = settings.prefetch_buffer_size;
+    res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
+    res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
+    res.priority = Priority{settings.read_priority};
 
     res.remote_throttler = getRemoteReadThrottler();
     res.local_throttler = getLocalReadThrottler();
 
-    res.http_max_tries = settings->http_max_tries;
-    res.http_retry_initial_backoff_ms = settings->http_retry_initial_backoff_ms;
-    res.http_retry_max_backoff_ms = settings->http_retry_max_backoff_ms;
-    res.http_skip_not_found_url_for_globs = settings->http_skip_not_found_url_for_globs;
-    res.http_make_head_request = settings->http_make_head_request;
+    res.http_max_tries = settings.http_max_tries;
+    res.http_retry_initial_backoff_ms = settings.http_retry_initial_backoff_ms;
+    res.http_retry_max_backoff_ms = settings.http_retry_max_backoff_ms;
+    res.http_skip_not_found_url_for_globs = settings.http_skip_not_found_url_for_globs;
+    res.http_make_head_request = settings.http_make_head_request;
 
     res.mmap_cache = getMMappedFileCache().get();
 
@@ -5575,13 +5257,12 @@ WriteSettings Context::getWriteSettings() const
 {
     WriteSettings res;
 
-    res.enable_filesystem_cache_on_write_operations = settings->enable_filesystem_cache_on_write_operations;
-    res.enable_filesystem_cache_log = settings->enable_filesystem_cache_log;
-    res.throw_on_error_from_cache = settings->throw_on_error_from_cache_on_write_operations;
-    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings->filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+    res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
+    res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
+    res.throw_on_error_from_cache = settings.throw_on_error_from_cache_on_write_operations;
+    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
 
-    res.s3_allow_parallel_part_upload = settings->s3_allow_parallel_part_upload;
-    res.azure_allow_parallel_part_upload = settings->azure_allow_parallel_part_upload;
+    res.s3_allow_parallel_part_upload = settings.s3_allow_parallel_part_upload;
 
     res.remote_throttler = getRemoteWriteThrottler();
     res.local_throttler = getLocalWriteThrottler();
@@ -5627,37 +5308,10 @@ bool Context::canUseParallelReplicasOnFollower() const
     return canUseTaskBasedParallelReplicas() && getClientInfo().collaborate_with_initiator;
 }
 
-bool Context::canUseParallelReplicasCustomKey() const
+bool Context::canUseParallelReplicasCustomKey(const Cluster & cluster) const
 {
-    return settings->max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY;
-}
-
-bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const
-{
-    return canUseParallelReplicasCustomKey() && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
-}
-
-bool Context::canUseOffsetParallelReplicas() const
-{
-    return offset_parallel_replicas_enabled && settings->max_parallel_replicas > 1
-        && getParallelReplicasMode() != Context::ParallelReplicasMode::READ_TASKS;
-}
-
-void Context::disableOffsetParallelReplicas()
-{
-    offset_parallel_replicas_enabled = false;
-}
-
-ClusterPtr Context::getClusterForParallelReplicas() const
-{
-    /// check cluster for parallel replicas
-    if (settings->cluster_for_parallel_replicas.value.empty())
-        throw Exception(
-            ErrorCodes::CLUSTER_DOESNT_EXIST,
-            "Reading in parallel from replicas is enabled but cluster to execute query is not provided. Please set "
-            "'cluster_for_parallel_replicas' setting");
-
-    return getCluster(settings->cluster_for_parallel_replicas);
+    return settings.max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY
+        && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
 }
 
 void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
@@ -5683,41 +5337,6 @@ void Context::setClientProtocolVersion(UInt64 version)
 const ServerSettings & Context::getServerSettings() const
 {
     return shared->server_settings;
-}
-
-uint64_t HTTPContext::getMaxHstsAge() const
-{
-    return context->getSettingsRef().hsts_max_age;
-}
-
-    uint64_t HTTPContext::getMaxUriSize() const
-{
-    return context->getSettingsRef().http_max_uri_size;
-}
-
-uint64_t HTTPContext::getMaxFields() const
-{
-return context->getSettingsRef().http_max_fields;
-}
-
-uint64_t HTTPContext::getMaxFieldNameSize() const
-{
-return context->getSettingsRef().http_max_field_name_size;
-}
-
-uint64_t HTTPContext::getMaxFieldValueSize() const
-{
-return context->getSettingsRef().http_max_field_value_size;
-}
-
-Poco::Timespan HTTPContext::getReceiveTimeout() const
-{
-return context->getSettingsRef().http_receive_timeout;
-}
-
-Poco::Timespan HTTPContext::getSendTimeout() const
-{
-return context->getSettingsRef().http_send_timeout;
 }
 
 }

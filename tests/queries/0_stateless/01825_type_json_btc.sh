@@ -5,9 +5,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-mkdir -p ${CLICKHOUSE_USER_FILES_UNIQUE}/
-rm -rf "${CLICKHOUSE_USER_FILES_UNIQUE:?}"/*
-cp $CUR_DIR/data_json/btc_transactions.json ${CLICKHOUSE_USER_FILES_UNIQUE}/
+user_files_path=$($CLICKHOUSE_CLIENT_BINARY --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
+mkdir -p ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/
+rm -rf ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/*
+cp $CUR_DIR/data_json/btc_transactions.json ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS btc"
 
@@ -26,4 +27,4 @@ ${CLICKHOUSE_CLIENT} -q "SELECT data.out.spending_outpoints AS outpoints FROM bt
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS btc"
 
-rm ${CLICKHOUSE_USER_FILES_UNIQUE}/btc_transactions.json
+rm ${user_files_path}/${CLICKHOUSE_TEST_UNIQUE_NAME}/btc_transactions.json

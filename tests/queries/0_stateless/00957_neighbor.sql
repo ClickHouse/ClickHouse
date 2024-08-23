@@ -1,16 +1,15 @@
-SET allow_deprecated_error_prone_window_functions = 1;
 -- no arguments
-select neighbor(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select neighbor(); -- { serverError 42 }
 -- single argument
-select neighbor(1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select neighbor(1); -- { serverError 42 }
 -- greater than 3 arguments
-select neighbor(1,2,3,4); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select neighbor(1,2,3,4); -- { serverError 42 }
 -- bad default value
-select neighbor(dummy, 1, 'hello'); -- { serverError NO_COMMON_TYPE }
+select neighbor(dummy, 1, 'hello'); -- { serverError 386 }
 -- types without common supertype (UInt64 and Int8)
-select number, neighbor(number, 1, -10) from numbers(3); -- { serverError NO_COMMON_TYPE }
+select number, neighbor(number, 1, -10) from numbers(3); -- { serverError 386 }
 -- nullable offset is not allowed
-select number, if(number > 1, number, null) as offset, neighbor(number, offset) from numbers(3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select number, if(number > 1, number, null) as offset, neighbor(number, offset) from numbers(3); -- { serverError 43 }
 select 'Zero offset';
 select number, neighbor(number, 0) from numbers(3);
 select 'Nullable values';

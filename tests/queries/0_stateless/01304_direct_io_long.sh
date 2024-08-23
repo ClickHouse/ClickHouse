@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tags: long, no-object-storage-with-slow-build
+# Tags: long, no-s3-storage-with-slow-build
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --query "
+$CLICKHOUSE_CLIENT --multiquery --query "
     DROP TABLE IF EXISTS bug;
     CREATE TABLE bug (UserID UInt64, Date Date) ENGINE = MergeTree ORDER BY Date
         SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', merge_max_block_size = 8192;
@@ -18,5 +18,5 @@ cat "$LOG" | grep Loaded
 
 rm "$LOG"
 
-$CLICKHOUSE_CLIENT --query "
+$CLICKHOUSE_CLIENT --multiquery --query "
     DROP TABLE bug;"

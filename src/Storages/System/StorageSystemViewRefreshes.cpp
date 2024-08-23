@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Storages/MaterializedView/RefreshSet.h>
@@ -20,7 +19,6 @@ ColumnsDescription StorageSystemViewRefreshes::getColumnsDescription()
     {
         {"database", std::make_shared<DataTypeString>(), "The name of the database the table is in."},
         {"view", std::make_shared<DataTypeString>(), "Table name."},
-        {"uuid", std::make_shared<DataTypeUUID>(), "Table uuid (Atomic database)."},
         {"status", std::make_shared<DataTypeString>(), "Current state of the refresh."},
         {"last_refresh_result", std::make_shared<DataTypeString>(), "Outcome of the latest refresh attempt."},
         {"last_refresh_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()),
@@ -65,7 +63,6 @@ void StorageSystemViewRefreshes::fillData(
         std::size_t i = 0;
         res_columns[i++]->insert(refresh.view_id.getDatabaseName());
         res_columns[i++]->insert(refresh.view_id.getTableName());
-        res_columns[i++]->insert(refresh.view_id.uuid);
         res_columns[i++]->insert(toString(refresh.state));
         res_columns[i++]->insert(toString(refresh.last_refresh_result));
 

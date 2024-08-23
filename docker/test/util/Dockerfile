@@ -5,11 +5,10 @@ FROM ubuntu:22.04
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=18
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=17
 
 RUN apt-get update \
     && apt-get install \
-        sudo \
         apt-transport-https \
         apt-utils \
         ca-certificates \
@@ -44,6 +43,7 @@ RUN apt-get update \
         bash \
         bsdmainutils \
         build-essential \
+        gdb \
         git \
         gperf \
         moreutils \
@@ -57,6 +57,3 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 COPY process_functional_tests_result.py /
-
-COPY --from=clickhouse/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
-ENV PATH="/opt/gdb/bin:${PATH}"

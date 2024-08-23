@@ -12,7 +12,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Core/Settings.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -77,9 +76,9 @@ const Processors & PipelineExecutor::getProcessors() const
     return graph->getProcessors();
 }
 
-void PipelineExecutor::cancel(ExecutionStatus reason)
+void PipelineExecutor::cancel()
 {
-    tryUpdateExecutionStatus(ExecutionStatus::Executing, reason);
+    cancelled = true;
     finish();
     graph->cancel();
 }
@@ -98,15 +97,11 @@ void PipelineExecutor::finish()
     tasks.finish();
 }
 
-bool PipelineExecutor::tryUpdateExecutionStatus(ExecutionStatus expected, ExecutionStatus desired)
-{
-    return execution_status.compare_exchange_strong(expected, desired);
-}
-
 void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
 {
     checkTimeLimit();
-    num_threads = std::max<size_t>(num_threads, 1);
+    if (num_threads < 1)
+        num_threads = 1;
 
     OpenTelemetry::SpanHolder span("PipelineExecutor::execute()");
     span.addAttribute("clickhouse.thread_num", num_threads);
@@ -125,7 +120,7 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
     }
     catch (...)
     {
-        span.addAttribute(DB::ExecutionStatus::fromCurrentException());
+        span.addAttribute(ExecutionStatus::fromCurrentException());
 
 #ifndef NDEBUG
         LOG_TRACE(log, "Exception while executing query. Current state:\n{}", dumpPipeline());
@@ -174,7 +169,7 @@ bool PipelineExecutor::checkTimeLimitSoft()
         // We call cancel here so that all processors are notified and tasks waken up
         // so that the "break" is faster and doesn't wait for long events
         if (!continuing)
-            cancel(ExecutionStatus::CancelledByTimeout);
+            cancel();
 
         return continuing;
     }
@@ -200,8 +195,7 @@ void PipelineExecutor::finalizeExecution()
 {
     checkTimeLimit();
 
-    auto status = execution_status.load();
-    if (status == ExecutionStatus::CancelledByTimeout || status == ExecutionStatus::CancelledByUser)
+    if (cancelled)
         return;
 
     bool all_processors_finished = true;
@@ -277,7 +271,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
                 break;
 
             if (!context.executeTask())
-                cancel(ExecutionStatus::Exception);
+                cancel();
 
             if (tasks.isFinished())
                 break;
@@ -295,13 +289,11 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
                 Queue async_queue;
 
                 /// Prepare processor after execution.
-                auto status = graph->updateNode(context.getProcessorID(), queue, async_queue);
-                if (status == ExecutingGraph::UpdateNodeStatus::Exception)
-                    cancel(ExecutionStatus::Exception);
+                if (!graph->updateNode(context.getProcessorID(), queue, async_queue))
+                    cancel();
 
                 /// Push other tasks to global queue.
-                if (status == ExecutingGraph::UpdateNodeStatus::Done)
-                    tasks.pushTasks(queue, async_queue, context);
+                tasks.pushTasks(queue, async_queue, context);
             }
 
 #ifndef NDEBUG
@@ -317,7 +309,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
             {
                 /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
                 /// We should cancel execution properly before rethrow.
-                cancel(ExecutionStatus::Exception);
+                cancel();
                 throw;
             }
 
@@ -336,7 +328,6 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_control)
 {
     is_execution_initialized = true;
-    tryUpdateExecutionStatus(ExecutionStatus::NotStarted, ExecutionStatus::Executing);
 
     size_t use_threads = num_threads;
 
@@ -402,7 +393,7 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
         {
             /// If finished_flag is not set, there was an exception.
             /// Cancel execution in this case.
-            cancel(ExecutionStatus::Exception);
+            cancel();
             if (pool)
                 pool->wait();
         }

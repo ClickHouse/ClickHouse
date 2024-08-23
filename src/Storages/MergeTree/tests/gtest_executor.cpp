@@ -34,7 +34,7 @@ public:
 
         auto choice = distribution(generator);
         if (choice == 0)
-            throw TestException();
+            throw std::runtime_error("Unlucky...");
 
         return false;
     }
@@ -48,7 +48,7 @@ public:
     {
         auto choice = distribution(generator);
         if (choice == 0)
-            throw TestException();
+            throw std::runtime_error("Unlucky...");
     }
 
     Priority getPriority() const override { return {}; }

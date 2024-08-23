@@ -34,11 +34,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 - `options` — MongoDB connection string options (optional parameter).
 
 :::tip
-If you are using the MongoDB Atlas cloud offering:
+If you are using the MongoDB Atlas cloud offering please add these options:
 
 ```
-- connection url can be obtained from 'Atlas SQL' option
-- use options: 'connectTimeoutMS=10000&ssl=true&authSource=admin'
+'connectTimeoutMS=10000&ssl=true&authSource=admin'
 ```
 
 :::

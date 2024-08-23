@@ -52,7 +52,6 @@ public:
 
     void addObject(ObjectStorageKey key, size_t size);
 
-    ObjectKeyWithMetadata popLastObject();
 
     void deserialize(ReadBuffer & buf);
     void deserializeFromString(const std::string & data);

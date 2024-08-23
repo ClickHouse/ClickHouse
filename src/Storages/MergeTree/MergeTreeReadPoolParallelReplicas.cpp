@@ -33,11 +33,7 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
         context_)
     , extension(std::move(extension_))
     , coordination_mode(CoordinationMode::Default)
-    , min_marks_per_task(pool_settings.min_marks_for_concurrent_read)
 {
-    for (const auto & info : per_part_infos)
-        min_marks_per_task = std::max(min_marks_per_task, info->min_marks_per_task);
-
     extension.all_callback(
         InitialAllRangesAnnouncement(coordination_mode, parts_ranges.getDescriptions(), extension.number_of_current_replica));
 }
@@ -54,7 +50,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
         auto result = extension.callback(ParallelReadRequest(
             coordination_mode,
             extension.number_of_current_replica,
-            min_marks_per_task * pool_settings.threads,
+            pool_settings.min_marks_for_concurrent_read * pool_settings.threads,
             /// For Default coordination mode we don't need to pass part names.
             RangesInDataPartsDescription{}));
 
@@ -80,9 +76,9 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
 
     MarkRanges ranges_to_read;
     size_t current_sum_marks = 0;
-    while (current_sum_marks < min_marks_per_task && !current_task.ranges.empty())
+    while (current_sum_marks < pool_settings.min_marks_for_concurrent_read && !current_task.ranges.empty())
     {
-        auto diff = min_marks_per_task - current_sum_marks;
+        auto diff = pool_settings.min_marks_for_concurrent_read - current_sum_marks;
         auto range = current_task.ranges.front();
         if (range.getNumberOfMarks() > diff)
         {

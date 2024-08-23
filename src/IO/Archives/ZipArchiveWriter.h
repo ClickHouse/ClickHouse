@@ -52,7 +52,7 @@ public:
     static constexpr const char kXz[] = "xz";
 
     /// Some compression levels.
-    enum class CompressionLevels : int8_t
+    enum class CompressionLevels
     {
         kDefault = kDefaultCompressionLevel,
         kFast = 2,
