@@ -1045,7 +1045,7 @@ void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveMutableColu
 
 bool ColumnObject::structureEquals(const IColumn & rhs) const
 {
-    /// 2 Object columns have equal structure if they have the same typed paths and max_dynamic_paths/max_dynamic_types.
+    /// 2 Object columns have equal structure if they have the same typed paths and global_max_dynamic_paths/max_dynamic_types.
     const auto * rhs_object = typeid_cast<const ColumnObject *>(&rhs);
     if (!rhs_object || typed_paths.size() != rhs_object->typed_paths.size() || global_max_dynamic_paths != rhs_object->global_max_dynamic_paths || max_dynamic_types != rhs_object->max_dynamic_types)
         return false;
