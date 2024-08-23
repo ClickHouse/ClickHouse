@@ -35,6 +35,8 @@
 #    include <Common/FieldVisitorsAccurateComparison.h>
 #    include "ArrowBufferedStreams.h"
 
+#    include <orc/Vector.hh>
+
 
 namespace DB
 {
@@ -899,6 +901,7 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
         throw Exception(ErrorCodes::INCORRECT_DATA, "ORC stripe {} has no rows", current_stripe);
 
     orc::RowReaderOptions row_reader_options;
+    row_reader_options.setEnableLazyDecoding(true);
     row_reader_options.includeTypes(include_indices);
     row_reader_options.setTimezoneName(format_settings.orc.reader_time_zone_name);
     row_reader_options.range(current_stripe_info->getOffset(), current_stripe_info->getLength());
@@ -998,6 +1001,7 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
 
         bool skipped = false;
         DataTypePtr type = parseORCType(orc_type, format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference, skipped);
+        type = std::make_shared<DataTypeLowCardinality>(removeNullable(type));
         if (!skipped)
             header.insert(ColumnWithTypeAndName{type, name});
     }
@@ -1123,6 +1127,53 @@ readColumnWithNumericDataCast(const orc::ColumnVectorBatch * orc_column, const o
     for (size_t i = 0; i < orc_int_column->numElements; ++i)
         column_data.push_back(static_cast<NumericType>(orc_int_column->data[i]));
 
+    return {std::move(internal_column), std::move(internal_type), column_name};
+}
+
+static ColumnWithTypeAndName
+readColumnWithLowCardinalityStringData(const orc::ColumnVectorBatch * orc_column, const orc::Type *, const String & column_name)
+{
+    /// Calculate dict_column
+    auto dict_type = std::make_shared<DataTypeString>();
+    auto dict_column = dict_type->createColumn();
+    PaddedPODArray<UInt8> & column_chars_t = assert_cast<ColumnString &>(*dict_column).getChars();
+    PaddedPODArray<UInt64> & column_offsets = assert_cast<ColumnString &>(*dict_column).getOffsets();
+
+    const auto * orc_str_column = dynamic_cast<const orc::EncodedStringVectorBatch *>(orc_column);
+    const auto & orc_dict = *orc_str_column->dictionary;
+    size_t dict_size = orc_dict.dictionaryOffset.size() - 1;
+    size_t reserver_size = orc_dict.dictionaryBlob.size() + dict_size;
+    column_chars_t.resize_exact(reserver_size);
+    column_offsets.resize_exact(dict_size);
+
+    size_t curr_offset = 0;
+    for (size_t i = 0; i < dict_size; ++i)
+    {
+        const auto * buf = orc_dict.dictionaryBlob.data() + orc_dict.dictionaryOffset[i];
+        size_t buf_size = orc_dict.dictionaryOffset[i + 1] - orc_dict.dictionaryOffset[i];
+        memcpy(&column_chars_t[curr_offset], buf, buf_size);
+        curr_offset += buf_size;
+
+        column_chars_t[curr_offset] = 0;
+        ++curr_offset;
+
+        column_offsets[i] = curr_offset;
+    }
+
+    /// Fill dict_column into unique column
+    auto internal_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    auto internal_column = internal_type->createColumn();
+    auto dictionary_column = IColumn::mutate(assert_cast<ColumnLowCardinality *>(internal_column.get())->getDictionaryPtr());
+    dynamic_cast<IColumnUnique *>(dictionary_column.get())->uniqueInsertRangeFrom(*dict_column, 0, dict_column->size());
+
+    /// Fill index_column
+    auto index_column = ColumnUInt64::create();
+    auto & index_data = index_column->getData();
+    index_data.resize_exact(orc_str_column->index.size());
+    for (size_t i = 0; i < orc_str_column->index.size(); ++i)
+        index_data[i] = orc_str_column->index[i] + 1;
+
+    internal_column = ColumnLowCardinality::create(std::move(dictionary_column), std::move(index_column));
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
@@ -1420,7 +1471,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
                     default:;
                 }
             }
-            return readColumnWithStringData(orc_column, orc_type, column_name);
+            return readColumnWithLowCardinalityStringData(orc_column, orc_type, column_name);
         }
         case orc::CHAR: {
             if (type_hint)
