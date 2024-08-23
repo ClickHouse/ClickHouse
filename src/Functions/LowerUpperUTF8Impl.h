@@ -6,8 +6,10 @@
 
 #include <Columns/ColumnString.h>
 #include <Functions/LowerUpperImpl.h>
-#include <base/find_symbols.h>
 #include <unicode/unistr.h>
+#include <unicode/ucasemap.h>
+#include <unicode/utypes.h>
+#include <unicode/urename.h>
 #include <Common/StringUtils.h>
 
 namespace DB
@@ -38,38 +40,70 @@ struct LowerUpperUTF8Impl
             return;
         }
 
+
+        UErrorCode error_code = U_ZERO_ERROR;
+        UCaseMap * csm = ucasemap_open(nullptr, 0, &error_code);
+        if (U_FAILURE(error_code))
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Call ucasemap_open error:{}", u_errorName(error_code));
+
+        // String output;
+        size_t curr_offset = 0;
         res_data.resize(data.size());
         res_offsets.resize_exact(offsets.size());
-
-        String output;
-        size_t curr_offset = 0;
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * data_start = reinterpret_cast<const char *>(&data[offsets[i - 1]]);
-            size_t size = offsets[i] - offsets[i - 1];
+            size_t size = offsets[i] - offsets[i - 1] - 1;
 
-            icu::UnicodeString input(data_start, static_cast<int32_t>(size), "UTF-8");
+            int32_t out_size;
             if constexpr (upper)
-                input.toUpper();
+                out_size = ucasemap_utf8ToUpper(
+                    csm, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, data_start, size, &error_code);
             else
-                input.toLower();
+                out_size = ucasemap_utf8ToLower(
+                    csm, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, data_start, size, &error_code);
+            // std::cout << size << ":" << out_size << ":" << static_cast<size_t>(res_data[curr_offset + out_size - 1]) << ":" << error_code
+            //   << std::endl;
 
-            output.clear();
-            input.toUTF8String(output);
+            if (error_code == U_BUFFER_OVERFLOW_ERROR)
+            {
+                size_t new_size = curr_offset + out_size + 1;
+                res_data.resize(new_size);
 
-            /// For valid UTF-8 input strings, ICU sometimes produces output with extra '\0's at the end. Only the data before the first
-            /// '\0' is valid. It the input is not valid UTF-8, then the behavior of lower/upperUTF8 is undefined by definition. In this
-            /// case, the behavior is also reasonable.
-            const char * res_end = find_last_not_symbols_or_null<'\0'>(output.data(), output.data() + output.size());
-            size_t valid_size = res_end ? res_end - output.data() + 1 : 0;
+                error_code = U_ZERO_ERROR;
+                if constexpr (upper)
+                    out_size = ucasemap_utf8ToUpper(
+                        csm,
+                        reinterpret_cast<char *>(&res_data[curr_offset]),
+                        res_data.size() - curr_offset,
+                        data_start,
+                        size,
+                        &error_code);
+                else
+                    out_size = ucasemap_utf8ToLower(
+                        csm,
+                        reinterpret_cast<char *>(&res_data[curr_offset]),
+                        res_data.size() - curr_offset,
+                        data_start,
+                        size,
+                        &error_code);
+            }
 
-            res_data.resize(curr_offset + valid_size + 1);
-            memcpy(&res_data[curr_offset], output.data(), valid_size);
-            res_data[curr_offset + valid_size] = 0;
+            if (error_code != U_ZERO_ERROR)
+                throw DB::Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Call {} error:{} input:{} input_size:{}",
+                    upper ? "ucasemap_utf8ToUpper" : "ucasemap_utf8ToLower",
+                    u_errorName(error_code),
+                    std::string_view(data_start, size),
+                    size);
 
-            curr_offset += valid_size + 1;
+            res_data[curr_offset + out_size] = 0;
+            curr_offset += out_size + 1;
             res_offsets[i] = curr_offset;
         }
+
+        res_data.resize(curr_offset);
     }
 
     static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
