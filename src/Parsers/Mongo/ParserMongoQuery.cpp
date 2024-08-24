@@ -36,13 +36,16 @@ bool ParserMongoQuery::parseImpl(Pos & /*pos*/, ASTPtr & node, Expected & /*expe
 {
     switch (metadata->getQueryType())
     {
-        case QueryMetadata::QueryType::select: {
+        case QueryMetadata::QueryType::select:
+        {
             return ParserMongoSelectQuery(std::move(data), metadata).parseImpl(node);
         }
-        case QueryMetadata::QueryType::insert_many: {
+        case QueryMetadata::QueryType::insert_many:
+        {
             return ParserMongoInsertManyQuery(std::move(data), metadata).parseImpl(node);
         }
-        case QueryMetadata::QueryType::insert_one: {
+        case QueryMetadata::QueryType::insert_one:
+        {
             return ParserMongoInsertOneQuery(std::move(data), metadata).parseImpl(node);
         }
     }

@@ -47,10 +47,7 @@ public:
 
 /// Creates a parser based on edge name and data.
 std::shared_ptr<IMongoParser> createParser(
-    rapidjson::Value data_, 
-    std::shared_ptr<QueryMetadata> metadata_, 
-    const std::string & edge_name_, 
-    bool literal_as_default = false);
+    rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_, bool literal_as_default = false);
 
 /// Creates a inversed parsed based on edge name and data.
 /// Inversed means that mongo syntax have inversed order of elements in tree.
@@ -63,16 +60,13 @@ std::shared_ptr<IMongoParser> createParser(
 ///
 /// But in AST representation looks like
 ///
-///     (operator <) 
+///     (operator <)
 ///    /           \
 ///  quantity      20
 ///
 /// So some operators needs in special parsers
 std::shared_ptr<IMongoParser>
-createInversedParser(
-    rapidjson::Value data_, 
-    std::shared_ptr<QueryMetadata> metadata_,
-    const std::string & edge_name_);
+createInversedParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_);
 
 
 /// Class to connect mongo and clickhouse parsers
