@@ -113,7 +113,15 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
 
-void ColumnDescription::writeText(WriteBuffer & buf) const
+String formatASTStateAware(IAST & ast, IAST::FormatState & state)
+{
+    WriteBufferFromOwnString buf;
+    IAST::FormatSettings settings(buf, true, false);
+    ast.formatImpl(settings, state, IAST::FormatStateStacked());
+    return buf.str();
+}
+
+void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const
 {
     /// NOTE: Serialization format is insane.
 
@@ -126,20 +134,21 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
         writeChar('\t', buf);
         DB::writeText(DB::toString(default_desc.kind), buf);
         writeChar('\t', buf);
-        writeEscapedString(queryToString(default_desc.expression), buf);
+        writeEscapedString(formatASTStateAware(*default_desc.expression, state), buf);
     }
 
-    if (!comment.empty())
+    if (!comment.empty() && include_comment)
     {
         writeChar('\t', buf);
         DB::writeText("COMMENT ", buf);
-        writeEscapedString(queryToString(ASTLiteral(Field(comment))), buf);
+        auto ast = ASTLiteral(Field(comment));
+        writeEscapedString(formatASTStateAware(ast, state), buf);
     }
 
     if (codec)
     {
         writeChar('\t', buf);
-        writeEscapedString(queryToString(codec), buf);
+        writeEscapedString(formatASTStateAware(*codec, state), buf);
     }
 
     if (!settings.empty())
@@ -150,21 +159,21 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
         ASTSetQuery ast;
         ast.is_standalone = false;
         ast.changes = settings;
-        writeEscapedString(queryToString(ast), buf);
+        writeEscapedString(formatASTStateAware(ast, state), buf);
         DB::writeText(")", buf);
     }
 
     if (!statistics.empty())
     {
         writeChar('\t', buf);
-        writeEscapedString(queryToString(statistics.getAST()), buf);
+        writeEscapedString(formatASTStateAware(*statistics.getAST(), state), buf);
     }
 
     if (ttl)
     {
         writeChar('\t', buf);
         DB::writeText("TTL ", buf);
-        writeEscapedString(queryToString(ttl), buf);
+        writeEscapedString(formatASTStateAware(*ttl, state), buf);
     }
 
     writeChar('\n', buf);
@@ -197,7 +206,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
             }
 
             if (col_ast->comment)
-                comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
+                comment = col_ast->comment->as<ASTLiteral &>().value.safeGet<String>();
 
             if (col_ast->codec)
                 codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);
@@ -895,16 +904,17 @@ void ColumnsDescription::resetColumnTTLs()
 }
 
 
-String ColumnsDescription::toString() const
+String ColumnsDescription::toString(bool include_comments) const
 {
     WriteBufferFromOwnString buf;
+    IAST::FormatState ast_format_state;
 
     writeCString("columns format version: 1\n", buf);
     DB::writeText(columns.size(), buf);
     writeCString(" columns:\n", buf);
 
     for (const ColumnDescription & column : columns)
-        column.writeText(buf);
+        column.writeText(buf, ast_format_state, include_comments);
 
     return buf.str();
 }

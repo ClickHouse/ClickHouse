@@ -419,7 +419,7 @@ void fuzzJSONObject(
         if (val.fixed->getType() == Field::Types::Which::String)
         {
             out << fuzzJSONStructure(config, rnd, "\"");
-            writeText(val.fixed->get<String>(), out);
+            writeText(val.fixed->safeGet<String>(), out);
             out << fuzzJSONStructure(config, rnd, "\"");
         }
         else

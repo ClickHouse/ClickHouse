@@ -313,6 +313,12 @@ private:
         statistics.rows_before_limit = rows_before_limit;
         statistics.applied_limit = true;
     }
+    void setRowsBeforeAggregation(size_t rows_before_aggregation) override
+    {
+        std::lock_guard lock(statistics_mutex);
+        statistics.rows_before_aggregation = rows_before_aggregation;
+        statistics.applied_aggregation = true;
+    }
 };
 
 }

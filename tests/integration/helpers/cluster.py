@@ -570,6 +570,8 @@ class ClickHouseCluster:
         self.spark_session = None
 
         self.with_azurite = False
+        self.azurite_container = "azurite-container"
+        self.blob_service_client = None
         self._azurite_port = 0
 
         # available when with_hdfs == True
@@ -2692,6 +2694,32 @@ class ClickHouseCluster:
                     connection_string
                 )
                 logging.debug(blob_service_client.get_account_information())
+                containers = [
+                    c
+                    for c in blob_service_client.list_containers(
+                        name_starts_with=self.azurite_container
+                    )
+                    if c.name == self.azurite_container
+                ]
+                if len(containers) > 0:
+                    for c in containers:
+                        blob_service_client.delete_container(c)
+
+                container_client = blob_service_client.get_container_client(
+                    self.azurite_container
+                )
+                if container_client.exists():
+                    logging.debug(
+                        f"azurite container '{self.azurite_container}' exist, deleting all blobs"
+                    )
+                    for b in container_client.list_blobs():
+                        container_client.delete_blob(b.name)
+                else:
+                    logging.debug(
+                        f"azurite container '{self.azurite_container}' doesn't exist, creating it"
+                    )
+                    container_client.create_container()
+
                 self.blob_service_client = blob_service_client
                 return
             except Exception as ex:

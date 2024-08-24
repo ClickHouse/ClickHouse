@@ -36,6 +36,8 @@
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
+
+#include <Formats/SchemaInferenceUtils.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -90,9 +92,20 @@ static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys = {
     std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].value)"),
 };
 
-static bool urlWithGlobs(const String & uri)
+bool urlWithGlobs(const String & uri)
 {
     return (uri.find('{') != std::string::npos && uri.find('}') != std::string::npos) || uri.find('|') != std::string::npos;
+}
+
+String getSampleURI(String uri, ContextPtr context)
+{
+    if (urlWithGlobs(uri))
+    {
+        auto uris = parseRemoteDescription(uri, 0, uri.size(), ',', context->getSettingsRef().glob_expansion_max_elements);
+        if (!uris.empty())
+            return uris[0];
+    }
+    return uri;
 }
 
 static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
@@ -152,8 +165,9 @@ IStorageURLBase::IStorageURLBase(
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_, getSampleURI(uri, context_), format_settings));
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 
@@ -414,13 +428,14 @@ Chunk StorageURLSource::generate()
             size_t chunk_size = 0;
             if (input_format)
                 chunk_size = input_format->getApproxBytesReadForChunk();
+
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, requested_virtual_columns,
                 {
                     .path = curr_uri.getPath(),
-                    .size = current_file_size
-                });
+                    .size = current_file_size,
+                }, getContext());
             return chunk;
         }
 
@@ -839,7 +854,7 @@ namespace
             format = format_name;
         }
 
-        String getLastFileName() const override { return current_url_option; }
+        String getLastFilePath() const override { return current_url_option; }
 
         bool supportsLastReadBufferRecreation() const override { return true; }
 
@@ -1160,6 +1175,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
 void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     createIterator(nullptr);
+    const auto & settings = context->getSettingsRef();
 
     if (is_empty_glob)
     {
@@ -1170,7 +1186,6 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    const auto & settings = context->getSettingsRef();
     const size_t max_parsing_threads = num_streams >= settings.max_parsing_threads ? 1 : (settings.max_parsing_threads  / num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)

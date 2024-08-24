@@ -48,7 +48,7 @@ Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
         return sketch.get_estimate(&val_converted, data_type->getSizeOfValueInMemory());
 
     if (isStringOrFixedString(data_type))
-        return sketch.get_estimate(val.get<String>());
+        return sketch.get_estimate(val.safeGet<String>());
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'count_min' does not support estimate data type of {}", data_type->getName());
 }
