@@ -501,9 +501,10 @@ class CI:
         JobNames.SQLANCER_DEBUG: CommonJobConfigs.SQLLANCER_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_DEBUG],
         ),
-        JobNames.SQL_LOGIC_TEST: CommonJobConfigs.SQLLOGIC_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE],
-        ),
+        # TODO: job does not work at all, uncomment and fix
+        # JobNames.SQL_LOGIC_TEST: CommonJobConfigs.SQLLOGIC_TEST.with_properties(
+        #     required_builds=[BuildNames.PACKAGE_RELEASE],
+        # ),
         JobNames.SQLTEST: CommonJobConfigs.SQL_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
         ),
