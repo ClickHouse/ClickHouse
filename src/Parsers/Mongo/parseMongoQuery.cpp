@@ -39,7 +39,7 @@ ASTPtr tryParseMongoQuery(
     auto [data_begin, data_end] = getSettingsSubstring(_out_query_end, end);
     metadata = extractMetadataFromRequest(_out_query_end, end);
     dynamic_cast<ParserMongoQuery &>(parser).setParsingData(parseData(data_begin, data_end), metadata);
-    
+
     _out_query_end = findKth<';'>(_out_query_end, end, 1) + 1;
     const bool parse_res = parser.parse(token_iterator, res, expected);
     if (!parse_res)

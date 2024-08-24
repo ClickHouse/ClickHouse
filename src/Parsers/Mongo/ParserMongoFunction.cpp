@@ -62,7 +62,7 @@ bool MongoLiteralFunction::parseImpl(ASTPtr & node)
         }
 
         auto it = data.MemberBegin();
-        
+
         const char * name = it->name.GetString();
         auto parser = createParser(copyValue(it->value), metadata, name);
         ASTPtr child_node;

@@ -19,7 +19,7 @@ std::pair<const char *, const char *> getMetadataSubstring(const char * begin, c
     const char * position = findKth<'('>(begin, end, 1);
     if (position == end)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not find ) in query");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not parse metadata in query");
     }
     return {begin, position};
 }
@@ -29,13 +29,13 @@ std::pair<const char *, const char *> getSettingsSubstring(const char * begin, c
     const char * position_start = findKth<'('>(begin, end, 1);
     if (position_start == end)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not find ( in query");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not find settings in query");
     }
 
     const char * position_end = findKth<')'>(begin, end, 1);
     if (position_end == end)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: : can not find ) in your query ");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not find settings in your query ");
     }
     return {position_start + 1, position_end};
 }
