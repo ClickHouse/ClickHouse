@@ -12,6 +12,23 @@
 
 namespace DB
 {
+
+class SubRowGroupRangeReader
+{
+public:
+    using RowGroupReaderCreator = std::function<std::unique_ptr<RowGroupChunkReader>(size_t)>;
+    explicit SubRowGroupRangeReader(const std::vector<Int32> & rowGroupIndices, RowGroupReaderCreator&& creator);
+    DB::Chunk read(size_t rows);
+
+private:
+    bool loadRowGroupChunkReaderIfNeeded();
+
+    std::vector<Int32> row_group_indices;
+    std::unique_ptr<RowGroupChunkReader> row_group_chunk_reader;
+    size_t next_row_group_idx = 0;
+    RowGroupReaderCreator row_group_reader_creator;
+};
+
 class ParquetReader
 {
 public:
@@ -30,9 +47,8 @@ public:
     void addFilter(const String & column_name, ColumnFilterPtr filter);
     void setRemainFilter(std::optional<ActionsDAG> & expr);
     std::unique_ptr<RowGroupChunkReader> getRowGroupChunkReader(size_t row_group_idx);
+    std::unique_ptr<SubRowGroupRangeReader> getSubRowGroupRangeReader(std::vector<Int32> row_group_indices);
 private:
-    bool loadRowGroupChunkReaderIfNeeded();
-
     std::unique_ptr<parquet::ParquetFileReader> file_reader;
     std::mutex file_mutex;
     SeekableReadBuffer& file;
@@ -40,7 +56,7 @@ private:
 
     Block header;
 
-    std::unique_ptr<RowGroupChunkReader> row_group_chunk_reader;
+    std::unique_ptr<SubRowGroupRangeReader> chunk_reader;
 
     UInt64 max_block_size;
     parquet::ReaderProperties properties;

@@ -590,7 +590,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
                 ErrorCodes::BAD_ARGUMENTS,
                 "parquet native reader only supports little endian system currently");
 #pragma clang diagnostic pop
-        row_group_batch.row_group_chunk_reader = new_native_reader->getRowGroupChunkReader(row_group_batch_idx);
+        row_group_batch.row_group_chunk_reader = new_native_reader->getSubRowGroupRangeReader(row_group_batch.row_groups_idxs);
 //        row_group_batch.native_record_reader = std::make_shared<ParquetRecordReader>(
 //            getPort().getHeader(),
 //            arrow_properties,
@@ -683,8 +683,6 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
     lock.unlock();
 
     auto end_of_row_group = [&] {
-        if (row_group_batch.row_group_chunk_reader)
-            row_group_batch.row_group_chunk_reader->printMetrics(std::cerr);
         row_group_batch.row_group_chunk_reader.reset();
         row_group_batch.native_record_reader.reset();
         row_group_batch.arrow_column_to_ch_column.reset();
@@ -714,7 +712,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
 
     if (format_settings.parquet.use_native_reader)
     {
-        auto chunk = row_group_batch.row_group_chunk_reader->readChunk(row_group_batch.adaptive_chunk_size);
+        auto chunk = row_group_batch.row_group_chunk_reader->read(row_group_batch.adaptive_chunk_size);
         if (!chunk)
         {
             end_of_row_group();

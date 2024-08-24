@@ -20,7 +20,7 @@ namespace DB
 class ArrowColumnToCHColumn;
 class ParquetRecordReader;
 class ParquetReader;
-class RowGroupChunkReader;
+class SubRowGroupRangeReader;
 
 // Parquet files contain a metadata block with the following information:
 //  * list of columns,
@@ -225,7 +225,7 @@ private:
         std::shared_ptr<ParquetRecordReader> native_record_reader;
         std::unique_ptr<parquet::arrow::FileReader> file_reader;
         std::shared_ptr<arrow::RecordBatchReader> record_batch_reader;
-        std::unique_ptr<RowGroupChunkReader> row_group_chunk_reader;
+        std::unique_ptr<SubRowGroupRangeReader> row_group_chunk_reader;
         std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
     };
 

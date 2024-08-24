@@ -464,10 +464,23 @@ TEST(Processors, BenchmarkReadNullableString)
 template<class T>
 static void testGatherDictInt()
 {
-    PaddedPODArray<T> data = {0, 0, 0, 3, 3, 3, 4, 7, 0, 4, 7, 0, 9, 1, 5, 6, 7, 8, 9, 3, 4, 6, 7};
-    PaddedPODArray<T> dict = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    int size = 10000;
+    PaddedPODArray<T> data;
+    PaddedPODArray<T> dict;
+    std::unordered_map<T, Int32> map;
     PaddedPODArray<T> dist;
-    PaddedPODArray<Int32> idx = {0, 0, 0, 3, 3, 3, 4, 7, 0, 4, 7, 0, 9, 1, 5, 6, 7, 8, 9, 3, 4, 6, 7};
+    PaddedPODArray<Int32> idx;
+    for (size_t i = 0; i < size; ++i)
+    {
+        auto value = std::rand() % 10000;
+        data.push_back(value);
+        if (map.find(value) == map.end())
+        {
+            map[value] = static_cast<Int32>(dict.size());
+            dict.push_back(value);
+        }
+        idx.push_back(map[value]);
+    }
     dist.reserve(data.size());
     FilterHelper::gatherDictFixedValue(dict, dist, idx, data.size());
     ASSERT_EQ(data.size(), dist.size());

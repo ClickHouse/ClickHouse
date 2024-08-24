@@ -53,28 +53,13 @@ ParquetReader::ParquetReader(
     if (row_groups_indices.empty())
         for (int i = 0; i < meta_data->num_row_groups(); i++)
             row_groups_indices.push_back(i);
+
+    chunk_reader = std::make_unique<SubRowGroupRangeReader>(row_groups_indices, [&](const size_t idx) { return getRowGroupChunkReader(idx); });
 }
 
-bool ParquetReader::loadRowGroupChunkReaderIfNeeded()
-{
-    if (row_group_chunk_reader && !row_group_chunk_reader->hasMoreRows() && next_row_group_idx >= row_groups_indices.size())
-        return false;
-    if ((!row_group_chunk_reader || !row_group_chunk_reader->hasMoreRows()) && next_row_group_idx < row_groups_indices.size())
-    {
-        row_group_chunk_reader
-            = std::make_unique<RowGroupChunkReader>(this, meta_data->RowGroup(row_groups_indices[next_row_group_idx]), filters);
-        next_row_group_idx++;
-    }
-    return true;
-}
 Block ParquetReader::read()
 {
-    Chunk chunk;
-    while (chunk.getNumRows() == 0)
-    {
-        if (!loadRowGroupChunkReaderIfNeeded()) break;
-        chunk = row_group_chunk_reader->readChunk(max_block_size);
-    }
+    Chunk chunk = chunk_reader->read(max_block_size);
     if (!chunk) return header.cloneEmpty();
     return header.cloneWithColumns(chunk.detachColumns());
 }
@@ -101,6 +86,36 @@ std::unique_ptr<RowGroupChunkReader> ParquetReader::getRowGroupChunkReader(size_
     std::lock_guard lock(file_mutex);
     return std::make_unique<RowGroupChunkReader>(this, meta_data->RowGroup(static_cast<int>(row_group_idx)), filters);
 }
+std::unique_ptr<SubRowGroupRangeReader> ParquetReader::getSubRowGroupRangeReader(std::vector<Int32> row_group_indices_)
+{
+    return std::make_unique<SubRowGroupRangeReader>(row_group_indices_, [&](const size_t idx) { return getRowGroupChunkReader(idx); });
+}
 
+
+SubRowGroupRangeReader::SubRowGroupRangeReader(const std::vector<Int32> & rowGroupIndices, RowGroupReaderCreator && creator)
+    : row_group_indices(rowGroupIndices), row_group_reader_creator(creator)
+{
+}
+DB::Chunk SubRowGroupRangeReader::read(size_t rows)
+{
+    Chunk chunk;
+    while (chunk.getNumRows() == 0)
+    {
+        if (!loadRowGroupChunkReaderIfNeeded()) break;
+        chunk = row_group_chunk_reader->readChunk(rows);
+    }
+    return chunk;
+}
+bool SubRowGroupRangeReader::loadRowGroupChunkReaderIfNeeded()
+{
+    if (row_group_chunk_reader && !row_group_chunk_reader->hasMoreRows() && next_row_group_idx >= row_group_indices.size())
+        return false;
+    if ((!row_group_chunk_reader || !row_group_chunk_reader->hasMoreRows()) && next_row_group_idx < row_group_indices.size())
+    {
+        row_group_chunk_reader = row_group_reader_creator(row_group_indices[next_row_group_idx]);
+        next_row_group_idx++;
+    }
+    return true;
+}
 
 }
