@@ -66,15 +66,13 @@ DROP TABLE codecTest;
 
 -- just test flags
 
-SET sz3_algorithm = 2;
-
 CREATE TABLE codecTest (
     key      UInt64,
     name     String,
     ref_valueF64 Float64,
     ref_valueF32 Float32,
-    valueF64 Float64  CODEC(SZ3),
-    valueF32 Float32  CODEC(SZ3)
+    valueF64 Float64  CODEC(SZ3('ALGO_INTERP', 'REL', 0.01)),
+    valueF32 Float32  CODEC(SZ3('ALGO_INTERP', 'REL', 0.01))
 ) Engine = MergeTree ORDER BY key;
 
 -- best case - same value

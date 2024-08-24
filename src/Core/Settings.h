@@ -1296,13 +1296,6 @@ class IColumn;
     M(Bool, precise_float_parsing, false, "Prefer more precise (but slower) float parsing algorithm", 0) \
     M(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", "Overflow mode for Date, Date32, DateTime, DateTime64 types. Possible values: 'ignore', 'throw', 'saturate'.", 0) \
     M(Bool, validate_experimental_and_suspicious_types_inside_nested_types, true, "Validate usage of experimental and suspicious types inside nested types like Array/Map/Tuple", 0) \
-    \
-    M(UInt64, sz3_algorithm, 1, "Mode for sz3 algorithm. 0 means ALGO_INTERP, 1 means ALGO_INTERP_LORENZO, 2 means ALGO_LORENZO_REG. Read more about modes - https://github.com/szcompressor/SZ3/blob/master/include/SZ3/api/sz.hpp#L17 ", 0) \
-    M(UInt64, sz3_error_bound_mode, 1, "Error bound mode for SZ3 compression. 0 means absolute error, 1 means relative error, 2 means psnr, 3 means l2 norm, 4 means both absolute and relative, 5 means absolute or relative", 0) \
-    M(Float, sz3_abs_error_bound, 0, "Absolute error bound for SZ3 compression.", 0) \
-    M(Float, sz3_rel_error_bound, 0.01f, "Relative error bound for SZ3 compression.", 0) \
-    M(Float, sz3_psnr_error_bound, 0, "PSNR error bound for SZ3 compression.", 0) \
-    M(Float, sz3_l2_norm_error_bound, 0, "L2 norm error bound for SZ3 compression.", 0) \
 
 
 // End of FORMAT_FACTORY_SETTINGS
