@@ -2,23 +2,23 @@
 
 #if USE_SZ3
 
-#    include "DataTypes/IDataType.h"
+#include "DataTypes/IDataType.h"
 
-#    include <Compression/CompressionFactory.h>
-#    include <Compression/CompressionInfo.h>
-#    include <Compression/ICompressionCodec.h>
-#    include <Core/Settings.h>
-#    include <IO/BufferWithOwnMemory.h>
-#    include <IO/WriteBuffer.h>
-#    include <IO/WriteHelpers.h>
-#    include <Interpreters/Context.h>
-#    include <Parsers/ASTFunction.h>
-#    include <Parsers/ASTIdentifier.h>
-#    include <Parsers/ASTLiteral.h>
-#    include <Parsers/IAST.h>
-#    include <Common/CurrentThread.h>
+#include <Compression/CompressionFactory.h>
+#include <Compression/CompressionInfo.h>
+#include <Compression/ICompressionCodec.h>
+#include <Core/Settings.h>
+#include <IO/BufferWithOwnMemory.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/IAST.h>
+#include <Common/CurrentThread.h>
 
-#    include <SZ3/api/sz.hpp>
+#include <SZ3/api/sz.hpp>
 
 namespace DB
 {
