@@ -25,7 +25,10 @@ RUN apt-get update -y \
             openssl \
             postgresql-client \
             python3 \
+            python3-lxml \
             python3-pip \
+            python3-requests \
+            python3-termcolor \
             qemu-user-static \
             sqlite3 \
             sudo \
@@ -48,8 +51,7 @@ RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PR
     && unzip protoc-${PROTOC_VERSION}-linux-x86_64.zip -d /usr/local \
     && rm protoc-${PROTOC_VERSION}-linux-x86_64.zip
 
-COPY requirements.txt /
-RUN pip3 install --no-cache-dir -r /requirements.txt
+RUN pip3 install numpy==1.26.3 scipy==1.12.0 pandas==1.5.3 Jinja2==3.1.3 pyarrow==15.0.0
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && cd /tmp/clickhouse-odbc-tmp \
@@ -69,8 +71,8 @@ ENV MAX_RUN_TIME=0
 
 # Unrelated to vars in setup_minio.sh, but should be the same there
 # to have the same binaries for local running scenario
-ARG MINIO_SERVER_VERSION=2024-08-03T04-33-23Z
-ARG MINIO_CLIENT_VERSION=2024-07-31T15-58-33Z
+ARG MINIO_SERVER_VERSION=2022-01-03T18-22-58Z
+ARG MINIO_CLIENT_VERSION=2022-01-05T23-52-51Z
 ARG TARGETARCH
 
 # Download Minio-related binaries
@@ -86,7 +88,6 @@ RUN curl -L --no-verbose -O 'https://archive.apache.org/dist/hadoop/common/hadoo
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 ENV EXPORT_S3_STORAGE_POLICIES=1
-ENV CLICKHOUSE_GRPC_CLIENT="/usr/share/clickhouse-utils/grpc-client/clickhouse-grpc-client.py"
 
 RUN npm install -g azurite@3.30.0 \
     && npm install -g tslib && npm install -g node

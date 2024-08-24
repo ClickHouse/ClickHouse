@@ -15,7 +15,7 @@ from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
-from report import ERROR, JobReport, TestResults, read_test_results
+from report import ERROR, JobReport, TestResult, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
@@ -42,9 +42,6 @@ def get_additional_envs(check_name: str) -> List[str]:
     result.append("RANDOMIZE_KEEPER_FEATURE_FLAGS=1")
     if "azure" in check_name:
         result.append("USE_AZURE_STORAGE_FOR_MERGE_TREE=1")
-
-    if "s3" in check_name:
-        result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
 
     return result
 
@@ -180,9 +177,14 @@ def run_stress_test(docker_image_name: str) -> None:
     )
     logging.info("Going to run stress test: %s", run_command)
 
-    with TeePopen(run_command, run_log_path) as process:
+    timeout_expired = False
+    timeout = 60 * 150
+    with TeePopen(run_command, run_log_path, timeout=timeout) as process:
         retcode = process.wait()
-        if retcode == 0:
+        if process.timeout_exceeded:
+            logging.info("Timeout expired for command: %s", run_command)
+            timeout_expired = True
+        elif retcode == 0:
             logging.info("Run successfully")
         else:
             logging.info("Run failed")
@@ -193,6 +195,11 @@ def run_stress_test(docker_image_name: str) -> None:
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path, run_log_path
     )
+
+    if timeout_expired:
+        test_results.append(TestResult.create_check_timeout_expired(timeout))
+        state = "failure"
+        description = test_results[-1].name
 
     JobReport(
         description=description,

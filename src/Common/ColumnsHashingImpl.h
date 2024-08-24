@@ -453,7 +453,7 @@ protected:
     /// Return the columns which actually contain the values of the keys.
     /// For a given key column, if it is nullable, we return its nested
     /// column. Otherwise we return the key column itself.
-    const ColumnRawPtrs & getActualColumns() const
+    inline const ColumnRawPtrs & getActualColumns() const
     {
         return actual_columns;
     }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, no-parallel
+# Tags: race, zookeeper
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -87,7 +87,7 @@ function insert()
 
 
 
-TIMEOUT=20
+TIMEOUT=30
 
 create_db $TIMEOUT &
 sync_db $TIMEOUT &

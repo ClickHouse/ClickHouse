@@ -90,9 +90,7 @@ void IDataType::forEachSubcolumn(
             {
                 auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
                 auto subdata = ISerialization::createFromPath(subpath, prefix_len);
-                auto path_copy = subpath;
-                path_copy.resize(prefix_len);
-                callback(path_copy, name, subdata);
+                callback(subpath, name, subdata);
             }
             subpath[i].visited = true;
         }
@@ -175,7 +173,7 @@ bool IDataType::hasDynamicSubcolumns() const
     auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
     auto callback = [&](const SubstreamPath &, const String &, const SubstreamData & subcolumn_data)
     {
-        has_dynamic_subcolumns |= subcolumn_data.type && subcolumn_data.type->hasDynamicSubcolumnsData();
+        has_dynamic_subcolumns |= subcolumn_data.type->hasDynamicSubcolumnsData();
     };
     forEachSubcolumn(callback, data);
     return has_dynamic_subcolumns;

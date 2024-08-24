@@ -23,14 +23,16 @@
 #include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
-#include <Common/logger_useful.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/ProxyConfigurationResolverProvider.h>
 
-#include <Core/Settings.h>
+#include <Common/logger_useful.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
 
 #include <base/sleep.h>
 
+
+#ifdef ADDRESS_SANITIZER
+#include <sanitizer/lsan_interface.h>
+#endif
 
 namespace ProfileEvents
 {
@@ -42,11 +44,6 @@ namespace ProfileEvents
 
     extern const Event S3Clients;
     extern const Event TinyS3Clients;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric DiskS3NoSuchKeyErrors;
 }
 
 namespace DB
@@ -387,7 +384,7 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
     /// The next call is NOT a recurcive call
     /// This is a virtuall call Aws::S3::S3Client::HeadObject(const Model::HeadObjectRequest&)
-    return processRequestResult(
+    return enrichErrorMessage(
         HeadObject(static_cast<const Model::HeadObjectRequest&>(request)));
 }
 
@@ -408,7 +405,7 @@ Model::ListObjectsOutcome Client::ListObjects(ListObjectsRequest & request) cons
 
 Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
 {
-    return processRequestResult(
+    return enrichErrorMessage(
         doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); }));
 }
 
@@ -695,13 +692,10 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 }
 
 template <typename RequestResult>
-RequestResult Client::processRequestResult(RequestResult && outcome) const
+RequestResult Client::enrichErrorMessage(RequestResult && outcome) const
 {
     if (outcome.IsSuccess() || !isClientForDisk())
         return std::forward<RequestResult>(outcome);
-
-    if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
-        CurrentMetrics::add(CurrentMetrics::DiskS3NoSuchKeyErrors);
 
     String enriched_message = fmt::format(
         "{} {}",
@@ -897,7 +891,14 @@ void ClientCacheRegistry::clearCacheForAll()
 ClientFactory::ClientFactory()
 {
     aws_options = Aws::SDKOptions{};
-    Aws::InitAPI(aws_options);
+    {
+#ifdef ADDRESS_SANITIZER
+        /// Leak sanitizer (part of address sanitizer) thinks that memory in OpenSSL (called by AWS SDK) is allocated but not
+        /// released. Actually, the memory is released at the end of the program (ClientFactory is a singleton, see the dtor).
+        __lsan::ScopedDisabler lsan_disabler;
+#endif
+        Aws::InitAPI(aws_options);
+    }
     Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>(false));
     Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
 }

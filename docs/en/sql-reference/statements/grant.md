@@ -33,7 +33,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 - `role` — ClickHouse user role.
 - `user` — ClickHouse user account.
 
-The `WITH ADMIN OPTION` clause grants [ADMIN OPTION](#admin-option) privilege to `user` or `role`.
+The `WITH ADMIN OPTION` clause grants [ADMIN OPTION](#admin-option-privilege) privilege to `user` or `role`.
 The `WITH REPLACE OPTION` clause replace old roles by new role for the `user` or `role`, if is not specified it appends roles.
 
 ## Grant Current Grants Syntax
@@ -201,7 +201,7 @@ Hierarchy of privileges:
     - `HDFS`
     - `S3`
 - [dictGet](#dictget)
-- [displaySecretsInShowAndSelect](#displaysecretsinshowandselect)
+- [displaySecretsInShowAndSelect](#display-secrets)
 - [NAMED COLLECTION ADMIN](#named-collection-admin)
     - `CREATE NAMED COLLECTION`
     - `DROP NAMED COLLECTION`
@@ -498,7 +498,7 @@ Privilege level: `DICTIONARY`.
 - `GRANT dictGet ON mydictionary TO john`
 
 
-### displaySecretsInShowAndSelect
+### displaySecretsInShowAndSelect {#display-secrets}
 
 Allows a user to view secrets in `SHOW` and `SELECT` queries if both
 [`display_secrets_in_show_and_select` server setting](../../operations/server-configuration-parameters/settings#display_secrets_in_show_and_select)

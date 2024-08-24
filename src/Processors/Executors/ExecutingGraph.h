@@ -138,17 +138,10 @@ public:
     /// Traverse graph the first time to update all the childless nodes.
     void initializeExecution(Queue & queue);
 
-    enum class UpdateNodeStatus
-    {
-        Done,
-        Exception,
-        Cancelled,
-    };
-
     /// Update processor with pid number (call IProcessor::prepare).
     /// Check parents and children of current processor and push them to stacks if they also need to be updated.
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
-    UpdateNodeStatus updateNode(uint64_t pid, Queue & queue, Queue & async_queue);
+    bool updateNode(uint64_t pid, Queue & queue, Queue & async_queue);
 
     void cancel(bool cancel_all_processors = true);
 
@@ -162,7 +155,7 @@ private:
 
     /// Update graph after processor (pid) returned ExpandPipeline status.
     /// All new nodes and nodes with updated ports are pushed into stack.
-    UpdateNodeStatus expandPipeline(std::stack<uint64_t> & stack, uint64_t pid);
+    bool expandPipeline(std::stack<uint64_t> & stack, uint64_t pid);
 
     std::shared_ptr<Processors> processors;
     std::vector<bool> source_processors;

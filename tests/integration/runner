@@ -244,10 +244,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--count", action="store", type=int, dest="count", help="Repeat count"
-    )
-
-    parser.add_argument(
         "--no-random",
         action="store",
         dest="no_random",
@@ -321,10 +317,6 @@ if __name__ == "__main__":
     if args.parallel:
         parallel_args += "--dist=loadfile"
         parallel_args += f" -n {args.parallel}".format()
-
-    repeat_args = (
-        f" --count {args.count}" if args.count is not None and args.count > 0 else ""
-    )
 
     rand_args = ""
     # if not args.no_random:
@@ -417,7 +409,7 @@ if __name__ == "__main__":
         f"--volume={args.utils_dir}/grpc-client/pb2:/ClickHouse/utils/grpc-client/pb2 "
         f"--volume=/run:/run/host:ro {dockerd_internal_volume} {env_tags} {env_cleanup} "
         f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_old_analyzer} -e PYTHONUNBUFFERED=1 "
-        f'-e PYTEST_ADDOPTS="{parallel_args} {repeat_args} {pytest_opts} {tests_list} {rand_args} -vvv"'
+        f'-e PYTEST_ADDOPTS="{parallel_args} {pytest_opts} {tests_list} {rand_args} -vvv"'
         f" {DIND_INTEGRATION_TESTS_IMAGE_NAME}:{args.docker_image_version}"
     )
 

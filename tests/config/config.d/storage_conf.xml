@@ -20,7 +20,6 @@
                 <disk>s3_disk</disk>
                 <path>s3_cache/</path>
                 <max_size>104857600</max_size>
-                <max_file_segment_size>5Mi</max_file_segment_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
                 <cache_policy>LRU</cache_policy>
@@ -93,13 +92,6 @@
                 <max_size>22548578304</max_size>
                 <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
             </s3_cache_multi_2>
-            <s3_no_cache>
-                <type>s3</type>
-                <endpoint>http://localhost:11111/test/special/</endpoint>
-                <access_key_id>clickhouse</access_key_id>
-                <secret_access_key>clickhouse</secret_access_key>
-                <s3_check_objects_after_upload>0</s3_check_objects_after_upload>
-            </s3_no_cache>
         </disks>
         <policies>
             <local_remote>
@@ -115,13 +107,6 @@
                     </main>
                 </volumes>
             </s3_cache>
-            <s3_no_cache>
-                <volumes>
-                    <main>
-                        <disk>s3_no_cache</disk>
-                    </main>
-                </volumes>
-            </s3_no_cache>
             <s3_cache_multi>
                 <volumes>
                     <main>

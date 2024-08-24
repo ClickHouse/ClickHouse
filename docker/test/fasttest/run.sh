@@ -9,7 +9,7 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 
 # Compiler version, normally set by Dockerfile
-export LLVM_VERSION=${LLVM_VERSION:-18}
+export LLVM_VERSION=${LLVM_VERSION:-17}
 
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
@@ -41,7 +41,7 @@ export FASTTEST_WORKSPACE
 export FASTTEST_SOURCE
 export FASTTEST_BUILD
 export FASTTEST_DATA
-export FASTTEST_OUTPUT
+export FASTTEST_OUT
 export PATH
 
 function ccache_status
@@ -83,8 +83,6 @@ function start_server
     server_pid="$(cat "$FASTTEST_DATA/clickhouse-server.pid")"
     echo "ClickHouse server pid '$server_pid' started and responded"
 }
-
-export -f start_server
 
 function clone_root
 {
@@ -256,22 +254,6 @@ function configure
     rm -f "$FASTTEST_DATA/config.d/secure_ports.xml"
 }
 
-function timeout_with_logging() {
-    local exit_code=0
-
-    timeout -s TERM --preserve-status "${@}" || exit_code="${?}"
-
-    echo "Checking if it is a timeout. The code 124 will indicate a timeout."
-    if [[ "${exit_code}" -eq "124" ]]
-    then
-        echo "The command 'timeout ${*}' has been killed by timeout."
-    else
-        echo "No, it isn't a timeout."
-    fi
-
-    return $exit_code
-}
-
 function run_tests
 {
     clickhouse-server --version
@@ -286,11 +268,6 @@ function run_tests
     if [[ $NPROC == 0 ]]; then
       NPROC=1
     fi
-
-    export CLICKHOUSE_CONFIG_DIR=$FASTTEST_DATA
-    export CLICKHOUSE_CONFIG="$FASTTEST_DATA/config.xml"
-    export CLICKHOUSE_USER_FILES="$FASTTEST_DATA/user_files"
-    export CLICKHOUSE_SCHEMA_FILES="$FASTTEST_DATA/format_schemas"
 
     local test_opts=(
         --hung-check
@@ -315,8 +292,6 @@ function run_tests
     clickhouse stop --pid-path "$FASTTEST_DATA"
 }
 
-export -f run_tests
-
 case "$stage" in
 "")
     ls -la
@@ -340,7 +315,7 @@ case "$stage" in
     configure 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/install_log.txt"
     ;&
 "run_tests")
-    timeout_with_logging 35m bash -c run_tests ||:
+    run_tests
     /process_functional_tests_result.py --in-results-dir "$FASTTEST_OUTPUT/" \
         --out-results-file "$FASTTEST_OUTPUT/test_results.tsv" \
         --out-status-file "$FASTTEST_OUTPUT/check_status.tsv" || echo -e "failure\tCannot parse results" > "$FASTTEST_OUTPUT/check_status.tsv"

@@ -54,11 +54,11 @@ Identifiers are:
 - Cluster, database, table, partition, and column names.
 - Functions.
 - Data types.
-- [Expression aliases](#expression-aliases).
+- [Expression aliases](#expression_aliases).
 
 Identifiers can be quoted or non-quoted. The latter is preferred.
 
-Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and can not be equal to [keywords](#keywords). Examples: `x`, `_1`, `X_y__Z123_`.
+Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and can not be equal to [keywords](#syntax-keywords). Examples: `x`, `_1`, `X_y__Z123_`.
 
 If you want to use identifiers the same as keywords or you want to use other symbols in identifiers, quote it using double quotes or backticks, for example, `"id"`, `` `id` ``.
 

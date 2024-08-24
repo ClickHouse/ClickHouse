@@ -698,7 +698,7 @@ void ColumnObject::forEachSubcolumnRecursively(RecursiveMutableColumnCallback ca
 
 void ColumnObject::insert(const Field & field)
 {
-    const auto & object = field.safeGet<const Object &>();
+    const auto & object = field.get<const Object &>();
 
     HashSet<StringRef, StringRefHash> inserted_paths;
     size_t old_size = size();
@@ -754,7 +754,7 @@ void ColumnObject::get(size_t n, Field & res) const
 {
     assert(n < size());
     res = Object();
-    auto & object = res.safeGet<Object &>();
+    auto & object = res.get<Object &>();
 
     for (const auto & entry : subcolumns)
     {
@@ -763,20 +763,12 @@ void ColumnObject::get(size_t n, Field & res) const
     }
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnObject::insertFrom(const IColumn & src, size_t n)
-#else
-void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
-#endif
 {
     insert(src[n]);
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
-#else
-void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
-#endif
 {
     const auto & src_object = assert_cast<const ColumnObject &>(src);
 
@@ -1101,10 +1093,4 @@ void ColumnObject::finalize()
     checkObjectHasNoAmbiguosPaths(getKeys());
 }
 
-void ColumnObject::updateHashFast(SipHash & hash) const
-{
-    for (const auto & entry : subcolumns)
-        for (auto & part : entry->data.data)
-            part->updateHashFast(hash);
-}
 }

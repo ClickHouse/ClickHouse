@@ -414,8 +414,6 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
     -   `content_type` — используется со всеми типами, возвращает [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
 
-    -   `http_response_headers` — используется со всеми типами чтобы добавить кастомные хедеры в ответ. Может использоваться в том числе для задания хедера `Content-Type` вместо `content_type`.
-
     -   `response_content` — используется с типом`static`, содержимое ответа, отправленное клиенту, при использовании префикса ‘file://’ or ‘config://’, находит содержимое из файла или конфигурации, отправленного клиенту.
 
 Далее приведены методы настройки для различных типов.
@@ -511,33 +509,6 @@ max_final_threads   2
                 <type>static</type>
                 <status>402</status>
                 <content_type>text/html; charset=UTF-8</content_type>
-                <http_response_headers>
-                    <Content-Language>en</Content-Language>
-                    <X-My-Custom-Header>43</X-My-Custom-Header>
-                </http_response_headers>
-                <response_content>Say Hi!</response_content>
-            </handler>
-        </rule>
-        <defaults/>
-</http_handlers>
-```
-
-`http_response_headers` так же может использоваться для определения `Content-Type` вместо `content_type`.
-
-``` xml
-<http_handlers>
-        <rule>
-            <methods>GET</methods>
-            <headers><XXX>xxx</XXX></headers>
-            <url>/hi</url>
-            <handler>
-                <type>static</type>
-                <status>402</status>
-                <http_response_headers>
-                    <Content-Type>text/html; charset=UTF-8</Content-Type>
-                    <Content-Language>en</Content-Language>
-                    <X-My-Custom-Header>43</X-My-Custom-Header>
-                </http_response_headers>
                 <response_content>Say Hi!</response_content>
             </handler>
         </rule>
@@ -618,9 +589,6 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
             <handler>
                 <type>static</type>
                 <content_type>text/html; charset=UTF-8</content_type>
-                <http_response_headers>
-                    <ETag>737060cd8c284d8af7ad3082f209582d</ETag>
-                </http_response_headers>
                 <response_content>file:///absolute_path_file.html</response_content>
             </handler>
         </rule>
@@ -631,9 +599,6 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
             <handler>
                 <type>static</type>
                 <content_type>text/html; charset=UTF-8</content_type>
-                <http_response_headers>
-                    <ETag>737060cd8c284d8af7ad3082f209582d</ETag>
-                </http_response_headers>
                 <response_content>file://./relative_path_file.html</response_content>
             </handler>
         </rule>

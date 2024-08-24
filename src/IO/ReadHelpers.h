@@ -258,20 +258,6 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
     char tmp = '0';
     readChar(tmp, buf);
     x = tmp != '0';
-
-    if (!buf.eof() && isAlphaASCII(tmp))
-    {
-        if (tmp == 't' || tmp == 'T')
-        {
-            assertStringCaseInsensitive("rue", buf);
-            x = true;
-        }
-        else if (tmp == 'f' || tmp == 'F')
-        {
-            assertStringCaseInsensitive("alse", buf);
-            x = false;
-        }
-    }
 }
 
 template <typename ReturnType = void>
@@ -717,28 +703,13 @@ struct NullOutput
 };
 
 template <typename ReturnType>
-ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char * allowed_delimiters);
-
-inline bool isSymbolIn(char symbol, const char * symbols)
-{
-    if (symbols == nullptr)
-        return true;
-
-    const char * pos = symbols;
-    while (*pos)
-    {
-        if (*pos == symbol)
-            return true;
-        ++pos;
-    }
-    return false;
-}
+ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf);
 
 /// In YYYY-MM-DD format.
 /// For convenience, Month and Day parts can have single digit instead of two digits.
 /// Any separators other than '-' are supported.
 template <typename ReturnType = void>
-inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const char * allowed_delimiters = nullptr)
+inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -782,9 +753,6 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
         }
         else
         {
-            if (!isSymbolIn(pos[-1], allowed_delimiters))
-                return error();
-
             if (!isNumericASCII(pos[0]))
                 return error();
 
@@ -798,9 +766,6 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
                 pos += 2;
 
             if (isNumericASCII(pos[-1]) || !isNumericASCII(pos[0]))
-                return error();
-
-            if (!isSymbolIn(pos[-1], allowed_delimiters))
                 return error();
 
             day = pos[0] - '0';
@@ -818,7 +783,7 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
         return ReturnType(true);
     }
     else
-        return readDateTextFallback<ReturnType>(date, buf, allowed_delimiters);
+        return readDateTextFallback<ReturnType>(date, buf);
 }
 
 inline void convertToDayNum(DayNum & date, ExtendedDayNum & from)
@@ -832,15 +797,15 @@ inline void convertToDayNum(DayNum & date, ExtendedDayNum & from)
 }
 
 template <typename ReturnType = void>
-inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_delimiters = nullptr)
+inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     LocalDate local_date;
 
     if constexpr (throw_exception)
-        readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters);
-    else if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
+        readDateTextImpl<ReturnType>(local_date, buf);
+    else if (!readDateTextImpl<ReturnType>(local_date, buf))
         return false;
 
     ExtendedDayNum ret = date_lut.makeDayNum(local_date.year(), local_date.month(), local_date.day());
@@ -849,15 +814,15 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLU
 }
 
 template <typename ReturnType = void>
-inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_delimiters = nullptr)
+inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     LocalDate local_date;
 
     if constexpr (throw_exception)
-        readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters);
-    else if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
+        readDateTextImpl<ReturnType>(local_date, buf);
+    else if (!readDateTextImpl<ReturnType>(local_date, buf))
         return false;
 
     /// When the parameter is out of rule or out of range, Date32 uses 1925-01-01 as the default value (-DateLUT::instance().getDayNumOffsetEpoch(), -16436) and Date uses 1970-01-01.
@@ -881,19 +846,19 @@ inline void readDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTI
     readDateTextImpl<void>(date, buf, date_lut);
 }
 
-inline bool tryReadDateText(LocalDate & date, ReadBuffer & buf, const char * allowed_delimiters = nullptr)
+inline bool tryReadDateText(LocalDate & date, ReadBuffer & buf)
 {
-    return readDateTextImpl<bool>(date, buf, allowed_delimiters);
+    return readDateTextImpl<bool>(date, buf);
 }
 
-inline bool tryReadDateText(DayNum & date, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_delimiters = nullptr)
+inline bool tryReadDateText(DayNum & date, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
 {
-    return readDateTextImpl<bool>(date, buf, time_zone, allowed_delimiters);
+    return readDateTextImpl<bool>(date, buf, time_zone);
 }
 
-inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_delimiters = nullptr)
+inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
 {
-    return readDateTextImpl<bool>(date, buf, time_zone, allowed_delimiters);
+    return readDateTextImpl<bool>(date, buf, time_zone);
 }
 
 UUID parseUUID(std::span<const UInt8> src);
@@ -1010,13 +975,13 @@ inline T parseFromString(std::string_view str)
 
 
 template <typename ReturnType = void, bool dt64_mode = false>
-ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr);
+ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut);
 
 /** In YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format, according to specified time zone.
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
 template <typename ReturnType = void, bool dt64_mode = false>
-inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
+inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1049,9 +1014,6 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
                     || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
                     return ReturnType(false);
-
-                if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
-                    return ReturnType(false);
             }
 
             UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
@@ -1070,9 +1032,6 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 {
                     if (!isNumericASCII(s[11]) || !isNumericASCII(s[12]) || !isNumericASCII(s[14]) || !isNumericASCII(s[15])
                         || !isNumericASCII(s[17]) || !isNumericASCII(s[18]))
-                        return ReturnType(false);
-
-                    if (!isSymbolIn(s[13], allowed_time_delimiters) || !isSymbolIn(s[16], allowed_time_delimiters))
                         return ReturnType(false);
                 }
 
@@ -1098,11 +1057,11 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }
     else
-        return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+        return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut);
 }
 
 template <typename ReturnType>
-inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
+inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1116,7 +1075,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         {
             try
             {
-                readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+                readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut);
             }
             catch (const DB::Exception &)
             {
@@ -1126,7 +1085,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         }
         else
         {
-            auto ok = readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+            auto ok = readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut);
             if (!ok && (buf.eof() || *buf.position() != '.'))
                 return ReturnType(false);
         }
@@ -1209,14 +1168,14 @@ inline void readDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer
     readDateTimeTextImpl<void>(datetime64, scale, buf, date_lut);
 }
 
-inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
+inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
 {
-    return readDateTimeTextImpl<bool>(datetime, buf, time_zone, allowed_date_delimiters, allowed_time_delimiters);
+    return readDateTimeTextImpl<bool>(datetime, buf, time_zone);
 }
 
-inline bool tryReadDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance(), const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
+inline bool tryReadDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
-    return readDateTimeTextImpl<bool>(datetime64, scale, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+    return readDateTimeTextImpl<bool>(datetime64, scale, buf, date_lut);
 }
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
@@ -1749,7 +1708,6 @@ inline T parse(const char * data, size_t size)
     T res;
     ReadBufferFromMemory buf(data, size);
     readText(res, buf);
-    assertEOF(buf);
     return res;
 }
 
@@ -1757,9 +1715,7 @@ template <typename T>
 inline bool tryParse(T & res, const char * data, size_t size)
 {
     ReadBufferFromMemory buf(data, size);
-    if (!tryReadText(res, buf))
-        return false;
-    return buf.eof();
+    return tryReadText(res, buf);
 }
 
 template <typename T>

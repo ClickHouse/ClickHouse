@@ -16,7 +16,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Core/ExternalTable.h>
-#include <Core/Settings.h>
 #include <Poco/Net/MessageHeader.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -49,7 +48,7 @@ ExternalTableDataPtr BaseExternalTable::getData(ContextPtr context)
 {
     initReadBuffer();
     initSampleBlock();
-    auto input = context->getInputFormat(format, *read_buffer, sample_block, context->getSettingsRef().get("max_block_size").safeGet<UInt64>());
+    auto input = context->getInputFormat(format, *read_buffer, sample_block, context->getSettingsRef().get("max_block_size").get<UInt64>());
 
     auto data = std::make_unique<ExternalTableData>();
     data->pipe = std::make_unique<QueryPipelineBuilder>();

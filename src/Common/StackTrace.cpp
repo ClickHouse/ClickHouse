@@ -489,25 +489,13 @@ struct CacheEntry
 
 using CacheEntryPtr = std::shared_ptr<CacheEntry>;
 
-static constinit bool can_use_cache = false;
+using StackTraceCache = std::map<StackTraceTriple, CacheEntryPtr, std::less<>>;
 
-using StackTraceCacheBase = std::map<StackTraceTriple, CacheEntryPtr, std::less<>>;
-
-struct StackTraceCache : public StackTraceCacheBase
+static StackTraceCache & cacheInstance()
 {
-    StackTraceCache()
-        : StackTraceCacheBase()
-    {
-        can_use_cache = true;
-    }
-
-    ~StackTraceCache()
-    {
-        can_use_cache = false;
-    }
-};
-
-static StackTraceCache cache;
+    static StackTraceCache cache;
+    return cache;
+}
 
 static DB::SharedMutex stacktrace_cache_mutex;
 
@@ -515,16 +503,10 @@ String toStringCached(const StackTrace::FramePointers & pointers, size_t offset,
 {
     const StackTraceRefTriple key{pointers, offset, size};
 
-    if (!can_use_cache)
-    {
-        DB::WriteBufferFromOwnString out;
-        toStringEveryLineImpl(false, key, [&](std::string_view str) { out << str << '\n'; });
-        return out.str();
-    }
-
     /// Calculation of stack trace text is extremely slow.
     /// We use cache because otherwise the server could be overloaded by trash queries.
     /// Note that this cache can grow unconditionally, but practically it should be small.
+    StackTraceCache & cache = cacheInstance();
     CacheEntryPtr cache_entry;
 
     // Optimistic try for cache hit to avoid any contention whatsoever, should be the main hot code route
@@ -563,7 +545,7 @@ std::string StackTrace::toString() const
     return toStringCached(frame_pointers, offset, size);
 }
 
-std::string StackTrace::toString(void * const * frame_pointers_raw, size_t offset, size_t size)
+std::string StackTrace::toString(void ** frame_pointers_raw, size_t offset, size_t size)
 {
     __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
 
@@ -576,7 +558,7 @@ std::string StackTrace::toString(void * const * frame_pointers_raw, size_t offse
 void StackTrace::dropCache()
 {
     std::lock_guard lock{stacktrace_cache_mutex};
-    cache.clear();
+    cacheInstance().clear();
 }
 
 

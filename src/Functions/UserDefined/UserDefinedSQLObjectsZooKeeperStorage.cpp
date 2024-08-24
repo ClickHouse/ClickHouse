@@ -14,7 +14,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-#include <Core/Settings.h>
+
 
 namespace DB
 {
@@ -35,6 +35,7 @@ namespace
             case UserDefinedSQLObjectType::Function:
                 return "function_";
         }
+        UNREACHABLE();
     }
 
     constexpr std::string_view sql_extension = ".sql";

@@ -3,7 +3,6 @@
 #include <Storages/StorageMaterializedView.h>
 
 #include <Common/CurrentMetrics.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -33,6 +32,7 @@ RefreshTask::RefreshTask(
 {}
 
 RefreshTaskHolder RefreshTask::create(
+    const StorageMaterializedView & view,
     ContextMutablePtr context,
     const DB::ASTRefreshStrategy & strategy)
 {
@@ -45,9 +45,12 @@ RefreshTaskHolder RefreshTask::create(
                 t->refreshTask();
         });
 
+    std::vector<StorageID> deps;
     if (strategy.dependencies)
         for (auto && dependency : strategy.dependencies->children)
-            task->initial_dependencies.emplace_back(dependency->as<const ASTTableIdentifier &>());
+            deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
+
+    context->getRefreshSet().emplace(view.getStorageID(), deps, task);
 
     return task;
 }
@@ -57,7 +60,6 @@ void RefreshTask::initializeAndStart(std::shared_ptr<StorageMaterializedView> vi
     view_to_refresh = view;
     if (view->getContext()->getSettingsRef().stop_refreshable_materialized_views_on_startup)
         stop_requested = true;
-    view->getContext()->getRefreshSet().emplace(view->getStorageID(), initial_dependencies, shared_from_this());
     populateDependencies();
     advanceNextRefreshTime(currentTime());
     refresh_task->schedule();
@@ -66,8 +68,7 @@ void RefreshTask::initializeAndStart(std::shared_ptr<StorageMaterializedView> vi
 void RefreshTask::rename(StorageID new_id)
 {
     std::lock_guard guard(mutex);
-    if (set_handle)
-        set_handle.rename(new_id);
+    set_handle.rename(new_id);
 }
 
 void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy)
@@ -302,7 +303,7 @@ void RefreshTask::refreshTask()
                 {
                     PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
                     auto text = message.text;
-                    message.text = fmt::format("Refresh view {} failed: {}", view->getStorageID().getFullTableName(), message.text);
+                    message.text = fmt::format("Refresh failed: {}", message.text);
                     LOG_ERROR(log, message);
                     exception = text;
                 }
@@ -355,7 +356,7 @@ void RefreshTask::refreshTask()
         stop_requested = true;
         tryLogCurrentException(log,
             "Unexpected exception in refresh scheduling, please investigate. The view will be stopped.");
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifdef ABORT_ON_LOGICAL_ERROR
         abortOnFailedAssertion("Unexpected exception in refresh scheduling");
 #endif
     }
@@ -376,13 +377,7 @@ void RefreshTask::executeRefreshUnlocked(std::shared_ptr<StorageMaterializedView
         {
             CurrentThread::QueryScope query_scope(refresh_context); // create a thread group for the query
 
-            BlockIO block_io = InterpreterInsertQuery(
-                refresh_query,
-                refresh_context,
-                /* allow_materialized */ false,
-                /* no_squash */ false,
-                /* no_destination */ false,
-                /* async_isnert */ false).execute();
+            BlockIO block_io = InterpreterInsertQuery(refresh_query, refresh_context).execute();
             QueryPipeline & pipeline = block_io.pipeline;
 
             pipeline.setProgressCallback([this](const Progress & prog)

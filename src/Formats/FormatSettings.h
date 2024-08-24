@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Core/Defines.h>
 #include <Core/Names.h>
+#include <Core/Defines.h>
 #include <base/types.h>
 #include <base/unit.h>
+#include <Core/SettingsFields.h>
 
 namespace DB
 {
@@ -46,7 +47,6 @@ struct FormatSettings
     bool try_infer_integers = true;
     bool try_infer_dates = true;
     bool try_infer_datetimes = true;
-    bool try_infer_datetimes_only_datetime64 = false;
     bool try_infer_exponent_floats = false;
 
     enum class DateTimeInputFormat : uint8_t
@@ -106,6 +106,8 @@ struct FormatSettings
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
+    UInt64 max_binary_string_size = 1_GiB;
+    UInt64 max_binary_array_size = 1_GiB;
     UInt64 client_protocol_version = 0;
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
@@ -118,14 +120,6 @@ struct FormatSettings
         LZ4_FRAME,
         ZSTD
     };
-
-    struct
-    {
-        UInt64 max_binary_string_size = 1_GiB;
-        UInt64 max_binary_array_size = 1_GiB;
-        bool encode_types_in_binary_format = false;
-        bool decode_types_in_binary_format = false;
-    } binary{};
 
     struct
     {
@@ -206,7 +200,6 @@ struct FormatSettings
 
     struct JSON
     {
-        size_t max_depth = 1000;
         bool array_of_rows = false;
         bool quote_64bit_integers = true;
         bool quote_64bit_floats = false;
@@ -268,21 +261,18 @@ struct FormatSettings
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
         bool filter_push_down = true;
-        bool use_native_reader = false;
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         bool preserve_order = false;
         bool use_custom_encoder = true;
         bool parallel_encoding = true;
-        UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
-        size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
+        UInt64 max_block_size = 8192;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         bool output_compliant_nested_types = true;
         size_t data_page_size = 1024 * 1024;
         size_t write_batch_size = 1024;
-        bool write_page_index = false;
         size_t local_read_min_bytes_for_seek = 8192;
     } parquet{};
 
@@ -293,13 +283,10 @@ struct FormatSettings
         UInt64 max_value_width = 10000;
         UInt64 max_value_width_apply_for_single_value = false;
         bool highlight_digit_groups = true;
-        /// Set to 2 for auto
-        UInt64 color = 2;
+        SettingFieldUInt64Auto color{"auto"};
 
         bool output_format_pretty_row_numbers = false;
         UInt64 output_format_pretty_single_large_number_tip_threshold = 1'000'000;
-        UInt64 output_format_pretty_display_footer_column_names = 1;
-        UInt64 output_format_pretty_display_footer_column_names_min_rows = 50;
 
         enum class Charset : uint8_t
         {
@@ -410,7 +397,6 @@ struct FormatSettings
         bool use_fast_decoder = true;
         bool filter_push_down = true;
         UInt64 output_row_index_stride = 10'000;
-        String reader_time_zone_name = "GMT";
     } orc{};
 
     /// For capnProto format we should determine how to
@@ -466,8 +452,6 @@ struct FormatSettings
     struct
     {
         bool allow_types_conversion = true;
-        bool encode_types_in_binary_format = false;
-        bool decode_types_in_binary_format = false;
     } native{};
 
     struct

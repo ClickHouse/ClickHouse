@@ -82,11 +82,9 @@ FROM
 
 In this case, you should remember that you do not know the histogram bin borders.
 
-## sequenceMatch
+## sequenceMatch(pattern)(timestamp, cond1, cond2, …)
 
 Checks whether the sequence contains an event chain that matches the pattern.
-
-**Syntax**
 
 ``` sql
 sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
@@ -104,7 +102,7 @@ Events that occur at the same second may lay in the sequence in an undefined ord
 
 **Parameters**
 
-- `pattern` — Pattern string. See [Pattern syntax](#sequencematch).
+- `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
 
 **Returned values**
 
@@ -172,17 +170,15 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 **See Also**
 
-- [sequenceCount](#sequencecount)
+- [sequenceCount](#function-sequencecount)
 
-## sequenceCount
+## sequenceCount(pattern)(time, cond1, cond2, …)
 
 Counts the number of event chains that matched the pattern. The function searches event chains that do not overlap. It starts to search for the next chain after the current chain is matched.
 
 :::note
 Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
 :::
-
-**Syntax**
 
 ``` sql
 sequenceCount(pattern)(timestamp, cond1, cond2, ...)
@@ -196,7 +192,7 @@ sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 
 **Parameters**
 
-- `pattern` — Pattern string. See [Pattern syntax](#sequencematch).
+- `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
 
 **Returned values**
 
@@ -233,7 +229,7 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 
 **See Also**
 
-- [sequenceMatch](#sequencematch)
+- [sequenceMatch](#function-sequencematch)
 
 ## windowFunnel
 

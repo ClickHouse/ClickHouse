@@ -9,7 +9,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
-#include <Core/Settings.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <numeric>

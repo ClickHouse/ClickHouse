@@ -147,7 +147,7 @@ public:
 
     static T getScaleMultiplier(UInt32 scale);
 
-    DecimalUtils::DataTypeDecimalTrait<T> getTrait() const
+    inline DecimalUtils::DataTypeDecimalTrait<T> getTrait() const
     {
         return {precision, scale};
     }

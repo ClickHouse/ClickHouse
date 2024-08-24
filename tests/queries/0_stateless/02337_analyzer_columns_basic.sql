@@ -1,6 +1,6 @@
 -- Tags: no-parallel
 
-SET enable_analyzer = 1;
+SET allow_experimental_analyzer = 1;
 
 -- Empty from section
 
@@ -30,8 +30,8 @@ INSERT INTO test_table VALUES (0, 'Value');
 
 SELECT 'Table access without table name qualification';
 
-SELECT test_id FROM test_table; -- { serverError UNKNOWN_IDENTIFIER }
-SELECT test_id FROM test_unknown_table; -- { serverError UNKNOWN_TABLE }
+SELECT test_id FROM test_table; -- { serverError 47 }
+SELECT test_id FROM test_unknown_table; -- { serverError 60 }
 
 DESCRIBE (SELECT id FROM test_table);
 SELECT id FROM test_table;

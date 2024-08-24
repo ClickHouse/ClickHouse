@@ -105,13 +105,9 @@ private:
     {
         DynamicStructureSerializationVersion structure_version;
         DataTypePtr variant_type;
-        size_t max_dynamic_types;
-        ColumnDynamic::StatisticsPtr statistics;
+        ColumnDynamic::Statistics statistics = {.source = ColumnDynamic::Statistics::Source::READ, .data = {}};
 
-        explicit DeserializeBinaryBulkStateDynamicStructure(UInt64 structure_version_)
-            : structure_version(structure_version_)
-        {
-        }
+        explicit DeserializeBinaryBulkStateDynamicStructure(UInt64 structure_version_) : structure_version(structure_version_) {}
     };
 
     size_t max_dynamic_types;

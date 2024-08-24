@@ -74,6 +74,11 @@ public:
 
     void startup() override;
 
+    void applyNewSettings(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr context) override;
+
     String getObjectsNamespace() const override { return ""; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
@@ -82,7 +87,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & /* key_prefix */) const override
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override
     {
         return ObjectStorageKey::createAsRelative(path);
     }

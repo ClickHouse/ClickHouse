@@ -4,7 +4,6 @@
 
 #include "registerTableFunctions.h"
 #include <Access/Common/AccessFlags.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageFile.h>
@@ -48,7 +47,7 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
     else if (type == Field::Types::Int64 || type == Field::Types::UInt64)
     {
         fd = static_cast<int>(
-            (type == Field::Types::Int64) ? literal->value.safeGet<Int64>() : literal->value.safeGet<UInt64>());
+            (type == Field::Types::Int64) ? literal->value.get<Int64>() : literal->value.get<UInt64>());
         if (fd < 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "File descriptor must be non-negative");
     }

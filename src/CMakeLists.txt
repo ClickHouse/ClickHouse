@@ -1,4 +1,4 @@
-add_compile_options("$<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>")
+add_compile_options($<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>)
 
 if (USE_INCLUDE_WHAT_YOU_USE)
     set (CMAKE_CXX_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
@@ -21,6 +21,15 @@ message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSI
 include (configure_config.cmake)
 configure_file (Common/config.h.in ${CONFIG_INCLUDE_PATH}/config.h)
 configure_file (Common/config_version.cpp.in ${CONFIG_INCLUDE_PATH}/config_version.cpp)
+
+if (USE_DEBUG_HELPERS)
+    get_target_property(MAGIC_ENUM_INCLUDE_DIR ch_contrib::magic_enum INTERFACE_INCLUDE_DIRECTORIES)
+    # CMake generator expression will do insane quoting when it encounters special character like quotes, spaces, etc.
+    # Prefixing "SHELL:" will force it to use the original text.
+    set (INCLUDE_DEBUG_HELPERS "SHELL:-I\"${ClickHouse_SOURCE_DIR}/base\" -I\"${MAGIC_ENUM_INCLUDE_DIR}\" -include \"${ClickHouse_SOURCE_DIR}/src/Core/iostream_debug_helpers.h\"")
+    # Use generator expression as we don't want to pollute CMAKE_CXX_FLAGS, which will interfere with CMake check system.
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:${INCLUDE_DEBUG_HELPERS}>)
+endif ()
 
 # ClickHouse developers may use platform-dependent code under some macro (e.g. `#ifdef ENABLE_MULTITARGET`).
 # If turned ON, this option defines such macro.
@@ -78,7 +87,6 @@ add_headers_and_sources(clickhouse_common_io Common/Scheduler)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes)
 add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/Archives)
-add_headers_and_sources(clickhouse_common_io IO/Protobuf)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
@@ -107,11 +115,8 @@ if (TARGET ch_contrib::nats_io)
     add_headers_and_sources(dbms Storages/NATS)
 endif()
 
-add_headers_and_sources(dbms Storages/ObjectStorage)
-add_headers_and_sources(dbms Storages/ObjectStorage/Azure)
-add_headers_and_sources(dbms Storages/ObjectStorage/S3)
-add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
-add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
+add_headers_and_sources(dbms Storages/DataLakes)
+add_headers_and_sources(dbms Storages/DataLakes/Iceberg)
 add_headers_and_sources(dbms Common/NamedCollections)
 
 if (TARGET ch_contrib::amqp_cpp)
@@ -139,6 +144,7 @@ if (TARGET ch_contrib::azure_sdk)
 endif()
 
 if (TARGET ch_contrib::hdfs)
+    add_headers_and_sources(dbms Storages/HDFS)
     add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
 endif()
 
@@ -207,11 +213,9 @@ add_object_library(clickhouse_databases_mysql Databases/MySQL)
 add_object_library(clickhouse_disks Disks)
 add_object_library(clickhouse_analyzer Analyzer)
 add_object_library(clickhouse_analyzer_passes Analyzer/Passes)
-add_object_library(clickhouse_analyzer_passes Analyzer/Resolve)
 add_object_library(clickhouse_planner Planner)
 add_object_library(clickhouse_interpreters Interpreters)
 add_object_library(clickhouse_interpreters_cache Interpreters/Cache)
-add_object_library(clickhouse_interpreters_hash_join Interpreters/HashJoin)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
@@ -224,13 +228,9 @@ add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_statistics Storages/Statistics)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_storages_windowview Storages/WindowView)
-add_object_library(clickhouse_storages_s3queue Storages/ObjectStorageQueue)
+add_object_library(clickhouse_storages_s3queue Storages/S3Queue)
 add_object_library(clickhouse_storages_materializedview Storages/MaterializedView)
-add_object_library(clickhouse_storages_time_series Storages/TimeSeries)
 add_object_library(clickhouse_client Client)
-# Always compile this file with the highest possible level of optimizations, even in Debug builds.
-# https://github.com/ClickHouse/ClickHouse/issues/65745
-set_source_files_properties(Client/ClientBaseOptimizedParts.cpp PROPERTIES COMPILE_FLAGS "-O3")
 add_object_library(clickhouse_bridge BridgeHelper)
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
@@ -291,7 +291,7 @@ if (TARGET ch_contrib::llvm)
 endif ()
 
 if (TARGET ch_contrib::gwp_asan)
-    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::gwp_asan)
+    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::gwp_asan)
     target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::gwp_asan)
 endif()
 
@@ -353,8 +353,8 @@ target_link_libraries(clickhouse_common_io
             Poco::Foundation
 )
 
-if (TARGET ch_contrib::libfiu)
-    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::libfiu)
+if (TARGET ch_contrib::fiu)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::fiu)
 endif()
 
 if (TARGET ch_contrib::cpuid)
@@ -424,6 +424,9 @@ dbms_target_link_libraries (
         boost::circular_buffer
         boost::heap)
 
+target_include_directories(clickhouse_common_io PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include") # uses some includes from core
+dbms_target_include_directories(PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include")
+
 target_link_libraries(clickhouse_common_io PUBLIC
     ch_contrib::miniselect
     ch_contrib::pdqsort)
@@ -471,7 +474,6 @@ dbms_target_link_libraries (PUBLIC ch_contrib::sparsehash)
 
 if (TARGET ch_contrib::protobuf)
     dbms_target_link_libraries (PRIVATE ch_contrib::protobuf)
-    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::protobuf)
 endif ()
 
 if (TARGET clickhouse_grpc_protos)
@@ -549,20 +551,21 @@ if (TARGET ch_contrib::libpqxx)
 endif()
 
 if (TARGET ch_contrib::datasketches)
-    dbms_target_link_libraries(PUBLIC ch_contrib::datasketches)
+    target_link_libraries (clickhouse_aggregate_functions PRIVATE ch_contrib::datasketches)
 endif ()
 
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 
 if (TARGET ch_contrib::qpl)
     dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
-    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::qpl)
-    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::accel-config)
 endif ()
 
-if (TARGET ch_contrib::accel-config AND TARGET ch_contrib::qatzstd_plugin)
-    dbms_target_link_libraries(PUBLIC ch_contrib::qatzstd_plugin)
+if (TARGET ch_contrib::accel-config)
     dbms_target_link_libraries(PUBLIC ch_contrib::accel-config)
+endif ()
+
+if (TARGET ch_contrib::qatzstd_plugin)
+    dbms_target_link_libraries(PUBLIC ch_contrib::qatzstd_plugin)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::qatzstd_plugin)
 endif ()
 
@@ -601,12 +604,12 @@ endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
 
-if (TARGET ch_contrib::usearch)
-    dbms_target_link_libraries(PUBLIC ch_contrib::usearch)
+if (TARGET ch_contrib::annoy)
+    dbms_target_link_libraries(PUBLIC ch_contrib::annoy)
 endif()
 
-if (TARGET ch_contrib::prometheus_protobufs)
-    dbms_target_link_libraries (PUBLIC ch_contrib::prometheus_protobufs)
+if (TARGET ch_contrib::usearch)
+    dbms_target_link_libraries(PUBLIC ch_contrib::usearch)
 endif()
 
 if (TARGET ch_rust::skim)
