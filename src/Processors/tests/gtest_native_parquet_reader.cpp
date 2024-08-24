@@ -180,7 +180,7 @@ TEST(Processors, BenchmarkReadInt64)
     {
         ReadBufferFromFile in(path);
         auto reader = openParquet(header, in);
-//        reader->addFilter("x", std::make_shared<Int64RangeFilter>(0, 9, false));
+        reader->addFilter("x", std::make_shared<Int64RangeFilter>(-1, -1, false));
         int count [[maybe_unused]] = 0;
         while (auto block = reader->read())
         {
@@ -188,11 +188,11 @@ TEST(Processors, BenchmarkReadInt64)
             if (block.rows() == 0)
                 break;
         }
-        //        std::cerr << "total count: " << count << std::endl;
+        std::cerr << "total count: " << count << std::endl;
     };
     std::cerr << "start benchmark \n";
-    benchmark("arrow", 21, old_test);
-    benchmark("native", 21, new_test);
+//    benchmark("arrow", 50, old_test);
+    benchmark("native", 1, new_test);
 }
 
 
@@ -454,9 +454,47 @@ TEST(Processors, BenchmarkReadNullableString)
             if (block.rows() == 0)
                 break;
         }
-        //        std::cerr << "total count: " << count << std::endl;
+        std::cerr << "total count: " << count << std::endl;
     };
     std::cerr << "start benchmark \n";
-    benchmark("arrow", 9, old_test);
-    benchmark("native", 9, new_test);
+    benchmark("arrow", 21, old_test);
+    benchmark("native", 21, new_test);
+}
+
+template<class T>
+static void testGatherDictInt()
+{
+    PaddedPODArray<T> data = {0, 0, 0, 3, 3, 3, 4, 7, 0, 4, 7, 0, 9, 1, 5, 6, 7, 8, 9, 3, 4, 6, 7};
+    PaddedPODArray<T> dict = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    PaddedPODArray<T> dist;
+    PaddedPODArray<Int32> idx = {0, 0, 0, 3, 3, 3, 4, 7, 0, 4, 7, 0, 9, 1, 5, 6, 7, 8, 9, 3, 4, 6, 7};
+    dist.reserve(data.size());
+    FilterHelper::gatherDictFixedValue(dict, dist, idx, data.size());
+    ASSERT_EQ(data.size(), dist.size());
+    for (size_t i = 0; i < data.size(); ++i)
+    {
+        ASSERT_EQ(data[i], dist[i]);
+    }
+}
+
+TEST(TestColumnFilterHepler, TestGatherDictNumberData)
+{
+    testGatherDictInt<Int16>();
+    testGatherDictInt<Int32>();
+    testGatherDictInt<Int64>();
+    testGatherDictInt<Float32>();
+    testGatherDictInt<Float64>();
+    testGatherDictInt<DateTime64>();
+}
+
+TEST(TestRowSet, TestRowSet)
+{
+    RowSet rowSet(10000);
+    rowSet.setAllFalse();
+    rowSet.set(100, true);
+    rowSet.set(1234, true);
+    ASSERT_EQ(2, rowSet.count());
+    ASSERT_FALSE(rowSet.none());
+    ASSERT_TRUE(rowSet.any());
+    ASSERT_FALSE(rowSet.all());
 }

@@ -534,7 +534,7 @@ bool RowSet::none() const
     bool res = true;
     auto increment = xsimd::batch_bool<unsigned char>::size;
     auto num_batched = max_rows / increment;
-    for (size_t i = 0; i < num_batched; i += increment)
+    for (size_t i = 0; i < num_batched; ++i)
     {
         auto batch = xsimd::batch_bool<unsigned char>::load_aligned(mask.data() + (i * increment));
         res &= xsimd::none(batch);
@@ -552,7 +552,7 @@ bool RowSet::all() const
     bool res = true;
     auto increment = xsimd::batch_bool<unsigned char>::size;
     auto num_batched = max_rows / increment;
-    for (size_t i = 0; i < num_batched; i += increment)
+    for (size_t i = 0; i < num_batched; ++i)
     {
         auto batch = xsimd::batch_bool<unsigned char>::load_aligned(mask.data() + (i * increment));
         res &= xsimd::all(batch);
@@ -568,19 +568,17 @@ bool RowSet::all() const
 
 bool RowSet::any() const
 {
-    bool res = true;
+    bool res = false;
     auto increment = xsimd::batch_bool<unsigned char>::size;
     auto num_batched = max_rows / increment;
-    for (size_t i = 0; i < num_batched; i += increment)
+    for (size_t i = 0; i < num_batched; ++i)
     {
         auto batch = xsimd::batch_bool<unsigned char>::load_aligned(mask.data() + (i * increment));
-        res &= xsimd::any(batch);
-        if (res)
-            return true;
+        res |= xsimd::any(batch);
     }
     for (size_t i = num_batched * increment; i < max_rows; ++i)
     {
-        res &= mask[i];
+        res |= mask[i];
     }
     return res;
 }

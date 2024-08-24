@@ -19,17 +19,35 @@ extern const int PARQUET_EXCEPTION;
 class RowSet
 {
 public:
-    explicit RowSet(size_t max_rows_) : max_rows(max_rows_) { mask.resize_fill(max_rows, true); }
+    explicit RowSet(size_t max_rows_) : max_rows(max_rows_)
+    {
+        mask.resize(max_rows, true);
+        std::fill(mask.begin(), mask.end(), true);
+    }
 
     inline void set(size_t i, bool value) { mask[i] = value; }
-    inline bool get(size_t i) const { return mask[i]; }
+    inline bool get(size_t i) const
+    {
+        if (i >= max_rows)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "RowSet index out of bound: {} >= {}", i, max_rows);
+        return mask[i];
+    }
     inline size_t totalRows() const { return max_rows; }
     bool none() const;
     bool all() const;
     bool any() const;
-    void setAllTrue() { mask.resize(max_rows, true); }
-    void setAllFalse() { mask.resize(max_rows, false); }
-    size_t count() const { return std::reduce(mask.begin(), mask.end(), 0, [](bool a, bool b) { return a+b;}); }
+    void setAllTrue() { std::fill(mask.begin(), mask.end(), true); }
+    void setAllFalse() { std::fill(mask.begin(), mask.end(), false); }
+    size_t count() const
+    {
+        size_t count = 0;
+        for (size_t i = 0; i < max_rows; ++i)
+        {
+            if (mask[i])
+                ++count;
+        }
+        return count;
+    }
     PaddedPODArray<bool> & maskReference() { return mask; }
     const PaddedPODArray<bool> & maskReference() const { return mask; }
 
@@ -236,7 +254,7 @@ public:
     }
 
 private:
-    template<class T>
+    template <class T>
     void testIntValues(RowSet & row_set, size_t offset, size_t len, const T * data) const;
 
     const Int64 max;
