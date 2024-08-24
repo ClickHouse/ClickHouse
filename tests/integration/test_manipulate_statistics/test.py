@@ -135,8 +135,8 @@ def test_single_node_normal(started_cluster):
 
 
 def test_replicated_table_ddl(started_cluster):
-    node1.query("DROP TABLE IF EXISTS test_stat")
-    node2.query("DROP TABLE IF EXISTS test_stat")
+    node1.query("DROP TABLE IF EXISTS test_stat SYNC")
+    node2.query("DROP TABLE IF EXISTS test_stat SYNC")
 
     node1.query(
         """
@@ -192,6 +192,8 @@ def test_replicated_table_ddl(started_cluster):
 
 
 def test_replicated_db(started_cluster):
+    node1.query("DROP DATABASE IF EXISTS test SYNC")
+    node2.query("DROP DATABASE IF EXISTS test SYNC")
     node1.query(
         "CREATE DATABASE test ENGINE = Replicated('/test/shared_stats', '{shard}', '{replica}')"
     )
