@@ -60,7 +60,6 @@ MESSAGES_TO_RETRY = [
     "is already started to be removing by another replica right now",
     # This is from LSan, and it indicates its own internal problem:
     "Unable to get registers from thread",
-    "You can retry",
 ]
 
 MAX_RETRIES = 3
