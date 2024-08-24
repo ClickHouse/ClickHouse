@@ -2,23 +2,23 @@
 
 #if USE_SZ3
 
-#include "DataTypes/IDataType.h"
+#    include "DataTypes/IDataType.h"
 
-#include <Compression/ICompressionCodec.h>
-#include <Compression/CompressionInfo.h>
-#include <Compression/CompressionFactory.h>
-#include <Parsers/IAST.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <Core/Settings.h>
-#include <Common/CurrentThread.h>
-#include <Interpreters/Context.h>
+#    include <Compression/CompressionFactory.h>
+#    include <Compression/CompressionInfo.h>
+#    include <Compression/ICompressionCodec.h>
+#    include <Core/Settings.h>
+#    include <IO/BufferWithOwnMemory.h>
+#    include <IO/WriteBuffer.h>
+#    include <IO/WriteHelpers.h>
+#    include <Interpreters/Context.h>
+#    include <Parsers/ASTFunction.h>
+#    include <Parsers/ASTIdentifier.h>
+#    include <Parsers/ASTLiteral.h>
+#    include <Parsers/IAST.h>
+#    include <Common/CurrentThread.h>
 
-#include <SZ3/api/sz.hpp>
+#    include <SZ3/api/sz.hpp>
 
 namespace DB
 {
@@ -34,8 +34,8 @@ public:
 
     explicit CompressionCodecSZ3(
         DataType type_,
-        const std::string& compression_algo_,
-        const std::string& error_bound_mode_,
+        const std::string & compression_algo_,
+        const std::string & error_bound_mode_,
         double rel_error_bound_,
         double abs_error_bound_,
         double psnr_error_bound_,
@@ -71,14 +71,14 @@ private:
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_CODEC_PARAMETER;
+extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
 CompressionCodecSZ3::CompressionCodecSZ3(
     DataType type_,
-    const std::string& compression_algo_,
-    const std::string& error_bound_mode_,
+    const std::string & compression_algo_,
+    const std::string & error_bound_mode_,
     double rel_error_bound_,
     double abs_error_bound_,
     double psnr_error_bound_,
@@ -120,15 +120,13 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
 
     switch (type)
     {
-        case DataType::FLOAT32:
-        {
+        case DataType::FLOAT32: {
             src_size = static_cast<size_t>(source_size) / sizeof(float);
             dest[0] = 0;
             ++dest;
             break;
         }
-        case DataType::FLOAT64:
-        {
+        case DataType::FLOAT64: {
             src_size = static_cast<size_t>(source_size) / sizeof(double);
             dest[0] = 1;
             ++dest;
@@ -173,13 +171,11 @@ UInt32 CompressionCodecSZ3::doCompressData(const char * source, UInt32 source_si
 
     switch (type)
     {
-        case DataType::FLOAT32:
-        {
+        case DataType::FLOAT32: {
             res = SZ_compress(conf, reinterpret_cast<float *>(source_compressed.get()), src_size);
             break;
         }
-        case DataType::FLOAT64:
-        {
+        case DataType::FLOAT64: {
             res = SZ_compress(conf, reinterpret_cast<double *>(source_compressed.get()), src_size);
             break;
         }
@@ -200,14 +196,12 @@ void CompressionCodecSZ3::doDecompressData(const char * source, UInt32 source_si
 
     switch (data_type)
     {
-        case DataType::FLOAT32:
-        {
+        case DataType::FLOAT32: {
             auto * res = SZ_decompress<float>(conf, copy_compressed.get(), source_size);
             memcpy(dest, reinterpret_cast<char *>(res), static_cast<size_t>(uncompressed_size));
             break;
         }
-        case DataType::FLOAT64:
-        {
+        case DataType::FLOAT64: {
             auto * res = SZ_decompress<double>(conf, copy_compressed.get(), source_size);
             memcpy(dest, reinterpret_cast<char *>(res), static_cast<size_t>(uncompressed_size));
             break;
@@ -224,9 +218,10 @@ CompressionCodecSZ3::DataType getDataType(const IDataType & column_type)
         case TypeIndex::Float64:
             return CompressionCodecSZ3::DataType::FLOAT64;
         default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "SZ3 codec is not applicable for {} because the data type must be Float32 or Float64",
-                            column_type.getName());
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "SZ3 codec is not applicable for {} because the data type must be Float32 or Float64",
+                column_type.getName());
     }
 }
 
@@ -241,10 +236,12 @@ void registerCodecSZ3(CompressionCodecFactory & factory)
             data_type = getDataType(*column_type);
         }
 
-        if (!arguments || arguments->children.size() == 0) {
+        if (!arguments || arguments->children.size() == 0)
+        {
             return std::make_shared<CompressionCodecSZ3>(data_type, "ALGO_INTERP_LORENZO", "REL", 1e-2, 0, 0, 0);
         }
-        else if (arguments->children.size() == 3) {
+        else if (arguments->children.size() == 3)
+        {
             const auto children = arguments->children;
             const auto * literal_algorithm = children[0]->as<ASTLiteral>();
             if (!literal_algorithm)
@@ -288,13 +285,12 @@ void registerCodecSZ3(CompressionCodecFactory & factory)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect error mode for sz3 codec {}", error_mode);
             }
         }
-        else 
+        else
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect number of arguments {}", arguments->children.size());
         }
     };
     factory.registerCompressionCodecWithType("SZ3", method_code, codec_builder);
-
 }
 
 }
