@@ -72,7 +72,7 @@ You can also add original ClickHouse repo address to your local repository to pu
 After successfully running this command you will be able to pull updates from the main ClickHouse repo by running `git pull upstream master`.
 
 :::note 
-Instructions below assume you are building on Linux. If you are cross-compiling or building on macOS, please also check for operating system and architecture specific guides, such as building [on macOS for macOS](build-osx.md), [on Linux for macOS](build-cross-osx.md), [on Linux for Linux/RISC-V](build-cross-riscv.md), [on Linux for Linux/LoongArch](build-cross-loongarch.md) and so on.
+Instructions below assume you are building on Linux. If you are cross-compiling or building on macOS, please also check for operating system and architecture specific guides, such as building [on macOS for macOS](build-osx.md), [on Linux for macOS](build-cross-osx.md), [on Linux for Linux/RISC-V](build-cross-riscv.md) and so on.
 :::
 
 ## Build System {#build-system}
@@ -121,7 +121,7 @@ While inside the `build` directory, configure your build by running CMake. Befor
     export CC=clang CXX=clang++
     cmake ..
 
-If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-18 CXX=clang++-18`. The clang version will be in the script output.
+If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-17 CXX=clang++-17`. The clang version will be in the script output.
 
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 
@@ -267,7 +267,7 @@ A pull request can be created even if the work is not completed yet. In this cas
 
 Testing will commence as soon as ClickHouse employees label your PR with a tag “can be tested”. The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
 
-The system will prepare ClickHouse binary builds for your pull request individually. To retrieve these builds click the “Details” link next to “Builds” entry in the list of checks. There you will find direct links to the built .deb packages of ClickHouse which you can deploy even on your production servers (if you have no fear).
+The system will prepare ClickHouse binary builds for your pull request individually. To retrieve these builds click the “Details” link next to “ClickHouse build check” entry in the list of checks. There you will find direct links to the built .deb packages of ClickHouse which you can deploy even on your production servers (if you have no fear).
 
 Most probably some of the builds will fail at first times. This is due to the fact that we check builds both with gcc as well as with clang, with almost all of existing warnings (always with the `-Werror` flag) enabled for clang. On that same page, you can find all of the build logs so that you do not have to build ClickHouse in all of the possible ways.
 

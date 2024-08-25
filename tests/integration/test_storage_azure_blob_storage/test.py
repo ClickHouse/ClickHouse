@@ -10,10 +10,13 @@ import threading
 import time
 
 from azure.storage.blob import BlobServiceClient
+import helpers.client
 import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.network import PartitionManager
+from helpers.mock_servers import start_mock_servers
+from helpers.test_tools import exec_query_with_retry
 from helpers.test_tools import assert_logs_contain_with_retry
-from helpers.test_tools import TSV
 
 
 @pytest.fixture(scope="module")
@@ -27,8 +30,6 @@ def cluster():
             with_azurite=True,
         )
         cluster.start()
-        container_client = cluster.blob_service_client.get_container_client("cont")
-        container_client.create_container()
         yield cluster
     finally:
         cluster.shutdown()
@@ -129,10 +130,8 @@ def test_create_table_connection_string(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        f"""
-        CREATE TABLE test_create_table_conn_string (key UInt64, data String)
-        Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_create_connection_string', 'CSV')
-        """,
+        f"CREATE TABLE test_create_table_conn_string (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}',"
+        f"'cont', 'test_create_connection_string', 'CSV')",
     )
 
 
@@ -787,25 +786,6 @@ def test_read_subcolumns(cluster):
     assert res == "42\tcont/test_subcolumns.jsonl\t(42,42)\ttest_subcolumns.jsonl\t42\n"
 
 
-def test_read_subcolumn_time(cluster):
-    node = cluster.instances["node"]
-    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
-    azure_query(
-        node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_subcolumn_time.tsv', "
-        f"'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto',"
-        f" 'a UInt32') select (42)",
-    )
-
-    res = node.query(
-        f"select a, dateDiff('minute', _time, now()) < 59 from azureBlobStorage('{storage_account_url}', 'cont', 'test_subcolumn_time.tsv',"
-        f" 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto',"
-        f" 'a UInt32')"
-    )
-
-    assert res == "42\t1\n"
-
-
 def test_read_from_not_existing_container(cluster):
     node = cluster.instances["node"]
     query = (
@@ -1233,7 +1213,7 @@ def test_filtering_by_file_or_path(cluster):
     node.query("SYSTEM FLUSH LOGS")
 
     result = node.query(
-        f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query ilike '%select%azure%test_filter%' AND type='QueryFinish'"
+        f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query like '%select%azure%test_filter%' AND type='QueryFinish'"
     )
 
     assert int(result) == 1
@@ -1343,20 +1323,6 @@ def test_format_detection(cluster):
     assert result == expected_result
 
 
-def test_write_to_globbed_partitioned_path(cluster):
-    node = cluster.instances["node"]
-    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
-    account_name = "devstoreaccount1"
-    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
-    error = azure_query(
-        node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_data_*_{{_partition_id}}', '{account_name}', '{account_key}', 'CSV', 'auto', 'x UInt64') partition by 42 select 42",
-        expect_error="true",
-    )
-
-    assert "DATABASE_ACCESS_DENIED" in error
-
-
 def test_parallel_read(cluster):
     node = cluster.instances["node"]
     connection_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
@@ -1428,37 +1394,3 @@ def test_respect_object_existence_on_partitioned_write(cluster):
     )
 
     assert int(result) == 44
-
-
-def test_insert_create_new_file(cluster):
-    node = cluster.instances["node"]
-    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
-    account_name = "devstoreaccount1"
-    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
-
-    azure_query(
-        node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_create_new_file.csv', '{account_name}', '{account_key}', 'a UInt64') VALUES (1)",
-        settings={
-            "azure_truncate_on_insert": False,
-            "azure_create_new_file_on_insert": True,
-        },
-    )
-
-    azure_query(
-        node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_create_new_file.csv', '{account_name}', '{account_key}', 'a UInt64') VALUES (2)",
-        settings={
-            "azure_truncate_on_insert": False,
-            "azure_create_new_file_on_insert": True,
-        },
-    )
-
-    res = azure_query(
-        node,
-        f"SELECT _file, * FROM azureBlobStorage('{storage_account_url}', 'cont', 'test_create_new_file*', '{account_name}', '{account_key}', 'a UInt64') ORDER BY a",
-    )
-
-    assert TSV(res) == TSV(
-        "test_create_new_file.csv\t1\ntest_create_new_file.1.csv\t2\n"
-    )

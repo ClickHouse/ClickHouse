@@ -4,23 +4,15 @@
 #include <Common/getRandomASCIIString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
 #include <optional>
 #include <ranges>
 #include <filesystem>
-#include <utility>
 
 namespace fs = std::filesystem;
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 static std::string getTempFileName(const std::string & dir)
 {
@@ -348,35 +340,6 @@ void UnlinkMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)
     /// Update outcome to reflect the fact that we have restored the file.
     outcome->num_hardlinks++;
 }
-
-void TruncateMetadataFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
-{
-    if (metadata_storage.exists(path))
-    {
-        auto metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
-        while (metadata->getTotalSizeBytes() > target_size)
-        {
-            auto object_key_with_metadata = metadata->popLastObject();
-            outcome->objects_to_remove.emplace_back(object_key_with_metadata.key.serialize(), path, object_key_with_metadata.metadata.size_bytes);
-        }
-        if (metadata->getTotalSizeBytes() != target_size)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} can't be truncated to size {}", path, target_size);
-        }
-        LOG_TEST(getLogger("TruncateMetadataFileOperation"), "Going to remove {} blobs.", outcome->objects_to_remove.size());
-
-        write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
-
-        write_operation->execute(metadata_lock);
-    }
-}
-
-void TruncateMetadataFileOperation::undo(std::unique_lock<SharedMutex> & lock)
-{
-    if (write_operation)
-        write_operation->undo(lock);
-}
-
 
 void SetReadonlyFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
 {

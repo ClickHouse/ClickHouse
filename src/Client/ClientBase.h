@@ -18,6 +18,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+
 namespace po = boost::program_options;
 
 
@@ -66,22 +67,13 @@ class ClientBase : public Poco::Util::Application, public IHints<2>
 public:
     using Arguments = std::vector<String>;
 
-    explicit ClientBase
-    (
-        int in_fd_ = STDIN_FILENO,
-        int out_fd_ = STDOUT_FILENO,
-        int err_fd_ = STDERR_FILENO,
-        std::istream & input_stream_ = std::cin,
-        std::ostream & output_stream_ = std::cout,
-        std::ostream & error_stream_ = std::cerr
-    );
-
+    ClientBase();
     ~ClientBase() override;
 
     void init(int argc, char ** argv);
 
     std::vector<String> getAllRegisteredNames() const override { return cmd_options; }
-    ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
+    static ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements, bool is_interactive, bool ignore_error);
 
 protected:
     void runInteractive();
@@ -89,9 +81,6 @@ protected:
 
     char * argv0 = nullptr;
     void runLibFuzzer();
-
-    /// This is the analogue of Poco::Application::config()
-    virtual Poco::Util::LayeredConfiguration & getClientConfiguration() = 0;
 
     virtual bool processWithFuzzing(const String &)
     {
@@ -118,7 +107,7 @@ protected:
         String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
         std::unique_ptr<Exception> & current_exception);
 
-    void clearTerminal();
+    static void clearTerminal();
     void showClientVersion();
 
     using ProgramOptionsDescription = boost::program_options::options_description;
@@ -140,7 +129,6 @@ protected:
                                 const std::vector<Arguments> & hosts_and_ports_arguments) = 0;
     virtual void processConfig() = 0;
 
-    /// Returns true if query processing was successful.
     bool processQueryText(const String & text);
 
     virtual void readArguments(
@@ -202,7 +190,7 @@ protected:
     /// Adjust some settings after command line options and config had been processed.
     void adjustSettings();
 
-    void setDefaultFormatsAndCompressionFromConfiguration();
+    void setDefaultFormatsFromConfiguration();
 
     void initTTYBuffer(ProgressOption progress);
 
@@ -217,6 +205,7 @@ protected:
 
     bool echo_queries = false; /// Print queries before execution in batch mode.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
+    bool print_time_to_stderr = false; /// Output execution time to stderr in batch mode.
 
     std::optional<Suggest> suggest;
     bool load_suggestions = false;
@@ -235,7 +224,6 @@ protected:
     String pager;
 
     String default_output_format; /// Query results output format.
-    CompressionMethod default_output_compression_method = CompressionMethod::None;
     String default_input_format; /// Tables' format for clickhouse-local.
 
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
@@ -261,9 +249,9 @@ protected:
     ConnectionParameters connection_parameters;
 
     /// Buffer that reads from stdin in batch mode.
-    ReadBufferFromFileDescriptor std_in;
+    ReadBufferFromFileDescriptor std_in{STDIN_FILENO};
     /// Console output.
-    WriteBufferFromFileDescriptor std_out;
+    WriteBufferFromFileDescriptor std_out{STDOUT_FILENO};
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// The user can specify to redirect query output to a file.
@@ -294,6 +282,7 @@ protected:
     bool need_render_profile_events = true;
     bool written_first_block = false;
     size_t processed_rows = 0; /// How many rows have been read or written.
+    bool print_num_processed_rows = false; /// Whether to print the number of processed rows at
 
     bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the
@@ -338,17 +327,10 @@ protected:
     bool allow_repeated_settings = false;
     bool allow_merge_tree_settings = false;
 
-    std::atomic_bool cancelled = false;
-    std::atomic_bool cancelled_printed = false;
+    bool cancelled = false;
 
-    /// Unpacked descriptors and streams for the ease of use.
-    int in_fd = STDIN_FILENO;
-    int out_fd = STDOUT_FILENO;
-    int err_fd = STDERR_FILENO;
-    std::istream & input_stream;
-    std::ostream & output_stream;
-    std::ostream & error_stream;
-
+    /// Does log_comment has specified by user?
+    bool has_log_comment = false;
 };
 
 }

@@ -107,15 +107,12 @@ struct Frame
 using Stack = std::vector<Frame>;
 
 /// Second pass optimizations
-void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
+void optimizePrimaryKeyCondition(const Stack & stack);
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
-
-/// Returns the name of used projection or nullopt if no projection is used.
-std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections);
-std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes);
-
+bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections);
+bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes);
 bool addPlansForSets(QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 
 /// Enable memory bound merging of aggregation states for remote queries

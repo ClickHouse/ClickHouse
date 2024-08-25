@@ -12,16 +12,12 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 
-def make_instance(name, *args, **kwargs):
-    main_configs = kwargs.pop("main_configs", [])
-    main_configs.append("configs/remote_servers.xml")
-    user_configs = kwargs.pop("user_configs", [])
-    user_configs.append("configs/users.xml")
+def make_instance(name, cfg, *args, **kwargs):
     return cluster.add_instance(
         name,
         with_zookeeper=True,
-        main_configs=main_configs,
-        user_configs=user_configs,
+        main_configs=["configs/remote_servers.xml", cfg],
+        user_configs=["configs/users.xml"],
         *args,
         **kwargs,
     )
@@ -35,6 +31,14 @@ n1 = make_instance(
     user_configs=["configs/users.d/new_user.xml"],
 )
 n2 = make_instance("n2", main_configs=["configs/remote_servers_n2.xml"])
+backward = make_instance(
+    "backward",
+    "configs/remote_servers_backward.xml",
+    image="clickhouse/clickhouse-server",
+    # version without DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
+    with_installed_binary=True,
+)
 
 users = pytest.mark.parametrize(
     "user,password",
@@ -96,12 +100,6 @@ def bootstrap():
             0, /* min_bytes  */
             0  /* max_bytes  */
         )
-        """
-        )
-        n.query(
-            """
-        CREATE TABLE dist_over_dist_secure AS data
-        Engine=Distributed(secure, currentDatabase(), dist_secure, key)
         """
         )
 
@@ -431,3 +429,25 @@ def test_secure_cluster_distributed_over_distributed_different_users():
     # and stuff).
     with pytest.raises(QueryRuntimeException):
         n1.query("SELECT * FROM dist_over_dist_secure", user="new_user")
+
+
+@users
+def test_user_secure_cluster_with_backward(user, password):
+    id_ = "with-backward-query-dist_secure-" + user
+    n1.query(
+        f"SELECT *, '{id_}' FROM dist_secure_backward", user=user, password=password
+    )
+    assert get_query_user_info(n1, id_) == [user, user]
+    assert get_query_user_info(backward, id_) == [user, user]
+
+
+@users
+def test_user_secure_cluster_from_backward(user, password):
+    id_ = "from-backward-query-dist_secure-" + user
+    backward.query(f"SELECT *, '{id_}' FROM dist_secure", user=user, password=password)
+    assert get_query_user_info(n1, id_) == [user, user]
+    assert get_query_user_info(backward, id_) == [user, user]
+
+    assert n1.contains_in_log(
+        "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster."
+    )

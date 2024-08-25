@@ -233,7 +233,7 @@ namespace
 
     /**
      *  Levels:
-     *  1. GLOBAL
+     *                    1. GLOBAL
      *  2. DATABASE_LEVEL          2. GLOBAL_WITH_PARAMETER (parameter example: named collection)
      *  3. TABLE_LEVEL
      *  4. COLUMN_LEVEL
@@ -241,12 +241,11 @@ namespace
 
     enum Level
     {
-        GLOBAL_LEVEL = 0,
-        DATABASE_LEVEL = 1,
+        GLOBAL_LEVEL,
+        DATABASE_LEVEL,
         GLOBAL_WITH_PARAMETER = DATABASE_LEVEL,
-        TABLE_LEVEL = 2,
-        COLUMN_LEVEL = 3,
-        MAX = COLUMN_LEVEL,
+        TABLE_LEVEL,
+        COLUMN_LEVEL,
     };
 
     AccessFlags getAllGrantableFlags(Level level)
@@ -258,7 +257,7 @@ namespace
             case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel();
             case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel();
         }
-        chassert(false);
+        UNREACHABLE();
     }
 }
 
@@ -521,7 +520,7 @@ public:
 
 private:
     AccessFlags getAllGrantableFlags() const { return ::DB::getAllGrantableFlags(level); }
-    AccessFlags getChildAllGrantableFlags() const { return ::DB::getAllGrantableFlags(static_cast<Level>(level == Level::MAX ? level : (level + 1))); }
+    AccessFlags getChildAllGrantableFlags() const { return ::DB::getAllGrantableFlags(static_cast<Level>(level + 1)); }
 
     Node * tryGetChild(std::string_view name) const
     {

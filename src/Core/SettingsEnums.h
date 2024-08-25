@@ -115,7 +115,7 @@ constexpr auto getEnumValues();
         return getEnumValues<EnumType>().size();\
     }
 
-enum class LoadBalancing : uint8_t
+enum class LoadBalancing
 {
     /// among replicas with a minimum number of errors selected randomly
     RANDOM = 0,
@@ -142,7 +142,7 @@ DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
 
 
 /// Which rows should be included in TOTALS.
-enum class TotalsMode : uint8_t
+enum class TotalsMode
 {
     BEFORE_HAVING            = 0, /// Count HAVING for all read rows;
                                   ///  including those not in max_rows_to_group_by
@@ -164,7 +164,7 @@ DECLARE_SETTING_ENUM_WITH_RENAME(OverflowModeGroupBy, OverflowMode)
 
 
 /// The setting for executing distributed subqueries inside IN or JOIN sections.
-enum class DistributedProductMode : uint8_t
+enum class DistributedProductMode
 {
     DENY = 0,    /// Disable
     LOCAL,       /// Convert to local query
@@ -175,7 +175,7 @@ enum class DistributedProductMode : uint8_t
 DECLARE_SETTING_ENUM(DistributedProductMode)
 
 /// How the query cache handles queries with non-deterministic functions, e.g. now()
-enum class QueryCacheNondeterministicFunctionHandling : uint8_t
+enum class QueryCacheNondeterministicFunctionHandling
 {
     Throw,
     Save,
@@ -185,7 +185,7 @@ enum class QueryCacheNondeterministicFunctionHandling : uint8_t
 DECLARE_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling)
 
 /// How the query cache handles queries against system tables, tables in databases 'system.*' and 'information_schema.*'
-enum class QueryCacheSystemTableHandling : uint8_t
+enum class QueryCacheSystemTableHandling
 {
     Throw,
     Save,
@@ -217,7 +217,7 @@ enum QueryLogElementType : int8_t
 DECLARE_SETTING_ENUM_WITH_RENAME(LogQueriesType, QueryLogElementType)
 
 
-enum class DefaultDatabaseEngine : uint8_t
+enum class DefaultDatabaseEngine
 {
     Ordinary,
     Atomic,
@@ -225,7 +225,7 @@ enum class DefaultDatabaseEngine : uint8_t
 
 DECLARE_SETTING_ENUM(DefaultDatabaseEngine)
 
-enum class DefaultTableEngine : uint8_t
+enum class DefaultTableEngine
 {
     None = 0, /// Disable. Need to use ENGINE =
     Log,
@@ -242,7 +242,7 @@ enum class DefaultTableEngine : uint8_t
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
 
-enum class CleanDeletedRows : uint8_t
+enum class CleanDeletedRows
 {
     Never = 0, /// Disable.
     Always,
@@ -250,7 +250,7 @@ enum class CleanDeletedRows : uint8_t
 
 DECLARE_SETTING_ENUM(CleanDeletedRows)
 
-enum class MySQLDataTypesSupport : uint8_t
+enum class MySQLDataTypesSupport
 {
     DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
     DATETIME64, // convert MySQL's DATETIME and TIMESTAMP and ClickHouse DateTime64 if precision is > 0 or range is greater that for DateTime.
@@ -260,7 +260,7 @@ enum class MySQLDataTypesSupport : uint8_t
 
 DECLARE_SETTING_MULTI_ENUM(MySQLDataTypesSupport)
 
-enum class SetOperationMode : uint8_t
+enum class SetOperationMode
 {
     Unspecified = 0, // Query UNION / EXCEPT / INTERSECT without SetOperationMode will throw exception
     ALL, // Query UNION / EXCEPT / INTERSECT without SetOperationMode -> SELECT ... UNION / EXCEPT / INTERSECT ALL SELECT ...
@@ -269,7 +269,7 @@ enum class SetOperationMode : uint8_t
 
 DECLARE_SETTING_ENUM(SetOperationMode)
 
-enum class DistributedDDLOutputMode : uint8_t
+enum class DistributedDDLOutputMode
 {
     NONE,
     THROW,
@@ -282,7 +282,7 @@ enum class DistributedDDLOutputMode : uint8_t
 
 DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
 
-enum class StreamingHandleErrorMode : uint8_t
+enum class StreamingHandleErrorMode
 {
     DEFAULT = 0, // Ignore errors with threshold.
     STREAM, // Put errors to stream in the virtual column named ``_error.
@@ -292,7 +292,7 @@ enum class StreamingHandleErrorMode : uint8_t
 
 DECLARE_SETTING_ENUM(StreamingHandleErrorMode)
 
-enum class ShortCircuitFunctionEvaluation : uint8_t
+enum class ShortCircuitFunctionEvaluation
 {
     ENABLE, // Use short-circuit function evaluation for functions that are suitable for it.
     FORCE_ENABLE, // Use short-circuit function evaluation for all functions.
@@ -301,7 +301,7 @@ enum class ShortCircuitFunctionEvaluation : uint8_t
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
 
-enum class TransactionsWaitCSNMode : uint8_t
+enum class TransactionsWaitCSNMode
 {
     ASYNC,
     WAIT,
@@ -322,7 +322,7 @@ DECLARE_SETTING_ENUM_WITH_RENAME(ArrowCompression, FormatSettings::ArrowCompress
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ORCCompression, FormatSettings::ORCCompression)
 
-enum class Dialect : uint8_t
+enum class Dialect
 {
     clickhouse,
     kusto,
@@ -339,35 +339,27 @@ enum class ParallelReplicasCustomKeyFilterType : uint8_t
 
 DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
 
-enum class LightweightMutationProjectionMode : uint8_t
-{
-    THROW,
-    DROP,
-};
-
-DECLARE_SETTING_ENUM(LightweightMutationProjectionMode)
-
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
 
-enum class ObjectStorageQueueMode : uint8_t
+enum class S3QueueMode
 {
     ORDERED,
     UNORDERED,
 };
 
-DECLARE_SETTING_ENUM(ObjectStorageQueueMode)
+DECLARE_SETTING_ENUM(S3QueueMode)
 
-enum class ObjectStorageQueueAction : uint8_t
+enum class S3QueueAction
 {
     KEEP,
     DELETE,
 };
 
-DECLARE_SETTING_ENUM(ObjectStorageQueueAction)
+DECLARE_SETTING_ENUM(S3QueueAction)
 
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
-enum class SchemaInferenceMode : uint8_t
+enum class SchemaInferenceMode
 {
     DEFAULT,
     UNION,
@@ -378,12 +370,4 @@ DECLARE_SETTING_ENUM(SchemaInferenceMode)
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
 
 DECLARE_SETTING_ENUM(SQLSecurityType)
-
-enum class GroupArrayActionWhenLimitReached : uint8_t
-{
-    THROW,
-    DISCARD
-};
-DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
-
 }

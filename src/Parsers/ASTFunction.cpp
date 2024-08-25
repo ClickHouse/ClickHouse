@@ -408,25 +408,26 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
         {
             const char * operators[] =
             {
-                "multiply",        " * ",
-                "divide",          " / ",
-                "modulo",          " % ",
-                "plus",            " + ",
-                "minus",           " - ",
-                "notEquals",       " != ",
-                "lessOrEquals",    " <= ",
-                "greaterOrEquals", " >= ",
-                "less",            " < ",
-                "greater",         " > ",
-                "equals",          " = ",
-                "like",            " LIKE ",
-                "ilike",           " ILIKE ",
-                "notLike",         " NOT LIKE ",
-                "notILike",        " NOT ILIKE ",
-                "in",              " IN ",
-                "notIn",           " NOT IN ",
-                "globalIn",        " GLOBAL IN ",
-                "globalNotIn",     " GLOBAL NOT IN ",
+                "multiply",          " * ",
+                "divide",            " / ",
+                "modulo",            " % ",
+                "plus",              " + ",
+                "minus",             " - ",
+                "notEquals",         " != ",
+                "lessOrEquals",      " <= ",
+                "greaterOrEquals",   " >= ",
+                "less",              " < ",
+                "greater",           " > ",
+                "equals",            " = ",
+                "isNotDistinctFrom", " <=> ",
+                "like",              " LIKE ",
+                "ilike",             " ILIKE ",
+                "notLike",           " NOT LIKE ",
+                "notILike",          " NOT ILIKE ",
+                "in",                " IN ",
+                "notIn",             " NOT IN ",
+                "globalIn",          " GLOBAL IN ",
+                "globalNotIn",       " GLOBAL NOT IN ",
                 nullptr
             };
 
@@ -671,8 +672,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
     if (written)
     {
-        finishFormatWithWindow(settings, state, frame);
-        return;
+        return finishFormatWithWindow(settings, state, frame);
     }
 
     settings.ostr << (settings.hilite ? hilite_function : "") << name;
@@ -754,7 +754,8 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
         settings.ostr << (settings.hilite ? hilite_function : "") << ')';
 
     settings.ostr << (settings.hilite ? hilite_none : "");
-    finishFormatWithWindow(settings, state, frame);
+
+    return finishFormatWithWindow(settings, state, frame);
 }
 
 bool ASTFunction::hasSecretParts() const

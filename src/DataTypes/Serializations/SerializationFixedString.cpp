@@ -10,10 +10,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
 
-#include "Common/PODArray.h"
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include "base/types.h"
 
 namespace DB
 {
@@ -185,17 +183,14 @@ static inline bool tryRead(const SerializationFixedString & self, IColumn & colu
 }
 
 
-void SerializationFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    read(*this, column, [&istr, &settings](ColumnFixedString::Chars & data)
-    {
-        settings.tsv.crlf_end_of_line_input ? readEscapedStringInto<ColumnFixedString::Chars,true>(data, istr) : readEscapedStringInto<ColumnFixedString::Chars,false>(data, istr);
-    });
+    read(*this, column, [&istr](ColumnFixedString::Chars & data) { readEscapedStringInto(data, istr); });
 }
 
 bool SerializationFixedString::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    return tryRead(*this, column, [&istr](ColumnFixedString::Chars & data) { readEscapedStringInto<PaddedPODArray<UInt8>,false>(data, istr); return true; });
+    return tryRead(*this, column, [&istr](ColumnFixedString::Chars & data) { readEscapedStringInto(data, istr); return true; });
 }
 
 

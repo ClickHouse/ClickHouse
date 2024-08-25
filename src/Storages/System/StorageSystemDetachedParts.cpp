@@ -313,8 +313,7 @@ protected:
 
 void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     if (filter_actions_dag)
     {
         const auto * predicate = filter_actions_dag->getOutputs().at(0);
@@ -328,7 +327,7 @@ void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes
 
         filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
         if (filter)
-            VirtualColumnUtils::buildSetsForDAG(filter, context);
+            VirtualColumnUtils::buildSetsForDAG(*filter, context);
     }
 }
 

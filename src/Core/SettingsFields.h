@@ -165,11 +165,7 @@ private:
 };
 
 
-enum class SettingFieldTimespanUnit : uint8_t
-{
-    Millisecond,
-    Second
-};
+enum class SettingFieldTimespanUnit { Millisecond, Second };
 
 template <SettingFieldTimespanUnit unit_>
 struct SettingFieldTimespan
@@ -247,6 +243,12 @@ struct SettingFieldString
     void readBinary(ReadBuffer & in);
 };
 
+#ifdef CLICKHOUSE_KEEPER_STANDALONE_BUILD
+#define NORETURN [[noreturn]]
+#else
+#define NORETURN
+#endif
+
 struct SettingFieldMap
 {
 public:
@@ -263,11 +265,11 @@ public:
     operator const Map &() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
-    String toString() const;
-    void parseFromString(const String & str);
+    NORETURN String toString() const;
+    NORETURN void parseFromString(const String & str);
 
-    void writeBinary(WriteBuffer & out) const;
-    void readBinary(ReadBuffer & in);
+    NORETURN void writeBinary(WriteBuffer & out) const;
+    NORETURN void readBinary(ReadBuffer & in);
 };
 
 #undef NORETURN

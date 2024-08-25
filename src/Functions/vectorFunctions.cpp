@@ -12,42 +12,11 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int ARGUMENT_OUT_OF_BOUND;
-}
-
-namespace
-{
-
-/// Checks that passed data types are tuples and have the same size.
-/// Returns size of tuples.
-size_t checkAndGetTuplesSize(const DataTypePtr & lhs_type, const DataTypePtr & rhs_type, const String & function_name = {})
-{
-    const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(lhs_type.get());
-    const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(rhs_type.get());
-
-    if (!left_tuple)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0{} should be tuple, got {}",
-                        function_name.empty() ? "" : fmt::format(" of function {}", function_name), lhs_type->getName());
-
-    if (!right_tuple)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1{}should be tuple, got {}",
-                        function_name.empty() ? "" : fmt::format(" of function {}", function_name), rhs_type->getName());
-
-    const auto & left_types = left_tuple->getElements();
-    const auto & right_types = right_tuple->getElements();
-
-    if (left_types.size() != right_types.size())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Expected tuples of the same size as arguments{}, got {} and {}",
-                        function_name.empty() ? "" : fmt::format(" of function {}", function_name), lhs_type->getName(), rhs_type->getName());
-    return left_types.size();
-}
-
 }
 
 struct PlusName { static constexpr auto name = "plus"; };
@@ -64,7 +33,8 @@ struct L2SquaredLabel { static constexpr auto name = "2Squared"; };
 struct LinfLabel { static constexpr auto name = "inf"; };
 struct LpLabel { static constexpr auto name = "p"; };
 
-constexpr std::string makeFirstLetterUppercase(const std::string & str)
+/// str starts from the lowercase letter; not constexpr due to the compiler version
+/*constexpr*/ std::string makeFirstLetterUppercase(const std::string& str)
 {
     std::string res(str);
     res[0] += 'A' - 'a';
@@ -87,13 +57,35 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        size_t tuple_size = checkAndGetTuplesSize(arguments[0].type, arguments[1].type, getName());
+        const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+        const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
 
-        const auto & left_types = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get())->getElements();
-        const auto & right_types = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get())->getElements();
+        if (!left_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
+                            getName(), arguments[0].type->getName());
 
-        Columns left_elements = arguments[0].column ? getTupleElements(*arguments[0].column) : Columns();
-        Columns right_elements = arguments[1].column ? getTupleElements(*arguments[1].column) : Columns();
+        if (!right_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1 of function {} should be tuple, got {}",
+                            getName(), arguments[1].type->getName());
+
+        const auto & left_types = left_tuple->getElements();
+        const auto & right_types = right_tuple->getElements();
+
+        Columns left_elements;
+        Columns right_elements;
+        if (arguments[0].column)
+            left_elements = getTupleElements(*arguments[0].column);
+        if (arguments[1].column)
+            right_elements = getTupleElements(*arguments[1].column);
+
+        if (left_types.size() != right_types.size())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Expected tuples of the same size as arguments of function {}. Got {} and {}",
+                            getName(), arguments[0].type->getName(), arguments[1].type->getName());
+
+        size_t tuple_size = left_types.size();
+        if (tuple_size == 0)
+            return std::make_shared<DataTypeUInt8>();
 
         auto func = FunctionFactory::instance().get(FuncName::name, context);
         DataTypes types(tuple_size);
@@ -127,7 +119,7 @@ public:
 
         size_t tuple_size = left_elements.size();
         if (tuple_size == 0)
-            return ColumnTuple::create(input_rows_count);
+            return DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count);
 
         auto func = FunctionFactory::instance().get(FuncName::name, context);
         Columns columns(tuple_size);
@@ -185,6 +177,9 @@ public:
             cur_elements = getTupleElements(*arguments[0].column);
 
         size_t tuple_size = cur_types.size();
+        if (tuple_size == 0)
+            return std::make_shared<DataTypeUInt8>();
+
         auto negate = FunctionFactory::instance().get("negate", context);
         DataTypes types(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
@@ -202,7 +197,7 @@ public:
             }
         }
 
-        return std::make_shared<DataTypeTuple>(std::move(types));
+        return std::make_shared<DataTypeTuple>(types);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -213,7 +208,7 @@ public:
 
         size_t tuple_size = cur_elements.size();
         if (tuple_size == 0)
-            return ColumnTuple::create(input_rows_count);
+            return DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count);
 
         auto negate = FunctionFactory::instance().get("negate", context);
         Columns columns(tuple_size);
@@ -253,9 +248,13 @@ public:
 
         const auto & cur_types = cur_tuple->getElements();
 
-        Columns cur_elements = arguments[0].column ? getTupleElements(*arguments[0].column) : Columns();
+        Columns cur_elements;
+        if (arguments[0].column)
+            cur_elements = getTupleElements(*arguments[0].column);
 
         size_t tuple_size = cur_types.size();
+        if (tuple_size == 0)
+            return std::make_shared<DataTypeUInt8>();
 
         const auto & p_column = arguments[1];
         auto func = FunctionFactory::instance().get(FuncName::name, context);
@@ -286,7 +285,7 @@ public:
 
         size_t tuple_size = cur_elements.size();
         if (tuple_size == 0)
-            return ColumnTuple::create(input_rows_count);
+            return DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count);
 
         const auto & p_column = arguments[1];
         auto func = FunctionFactory::instance().get(FuncName::name, context);
@@ -584,14 +583,11 @@ public:
             types = {arguments[0]};
         }
 
-        if (!types.empty())
-        {
-            const auto * interval_last = checkAndGetDataType<DataTypeInterval>(types.back().get());
-            const auto * interval_new = checkAndGetDataType<DataTypeInterval>(arguments[1].get());
+        const auto * interval_last = checkAndGetDataType<DataTypeInterval>(types.back().get());
+        const auto * interval_new = checkAndGetDataType<DataTypeInterval>(arguments[1].get());
 
-            if (!interval_last->equals(*interval_new))
-                types.push_back(arguments[1]);
-        }
+        if (!interval_last->equals(*interval_new))
+            types.push_back(arguments[1]);
 
         return std::make_shared<DataTypeTuple>(types);
     }
@@ -636,10 +632,14 @@ public:
             size_t tuple_size = cur_elements.size();
 
             if (tuple_size == 0)
-                return ColumnTuple::create(input_rows_count);
-
-            const auto * tuple_last_interval = checkAndGetDataType<DataTypeInterval>(cur_types.back().get());
-            can_be_merged = tuple_last_interval->equals(*second_interval);
+            {
+                can_be_merged = false;
+            }
+            else
+            {
+                const auto * tuple_last_interval = checkAndGetDataType<DataTypeInterval>(cur_types.back().get());
+                can_be_merged = tuple_last_interval->equals(*second_interval);
+            }
 
             if (can_be_merged)
                 tuple_columns.resize(tuple_size);
@@ -726,7 +726,9 @@ public:
 
         const auto & cur_types = cur_tuple->getElements();
 
-        Columns cur_elements = arguments[0].column ? getTupleElements(*arguments[0].column) : Columns();
+        Columns cur_elements;
+        if (arguments[0].column)
+            cur_elements = getTupleElements(*arguments[0].column);
 
         size_t tuple_size = cur_types.size();
         if (tuple_size == 0)
@@ -1342,11 +1344,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        size_t tuple_size = checkAndGetTuplesSize(arguments[0].type, arguments[1].type, getName());
-        if (tuple_size == 0)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Result of function {} is undefined for empty tuples", getName());
-
         FunctionDotProduct dot(context);
         ColumnWithTypeAndName dot_result{dot.getReturnTypeImpl(arguments), {}};
 
@@ -1403,7 +1400,7 @@ public:
                                                     divide_result.type, input_rows_count);
 
         auto minus_elem = minus->build({one, divide_result});
-        return minus_elem->execute({one, divide_result}, minus_elem->getResultType(), input_rows_count);
+        return minus_elem->execute({one, divide_result}, minus_elem->getResultType(), {});
     }
 };
 

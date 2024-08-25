@@ -36,7 +36,7 @@ Finds non-negative derivative for given `metric_column` by `timestamp_column`.
 `INTERVAL` can be omitted, default is `INTERVAL 1 SECOND`.
 The computed value is the following for each row:
 - `0` for 1st row,
-- ${\text{metric}_i - \text{metric}_{i-1} \over \text{timestamp}_i - \text{timestamp}_{i-1}}  * \text{interval}$ for $i_{th}$ row.
+- ${metric_i - metric_{i-1} \over timestamp_i - timestamp_{i-1}}  * interval$ for $i_th$ row.
 
 ## Syntax
 
@@ -80,8 +80,8 @@ These functions can be used only as a window function.
 - `nth_value(x, offset)` - Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
 - `rank()` - Rank the current row within its partition with gaps.
 - `dense_rank()` - Rank the current row within its partition without gaps.
-- `lagInFrame(x[, offset[, default]])` - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame. The offset parameter, if not specified, defaults to 1, meaning it will fetch the value from the next row. If the calculated row exceeds the boundaries of the window frame, the specified default value is returned.
-- `leadInFrame(x[, offset[, default]])` - Return a value evaluated at the row that is offset rows after the current row within the ordered frame. If offset is not provided, it defaults to 1. If the offset leads to a position outside the window frame, the specified default value is used.
+- `lagInFrame(x)` - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
+- `leadInFrame(x)` - Return a value evaluated at the row that is offset rows after the current row within the ordered frame.
 
 ## Examples
 

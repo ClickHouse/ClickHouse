@@ -65,7 +65,7 @@ bool isSupportedAlterTypeForOnClusterDDLQuery(int type)
 
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, const DDLQueryOnClusterParams & params)
 {
-    OpenTelemetry::SpanHolder span(__FUNCTION__, OpenTelemetry::SpanKind::PRODUCER);
+    OpenTelemetry::SpanHolder span(__FUNCTION__, OpenTelemetry::PRODUCER);
 
     if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ON CLUSTER queries inside transactions are not supported");
@@ -237,6 +237,7 @@ private:
     Int64 timeout_seconds = 120;
     bool is_replicated_database = false;
     bool throw_on_timeout = true;
+    bool throw_on_timeout_only_active = false;
     bool only_running_hosts = false;
 
     bool timeout_exceeded = false;
@@ -316,8 +317,8 @@ DDLQueryStatusSource::DDLQueryStatusSource(
     , log(getLogger("DDLQueryStatusSource"))
 {
     auto output_mode = context->getSettingsRef().distributed_ddl_output_mode;
-    throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::THROW_ONLY_ACTIVE
-        || output_mode == DistributedDDLOutputMode::NONE || output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE;
+    throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE;
+    throw_on_timeout_only_active = output_mode == DistributedDDLOutputMode::THROW_ONLY_ACTIVE || output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE;
 
     if (hosts_to_wait)
     {
@@ -451,7 +452,7 @@ Chunk DDLQueryStatusSource::generate()
                                         "({} of them are currently executing the task, {} are inactive). "
                                         "They are going to execute the query in background. Was waiting for {} seconds{}";
 
-            if (throw_on_timeout)
+            if (throw_on_timeout || (throw_on_timeout_only_active && !stop_waiting_offline_hosts))
             {
                 if (!first_exception)
                     first_exception = std::make_unique<Exception>(Exception(ErrorCodes::TIMEOUT_EXCEEDED,

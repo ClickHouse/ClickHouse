@@ -24,6 +24,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
@@ -198,15 +199,12 @@ MySQLHandler::~MySQLHandler() = default;
 void MySQLHandler::run()
 {
     setThreadName("MySQLHandler");
+    ThreadStatus thread_status;
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MYSQL);
     SCOPE_EXIT({ session.reset(); });
 
     session->setClientConnectionId(connection_id);
-
-    const Settings & settings = server.context()->getSettingsRef();
-    socket().setReceiveTimeout(settings.receive_timeout);
-    socket().setSendTimeout(settings.send_timeout);
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket(), read_event);
     out = std::make_shared<WriteBufferFromPocoSocket>(socket(), write_event);
@@ -455,7 +453,6 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 
         // Settings replacements
         if (!should_replace)
-        {
             for (auto const & [mysql_setting, clickhouse_setting] : settings_replacements)
             {
                 const auto replacement_query_opt = setSettingReplacementQuery(query, mysql_setting, clickhouse_setting);
@@ -466,7 +463,6 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
                     break;
                 }
             }
-        }
 
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
@@ -475,10 +471,6 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         auto settings = query_context->getSettings();
         settings.prefer_column_name_to_alias = true;
         query_context->setSettings(settings);
-
-        /// Update timeouts
-        socket().setReceiveTimeout(settings.receive_timeout);
-        socket().setSendTimeout(settings.send_timeout);
 
         CurrentThread::QueryScope query_scope{query_context};
 
@@ -653,11 +645,7 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     client_capabilities = ssl_request.capability_flags;
     max_packet_size = ssl_request.max_packet_size ? ssl_request.max_packet_size : MAX_PACKET_LENGTH;
     secure_connection = true;
-
     ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
-    ss->setReceiveTimeout(socket().getReceiveTimeout());
-    ss->setSendTimeout(socket().getSendTimeout());
-
     in = std::make_shared<ReadBufferFromPocoSocket>(*ss);
     out = std::make_shared<WriteBufferFromPocoSocket>(*ss);
     sequence_id = 2;

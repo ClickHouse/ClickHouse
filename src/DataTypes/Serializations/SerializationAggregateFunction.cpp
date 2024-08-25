@@ -63,7 +63,9 @@ void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column,
     ColumnAggregateFunction::Container::const_iterator it = vec.begin() + offset;
     ColumnAggregateFunction::Container::const_iterator end = limit ? it + limit : vec.end();
 
-    end = std::min(end, vec.end());
+    if (end > vec.end())
+        end = vec.end();
+
     for (; it != end; ++it)
         function->serialize(*it, ostr, version);
 }
@@ -146,10 +148,10 @@ void SerializationAggregateFunction::serializeTextEscaped(const IColumn & column
 }
 
 
-void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     String s;
-    settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(s, istr) : readEscapedString(s, istr);
+    readEscapedString(s, istr);
     deserializeFromString(function, column, s, version);
 }
 

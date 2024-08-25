@@ -89,9 +89,6 @@ public:
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     bool supportsSubcolumns() const override { return true; }
-    bool supportsOptimizationToSubcolumns() const override { return false; }
-
-    bool supportsDynamicSubcolumns() const override { return true; }
 
     bool prefersLargeBlocks() const override;
 
@@ -103,7 +100,7 @@ public:
     {
         std::vector<std::string> paths_to_archives;
         std::string path_in_archive; // used when reading a single file from archive
-        IArchiveReader::NameFilter filter; // used when files inside archive are defined with a glob
+        IArchiveReader::NameFilter filter = {}; // used when files inside archive are defined with a glob
 
         bool isSingleFileRead() const
         {
@@ -280,7 +277,6 @@ private:
     FilesIteratorPtr files_iterator;
     String current_path;
     std::optional<size_t> current_file_size;
-    std::optional<Poco::Timestamp> current_file_last_modified;
     struct stat current_archive_stat;
     std::optional<String> filename_override;
     Block sample_block;

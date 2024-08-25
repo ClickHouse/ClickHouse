@@ -37,13 +37,13 @@ namespace
 {
     using Pos = const char *;
 
-    enum class ParseSyntax : uint8_t
+    enum class ParseSyntax
     {
         MySQL,
         Joda
     };
 
-    enum class ErrorHandling : uint8_t
+    enum class ErrorHandling
     {
         Exception,
         Zero,
@@ -589,7 +589,7 @@ namespace
                 {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"}
             };
 
-            validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+            validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
             String time_zone_name = getTimeZone(arguments).getTimeZone();
             DataTypePtr date_type = std::make_shared<DataTypeDateTime>(time_zone_name);
@@ -713,7 +713,7 @@ namespace
         class Instruction
         {
         private:
-            enum class NeedCheckSpace : uint8_t
+            enum class NeedCheckSpace
             {
                 Yes,
                 No

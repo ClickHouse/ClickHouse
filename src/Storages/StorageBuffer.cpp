@@ -281,7 +281,7 @@ void StorageBuffer::read(
                 if (!dest_columns.hasPhysical(column_name))
                 {
                     LOG_WARNING(log, "Destination table {} doesn't have column {}. The default values are used.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name));
-                    std::erase(columns_intersection, column_name);
+                    boost::range::remove_erase(columns_intersection, column_name);
                     continue;
                 }
                 const auto & dst_col = dest_columns.getPhysical(column_name);
@@ -607,7 +607,7 @@ public:
 
     String getName() const override { return "BufferSink"; }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
         size_t rows = chunk.getNumRows();
         if (!rows)
@@ -1020,13 +1020,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     auto insert_context = Context::createCopy(getContext());
     insert_context->makeQueryContext();
 
-    InterpreterInsertQuery interpreter(
-        insert,
-        insert_context,
-        allow_materialized,
-        /* no_squash */ false,
-        /* no_destination */ false,
-        /* async_isnert */ false);
+    InterpreterInsertQuery interpreter{insert, insert_context, allow_materialized};
 
     auto block_io = interpreter.execute();
     PushingPipelineExecutor executor(block_io.pipeline);

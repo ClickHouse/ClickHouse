@@ -6,7 +6,7 @@
 namespace DB
 {
 
-enum class AuthenticationType : uint8_t
+enum class AuthenticationType
 {
     /// User doesn't have to enter password.
     NO_PASSWORD,
@@ -40,9 +40,6 @@ enum class AuthenticationType : uint8_t
 
     /// Authentication through HTTP protocol
     HTTP,
-
-    /// JSON Web Token
-    JWT,
 
     MAX,
 };

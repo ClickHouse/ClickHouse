@@ -1,7 +1,5 @@
 #pragma once
 
-#include <iostream>
-#include <unistd.h>
 #include <mutex>
 #include <atomic>
 #include <vector>
@@ -39,16 +37,7 @@ public:
 
     using Patterns = std::vector<const char *>;
 
-    LineReader(
-        const String & history_file_path,
-        bool multiline,
-        Patterns extenders,
-        Patterns delimiters,
-        std::istream & input_stream_ = std::cin,
-        std::ostream & output_stream_ = std::cout,
-        int in_fd_ = STDIN_FILENO
-    );
-
+    LineReader(const String & history_file_path, bool multiline, Patterns extenders, Patterns delimiters);
     virtual ~LineReader() = default;
 
     /// Reads the whole line until delimiter (in multiline mode) or until the last line without extender.
@@ -66,8 +55,6 @@ public:
     /// for the next readLine() call.
     virtual void enableBracketedPaste() {}
     virtual void disableBracketedPaste() {}
-
-    bool hasInputData() const;
 
 protected:
     enum InputStatus
@@ -90,10 +77,6 @@ protected:
 
     virtual InputStatus readOneLine(const String & prompt);
     virtual void addToHistory(const String &) {}
-
-    std::istream & input_stream;
-    std::ostream & output_stream;
-    int in_fd;
 };
 
 }

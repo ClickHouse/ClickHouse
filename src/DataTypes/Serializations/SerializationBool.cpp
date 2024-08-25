@@ -28,7 +28,7 @@ constexpr char str_false[6] = "false";
 const ColumnUInt8 * checkAndGetSerializeColumnType(const IColumn & column)
 {
     const auto * col = checkAndGetColumn<ColumnUInt8>(&column);
-    if (!col)
+    if (!checkAndGetColumn<ColumnUInt8>(&column))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Bool type can only serialize columns of type UInt8.{}", column.getName());
     return col;
 }
@@ -36,7 +36,7 @@ const ColumnUInt8 * checkAndGetSerializeColumnType(const IColumn & column)
 ColumnUInt8 * checkAndGetDeserializeColumnType(IColumn & column)
 {
     auto * col =  typeid_cast<ColumnUInt8 *>(&column);
-    if (!col)
+    if (!checkAndGetColumn<ColumnUInt8>(&column))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Bool type can only deserialize columns of type UInt8.{}",
                         column.getName());
     return col;
@@ -242,10 +242,8 @@ void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & is
 {
     if (istr.eof())
         throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Expected boolean value but get EOF.");
-    if (settings.tsv.crlf_end_of_line_input)
-        deserializeImpl(column, istr, settings, [](ReadBuffer & buf){ return buf.eof() || *buf.position() == '\t' || *buf.position() == '\n' || *buf.position() == '\r'; });
-    else
-        deserializeImpl(column, istr, settings, [](ReadBuffer & buf){ return buf.eof() || *buf.position() == '\t' || *buf.position() == '\n'; });
+
+    deserializeImpl(column, istr, settings, [](ReadBuffer & buf){ return buf.eof() || *buf.position() == '\t' || *buf.position() == '\n'; });
 }
 
 bool SerializationBool::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

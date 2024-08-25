@@ -426,7 +426,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAGPtr &, ContextPtr) const override;
+    ConditionEstimator getConditionEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const override;
 
     bool supportsFinal() const override;
 
@@ -434,12 +434,9 @@ public:
 
     bool supportsTTL() const override { return true; }
 
-    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
 
     bool supportsLightweightDelete() const override;
-
-    bool hasProjection() const override;
 
     bool areAsynchronousInsertsEnabled() const override { return getSettings()->async_insert; }
 
@@ -739,8 +736,6 @@ public:
         const ASTPtr & new_settings,
         AlterLockHolder & table_lock_holder);
 
-    static void verifySortingKey(const KeyDescription & sorting_key);
-
     /// Should be called if part data is suspected to be corrupted.
     /// Has the ability to check all other parts
     /// which reside on the same disk of the suspicious part.
@@ -846,15 +841,14 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
-    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPart(
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPartOnSameDisk(
         const MergeTreeData::DataPartPtr & src_part,
         const String & tmp_part_prefix,
         const MergeTreePartInfo & dst_part_info,
         const StorageMetadataPtr & metadata_snapshot,
         const IDataPartStorage::ClonePartParams & params,
         const ReadSettings & read_settings,
-        const WriteSettings & write_settings,
-        bool must_on_same_disk);
+        const WriteSettings & write_settings);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 
@@ -1096,12 +1090,7 @@ public:
 
     static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
 
-    /// Unloads primary keys of all parts.
     void unloadPrimaryKeys();
-
-    /// Unloads primary keys of outdated parts that are not used by any query.
-    /// Returns the number of parts for which index was unloaded.
-    size_t unloadPrimaryKeysOfOutdatedParts();
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1148,7 +1137,7 @@ protected:
     struct TagByInfo{};
     struct TagByStateAndInfo{};
 
-    void initializeDirectoriesAndFormatVersion(const std::string & relative_data_path_, bool attach, const std::string & date_column_name, bool need_create_directories = true);
+    void initializeDirectoriesAndFormatVersion(const std::string & relative_data_path_, bool attach, const std::string & date_column_name, bool need_create_directories=true);
 
     static const MergeTreePartInfo & dataPartPtrToInfo(const DataPartPtr & part)
     {
@@ -1265,8 +1254,6 @@ protected:
     std::mutex grab_old_parts_mutex;
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
-    /// The same for unloadPrimaryKeysOfOutdatedParts.
-    std::mutex unload_primary_key_mutex;
 
     void checkProperties(
         const StorageInMemoryMetadata & new_metadata,

@@ -9,7 +9,7 @@ set -xeuo pipefail
 
 echo "Running prepare script"
 export DEBIAN_FRONTEND=noninteractive
-export RUNNER_VERSION=2.317.0
+export RUNNER_VERSION=2.315.0
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
 deb_arch() {
@@ -54,8 +54,7 @@ apt-get install --yes --no-install-recommends \
     python3-dev \
     python3-pip \
     qemu-user-static \
-    unzip \
-    gh
+    unzip
 
 # Install docker
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
@@ -102,7 +101,7 @@ sudo -u ubuntu docker buildx version
 sudo -u ubuntu docker buildx rm default-builder || : # if it's the second attempt
 sudo -u ubuntu docker buildx create --use --name default-builder
 
-pip install boto3 pygithub requests urllib3 unidiff dohq-artifactory jwt
+pip install boto3 pygithub requests urllib3 unidiff dohq-artifactory
 
 rm -rf $RUNNER_HOME  # if it's the second attempt
 mkdir -p $RUNNER_HOME && cd $RUNNER_HOME
@@ -158,64 +157,39 @@ apt-get install tailscale --yes --no-install-recommends
 
 # Create a common script for the instances
 mkdir /usr/local/share/scripts -p
-setup_cloudflare_dns() {
-    # Add cloudflare DNS as a fallback
-    # Get default gateway interface
-    local IFACE ETH_DNS CLOUDFLARE_NS new_dns
-    IFACE=$(ip --json route list | jq '.[]|select(.dst == "default").dev' --raw-output)
-    # `Link 2 (eth0): 172.31.0.2`
-    ETH_DNS=$(resolvectl dns "$IFACE") || :
-    CLOUDFLARE_NS=1.1.1.1
-    if [[ "$ETH_DNS" ]] && [[ "${ETH_DNS#*: }" != *"$CLOUDFLARE_NS"* ]]; then
-      # Cut the leading legend
-      ETH_DNS=${ETH_DNS#*: }
-      # shellcheck disable=SC2206
-      new_dns=(${ETH_DNS} "$CLOUDFLARE_NS")
-      resolvectl dns "$IFACE" "${new_dns[@]}"
-    fi
-}
+cat > /usr/local/share/scripts/init-network.sh << 'EOF'
+#!/usr/bin/env bash
 
-setup_tailscale() {
-    # Setup tailscale, the very first action
-    local TS_API_CLIENT_ID TS_API_CLIENT_SECRET TS_AUTHKEY RUNNER_TYPE
-    TS_API_CLIENT_ID=$(aws ssm get-parameter --region us-east-1 --name /tailscale/api-client-id --query 'Parameter.Value' --output text --with-decryption)
-    TS_API_CLIENT_SECRET=$(aws ssm get-parameter --region us-east-1 --name /tailscale/api-client-secret --query 'Parameter.Value' --output text --with-decryption)
+# Add cloudflare DNS as a fallback
+# Get default gateway interface
+IFACE=$(ip --json route list | jq '.[]|select(.dst == "default").dev' --raw-output)
+# `Link 2 (eth0): 172.31.0.2`
+ETH_DNS=$(resolvectl dns "$IFACE") || :
+CLOUDFLARE_NS=1.1.1.1
+if [[ "$ETH_DNS" ]] && [[ "${ETH_DNS#*: }" != *"$CLOUDFLARE_NS"* ]]; then
+  # Cut the leading legend
+  ETH_DNS=${ETH_DNS#*: }
+  # shellcheck disable=SC2206
+  new_dns=(${ETH_DNS} "$CLOUDFLARE_NS")
+  resolvectl dns "$IFACE" "${new_dns[@]}"
+fi
 
-    RUNNER_TYPE=$(/usr/local/bin/aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" --query "Tags[?Key=='github:runner-type'].Value" --output text)
-    RUNNER_TYPE=${RUNNER_TYPE:-unknown}
-    # Clean possible garbage from the runner type
-    RUNNER_TYPE=${RUNNER_TYPE//[^0-9a-z]/-}
-    TS_AUTHKEY=$(TS_API_CLIENT_ID="$TS_API_CLIENT_ID" TS_API_CLIENT_SECRET="$TS_API_CLIENT_SECRET" \
-                 get-authkey -tags tag:svc-core-ci-github -ephemeral)
-    tailscale up --ssh --auth-key="$TS_AUTHKEY" --hostname="ci-runner-$RUNNER_TYPE-$INSTANCE_ID"
-}
-
-cat > /usr/local/share/scripts/init-network.sh << EOF
-!/usr/bin/env bash
-$(declare -f setup_cloudflare_dns)
-
-$(declare -f setup_tailscale)
-
-# If the script is sourced, it will return now and won't execute functions
-return 0 &>/dev/null || :
-
-echo Setup Cloudflare DNS
-setup_cloudflare_dns
-
-echo Setup Tailscale VPN
-setup_tailscale
+# Setup tailscale, the very first action
+TS_API_CLIENT_ID=$(aws ssm get-parameter --region us-east-1 --name /tailscale/api-client-id --query 'Parameter.Value' --output text --with-decryption)
+TS_API_CLIENT_SECRET=$(aws ssm get-parameter --region us-east-1 --name /tailscale/api-client-secret --query 'Parameter.Value' --output text --with-decryption)
+export TS_API_CLIENT_ID TS_API_CLIENT_SECRET
+TS_AUTHKEY=$(get-authkey -tags tag:svc-core-ci-github -reusable -ephemeral)
+tailscale up --ssh --auth-key="$TS_AUTHKEY" --hostname="ci-runner-$INSTANCE_ID"
 EOF
-
-chmod +x /usr/local/share/scripts/init-network.sh
 
 
 # The following line is used in aws TOE check.
 touch /var/tmp/clickhouse-ci-ami.success
 # END OF THE SCRIPT
 
-# TOE (Task Orchestrator and Executor) description
+# TOE description
 # name: CIInfrastructurePrepare
-# description: installs the infrastructure for ClickHouse CI runners
+# description: instals the infrastructure for ClickHouse CI runners
 # schemaVersion: 1.0
 #
 # phases:

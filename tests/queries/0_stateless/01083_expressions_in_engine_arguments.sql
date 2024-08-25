@@ -36,7 +36,7 @@ CREATE TABLE url (n UInt64, col String) ENGINE=URL
 CREATE VIEW view AS SELECT toInt64(n) as n FROM (SELECT toString(n) as n from merge WHERE _table != 'qwerty' ORDER BY _table) UNION ALL SELECT * FROM file;
 
 -- The following line is needed just to disable checking stderr for emptiness
-SELECT nonexistentsomething; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT nonexistentsomething; -- { serverError 47 }
 
 CREATE DICTIONARY dict (n UInt64, col String DEFAULT '42') PRIMARY KEY n
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9440 SECURE 1 USER 'default' TABLE 'url')) LIFETIME(1) LAYOUT(CACHE(SIZE_IN_CELLS 1));
@@ -88,7 +88,6 @@ SELECT sum(n) from rich_syntax;
 SYSTEM DROP DNS CACHE;
 
 DROP TABLE file;
-DROP DICTIONARY dict;
 DROP TABLE url;
 DROP TABLE view;
 DROP TABLE buffer;
@@ -97,3 +96,4 @@ DROP TABLE merge_tf;
 DROP TABLE distributed;
 DROP TABLE distributed_tf;
 DROP TABLE rich_syntax;
+DROP DICTIONARY dict;

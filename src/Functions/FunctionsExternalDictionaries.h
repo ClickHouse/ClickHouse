@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int TYPE_MISMATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -296,7 +297,7 @@ private:
     mutable FunctionDictHelper helper;
 };
 
-enum class DictionaryGetFunctionType : uint8_t
+enum class DictionaryGetFunctionType
 {
     get,
     getOrDefault,
@@ -654,6 +655,18 @@ private:
         result_column = if_func->build(if_args)->execute(if_args, result_type, rows);
     }
 
+#ifdef ABORT_ON_LOGICAL_ERROR
+    void validateShortCircuitResult(const ColumnPtr & column, const IColumn::Filter & filter) const
+    {
+        size_t expected_size = filter.size() - countBytesInFilter(filter);
+        size_t col_size = column->size();
+        if (col_size != expected_size)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Invalid size of getColumnsOrDefaultShortCircuit result. Column has {} rows, but filter contains {} bytes.",
+                col_size, expected_size);
+    }
+#endif
 
     ColumnPtr executeDictionaryRequest(
         std::shared_ptr<const IDictionary> & dictionary,
@@ -682,6 +695,11 @@ private:
             {
                 IColumn::Filter default_mask;
                 result_columns = dictionary->getColumns(attribute_names, attribute_tuple_type.getElements(), key_columns, key_types, default_mask);
+
+#ifdef ABORT_ON_LOGICAL_ERROR
+                for (const auto & column : result_columns)
+                    validateShortCircuitResult(column, default_mask);
+#endif
 
                 auto [defaults_column, mask_column] =
                     getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument);
@@ -717,6 +735,10 @@ private:
             {
                 IColumn::Filter default_mask;
                 result = dictionary->getColumn(attribute_names[0], attribute_type, key_columns, key_types, default_mask);
+
+#ifdef ABORT_ON_LOGICAL_ERROR
+                validateShortCircuitResult(result, default_mask);
+#endif
 
                 auto [defaults_column, mask_column] =
                     getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument);
@@ -1334,7 +1356,7 @@ public:
                     "Illegal type of third argument of function {}. Expected const unsigned integer.",
                     getName());
 
-            Int64 value = arguments[2].column->getInt(0);
+            auto value = static_cast<Int64>(arguments[2].column->getInt(0));
             if (value < 0)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type of third argument of function {}. Expected const unsigned integer.",

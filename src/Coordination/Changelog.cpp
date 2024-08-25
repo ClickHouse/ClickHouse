@@ -2270,7 +2270,7 @@ nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(uint64_t index, 
 
     nuraft::ptr<nuraft::buffer> buf_out = nuraft::buffer::alloc(sizeof(int32_t) + count * sizeof(int32_t) + size_total);
     buf_out->pos(0);
-    buf_out->put(count);
+    buf_out->put(static_cast<int32_t>(count));
 
     for (auto & entry : returned_logs)
     {

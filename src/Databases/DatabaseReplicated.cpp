@@ -65,7 +65,6 @@ static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
 static constexpr const char * DROPPED_MARK = "DROPPED";
 static constexpr const char * BROKEN_TABLES_SUFFIX = "_broken_tables";
 static constexpr const char * BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
-static constexpr const char * FIRST_REPLICA_DATABASE_NAME = "first_replica_database_name";
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
@@ -74,10 +73,9 @@ zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
     return getContext()->getZooKeeper();
 }
 
-static inline String getHostID(ContextPtr global_context, const UUID & db_uuid, bool secure)
+static inline String getHostID(ContextPtr global_context, const UUID & db_uuid)
 {
-    UInt16 port = secure ? global_context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : global_context->getTCPPort();
-    return Cluster::Address::toString(getFQDNOrHostName(), port) + ':' + toString(db_uuid);
+    return Cluster::Address::toString(getFQDNOrHostName(), global_context->getTCPPort()) + ':' + toString(db_uuid);
 }
 
 static inline UInt64 getMetadataHash(const String & table_name, const String & metadata)
@@ -124,13 +122,6 @@ DatabaseReplicated::DatabaseReplicated(
         fillClusterAuthInfo(db_settings.collection_name.value, context_->getConfigRef());
 
     replica_group_name = context_->getConfigRef().getString("replica_group_name", "");
-
-    if (!replica_group_name.empty() && database_name.starts_with(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX))
-    {
-        context_->addWarningMessage(fmt::format("There's a Replicated database with a name starting from '{}', "
-                                                "and replica_group_name is configured. It may cause collisions in cluster names.",
-                                                ALL_GROUPS_CLUSTER_PREFIX));
-    }
 }
 
 String DatabaseReplicated::getFullReplicaName(const String & shard, const String & replica)
@@ -182,40 +173,13 @@ ClusterPtr DatabaseReplicated::tryGetCluster() const
     return cluster;
 }
 
-ClusterPtr DatabaseReplicated::tryGetAllGroupsCluster() const
+void DatabaseReplicated::setCluster(ClusterPtr && new_cluster)
 {
     std::lock_guard lock{mutex};
-    if (replica_group_name.empty())
-        return nullptr;
-
-    if (cluster_all_groups)
-        return cluster_all_groups;
-
-    /// Database is probably not created or not initialized yet, it's ok to return nullptr
-    if (is_readonly)
-        return cluster_all_groups;
-
-    try
-    {
-        cluster_all_groups = getClusterImpl(/*all_groups*/ true);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
-    }
-    return cluster_all_groups;
+    cluster = std::move(new_cluster);
 }
 
-void DatabaseReplicated::setCluster(ClusterPtr && new_cluster, bool all_groups)
-{
-    std::lock_guard lock{mutex};
-    if (all_groups)
-        cluster_all_groups = std::move(new_cluster);
-    else
-        cluster = std::move(new_cluster);
-}
-
-ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
+ClusterPtr DatabaseReplicated::getClusterImpl() const
 {
     Strings unfiltered_hosts;
     Strings hosts;
@@ -235,24 +199,17 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
                             "It's possible if the first replica is not fully created yet "
                             "or if the last replica was just dropped or due to logical error", zookeeper_path);
 
-        if (all_groups)
-        {
-            hosts = unfiltered_hosts;
-        }
-        else
-        {
-            hosts.clear();
-            std::vector<String> paths;
-            for (const auto & host : unfiltered_hosts)
-                paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
+        hosts.clear();
+        std::vector<String> paths;
+        for (const auto & host : unfiltered_hosts)
+            paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
 
-            auto replica_groups = zookeeper->tryGet(paths);
+        auto replica_groups = zookeeper->tryGet(paths);
 
-            for (size_t i = 0; i < paths.size(); ++i)
-            {
-                if (replica_groups[i].data == replica_group_name)
-                    hosts.push_back(unfiltered_hosts[i]);
-            }
+        for (size_t i = 0; i < paths.size(); ++i)
+        {
+            if (replica_groups[i].data == replica_group_name)
+                hosts.push_back(unfiltered_hosts[i]);
         }
 
         Int32 cversion = stat.cversion;
@@ -317,11 +274,6 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
 
     bool treat_local_as_remote = false;
     bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
-
-    String cluster_name = TSA_SUPPRESS_WARNING_FOR_READ(database_name);     /// FIXME
-    if (all_groups)
-        cluster_name = ALL_GROUPS_CLUSTER_PREFIX + cluster_name;
-
     ClusterConnectionParameters params{
         cluster_auth_info.cluster_username,
         cluster_auth_info.cluster_password,
@@ -330,7 +282,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         treat_local_port_as_remote,
         cluster_auth_info.cluster_secure_connection,
         Priority{1},
-        cluster_name,
+        TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
         cluster_auth_info.cluster_secret};
 
     return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params);
@@ -417,23 +369,13 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
                 return;
             }
 
-            String host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
-            String host_id_default = getHostID(getContext(), db_uuid, false);
-
-            if (is_create_query || (replica_host_id != host_id && replica_host_id != host_id_default))
+            String host_id = getHostID(getContext(), db_uuid);
+            if (is_create_query || replica_host_id != host_id)
             {
                 throw Exception(
                     ErrorCodes::REPLICA_ALREADY_EXISTS,
                     "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
                     replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
-            }
-
-            /// Before 24.6 we always created host_id with insecure port, even if cluster_auth_info.cluster_secure_connection was true.
-            /// So not to break compatibility, we need to update host_id to secure one if cluster_auth_info.cluster_secure_connection is true.
-            if (host_id != host_id_default && replica_host_id == host_id_default)
-            {
-                current_zookeeper->set(replica_path, host_id, -1);
-                createEmptyLogEntry(current_zookeeper);
             }
 
             /// Check that replica_group_name in ZooKeeper matches the local one and change it if necessary.
@@ -465,13 +407,6 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
             is_probably_dropped = true;
             return;
         }
-
-        /// If not exist, create a node with the database name for introspection.
-        /// Technically, the database may have different names on different replicas, but this is not a usual case and we only save the first one
-        auto db_name_path = fs::path(zookeeper_path) / FIRST_REPLICA_DATABASE_NAME;
-        auto error_code = current_zookeeper->trySet(db_name_path, getDatabaseName());
-        if (error_code == Coordination::Error::ZNONODE)
-            current_zookeeper->tryCreate(db_name_path, getDatabaseName(), zkutil::CreateMode::Persistent);
 
         is_readonly = false;
     }
@@ -569,7 +504,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
                         "already contains some data and it does not look like Replicated database path.", zookeeper_path);
 
     /// Write host name to replica_path, it will protect from multiple replicas with the same name
-    auto host_id = getHostID(getContext(), db_uuid, cluster_auth_info.cluster_secure_connection);
+    auto host_id = getHostID(getContext(), db_uuid);
 
     for (int attempts = 10; attempts > 0; --attempts)
     {
@@ -986,7 +921,6 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
         query_context->setSetting("allow_experimental_inverted_index", 1);
-        query_context->setSetting("allow_experimental_full_text_index", 1);
         query_context->setSetting("allow_experimental_codecs", 1);
         query_context->setSetting("allow_experimental_live_view", 1);
         query_context->setSetting("allow_experimental_window_view", 1);
@@ -995,14 +929,12 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_experimental_hash_functions", 1);
         query_context->setSetting("allow_experimental_object_type", 1);
         query_context->setSetting("allow_experimental_variant_type", 1);
-        query_context->setSetting("allow_experimental_dynamic_type", 1);
         query_context->setSetting("allow_experimental_annoy_index", 1);
         query_context->setSetting("allow_experimental_usearch_index", 1);
         query_context->setSetting("allow_experimental_bigint_types", 1);
         query_context->setSetting("allow_experimental_window_functions", 1);
         query_context->setSetting("allow_experimental_geo_types", 1);
         query_context->setSetting("allow_experimental_map_type", 1);
-        query_context->setSetting("allow_deprecated_error_prone_window_functions", 1);
 
         query_context->setSetting("allow_suspicious_low_cardinality_types", 1);
         query_context->setSetting("allow_suspicious_fixed_string_types", 1);
@@ -1165,7 +1097,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// And QualifiedTableName::parseFromString doesn't handle this.
         auto qualified_name = QualifiedTableName{.database = getDatabaseName(), .table = table_name};
         auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_table_query);
-        tables_dependencies.addDependencies(qualified_name, getDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ast, getContext()->getCurrentDatabase()));
+        tables_dependencies.addDependencies(qualified_name, getDependenciesFromCreateQuery(getContext(), qualified_name, query_ast));
     }
 
     tables_dependencies.checkNoCyclicDependencies();
@@ -1388,13 +1320,6 @@ void DatabaseReplicated::drop(ContextPtr context_)
         /// It was the last replica, remove all metadata
         current_zookeeper->tryRemoveRecursive(zookeeper_path);
     }
-}
-
-void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String & new_name)
-{
-    DatabaseAtomic::renameDatabase(query_context, new_name);
-    auto db_name_path = fs::path(zookeeper_path) / FIRST_REPLICA_DATABASE_NAME;
-    getZooKeeper()->set(db_name_path, getDatabaseName());
 }
 
 void DatabaseReplicated::stopReplication()

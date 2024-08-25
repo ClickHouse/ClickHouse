@@ -49,7 +49,6 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
     bool supportsPrewhere() const override { return tableSupportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override;
 
@@ -165,7 +164,7 @@ public:
 
     QueryPlanRawPtrs getChildPlans() override;
 
-    void addFilter(FilterDAGInfo filter);
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
 
 private:
     const size_t required_max_block_size;
@@ -221,7 +220,7 @@ private:
 
         /// Create explicit filter transform to exclude
         /// rows that are not conform to row level policy
-        void addFilterTransform(QueryPlan &) const;
+        void addFilterTransform(QueryPipelineBuilder &) const;
 
     private:
         std::string filter_column_name; // complex filter, may contain logic operations
@@ -235,21 +234,21 @@ private:
     struct ChildPlan
     {
         QueryPlan plan;
-        QueryProcessingStage::Enum stage;
+        Aliases table_aliases;
+        RowPolicyDataOpt row_policy_data_opt;
     };
 
     /// Store read plan for each child table.
     /// It's needed to guarantee lifetime for child steps to be the same as for this step (mainly for EXPLAIN PIPELINE).
     std::optional<std::vector<ChildPlan>> child_plans;
 
-    /// Store filters pushed down from query plan optimization. Filters are added on top of child plans.
-    std::vector<FilterDAGInfo> pushed_down_filters;
-
     std::vector<ChildPlan> createChildrenPlans(SelectQueryInfo & query_info_) const;
 
     void filterTablesAndCreateChildrenPlans();
 
-    ChildPlan createPlanForTable(
+    void applyFilters(const QueryPlan & plan, const ActionDAGNodes & added_filter_nodes) const;
+
+    QueryPlan createPlanForTable(
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         QueryProcessingStage::Enum processed_stage,
@@ -260,15 +259,16 @@ private:
         ContextMutablePtr modified_context,
         size_t streams_num) const;
 
-    void addVirtualColumns(
-        ChildPlan & child,
+    QueryPipelineBuilderPtr createSources(
+        QueryPlan & plan,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & modified_query_info,
         QueryProcessingStage::Enum processed_stage,
-        const StorageWithLockAndName & storage_with_lock) const;
-
-    QueryPipelineBuilderPtr buildPipeline(
-        ChildPlan & child,
-        QueryProcessingStage::Enum processed_stage) const;
+        const Block & header,
+        const Aliases & aliases,
+        const RowPolicyDataOpt & row_policy_data_opt,
+        const StorageWithLockAndName & storage_with_lock,
+        bool concat_streams = false) const;
 
     static void convertAndFilterSourceStream(
         const Block & header,
@@ -277,12 +277,15 @@ private:
         const Aliases & aliases,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextPtr context,
-        ChildPlan & child);
+        QueryPipelineBuilder & builder,
+        QueryProcessingStage::Enum processed_stage);
 
     StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context,
         bool filter_by_database_virtual_column,
         bool filter_by_table_virtual_column) const;
+
+    // static VirtualColumnsDescription createVirtuals(StoragePtr first_table);
 };
 
 }

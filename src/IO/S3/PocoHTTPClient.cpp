@@ -305,7 +305,8 @@ void PocoHTTPClient::makeRequestInternal(
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
-    makeRequestInternalImpl(request, response, readLimiter, writeLimiter);
+    const auto request_configuration = per_request_configuration();
+    makeRequestInternalImpl(request, request_configuration, response, readLimiter, writeLimiter);
 }
 
 String getMethod(const Aws::Http::HttpRequest & request)
@@ -329,6 +330,7 @@ String getMethod(const Aws::Http::HttpRequest & request)
 
 void PocoHTTPClient::makeRequestInternalImpl(
     Aws::Http::HttpRequest & request,
+    const DB::ProxyConfiguration & proxy_configuration,
     std::shared_ptr<PocoHTTPResponse> & response,
     Aws::Utils::RateLimits::RateLimiterInterface *,
     Aws::Utils::RateLimits::RateLimiterInterface *) const
@@ -381,7 +383,6 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
     try
     {
-        const auto proxy_configuration = per_request_configuration();
         for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
             Poco::URI target_uri(uri);
@@ -535,7 +536,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 const static std::string_view needle = "<Error>";
                 if (auto it = std::search(response_string.begin(), response_string.end(), std::default_searcher(needle.begin(), needle.end())); it != response_string.end())
                 {
-                    LOG_WARNING(log, "Response for the request contains an <Error> tag in the body, will treat it as an internal server error (code 500)");
+                    LOG_WARNING(log, "Response for request contain <Error> tag in body, settings internal server error (500 code)");
                     response->SetResponseCode(Aws::Http::HttpResponseCode::INTERNAL_SERVER_ERROR);
 
                     addMetric(request, S3MetricType::Errors);

@@ -5,12 +5,12 @@
 import argparse
 import sys
 
+from ci_config import StatusNames
 from commit_status_helper import get_commit, post_commit_status
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
 from pr_info import PRInfo
 from report import SUCCESS
-from ci_config import CI
 
 
 def parse_args() -> argparse.Namespace:
@@ -75,7 +75,7 @@ def set_sync_status(gh, pr_info, sync_pr):
     if sync_pr.mergeable_state == "clean":
         print(f"Sync PR [{sync_pr.number}] is clean")
         post_commit_status(
-            get_commit(gh, pr_info.sha), SUCCESS, "", "", CI.StatusNames.SYNC
+            get_commit(gh, pr_info.sha), SUCCESS, "", "", StatusNames.SYNC
         )
     else:
         print(

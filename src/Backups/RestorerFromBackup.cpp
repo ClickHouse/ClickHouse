@@ -438,7 +438,7 @@ void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_
     String create_table_query_str = serializeAST(*create_table_query);
 
     bool is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
-    auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query, context->getCurrentDatabase());
+    auto table_dependencies = getDependenciesFromCreateQuery(context, table_name, create_table_query);
     bool table_has_data = backup->hasFiles(data_path_in_backup);
 
     std::lock_guard lock{mutex};
@@ -798,7 +798,7 @@ void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
         {
             if (restore_settings.storage_policy.value().empty())
                 /// it has been set to "" deliberately, so the source storage policy is erased
-                storage->settings->changes.removeSetting(setting_name); // NOLINT
+                storage->settings->changes.removeSetting(setting_name);
             else
                 /// it has been set to a custom value, so it either overwrites the existing value or is added as a new one
                 storage->settings->changes.setSetting(setting_name, restore_settings.storage_policy.value());
@@ -838,7 +838,7 @@ void RestorerFromBackup::removeUnresolvedDependencies()
         return true; /// Exclude this dependency.
     };
 
-    tables_dependencies.removeTablesIf(need_exclude_dependency); // NOLINT
+    tables_dependencies.removeTablesIf(need_exclude_dependency);
 
     if (tables_dependencies.getNumberOfTables() != table_infos.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of tables to be restored is not as expected. It's a bug");

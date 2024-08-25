@@ -173,12 +173,8 @@ namespace
 
             if (typeid_cast<const WindowStep *>(current_step))
             {
-                /// it can be empty in case of 2 WindowSteps following one another
-                if (!dag_stack.empty())
-                {
-                    actions_chain.push_back(std::move(dag_stack));
-                    dag_stack.clear();
-                }
+                actions_chain.push_back(std::move(dag_stack));
+                dag_stack.clear();
             }
 
             if (const auto * const expr = typeid_cast<const ExpressionStep *>(current_step); expr)

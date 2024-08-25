@@ -28,7 +28,6 @@
 #include <IO/PeekableReadBuffer.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <Disks/IO/IOUringReader.h>
-#include <Disks/IO/getIOUringReader.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -225,7 +224,7 @@ void checkCreationIsAllowed(
     {
         auto table_path_stat = fs::status(table_path);
         if (fs::exists(table_path_stat) && fs::is_directory(table_path_stat))
-            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File {} must not be a directory", table_path);
+            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File must not be a directory");
     }
 }
 
@@ -274,7 +273,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     if (S_ISREG(file_stat.st_mode) && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap))
     {
         if (use_table_fd)
-            res = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd, context->getSettingsRef().max_read_buffer_size);
+            res = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd);
         else
             res = std::make_unique<ReadBufferFromFilePRead>(current_path, context->getSettingsRef().max_read_buffer_size);
 
@@ -283,7 +282,10 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     else if (read_method == LocalFSReadMethod::io_uring && !use_table_fd)
     {
 #if USE_LIBURING
-        auto & reader = getIOUringReaderOrThrow(context);
+        auto & reader = context->getIOURingReader();
+        if (!reader.isSupported())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "io_uring is not supported by this system");
+
         res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
             reader,
             Priority{},
@@ -296,7 +298,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     else
     {
         if (use_table_fd)
-            res = std::make_unique<ReadBufferFromFileDescriptor>(table_fd, context->getSettingsRef().max_read_buffer_size);
+            res = std::make_unique<ReadBufferFromFileDescriptor>(table_fd);
         else
             res = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef().max_read_buffer_size);
 
@@ -1341,7 +1343,6 @@ Chunk StorageFileSource::generate()
                         chassert(file_enumerator);
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
                         current_file_size = file_enumerator->getFileInfo().uncompressed_size;
-                        current_file_last_modified = file_enumerator->getFileInfo().last_modified;
                         if (need_only_count && tryGetCountFromCache(current_archive_stat))
                             continue;
 
@@ -1371,7 +1372,6 @@ Chunk StorageFileSource::generate()
                 struct stat file_stat;
                 file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
                 current_file_size = file_stat.st_size;
-                current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
 
                 if (getContext()->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0)
                     continue;
@@ -1438,15 +1438,8 @@ Chunk StorageFileSource::generate()
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
             /// Enrich with virtual columns.
-            VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
-                chunk, requested_virtual_columns,
-                {
-                    .path = current_path,
-                    .size = current_file_size,
-                    .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
-                    .last_modified = current_file_last_modified
-                });
-
+            VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(
+                chunk, requested_virtual_columns, current_path, current_file_size, filename_override.has_value() ? &filename_override.value() : nullptr);
             return chunk;
         }
 
@@ -1543,8 +1536,7 @@ private:
 
 void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
@@ -1778,19 +1770,18 @@ public:
 
     String getName() const override { return "StorageFileSink"; }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
         std::lock_guard cancel_lock(cancel_mutex);
         if (cancelled)
             return;
-        writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
+        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     void onCancel() override
     {
         std::lock_guard cancel_lock(cancel_mutex);
-        cancelBuffers();
-        releaseBuffers();
+        finalize();
         cancelled = true;
     }
 
@@ -1804,18 +1795,18 @@ public:
         catch (...)
         {
             /// An exception context is needed to proper delete write buffers without finalization
-            releaseBuffers();
+            release();
         }
     }
 
     void onFinish() override
     {
         std::lock_guard cancel_lock(cancel_mutex);
-        finalizeBuffers();
+        finalize();
     }
 
 private:
-    void finalizeBuffers()
+    void finalize()
     {
         if (!writer)
             return;
@@ -1824,29 +1815,20 @@ private:
         {
             writer->finalize();
             writer->flush();
+            write_buf->finalize();
         }
         catch (...)
         {
             /// Stop ParallelFormattingOutputFormat correctly.
-            releaseBuffers();
+            release();
             throw;
         }
-
-        write_buf->finalize();
     }
 
-    void releaseBuffers()
+    void release()
     {
         writer.reset();
-        write_buf.reset();
-    }
-
-    void cancelBuffers()
-    {
-        if (writer)
-            writer->cancel();
-        if (write_buf)
-            write_buf->cancel();
+        write_buf->finalize();
     }
 
     StorageMetadataPtr metadata_snapshot;

@@ -245,7 +245,7 @@ bool AccessRightsElements::sameOptions() const
 
 void AccessRightsElements::eraseNonGrantable()
 {
-    std::erase_if(*this, [](AccessRightsElement & element)
+    boost::range::remove_erase_if(*this, [](AccessRightsElement & element)
     {
         element.eraseNonGrantable();
         return element.empty();

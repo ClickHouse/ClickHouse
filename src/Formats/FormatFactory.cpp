@@ -1,7 +1,6 @@
 #include <Formats/FormatFactory.h>
 
 #include <algorithm>
-#include <unistd.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -16,7 +15,7 @@
 #include <Poco/URI.h>
 #include <Common/Exception.h>
 #include <Common/KnownObjectNames.h>
-#include <Common/tryGetFileNameByFileDescriptor.h>
+#include <unistd.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -149,9 +148,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.try_infer_objects_as_tuples = settings.input_format_json_try_infer_named_tuples_from_objects;
     format_settings.json.throw_on_bad_escape_sequence = settings.input_format_json_throw_on_bad_escape_sequence;
     format_settings.json.ignore_unnecessary_fields = settings.input_format_json_ignore_unnecessary_fields;
-    format_settings.json.ignore_key_case = settings.input_format_json_ignore_key_case;
     format_settings.null_as_default = settings.input_format_null_as_default;
-    format_settings.force_null_for_omitted_fields = settings.input_format_force_null_for_omitted_fields;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_rows = settings.output_format_parquet_row_group_size;
     format_settings.parquet.row_group_bytes = settings.output_format_parquet_row_group_size_bytes;
@@ -159,20 +156,17 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.case_insensitive_column_matching = settings.input_format_parquet_case_insensitive_column_matching;
     format_settings.parquet.preserve_order = settings.input_format_parquet_preserve_order;
     format_settings.parquet.filter_push_down = settings.input_format_parquet_filter_push_down;
-    format_settings.parquet.use_native_reader = settings.input_format_parquet_use_native_reader;
     format_settings.parquet.allow_missing_columns = settings.input_format_parquet_allow_missing_columns;
     format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference;
     format_settings.parquet.output_string_as_string = settings.output_format_parquet_string_as_string;
     format_settings.parquet.output_fixed_string_as_fixed_byte_array = settings.output_format_parquet_fixed_string_as_fixed_byte_array;
     format_settings.parquet.max_block_size = settings.input_format_parquet_max_block_size;
-    format_settings.parquet.prefer_block_bytes = settings.input_format_parquet_prefer_block_bytes;
     format_settings.parquet.output_compression_method = settings.output_format_parquet_compression_method;
     format_settings.parquet.output_compliant_nested_types = settings.output_format_parquet_compliant_nested_types;
     format_settings.parquet.use_custom_encoder = settings.output_format_parquet_use_custom_encoder;
     format_settings.parquet.parallel_encoding = settings.output_format_parquet_parallel_encoding;
     format_settings.parquet.data_page_size = settings.output_format_parquet_data_page_size;
     format_settings.parquet.write_batch_size = settings.output_format_parquet_batch_size;
-    format_settings.parquet.write_page_index = settings.output_format_parquet_write_page_index;
     format_settings.parquet.local_read_min_bytes_for_seek = settings.input_format_parquet_local_file_min_bytes_for_seek;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings.output_format_pretty_color;
@@ -183,8 +177,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.highlight_digit_groups = settings.output_format_pretty_highlight_digit_groups;
     format_settings.pretty.output_format_pretty_row_numbers = settings.output_format_pretty_row_numbers;
     format_settings.pretty.output_format_pretty_single_large_number_tip_threshold = settings.output_format_pretty_single_large_number_tip_threshold;
-    format_settings.pretty.output_format_pretty_display_footer_column_names = settings.output_format_pretty_display_footer_column_names;
-    format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows = settings.output_format_pretty_display_footer_column_names_min_rows;
     format_settings.protobuf.input_flatten_google_wrappers = settings.input_format_protobuf_flatten_google_wrappers;
     format_settings.protobuf.output_nullables_with_google_wrappers = settings.output_format_protobuf_nullables_with_google_wrappers;
     format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference;
@@ -212,7 +204,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.tsv.try_detect_header = settings.input_format_tsv_detect_header;
     format_settings.tsv.skip_trailing_empty_lines = settings.input_format_tsv_skip_trailing_empty_lines;
     format_settings.tsv.allow_variable_number_of_columns = settings.input_format_tsv_allow_variable_number_of_columns;
-    format_settings.tsv.crlf_end_of_line_input = settings.input_format_tsv_crlf_end_of_line;
     format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
     format_settings.values.allow_data_after_semicolon = settings.input_format_values_allow_data_after_semicolon;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
@@ -704,12 +695,21 @@ String FormatFactory::getFormatFromFileName(String file_name)
 
 std::optional<String> FormatFactory::tryGetFormatFromFileDescriptor(int fd)
 {
-    std::optional<String> file_name = tryGetFileNameFromFileDescriptor(fd);
-
-    if (file_name)
-        return tryGetFormatFromFileName(*file_name);
-
+#ifdef OS_LINUX
+    std::string proc_path = fmt::format("/proc/self/fd/{}", fd);
+    char file_path[PATH_MAX] = {'\0'};
+    if (readlink(proc_path.c_str(), file_path, sizeof(file_path) - 1) != -1)
+        return tryGetFormatFromFileName(file_path);
     return std::nullopt;
+#elif defined(OS_DARWIN)
+    char file_path[PATH_MAX] = {'\0'};
+    if (fcntl(fd, F_GETPATH, file_path) != -1)
+        return tryGetFormatFromFileName(file_path);
+    return std::nullopt;
+#else
+    (void)fd;
+    return std::nullopt;
+#endif
 }
 
 String FormatFactory::getFormatFromFileDescriptor(int fd)

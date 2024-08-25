@@ -7,7 +7,7 @@
 
 #include <Common/BinStringDecodeHelper.h>
 #include <Common/PODArray.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include "Parsers/CommonParsers.h"
 
@@ -170,17 +170,9 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// Identifier in backquotes or in double quotes or in English-style Unicode double quotes
+    /// Identifier in backquotes or in double quotes
     if (pos->type == TokenType::QuotedIdentifier)
     {
-        /// The case of Unicode quotes. No escaping is supported. Assuming UTF-8.
-        if (*pos->begin == '\xE2' && pos->size() > 6) /// Empty identifiers are not allowed.
-        {
-            node = std::make_shared<ASTIdentifier>(String(pos->begin + 3, pos->end - 3));
-            ++pos;
-            return true;
-        }
-
         ReadBufferFromMemory buf(pos->begin, pos->size());
         String s;
 
@@ -703,7 +695,7 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-bool ParserStatisticsType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserStatisticType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserList stat_type_parser(std::make_unique<ParserIdentifierWithOptionalParameters>(),
         std::make_unique<ParserToken>(TokenType::Comma), false);
@@ -722,7 +714,7 @@ bool ParserStatisticsType::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ++pos;
 
     auto function_node = std::make_shared<ASTFunction>();
-    function_node->name = "STATISTICS";
+    function_node->name = "STATISTIC";
     function_node->arguments = stat_type;
     function_node->children.push_back(function_node->arguments);
 
@@ -1129,11 +1121,11 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
 
     if (hex)
     {
-        hexStringDecode(str_begin, str_end, res_pos);
+        hexStringDecode(str_begin, str_end, res_pos, word_size);
     }
     else
     {
-        binStringDecode(str_begin, str_end, res_pos);
+        binStringDecode(str_begin, str_end, res_pos, word_size);
     }
 
     return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), (res_pos - res_begin - 1)));
@@ -1148,24 +1140,16 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
     if (pos->type == TokenType::StringLiteral)
     {
-        char first_char = *pos->begin;
-
-        if (first_char == 'x' || first_char == 'X')
+        if (*pos->begin == 'x' || *pos->begin == 'X')
         {
             constexpr size_t word_size = 2;
             return makeHexOrBinStringLiteral(pos, node, true, word_size);
         }
 
-        if (first_char == 'b' || first_char == 'B')
+        if (*pos->begin == 'b' || *pos->begin == 'B')
         {
             constexpr size_t word_size = 8;
             return makeHexOrBinStringLiteral(pos, node, false, word_size);
-        }
-
-        /// The case of Unicode quotes. No escaping is supported. Assuming UTF-8.
-        if (first_char == '\xE2' && pos->size() >= 6)
-        {
-            return makeStringLiteral(pos, node, String(pos->begin + 3, pos->end - 3));
         }
 
         ReadBufferFromMemory in(pos->begin, pos->size());

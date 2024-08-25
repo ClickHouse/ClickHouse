@@ -213,13 +213,41 @@ void StorageMergeTree::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    const auto & settings = local_context->getSettingsRef();
-    /// reading step for parallel replicas with new analyzer is built in Planner, so don't do it here
-    if (local_context->canUseParallelReplicasOnInitiator() && settings.parallel_replicas_for_non_replicated_merge_tree
-        && !settings.allow_experimental_analyzer)
+    if (local_context->canUseParallelReplicasOnInitiator() && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
     {
+        ASTPtr modified_query_ast;
+        Block header;
+        if (local_context->getSettingsRef().allow_experimental_analyzer)
+        {
+            QueryTreeNodePtr modified_query_tree = query_info.query_tree->clone();
+            rewriteJoinToGlobalJoin(modified_query_tree, local_context);
+            modified_query_tree = buildQueryTreeForShard(query_info.planner_context, modified_query_tree);
+            header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+                modified_query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
+            modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
+        }
+        else
+        {
+            const auto table_id = getStorageID();
+            modified_query_ast = ClusterProxy::rewriteSelectQuery(local_context, query_info.query,
+                table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
+            header
+                = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+        }
+
+        ClusterProxy::SelectStreamFactory select_stream_factory =
+            ClusterProxy::SelectStreamFactory(
+                header,
+                {},
+                storage_snapshot,
+                processed_stage);
+
         ClusterProxy::executeQueryWithParallelReplicas(
-            query_plan, getStorageID(), processed_stage, query_info.query, local_context, query_info.storage_limits);
+            query_plan,
+            select_stream_factory,
+            modified_query_ast,
+            local_context,
+            query_info.storage_limits);
     }
     else
     {
@@ -310,20 +338,16 @@ void StorageMergeTree::alter(
 
     auto table_id = getStorageID();
     auto old_storage_settings = getSettings();
-    const auto & query_settings = local_context->getSettingsRef();
 
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
 
-    auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, query_settings.materialize_ttl_after_modify, local_context);
+    auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, local_context->getSettingsRef().materialize_ttl_after_modify, local_context);
     if (!maybe_mutation_commands.empty())
         delayMutationOrThrowIfNeeded(nullptr, local_context);
 
     Int64 mutation_version = -1;
     commands.apply(new_metadata, local_context);
-
-    if (!query_settings.allow_suspicious_primary_key)
-        MergeTreeData::verifySortingKey(new_metadata.sorting_key);
 
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
@@ -377,7 +401,7 @@ void StorageMergeTree::alter(
             resetObjectColumnsFromActiveParts(parts_lock);
         }
 
-        if (!maybe_mutation_commands.empty() && query_settings.alter_sync > 0)
+        if (!maybe_mutation_commands.empty() && local_context->getSettingsRef().alter_sync > 0)
             waitForMutation(mutation_version, false);
     }
 
@@ -1269,7 +1293,6 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                 if (command.type != MutationCommand::Type::DROP_COLUMN
                     && command.type != MutationCommand::Type::DROP_INDEX
                     && command.type != MutationCommand::Type::DROP_PROJECTION
-                    && command.type != MutationCommand::Type::DROP_STATISTICS
                     && command.type != MutationCommand::Type::RENAME_COLUMN)
                 {
                     commands_for_size_validation.push_back(command);
@@ -1457,7 +1480,6 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 cleared_count += clearOldPartsFromFilesystem();
                 cleared_count += clearOldMutations();
                 cleared_count += clearEmptyParts();
-                cleared_count += unloadPrimaryKeysOfOutdatedParts();
                 return cleared_count;
                 /// TODO maybe take into account number of cleared objects when calculating backoff
             }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
@@ -2098,36 +2120,16 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
-        if (replace)
-        {
-            /// Replace can only work on the same disk
-            auto [dst_part, part_lock] = cloneAndLoadDataPart(
-                src_part,
-                TMP_PREFIX,
-                dst_part_info,
-                my_metadata_snapshot,
-                clone_params,
-                local_context->getReadSettings(),
-                local_context->getWriteSettings(),
-                true/*must_on_same_disk*/);
-            dst_parts.emplace_back(std::move(dst_part));
-            dst_parts_locks.emplace_back(std::move(part_lock));
-        }
-        else
-        {
-            /// Attach can work on another disk
-            auto [dst_part, part_lock] = cloneAndLoadDataPart(
-                src_part,
-                TMP_PREFIX,
-                dst_part_info,
-                my_metadata_snapshot,
-                clone_params,
-                local_context->getReadSettings(),
-                local_context->getWriteSettings(),
-                false/*must_on_same_disk*/);
-            dst_parts.emplace_back(std::move(dst_part));
-            dst_parts_locks.emplace_back(std::move(part_lock));
-        }
+        auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
+            src_part,
+            TMP_PREFIX,
+            dst_part_info,
+            my_metadata_snapshot,
+            clone_params,
+            local_context->getReadSettings(),
+            local_context->getWriteSettings());
+        dst_parts.emplace_back(std::move(dst_part));
+        dst_parts_locks.emplace_back(std::move(part_lock));
     }
 
     /// ATTACH empty part set
@@ -2232,15 +2234,14 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             .copy_instead_of_hardlink = getSettings()->always_use_copy_instead_of_hardlinks,
         };
 
-        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
+        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(
             src_part,
             TMP_PREFIX,
             dst_part_info,
             dest_metadata_snapshot,
             clone_params,
             local_context->getReadSettings(),
-            local_context->getWriteSettings(),
-            true/*must_on_same_disk*/
+            local_context->getWriteSettings()
         );
 
         dst_parts.emplace_back(std::move(dst_part));

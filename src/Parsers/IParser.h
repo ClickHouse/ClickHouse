@@ -22,7 +22,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-enum class Highlight : uint8_t
+enum class Highlight
 {
     none = 0,
     keyword,

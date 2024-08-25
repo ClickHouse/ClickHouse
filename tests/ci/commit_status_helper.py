@@ -17,8 +17,9 @@ from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
 from github.Repository import Repository
 
-from ci_config import CI
-from env_helper import GITHUB_REPOSITORY, TEMP_PATH
+from ci_config import CHECK_DESCRIPTIONS, REQUIRED_CHECKS, CheckDescription, StatusNames
+from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL, TEMP_PATH
+from lambda_shared_package.lambda_shared.pr import Labels
 from pr_info import PRInfo
 from report import (
     ERROR,
@@ -78,7 +79,7 @@ def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
 
 def post_commit_status(
     commit: Commit,
-    state: StatusType,  # do not change it, it MUST be StatusType and nothing else
+    state: StatusType,
     report_url: Optional[str] = None,
     description: Optional[str] = None,
     check_name: Optional[str] = None,
@@ -101,12 +102,7 @@ def post_commit_status(
             if i == RETRY - 1:
                 raise ex
             time.sleep(i)
-    if pr_info and check_name not in (
-        CI.StatusNames.MERGEABLE,
-        CI.StatusNames.CI,
-        CI.StatusNames.PR_CHECK,
-        CI.StatusNames.SYNC,
-    ):
+    if pr_info:
         status_updated = False
         for i in range(RETRY):
             try:
@@ -160,21 +156,10 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     gh.__requester = commit._requester  # type:ignore #pylint:disable=protected-access
     repo = get_repo(gh)
     statuses = sorted(get_commit_filtered_statuses(commit), key=lambda x: x.context)
-    statuses = [
-        status
-        for status in statuses
-        if status.context
-        not in (
-            CI.StatusNames.MERGEABLE,
-            CI.StatusNames.CI,
-            CI.StatusNames.PR_CHECK,
-            CI.StatusNames.SYNC,
-        )
-    ]
     if not statuses:
         return
 
-    if not [status for status in statuses if status.context == CI.StatusNames.CI]:
+    if not [status for status in statuses if status.context == StatusNames.CI]:
         # This is the case, when some statuses already exist for the check,
         # but not the StatusNames.CI. We should create it as pending.
         # W/o pr_info to avoid recursion, and yes, one extra create_ci_report
@@ -183,7 +168,7 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
             PENDING,
             create_ci_report(pr_info, statuses),
             "The report for running CI",
-            CI.StatusNames.CI,
+            StatusNames.CI,
         )
 
     # We update the report in generate_status_comment function, so do it each
@@ -226,20 +211,20 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
         f"\n"
     )
     # group checks by the name to get the worst one per each
-    grouped_statuses = {}  # type: Dict[CI.CheckDescription, CommitStatuses]
+    grouped_statuses = {}  # type: Dict[CheckDescription, CommitStatuses]
     for status in statuses:
         cd = None
-        for c in CI.CHECK_DESCRIPTIONS:
+        for c in CHECK_DESCRIPTIONS:
             if c.match_func(status.context):
                 cd = c
                 break
 
-        if cd is None or cd == CI.CHECK_DESCRIPTIONS[-1]:
+        if cd is None or cd == CHECK_DESCRIPTIONS[-1]:
             # This is the case for either non-found description or a fallback
-            cd = CI.CheckDescription(
+            cd = CheckDescription(
                 status.context,
-                CI.CHECK_DESCRIPTIONS[-1].description,
-                CI.CHECK_DESCRIPTIONS[-1].match_func,
+                CHECK_DESCRIPTIONS[-1].description,
+                CHECK_DESCRIPTIONS[-1].match_func,
             )
 
         if cd in grouped_statuses:
@@ -315,7 +300,7 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
             )
         )
     return upload_results(
-        S3Helper(), pr_info.number, pr_info.sha, test_results, [], CI.StatusNames.CI
+        S3Helper(), pr_info.number, pr_info.sha, test_results, [], StatusNames.CI
     )
 
 
@@ -442,97 +427,76 @@ def set_mergeable_check(
     commit: Commit,
     description: str = "",
     state: StatusType = SUCCESS,
+    hide_url: bool = False,
 ) -> CommitStatus:
-    report_url = ""
+    report_url = GITHUB_RUN_URL
+    if hide_url:
+        report_url = ""
     return post_commit_status(
         commit,
         state,
         report_url,
         format_description(description),
-        CI.StatusNames.MERGEABLE,
+        StatusNames.MERGEABLE,
     )
 
 
+def update_mergeable_check(
+    commit: Commit, pr_info: PRInfo, check_name: str
+) -> Optional[CommitStatus]:
+    "check if the check_name in REQUIRED_CHECKS and then trigger update"
+    not_run = (
+        pr_info.labels.intersection({Labels.SKIP_MERGEABLE_CHECK, Labels.RELEASE})
+        or check_name not in REQUIRED_CHECKS
+        or pr_info.release_pr
+        or pr_info.number == 0
+    )
+
+    if not_run:
+        # Let's avoid unnecessary work
+        return None
+
+    logging.info("Update Mergeable Check by %s", check_name)
+
+    statuses = get_commit_filtered_statuses(commit)
+    return trigger_mergeable_check(commit, statuses)
+
+
 def trigger_mergeable_check(
-    commit: Commit,
-    statuses: CommitStatuses,
-    set_from_sync: bool = False,
-    workflow_failed: bool = False,
-) -> StatusType:
+    commit: Commit, statuses: CommitStatuses, hide_url: bool = False
+) -> CommitStatus:
     """calculate and update StatusNames.MERGEABLE"""
-    required_checks = [status for status in statuses if CI.is_required(status.context)]
+    required_checks = [
+        status for status in statuses if status.context in REQUIRED_CHECKS
+    ]
 
     mergeable_status = None
     for status in statuses:
-        if status.context == CI.StatusNames.MERGEABLE:
+        if status.context == StatusNames.MERGEABLE:
             mergeable_status = status
             break
 
     success = []
     fail = []
-    pending = []
     for status in required_checks:
         if status.state == SUCCESS:
             success.append(status.context)
-        elif status.state == PENDING:
-            pending.append(status.context)
         else:
             fail.append(status.context)
 
     state: StatusType = SUCCESS
 
+    if success:
+        description = ", ".join(success)
+    else:
+        description = "awaiting job statuses"
+
     if fail:
         description = "failed: " + ", ".join(fail)
         state = FAILURE
-    elif workflow_failed:
-        description = "check workflow failures"
-        state = FAILURE
-    elif pending:
-        description = "pending: " + ", ".join(pending)
-        state = PENDING
-    else:
-        # all good
-        description = ", ".join(success)
-
     description = format_description(description)
 
-    if set_from_sync:
-        # update Mergeable Check from sync WF only if its status already present or its new status is not SUCCESS
-        #   to avoid false-positives
-        if mergeable_status or state != SUCCESS:
-            set_mergeable_check(commit, description, state)
-    elif mergeable_status is None or mergeable_status.description != description:
-        set_mergeable_check(commit, description, state)
+    if mergeable_status is None or mergeable_status.description != description:
+        return set_mergeable_check(commit, description, state, hide_url)
 
-    return state
-
-
-def update_upstream_sync_status(
-    pr_info: PRInfo,
-    state: StatusType,
-) -> None:
-    last_synced_upstream_commit = pr_info.get_latest_sync_commit()
-
-    logging.info(
-        "Using commit [%s] to post the [%s] status [%s]",
-        last_synced_upstream_commit.sha,
-        state,
-        CI.StatusNames.SYNC,
-    )
-    if state == SUCCESS:
-        description = CI.SyncState.COMPLETED
-    else:
-        description = CI.SyncState.TESTS_FAILED
-
-    post_commit_status(
-        last_synced_upstream_commit,
-        state,
-        "",
-        description,
-        CI.StatusNames.SYNC,
-    )
-    trigger_mergeable_check(
-        last_synced_upstream_commit,
-        get_commit_filtered_statuses(last_synced_upstream_commit),
-        set_from_sync=True,
-    )
+    return mergeable_status

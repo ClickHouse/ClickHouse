@@ -9,9 +9,6 @@ assignees: ''
 
 (you don't have to strictly follow this form)
 
-**Company or project name**
-Put your company name or project description here
-
 **Describe the situation**
 What exactly works slower than expected?
 

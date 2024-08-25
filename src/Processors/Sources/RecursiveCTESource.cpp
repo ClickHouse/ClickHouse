@@ -5,7 +5,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Transforms/SquashingTransform.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -102,7 +102,6 @@ public:
             "Recursive CTE subquery {}. Expected projection columns to have same size in recursive and non recursive subquery.",
             recursive_cte_union_node->formatASTForErrorMessage());
 
-        working_temporary_table_holder = recursive_cte_table->holder;
         working_temporary_table_storage = recursive_cte_table->storage;
 
         intermediate_temporary_table_holder = std::make_shared<TemporaryTableHolder>(
@@ -148,7 +147,6 @@ public:
 
             truncateTemporaryTable(working_temporary_table_storage);
 
-            std::swap(intermediate_temporary_table_holder, working_temporary_table_holder);
             std::swap(intermediate_temporary_table_storage, working_temporary_table_storage);
         }
 
@@ -173,9 +171,6 @@ private:
 
         SelectQueryOptions select_query_options;
         select_query_options.merge_tree_enable_remove_parts_from_snapshot_optimization = false;
-
-        const auto & recursive_table_name = recursive_cte_union_node->as<UnionNode &>().getCTEName();
-        recursive_query_context->addOrUpdateExternalTable(recursive_table_name, working_temporary_table_holder);
 
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, recursive_query_context, select_query_options);
         auto pipeline_builder = interpreter->buildQueryPipeline();
@@ -230,7 +225,6 @@ private:
     QueryTreeNodePtr recursive_query;
     ContextMutablePtr recursive_query_context;
 
-    TemporaryTableHolderPtr working_temporary_table_holder;
     StoragePtr working_temporary_table_storage;
 
     TemporaryTableHolderPtr intermediate_temporary_table_holder;

@@ -41,6 +41,7 @@ UInt8 getDayOfWeek(const cctz::civil_day & date)
         case cctz::weekday::saturday:   return 6;
         case cctz::weekday::sunday:     return 7;
     }
+    UNREACHABLE();
 }
 
 inline cctz::time_point<cctz::seconds> lookupTz(const cctz::time_zone & cctz_time_zone, const cctz::civil_day & date)
@@ -252,7 +253,8 @@ namespace cctz_extension
 
             size_t Read(void * buf, size_t bytes) override
             {
-                bytes = std::min(bytes, size);
+                if (bytes > size)
+                    bytes = size;
                 memcpy(buf, data, bytes);
                 data += bytes;
                 size -= bytes;

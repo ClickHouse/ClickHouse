@@ -301,13 +301,7 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     auto & insert_query = query->as<ASTInsertQuery &>();
     insert_query.async_insert_flush = true;
 
-    InterpreterInsertQuery interpreter(
-        query,
-        query_context,
-        query_context->getSettingsRef().insert_allow_materialized_columns,
-        /* no_squash */ false,
-        /* no_destination */ false,
-        /* async_insert */ false);
+    InterpreterInsertQuery interpreter(query, query_context, query_context->getSettingsRef().insert_allow_materialized_columns);
     auto table = interpreter.getTable(insert_query);
     auto sample_block = InterpreterInsertQuery::getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr(), query_context);
 
@@ -673,7 +667,11 @@ namespace
 using TimePoint = std::chrono::time_point<std::chrono::system_clock>;
 
 void appendElementsToLogSafe(
-    AsynchronousInsertLog & log, std::vector<AsynchronousInsertLogElement> elements, TimePoint flush_time, const String & flush_exception)
+    AsynchronousInsertLog & log,
+    std::vector<AsynchronousInsertLogElement> elements,
+    TimePoint flush_time,
+    const String & flush_query_id,
+    const String & flush_exception)
 try
 {
     using Status = AsynchronousInsertLogElement::Status;
@@ -682,6 +680,7 @@ try
     {
         elem.flush_time = timeInSeconds(flush_time);
         elem.flush_time_microseconds = timeInMicroseconds(flush_time);
+        elem.flush_query_id = flush_query_id;
         elem.exception = flush_exception;
         elem.status = flush_exception.empty() ? Status::Ok : Status::FlushError;
         log.add(std::move(elem));
@@ -701,6 +700,7 @@ String serializeQuery(const IAST & query, size_t max_length)
 
 }
 
+// static
 void AsynchronousInsertQueue::processData(
     InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history)
 try
@@ -709,8 +709,6 @@ try
         return;
 
     SCOPE_EXIT(CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size()));
-
-    setThreadName("AsyncInsertQ");
 
     const auto log = getLogger("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
@@ -787,12 +785,7 @@ try
     try
     {
         interpreter = std::make_unique<InterpreterInsertQuery>(
-            key.query,
-            insert_context,
-            key.settings.insert_allow_materialized_columns,
-            false,
-            false,
-            true);
+            key.query, insert_context, key.settings.insert_allow_materialized_columns, false, false, true);
 
         pipeline = interpreter->execute().pipeline;
         chassert(pipeline.pushing());
@@ -815,12 +808,12 @@ try
         throw;
     }
 
-    auto add_entry_to_asynchronous_insert_log = [&](const auto & entry,
-                                                    const auto & entry_query_for_logging,
-                                                    const auto & exception,
-                                                    size_t num_rows,
-                                                    size_t num_bytes,
-                                                    Milliseconds timeout_ms)
+    auto add_entry_to_log = [&](const auto & entry,
+                                const auto & entry_query_for_logging,
+                                const auto & exception,
+                                size_t num_rows,
+                                size_t num_bytes,
+                                Milliseconds timeout_ms)
     {
         if (!async_insert_log)
             return;
@@ -838,7 +831,6 @@ try
         elem.exception = exception;
         elem.data_kind = entry->chunk.getDataKind();
         elem.timeout_milliseconds = timeout_ms.count();
-        elem.flush_query_id = insert_query_id;
 
         /// If there was a parsing error,
         /// the entry won't be flushed anyway,
@@ -865,7 +857,7 @@ try
         if (!log_elements.empty())
         {
             auto flush_time = std::chrono::system_clock::now();
-            appendElementsToLogSafe(*async_insert_log, std::move(log_elements), flush_time, "");
+            appendElementsToLogSafe(*async_insert_log, std::move(log_elements), flush_time, insert_query_id, "");
         }
     };
 
@@ -873,27 +865,15 @@ try
     auto header = pipeline.getHeader();
 
     if (key.data_kind == DataKind::Parsed)
-        chunk = processEntriesWithParsing(key, data, header, insert_context, log, add_entry_to_asynchronous_insert_log);
+        chunk = processEntriesWithParsing(key, data, header, insert_context, log, add_entry_to_log);
     else
-        chunk = processPreprocessedEntries(key, data, header, insert_context, add_entry_to_asynchronous_insert_log);
+        chunk = processPreprocessedEntries(key, data, header, insert_context, add_entry_to_log);
 
     ProfileEvents::increment(ProfileEvents::AsyncInsertRows, chunk.getNumRows());
-
-    auto log_and_add_finish_to_query_log = [&](size_t num_rows, size_t num_bytes)
-    {
-        LOG_DEBUG(log, "Flushed {} rows, {} bytes for query '{}'", num_rows, num_bytes, key.query_str);
-        queue_shard_flush_time_history.updateWithCurrentTime();
-
-        bool pulling_pipeline = false;
-        logQueryFinish(
-            query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryCache::Usage::None, internal);
-    };
-
 
     if (chunk.getNumRows() == 0)
     {
         finish_entries();
-        log_and_add_finish_to_query_log(0, 0);
         return;
     }
 
@@ -908,7 +888,12 @@ try
         CompletedPipelineExecutor completed_executor(pipeline);
         completed_executor.execute();
 
-        log_and_add_finish_to_query_log(num_rows, num_bytes);
+        LOG_INFO(log, "Flushed {} rows, {} bytes for query '{}'", num_rows, num_bytes, key.query_str);
+
+        queue_shard_flush_time_history.updateWithCurrentTime();
+
+        bool pulling_pipeline = false;
+        logQueryFinish(query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryCache::Usage::None, internal);
     }
     catch (...)
     {
@@ -918,7 +903,7 @@ try
         {
             auto exception = getCurrentExceptionMessage(false);
             auto flush_time = std::chrono::system_clock::now();
-            appendElementsToLogSafe(*async_insert_log, std::move(log_elements), flush_time, exception);
+            appendElementsToLogSafe(*async_insert_log, std::move(log_elements), flush_time, insert_query_id, exception);
         }
         throw;
     }
@@ -1011,7 +996,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     }
 
     Chunk chunk(executor.getResultColumns(), total_rows);
-    chunk.getChunkInfos().add(std::move(chunk_info));
+    chunk.setChunkInfo(std::move(chunk_info));
     return chunk;
 }
 
@@ -1063,7 +1048,7 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
     }
 
     Chunk chunk(std::move(result_columns), total_rows);
-    chunk.getChunkInfos().add(std::move(chunk_info));
+    chunk.setChunkInfo(std::move(chunk_info));
     return chunk;
 }
 

@@ -18,7 +18,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
-    extern const int TYPE_MISMATCH;
 }
 
 namespace
@@ -46,15 +45,6 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
 {
     const auto & header = getPort().getHeader();
     name_map = header.getNamesToIndexesMap();
-    if (format_settings_.json.ignore_key_case)
-    {
-        for (auto & it : name_map)
-        {
-            StringRef key = it.first;
-            String lower_case_key = transformFieldNameToLowerCase(key);
-            lower_case_name_map[lower_case_key] = key;
-        }
-    }
     if (format_settings_.import_nested_json)
     {
         for (size_t i = 0; i != header.columns(); ++i)
@@ -180,15 +170,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             skipUnknownField(name_ref);
             continue;
         }
-        size_t column_index = 0;
-        if (format_settings.json.ignore_key_case)
-        {
-            String lower_case_name = transformFieldNameToLowerCase(name_ref);
-            StringRef field_name_ref = lower_case_name_map[lower_case_name];
-            column_index = columnIndex(field_name_ref, key_index);
-        }
-        else
-            column_index = columnIndex(name_ref, key_index);
+        const size_t column_index = columnIndex(name_ref, key_index);
 
         if (unlikely(ssize_t(column_index) < 0))
         {
@@ -251,14 +233,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     /// Fill non-visited columns with the default values.
     for (size_t i = 0; i < num_columns; ++i)
         if (!seen_columns[i])
-        {
-            const auto & type = header.getByPosition(i).type;
-            if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(type))
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column `{}` of type '{}'", columnName(i), type->getName());
-            else
-                type->insertDefaultInto(*columns[i]);
-        }
-
+            header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
     /// Return info about defaults set.
     /// If defaults_for_omitted_fields is set to 0, we should just leave already inserted defaults.

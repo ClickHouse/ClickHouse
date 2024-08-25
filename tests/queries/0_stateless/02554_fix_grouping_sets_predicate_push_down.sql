@@ -1,4 +1,4 @@
--- Tags: no-object-storage
+-- Tags: no-s3-storage
 
 DROP TABLE IF EXISTS test_grouping_sets_predicate;
 

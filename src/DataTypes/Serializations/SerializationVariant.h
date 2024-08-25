@@ -59,8 +59,7 @@ public:
 
     void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state,
-        SubstreamsDeserializeStatesCache * cache) const override;
+        DeserializeBinaryBulkStatePtr & state) const override;
 
     void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
@@ -68,14 +67,6 @@ public:
         size_t limit,
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const override;
-
-    void serializeBinaryBulkWithMultipleStreamsAndUpdateVariantStatistics(
-        const IColumn & column,
-        size_t offset,
-        size_t limit,
-        SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & state,
-        std::unordered_map<String, size_t> & variants_statistics) const;
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,

@@ -8,7 +8,6 @@
 #include <Common/Exception.h>
 #include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
-#include <Access/Common/SSLCertificateSubjects.h>
 
 #include "config.h"
 
@@ -109,9 +108,6 @@ bool Authentication::areCredentialsValid(
             case AuthenticationType::HTTP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
-            case AuthenticationType::JWT:
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
-
             case AuthenticationType::KERBEROS:
                 return external_authenticators.checkKerberosCredentials(auth_data.getKerberosRealm(), *gss_acceptor_context);
 
@@ -152,9 +148,6 @@ bool Authentication::areCredentialsValid(
 
             case AuthenticationType::SSL_CERTIFICATE:
                 throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
-
-            case AuthenticationType::JWT:
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
 
             case AuthenticationType::SSH_KEY:
 #if USE_SSH
@@ -200,9 +193,6 @@ bool Authentication::areCredentialsValid(
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
 #endif
 
-            case AuthenticationType::JWT:
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
-
             case AuthenticationType::BCRYPT_PASSWORD:
                 return checkPasswordBcrypt(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
 
@@ -232,22 +222,11 @@ bool Authentication::areCredentialsValid(
             case AuthenticationType::HTTP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
-            case AuthenticationType::JWT:
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
-
             case AuthenticationType::KERBEROS:
                 throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
 
             case AuthenticationType::SSL_CERTIFICATE:
-                for (SSLCertificateSubjects::Type type : {SSLCertificateSubjects::Type::CN, SSLCertificateSubjects::Type::SAN})
-                {
-                    for (const auto & subject : auth_data.getSSLCertificateSubjects().at(type))
-                    {
-                        if (ssl_certificate_credentials->getSSLCertificateSubjects().at(type).contains(subject))
-                            return true;
-                    }
-                }
-                return false;
+                return auth_data.getSSLCertificateCommonNames().contains(ssl_certificate_credentials->getCommonName());
 
             case AuthenticationType::SSH_KEY:
 #if USE_SSH
@@ -274,9 +253,6 @@ bool Authentication::areCredentialsValid(
             case AuthenticationType::LDAP:
             case AuthenticationType::HTTP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
-
-            case AuthenticationType::JWT:
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
 
             case AuthenticationType::KERBEROS:
                 throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());

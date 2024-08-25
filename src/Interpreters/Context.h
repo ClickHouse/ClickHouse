@@ -1,5 +1,7 @@
 #pragma once
 
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
+
 #include <base/types.h>
 #include <Common/isLocalAddress.h>
 #include <Common/MultiVersion.h>
@@ -48,7 +50,6 @@ class ASTSelectQuery;
 
 struct ContextSharedPart;
 class ContextAccess;
-class ContextAccessWrapper;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 struct SettingsProfilesInfo;
@@ -60,7 +61,7 @@ struct QuotaUsage;
 class AccessFlags;
 struct AccessRightsElement;
 class AccessRightsElements;
-enum class RowPolicyFilterType : uint8_t;
+enum class RowPolicyFilterType;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
@@ -105,7 +106,7 @@ class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
-class ObjectStorageQueueLog;
+class S3QueueLog;
 class AsynchronousInsertLog;
 class BackupLog;
 class BlobStorageLog;
@@ -116,7 +117,7 @@ struct DistributedSettings;
 struct InitialAllRangesAnnouncement;
 struct ParallelReadRequest;
 struct ParallelReadResponse;
-class S3SettingsByEndpoint;
+class StorageS3Settings;
 class IDatabase;
 class DDLWorker;
 class ITableFunction;
@@ -402,31 +403,9 @@ public:
         mutable std::mutex mutex;
     };
 
-    struct QueryPrivilegesInfo
-    {
-        QueryPrivilegesInfo() = default;
-
-        QueryPrivilegesInfo(const QueryPrivilegesInfo & rhs)
-        {
-            std::lock_guard<std::mutex> lock(rhs.mutex);
-            used_privileges = rhs.used_privileges;
-            missing_privileges = rhs.missing_privileges;
-        }
-
-        QueryPrivilegesInfo(QueryPrivilegesInfo && rhs) = delete;
-
-        std::unordered_set<std::string> used_privileges TSA_GUARDED_BY(mutex);
-        std::unordered_set<std::string> missing_privileges TSA_GUARDED_BY(mutex);
-
-        mutable std::mutex mutex;
-    };
-
-    using QueryPrivilegesInfoPtr = std::shared_ptr<QueryPrivilegesInfo>;
-
 protected:
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
-    QueryPrivilegesInfoPtr query_privileges_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
     mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
 
@@ -633,7 +612,7 @@ public:
     void checkAccess(const AccessRightsElement & element) const;
     void checkAccess(const AccessRightsElements & elements) const;
 
-    std::shared_ptr<const ContextAccessWrapper> getAccess() const;
+    std::shared_ptr<const ContextAccess> getAccess() const;
 
     RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
@@ -643,10 +622,6 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
-    String getMergeWorkload() const;
-    void setMergeWorkload(const String & value);
-    String getMutationWorkload() const;
-    void setMutationWorkload(const String & value);
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
@@ -710,9 +685,6 @@ public:
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
     void updateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
     void addOrUpdateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
-    void addExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
-    void updateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
-    void addOrUpdateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
@@ -746,7 +718,7 @@ public:
     void addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name);
 
     /// Supported factories for records in query_log
-    enum class QueryLogFactories : uint8_t
+    enum class QueryLogFactories
     {
         AggregateFunction,
         AggregateFunctionCombinator,
@@ -762,17 +734,13 @@ public:
     QueryFactoriesInfo getQueryFactoriesInfo() const;
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
 
-    const QueryPrivilegesInfo & getQueryPrivilegesInfo() const { return *getQueryPrivilegesInfoPtr(); }
-    QueryPrivilegesInfoPtr getQueryPrivilegesInfoPtr() const { return query_privileges_info; }
-    void addQueryPrivilegesInfo(const String & privilege, bool granted) const;
-
     /// For table functions s3/file/url/hdfs/input we can use structure from
     /// insertion table depending on select expression.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint = nullptr);
     /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
 
-    StoragePtr buildParametrizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values);
+    StoragePtr buildParametrizedViewStorage(const ASTPtr & table_expression, const String & database_name, const String & table_name);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
@@ -788,12 +756,6 @@ public:
     /// exists because it should be set before databases loading.
     void setCurrentDatabaseNameInGlobalContext(const String & name);
     void setCurrentQueryId(const String & query_id);
-
-    /// FIXME: for background operations (like Merge and Mutation) we also use the same Context object and even setup
-    /// query_id for it (table_uuid::result_part_name). We can distinguish queries from background operation in some way like
-    /// bool is_background = query_id.contains("::"), but it's much worse than just enum check with more clear purpose
-    void setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType setBackgroundOperationTypeForContextbackground_operation);
-    bool isBackgroundOperationContext() const;
 
     void killCurrentQuery() const;
     bool isCurrentQueryKilled() const;
@@ -896,8 +858,6 @@ public:
     const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
     void setMaxTableNumToWarn(size_t max_table_to_warn);
-    void setMaxViewNumToWarn(size_t max_view_to_warn);
-    void setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn);
     void setMaxDatabaseNumToWarn(size_t max_database_to_warn);
     void setMaxPartNumToWarn(size_t max_part_to_warn);
     /// The port that the server listens for executing SQL queries.
@@ -936,8 +896,6 @@ public:
     void setSessionContext(ContextMutablePtr context_) { session_context = context_; }
 
     void makeQueryContext();
-    void makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings);
-    void makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings);
     void makeSessionContext();
     void makeGlobalContext();
 
@@ -1108,8 +1066,6 @@ public:
     void initializeSystemLogs();
 
     /// Call after initialization before using trace collector.
-    void createTraceCollector();
-
     void initializeTraceCollector();
 
     /// Call after unexpected crash happen.
@@ -1131,8 +1087,7 @@ public:
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
-    std::shared_ptr<ObjectStorageQueueLog> getS3QueueLog() const;
-    std::shared_ptr<ObjectStorageQueueLog> getAzureQueueLog() const;
+    std::shared_ptr<S3QueueLog> getS3QueueLog() const;
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
     std::shared_ptr<BackupLog> getBackupLog() const;
@@ -1147,7 +1102,7 @@ public:
     const MergeTreeSettings & getMergeTreeSettings() const;
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
     const DistributedSettings & getDistributedSettings() const;
-    const S3SettingsByEndpoint & getStorageS3Settings() const;
+    const StorageS3Settings & getStorageS3Settings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
@@ -1160,9 +1115,6 @@ public:
     size_t getMaxPartitionSizeToDrop() const;
     void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const;
     void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size, const size_t & max_partition_size_to_drop) const;
-    /// Only for system.server_settings, actual value is stored in ConfigReloader
-    void setConfigReloaderInterval(size_t value_ms);
-    size_t getConfigReloaderInterval() const;
 
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
@@ -1203,7 +1155,7 @@ public:
 
     ActionLocksManagerPtr getActionLocksManager() const;
 
-    enum class ApplicationType : uint8_t
+    enum class ApplicationType
     {
         SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
         CLIENT,         /// clickhouse-client
@@ -1291,7 +1243,7 @@ public:
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
 #if USE_LIBURING
-    IOUringReader & getIOUringReader() const;
+    IOUringReader & getIOURingReader() const;
 #endif
 
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
@@ -1435,6 +1387,11 @@ struct HTTPContext : public IHTTPContext
         return context->getSettingsRef().http_max_field_value_size;
     }
 
+    uint64_t getMaxChunkSize() const override
+    {
+        return context->getSettingsRef().http_max_chunk_size;
+    }
+
     Poco::Timespan getReceiveTimeout() const override
     {
         return context->getSettingsRef().http_receive_timeout;
@@ -1449,3 +1406,9 @@ struct HTTPContext : public IHTTPContext
 };
 
 }
+
+#else
+
+#include <Coordination/Standalone/Context.h>
+
+#endif

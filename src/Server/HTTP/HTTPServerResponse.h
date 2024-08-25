@@ -132,11 +132,12 @@ protected:
     void nextImpl() override
     {
         if (chunked)
-            nextImplChunked();
-        else if (fixed_length)
-            nextImplFixedLength();
-        else
-            WriteBufferFromPocoSocket::nextImpl();
+            return nextImplChunked();
+
+        if (fixed_length)
+            return nextImplFixedLength();
+
+        WriteBufferFromPocoSocket::nextImpl();
     }
 
     void nextImplFixedLength()

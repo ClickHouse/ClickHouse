@@ -24,7 +24,6 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeIndices.h>
 
 
 namespace DB
@@ -138,7 +137,7 @@ private:
         virtual ~IStage() = default;
     };
 
-    /// By default this context is uninitialized, but some variables has to be set after construction,
+    /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
     struct GlobalRuntimeContext : public IStageRuntimeContext
@@ -165,13 +164,14 @@ private:
 
         NamesAndTypesList gathering_columns{};
         NamesAndTypesList merging_columns{};
+        Names gathering_column_names{};
+        Names merging_column_names{};
         NamesAndTypesList storage_columns{};
+        Names all_column_names{};
         MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
 
-        IndicesDescription merging_skip_indexes;
-        std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
-
         MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
+        size_t gathering_column_names_size{0};
 
         std::unique_ptr<MergeStageProgress> horizontal_stage_progress{nullptr};
         std::unique_ptr<MergeStageProgress> column_progress{nullptr};
@@ -199,7 +199,7 @@ private:
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;
 
-    /// By default this context is uninitialized, but some variables has to be set after construction,
+    /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
     struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext
@@ -232,6 +232,7 @@ private:
 
         /// Dependencies for next stages
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
+        size_t column_num_for_vertical_merge{0};
         bool need_sync{false};
     };
 
@@ -259,21 +260,19 @@ private:
 
         MergeAlgorithm chooseMergeAlgorithm() const;
         void createMergedStream();
-        void extractMergingAndGatheringColumns() const;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {
             ctx = static_pointer_cast<ExecuteAndFinalizeHorizontalPartRuntimeContext>(local);
             global_ctx = static_pointer_cast<GlobalRuntimeContext>(global);
         }
-
         StageRuntimeContextPtr getContextForNextStage() override;
 
         ExecuteAndFinalizeHorizontalPartRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
     };
 
-    /// By default this context is uninitialized, but some variables has to be set after construction,
+    /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
     struct VerticalMergeRuntimeContext : public IStageRuntimeContext
@@ -285,11 +284,12 @@ private:
         CompressionCodecPtr compression_codec;
         TemporaryDataOnDiskPtr tmp_disk{nullptr};
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
+        size_t column_num_for_vertical_merge{0};
         bool read_with_direct_io{false};
         bool need_sync{false};
         /// End dependencies from previous stages
 
-        enum class State : uint8_t
+        enum class State
         {
             NEED_PREPARE,
             NEED_EXECUTE,
@@ -299,9 +299,7 @@ private:
 
         Float64 progress_before = 0;
         std::unique_ptr<MergedColumnOnlyOutputStream> column_to{nullptr};
-        std::optional<Pipe> prepared_pipe;
         size_t max_delayed_streams = 0;
-        bool use_prefetch = false;
         std::list<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
         size_t column_elems_written{0};
         QueryPipeline column_parts_pipeline;
@@ -342,13 +340,11 @@ private:
         bool executeVerticalMergeForOneColumn() const;
         void finalizeVerticalMergeForOneColumn() const;
 
-        Pipe createPipeForReadingOneColumn(const String & column_name) const;
-
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
     };
 
-    /// By default this context is uninitialized, but some variables has to be set after construction,
+    /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
     struct MergeProjectionsRuntimeContext : public IStageRuntimeContext

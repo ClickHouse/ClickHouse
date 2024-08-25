@@ -4,7 +4,6 @@
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
@@ -59,7 +58,7 @@ static inline String generateInnerTableName(const StorageID & view_id)
     return ".inner." + view_id.getTableName();
 }
 
-/// Remove columns from target_header that does not exist in src_header
+/// Remove columns from target_header that does not exists in src_header
 static void removeNonCommonColumns(const Block & src_header, Block & target_header)
 {
     std::set<size_t> target_only_positions;
@@ -152,9 +151,6 @@ StorageMaterializedView::StorageMaterializedView(
     }
     else
     {
-        const String & engine = query.storage->engine->name;
-        const auto & storage_features = StorageFactory::instance().getStorageFeatures(engine);
-
         /// We will create a query to create an internal table.
         auto create_context = Context::createCopy(local_context);
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
@@ -164,22 +160,6 @@ StorageMaterializedView::StorageMaterializedView(
 
         auto new_columns_list = std::make_shared<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
-        if (storage_features.supports_skipping_indices)
-        {
-            if (query.columns_list->indices)
-                new_columns_list->set(new_columns_list->indices, query.columns_list->indices->ptr());
-            if (query.columns_list->constraints)
-                new_columns_list->set(new_columns_list->constraints, query.columns_list->constraints->ptr());
-            if (query.columns_list->primary_key)
-                new_columns_list->set(new_columns_list->primary_key, query.columns_list->primary_key->ptr());
-            if (query.columns_list->primary_key_from_columns)
-                new_columns_list->set(new_columns_list->primary_key_from_columns, query.columns_list->primary_key_from_columns->ptr());
-        }
-        if (storage_features.supports_projections)
-        {
-            if (query.columns_list->projections)
-                new_columns_list->set(new_columns_list->projections, query.columns_list->projections->ptr());
-        }
 
         manual_create_query->set(manual_create_query->columns_list, new_columns_list);
         manual_create_query->set(manual_create_query->storage, query.storage->ptr());
@@ -193,7 +173,6 @@ StorageMaterializedView::StorageMaterializedView(
 
     if (query.refresh_strategy)
     {
-        fixed_uuid = false;
         refresher = RefreshTask::create(
             *this,
             getContext(),
@@ -254,10 +233,10 @@ void StorageMaterializedView::read(
         auto mv_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, context, processed_stage);
         auto target_header = query_plan.getCurrentDataStream().header;
 
-        /// No need to convert columns that does not exist in MV
+        /// No need to convert columns that does not exists in MV
         removeNonCommonColumns(mv_header, target_header);
 
-        /// No need to convert columns that does not exist in the result header.
+        /// No need to convert columns that does not exists in the result header.
         ///
         /// Distributed storage may process query up to the specific stage, and
         /// so the result header may not include all the columns from the
@@ -273,7 +252,7 @@ void StorageMaterializedView::read(
              * They may be added in case of distributed query with JOIN.
              * In that case underlying table returns joined columns as well.
              */
-            converting_actions->removeUnusedActions();
+            converting_actions->projectInput(false);
             auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), converting_actions);
             converting_step->setStepDescription("Convert target table structure to MaterializedView structure");
             query_plan.addStep(std::move(converting_step));
@@ -623,7 +602,7 @@ void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries
 void StorageMaterializedView::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
     if (hasInnerTable())
-        getTargetTable()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+        return getTargetTable()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
 }
 
 bool StorageMaterializedView::supportsBackupPartition() const
@@ -688,14 +667,10 @@ void StorageMaterializedView::onActionLockRemove(StorageActionBlockType action_t
         refresher->start();
 }
 
-StorageID StorageMaterializedView::getTargetTableId() const
+DB::StorageID StorageMaterializedView::getTargetTableId() const
 {
     std::lock_guard guard(target_table_id_mutex);
-    auto id = target_table_id;
-    /// TODO: Avoid putting uuid into target_table_id in the first place, instead of clearing it here.
-    if (!fixed_uuid)
-        id.uuid = UUIDHelpers::Nil;
-    return id;
+    return target_table_id;
 }
 
 void StorageMaterializedView::setTargetTableId(DB::StorageID id)

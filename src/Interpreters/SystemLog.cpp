@@ -12,7 +12,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/CrashLog.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ErrorLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -25,7 +24,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
-#include <Interpreters/ObjectStorageQueueLog.h>
+#include <Interpreters/S3QueueLog.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
@@ -117,7 +116,6 @@ namespace
 {
 
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
-constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
 template <typename TSystemLog>
@@ -288,7 +286,6 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     crash_log = createSystemLog<CrashLog>(global_context, "system", "crash_log", config, "crash_log", "Contains information about stack traces for fatal errors. The table does not exist in the database by default, it is created only when fatal errors occur.");
     text_log = createSystemLog<TextLog>(global_context, "system", "text_log", config, "text_log", "Contains logging entries which are normally written to a log file or to stdout.");
     metric_log = createSystemLog<MetricLog>(global_context, "system", "metric_log", config, "metric_log", "Contains history of metrics values from tables system.metrics and system.events, periodically flushed to disk.");
-    error_log = createSystemLog<ErrorLog>(global_context, "system", "error_log", config, "error_log", "Contains history of error values from table system.errors, periodically flushed to disk.");
     filesystem_cache_log = createSystemLog<FilesystemCacheLog>(global_context, "system", "filesystem_cache_log", config, "filesystem_cache_log", "Contains a history of all events occurred with filesystem cache for objects on a remote filesystem.");
     filesystem_read_prefetches_log = createSystemLog<FilesystemReadPrefetchesLog>(
         global_context, "system", "filesystem_read_prefetches_log", config, "filesystem_read_prefetches_log", "Contains a history of all prefetches done during reading from MergeTables backed by a remote filesystem.");
@@ -306,8 +303,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     processors_profile_log = createSystemLog<ProcessorsProfileLog>(global_context, "system", "processors_profile_log", config, "processors_profile_log", "Contains profiling information on processors level (building blocks for a pipeline for query execution.");
     asynchronous_insert_log = createSystemLog<AsynchronousInsertLog>(global_context, "system", "asynchronous_insert_log", config, "asynchronous_insert_log", "Contains a history for all asynchronous inserts executed on current server.");
     backup_log = createSystemLog<BackupLog>(global_context, "system", "backup_log", config, "backup_log", "Contains logging entries with the information about BACKUP and RESTORE operations.");
-    s3_queue_log = createSystemLog<ObjectStorageQueueLog>(global_context, "system", "s3queue_log", config, "s3queue_log", "Contains logging entries with the information files processes by S3Queue engine.");
-    azure_queue_log = createSystemLog<ObjectStorageQueueLog>(global_context, "system", "azure_queue_log", config, "azure_queue_log", "Contains logging entries with the information files processes by S3Queue engine.");
+    s3_queue_log = createSystemLog<S3QueueLog>(global_context, "system", "s3queue_log", config, "s3queue_log", "Contains logging entries with the information files processes by S3Queue engine.");
     blob_storage_log = createSystemLog<BlobStorageLog>(global_context, "system", "blob_storage_log", config, "blob_storage_log", "Contains logging entries with information about various blob storage operations such as uploads and deletes.");
 
     if (query_log)
@@ -324,8 +320,6 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(text_log.get());
     if (metric_log)
         logs.emplace_back(metric_log.get());
-    if (error_log)
-        logs.emplace_back(error_log.get());
     if (asynchronous_metric_log)
         logs.emplace_back(asynchronous_metric_log.get());
     if (opentelemetry_span_log)
@@ -372,14 +366,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     {
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        metric_log->startCollect(collect_interval_milliseconds);
-    }
-
-    if (error_log)
-    {
-        size_t collect_interval_milliseconds = config.getUInt64("error_log.collect_interval_milliseconds",
-                                                                DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        error_log->startCollect(collect_interval_milliseconds);
+        metric_log->startCollectMetric(collect_interval_milliseconds);
     }
 
     if (crash_log)
@@ -517,10 +504,6 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         Block block(std::move(log_element_columns));
 
         MutableColumns columns = block.mutateColumns();
-
-        for (auto & column : columns)
-            column->reserve(to_flush.size());
-
         for (const auto & elem : to_flush)
             elem.appendToBlock(columns);
 
@@ -536,15 +519,10 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         // we need query context to do inserts to target table with MV containing subqueries or joins
         auto insert_context = Context::createCopy(context);
         insert_context->makeQueryContext();
-        addSettingsForQuery(insert_context, IAST::QueryKind::Insert);
+        /// We always want to deliver the data to the original table regardless of the MVs
+        insert_context->setSetting("materialized_views_ignore_errors", true);
 
-        InterpreterInsertQuery interpreter(
-            query_ptr,
-            insert_context,
-            /* allow_materialized */ false,
-            /* no_squash */ false,
-            /* no_destination */ false,
-            /* async_isnert */ false);
+        InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
 
         PushingPipelineExecutor executor(io.pipeline);
@@ -555,8 +533,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to flush system log {} with {} entries up to offset {}",
-            table_id.getNameForLogs(), to_flush.size(), to_flush_end));
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     queue->confirm(to_flush_end);
@@ -564,18 +541,13 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     LOG_TRACE(log, "Flushed system log up to offset {}", to_flush_end);
 }
 
-template <typename LogElement>
-StoragePtr SystemLog<LogElement>::getStorage() const
-{
-    return DatabaseCatalog::instance().tryGetTable(table_id, getContext());
-}
 
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
     String description = table_id.getNameForLogs();
 
-    auto table = getStorage();
+    auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     if (table)
     {
         if (old_create_query.empty())
@@ -624,9 +596,10 @@ void SystemLog<LogElement>::prepareTable()
                 merges_lock = table->getActionLock(ActionLocks::PartsMerge);
 
             auto query_context = Context::createCopy(context);
+            /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
+            query_context->setSetting("check_table_dependencies", Field{false});
+            query_context->setSetting("check_referential_table_dependencies", Field{false});
             query_context->makeQueryContext();
-            addSettingsForQuery(query_context, IAST::QueryKind::Rename);
-
             InterpreterRenameQuery(rename, query_context).execute();
 
             /// The required table will be created.
@@ -643,7 +616,6 @@ void SystemLog<LogElement>::prepareTable()
 
         auto query_context = Context::createCopy(context);
         query_context->makeQueryContext();
-        addSettingsForQuery(query_context, IAST::QueryKind::Create);
 
         auto create_query_ast = getCreateTableQuery();
         InterpreterCreateQuery interpreter(create_query_ast, query_context);
@@ -656,22 +628,6 @@ void SystemLog<LogElement>::prepareTable()
     }
 
     is_prepared = true;
-}
-
-template <typename LogElement>
-void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const
-{
-    if (query_kind == IAST::QueryKind::Insert)
-    {
-        /// We always want to deliver the data to the original table regardless of the MVs
-        mutable_context->setSetting("materialized_views_ignore_errors", true);
-    }
-    else if (query_kind == IAST::QueryKind::Rename)
-    {
-        /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
-        mutable_context->setSetting("check_table_dependencies", Field{false});
-        mutable_context->setSetting("check_referential_table_dependencies", Field{false});
-    }
 }
 
 template <typename LogElement>

@@ -9,7 +9,7 @@
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 
-#include <Processors/Transforms/SquashingTransform.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
 
 
 namespace ProfileEvents
@@ -35,7 +35,7 @@ Chunk convertToChunk(const Block & block)
 
     UInt64 num_rows = block.rows();
     Chunk chunk(block.getColumns(), num_rows);
-    chunk.getChunkInfos().add(std::move(info));
+    chunk.setChunkInfo(std::move(info));
 
     return chunk;
 }
@@ -44,11 +44,15 @@ namespace
 {
     const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
     {
-        auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
+        const auto & info = chunk.getChunkInfo();
+        if (!info)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk.");
+
+        const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
         if (!agg_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo.");
 
-        return agg_info.get();
+        return agg_info;
     }
 
     /// Reads chunks from file in native format. Provide chunks with aggregation info.
@@ -206,7 +210,11 @@ private:
 
     void process(Chunk && chunk)
     {
-        auto chunks_to_merge = chunk.getChunkInfos().get<ChunksToMerge>();
+        if (!chunk.hasChunkInfo())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected chunk with chunk info in {}", getName());
+
+        const auto & info = chunk.getChunkInfo();
+        const auto * chunks_to_merge = typeid_cast<const ChunksToMerge *>(info.get());
         if (!chunks_to_merge)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected chunk with ChunksToMerge info in {}", getName());
 
@@ -775,7 +783,7 @@ void AggregatingTransform::initGenerate()
                             {
                                 /// Just a reasonable constant, matches default value for the setting `preferred_block_size_bytes`
                                 static constexpr size_t oneMB = 1024 * 1024;
-                                return std::make_shared<SimpleSquashingTransform>(header, params->params.max_block_size, oneMB);
+                                return std::make_shared<SimpleSquashingChunksTransform>(header, params->params.max_block_size, oneMB);
                             });
                     }
                     /// AggregatingTransform::expandPipeline expects single output port.

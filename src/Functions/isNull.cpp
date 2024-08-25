@@ -6,7 +6,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnVariant.h>
-#include <Columns/ColumnDynamic.h>
 
 
 namespace DB
@@ -59,10 +58,9 @@ public:
     {
         const ColumnWithTypeAndName & elem = arguments[0];
 
-        if (isVariant(elem.type) || isDynamic(elem.type))
+        if (isVariant(elem.type))
         {
-            const auto & column_variant = isVariant(elem.type) ? checkAndGetColumn<ColumnVariant>(*elem.column) : checkAndGetColumn<ColumnDynamic>(*elem.column).getVariantColumn();
-            const auto & discriminators = column_variant.getLocalDiscriminators();
+            const auto & discriminators = checkAndGetColumn<ColumnVariant>(*elem.column)->getLocalDiscriminators();
             auto res = DataTypeUInt8().createColumn();
             auto & data = typeid_cast<ColumnUInt8 &>(*res).getData();
             data.reserve(discriminators.size());
@@ -73,17 +71,17 @@ public:
 
         if (elem.type->isLowCardinalityNullable())
         {
-            const auto & low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(*elem.column);
-            size_t null_index = low_cardinality_column.getDictionary().getNullValueIndex();
+            const auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(*elem.column);
+            size_t null_index = low_cardinality_column->getDictionary().getNullValueIndex();
             auto res = DataTypeUInt8().createColumn();
             auto & data = typeid_cast<ColumnUInt8 &>(*res).getData();
-            data.reserve(low_cardinality_column.size());
-            for (size_t i = 0; i != low_cardinality_column.size(); ++i)
-                data.push_back(low_cardinality_column.getIndexAt(i) == null_index);
+            data.reserve(low_cardinality_column->size());
+            for (size_t i = 0; i != low_cardinality_column->size(); ++i)
+                data.push_back(low_cardinality_column->getIndexAt(i) == null_index);
             return res;
         }
 
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*elem.column))
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
         {
             /// Merely return the embedded null map.
             return nullable->getNullMapColumnPtr();

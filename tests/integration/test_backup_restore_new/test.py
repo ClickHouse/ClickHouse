@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 import glob
 import re
 import random
@@ -1485,7 +1486,6 @@ def test_backup_all(exclude_system_log_tables):
             "processors_profile_log",
             "asynchronous_insert_log",
             "backup_log",
-            "error_log",
         ]
         exclude_from_backup += ["system." + table_name for table_name in log_tables]
 
@@ -1500,7 +1500,7 @@ def test_backup_all(exclude_system_log_tables):
     restore_settings = []
     if not exclude_system_log_tables:
         restore_settings.append("allow_non_empty_tables=true")
-    restore_command = f"RESTORE ALL FROM {backup_name} {'SETTINGS ' + ', '.join(restore_settings) if restore_settings else ''}"
+    restore_command = f"RESTORE ALL FROM {backup_name} {'SETTINGS '+ ', '.join(restore_settings) if restore_settings else ''}"
 
     session_id = new_session_id()
     instance.http_query(

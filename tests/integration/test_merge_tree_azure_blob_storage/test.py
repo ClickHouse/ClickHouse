@@ -537,7 +537,10 @@ def test_freeze_unfreeze(cluster):
 def test_apply_new_settings(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
-    config_path = os.path.join(SCRIPT_DIR, "./_gen/disk_storage_conf.xml")
+    config_path = os.path.join(
+        SCRIPT_DIR,
+        "./_gen/disk_storage_conf.xml".format(cluster.instances_dir_name),
+    )
 
     azure_query(
         node, f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-03', 4096)}"

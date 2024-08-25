@@ -7,11 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int SYNTAX_ERROR;
-}
-
 namespace
 {
 
@@ -92,9 +87,6 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
 
         if (!tables_p.parse(pos, database_and_tables, expected))
             return false;
-
-        if (database_and_tables->as<ASTExpressionList &>().children.size() > 1 && kind != ASTDropQuery::Kind::Drop)
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Only Support DROP multiple tables currently");
     }
 
     /// common for tables / dictionaries / databases
@@ -133,9 +125,6 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
         query->children.push_back(database_and_tables);
 
     query->cluster = cluster_str;
-
-    if (database_and_tables && database_and_tables->as<ASTExpressionList &>().children.size() == 1)
-        node = query->getRewrittenASTsOfSingleTable()[0];
 
     return true;
 }

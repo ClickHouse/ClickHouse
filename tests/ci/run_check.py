@@ -5,6 +5,7 @@ from typing import Tuple
 
 from github import Github
 
+from ci_config import StatusNames
 from commit_status_helper import (
     create_ci_report,
     format_description,
@@ -22,8 +23,7 @@ from lambda_shared_package.lambda_shared.pr import (
     check_pr_description,
 )
 from pr_info import PRInfo
-from report import FAILURE, PENDING, SUCCESS, StatusType
-from ci_config import CI
+from report import FAILURE, PENDING, SUCCESS
 
 TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
@@ -58,7 +58,7 @@ def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
 # Returns can_run, description
 def should_run_ci_for_pr(pr_info: PRInfo) -> Tuple[bool, str]:
     # Consider the labels and whether the user is trusted.
-    logging.info("Got labels: %s", pr_info.labels)
+    print("Got labels", pr_info.labels)
 
     if OK_SKIP_LABELS.intersection(pr_info.labels):
         return True, "Don't try new checks for release/backports/cherry-picks"
@@ -66,10 +66,9 @@ def should_run_ci_for_pr(pr_info: PRInfo) -> Tuple[bool, str]:
     if Labels.CAN_BE_TESTED not in pr_info.labels and not pr_is_by_trusted_user(
         pr_info.user_login, pr_info.user_orgs
     ):
-        logging.info(
-            "PRs by untrusted users need the '%s' label - "
-            "please contact a member of the core team",
-            Labels.CAN_BE_TESTED,
+        print(
+            f"PRs by untrusted users need the '{Labels.CAN_BE_TESTED}' label - "
+            "please contact a member of the core team"
         )
         return False, "Needs 'can be tested' label"
 
@@ -94,7 +93,6 @@ def main():
     description = format_description(description)
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
-    status = SUCCESS  # type: StatusType
 
     description_error, category = check_pr_description(pr_info.body, GITHUB_REPOSITORY)
     pr_labels_to_add = []
@@ -127,16 +125,13 @@ def main():
             f"::notice :: Add backport labels [{backport_labels}] for a given PR category"
         )
 
-    logging.info(
-        "Change labels: add %s, remove %s", pr_labels_to_add, pr_labels_to_remove
-    )
+    print(f"Change labels: add {pr_labels_to_add}, remove {pr_labels_to_remove}")
     if pr_labels_to_add:
         post_labels(gh, pr_info, pr_labels_to_add)
 
     if pr_labels_to_remove:
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
-    # 1. Next three IFs are in a correct order. First - fatal error
     if description_error:
         print(
             "::error ::Cannot run, PR description does not match the template: "
@@ -151,10 +146,9 @@ def main():
             f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/"
             "blob/master/.github/PULL_REQUEST_TEMPLATE.md?plain=1"
         )
-        status = FAILURE
         post_commit_status(
             commit,
-            status,
+            FAILURE,
             url,
             format_description(description_error),
             PR_CHECK,
@@ -162,38 +156,41 @@ def main():
         )
         sys.exit(1)
 
-    # 2. Then we check if the documentation is not created to fail the Mergeable check
     if (
         Labels.PR_FEATURE in pr_info.labels
         and not pr_info.has_changes_in_documentation()
     ):
         print(
-            f"::error ::The '{Labels.PR_FEATURE}' in the labels, "
+            f"The '{Labels.PR_FEATURE}' in the labels, "
             "but there's no changed documentation"
         )
-        status = FAILURE
-        description = f"expect adding docs for {Labels.PR_FEATURE}"
-    # 3. But we allow the workflow to continue
+        post_commit_status(
+            commit,
+            FAILURE,
+            "",
+            f"expect adding docs for {Labels.PR_FEATURE}",
+            PR_CHECK,
+            pr_info,
+        )
+        # allow the workflow to continue
 
-    # 4. And post only a single commit status on a failure
     if not can_run:
         post_commit_status(
             commit,
-            status,
+            FAILURE,
             "",
             description,
             PR_CHECK,
             pr_info,
         )
-        print("::error ::Cannot run")
+        print("::notice ::Cannot run")
         sys.exit(1)
 
-    # The status for continue can be posted only one time, not more.
     post_commit_status(
         commit,
-        status,
+        SUCCESS,
         "",
-        description,
+        "ok",
         PR_CHECK,
         pr_info,
     )
@@ -208,7 +205,7 @@ def main():
             PENDING,
             ci_report_url,
             description,
-            CI.StatusNames.CI,
+            StatusNames.CI,
             pr_info,
         )
 

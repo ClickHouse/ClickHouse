@@ -41,6 +41,7 @@ node2 = cluster.add_instance(
     stay_alive=True,  # Necessary for the "test_stop_other_host_while_backup" test
 )
 
+
 node3 = cluster.add_instance(
     "node3",
     main_configs=main_configs,

@@ -215,7 +215,7 @@ static void compileCreateAggregateStatesFunctions(llvm::Module & module, const s
     b.CreateRetVoid();
 }
 
-enum class AddIntoAggregateStatesPlacesArgumentType : uint8_t
+enum class AddIntoAggregateStatesPlacesArgumentType
 {
     SinglePlace,
     MultiplePlaces,

@@ -846,7 +846,7 @@ LockedKey::~LockedKey()
     /// See comment near cleanupThreadFunc() for more details.
 
     key_metadata->key_state = KeyMetadata::KeyState::REMOVING;
-    LOG_TRACE(key_metadata->logger(), "Submitting key {} for removal", getKey());
+    LOG_DEBUG(key_metadata->logger(), "Submitting key {} for removal", getKey());
     key_metadata->addToCleanupQueue();
 }
 
@@ -944,7 +944,14 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
     try
     {
         const auto path = key_metadata->getFileSegmentPath(*file_segment);
-        if (file_segment->downloaded_size == 0)
+        if (file_segment->segment_kind == FileSegmentKind::Temporary)
+        {
+            /// FIXME: For temporary file segment the requirement is not as strong because
+            /// the implementation of "temporary data in cache" creates files in advance.
+            if (fs::exists(path))
+                fs::remove(path);
+        }
+        else if (file_segment->downloaded_size == 0)
         {
             chassert(!fs::exists(path));
         }

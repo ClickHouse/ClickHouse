@@ -83,8 +83,7 @@ MergeTreeReadTask::createRangeReaders(const Readers & task_readers, const Prewhe
     {
         last_reader = task_readers.main->getColumns().empty() && (i + 1 == prewhere_actions.steps.size());
 
-        MergeTreeRangeReader current_reader(
-            task_readers.prewhere[i].get(), prev_reader, prewhere_actions.steps[i].get(), last_reader, /*main_reader_=*/false);
+        MergeTreeRangeReader current_reader(task_readers.prewhere[i].get(), prev_reader, prewhere_actions.steps[i].get(), last_reader);
 
         new_range_readers.prewhere.push_back(std::move(current_reader));
         prev_reader = &new_range_readers.prewhere.back();
@@ -92,7 +91,7 @@ MergeTreeReadTask::createRangeReaders(const Readers & task_readers, const Prewhe
 
     if (!last_reader)
     {
-        new_range_readers.main = MergeTreeRangeReader(task_readers.main.get(), prev_reader, nullptr, true, /*main_reader_=*/true);
+        new_range_readers.main = MergeTreeRangeReader(task_readers.main.get(), prev_reader, nullptr, true);
     }
     else
     {

@@ -550,7 +550,7 @@ class Release:
     def _create_tag(
         self, tag: str, commit: str, tag_message: str = ""
     ) -> Iterator[None]:
-        tag_message = tag_message or f"Release {tag}"
+        tag_message = tag_message or "Release {tag}"
         # Create tag even in dry-run
         self.run(f"git tag -a -m '{tag_message}' '{tag}' {commit}")
         rollback_cmd = f"git tag -d '{tag}'"

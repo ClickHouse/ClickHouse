@@ -1,13 +1,10 @@
 #include <Parsers/ParserDataType.h>
 
-#include <boost/algorithm/string/case_conv.hpp>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Common/StringUtils.h>
 
 
 namespace DB
@@ -16,60 +13,18 @@ namespace DB
 namespace
 {
 
-/// Parser of Dynamic type arguments: Dynamic(max_types=N)
-class DynamicArgumentsParser : public IParserBase
-{
-private:
-    const char * getName() const override { return "Dynamic data type optional argument"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        ASTPtr identifier;
-        ParserIdentifier identifier_parser;
-        if (!identifier_parser.parse(pos, identifier, expected))
-            return false;
-
-        if (pos->type != TokenType::Equals)
-        {
-            expected.add(pos, "equals operator");
-            return false;
-        }
-
-        ++pos;
-
-        ASTPtr number;
-        ParserNumber number_parser;
-        if (!number_parser.parse(pos, number, expected))
-            return false;
-
-        node = makeASTFunction("equals", identifier, number);
-        return true;
-    }
-};
-
 /// Wrapper to allow mixed lists of nested and normal types.
 /// Parameters are either:
 /// - Nested table elements;
 /// - Enum element in form of 'a' = 1;
 /// - literal;
-/// - Dynamic type arguments;
-/// - another data type (or identifier);
+/// - another data type (or identifier)
 class ParserDataTypeArgument : public IParserBase
 {
-public:
-    explicit ParserDataTypeArgument(std::string_view type_name_) : type_name(type_name_)
-    {
-    }
-
 private:
     const char * getName() const override { return "data type argument"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
-        if (type_name == "Dynamic")
-        {
-            DynamicArgumentsParser parser;
-            return parser.parse(pos, node, expected);
-        }
-
         ParserNestedTable nested_parser;
         ParserDataType data_type_parser;
         ParserAllCollectionsOfLiterals literal_parser(false);
@@ -84,8 +39,6 @@ private:
             || literal_parser.parse(pos, node, expected)
             || data_type_parser.parse(pos, node, expected);
     }
-
-    std::string_view type_name;
 };
 
 }
@@ -103,29 +56,6 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!name_parser.parse(pos, identifier, expected))
         return false;
     tryGetIdentifierNameInto(identifier, type_name);
-
-    /// When parsing we accept quoted type names (e.g. `UInt64`), but when formatting we print them
-    /// unquoted (e.g. UInt64). This introduces problems when the string in the quotes is garbage:
-    ///  * Array(`x.y`) -> Array(x.y) -> fails to parse
-    ///  * `Null` -> Null -> parses as keyword instead of type name
-    /// Here we check for these cases and reject.
-    if (!std::all_of(type_name.begin(), type_name.end(), [](char c) { return isWordCharASCII(c) || c == '$'; }))
-    {
-        expected.add(pos, "type name");
-        return false;
-    }
-    /// Keywords that IParserColumnDeclaration recognizes before the type name.
-    /// E.g. reject CREATE TABLE a (x `Null`) because in "x Null" the Null would be parsed as
-    /// column attribute rather than type name.
-    {
-        String n = type_name;
-        boost::to_upper(n);
-        if (n == "NOT" || n == "NULL" || n == "DEFAULT" || n == "MATERIALIZED" || n == "EPHEMERAL" || n == "ALIAS" || n == "AUTO" || n == "PRIMARY" || n == "COMMENT" || n == "CODEC")
-        {
-            expected.add(pos, "type name");
-            return false;
-        }
-    }
 
     String type_name_upper = Poco::toUpper(type_name);
     String type_name_suffix;
@@ -210,7 +140,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     /// Parse optional parameters
-    ParserList args_parser(std::make_unique<ParserDataTypeArgument>(type_name), std::make_unique<ParserToken>(TokenType::Comma));
+    ParserList args_parser(std::make_unique<ParserDataTypeArgument>(), std::make_unique<ParserToken>(TokenType::Comma));
     ASTPtr expr_list_args;
 
     if (!args_parser.parse(pos, expr_list_args, expected))
