@@ -12,7 +12,7 @@ on:  # yamllint disable-line rule:truthy
       - reopened
       - opened
     branches:
-      - master
+      - '23.8'
     paths-ignore:
       - 'CHANGELOG.md'
       - 'README.md'
