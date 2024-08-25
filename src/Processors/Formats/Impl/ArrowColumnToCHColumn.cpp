@@ -742,6 +742,15 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     case TypeIndex::IPv6:
                         return readIPv6ColumnFromBinaryData(arrow_column, column_name);
                     /// ORC format outputs big integers as binary column, because there is no fixed binary in ORC.
+                    ///
+                    /// When ORC/Parquet file says the type is "byte array" or "fixed len byte array",
+                    /// but the clickhouse query says to interpret the column as e.g. Int128, it
+                    /// may mean one of two things:
+                    ///  * The byte array is the 16 bytes of Int128, little-endian.
+                    ///  * The byte array is an ASCII string containing the Int128 formatted in base 10.
+                    /// There's no reliable way to distinguish these cases. We just guess: if the
+                    /// byte array is variable-length, and the length is different from sizeof(type),
+                    /// we parse as text, otherwise as binary.
                     case TypeIndex::Int128:
                         return readColumnWithBigNumberFromBinaryData<ColumnInt128>(arrow_column, column_name, type_hint);
                     case TypeIndex::UInt128:
