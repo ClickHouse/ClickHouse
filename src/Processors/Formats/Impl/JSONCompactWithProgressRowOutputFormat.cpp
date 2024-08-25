@@ -117,18 +117,16 @@ void JSONCompactWithProgressRowOutputFormat::writeProgress()
 
 void JSONCompactWithProgressRowOutputFormat::finalizeImpl()
 {
-    JSONUtils::writeCompactAdditionalInfo(
-        row_count,
-        statistics.rows_before_limit,
-        statistics.applied_limit,
-        statistics.watch,
-        statistics.progress,
-        settings.write_statistics && exception_message.empty(),
-        *ostr);
-
-    if (!exception_message.empty())
-    {
-        writeCString("\n", *ostr);
+    if (exception_message.empty()) {
+        JSONUtils::writeCompactAdditionalInfo(
+            row_count,
+            statistics.rows_before_limit,
+            statistics.applied_limit,
+            statistics.watch,
+            statistics.progress,
+            settings.write_statistics && exception_message.empty(),
+            *ostr);
+    } else {
         JSONUtils::writeCompactObjectStart(*ostr);
         JSONUtils::writeException(exception_message, *ostr, settings, 0);
         JSONUtils::writeCompactObjectEnd(*ostr);
