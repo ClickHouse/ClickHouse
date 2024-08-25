@@ -8,7 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
 }
 
 /// AST, EXPLAIN or other query with meaning of explanation query instead of execution
@@ -25,20 +25,31 @@ public:
         QueryEstimates, /// 'EXPLAIN ESTIMATE ...'
         TableOverride, /// 'EXPLAIN TABLE OVERRIDE ...'
         CurrentTransaction, /// 'EXPLAIN CURRENT TRANSACTION'
+        ExecutionAnalysis, /// 'EXPLAIN ANALYZE'
     };
 
     static String toString(ExplainKind kind)
     {
         switch (kind)
         {
-            case ParsedAST: return "EXPLAIN AST";
-            case AnalyzedSyntax: return "EXPLAIN SYNTAX";
-            case QueryTree: return "EXPLAIN QUERY TREE";
-            case QueryPlan: return "EXPLAIN";
-            case QueryPipeline: return "EXPLAIN PIPELINE";
-            case QueryEstimates: return "EXPLAIN ESTIMATE";
-            case TableOverride: return "EXPLAIN TABLE OVERRIDE";
-            case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
+            case ParsedAST:
+                return "EXPLAIN AST";
+            case AnalyzedSyntax:
+                return "EXPLAIN SYNTAX";
+            case QueryTree:
+                return "EXPLAIN QUERY TREE";
+            case QueryPlan:
+                return "EXPLAIN";
+            case QueryPipeline:
+                return "EXPLAIN PIPELINE";
+            case QueryEstimates:
+                return "EXPLAIN ESTIMATE";
+            case TableOverride:
+                return "EXPLAIN TABLE OVERRIDE";
+            case CurrentTransaction:
+                return "EXPLAIN CURRENT TRANSACTION";
+            case ExecutionAnalysis:
+                return "EXPLAIN ANALYZE";
         }
     }
 
@@ -60,11 +71,13 @@ public:
             return TableOverride;
         if (str == "EXPLAIN CURRENT TRANSACTION")
             return CurrentTransaction;
+        if (str == "EXPLAIN ANALYZE")
+            return ExecutionAnalysis;
 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown explain kind '{}'", str);
     }
 
-    explicit ASTExplainQuery(ExplainKind kind_) : kind(kind_) {}
+    explicit ASTExplainQuery(ExplainKind kind_) : kind(kind_) { }
 
     String getID(char delim) const override { return "Explain" + (delim + toString(kind)); }
     ExplainKind getKind() const { return kind; }

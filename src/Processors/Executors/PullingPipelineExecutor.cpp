@@ -23,6 +23,11 @@ PullingPipelineExecutor::PullingPipelineExecutor(QueryPipeline & pipeline_) : pi
     pipeline.complete(pulling_format);
 }
 
+PullingPipelineExecutor::PullingPipelineExecutor(QueryPipeline & pipeline_, bool profile_processors_): PullingPipelineExecutor(pipeline_)
+{
+    profile_processors = profile_processors_;
+}
+
 PullingPipelineExecutor::~PullingPipelineExecutor()
 {
     try
@@ -44,7 +49,7 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
 {
     if (!executor)
     {
-        executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+        executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element, profile_processors);
         executor->setReadProgressCallback(pipeline.getReadProgressCallback());
     }
 

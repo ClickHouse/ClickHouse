@@ -174,4 +174,59 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
     out << "}\n";
 }
 
+void printExecutionAnalysis(const Processors & processors, WriteBuffer & out)
+{
+    out << "digraph\n";
+    out << "{\n";
+    out << "    rankdir=\"LR\";\n";
+    out << "    {   node [shape=rect margin=0]\n";
+
+    std::unordered_map<const void *, std::size_t> pointer_to_id;
+    auto get_proc_id = [&](const IProcessor & proc) -> std::size_t
+    {
+        auto [it, inserted] = pointer_to_id.try_emplace(&proc, pointer_to_id.size());
+        return it->second;
+    };
+
+
+    for (const auto & processor : processors)
+    {
+        const auto & description = processor->getDescription();
+        out << "        n" << get_proc_id(*processor) << "[label=<\n";
+        out << "            <table border=\"0\" cellborder=\"1\" cellspacing=\"0\">\n";
+        out << "                <tr><td>" << processor->getName() << (description.empty() ? "" : ":") << description << "</td></tr>\n";
+        out << "                <tr>\n";
+        out << "                    <td>\n";
+        out << "                        <table border=\"0\" cellborder=\"0\" cellspacing=\"0\">\n";
+        out << "                            <tr><td>Input wait time(us): " << processor->getInputWaitElapsedNs() / 1000U << "</td></tr>\n";
+        out << "                            <tr><td>Execution time(us): " << processor->getElapsedNs() / 1000U << "</td></tr>\n";
+        out << "                            <tr><td>Output wait time(us): " << processor->getOutputWaitElapsedNs() / 1000U
+            << "</td></tr>\n";
+        out << "                        </table>\n";
+        out << "                    </td>\n";
+        out << "                </tr>\n";
+        out << "            </table>\n";
+        out << "        >];\n";
+    }
+
+    out << "    }\n";
+
+    /// Edges
+    for (const auto & processor : processors)
+    {
+        for (const auto & port : processor->getOutputs())
+        {
+            if (!port.isConnected())
+                continue;
+
+            const IProcessor & curr = *processor;
+            const IProcessor & next = port.getInputPort().getProcessor();
+            const auto curr_stats = curr.getProcessorDataStats();
+
+            out << "  n" << get_proc_id(curr) << " -> n" << get_proc_id(next) << " [label=\"" << curr_stats.output_rows << " rows\n "
+                << curr_stats.output_bytes << " bytes\"];\n";
+        }
+    }
+    out << "}\n";
+}
 }
