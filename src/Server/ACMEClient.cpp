@@ -209,8 +209,6 @@ void ACMEClient::requestCertificate(const Poco::Util::AbstractConfiguration &)
 void ACMEClient::reload(const Poco::Util::AbstractConfiguration & config)
 try
 {
-    auto context = Context::getGlobalContextInstance();
-
     auto http_port = config.getInt("http_port");
     if (http_port != 80 && !initialized)
         LOG_WARNING(log, "For ACME HTTP challenge HTTP port must be 80, but is {}", http_port);
@@ -232,6 +230,7 @@ try
     connection_timeout_settings = ConnectionTimeouts();
     proxy_configuration = ProxyConfiguration();
 
+    auto context = Context::getGlobalContextInstance();
     auto zk = context->getZooKeeper();
     zk->createIfNotExists(fs::path(ZOOKEEPER_ACME_BASE_PATH), "");
 
@@ -596,15 +595,35 @@ std::string ACMEClient::requestChallenge(const std::string & uri)
 
     /// TODO remember which tokens we've requested
 
+    LOG_DEBUG(log, "Challenge requested for uri: {}", uri);
+
     if (!uri.starts_with(ACME_CHALLENGE_HTTP_PATH))
         return "";
 
-    std::string token_from_uri = uri.substr(std::string(ACME_CHALLENGE_HTTP_PATH).size());
-    auto jwk = JSONWebKey::fromRSAKey(*private_acme_key).toString();
-    auto jwk_thumbprint = encodeSHA256(jwk);
-    jwk_thumbprint = base64Encode(jwk_thumbprint, /*url_encoding*/ true, /*no_padding*/ true);
+    auto host = Poco::URI(uri).getHost();
+    LOG_DEBUG(log, "Host: {}", host);
 
-    return token_from_uri + "." + jwk_thumbprint;
+    if (std::find(domains.begin(), domains.end(), host) == domains.end())
+        return "";
+
+    auto context = Context::getGlobalContextInstance();
+    auto zk = context->getZooKeeper();
+
+    Coordination::Stat challenge_stat;
+    std::string challenge;
+
+    auto response = zk->tryGet(fs::path(ZOOKEEPER_ACME_BASE_PATH) / host / "challenge", challenge, &challenge_stat);
+    if (!response)
+        return "";
+
+    // std::string token_from_uri = uri.substr(std::string(ACME_CHALLENGE_HTTP_PATH).size());
+    // auto jwk = JSONWebKey::fromRSAKey(*private_acme_key).toString();
+    // auto jwk_thumbprint = encodeSHA256(jwk);
+    // jwk_thumbprint = base64Encode(jwk_thumbprint, /*url_encoding*/ true, /*no_padding*/ true);
+    //
+    // return token_from_uri + "." + jwk_thumbprint;
+
+    return challenge;
 }
 
 }
