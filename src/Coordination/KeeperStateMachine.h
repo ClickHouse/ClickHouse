@@ -124,7 +124,7 @@ public:
     uint64_t getTotalEphemeralNodesCount() const;
     uint64_t getApproximateDataSize() const;
     uint64_t getKeyArenaSize() const;
-    uint64_t getLatestSnapshotSize() const;
+    uint64_t getLatestSnapshotBufSize() const;
 
     void recalculateStorageStats();
 
@@ -135,7 +135,7 @@ private:
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
     SnapshotMetadataPtr latest_snapshot_meta = nullptr;
-    std::shared_ptr<SnapshotFileInfo> latest_snapshot_info;
+    SnapshotFileInfo latest_snapshot_info;
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
 
     /// Main state machine logic
@@ -182,7 +182,8 @@ private:
 
     KeeperSnapshotManagerS3 * snapshot_manager_s3;
 
-    KeeperStorage::ResponseForSession processReconfiguration(const KeeperStorage::RequestForSession & request_for_session)
+    KeeperStorage::ResponseForSession processReconfiguration(
+        const KeeperStorage::RequestForSession& request_for_session)
         TSA_REQUIRES(storage_and_responses_lock);
 };
 }

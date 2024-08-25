@@ -47,7 +47,7 @@ public:
         FunctionArgumentDescriptors args{
             {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isDateTime64), nullptr, "DateTime64"}
         };
-        validateFunctionArguments(*this, arguments, args);
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         return std::make_shared<DataTypeInt64>();
     }
@@ -140,7 +140,7 @@ public:
         const auto & src = arguments[0];
         const auto & col = *src.column;
 
-        if (!checkAndGetColumn<ColumnVector<T>>(&col))
+        if (!checkAndGetColumn<ColumnVector<T>>(col))
             return false;
 
         auto & result_data = result_column->getData();

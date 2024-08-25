@@ -19,7 +19,7 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
-azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence &
+azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateful
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
@@ -87,7 +87,7 @@ function start()
             tail -n1000 /var/log/clickhouse-server/clickhouse-server.log
             break
         fi
-        timeout 120 sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon --pid-file /var/run/clickhouse-server/clickhouse-server.pid
+        timeout 120 service clickhouse-server start
         sleep 0.5
         counter=$((counter + 1))
     done
@@ -211,10 +211,6 @@ function run_tests()
 
     if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--s3-storage')
-    fi
-
-    if [[ -n "$USE_AZURE_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
-        ADDITIONAL_OPTIONS+=('--azure-blob-storage')
     fi
 
     if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; then

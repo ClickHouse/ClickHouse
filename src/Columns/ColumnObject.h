@@ -1,10 +1,12 @@
 #pragma once
 
-#include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <Core/Names.h>
-#include <DataTypes/Serializations/SubcolumnsTree.h>
+#include <Columns/IColumn.h>
 #include <Common/PODArray.h>
+#include <Common/HashTable/HashMap.h>
+#include <DataTypes/Serializations/JSONDataParser.h>
+#include <DataTypes/Serializations/SubcolumnsTree.h>
 
 #include <DataTypes/IDataType.h>
 
@@ -242,7 +244,7 @@ public:
     const char * skipSerializedInArena(const char *) const override { throwMustBeConcrete(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeConcrete(); }
     void updateWeakHash32(WeakHash32 &) const override { throwMustBeConcrete(); }
-    void updateHashFast(SipHash & hash) const override;
+    void updateHashFast(SipHash &) const override { throwMustBeConcrete(); }
     void expand(const Filter &, bool) override { throwMustBeConcrete(); }
     bool hasEqualValues() const override { throwMustBeConcrete(); }
     size_t byteSizeAt(size_t) const override { throwMustBeConcrete(); }

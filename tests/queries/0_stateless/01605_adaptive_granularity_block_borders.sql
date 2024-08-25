@@ -1,6 +1,6 @@
--- Tags: no-random-merge-tree-settings, no-tsan, no-debug, no-object-storage
+-- Tags: no-random-merge-tree-settings, no-tsan, no-debug, no-s3-storage
 -- no-tsan: too slow
--- no-object-storage: for remote tables we use thread pool even when reading with one stream, so memory consumption is higher
+-- no-s3-storage: for remote tables we use thread pool even when reading with one stream, so memory consumption is higher
 
 SET use_uncompressed_cache = 0;
 SET allow_prefetched_read_pool_for_remote_filesystem=0;
@@ -24,7 +24,6 @@ enable_vertical_merge_algorithm = 0;
 SET max_block_size=900;
 
 -- There are about 900 marks for our settings.
-SET optimize_trivial_insert_select = 1;
 INSERT INTO adaptive_table SELECT number, if(number > 700, randomPrintableASCII(102400), randomPrintableASCII(1)) FROM numbers(10000);
 
 OPTIMIZE TABLE adaptive_table FINAL;

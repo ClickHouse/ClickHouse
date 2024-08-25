@@ -281,7 +281,7 @@ void StorageBuffer::read(
                 if (!dest_columns.hasPhysical(column_name))
                 {
                     LOG_WARNING(log, "Destination table {} doesn't have column {}. The default values are used.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name));
-                    std::erase(columns_intersection, column_name);
+                    boost::range::remove_erase(columns_intersection, column_name);
                     continue;
                 }
                 const auto & dst_col = dest_columns.getPhysical(column_name);
@@ -302,8 +302,6 @@ void StorageBuffer::read(
                 auto src_table_query_info = query_info;
                 if (src_table_query_info.prewhere_info)
                 {
-                    src_table_query_info.prewhere_info = src_table_query_info.prewhere_info->clone();
-
                     auto actions_dag = ActionsDAG::makeConvertingActions(
                             header_after_adding_defaults.getColumnsWithTypeAndName(),
                             header.getColumnsWithTypeAndName(),
@@ -607,7 +605,7 @@ public:
 
     String getName() const override { return "BufferSink"; }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
         size_t rows = chunk.getNumRows();
         if (!rows)
@@ -859,25 +857,23 @@ bool StorageBuffer::checkThresholdsImpl(bool direct, size_t rows, size_t bytes, 
 
 void StorageBuffer::flushAllBuffers(bool check_thresholds)
 {
-    std::optional<ThreadPoolCallbackRunnerLocal<void>> runner;
-    if (flush_pool)
-        runner.emplace(*flush_pool, "BufferFlush");
     for (auto & buf : buffers)
     {
-        if (runner)
+        if (flush_pool)
         {
-            (*runner)([&]()
+            scheduleFromThreadPool<void>([&] ()
             {
                 flushBuffer(buf, check_thresholds, false);
-            });
+            }, *flush_pool, "BufferFlush");
         }
         else
         {
             flushBuffer(buf, check_thresholds, false);
         }
     }
-    if (runner)
-        runner->waitForAllToFinishAndRethrowFirstError();
+
+    if (flush_pool)
+        flush_pool->wait();
 }
 
 
@@ -1020,13 +1016,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     auto insert_context = Context::createCopy(getContext());
     insert_context->makeQueryContext();
 
-    InterpreterInsertQuery interpreter(
-        insert,
-        insert_context,
-        allow_materialized,
-        /* no_squash */ false,
-        /* no_destination */ false,
-        /* async_isnert */ false);
+    InterpreterInsertQuery interpreter{insert, insert_context, allow_materialized};
 
     auto block_io = interpreter.execute();
     PushingPipelineExecutor executor(block_io.pipeline);

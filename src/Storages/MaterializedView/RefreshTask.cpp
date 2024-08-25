@@ -50,7 +50,7 @@ RefreshTaskHolder RefreshTask::create(
         for (auto && dependency : strategy.dependencies->children)
             deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
 
-    context->getRefreshSet().emplace(view.getStorageID(), deps, task);
+    task->set_handle = context->getRefreshSet().emplace(view.getStorageID(), deps, task);
 
     return task;
 }
@@ -377,13 +377,7 @@ void RefreshTask::executeRefreshUnlocked(std::shared_ptr<StorageMaterializedView
         {
             CurrentThread::QueryScope query_scope(refresh_context); // create a thread group for the query
 
-            BlockIO block_io = InterpreterInsertQuery(
-                refresh_query,
-                refresh_context,
-                /* allow_materialized */ false,
-                /* no_squash */ false,
-                /* no_destination */ false,
-                /* async_isnert */ false).execute();
+            BlockIO block_io = InterpreterInsertQuery(refresh_query, refresh_context).execute();
             QueryPipeline & pipeline = block_io.pipeline;
 
             pipeline.setProgressCallback([this](const Progress & prog)
@@ -513,11 +507,6 @@ std::chrono::system_clock::time_point RefreshTask::currentTime() const
         return std::chrono::system_clock::now();
     else
         return std::chrono::system_clock::time_point(std::chrono::seconds(fake));
-}
-
-void RefreshTask::setRefreshSetHandleUnlock(RefreshSet::Handle && set_handle_)
-{
-    set_handle = std::move(set_handle_);
 }
 
 }

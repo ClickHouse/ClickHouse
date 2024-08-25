@@ -6,7 +6,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/quoteString.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -628,7 +628,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
 
         const auto * available_type = it->getMapped();
 
-        if (!available_type->hasDynamicSubcolumnsDeprecated()
+        if (!available_type->hasDynamicSubcolumns()
             && !column.type->equals(*available_type)
             && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
@@ -676,7 +676,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
         const auto * provided_column_type = it->getMapped();
         const auto * available_column_type = jt->getMapped();
 
-        if (!provided_column_type->hasDynamicSubcolumnsDeprecated()
+        if (!provided_column_type->hasDynamicSubcolumns()
             && !provided_column_type->equals(*available_column_type)
             && !isCompatibleEnumTypes(available_column_type, provided_column_type))
             throw Exception(
@@ -720,7 +720,7 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
                 listOfColumns(available_columns));
 
         const auto * available_type = it->getMapped();
-        if (!available_type->hasDynamicSubcolumnsDeprecated()
+        if (!available_type->hasDynamicSubcolumns()
             && !column.type->equals(*available_type)
             && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(

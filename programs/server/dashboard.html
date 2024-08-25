@@ -506,14 +506,6 @@ let user = 'default';
 let password = '';
 let add_http_cors_header = (location.protocol != 'file:');
 
-const current_url = new URL(window.location);
-/// Substitute user name if it's specified in the query string
-const user_from_url = current_url.searchParams.get('user');
-if (user_from_url) {
-    user = user_from_url;
-}
-
-
 const errorCodeMessageMap = {
     516: 'Error authenticating with database. Please check your connection params and try again.'
 }

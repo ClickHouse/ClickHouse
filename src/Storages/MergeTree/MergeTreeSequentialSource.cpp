@@ -42,7 +42,8 @@ public:
         std::optional<MarkRanges> mark_ranges_,
         bool apply_deleted_mask,
         bool read_with_direct_io_,
-        bool prefetch);
+        bool take_column_types_from_storage,
+        bool quiet = false);
 
     ~MergeTreeSequentialSource() override;
 
@@ -95,7 +96,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     std::optional<MarkRanges> mark_ranges_,
     bool apply_deleted_mask,
     bool read_with_direct_io_,
-    bool prefetch)
+    bool take_column_types_from_storage,
+    bool quiet)
     : ISource(storage_snapshot_->getSampleBlockForColumns(columns_to_read_))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -105,13 +107,16 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     , mark_ranges(std::move(mark_ranges_))
     , mark_cache(storage.getContext()->getMarkCache())
 {
-    /// Print column name but don't pollute logs in case of many columns.
-    if (columns_to_read.size() == 1)
-        LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part, column {}",
-            data_part->getMarksCount(), data_part->name, data_part->rows_count, columns_to_read.front());
-    else
-        LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part",
-            data_part->getMarksCount(), data_part->name, data_part->rows_count);
+    if (!quiet)
+    {
+        /// Print column name but don't pollute logs in case of many columns.
+        if (columns_to_read.size() == 1)
+            LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part, column {}",
+                data_part->getMarksCount(), data_part->name, data_part->rows_count, columns_to_read.front());
+        else
+            LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part",
+                data_part->getMarksCount(), data_part->name, data_part->rows_count);
+    }
 
     auto alter_conversions = storage.getAlterConversionsForPart(data_part);
 
@@ -126,12 +131,21 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         storage.supportsSubcolumns(),
         columns_to_read);
 
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
-        .withExtendedObjects()
-        .withVirtuals()
-        .withSubcolumns(storage.supportsSubcolumns());
+    NamesAndTypesList columns_for_reader;
+    if (take_column_types_from_storage)
+    {
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+            .withExtendedObjects()
+            .withVirtuals()
+            .withSubcolumns(storage.supportsSubcolumns());
 
-    auto columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
+        columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
+    }
+    else
+    {
+        /// take columns from data_part
+        columns_for_reader = data_part->getColumns().addTypes(columns_to_read);
+    }
 
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
@@ -160,7 +174,6 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         .read_settings = read_settings,
         .save_marks_in_cache = false,
         .apply_deleted_mask = apply_deleted_mask,
-        .can_read_part_without_marks = true,
     };
 
     if (!mark_ranges)
@@ -171,22 +184,18 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         storage_snapshot,
         *mark_ranges,
         /*virtual_fields=*/ {},
-        /*uncompressed_cache=*/ {},
+        /*uncompressed_cache=*/{},
         mark_cache.get(),
         alter_conversions,
         reader_settings,
-        /*avg_value_size_hints=*/ {},
-        /*profile_callback=*/ {});
-
-    if (prefetch)
-        reader->prefetchBeginOfRange(Priority{});
+        {},
+        {});
 }
 
 static void fillBlockNumberColumns(
     Columns & res_columns,
     const NamesAndTypesList & columns_list,
     UInt64 block_number,
-    UInt64 block_offset,
     UInt64 num_rows)
 {
     chassert(res_columns.size() == columns_list.size());
@@ -201,16 +210,6 @@ static void fillBlockNumberColumns(
         {
             res_columns[i] = BlockNumberColumn::type->createColumnConst(num_rows, block_number)->convertToFullColumnIfConst();
         }
-        else if (it->name == BlockOffsetColumn::name)
-        {
-            auto column = BlockOffsetColumn::type->createColumn();
-            auto & block_offset_data = assert_cast<ColumnUInt64 &>(*column).getData();
-
-            block_offset_data.resize(num_rows);
-            std::iota(block_offset_data.begin(), block_offset_data.end(), block_offset);
-
-            res_columns[i] = std::move(column);
-        }
     }
 }
 
@@ -220,7 +219,6 @@ try
     const auto & header = getPort().getHeader();
     /// Part level is useful for next step for merging non-merge tree table
     bool add_part_level = storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
-    size_t num_marks_in_part = data_part->getMarksCount();
 
     if (!isCancelled() && current_row < data_part->rows_count)
     {
@@ -229,11 +227,11 @@ try
 
         const auto & sample = reader->getColumns();
         Columns columns(sample.size());
-        size_t rows_read = reader->readRows(current_mark, num_marks_in_part, continue_reading, rows_to_read, columns);
+        size_t rows_read = reader->readRows(current_mark, data_part->getMarksCount(), continue_reading, rows_to_read, columns);
 
         if (rows_read)
         {
-            fillBlockNumberColumns(columns, sample, data_part->info.min_block, current_row, rows_read);
+            fillBlockNumberColumns(columns, sample, data_part->info.min_block, rows_read);
             reader->fillVirtualColumns(columns, rows_read);
 
             current_row += rows_read;
@@ -264,10 +262,7 @@ try
                 ++it;
             }
 
-            auto result = Chunk(std::move(res_columns), rows_read);
-            if (add_part_level)
-                result.getChunkInfos().add(std::make_shared<MergeTreePartLevelInfo>(data_part->info.level));
-            return result;
+            return Chunk(std::move(res_columns), rows_read, add_part_level ? std::make_shared<MergeTreePartLevelInfo>(data_part->info.level) : nullptr);
         }
     }
     else
@@ -305,10 +300,11 @@ Pipe createMergeTreeSequentialSource(
     MergeTreeData::DataPartPtr data_part,
     Names columns_to_read,
     std::optional<MarkRanges> mark_ranges,
-    std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
     bool read_with_direct_io,
-    bool prefetch)
+    bool take_column_types_from_storage,
+    bool quiet,
+    std::shared_ptr<std::atomic<size_t>> filtered_rows_count)
 {
 
     /// The part might have some rows masked by lightweight deletes
@@ -320,7 +316,7 @@ Pipe createMergeTreeSequentialSource(
 
     auto column_part_source = std::make_shared<MergeTreeSequentialSource>(type,
         storage, storage_snapshot, data_part, columns_to_read, std::move(mark_ranges),
-        /*apply_deleted_mask=*/ false, read_with_direct_io, prefetch);
+        /*apply_deleted_mask=*/ false, read_with_direct_io, take_column_types_from_storage, quiet);
 
     Pipe pipe(std::move(column_part_source));
 
@@ -384,13 +380,7 @@ public:
 
             if (!key_condition.alwaysFalse())
                 mark_ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
-                    data_part,
-                    metadata_snapshot,
-                    key_condition,
-                    /*part_offset_condition=*/{},
-                    /*exact_ranges=*/nullptr,
-                    context->getSettingsRef(),
-                    log);
+                    data_part, metadata_snapshot, key_condition, {}, context->getSettingsRef(), log);
 
             if (mark_ranges && mark_ranges->empty())
             {
@@ -405,10 +395,11 @@ public:
             data_part,
             columns_to_read,
             std::move(mark_ranges),
-            /*filtered_rows_count=*/ nullptr,
             apply_deleted_mask,
             /*read_with_direct_io=*/ false,
-            /*prefetch=*/ false);
+            /*take_column_types_from_storage=*/ true,
+            /*quiet=*/ false,
+            /*filtered_rows_count=*/ nullptr);
 
         pipeline.init(Pipe(std::move(source)));
     }

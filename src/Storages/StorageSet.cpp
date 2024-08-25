@@ -8,7 +8,7 @@
 #include <QueryPipeline/ProfileInfo.h>
 #include <Disks/IDisk.h>
 #include <Common/formatReadable.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/logger_useful.h>
@@ -44,7 +44,7 @@ public:
         const String & backup_file_name_, bool persistent_);
 
     String getName() const override { return "SetOrJoinSink"; }
-    void consume(Chunk & chunk) override;
+    void consume(Chunk chunk) override;
     void onFinish() override;
 
 private:
@@ -82,9 +82,9 @@ SetOrJoinSink::SetOrJoinSink(
 {
 }
 
-void SetOrJoinSink::consume(Chunk & chunk)
+void SetOrJoinSink::consume(Chunk chunk)
 {
-    Block block = getHeader().cloneWithColumns(chunk.getColumns());
+    Block block = getHeader().cloneWithColumns(chunk.detachColumns());
 
     table.insertBlock(block, getContext());
     if (persistent)
@@ -97,7 +97,8 @@ void SetOrJoinSink::onFinish()
     if (persistent)
     {
         backup_stream.flush();
-        compressed_backup_buf.finalize();
+        compressed_backup_buf.next();
+        backup_buf->next();
         backup_buf->finalize();
 
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
@@ -128,6 +129,7 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+
 
     if (relative_path_.empty())
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Join and Set storages require data path");

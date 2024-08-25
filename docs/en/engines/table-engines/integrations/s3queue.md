@@ -13,7 +13,7 @@ This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ec
 CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression])
     [SETTINGS]
-    [mode = '',]
+    [mode = 'unordered',]
     [after_processing = 'keep',]
     [keeper_path = '',]
     [s3queue_loading_retries = 0,]
@@ -27,8 +27,6 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [s3queue_cleanup_interval_min_ms = 10000,]
     [s3queue_cleanup_interval_max_ms = 30000,]
 ```
-
-Starting with `24.7` settings without `s3queue_` prefix are also supported.
 
 **Engine parameters**
 
@@ -77,7 +75,7 @@ Possible values:
 - unordered — With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeeper.
 - ordered — With ordered mode, only the max name of the successfully consumed file, and the names of files that will be retried after unsuccessful loading attempt are being stored in ZooKeeper.
 
-Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no default value, the setting becomes required to be specified manually. For tables created on earlier versions the default value will remain `Ordered` for compatibility.
+Default value: `unordered`.
 
 ### after_processing {#after_processing}
 
@@ -183,10 +181,6 @@ For 'Ordered' mode. Defines a maximum boundary for reschedule interval for a bac
 
 Default value: `30000`.
 
-### s3queue_buckets {#buckets}
-
-For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Queue table, each working with the same metadata directory in keeper, the value of `s3queue_buckets` needs to be equal to at least the number of replicas. If `s3queue_processing_threads` setting is used as well, it makes sense to increase the value of `s3queue_buckets` setting even further, as it defines the actual parallelism of `S3Queue` processing.
-
 ## S3-related Settings {#s3-settings}
 
 Engine supports all s3 related settings. For more information about S3 settings see [here](../../../engines/table-engines/integrations/s3.md).
@@ -208,7 +202,8 @@ Example:
   CREATE TABLE s3queue_engine_table (name String, value UInt32)
     ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
     SETTINGS
-        mode = 'unordered';
+        mode = 'unordered',
+        keeper_path = '/clickhouse/s3queue/';
 
   CREATE TABLE stats (name String, value UInt32)
     ENGINE = MergeTree() ORDER BY name;
@@ -273,7 +268,7 @@ For introspection use `system.s3queue` stateless table and `system.s3queue_log` 
     `exception` String
 )
 ENGINE = SystemS3Queue
-COMMENT 'Contains in-memory state of S3Queue metadata and currently processed rows per file.' │
+COMMENT 'SYSTEM TABLE is built on the fly.' │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

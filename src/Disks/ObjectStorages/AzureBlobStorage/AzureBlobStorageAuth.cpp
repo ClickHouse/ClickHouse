@@ -4,10 +4,8 @@
 
 #include <Common/Exception.h>
 #include <Common/re2.h>
+#include <optional>
 #include <azure/identity/managed_identity_credential.hpp>
-#include <azure/identity/workload_identity_credential.hpp>
-#include <azure/storage/blobs/blob_options.hpp>
-#include <azure/core/http/curl_transport.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 
@@ -140,34 +138,35 @@ AzureBlobStorageEndpoint processAzureBlobStorageEndpoint(const Poco::Util::Abstr
 
 
 template <class T>
-std::unique_ptr<T> getClientWithConnectionString(const String & connection_str, const String & container_name, const BlobClientOptions & client_options) = delete;
+std::unique_ptr<T> getClientWithConnectionString(const String & connection_str, const String & container_name) = delete;
+
 
 template<>
-std::unique_ptr<BlobServiceClient> getClientWithConnectionString(const String & connection_str, const String & /*container_name*/, const BlobClientOptions & client_options)
+std::unique_ptr<BlobServiceClient> getClientWithConnectionString(
+    const String & connection_str, const String & /*container_name*/)
 {
-    return std::make_unique<BlobServiceClient>(BlobServiceClient::CreateFromConnectionString(connection_str, client_options));
+    return std::make_unique<BlobServiceClient>(BlobServiceClient::CreateFromConnectionString(connection_str));
 }
 
+
 template<>
-std::unique_ptr<BlobContainerClient> getClientWithConnectionString(const String & connection_str, const String & container_name, const BlobClientOptions & client_options)
+std::unique_ptr<BlobContainerClient> getClientWithConnectionString(
+    const String & connection_str, const String & container_name)
 {
-    return std::make_unique<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(connection_str, container_name, client_options));
+    return std::make_unique<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(connection_str, container_name));
 }
+
 
 template <class T>
 std::unique_ptr<T> getAzureBlobStorageClientWithAuth(
-    const String & url,
-    const String & container_name,
-    const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix,
-    const Azure::Storage::Blobs::BlobClientOptions & client_options)
+    const String & url, const String & container_name, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     std::string connection_str;
     if (config.has(config_prefix + ".connection_string"))
         connection_str = config.getString(config_prefix + ".connection_string");
 
     if (!connection_str.empty())
-        return getClientWithConnectionString<T>(connection_str, container_name, client_options);
+        return getClientWithConnectionString<T>(connection_str, container_name);
 
     if (config.has(config_prefix + ".account_key") && config.has(config_prefix + ".account_name"))
     {
@@ -175,72 +174,38 @@ std::unique_ptr<T> getAzureBlobStorageClientWithAuth(
             config.getString(config_prefix + ".account_name"),
             config.getString(config_prefix + ".account_key")
         );
-        return std::make_unique<T>(url, storage_shared_key_credential, client_options);
-    }
-
-    if (config.getBool(config_prefix + ".use_workload_identity", false))
-    {
-        auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
-        return std::make_unique<T>(url, workload_identity_credential, client_options);
+        return std::make_unique<T>(url, storage_shared_key_credential);
     }
 
     auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
-    return std::make_unique<T>(url, managed_identity_credential, client_options);
+    return std::make_unique<T>(url, managed_identity_credential);
 }
 
-Azure::Storage::Blobs::BlobClientOptions getAzureBlobClientOptions(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-{
-    Azure::Core::Http::Policies::RetryOptions retry_options;
-    retry_options.MaxRetries = config.getUInt(config_prefix + ".max_tries", 10);
-    retry_options.RetryDelay = std::chrono::milliseconds(config.getUInt(config_prefix + ".retry_initial_backoff_ms", 10));
-    retry_options.MaxRetryDelay = std::chrono::milliseconds(config.getUInt(config_prefix + ".retry_max_backoff_ms", 1000));
 
-    using CurlOptions = Azure::Core::Http::CurlTransportOptions;
-    CurlOptions curl_options;
-    curl_options.NoSignal = true;
-
-    if (config.has(config_prefix + ".curl_ip_resolve"))
-    {
-        auto value = config.getString(config_prefix + ".curl_ip_resolve");
-        if (value == "ipv4")
-            curl_options.IPResolve = CurlOptions::CURL_IPRESOLVE_V4;
-        else if (value == "ipv6")
-            curl_options.IPResolve = CurlOptions::CURL_IPRESOLVE_V6;
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value for option 'curl_ip_resolve': {}. Expected one of 'ipv4' or 'ipv6'", value);
-    }
-
-    Azure::Storage::Blobs::BlobClientOptions client_options;
-    client_options.Retry = retry_options;
-    client_options.Transport.Transport = std::make_shared<Azure::Core::Http::CurlTransport>(curl_options);
-
-    client_options.ClickhouseOptions = Azure::Storage::Blobs::ClickhouseClientOptions{.IsClientForDisk=true};
-
-    return client_options;
-}
-
-std::unique_ptr<BlobContainerClient> getAzureBlobContainerClient(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+std::unique_ptr<BlobContainerClient> getAzureBlobContainerClient(
+    const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     auto endpoint = processAzureBlobStorageEndpoint(config, config_prefix);
     auto container_name = endpoint.container_name;
     auto final_url = endpoint.getEndpoint();
-    auto client_options = getAzureBlobClientOptions(config, config_prefix);
 
     if (endpoint.container_already_exists.value_or(false))
-        return getAzureBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix, client_options);
+        return getAzureBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
 
-    auto blob_service_client = getAzureBlobStorageClientWithAuth<BlobServiceClient>(endpoint.getEndpointWithoutContainer(), container_name, config, config_prefix, client_options);
+    auto blob_service_client = getAzureBlobStorageClientWithAuth<BlobServiceClient>(
+        endpoint.getEndpointWithoutContainer(), container_name, config, config_prefix);
 
     try
     {
-        return std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(container_name).Value);
+        return std::make_unique<BlobContainerClient>(
+            blob_service_client->CreateBlobContainer(container_name).Value);
     }
     catch (const Azure::Storage::StorageException & e)
     {
         /// If container_already_exists is not set (in config), ignore already exists error.
         /// (Conflict - The specified container already exists)
         if (!endpoint.container_already_exists.has_value() && e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
-            return getAzureBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix, client_options);
+            return getAzureBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
         throw;
     }
 }
@@ -257,7 +222,6 @@ std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Po
     settings->max_upload_part_size = config.getUInt64(config_prefix + ".max_upload_part_size", context->getSettings().azure_max_upload_part_size);
     settings->max_single_part_copy_size = config.getUInt64(config_prefix + ".max_single_part_copy_size", context->getSettings().azure_max_single_part_copy_size);
     settings->use_native_copy = config.getBool(config_prefix + ".use_native_copy", false);
-    settings->max_blocks_in_multipart_upload = config.getUInt64(config_prefix + ".max_blocks_in_multipart_upload", 50000);
     settings->max_unexpected_write_error_retries = config.getUInt64(config_prefix + ".max_unexpected_write_error_retries", context->getSettings().azure_max_unexpected_write_error_retries);
     settings->max_inflight_parts_for_one_file = config.getUInt64(config_prefix + ".max_inflight_parts_for_one_file", context->getSettings().azure_max_inflight_parts_for_one_file);
     settings->strict_upload_part_size = config.getUInt64(config_prefix + ".strict_upload_part_size", context->getSettings().azure_strict_upload_part_size);

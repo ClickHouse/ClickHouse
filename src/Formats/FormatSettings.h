@@ -32,7 +32,6 @@ struct FormatSettings
     bool write_statistics = true;
     bool import_nested_json = false;
     bool null_as_default = true;
-    bool force_null_for_omitted_fields = false;
     bool decimal_trailing_zeros = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
@@ -44,12 +43,12 @@ struct FormatSettings
     String column_names_for_schema_inference{};
     String schema_inference_hints{};
 
-    bool try_infer_integers = true;
-    bool try_infer_dates = true;
-    bool try_infer_datetimes = true;
+    bool try_infer_integers = false;
+    bool try_infer_dates = false;
+    bool try_infer_datetimes = false;
     bool try_infer_exponent_floats = false;
 
-    enum class DateTimeInputFormat : uint8_t
+    enum class DateTimeInputFormat
     {
         Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
         BestEffort,   /// Use sophisticated rules to parse whatever possible.
@@ -58,14 +57,14 @@ struct FormatSettings
 
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
 
-    enum class DateTimeOutputFormat : uint8_t
+    enum class DateTimeOutputFormat
     {
         Simple,
         ISO,
         UnixTimestamp
     };
 
-    enum class EscapingRule : uint8_t
+    enum class EscapingRule
     {
         None,
         Escaped,
@@ -80,7 +79,7 @@ struct FormatSettings
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
-    enum class IntervalOutputFormat : uint8_t
+    enum class IntervalOutputFormat
     {
         Kusto,
         Numeric
@@ -91,7 +90,7 @@ struct FormatSettings
         IntervalOutputFormat output_format = IntervalOutputFormat::Numeric;
     } interval{};
 
-    enum class DateTimeOverflowBehavior : uint8_t
+    enum class DateTimeOverflowBehavior
     {
         Ignore,
         Throw,
@@ -114,7 +113,7 @@ struct FormatSettings
 
     size_t max_threads = 1;
 
-    enum class ArrowCompression : uint8_t
+    enum class ArrowCompression
     {
         NONE,
         LZ4_FRAME,
@@ -180,7 +179,6 @@ struct FormatSettings
         char fields_delimiter = '\x01';
         char collection_items_delimiter = '\x02';
         char map_keys_delimiter = '\x03';
-        bool allow_variable_number_of_columns = true;
         Names input_field_names;
     } hive_text{};
 
@@ -198,7 +196,7 @@ struct FormatSettings
         bool allow_variable_number_of_columns = false;
     } custom{};
 
-    struct JSON
+    struct
     {
         bool array_of_rows = false;
         bool quote_64bit_integers = true;
@@ -226,9 +224,7 @@ struct FormatSettings
         bool compact_allow_variable_number_of_columns = false;
         bool try_infer_objects_as_tuples = false;
         bool infer_incomplete_types_as_strings = true;
-        bool throw_on_bad_escape_sequence = true;
-        bool ignore_unnecessary_fields = true;
-        bool ignore_key_case = false;
+
     } json{};
 
     struct
@@ -236,7 +232,7 @@ struct FormatSettings
         String column_for_object_name{};
     } json_object_each_row{};
 
-    enum class ParquetVersion : uint8_t
+    enum class ParquetVersion
     {
         V1_0,
         V2_4,
@@ -244,7 +240,7 @@ struct FormatSettings
         V2_LATEST,
     };
 
-    enum class ParquetCompression : uint8_t
+    enum class ParquetCompression
     {
         NONE,
         SNAPPY,
@@ -262,21 +258,18 @@ struct FormatSettings
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
         bool filter_push_down = true;
-        bool use_native_reader = false;
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         bool preserve_order = false;
         bool use_custom_encoder = true;
         bool parallel_encoding = true;
-        UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
-        size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
+        UInt64 max_block_size = 8192;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         bool output_compliant_nested_types = true;
         size_t data_page_size = 1024 * 1024;
         size_t write_batch_size = 1024;
-        bool write_page_index = false;
         size_t local_read_min_bytes_for_seek = 8192;
     } parquet{};
 
@@ -291,10 +284,8 @@ struct FormatSettings
 
         bool output_format_pretty_row_numbers = false;
         UInt64 output_format_pretty_single_large_number_tip_threshold = 1'000'000;
-        UInt64 output_format_pretty_display_footer_column_names = 1;
-        UInt64 output_format_pretty_display_footer_column_names_min_rows = 50;
 
-        enum class Charset : uint8_t
+        enum class Charset
         {
             UTF8,
             ASCII,
@@ -370,7 +361,6 @@ struct FormatSettings
         bool try_detect_header = true;
         bool skip_trailing_empty_lines = false;
         bool allow_variable_number_of_columns = false;
-        bool crlf_end_of_line_input = false;
     } tsv{};
 
     struct
@@ -382,7 +372,7 @@ struct FormatSettings
         bool escape_quote_with_quote = false;
     } values{};
 
-    enum class ORCCompression : uint8_t
+    enum class ORCCompression
     {
         NONE,
         LZ4,
@@ -407,7 +397,7 @@ struct FormatSettings
 
     /// For capnProto format we should determine how to
     /// compare ClickHouse Enum and Enum from schema.
-    enum class CapnProtoEnumComparingMode : uint8_t
+    enum class CapnProtoEnumComparingMode
     {
         BY_NAMES, // Names in enums should be the same, values can be different.
         BY_NAMES_CASE_INSENSITIVE, // Case-insensitive name comparison.
@@ -421,7 +411,7 @@ struct FormatSettings
         bool use_autogenerated_schema = true;
     } capn_proto{};
 
-    enum class MsgPackUUIDRepresentation : uint8_t
+    enum class MsgPackUUIDRepresentation
     {
         STR, // Output UUID as a string of 36 characters.
         BIN, // Output UUID as 16-bytes binary.

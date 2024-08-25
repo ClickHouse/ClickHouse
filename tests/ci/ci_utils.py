@@ -1,7 +1,8 @@
-import os
 from contextlib import contextmanager
+import os
+import signal
+from typing import Any, List, Union, Iterator
 from pathlib import Path
-from typing import Any, Iterator, List, Union
 
 
 class WithIter(type):
@@ -28,10 +29,16 @@ def is_hex(s):
 
 
 def normalize_string(string: str) -> str:
-    res = string.lower()
-    for r in ((" ", "_"), ("(", "_"), (")", "_"), (",", "_"), ("/", "_"), ("-", "_")):
-        res = res.replace(*r)
-    return res
+    lowercase_string = string.lower()
+    normalized_string = (
+        lowercase_string.replace(" ", "_")
+        .replace("-", "_")
+        .replace("/", "_")
+        .replace("(", "")
+        .replace(")", "")
+        .replace(",", "")
+    )
+    return normalized_string
 
 
 class GHActions:
@@ -42,3 +49,14 @@ class GHActions:
         for line in lines:
             print(line)
         print("::endgroup::")
+
+
+def set_job_timeout():
+    def timeout_handler(_signum, _frame):
+        print("Timeout expired")
+        raise TimeoutError("Job's KILL_TIMEOUT expired")
+
+    kill_timeout = int(os.getenv("KILL_TIMEOUT", "0"))
+    assert kill_timeout > 0, "kill timeout must be provided in KILL_TIMEOUT env"
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(kill_timeout)

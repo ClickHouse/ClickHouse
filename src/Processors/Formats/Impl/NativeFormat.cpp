@@ -82,7 +82,7 @@ public:
 
     std::string getContentType() const override
     {
-        return NativeWriter::getContentType();
+        return writer.getContentType();
     }
 
 protected:

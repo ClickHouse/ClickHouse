@@ -77,7 +77,7 @@ void CgroupsMemoryUsageObserver::setMemoryUsageLimits(uint64_t hard_limit_, uint
     {
         if (up)
         {
-            LOG_WARNING(log, "Exceeded soft memory limit ({})", ReadableSize(soft_limit_));
+            LOG_WARNING(log, "Exceeded sort memory limit ({})", ReadableSize(soft_limit_));
 
 #if USE_JEMALLOC
             LOG_INFO(log, "Purging jemalloc arenas");
@@ -125,8 +125,9 @@ std::optional<std::string> getCgroupsV2FileName()
     if (!cgroupsV2MemoryControllerEnabled())
         return {};
 
-    String cgroup = cgroupV2OfProcess();
-    auto current_cgroup = cgroup.empty() ? default_cgroups_mount : (default_cgroups_mount / cgroup);
+    std::filesystem::path current_cgroup = cgroupV2PathOfProcess();
+    if (current_cgroup.empty())
+        return {};
 
     /// Return the bottom-most nested current memory file. If there is no such file at the current
     /// level, try again at the parent level as memory settings are inherited.

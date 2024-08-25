@@ -120,7 +120,7 @@ Chunk PostgreSQLSource<T>::generate()
     MutableColumns columns = description.sample_block.cloneEmptyColumns();
     size_t num_rows = 0;
 
-    while (!isCancelled())
+    while (true)
     {
         const std::vector<pqxx::zview> * row{stream->read_row()};
 
