@@ -28,6 +28,8 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [s3queue_cleanup_interval_max_ms = 30000,]
 ```
 
+Starting with `24.7` settings without `s3queue_` prefix are also supported.
+
 **Engine parameters**
 
 - `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [below](#wildcards-in-path).
@@ -73,7 +75,7 @@ SETTINGS
 Possible values:
 
 - unordered — With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeeper.
-- ordered — With ordered mode, only the max name of the successfully consumed file, and the names of files that will be retried after unsuccessful loading attempt are being stored in ZooKeeper.
+- ordered — With ordered mode, the files are processed in lexicographic order. It means that if file named 'BBB' was processed at some point and later on a file named 'AA' is added to the bucket, it will be ignored. Only the max name (in lexicographic sense) of the successfully consumed file, and the names of files that will be retried after unsuccessful loading attempt are being stored in ZooKeeper.
 
 Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no default value, the setting becomes required to be specified manually. For tables created on earlier versions the default value will remain `Ordered` for compatibility.
 

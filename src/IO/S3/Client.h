@@ -54,10 +54,7 @@ struct ClientCache
 {
     ClientCache() = default;
 
-    ClientCache(const ClientCache & other)
-        : region_for_bucket_cache(other.region_for_bucket_cache)
-        , uri_for_bucket_cache(other.uri_for_bucket_cache)
-    {}
+    ClientCache(const ClientCache & other);
 
     ClientCache(ClientCache && other) = delete;
 
@@ -66,11 +63,11 @@ struct ClientCache
 
     void clearCache();
 
-    std::mutex region_cache_mutex;
-    std::unordered_map<std::string, std::string> region_for_bucket_cache;
+    mutable std::mutex region_cache_mutex;
+    std::unordered_map<std::string, std::string> region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex);
 
-    std::mutex uri_cache_mutex;
-    std::unordered_map<std::string, URI> uri_for_bucket_cache;
+    mutable std::mutex uri_cache_mutex;
+    std::unordered_map<std::string, URI> uri_for_bucket_cache TSA_GUARDED_BY(uri_cache_mutex);
 };
 
 class ClientCacheRegistry
@@ -89,7 +86,7 @@ private:
     ClientCacheRegistry() = default;
 
     std::mutex clients_mutex;
-    std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches;
+    std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches TSA_GUARDED_BY(clients_mutex);
 };
 
 bool isS3ExpressEndpoint(const std::string & endpoint);
@@ -162,7 +159,7 @@ public:
     class RetryStrategy : public Aws::Client::RetryStrategy
     {
     public:
-        explicit RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 90000);
+        explicit RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 5000);
 
         /// NOLINTNEXTLINE(google-runtime-int)
         bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
@@ -274,7 +271,7 @@ private:
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
 
     template <typename RequestResult>
-    RequestResult enrichErrorMessage(RequestResult && outcome) const;
+    RequestResult processRequestResult(RequestResult && outcome) const;
 
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;

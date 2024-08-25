@@ -56,6 +56,15 @@ SELECT * FROM test_table;
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
+## Authentication
+
+Currently there are 3 ways to authenticate:
+- `Managed Identity` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`.
+- `SAS Token` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`. It is identified by presence of '?' in the url.
+- `Workload Identity` - Can be used by providing an `endpoint` or `storage_account_url`. If `use_workload_identity` parameter is set in config, ([workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications)) is used for authentication.
+
+
+
 ## See also
 
 [Azure Blob Storage Table Function](/docs/en/sql-reference/table-functions/azureBlobStorage)

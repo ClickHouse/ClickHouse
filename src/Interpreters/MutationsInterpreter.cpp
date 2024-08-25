@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -17,6 +18,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
@@ -41,6 +43,7 @@
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace DB
 {
@@ -143,7 +146,6 @@ ColumnDependencies getAllColumnDependencies(
 
 
 bool isStorageTouchedByMutations(
-    MergeTreeData & storage,
     MergeTreeData::DataPartPtr source_part,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
@@ -152,7 +154,9 @@ bool isStorageTouchedByMutations(
     if (commands.empty())
         return false;
 
+    auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part);
     bool all_commands_can_be_skipped = true;
+
     for (const auto & command : commands)
     {
         if (command.type == MutationCommand::APPLY_DELETED_MASK)
@@ -167,7 +171,7 @@ bool isStorageTouchedByMutations(
 
             if (command.partition)
             {
-                const String partition_id = storage.getPartitionIDFromQuery(command.partition, context);
+                const String partition_id = storage_from_part->getPartitionIDFromQuery(command.partition, context);
                 if (partition_id == source_part->info.partition_id)
                     all_commands_can_be_skipped = false;
             }
@@ -181,20 +185,18 @@ bool isStorageTouchedByMutations(
     if (all_commands_can_be_skipped)
         return false;
 
-    auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part);
-
     std::optional<InterpreterSelectQuery> interpreter_select_query;
     BlockIO io;
 
     if (context->getSettingsRef().allow_experimental_analyzer)
     {
-        auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage.shared_from_this(), context);
+        auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage_from_part, context);
         InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
         io = interpreter.execute();
     }
     else
     {
-        ASTPtr select_query = prepareQueryAffectedAST(commands, storage.shared_from_this(), context);
+        ASTPtr select_query = prepareQueryAffectedAST(commands, storage_from_part, context);
         /// Interpreter must be alive, when we use result of execute() method.
         /// For some reason it may copy context and give it into ExpressionTransform
         /// after that we will use context from destroyed stack frame in our stream.
@@ -217,7 +219,7 @@ bool isStorageTouchedByMutations(
     Block tmp_block;
     while (executor.pull(tmp_block));
 
-    auto count = (*block.getByName("count()").column)[0].get<UInt64>();
+    auto count = (*block.getByName("count()").column)[0].safeGet<UInt64>();
     return count != 0;
 }
 
@@ -497,6 +499,12 @@ static void validateUpdateColumns(
             {
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", backQuote(column_name));
             }
+        }
+        else if (storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->hasDynamicSubcolumns())
+        {
+            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                            "Cannot update column {} with type {}: updates of columns with dynamic subcolumns are not supported",
+                            backQuote(column_name), storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->getName());
         }
     }
 }
@@ -1137,9 +1145,9 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             for (const auto & kv : stage.column_to_updated)
             {
                 auto column_name = kv.second->getColumnName();
-                const auto & dag_node = actions->findInOutputs(column_name);
-                const auto & alias = actions->addAlias(dag_node, kv.first);
-                actions->addOrReplaceInOutputs(alias);
+                const auto & dag_node = actions->dag.findInOutputs(column_name);
+                const auto & alias = actions->dag.addAlias(dag_node, kv.first);
+                actions->dag.addOrReplaceInOutputs(alias);
             }
         }
 
@@ -1197,12 +1205,12 @@ void MutationsInterpreter::Source::read(
         const auto & names = first_stage.filter_column_names;
         size_t num_filters = names.size();
 
-        ActionsDAGPtr filter;
+        std::optional<ActionsDAG> filter;
         if (!first_stage.filter_column_names.empty())
         {
             ActionsDAG::NodeRawConstPtrs nodes(num_filters);
             for (size_t i = 0; i < num_filters; ++i)
-                nodes[i] = &steps[i]->actions()->findInOutputs(names[i]);
+                nodes[i] = &steps[i]->actions()->dag.findInOutputs(names[i]);
 
             filter = ActionsDAG::buildFilterActionsDAG(nodes);
         }
@@ -1211,7 +1219,7 @@ void MutationsInterpreter::Source::read(
             MergeTreeSequentialSourceType::Mutation,
             plan, *data, storage_snapshot,
             part, required_columns,
-            apply_deleted_mask_, filter, context_,
+            apply_deleted_mask_, std::move(filter), context_,
             getLogger("MutationsInterpreter"));
     }
     else
@@ -1273,18 +1281,24 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
         for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
         {
             const auto & step = stage.expressions_chain.steps[i];
-            if (step->actions()->hasArrayJoin())
+            if (step->actions()->dag.hasArrayJoin())
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "arrayJoin is not allowed in mutations");
 
             if (i < stage.filter_column_names.size())
             {
+                auto dag = step->actions()->dag.clone();
+                if (step->actions()->project_input)
+                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), step->actions(), stage.filter_column_names[i], false));
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), std::move(dag), stage.filter_column_names[i], false));
             }
             else
             {
+                auto dag = step->actions()->dag.clone();
+                if (step->actions()->project_input)
+                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), step->actions()));
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(dag)));
             }
         }
 

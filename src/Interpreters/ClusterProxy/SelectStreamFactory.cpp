@@ -5,6 +5,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
+#include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Planner/Utils.h>

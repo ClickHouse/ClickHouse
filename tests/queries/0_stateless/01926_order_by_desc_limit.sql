@@ -12,10 +12,10 @@ INSERT INTO order_by_desc SELECT number, repeat('a', 1024) FROM numbers(1024 * 3
 OPTIMIZE TABLE order_by_desc FINAL;
 
 SELECT s FROM order_by_desc ORDER BY u DESC LIMIT 10 FORMAT Null
-SETTINGS max_memory_usage = '600M';
+SETTINGS max_memory_usage = '400M';
 
 SELECT s FROM order_by_desc ORDER BY u LIMIT 10 FORMAT Null
-SETTINGS max_memory_usage = '600M';
+SETTINGS max_memory_usage = '400M';
 
 SYSTEM FLUSH LOGS;
 

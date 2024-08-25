@@ -54,7 +54,7 @@ function drop_create_table_thread()
 export -f dict_get_thread;
 export -f drop_create_table_thread;
 
-TIMEOUT=30
+TIMEOUT=20
 
 timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &
 timeout $TIMEOUT bash -c dict_get_thread 2> /dev/null &

@@ -104,7 +104,7 @@ class S3Helper:
 
         self.client.upload_file(file_path, bucket_name, s3_path, ExtraArgs=metadata)
         url = self.s3_url(bucket_name, s3_path)
-        logging.info("Upload %s to %s. Meta: %s", file_path, url, metadata)
+        logging.info("Upload %s to %s Meta: %s", file_path, url, metadata)
         return url
 
     def delete_file_from_s3(self, bucket_name: str, s3_path: str) -> None:

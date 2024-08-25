@@ -31,7 +31,7 @@ namespace ErrorCodes
 }
 
 
-struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>
+struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileSize
 {
     String hdfs_uri;
     String hdfs_file_path;
@@ -90,7 +90,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         hdfsCloseFile(fs.get(), fin);
     }
 
-    size_t getFileSize() const
+    std::optional<size_t> tryGetFileSize() override
     {
         return file_size;
     }
@@ -191,9 +191,9 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
 
 ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
 
-size_t ReadBufferFromHDFS::getFileSize()
+std::optional<size_t> ReadBufferFromHDFS::tryGetFileSize()
 {
-    return impl->getFileSize();
+    return impl->tryGetFileSize();
 }
 
 bool ReadBufferFromHDFS::nextImpl()

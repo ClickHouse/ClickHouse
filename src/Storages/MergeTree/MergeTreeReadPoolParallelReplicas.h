@@ -32,6 +32,7 @@ private:
 
     const ParallelReadingExtension extension;
     const CoordinationMode coordination_mode;
+    size_t min_marks_per_task{0};
     RangesInDataPartsDescription buffered_ranges;
     bool no_more_tasks_available{false};
     LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicas");

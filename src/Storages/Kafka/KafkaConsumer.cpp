@@ -9,6 +9,7 @@
 #include <algorithm>
 
 #include <Common/CurrentMetrics.h>
+#include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Common/ProfileEvents.h>
 #include <base/defines.h>
 
@@ -20,13 +21,12 @@ namespace CurrentMetrics
 
 namespace ProfileEvents
 {
-    extern const Event KafkaRebalanceRevocations;
-    extern const Event KafkaRebalanceAssignments;
-    extern const Event KafkaRebalanceErrors;
-    extern const Event KafkaMessagesPolled;
-    extern const Event KafkaCommitFailures;
-    extern const Event KafkaCommits;
-    extern const Event KafkaConsumerErrors;
+extern const Event KafkaRebalanceRevocations;
+extern const Event KafkaRebalanceAssignments;
+extern const Event KafkaRebalanceErrors;
+extern const Event KafkaMessagesPolled;
+extern const Event KafkaCommitFailures;
+extern const Event KafkaCommits;
 }
 
 namespace DB
@@ -199,43 +199,8 @@ KafkaConsumer::~KafkaConsumer()
 //     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
 void KafkaConsumer::drain()
 {
-    auto start_time = std::chrono::steady_clock::now();
-    cppkafka::Error last_error(RD_KAFKA_RESP_ERR_NO_ERROR);
-
-    while (true)
-    {
-        auto msg = consumer->poll(100ms);
-        if (!msg)
-            break;
-
-        auto error = msg.get_error();
-
-        if (error)
-        {
-            if (msg.is_eof() || error == last_error)
-            {
-                break;
-            }
-            else
-            {
-                LOG_ERROR(log, "Error during draining: {}", error);
-                setExceptionInfo(error);
-            }
-        }
-
-        // i don't stop draining on first error,
-        // only if it repeats once again sequentially
-        last_error = error;
-
-        auto ts = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time) > DRAIN_TIMEOUT_MS)
-        {
-            LOG_ERROR(log, "Timeout during draining.");
-            break;
-        }
-    }
+    StorageKafkaUtils::drainConsumer(*consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
 }
-
 
 void KafkaConsumer::commit()
 {
@@ -409,7 +374,7 @@ void KafkaConsumer::resetToLastCommitted(const char * msg)
 {
     if (!assignment.has_value() || assignment->empty())
     {
-        LOG_TRACE(log, "Not assignned. Can't reset to last committed position.");
+        LOG_TRACE(log, "Not assigned. Can't reset to last committed position.");
         return;
     }
     auto committed_offset = consumer->get_offsets_committed(consumer->get_assignment());
@@ -473,7 +438,7 @@ ReadBufferPtr KafkaConsumer::consume()
             // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
             if (!assignment.has_value())
             {
-                waited_for_assignment += poll_timeout; // slightly innaccurate, but rough calculation is ok.
+                waited_for_assignment += poll_timeout; // slightly inaccurate, but rough calculation is ok.
                 if (waited_for_assignment < MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS)
                 {
                     continue;
@@ -535,26 +500,12 @@ ReadBufferPtr KafkaConsumer::getNextMessage()
     return getNextMessage();
 }
 
-size_t KafkaConsumer::filterMessageErrors()
+void KafkaConsumer::filterMessageErrors()
 {
     assert(current == messages.begin());
 
-    size_t skipped = std::erase_if(messages, [this](auto & message)
-    {
-        if (auto error = message.get_error())
-        {
-            ProfileEvents::increment(ProfileEvents::KafkaConsumerErrors);
-            LOG_ERROR(log, "Consumer error: {}", error);
-            setExceptionInfo(error);
-            return true;
-        }
-        return false;
-    });
-
-    if (skipped)
-        LOG_ERROR(log, "There were {} messages with an error", skipped);
-
-    return skipped;
+    StorageKafkaUtils::eraseMessageErrors(messages, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
+    current = messages.begin();
 }
 
 void KafkaConsumer::resetIfStopped()

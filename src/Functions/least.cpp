@@ -65,7 +65,7 @@ using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 
 REGISTER_FUNCTION(Least)
 {
-    factory.registerFunction<LeastGreatestOverloadResolver<LeastGreatest::Least, FunctionLeast>>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<LeastGreatestOverloadResolver<LeastGreatest::Least, FunctionLeast>>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

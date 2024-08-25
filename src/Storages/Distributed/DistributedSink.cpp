@@ -32,6 +32,7 @@
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
+#include <Core/Settings.h>
 
 #include <filesystem>
 
@@ -134,7 +135,7 @@ DistributedSink::DistributedSink(
 }
 
 
-void DistributedSink::consume(Chunk chunk)
+void DistributedSink::consume(Chunk & chunk)
 {
     if (is_first_chunk)
     {
@@ -142,7 +143,7 @@ void DistributedSink::consume(Chunk chunk)
         is_first_chunk = false;
     }
 
-    auto ordinary_block = getHeader().cloneWithColumns(chunk.detachColumns());
+    auto ordinary_block = getHeader().cloneWithColumns(chunk.getColumns());
 
     if (insert_sync)
         writeSync(ordinary_block);
@@ -376,7 +377,11 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /// NOTE: INSERT will also take into account max_replica_delay_for_distributed_queries
                     /// (anyway fallback_to_stale_replicas_for_distributed_queries=true by default)
                     auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-                    job.connection_entry = std::move(results.front().entry);
+                    auto result = results.front();
+                    if (shard_info.pool->isTryResultInvalid(result, settings.distributed_insert_skip_read_only_replicas))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got an invalid connection result");
+
+                    job.connection_entry = std::move(result.entry);
                 }
                 else
                 {
@@ -420,7 +425,13 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 /// to resolve tables (in InterpreterInsertQuery::getTable())
                 auto copy_query_ast = query_ast->clone();
 
-                InterpreterInsertQuery interp(copy_query_ast, job.local_context, allow_materialized);
+                InterpreterInsertQuery interp(
+                    copy_query_ast,
+                    job.local_context,
+                    allow_materialized,
+                    /* no_squash */ false,
+                    /* no_destination */ false,
+                    /* async_isnert */ false);
                 auto block_io = interp.execute();
 
                 job.pipeline = std::move(block_io.pipeline);
@@ -596,7 +607,7 @@ void DistributedSink::onFinish()
     }
 }
 
-void DistributedSink::onCancel()
+void DistributedSink::onCancel() noexcept
 {
     std::lock_guard lock(execution_mutex);
     if (pool && !pool->finished())
@@ -607,14 +618,26 @@ void DistributedSink::onCancel()
         }
         catch (...)
         {
-            tryLogCurrentException(storage.log);
+            tryLogCurrentException(storage.log, "Error occurs on cancellation.");
         }
     }
 
     for (auto & shard_jobs : per_shard_jobs)
+    {
         for (JobReplica & job : shard_jobs.replicas_jobs)
-            if (job.executor)
-                job.executor->cancel();
+        {
+            try
+            {
+                if (job.executor)
+                    job.executor->cancel();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(storage.log, "Error occurs on cancellation.");
+            }
+        }
+    }
+
 }
 
 
@@ -715,7 +738,13 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
 
     try
     {
-        InterpreterInsertQuery interp(query_ast, context, allow_materialized);
+        InterpreterInsertQuery interp(
+            query_ast,
+            context,
+            allow_materialized,
+            /* no_squash */ false,
+            /* no_destination */ false,
+            /* async_isnert */ false);
 
         auto block_io = interp.execute();
         PushingPipelineExecutor executor(block_io.pipeline);

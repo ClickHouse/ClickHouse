@@ -5,6 +5,9 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/isLocalAddress.h>
 #include <Common/StringUtils.h>
+#include <Common/thread_local_rng.h>
+#include <Server/CloudPlacementInfo.h>
+#include <IO/S3/Credentials.h>
 #include <Poco/String.h>
 
 namespace DB
@@ -53,6 +56,7 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
 ZooKeeperArgs::ZooKeeperArgs(const String & hosts_string)
 {
     splitInto<','>(hosts, hosts_string);
+    availability_zones.resize(hosts.size());
 }
 
 void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfiguration & config)
@@ -103,8 +107,11 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
     for (const auto & key : keys)
     {
         if (startsWith(key, "server"))
+        {
             hosts.push_back(
                 (secure ? "secure://" : "") + config.getString(raft_configuration_key + "." + key + ".hostname") + ":" + tcp_port);
+            availability_zones.push_back(config.getString(raft_configuration_key + "." + key + ".availability_zone", ""));
+        }
     }
 
     static constexpr std::array load_balancing_keys
@@ -123,11 +130,15 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
             auto load_balancing = magic_enum::enum_cast<DB::LoadBalancing>(Poco::toUpper(load_balancing_str));
             if (!load_balancing)
                 throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown load balancing: {}", load_balancing_str);
-            get_priority_load_balancing.load_balancing = *load_balancing;
+            get_priority_load_balancing = DB::GetPriorityForLoadBalancing(*load_balancing, thread_local_rng() % hosts.size());
             break;
         }
     }
 
+    availability_zone_autodetect = config.getBool(std::string{config_name} + ".availability_zone_autodetect", false);
+    prefer_local_availability_zone = config.getBool(std::string{config_name} + ".prefer_local_availability_zone", false);
+    if (prefer_local_availability_zone)
+        client_availability_zone = DB::PlacementInfo::PlacementInfo::instance().getAvailabilityZone();
 }
 
 void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
@@ -137,6 +148,8 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_name, keys);
 
+    std::optional<DB::LoadBalancing> load_balancing;
+
     for (const auto & key : keys)
     {
         if (key.starts_with("node"))
@@ -144,6 +157,7 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
             hosts.push_back(
                 (config.getBool(config_name + "." + key + ".secure", false) ? "secure://" : "")
                 + config.getString(config_name + "." + key + ".host") + ":" + config.getString(config_name + "." + key + ".port", "2181"));
+            availability_zones.push_back(config.getString(config_name + "." + key + ".availability_zone", ""));
         }
         else if (key == "session_timeout_ms")
         {
@@ -199,6 +213,10 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         {
             sessions_path = config.getString(config_name + "." + key);
         }
+        else if (key == "prefer_local_availability_zone")
+        {
+            prefer_local_availability_zone = config.getBool(config_name + "." + key);
+        }
         else if (key == "implementation")
         {
             implementation = config.getString(config_name + "." + key);
@@ -207,10 +225,9 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         {
             String load_balancing_str = config.getString(config_name + "." + key);
             /// Use magic_enum to avoid dependency from dbms (`SettingFieldLoadBalancingTraits::fromString(...)`)
-            auto load_balancing = magic_enum::enum_cast<DB::LoadBalancing>(Poco::toUpper(load_balancing_str));
+            load_balancing = magic_enum::enum_cast<DB::LoadBalancing>(Poco::toUpper(load_balancing_str));
             if (!load_balancing)
                 throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown load balancing: {}", load_balancing_str);
-            get_priority_load_balancing.load_balancing = *load_balancing;
         }
         else if (key == "fallback_session_lifetime")
         {
@@ -224,9 +241,19 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         {
             use_compression = config.getBool(config_name + "." + key);
         }
+        else if (key == "availability_zone_autodetect")
+        {
+            availability_zone_autodetect = config.getBool(config_name + "." + key);
+        }
         else
             throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Unknown key {} in config file", key);
     }
+
+    if (load_balancing)
+        get_priority_load_balancing = DB::GetPriorityForLoadBalancing(*load_balancing, thread_local_rng() % hosts.size());
+
+    if (prefer_local_availability_zone)
+        client_availability_zone = DB::PlacementInfo::PlacementInfo::instance().getAvailabilityZone();
 }
 
 }

@@ -16,7 +16,7 @@ function check_refcnt_for_table()
         -- queue may hold the parts lock for awhile as well
         system stop pulling replication log $table;
     "
-    $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into $table select number, number%4 from numbers(200)"
+    $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into $table select number, number%4 from numbers(2000)"
 
     local query_id
     query_id="$table-$(random_str 10)"
@@ -35,7 +35,7 @@ function check_refcnt_for_table()
     )
 
     # Notes:
-    # - query may sleep 0.1*(200/4)=5 seconds maximum, it is enough to check system.parts
+    # - query may sleep 0.1*(2000/4)=50 seconds maximum, it is enough to check system.parts
     # - "part = 1" condition should prune all parts except first
     # - max_block_size=1 with index_granularity=1 will allow to cancel the query earlier
     $CLICKHOUSE_CLIENT "${args[@]}" -q "select sleepEachRow(0.1) from $table where part = 1" &

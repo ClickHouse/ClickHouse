@@ -1,5 +1,4 @@
 #include <Storages/StorageMongoDB.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 
 #include <Common/Exception.h>
 

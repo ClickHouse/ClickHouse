@@ -6,6 +6,7 @@
 #include <IO/MMappedFileCache.h>
 #include <IO/UncompressedCache.h>
 #include <Interpreters/Context.h>
+#include <Common/Config/ConfigReloader.h>
 #include <Interpreters/ProcessList.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
@@ -84,7 +85,8 @@ void StorageSystemServerSettings::fillData(MutableColumns & res_columns, Context
         {"mmap_cache_size", {std::to_string(context->getMMappedFileCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
 
         {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
-        {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}}
+        {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}},
+        {"config_reload_interval_ms", {std::to_string(context->getConfigReloaderInterval()), ChangeableWithoutRestart::Yes}}
     };
 
     if (context->areBackgroundExecutorsInitialized())

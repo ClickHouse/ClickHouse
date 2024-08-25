@@ -77,64 +77,70 @@ namespace impl
         ColumnPtr key0;
         ColumnPtr key1;
         bool is_const;
-        const ColumnArray::Offsets * offsets{};
+        const ColumnArray::Offsets * offsets = nullptr;
 
         size_t size() const
         {
             assert(key0 && key1);
             assert(key0->size() == key1->size());
-            assert(offsets == nullptr || offsets->size() == key0->size());
-            if (offsets != nullptr)
+            if (offsets != nullptr && !offsets->empty())
                 return offsets->back();
             return key0->size();
         }
+
         SipHashKey getKey(size_t i) const
         {
             if (is_const)
                 i = 0;
-            if (offsets != nullptr)
+            assert(key0->size() == key1->size());
+            if (offsets != nullptr && i > 0)
             {
-                const auto *const begin = offsets->begin();
+                const auto * const begin = std::upper_bound(offsets->begin(), offsets->end(), i - 1);
                 const auto * upper = std::upper_bound(begin, offsets->end(), i);
-                if (upper == offsets->end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "offset {} not found in function SipHashKeyColumns::getKey", i);
-                i = upper - begin;
+                if (upper != offsets->end())
+                    i = upper - begin;
             }
             const auto & key0data = assert_cast<const ColumnUInt64 &>(*key0).getData();
             const auto & key1data = assert_cast<const ColumnUInt64 &>(*key1).getData();
+            assert(key0->size() > i);
             return {key0data[i], key1data[i]};
         }
     };
 
     static SipHashKeyColumns parseSipHashKeyColumns(const ColumnWithTypeAndName & key)
     {
-        const ColumnTuple * tuple = nullptr;
-        const auto * column = key.column.get();
-        bool is_const = false;
-        if (isColumnConst(*column))
+        const auto * col_key = key.column.get();
+
+        bool is_const;
+        const ColumnTuple * col_key_tuple;
+        if (isColumnConst(*col_key))
         {
             is_const = true;
-            tuple = checkAndGetColumnConstData<ColumnTuple>(column);
+            col_key_tuple = checkAndGetColumnConstData<ColumnTuple>(col_key);
         }
         else
-            tuple = checkAndGetColumn<ColumnTuple>(column);
-        if (!tuple)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "key must be a tuple");
-        if (tuple->tupleSize() != 2)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "wrong tuple size: key must be a tuple of 2 UInt64");
+        {
+            is_const = false;
+            col_key_tuple = checkAndGetColumn<ColumnTuple>(col_key);
+        }
 
-        SipHashKeyColumns ret{tuple->getColumnPtr(0), tuple->getColumnPtr(1), is_const};
-        assert(ret.key0);
-        if (!checkColumn<ColumnUInt64>(*ret.key0))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "first element of the key tuple is not UInt64");
-        assert(ret.key1);
-        if (!checkColumn<ColumnUInt64>(*ret.key1))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "second element of the key tuple is not UInt64");
+        if (!col_key_tuple || col_key_tuple->tupleSize() != 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The key must be of type Tuple(UInt64, UInt64)");
 
-        if (ret.size() == 1)
-            ret.is_const = true;
+        SipHashKeyColumns result{.key0 = col_key_tuple->getColumnPtr(0), .key1 = col_key_tuple->getColumnPtr(1), .is_const = is_const};
 
-        return ret;
+        assert(result.key0);
+        assert(result.key1);
+
+        if (!checkColumn<ColumnUInt64>(*result.key0))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 1st element of the key tuple is not of type UInt64");
+        if (!checkColumn<ColumnUInt64>(*result.key1))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 2nd element of the key tuple is not of type UInt64");
+
+        if (result.size() == 1)
+            result.is_const = true;
+
+        return result;
     }
 }
 
@@ -1184,7 +1190,7 @@ private:
 
         if (icolumn->size() != vec_to.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Argument column '{}' size {} doesn't match result column size {} of function {}",
-                    icolumn->getName(), icolumn->size(), vec_to.size(), getName());
+                icolumn->getName(), icolumn->size(), vec_to.size(), getName());
 
         if constexpr (Keyed)
             if (key_cols.size() != vec_to.size() && key_cols.size() != 1)
@@ -1223,6 +1229,9 @@ private:
         else executeGeneric<first>(key_cols, icolumn, vec_to);
     }
 
+    /// Return a fixed random-looking magic number when input is empty.
+    static constexpr auto filler = 0xe28dbde7fe22e41c;
+
     void executeForArgument(const KeyColumnsType & key_cols, const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first) const
     {
         /// Flattening of tuples.
@@ -1231,6 +1240,11 @@ private:
             const auto & tuple_columns = tuple->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
+
+            if (0 == tuple_size && is_first)
+                for (auto & hash : vec_to)
+                    hash = static_cast<ToType>(filler);
+
             for (size_t i = 0; i < tuple_size; ++i)
                 executeForArgument(key_cols, tuple_types[i].get(), tuple_columns[i].get(), vec_to, is_first);
         }
@@ -1239,6 +1253,11 @@ private:
             const auto & tuple_columns = tuple_const->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
+
+            if (0 == tuple_size && is_first)
+                for (auto & hash : vec_to)
+                    hash = static_cast<ToType>(filler);
+
             for (size_t i = 0; i < tuple_size; ++i)
             {
                 auto tmp = ColumnConst::create(tuple_columns[i], column->size());
@@ -1300,10 +1319,7 @@ public:
             constexpr size_t first_data_argument = Keyed;
 
             if (arguments.size() <= first_data_argument)
-            {
-                /// Return a fixed random-looking magic number when input is empty
-                vec_to.assign(input_rows_count, static_cast<ToType>(0xe28dbde7fe22e41c));
-            }
+                vec_to.assign(input_rows_count, static_cast<ToType>(filler));
 
             KeyColumnsType key_cols{};
             if constexpr (Keyed)

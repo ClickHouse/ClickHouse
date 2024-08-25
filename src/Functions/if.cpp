@@ -10,6 +10,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/MaskOperations.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
@@ -1232,6 +1233,12 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}. "
                 "Must be ColumnUInt8 or ColumnConstUInt8.", arg_cond.column->getName(), getName());
 
+        /// If result is Variant, always use generic implementation.
+        /// Using typed implementations may lead to incorrect result column type when
+        /// resulting Variant is created by use_variant_when_no_common_type.
+        if (isVariant(result_type))
+            return executeGeneric(cond_col, arguments, input_rows_count, use_variant_when_no_common_type);
+
         auto call = [&](const auto & types) -> bool
         {
             using Types = std::decay_t<decltype(types)>;
@@ -1308,7 +1315,7 @@ public:
 
 REGISTER_FUNCTION(If)
 {
-    factory.registerFunction<FunctionIf>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionIf>({}, FunctionFactory::Case::Insensitive);
 }
 
 FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool allow_experimental_variant_type, bool use_variant_as_common_type)

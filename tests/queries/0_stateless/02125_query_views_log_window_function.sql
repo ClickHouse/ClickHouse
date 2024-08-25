@@ -1,4 +1,4 @@
-set allow_experimental_analyzer = 0;
+set enable_analyzer = 0;
 set allow_experimental_window_view = 1;
 
 CREATE TABLE data ( `id` UInt64, `timestamp` DateTime) ENGINE = Memory;

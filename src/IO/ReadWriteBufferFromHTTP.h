@@ -118,7 +118,7 @@ private:
 
     std::unique_ptr<ReadBuffer> initialize();
 
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
 
     bool supportsReadAt() override;
 

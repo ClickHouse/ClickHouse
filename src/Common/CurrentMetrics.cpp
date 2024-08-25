@@ -1,6 +1,7 @@
 #include <Common/CurrentMetrics.h>
 
 
+// clang-format off
 /// Available metrics. Add something here as you wish.
 /// If the metric is generic (i.e. not server specific)
 /// it should be also added to src/Coordination/KeeperConstant.cpp
@@ -233,10 +234,10 @@
     M(PartsCommitted, "Deprecated. See PartsActive.") \
     M(PartsPreActive, "The part is in data_parts, but not used for SELECTs.") \
     M(PartsActive, "Active data part, used by current and upcoming SELECTs.") \
-    M(AttachedDatabase, "Active database, used by current and upcoming SELECTs.") \
-    M(AttachedTable, "Active table, used by current and upcoming SELECTs.") \
-    M(AttachedView, "Active view, used by current and upcoming SELECTs.") \
-    M(AttachedDictionary, "Active dictionary, used by current and upcoming SELECTs.") \
+    M(AttachedDatabase, "Active databases.") \
+    M(AttachedTable, "Active tables.") \
+    M(AttachedView, "Active views.") \
+    M(AttachedDictionary, "Active dictionaries.") \
     M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \
     M(PartsDeleting, "Not active data part with identity refcounter, it is deleting right now by a cleaner.") \
     M(PartsDeleteOnDestroy, "Part was moved to another disk and should be deleted in own destructor.") \
@@ -266,7 +267,7 @@
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
-    M(KeeperOutstandingRequets, "Number of outstanding requests") \
+    M(KeeperOutstandingRequests, "Number of outstanding requests") \
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
     M(IOUringPendingEvents, "Number of io_uring SQEs waiting to be submitted") \
     M(IOUringInFlightEvents, "Number of io_uring SQEs in flight") \
@@ -305,6 +306,8 @@
     \
     M(FilteringMarksWithPrimaryKey, "Number of threads currently doing filtering of mark ranges by the primary key") \
     M(FilteringMarksWithSecondaryKeys, "Number of threads currently doing filtering of mark ranges by secondary keys") \
+    \
+    M(DiskS3NoSuchKeyErrors, "The number of `NoSuchKey` errors that occur when reading data from S3 cloud storage through ClickHouse disks.") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

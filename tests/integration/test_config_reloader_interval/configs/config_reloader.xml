@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<clickhouse>
+  <config_reload_interval_ms>1000</config_reload_interval_ms>
+</clickhouse>

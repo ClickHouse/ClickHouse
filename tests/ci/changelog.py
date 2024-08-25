@@ -7,7 +7,7 @@ import re
 from datetime import date, timedelta
 from pathlib import Path
 from subprocess import DEVNULL
-from typing import Any, Dict, List, Optional, TextIO
+from typing import Any, Dict, List, Optional, TextIO, Tuple
 
 import tqdm  # type: ignore
 from github.GithubException import RateLimitExceededException, UnknownObjectException
@@ -19,6 +19,7 @@ from env_helper import TEMP_PATH
 from git_helper import git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
 from s3_helper import S3Helper
+from ci_utils import Shell
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     get_abs_path,
@@ -33,10 +34,11 @@ from version_helper import (
 categories_preferred_order = (
     "Backward Incompatible Change",
     "New Feature",
+    "Experimental Feature",
     "Performance Improvement",
     "Improvement",
-    "Critical Bug Fix",
-    "Bug Fix",
+    # "Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)",
+    "Bug Fix (user-visible misbehavior in an official stable release)",
     "Build/Testing/Packaging Improvement",
     "Other",
 )
@@ -112,7 +114,6 @@ def get_descriptions(prs: PullRequests) -> Dict[str, List[Description]]:
         # pylint: enable=protected-access
         if repo_name not in repos:
             repos[repo_name] = pr.base.repo
-        in_changelog = False
         merge_commit = pr.merge_commit_sha
         if merge_commit is None:
             logging.warning("PR %s does not have merge-commit, skipping", pr.number)
@@ -205,7 +206,7 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
             try:
                 item = gh.get_pull_cached(repo, int(branch_parts[-1]))
             except Exception as e:
-                logging.warning("unable to get backpoted PR, exception: %s", e)
+                logging.warning("unable to get backported PR, exception: %s", e)
         else:
             logging.warning(
                 "The branch %s doesn't match backport template, using PR %s as is",
@@ -280,12 +281,18 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
         category,
     ):
         category = "NOT FOR CHANGELOG / INSIGNIFICANT"
-        entry = item.title
+        # Sometimes we declare not for changelog but still write a description. Keep it
+        if len(entry) <= 4 or "Documentation entry" in entry:
+            entry = item.title
 
     # Normalize bug fixes
-    if re.match(
-        r"(?i)bug\Wfix",
-        category,
+    if (
+        re.match(
+            r".*(?i)bug\Wfix",
+            category,
+        )
+        # Map "Critical Bug Fix" to "Bug fix" category for changelog
+        # and "Critical Bug Fix" not in category
     ):
         category = "Bug Fix (user-visible misbehavior in an official stable release)"
 
@@ -391,6 +398,21 @@ def get_year(prs: PullRequests) -> int:
     return max(pr.created_at.year for pr in prs)
 
 
+def get_branch_and_patch_by_tag(tag: str) -> Tuple[Optional[str], Optional[int]]:
+    tag = tag.removeprefix("v")
+    versions = tag.split(".")
+    if len(versions) < 4:
+        print("ERROR: Can't get branch by tag")
+        return None, None
+    try:
+        patch_version = int(versions[2])
+        branch = f"{int(versions[0])}.{int(versions[1])}"
+        print(f"Branch [{branch}], patch version [{patch_version}]")
+    except ValueError:
+        return None, None
+    return branch, patch_version
+
+
 def main():
     log_levels = [logging.WARN, logging.INFO, logging.DEBUG]
     args = parse_args()
@@ -440,6 +462,22 @@ def main():
     gh_cache = GitHubCache(gh.cache_path, temp_path, S3Helper())
     gh_cache.download()
     query = f"type:pr repo:{args.repo} is:merged"
+
+    branch, patch = get_branch_and_patch_by_tag(TO_REF)
+    if branch and patch and Shell.check(f"git show-ref --quiet {branch}"):
+        if patch > 1:
+            query += f" base:{branch}"
+            print(
+                f"NOTE: It's a patch [{patch}]. will use base branch to filter PRs [{branch}]"
+            )
+        else:
+            print(
+                f"NOTE: It's a first patch version. should count PRs merged on master - won't filter PRs by branch"
+            )
+    else:
+        print(f"ERROR: invalid branch {branch} - pass")
+
+    print(f"Fetch PRs with query {query}")
     prs = gh.get_pulls_from_search(
         query=query, merged=merged, sort="created", progress_func=tqdm.tqdm
     )

@@ -587,6 +587,11 @@ std::shared_ptr<const S3::Client> DiskObjectStorage::getS3StorageClient() const
 {
     return object_storage->getS3StorageClient();
 }
+
+std::shared_ptr<const S3::Client> DiskObjectStorage::tryGetS3StorageClient() const
+{
+    return object_storage->tryGetS3StorageClient();
+}
 #endif
 
 DiskPtr DiskObjectStorageReservation::getDisk(size_t i) const

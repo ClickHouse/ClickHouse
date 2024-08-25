@@ -1,5 +1,7 @@
 #include <base/defines.h>
 
+#include <Columns/IColumn.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
@@ -102,6 +104,11 @@ struct ArrayAggregateImpl
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
+        if (aggregate_operation == AggregateOperation::max || aggregate_operation == AggregateOperation::min)
+        {
+            return expression_return;
+        }
+
         DataTypePtr result;
 
         auto call = [&](const auto & types)
@@ -133,31 +140,6 @@ struct ArrayAggregateImpl
                     return true;
                 }
             }
-            else if constexpr (aggregate_operation == AggregateOperation::max || aggregate_operation == AggregateOperation::min)
-            {
-                if constexpr (IsDataTypeDate<DataType>)
-                {
-                    result = std::make_shared<DataType>();
-
-                    return true;
-                }
-                else if constexpr (!IsDataTypeDecimal<DataType>)
-                {
-                    std::string timezone = getDateTimeTimezone(*expression_return);
-                    result = std::make_shared<DataTypeDateTime>(timezone);
-
-                    return true;
-                }
-                else
-                {
-                    std::string timezone = getDateTimeTimezone(*expression_return);
-                    UInt32 scale = getDecimalScale(*expression_return);
-                    result = std::make_shared<DataTypeDateTime64>(scale, timezone);
-
-                    return true;
-                }
-            }
-
             return false;
         };
 
@@ -378,6 +360,47 @@ struct ArrayAggregateImpl
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
+        if constexpr (aggregate_operation == AggregateOperation::max || aggregate_operation == AggregateOperation::min)
+        {
+            MutableColumnPtr res;
+            const auto & column = array.getDataPtr();
+            const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(&*column);
+            if (const_column)
+            {
+                res = const_column->getDataColumn().cloneEmpty();
+            }
+            else
+            {
+                res = column->cloneEmpty();
+            }
+            const IColumn::Offsets & offsets = array.getOffsets();
+            size_t pos = 0;
+            for (const auto & offset : offsets)
+            {
+                if (offset == pos)
+                {
+                    res->insertDefault();
+                    continue;
+                }
+                size_t current_max_or_min_index = pos;
+                ++pos;
+                for (; pos < offset; ++pos)
+                {
+                    int compare_result = column->compareAt(pos, current_max_or_min_index, *column, 1);
+                    if (aggregate_operation == AggregateOperation::max && compare_result > 0)
+                    {
+                        current_max_or_min_index = pos;
+                    }
+                    else if (aggregate_operation == AggregateOperation::min && compare_result < 0)
+                    {
+                        current_max_or_min_index = pos;
+                    }
+                }
+                res->insert((*column)[current_max_or_min_index]);
+            }
+            return res;
+        }
+
         const IColumn::Offsets & offsets = array.getOffsets();
         ColumnPtr res;
 
