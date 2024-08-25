@@ -465,7 +465,7 @@ Chunk StorageURLSource::generate()
                     std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
                     std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
 
-                chunk.addColumn(type->createColumnConst(chunk.getNumRows(), http_response_headers));
+                chunk.addColumn(type->createColumnConst(chunk.getNumRows(), http_response_headers)->convertToFullColumnIfConst());
             }
             return chunk;
         }
