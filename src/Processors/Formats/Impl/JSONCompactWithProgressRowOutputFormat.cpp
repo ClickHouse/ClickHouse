@@ -19,7 +19,7 @@ void JSONCompactWithProgressRowOutputFormat::writePrefix()
     JSONUtils::writeCompactObjectStart(*ostr);
     JSONUtils::writeCompactMetadata(names, types, settings, *ostr);
     JSONUtils::writeCompactObjectEnd(*ostr);
-    writeCString("}\n", *ostr);
+    writeCString("\n", *ostr);
 }
 
 void JSONCompactWithProgressRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
