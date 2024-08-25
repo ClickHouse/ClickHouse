@@ -6,22 +6,7 @@ env:
   PYTHONUNBUFFERED: 1
 
 on:  # yamllint disable-line rule:truthy
-  pull_request:
-    types:
-      - synchronize
-      - reopened
-      - opened
-    branches:
-      - '23.8'
-    paths-ignore:
-      - 'CHANGELOG.md'
-      - 'README.md'
-      - 'SECURITY.md'
-      - 'docker/docs/**'
-      - 'docs/**'
-      - 'utils/check-style/aspell-ignore/**'
-      - 'tests/ci/docs_check.py'
-      - '.github/workflows/docs_check.yml'
+   push:
 ##########################################################################################
 ##################################### SMALL CHECKS #######################################
 ##########################################################################################
