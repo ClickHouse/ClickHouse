@@ -166,10 +166,9 @@ IStorageURLBase::IStorageURLBase(
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-    setInMemoryMetadata(storage_metadata);
 
     auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(
-        storage_metadata.getColumns(), context_, getSampleURI(uri, context_), format_settings);
+        storage_metadata.columns, context_, getSampleURI(uri, context_), format_settings);
     if (!storage_metadata.getColumns().has("_headers"))
     {
         virtual_columns_desc.addEphemeral(
@@ -181,6 +180,7 @@ IStorageURLBase::IStorageURLBase(
     }
 
     setVirtuals(virtual_columns_desc);
+    setInMemoryMetadata(storage_metadata);
 }
 
 
@@ -446,11 +446,13 @@ Chunk StorageURLSource::generate()
 
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
-                chunk, requested_virtual_columns,
+                chunk,
+                requested_virtual_columns,
                 {
                     .path = curr_uri.getPath(),
                     .size = current_file_size,
-                }, getContext(), columns_description);
+                },
+                getContext());
             if (need_headers_virtual_column)
             {
                 if (!http_response_headers_initialized)
