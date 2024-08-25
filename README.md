@@ -54,6 +54,7 @@ Other upcoming meetups
 * [Sydney Meetup](https://www.meetup.com/clickhouse-australia-user-group/events/302862966/) - September 5
 * [Zurich Meetup](https://www.meetup.com/clickhouse-switzerland-meetup-group/events/302267429/) - September 5
 * [Toronto Meetup (Shopify)](https://www.meetup.com/clickhouse-toronto-user-group/events/301490855/) - September 10
+* [Austin Meetup](https://www.meetup.com/clickhouse-austin-user-group/events/302558689/) - September 17
 * [London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/302977267) - September 17
 
 ## Recent Recordings
