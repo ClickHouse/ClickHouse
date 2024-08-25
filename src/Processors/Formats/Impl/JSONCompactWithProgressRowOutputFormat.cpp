@@ -124,7 +124,7 @@ void JSONCompactWithProgressRowOutputFormat::finalizeImpl()
             statistics.applied_limit,
             statistics.watch,
             statistics.progress,
-            settings.write_statistics && exception_message.empty(),
+            settings.write_statistics,
             *ostr);
     } else {
         JSONUtils::writeCompactObjectStart(*ostr);
