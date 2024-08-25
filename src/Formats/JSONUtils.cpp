@@ -563,17 +563,17 @@ namespace JSONUtils
         writeCompactObjectStart(out, 0, "statistics");
         writeTitle("rows", out, 0, "");
         writeIntText(rows, out);
-        writeFieldCompactDelimiter(out);
 
         if (applied_limit)
         {
+            writeFieldCompactDelimiter(out);
             writeTitle("rows_before_limit_at_least", out, 0, "");
             writeIntText(rows_before_limit, out);
-            writeFieldCompactDelimiter(out);
         }
 
         if (write_statistics)
         {
+            writeFieldCompactDelimiter(out);
             writeTitle("elapsed", out, 0, "");
             writeText(watch.elapsedSeconds(), out);
             writeFieldCompactDelimiter(out);
