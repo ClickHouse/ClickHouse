@@ -118,6 +118,7 @@ public:
     struct BlockAndProgress
     {
         Block block;
+        MarkRanges read_mark_ranges;
         size_t row_count = 0;
         size_t num_read_rows = 0;
         size_t num_read_bytes = 0;

@@ -2,7 +2,7 @@
 
 #include <Common/CollectionOfDerived.h>
 #include <Columns/IColumn.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MarkRange.h>
 
 #include <memory>
 
@@ -177,14 +177,20 @@ private:
 };
 
 
+class IMergeTreeDataPart;
+
 class MarkRangesInfo : public ChunkInfoCloneable<MarkRangesInfo>
 {
 public:
-    MarkRangesInfo(MergeTreeDataPartPtr data_part_, MarkRanges mark_ranges_);
-    MergeTreeDataPartPtr getDataPart();
-    MarkRanges & getMarkRanges();
+    MarkRangesInfo(std::shared_ptr<const IMergeTreeDataPart> data_part_, MarkRanges mark_ranges_)
+        : data_part(data_part_)
+        , mark_ranges(std::move(mark_ranges_))
+    {}
+
+    std::shared_ptr<const IMergeTreeDataPart> getDataPart() const { return data_part; }
+    const MarkRanges & getMarkRanges() const { return mark_ranges; }
 private:
-    MergeTreeDataPartPtr data_part;
+    std::shared_ptr<const IMergeTreeDataPart> data_part;
     MarkRanges mark_ranges;
 };
 

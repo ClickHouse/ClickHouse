@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Interpreters/Cache/MarkFilterCache.h>
 #include <city.h>
 
 namespace DB
@@ -29,7 +30,8 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReadTask::BlockSizeParams & block_size_params_,
-    const MergeTreeReaderSettings & reader_settings_)
+    const MergeTreeReaderSettings & reader_settings_,
+    const std::shared_ptr<MarkFilterCache> & mark_filter_cache_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
     , prewhere_info(prewhere_info_)
@@ -38,6 +40,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , reader_settings(reader_settings_)
     , block_size_params(block_size_params_)
     , result_header(transformHeader(pool->getHeader(), prewhere_info))
+    , mark_filter_cache(mark_filter_cache_)
 {
     if (reader_settings.apply_deleted_mask)
     {
@@ -149,6 +152,12 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             if (add_part_level)
                 chunk.getChunkInfos().add(std::make_shared<MergeTreePartLevelInfo>(task->getInfo().data_part->info.level));
 
+            chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(task->getInfo().data_part, res.read_mark_ranges));
+
+            /// update prewhere mark filter cache.
+            if (mark_filter_cache && prewhere_info)
+                mark_filter_cache->update(task->getInfo().data_part, prewhere_info->prewhere_column_name, res.read_mark_ranges, true);
+
             return ChunkAndProgress{
                 .chunk = std::move(chunk),
                 .num_read_rows = res.num_read_rows,
@@ -157,6 +166,9 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         }
         else
         {
+            if (mark_filter_cache && prewhere_info)
+                mark_filter_cache->update(task->getInfo().data_part, prewhere_info->prewhere_column_name, res.read_mark_ranges, false);
+
             return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
         }
     }

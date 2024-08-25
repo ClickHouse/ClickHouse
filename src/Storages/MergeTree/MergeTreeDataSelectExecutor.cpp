@@ -869,59 +869,87 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     return parts_with_ranges;
 }
 
-void MergeTreeDataSelectExecutor::filterPartsByMarkFilterCache(const MergeTreeData & data, RangesInDataParts & parts_with_ranges, const SelectQueryInfo & query_info)
+void MergeTreeDataSelectExecutor::filterPartsByPreWhereAndWhere(const ContextPtr & context, RangesInDataParts & parts_with_ranges, const SelectQueryInfo & query_info_, LoggerPtr log)
 {
-    if (!query_info.filter_actions_dag)
+    if (!context->getSettingsRef().enable_reads_to_mark_filter_cache || (!query_info_.prewhere_info && !query_info_.filter_actions_dag))
         return;
 
-    auto query = query_info.query->as<ASTSelectQuery &>();
-    String condition = query.where()->getColumnName();
+    MarkFilterCachePtr mark_filter_cache = context->getMarkFilterCache();
 
-    auto table_id = data.getStorageID();
-    MarkFilterCachePtr mark_filter_cache = data.getContext()->getMarkFilterCache();
-
-    for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
+    struct Stat
     {
-        auto & part_with_ranges = *it;
-        auto filter = mark_filter_cache->getByCondition(part_with_ranges.data_part, condition);
-        if (filter.empty())
-        {
-            ++it;
-            continue;
-        }
+        size_t total_granules{0};
+        size_t granules_dropped{0};
+    };
 
-        MarkRanges ranges;
-        for (auto & mark_range : part_with_ranges.ranges)
+    auto filterMarkRange =[&](const String & condition) -> Stat
+    {
+        Stat stat;
+        for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
         {
-            size_t begin = mark_range.begin;
-            for (size_t it = begin; it < mark_range.end; ++it)
+            auto & part_with_ranges = *it;
+            stat.total_granules += part_with_ranges.getMarksCount();
+
+            auto filter = mark_filter_cache->getByCondition(part_with_ranges.data_part, condition);
+            if (filter.empty())
             {
-                if (!filter[it])
-                {
-                    if (it == begin)
-                        ++begin;
-                    else
-                    {
-                        ranges.emplace_back(begin, it);
-                        begin = it + 1;
-                    }
-                }
+                ++it;
+                continue;
             }
 
-            if (begin != mark_range.begin && begin != mark_range.end)
-                ranges.emplace_back(begin, mark_range.end);
-            else if (begin == mark_range.begin)
-                ranges.emplace_back(begin, mark_range.end);
+            MarkRanges ranges;
+            for (auto & mark_range : part_with_ranges.ranges)
+            {
+                size_t begin = mark_range.begin;
+                for (size_t mark_it = begin; mark_it < mark_range.end; ++mark_it)
+                {
+                    if (!filter[mark_it])
+                    {
+                        ++stat.granules_dropped;
+                        if (mark_it == begin)
+                            ++begin;
+                        else
+                        {
+                            ranges.emplace_back(begin, mark_it);
+                            begin = mark_it + 1;
+                        }
+                    }
+                }
+
+                if (begin != mark_range.begin && begin != mark_range.end)
+                    ranges.emplace_back(begin, mark_range.end);
+                else if (begin == mark_range.begin)
+                    ranges.emplace_back(begin, mark_range.end);
+            }
+
+            if (ranges.empty())
+                it = parts_with_ranges.erase(it);
+            else
+            {
+                part_with_ranges.ranges = ranges;
+                ++it;
+            }
+
         }
 
-        if (ranges.empty())
-        {
-            it = parts_with_ranges.erase(it);
-        }
-        else
-            part_with_ranges.ranges = ranges;
+        return stat;
+    };
 
-        ++it;
+    /// filter prewhere condition.
+    if (query_info_.prewhere_info)
+    {
+        String & condition = query_info_.prewhere_info->prewhere_column_name;
+        auto stat = filterMarkRange(query_info_.prewhere_info->prewhere_column_name);
+        LOG_DEBUG(log, "MarkFilterCache PREWHERE contition {} has dropped {}/{} granules.", condition, stat.granules_dropped, stat.total_granules);
+    }
+
+    /// filter where condition.
+    if (query_info_.filter_actions_dag)
+    {
+        auto query = query_info_.query->as<ASTSelectQuery &>();
+        String condition = query.where()->getColumnName();
+        auto stat = filterMarkRange(condition);
+        LOG_DEBUG(log, "MarkFilterCache WHERE condition {} has dropped {}/{} granules.", condition, stat.granules_dropped, stat.total_granules);
     }
 }
 

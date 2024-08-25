@@ -215,6 +215,9 @@ public:
         Columns columns;
         size_t num_rows = 0;
 
+        /// All read marks, including partially read mark.
+        MarkRanges read_mark_ranges;
+
         /// The number of rows were added to block as a result of reading chain.
         size_t numReadRows() const { return num_read_rows; }
         /// The number of bytes read from disk.
@@ -271,8 +274,6 @@ public:
         Block additional_columns;
 
         RangesInfo started_ranges;
-        /// All read marks, including partially read mark.
-        MarkRanges read_mark_ranges;
 
         /// The number of rows read from each granule.
         /// Granule here is not number of rows between two marks

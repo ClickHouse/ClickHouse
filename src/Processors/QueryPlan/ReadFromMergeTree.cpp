@@ -5,6 +5,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/Cache/MarkFilterCache.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -390,9 +391,13 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
     {
         auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
 
+        MarkFilterCachePtr mark_filter_cache = nullptr;
+        if (context->getSettingsRef().enable_writes_to_mark_filter_cache)
+            mark_filter_cache = context->getMarkFilterCache();
+
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool, std::move(algorithm), prewhere_info,
-            actions_settings, block_size_copy, reader_settings);
+            actions_settings, block_size_copy, reader_settings, mark_filter_cache);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
@@ -489,9 +494,13 @@ Pipe ReadFromMergeTree::readFromPool(
     {
         auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
 
+        MarkFilterCachePtr mark_filter_cache = nullptr;
+        if (context->getSettingsRef().enable_writes_to_mark_filter_cache)
+            mark_filter_cache = context->getMarkFilterCache();
+
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool, std::move(algorithm), prewhere_info,
-            actions_settings, block_size_copy, reader_settings);
+            actions_settings, block_size_copy, reader_settings, mark_filter_cache);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
@@ -608,9 +617,13 @@ Pipe ReadFromMergeTree::readInOrder(
         else
             algorithm = std::make_unique<MergeTreeInOrderSelectAlgorithm>(i);
 
+        MarkFilterCachePtr mark_filter_cache = nullptr;
+        if (context->getSettingsRef().enable_writes_to_mark_filter_cache)
+            mark_filter_cache = context->getMarkFilterCache();
+
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool, std::move(algorithm), prewhere_info,
-            actions_settings, block_size, reader_settings);
+            actions_settings, block_size, reader_settings, mark_filter_cache);
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
@@ -1662,7 +1675,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->use_skip_indexes,
             find_exact_ranges);
 
-        MergeTreeDataSelectExecutor::filterPartsByMarkFilterCache(data, result.parts_with_ranges, query_info_);
+        MergeTreeDataSelectExecutor::filterPartsByPreWhereAndWhere(context_, result.parts_with_ranges, query_info_, log);
     }
 
     size_t sum_marks_pk = total_marks_pk;

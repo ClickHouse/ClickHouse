@@ -38,12 +38,13 @@ private:
     bool remove_filter_column;
     bool on_totals;
 
-    std::shared_ptr<MarkFilterCache> mark_filter_cache;
 
     ConstantFilterDescription constant_filter_description;
     size_t filter_column_position = 0;
 
     std::shared_ptr<std::atomic<size_t>> rows_filtered;
+
+    std::shared_ptr<MarkFilterCache> mark_filter_cache;
 
     /// Header after expression, but before removing filter column.
     Block transformed_header;

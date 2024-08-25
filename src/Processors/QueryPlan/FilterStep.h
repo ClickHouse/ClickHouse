@@ -15,7 +15,7 @@ public:
         ActionsDAG actions_dag_,
         String filter_column_name_,
         bool remove_filter_column_,
-        MarkFilterCachePtr mark_filter_cache_);
+        MarkFilterCachePtr mark_filter_cache_ = nullptr);
 
     String getName() const override { return "Filter"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;

@@ -1,5 +1,5 @@
-#include "Storages/MergeTree/MergeTreeData.h"
 #include <Interpreters/Cache/MarkFilterCache.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
 {
@@ -55,7 +55,7 @@ MarkFilterCache::EntryPtr MarkFilterCache::get(const Key & key)
 MarkFilterCache::EntryPtr MarkFilterCache::getOrSet(const Key & key)
 {
     TableMetadataPtr table_metadata;
-    if (const auto it = cache.find(key.table_id); it == cache.end())
+    if (const auto it = cache.find(key.table_id); it != cache.end())
         table_metadata = it->second;
     else
     {
@@ -224,7 +224,7 @@ MarkFilterCache::EntryPtr MarkFilterCache::TableMetadata::tryGetEntry(const Key 
 std::tuple<bool, MarkFilterCache::EntryPtr> MarkFilterCache::TableMetadata::getOrSet(const Key & key)
 {
     PartMetadataPtr part_metadata;
-    if (const auto it = find(key.part_name); it == end())
+    if (const auto it = find(key.part_name); it != end())
         part_metadata = it->second;
     else
     {

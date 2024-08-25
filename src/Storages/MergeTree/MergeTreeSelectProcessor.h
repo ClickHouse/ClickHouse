@@ -11,6 +11,7 @@ namespace DB
 {
 
 struct PrewhereExprInfo;
+class MarkFilterCache;
 
 struct ChunkAndProgress
 {
@@ -39,7 +40,8 @@ public:
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReadTask::BlockSizeParams & block_size_params_,
-        const MergeTreeReaderSettings & reader_settings_);
+        const MergeTreeReaderSettings & reader_settings_,
+        const std::shared_ptr<MarkFilterCache> & mark_filter_cache_);
 
     String getName() const;
 
@@ -79,6 +81,8 @@ private:
     PrewhereExprStepPtr lightweight_delete_filter_step;
     /// A result of getHeader(). A chunk which this header is returned from read().
     Block result_header;
+
+    const std::shared_ptr<MarkFilterCache> mark_filter_cache;
 
     /// Should we add part level to produced chunk. Part level is useful for next steps if query has FINAL
     bool add_part_level = false;

@@ -1119,7 +1119,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     {
         leading_begin_part_offset = stream.currentPartOffset();
         leading_end_part_offset = stream.lastPartOffset();
-        current_mark = stream.current_mark;
+        current_mark = stream.numPendingRowsInCurrentGranule() == 0 ? stream.current_mark : stream.current_mark + 1;
     }
 
     /// Stream is lazy. result.num_added_rows is the number of rows added to block which is not equal to
@@ -1132,7 +1132,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             if (stream.isFinished())
             {
                 result.addRows(stream.finalize(result.columns));
-                if (current_mark)
+                if (current_mark && *current_mark < stream.last_mark)
                     result.addReadRange(MarkRange{*current_mark, stream.last_mark});
 
                 stream = Stream(ranges.front().begin, ranges.front().end, current_task_last_mark, merge_tree_reader);
@@ -1158,8 +1158,9 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     }
 
     result.addRows(stream.finalize(result.columns));
-    if (current_mark)
-        result.addReadRange(MarkRange{*current_mark, stream.isFinished() ? stream.last_mark : stream.current_mark + 1});
+    size_t last_mark = stream.isFinished() ? stream.last_mark : stream.current_mark;
+    if (current_mark && current_mark < last_mark)
+        result.addReadRange(MarkRange{*current_mark, last_mark});
 
     /// Last granule may be incomplete.
     if (!result.rows_per_granule.empty())
