@@ -44,10 +44,11 @@
 #include <IO/HTTPHeaderEntries.h>
 
 #include <algorithm>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace ProfileEvents
 {
@@ -167,7 +168,19 @@ IStorageURLBase::IStorageURLBase(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), context_, getSampleURI(uri, context_), format_settings));
+    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        storage_metadata.getColumns(), context_, getSampleURI(uri, context_), format_settings);
+    if (!storage_metadata.getColumns().has("_headers"))
+    {
+        virtual_columns_desc.addEphemeral(
+            "_headers",
+            std::make_shared<DataTypeMap>(
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
+            "");
+    }
+
+    setVirtuals(virtual_columns_desc);
 }
 
 
@@ -292,11 +305,13 @@ StorageURLSource::StorageURLSource(
     const URIParams & params,
     bool glob_url,
     bool need_only_count_)
-    : SourceWithKeyCondition(info.source_header, false), WithContext(context_)
+    : SourceWithKeyCondition(info.source_header, false)
+    , WithContext(context_)
     , name(std::move(name_))
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
-    , requested_virtual_columns(info.requested_virtual_columns)
+    , need_headers_virtual_column(info.requested_virtual_columns.contains("_headers"))
+    , requested_virtual_columns(info.requested_virtual_columns.eraseNames({"_headers"}))
     , block_for_format(info.format_header)
     , uri_iterator(uri_iterator_)
     , format(format_)
@@ -436,6 +451,20 @@ Chunk StorageURLSource::generate()
                     .path = curr_uri.getPath(),
                     .size = current_file_size,
                 }, getContext(), columns_description);
+            if (need_headers_virtual_column)
+            {
+                if (!http_response_headers_initialized)
+                {
+                    http_response_headers = dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get())->getResponseHeaders();
+                    http_response_headers_initialized = true;
+                }
+
+                auto type = std::make_shared<DataTypeMap>(
+                    std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                    std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+
+                chunk.addColumn(type->createColumnConst(chunk.getNumRows(), http_response_headers));
+            }
             return chunk;
         }
 
@@ -446,6 +475,7 @@ Chunk StorageURLSource::generate()
         reader.reset();
         input_format.reset();
         read_buf.reset();
+        http_response_headers_initialized = false;
         total_rows_in_file = 0;
     }
     return {};
