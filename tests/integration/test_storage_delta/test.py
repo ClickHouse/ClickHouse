@@ -795,6 +795,7 @@ def test_complex_types(started_cluster):
     endpoint_url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
     aws_access_key_id = "minio"
     aws_secret_access_key = "minio123"
+    table_name = randomize_table_name("test_complex_types")
 
     storage_options = {
         "AWS_ENDPOINT_URL": endpoint_url,
@@ -803,23 +804,23 @@ def test_complex_types(started_cluster):
         "AWS_ALLOW_HTTP": "true",
         "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
     }
-    path = f"s3://root/testtable"
+    path = f"s3://root/{table_name}"
     table = pa.Table.from_arrays(data, schema=schema)
 
     write_deltalake(path, table, storage_options=storage_options)
 
     assert "1\n2\n3\n" in node.query(
-        f"SELECT id FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/testtable' , 'minio', 'minio123')"
+        f"SELECT id FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', 'minio123')"
     )
     assert (
         "('123 Elm St','Springfield','IL')\n('456 Maple St','Shelbyville','IL')\n('789 Oak St','Ogdenville','IL')"
         in node.query(
-            f"SELECT address FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/testtable' , 'minio', 'minio123')"
+            f"SELECT address FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', 'minio123')"
         )
     )
     assert (
         "{'key1':'value1','key2':'value2'}\n{'key1':'value3','key2':'value4'}\n{'key1':'value5','key2':'value6'}"
         in node.query(
-            f"SELECT metadata FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/testtable' , 'minio', 'minio123')"
+            f"SELECT metadata FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', 'minio123')"
         )
     )
