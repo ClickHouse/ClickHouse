@@ -430,7 +430,14 @@ class ClickhouseIntegrationTestsRunner:
             "Getting all tests to the file %s with cmd: \n%s", out_file_full, cmd
         )
         with open(out_file_full, "wb") as ofd:
-            subprocess.check_call(cmd, shell=True, stdout=ofd, stderr=ofd)
+            try:
+                subprocess.check_call(cmd, shell=True, stdout=ofd, stderr=ofd)
+            except subprocess.CalledProcessError as ex:
+                print("ERROR: Setting test plan failed. Output:")
+                with open(out_file_full, "r", encoding="utf-8") as file:
+                    for line in file:
+                        print("    " + line, end="")
+                raise ex
 
         all_tests = set()
         with open(out_file_full, "r", encoding="utf-8") as all_tests_fd:
