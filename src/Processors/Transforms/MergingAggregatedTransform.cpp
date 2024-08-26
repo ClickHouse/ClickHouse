@@ -74,7 +74,9 @@ void MergingAggregatedTransform::addBlock(Block block)
         /// Fill the last equal range.
         selector.resize_fill(row, enumerated_groups[last_group]);
         /// Enumerate new group if did not see it before.
-        enumerated_groups.emplace(last_group, enumerated_groups.size());
+        enumerated_groups.emplace(group, enumerated_groups.size());
+
+        last_group = group;
     }
 
     /// Optimization for single group.
