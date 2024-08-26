@@ -28,7 +28,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int INVALID_CONFIG_PARAMETER;
+    extern const int INVALID_CONFIG_PARAMETER;
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
 KeeperHTTPRequestHandlerFactory::KeeperHTTPRequestHandlerFactory(const std::string & name_) : log(getLogger(name_)), name(name_)
@@ -159,13 +160,13 @@ static inline auto createHandlersFactoryFromConfig(
                     "{}.{}.handler.type",
                     prefix,
                     key);
-            if (handler_type == "ready")
+            else if (handler_type == "ready")
                 addReadinessHandlerToFactory(*main_handler_factory, keeper_dispatcher, config);
-            if (handler_type == "dashboard")
+            else if (handler_type == "dashboard")
                 addDashboardHandlersToFactory(*main_handler_factory, keeper_dispatcher);
-            if (handler_type == "commands")
+            else if (handler_type == "commands")
                 addCommandsHandlersToFactory(*main_handler_factory, keeper_dispatcher);
-            if (handler_type == "storage")
+            else if (handler_type == "storage")
                 addStorageHandlersToFactory(*main_handler_factory, server, keeper_dispatcher);
             else
                 throw Exception(

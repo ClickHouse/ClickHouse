@@ -179,7 +179,7 @@ std::string HTTPServerRequest::toStringForLogging() const {
         getMethod(),
         clientAddress().toString(),
         get("User-Agent", "(none)"),
-        (hasContentLength() ? (", Length: " + std::to_string(getContentLength())) : ("")),
+        (hasContentLength() ? fmt::format(", Length: {}", getContentLength()) : ("")),
         getContentType(),
         getTransferEncoding(),
         get("X-Forwarded-For", "(none)"));
