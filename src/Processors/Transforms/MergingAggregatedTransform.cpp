@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 Block MergingAggregatedTransform::appendGroupingIfNeeded(const Block & in_header, Block out_header)
 {
-    /// __grouping_set is neigher GROUP BY key nor an aggregate function.
+    /// __grouping_set is neither GROUP BY key nor an aggregate function.
     /// It behaves like a GROUP BY key, but we cannot append it to keys
     /// because it changes hashing method and buckets for two level aggregation.
     /// Now, this column is processed "manually" by merging each group separately.
