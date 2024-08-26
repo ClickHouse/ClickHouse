@@ -6,6 +6,7 @@ import logging
 import os
 import random
 import shlex
+import shutil
 import signal
 import string
 import subprocess
@@ -135,6 +136,47 @@ def check_args_and_update_paths(args):
         )
 
 
+def check_iptables_legacy():
+    iptables_path = shutil.which("iptables")
+
+    if iptables_path is None:
+        print("Error: 'iptables' not found in PATH")
+        sys.exit(1)  # Exit with error code 1
+
+    try:
+        file_info = os.stat(iptables_path)
+        file_info_str = str(file_info)
+
+        if "legacy" in file_info_str:
+            print(
+                "iptables is in 'legacy' mode. This is not supported. Please switch to 'nftables' mode."
+            )
+            sys.exit(1)
+
+    except FileNotFoundError:
+        print(f"Error: '{iptables_path}' not found")
+        sys.exit(1)
+
+
+def check_iptables_forward_accept(ipv6=False):
+    command = "iptables"
+    if ipv6:
+        command = "ip6tables"
+    output = os.popen(command + "-S FORWARD").read()
+
+    # Check if the output contains '-P FORWARD ACCEPT'
+    if "-P FORWARD ACCEPT" not in output:
+        print(
+            f"'{command} -P FORWARD ACCEPT' is not set. This may cause issues in tests"
+        )
+
+
+def chech_prerequisites():
+    check_iptables_legacy()
+    check_iptables_forward_accept(ipv6=False)
+    check_iptables_forward_accept(ipv6=True)
+
+
 def docker_kill_handler_handler(signum, frame):
     _, _ = signum, frame
     subprocess.check_call(
@@ -163,6 +205,9 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s [ %(process)d ] %(levelname)s : %(message)s (%(filename)s:%(lineno)s, %(funcName)s)",
     )
+
+    chech_prerequisites()
+
     parser = argparse.ArgumentParser(description="ClickHouse integration tests runner")
 
     parser.add_argument(
