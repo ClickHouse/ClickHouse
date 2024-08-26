@@ -81,7 +81,7 @@ def test_keeper_feature_flags(started_cluster):
             assert f"{feature}\t{1 if is_enabled else 0}" in res
 
     assert_feature_flags(
-        [("filtered_list", 1), ("multi_read", 1), ("check_not_exists", 0)]
+        [("filtered_list", 1), ("multi_read", 1), ("check_not_exists", 1), ("create_if_not_exists", 1) ]
     )
 
     feature_flags = [
