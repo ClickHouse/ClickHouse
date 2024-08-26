@@ -552,7 +552,7 @@ static std::set<ColumnStatisticsPtr> getStatisticsToRecalculate(const StorageMet
     {
         if (!col_desc.statistics.empty() && materialized_stats.contains(col_desc.name))
         {
-            stats_to_recalc.insert(stats_factory.get(col_desc.statistics));
+            stats_to_recalc.insert(stats_factory.get(col_desc));
         }
     }
     return stats_to_recalc;
@@ -1257,6 +1257,8 @@ public:
 private:
     void prepare();
     bool mutateOriginalPartAndPrepareProjections();
+    void writeTempProjectionPart(size_t projection_idx, Chunk chunk);
+    void finalizeTempProjections();
     bool iterateThroughAllProjections();
     void constructTaskForProjectionPartsMerge();
     void finalize();
@@ -1307,10 +1309,22 @@ void PartMergerWriter::prepare()
 
 bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 {
-    Block cur_block;
-    Block projection_header;
-    if (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor->pull(cur_block))
+    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+    UInt64 step_time_ms = ctx->data->getSettings()->background_task_preferred_step_execution_time_ms.totalMilliseconds();
+
+    do
     {
+        Block cur_block;
+        Block projection_header;
+
+        MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry);
+
+        if (!ctx->mutating_executor->pull(cur_block))
+        {
+            finalizeTempProjections();
+            return false;
+        }
+
         if (ctx->minmax_idx)
             ctx->minmax_idx->update(cur_block, MergeTreeData::getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
 
@@ -1322,46 +1336,56 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 
         for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
         {
-            const auto & projection = *ctx->projections_to_build[i];
+            Chunk squashed_chunk;
 
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-            Block block_to_squash = projection.calculate(cur_block, ctx->context);
-            projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
-
-            Chunk squashed_chunk = Squashing::squash(projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}));
-            if (squashed_chunk)
             {
-                auto result = projection_squashes[i].getHeader().cloneWithColumns(squashed_chunk.detachColumns());
-                auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                    *ctx->data, ctx->log, result, projection, ctx->new_data_part.get(), ++block_num);
-                tmp_part.finalize();
-                tmp_part.part->getDataPartStorage().commitTransaction();
-                projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
+                ProfileEventTimeIncrement<Microseconds> projection_watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
+                Block block_to_squash = ctx->projections_to_build[i]->calculate(cur_block, ctx->context);
+
+                projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
+                squashed_chunk = Squashing::squash(projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}));
             }
+
+            if (squashed_chunk)
+                writeTempProjectionPart(i, std::move(squashed_chunk));
         }
 
         (*ctx->mutate_entry)->rows_written += cur_block.rows();
         (*ctx->mutate_entry)->bytes_written_uncompressed += cur_block.bytes();
+    } while (watch.elapsedMilliseconds() < step_time_ms);
 
-        /// Need execute again
-        return true;
-    }
+    /// Need execute again
+    return true;
+}
 
+void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chunk)
+{
+    const auto & projection = *ctx->projections_to_build[projection_idx];
+    const auto & projection_plan = projection_squashes[projection_idx];
+
+    auto result = projection_plan.getHeader().cloneWithColumns(chunk.detachColumns());
+
+    auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
+        *ctx->data,
+        ctx->log,
+        result,
+        projection,
+        ctx->new_data_part.get(),
+        ++block_num);
+
+    tmp_part.finalize();
+    tmp_part.part->getDataPartStorage().commitTransaction();
+    projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
+}
+
+void PartMergerWriter::finalizeTempProjections()
+{
     // Write the last block
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
-        const auto & projection = *ctx->projections_to_build[i];
-        auto & projection_squash_plan = projection_squashes[i];
-        auto squashed_chunk = Squashing::squash(projection_squash_plan.flush());
+        auto squashed_chunk = Squashing::squash(projection_squashes[i].flush());
         if (squashed_chunk)
-        {
-            auto result = projection_squash_plan.getHeader().cloneWithColumns(squashed_chunk.detachColumns());
-            auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *ctx->data, ctx->log, result, projection, ctx->new_data_part.get(), ++block_num);
-            temp_part.finalize();
-            temp_part.part->getDataPartStorage().commitTransaction();
-            projection_parts[projection.name].emplace_back(std::move(temp_part.part));
-        }
+            writeTempProjectionPart(i, std::move(squashed_chunk));
     }
 
     projection_parts_iterator = std::make_move_iterator(projection_parts.begin());
@@ -1369,11 +1393,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     /// Maybe there are no projections ?
     if (projection_parts_iterator != std::make_move_iterator(projection_parts.end()))
         constructTaskForProjectionPartsMerge();
-
-    /// Let's move on to the next stage
-    return false;
 }
-
 
 void PartMergerWriter::constructTaskForProjectionPartsMerge()
 {
@@ -1537,7 +1557,7 @@ private:
 
             if (ctx->materialized_statistics.contains(col.name))
             {
-                stats_to_rewrite.push_back(MergeTreeStatisticsFactory::instance().get(col.statistics));
+                stats_to_rewrite.push_back(MergeTreeStatisticsFactory::instance().get(col));
             }
             else
             {

@@ -572,7 +572,7 @@ def test_partition_columns(started_cluster):
                 "test" + str(i),
                 datetime.strptime(f"2000-01-0{i}", "%Y-%m-%d"),
                 i,
-                False,
+                False if i % 2 == 0 else True,
             )
         ]
         df = spark.createDataFrame(data=data, schema=schema)
@@ -622,15 +622,15 @@ def test_partition_columns(started_cluster):
        ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123')"""
     )
     assert (
-        """1	test1	2000-01-01	1	false
+        """1	test1	2000-01-01	1	true
 2	test2	2000-01-02	2	false
-3	test3	2000-01-03	3	false
+3	test3	2000-01-03	3	true
 4	test4	2000-01-04	4	false
-5	test5	2000-01-05	5	false
+5	test5	2000-01-05	5	true
 6	test6	2000-01-06	6	false
-7	test7	2000-01-07	7	false
+7	test7	2000-01-07	7	true
 8	test8	2000-01-08	8	false
-9	test9	2000-01-09	9	false"""
+9	test9	2000-01-09	9	true"""
         == instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY b").strip()
     )
 
@@ -670,7 +670,7 @@ test9	2000-01-09	9"""
                 "test" + str(i),
                 datetime.strptime(f"2000-01-{i}", "%Y-%m-%d"),
                 i,
-                False,
+                False if i % 2 == 0 else True,
             )
         ]
         df = spark.createDataFrame(data=data, schema=schema)
@@ -696,23 +696,23 @@ test9	2000-01-09	9"""
     assert result == num_rows * 2
 
     assert (
-        """1	test1	2000-01-01	1	false
+        """1	test1	2000-01-01	1	true
 2	test2	2000-01-02	2	false
-3	test3	2000-01-03	3	false
+3	test3	2000-01-03	3	true
 4	test4	2000-01-04	4	false
-5	test5	2000-01-05	5	false
+5	test5	2000-01-05	5	true
 6	test6	2000-01-06	6	false
-7	test7	2000-01-07	7	false
+7	test7	2000-01-07	7	true
 8	test8	2000-01-08	8	false
-9	test9	2000-01-09	9	false
+9	test9	2000-01-09	9	true
 10	test10	2000-01-10	10	false
-11	test11	2000-01-11	11	false
+11	test11	2000-01-11	11	true
 12	test12	2000-01-12	12	false
-13	test13	2000-01-13	13	false
+13	test13	2000-01-13	13	true
 14	test14	2000-01-14	14	false
-15	test15	2000-01-15	15	false
+15	test15	2000-01-15	15	true
 16	test16	2000-01-16	16	false
-17	test17	2000-01-17	17	false
+17	test17	2000-01-17	17	true
 18	test18	2000-01-18	18	false"""
         == instance.query(
             f"""

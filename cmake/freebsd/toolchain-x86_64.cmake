@@ -8,4 +8,7 @@ set (CMAKE_CXX_COMPILER_TARGET "x86_64-pc-freebsd11")
 set (CMAKE_ASM_COMPILER_TARGET "x86_64-pc-freebsd11")
 set (CMAKE_SYSROOT "${CMAKE_CURRENT_LIST_DIR}/../../contrib/sysroot/freebsd-x86_64")
 
+# dprintf is used in a patched version of replxx
+add_compile_definitions(_WITH_DPRINTF)
+
 set (CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)  # disable linkage check - it doesn't work in CMake

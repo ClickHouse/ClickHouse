@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -705,9 +706,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
         auto stats_vec = ColumnStatisticsDescription::fromAST(statistics_decl, metadata.columns);
-        for (const auto & stats : stats_vec)
+        for (const auto & [stats_column_name, stats] : stats_vec)
         {
-            metadata.columns.modify(stats.column_name,
+            metadata.columns.modify(stats_column_name,
                 [&](ColumnDescription & column) { column.statistics.merge(stats, column.name, column.type, if_not_exists); });
         }
     }
@@ -734,14 +735,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         {
             if (!metadata.columns.has(statistics_column_name))
             {
-                throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Cannot add statistics for column {}: this column is not found", statistics_column_name);
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Cannot modify statistics for column {}: this column is not found", statistics_column_name);
             }
         }
 
         auto stats_vec = ColumnStatisticsDescription::fromAST(statistics_decl, metadata.columns);
-        for (const auto & stats : stats_vec)
+        for (const auto & [stats_column_name, stats] : stats_vec)
         {
-            metadata.columns.modify(stats.column_name,
+            metadata.columns.modify(stats_column_name,
                 [&](ColumnDescription & column) { column.statistics.assign(stats); });
         }
     }
@@ -866,8 +867,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                     rename_visitor.visit(column_to_modify.default_desc.expression);
                 if (column_to_modify.ttl)
                     rename_visitor.visit(column_to_modify.ttl);
-                if (column_to_modify.name == column_name && !column_to_modify.statistics.empty())
-                    column_to_modify.statistics.column_name = rename_to;
             });
         }
         if (metadata.table_ttl.definition_ast)
@@ -1403,13 +1402,21 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 
-                bool new_type_has_object = command.data_type->hasDynamicSubcolumnsDeprecated();
-                bool old_type_has_object = old_data_type->hasDynamicSubcolumnsDeprecated();
+                bool new_type_has_deprecated_object = command.data_type->hasDynamicSubcolumnsDeprecated();
+                bool old_type_has_deprecated_object = old_data_type->hasDynamicSubcolumnsDeprecated();
 
-                if (new_type_has_object || old_type_has_object)
+                if (new_type_has_deprecated_object || old_type_has_deprecated_object)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "The change of data type {} of column {} to {} is not allowed. It has known bugs",
+                        old_data_type->getName(), backQuote(column_name), command.data_type->getName());
+
+                bool has_object_type = isObject(command.data_type);
+                command.data_type->forEachChild([&](const IDataType & type){ has_object_type |= isObject(type); });
+                if (has_object_type)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The change of data type {} of column {} to {} is not supported.",
                         old_data_type->getName(), backQuote(column_name), command.data_type->getName());
             }
 

@@ -11,33 +11,40 @@ function query()
     ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&database_atomic_wait_for_drop_and_detach_synchronously=1" -d "$*"
 }
 
-# NOTE: database = $CLICKHOUSE_DATABASE is unwanted
-verify_sql="SELECT
-    (SELECT sumIf(value, metric = 'PartsActive'), sumIf(value, metric = 'PartsOutdated') FROM system.metrics)
-    = (SELECT sum(active), sum(NOT active) FROM
-    (SELECT active FROM system.parts UNION ALL SELECT active FROM system.projection_parts UNION ALL SELECT 1 FROM system.dropped_tables_parts))"
 
 # The query is not atomic - it can compare states between system.parts and system.metrics from different points in time.
 # So, there is inherent race condition. But it should get expected result eventually.
 # In case of test failure, this code will do infinite loop and timeout.
 verify()
 {
-    for i in {1..5000}
-    do
-        result=$( query "$verify_sql" )
-        [ "$result" = "1" ] && echo "$result" && break
-        sleep 0.1
+    local result
 
-        if [[ $i -eq 5000 ]]
-        then
-            query "
-              SELECT sumIf(value, metric = 'PartsActive'), sumIf(value, metric = 'PartsOutdated') FROM system.metrics;
-              SELECT sum(active), sum(NOT active) FROM system.parts;
-              SELECT sum(active), sum(NOT active) FROM system.projection_parts;
-              SELECT count() FROM system.dropped_tables_parts;
-            "
+    for _ in {1..100}; do
+        # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
+        result=$( query "SELECT
+            (SELECT sumIf(value, metric = 'PartsActive'), sumIf(value, metric = 'PartsOutdated') FROM system.metrics)
+                =
+            (SELECT sum(active), sum(NOT active) FROM (
+                SELECT active FROM system.parts
+                UNION ALL SELECT active FROM system.projection_parts
+                UNION ALL SELECT 1 FROM system.dropped_tables_parts
+            ))"
+        )
+
+        if [ "$result" = "1" ]; then
+            echo "$result"
+            return
         fi
+
+        sleep 0.5
     done
+
+    $CLICKHOUSE_CLIENT -q "
+        SELECT sumIf(value, metric = 'PartsActive'), sumIf(value, metric = 'PartsOutdated') FROM system.metrics;
+        SELECT sum(active), sum(NOT active) FROM system.parts;
+        SELECT sum(active), sum(NOT active) FROM system.projection_parts;
+        SELECT count() FROM system.dropped_tables_parts;
+    "
 }
 
 query "DROP TABLE IF EXISTS test_table"
