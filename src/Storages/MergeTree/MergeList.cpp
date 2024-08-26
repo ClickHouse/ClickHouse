@@ -6,6 +6,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
 
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -33,12 +34,12 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         format_version = MERGE_TREE_DATA_OLD_FORMAT_VERSION;
 
     /// FIXME why do we need a merge list element for projection parts at all?
-    bool skip_sanity_checks = future_part->part_info == FAKE_RESULT_PART_FOR_PROJECTION;
+    bool is_fake_projection_part = future_part->part_info == FAKE_RESULT_PART_FOR_PROJECTION;
 
     size_t normal_parts_count = 0;
     for (const auto & source_part : future_part->parts)
     {
-        if (!skip_sanity_checks && !source_part->getParentPart())
+        if (!is_fake_projection_part && !source_part->getParentPart())
         {
             ++normal_parts_count;
             if (!result_part_info.contains(MergeTreePartInfo::fromPartName(source_part->name, format_version)))
@@ -57,14 +58,14 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
     if (!future_part->parts.empty())
     {
         source_data_version = future_part->parts[0]->info.getDataVersion();
-        is_mutation = (result_part_info.level == future_part->parts[0]->info.level);
+        is_mutation = (result_part_info.level == future_part->parts[0]->info.level) && !is_fake_projection_part;
 
         WriteBufferFromString out(partition);
         const auto & part = future_part->parts[0];
         part->partition.serializeText(part->storage, out, {});
     }
 
-    if (!skip_sanity_checks && is_mutation && normal_parts_count != 1)
+    if (!is_fake_projection_part && is_mutation && normal_parts_count != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} source parts for mutation {}: {}", future_part->parts.size(),
                         result_part_info.getPartNameV1(), fmt::join(source_part_names, ", "));
 
