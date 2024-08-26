@@ -8,6 +8,7 @@
 #include <Common/quoteString.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeCustom.h>
@@ -89,9 +90,7 @@ void IDataType::forEachSubcolumn(
             {
                 auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
                 auto subdata = ISerialization::createFromPath(subpath, prefix_len);
-                auto path_copy = subpath;
-                path_copy.resize(prefix_len);
-                callback(path_copy, name, subdata);
+                callback(subpath, name, subdata);
             }
             subpath[i].visited = true;
         }
@@ -174,7 +173,7 @@ bool IDataType::hasDynamicSubcolumns() const
     auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
     auto callback = [&](const SubstreamPath &, const String &, const SubstreamData & subcolumn_data)
     {
-        has_dynamic_subcolumns |= subcolumn_data.type && subcolumn_data.type->hasDynamicSubcolumnsData();
+        has_dynamic_subcolumns |= subcolumn_data.type->hasDynamicSubcolumnsData();
     };
     forEachSubcolumn(callback, data);
     return has_dynamic_subcolumns;
@@ -362,10 +361,9 @@ bool isArray(TYPE data_type) { return WhichDataType(data_type).isArray(); } \
 bool isTuple(TYPE data_type) { return WhichDataType(data_type).isTuple(); } \
 bool isMap(TYPE data_type) {return WhichDataType(data_type).isMap(); } \
 bool isInterval(TYPE data_type) {return WhichDataType(data_type).isInterval(); } \
-bool isObjectDeprecated(TYPE data_type) { return WhichDataType(data_type).isObjectDeprecated(); } \
+bool isObject(TYPE data_type) { return WhichDataType(data_type).isObject(); } \
 bool isVariant(TYPE data_type) { return WhichDataType(data_type).isVariant(); } \
 bool isDynamic(TYPE data_type) { return WhichDataType(data_type).isDynamic(); } \
-bool isObject(TYPE data_type) { return WhichDataType(data_type).isObject(); } \
 bool isNothing(TYPE data_type) { return WhichDataType(data_type).isNothing(); } \
 \
 bool isColumnedAsNumber(TYPE data_type) \

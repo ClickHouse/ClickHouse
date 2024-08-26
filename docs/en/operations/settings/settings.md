@@ -1170,10 +1170,6 @@ Data in the VALUES clause of INSERT queries is processed by a separate stream pa
 
 Default value: 262144 (= 256 KiB).
 
-:::note
-`max_query_size` cannot be set within an SQL query (e.g., `SELECT now() SETTINGS max_query_size=10000`) because ClickHouse needs to allocate a buffer to parse the query, and this buffer size is determined by the `max_query_size` setting, which must be configured before the query is executed.
-:::
-
 ## max_parser_depth {#max_parser_depth}
 
 Limits maximum recursion depth in the recursive descent parser. Allows controlling the stack size.
@@ -1358,30 +1354,17 @@ Connection pool size for PostgreSQL table engine and database engine.
 
 Default value: 16
 
-## postgresql_connection_attempt_timeout {#postgresql-connection-attempt-timeout}
-
-Connection timeout in seconds of a single attempt to connect PostgreSQL end-point.
-The value is passed as a `connect_timeout` parameter of the connection URL.
-
-Default value: `2`.
-
 ## postgresql_connection_pool_wait_timeout {#postgresql-connection-pool-wait-timeout}
 
 Connection pool push/pop timeout on empty pool for PostgreSQL table engine and database engine. By default it will block on empty pool.
 
 Default value: 5000
 
-## postgresql_connection_pool_retries {#postgresql-connection-pool-retries}
-
-The maximum number of retries to establish a connection with the PostgreSQL end-point.
-
-Default value: `2`.
-
 ## postgresql_connection_pool_auto_close_connection {#postgresql-connection-pool-auto-close-connection}
 
 Close connection before returning connection to the pool.
 
-Default value: false.
+Default value: true.
 
 ## odbc_bridge_connection_pool_size {#odbc-bridge-connection-pool-size}
 
@@ -1607,22 +1590,6 @@ Possible values:
 
 Default value: `default`.
 
-## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
-
-Allows the filter type `range` to split the work evenly between replicas based on the custom range `[parallel_replicas_custom_key_range_lower, INT_MAX]`.
-
-When used in conjuction with [parallel_replicas_custom_key_range_upper](#parallel_replicas_custom_key_range_upper), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`.
-
-Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing.
-
-## parallel_replicas_custom_key_range_upper {#parallel_replicas_custom_key_range_upper}
-
-Allows the filter type `range` to split the work evenly between replicas based on the custom range `[0, parallel_replicas_custom_key_range_upper]`. A value of 0 disables the upper bound, setting it the max value of the custom key expression.
-
-When used in conjuction with [parallel_replicas_custom_key_range_lower](#parallel_replicas_custom_key_range_lower), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`.
-
-Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing.
-
 ## allow_experimental_parallel_reading_from_replicas
 
 Enables or disables sending SELECT queries to all replicas of a table (up to `max_parallel_replicas`). Reading is parallelized and coordinated dynamically. It will work for any kind of MergeTree table.
@@ -1799,17 +1766,6 @@ Possible values:
 - 1 - Enabled
 
 Default value: `0`.
-
-## query_cache_tag {#query-cache-tag}
-
-A string which acts as a label for [query cache](../query-cache.md) entries.
-The same queries with different tags are considered different by the query cache.
-
-Possible values:
-
-- Any string
-
-Default value: `''`
 
 ## query_cache_max_size_in_bytes {#query-cache-max-size-in-bytes}
 
@@ -2000,7 +1956,7 @@ Possible values:
 - Positive integer.
 - 0 — Asynchronous insertions are disabled.
 
-Default value: `10485760`.
+Default value: `1000000`.
 
 ### async_insert_max_query_number {#async-insert-max-query-number}
 
@@ -2292,7 +2248,7 @@ Default value: 0.
 
 ## count_distinct_implementation {#count_distinct_implementation}
 
-Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT ...)](../../sql-reference/aggregate-functions/reference/count.md/#agg_function-count) construction.
+Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference/count.md/#agg_function-count) construction.
 
 Possible values:
 
@@ -2564,7 +2520,7 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 
-Default value: `1`.
+Default value: `0`.
 
 ## optimize_trivial_count_query {#optimize-trivial-count-query}
 
@@ -3214,18 +3170,6 @@ Possible values:
 
 Default value: `0`.
 
-## lightweight_deletes_sync {#lightweight_deletes_sync}
-
-The same as 'mutation_sync', but controls only execution of lightweight deletes.
-
-Possible values:
-
-- 0 - Mutations execute asynchronously.
-- 1 - The query waits for the lightweight deletes to complete on the current server.
-- 2 - The query waits for the lightweight deletes to complete on all replicas (if they exist).
-
-Default value: `2`.
-
 **See Also**
 
 - [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
@@ -3721,26 +3665,6 @@ Possible values:
 
 Default value: `0`.
 
-## s3_ignore_file_doesnt_exist {#s3_ignore_file_doesnt_exist}
-
-Ignore absence of file if it does not exist when reading certain keys.
-
-Possible values:
-- 1 — `SELECT` returns empty result.
-- 0 — `SELECT` throws an exception.
-
-Default value: `0`.
-
-## s3_validate_request_settings {#s3_validate_request_settings}
-
-Enables s3 request settings validation.
-
-Possible values:
-- 1 — validate settings.
-- 0 — do not validate settings.
-
-Default value: `1`.
-
 ## hdfs_truncate_on_insert {#hdfs_truncate_on_insert}
 
 Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists.
@@ -3766,56 +3690,6 @@ Default value: `0`.
 ## hdfs_skip_empty_files {#hdfs_skip_empty_files}
 
 Enables or disables skipping empty files in [HDFS](../../engines/table-engines/integrations/hdfs.md) engine tables.
-
-Possible values:
-- 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
-- 1 — `SELECT` returns empty result for empty file.
-
-Default value: `0`.
-
-## hdfs_throw_on_zero_files_match {#hdfs_throw_on_zero_files_match}
-
-Throw an error if matched zero files according to glob expansion rules.
-
-Possible values:
-- 1 — `SELECT` throws an exception.
-- 0 — `SELECT` returns empty result.
-
-Default value: `0`.
-
-## hdfs_ignore_file_doesnt_exist {#hdfs_ignore_file_doesnt_exist}
-
-Ignore absence of file if it does not exist when reading certain keys.
-
-Possible values:
-- 1 — `SELECT` returns empty result.
-- 0 — `SELECT` throws an exception.
-
-Default value: `0`.
-
-## azure_throw_on_zero_files_match {#azure_throw_on_zero_files_match}
-
-Throw an error if matched zero files according to glob expansion rules.
-
-Possible values:
-- 1 — `SELECT` throws an exception.
-- 0 — `SELECT` returns empty result.
-
-Default value: `0`.
-
-## azure_ignore_file_doesnt_exist {#azure_ignore_file_doesnt_exist}
-
-Ignore absence of file if it does not exist when reading certain keys.
-
-Possible values:
-- 1 — `SELECT` returns empty result.
-- 0 — `SELECT` throws an exception.
-
-Default value: `0`.
-
-## azure_skip_empty_files {#azure_skip_empty_files}
-
-Enables or disables skipping empty files in S3 engine.
 
 Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
@@ -3905,10 +3779,6 @@ Possible values:
 - 0 - Disabled (infinite timeout).
 
 Default value: 30.
-
-:::note
-It's applicable only to the default profile. A server reboot is required for the changes to take effect.
-:::
 
 ## http_receive_timeout {#http_receive_timeout}
 
@@ -4062,7 +3932,7 @@ Rewrite aggregate functions with if expression as argument when logically equiva
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
 
 :::note
-Supported only with experimental analyzer (`enable_analyzer = 1`).
+Supported only with experimental analyzer (`allow_experimental_analyzer = 1`).
 :::
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
@@ -4640,8 +4510,8 @@ Default Value: 5.
 
 ## memory_overcommit_ratio_denominator {#memory_overcommit_ratio_denominator}
 
-It represents the soft memory limit when the hard limit is reached on the global level.
-This value is used to compute the overcommit ratio for the query.
+It represents soft memory limit in case when hard limit is reached on user level.
+This value is used to compute overcommit ratio for the query.
 Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 
@@ -4657,8 +4527,8 @@ Default value: `5000000`.
 
 ## memory_overcommit_ratio_denominator_for_user {#memory_overcommit_ratio_denominator_for_user}
 
-It represents the soft memory limit when the hard limit is reached on the user level.
-This value is used to compute the overcommit ratio for the query.
+It represents soft memory limit in case when hard limit is reached on global level.
+This value is used to compute overcommit ratio for the query.
 Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 
@@ -5168,7 +5038,7 @@ a	Tuple(
 )
 ```
 
-## allow_experimental_statistics {#allow_experimental_statistics}
+## allow_experimental_statistic {#allow_experimental_statistic}
 
 Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md#column-statistics).
 
@@ -5178,7 +5048,7 @@ Allows using statistic to optimize the order of [prewhere conditions](../../sql-
 
 ## analyze_index_with_space_filling_curves
 
-If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
+If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
 
 ## query_plan_enable_optimizations {#query_plan_enable_optimizations}
 
@@ -5446,15 +5316,6 @@ When set to `false` than all attempts are made with identical timeouts.
 
 Default value: `true`.
 
-## allow_deprecated_snowflake_conversion_functions {#allow_deprecated_snowflake_conversion_functions}
-
-Functions `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake`, and `dateTime64ToSnowflake` are deprecated and disabled by default.
-Please use functions `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID`, and `dateTime64ToSnowflakeID` instead.
-
-To re-enable the deprecated functions (e.g., during a transition period), please set this setting to `true`.
-
-Default value: `false`
-
 ## allow_experimental_variant_type {#allow_experimental_variant_type}
 
 Allows creation of experimental [Variant](../../sql-reference/data-types/variant.md).
@@ -5619,57 +5480,3 @@ Default value: `10000000`.
 Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 
 Default value: `1GiB`.
-
-## use_json_alias_for_old_object_type
-
-When enabled, `JSON` data type alias will be used to create an old [Object('json')](../../sql-reference/data-types/json.md) type instead of the new [JSON](../../sql-reference/data-types/newjson.md) type.
-This setting requires server restart to take effect when changed.
-
-Default value: `false`.
-
-## type_json_skip_duplicated_paths
-
-When enabled, ClickHouse will skip duplicated paths during parsing of [JSON](../../sql-reference/data-types/newjson.md) object. Only the value of the first occurrence of each path will be inserted.
-
-Default value: `false`
-
-## restore_replace_external_engines_to_null
-
-For testing purposes. Replaces all external engines to Null to not initiate external connections.
-
-Default value: `False`
-
-## restore_replace_external_table_functions_to_null
-
-For testing purposes. Replaces all external table functions to Null to not initiate external connections.
-
-Default value: `False`
-
-## disable_insertion_and_mutation
-
-Disable all insert and mutations (alter table update / alter table delete / alter table drop partition). Set to true, can make this node focus on reading queries.
-
-Default value: `false`.
-
-## use_hive_partitioning
-
-When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](../../engines/table-engines/special/file.md#hive-style-partitioning)/[S3](../../engines/table-engines/integrations/s3.md#hive-style-partitioning)/[URL](../../engines/table-engines/special/url.md#hive-style-partitioning)/[HDFS](../../engines/table-engines/integrations/hdfs.md#hive-style-partitioning)/[AzureBlobStorage](../../engines/table-engines/integrations/azureBlobStorage.md#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
-
-Default value: `false`.
-
-## allow_experimental_time_series_table {#allow-experimental-time-series-table}
-
-Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.
-
-Possible values:
-
-- 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
-- 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
-
-Default value: `0`.
-
-## create_if_not_exists
-
-Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
-
-Default value: `false`.

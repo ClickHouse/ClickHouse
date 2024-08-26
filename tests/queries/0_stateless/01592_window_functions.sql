@@ -103,5 +103,3 @@ order by group_name, product_name, price;
 
 drop table product_groups;
 drop table products;
-
-

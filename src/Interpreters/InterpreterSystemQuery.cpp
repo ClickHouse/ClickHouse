@@ -12,7 +12,6 @@
 #include <Common/FailPoint.h>
 #include <Common/PageCache.h>
 #include <Common/HostResolvePool.h>
-#include <Core/ServerSettings.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -52,12 +51,11 @@
 #include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
+#include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/HDFS/Configuration.h>
-#include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/StorageAzureBlob.h>
 #include <Storages/MaterializedView/RefreshTask.h>
+#include <Storages/HDFS/StorageHDFS.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -502,17 +500,17 @@ BlockIO InterpreterSystemQuery::execute()
                 StorageFile::getSchemaCache(getContext()).clear();
 #if USE_AWS_S3
             if (caches_to_drop.contains("S3"))
-                StorageObjectStorage::getSchemaCache(getContext(), StorageS3Configuration::type_name).clear();
+                StorageS3::getSchemaCache(getContext()).clear();
 #endif
 #if USE_HDFS
             if (caches_to_drop.contains("HDFS"))
-                StorageObjectStorage::getSchemaCache(getContext(), StorageHDFSConfiguration::type_name).clear();
+                StorageHDFS::getSchemaCache(getContext()).clear();
 #endif
             if (caches_to_drop.contains("URL"))
                 StorageURL::getSchemaCache(getContext()).clear();
 #if USE_AZURE_BLOB_STORAGE
             if (caches_to_drop.contains("AZURE"))
-                StorageObjectStorage::getSchemaCache(getContext(), StorageAzureConfiguration::type_name).clear();
+                StorageAzureBlob::getSchemaCache(getContext()).clear();
 #endif
             break;
         }
@@ -663,20 +661,13 @@ BlockIO InterpreterSystemQuery::execute()
             startStopAction(ActionLocks::ViewRefresh, false);
             break;
         case Type::REFRESH_VIEW:
-            for (const auto & task : getRefreshTasks())
-                task->run();
-            break;
-        case Type::WAIT_VIEW:
-            for (const auto & task : getRefreshTasks())
-                task->wait();
+            getRefreshTask()->run();
             break;
         case Type::CANCEL_VIEW:
-            for (const auto & task : getRefreshTasks())
-                task->cancel();
+            getRefreshTask()->cancel();
             break;
         case Type::TEST_VIEW:
-            for (const auto & task : getRefreshTasks())
-                task->setFakeTime(query.fake_time_for_view);
+            getRefreshTask()->setFakeTime(query.fake_time_for_view);
             break;
         case Type::DROP_REPLICA:
             dropReplica(query);
@@ -717,8 +708,14 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
-            auto system_logs = getContext()->getSystemLogs();
-            system_logs.flush(true);
+
+            auto logs = getContext()->getSystemLogs();
+            std::vector<std::function<void()>> commands;
+            commands.reserve(logs.size());
+            for (auto * system_log : logs)
+                commands.emplace_back([system_log] { system_log->flush(true); });
+
+            executeCommandsAndThrowIfError(commands);
             break;
         }
         case Type::STOP_LISTEN:
@@ -1249,15 +1246,15 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RESTART DISK is not supported");
 }
 
-RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
+RefreshTaskHolder InterpreterSystemQuery::getRefreshTask()
 {
     auto ctx = getContext();
     ctx->checkAccess(AccessType::SYSTEM_VIEWS);
-    auto tasks = ctx->getRefreshSet().findTasks(table_id);
-    if (tasks.empty())
+    auto task = ctx->getRefreshSet().getTask(table_id);
+    if (!task)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Refreshable view {} doesn't exist", table_id.getNameForLogs());
-    return tasks;
+    return task;
 }
 
 
@@ -1413,7 +1410,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::REFRESH_VIEW:
-        case Type::WAIT_VIEW:
         case Type::START_VIEW:
         case Type::START_VIEWS:
         case Type::STOP_VIEW:

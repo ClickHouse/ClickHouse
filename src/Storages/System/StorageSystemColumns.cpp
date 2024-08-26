@@ -4,7 +4,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -105,8 +104,8 @@ protected:
 
         while (rows_count < max_block_size && db_table_num < total_tables)
         {
-            const std::string database_name = (*databases)[db_table_num].safeGet<std::string>();
-            const std::string table_name = (*tables)[db_table_num].safeGet<std::string>();
+            const std::string database_name = (*databases)[db_table_num].get<std::string>();
+            const std::string table_name = (*tables)[db_table_num].get<std::string>();
             ++db_table_num;
 
             ColumnsDescription columns;
@@ -299,7 +298,7 @@ private:
     ClientInfo::Interface client_info_interface;
     size_t db_table_num = 0;
     size_t total_tables;
-    std::shared_ptr<const ContextAccessWrapper> access;
+    std::shared_ptr<const ContextAccess> access;
     bool need_to_check_access_for_tables;
     String query_id;
     std::chrono::milliseconds lock_acquire_timeout;
@@ -338,7 +337,7 @@ private:
     std::shared_ptr<StorageSystemColumns> storage;
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
-    std::optional<ActionsDAG> virtual_columns_filter;
+    ActionsDAGPtr virtual_columns_filter;
 };
 
 void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -437,7 +436,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 
         for (size_t i = 0; i < num_databases; ++i)
         {
-            const std::string database_name = (*database_column)[i].safeGet<std::string>();
+            const std::string database_name = (*database_column)[i].get<std::string>();
             if (database_name.empty())
             {
                 for (auto & [table_name, table] : external_tables)
@@ -468,7 +467,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 
     /// Filter block with `database` and `table` columns.
     if (virtual_columns_filter)
-        VirtualColumnUtils::filterBlockWithPredicate(virtual_columns_filter->getOutputs().at(0), block_to_filter, context);
+        VirtualColumnUtils::filterBlockWithDAG(virtual_columns_filter, block_to_filter, context);
 
     if (!block_to_filter.rows())
     {

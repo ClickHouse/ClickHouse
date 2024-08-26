@@ -13,17 +13,17 @@ namespace DB::ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
-uint16_t getTerminalWidth(int in_fd, int err_fd)
+uint16_t getTerminalWidth()
 {
     struct winsize terminal_size {};
-    if (isatty(in_fd))
+    if (isatty(STDIN_FILENO))
     {
-        if (ioctl(in_fd, TIOCGWINSZ, &terminal_size))
+        if (ioctl(STDIN_FILENO, TIOCGWINSZ, &terminal_size))
             throw DB::ErrnoException(DB::ErrorCodes::SYSTEM_ERROR, "Cannot obtain terminal window size (ioctl TIOCGWINSZ)");
     }
-    else if (isatty(err_fd))
+    else if (isatty(STDERR_FILENO))
     {
-        if (ioctl(err_fd, TIOCGWINSZ, &terminal_size))
+        if (ioctl(STDERR_FILENO, TIOCGWINSZ, &terminal_size))
             throw DB::ErrnoException(DB::ErrorCodes::SYSTEM_ERROR, "Cannot obtain terminal window size (ioctl TIOCGWINSZ)");
     }
     /// Default - 0.

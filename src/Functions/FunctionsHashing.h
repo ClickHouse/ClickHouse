@@ -1190,7 +1190,7 @@ private:
 
         if (icolumn->size() != vec_to.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Argument column '{}' size {} doesn't match result column size {} of function {}",
-                icolumn->getName(), icolumn->size(), vec_to.size(), getName());
+                    icolumn->getName(), icolumn->size(), vec_to.size(), getName());
 
         if constexpr (Keyed)
             if (key_cols.size() != vec_to.size() && key_cols.size() != 1)
@@ -1229,9 +1229,6 @@ private:
         else executeGeneric<first>(key_cols, icolumn, vec_to);
     }
 
-    /// Return a fixed random-looking magic number when input is empty.
-    static constexpr auto filler = 0xe28dbde7fe22e41c;
-
     void executeForArgument(const KeyColumnsType & key_cols, const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first) const
     {
         /// Flattening of tuples.
@@ -1240,11 +1237,6 @@ private:
             const auto & tuple_columns = tuple->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
-
-            if (0 == tuple_size && is_first)
-                for (auto & hash : vec_to)
-                    hash = static_cast<ToType>(filler);
-
             for (size_t i = 0; i < tuple_size; ++i)
                 executeForArgument(key_cols, tuple_types[i].get(), tuple_columns[i].get(), vec_to, is_first);
         }
@@ -1253,11 +1245,6 @@ private:
             const auto & tuple_columns = tuple_const->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
-
-            if (0 == tuple_size && is_first)
-                for (auto & hash : vec_to)
-                    hash = static_cast<ToType>(filler);
-
             for (size_t i = 0; i < tuple_size; ++i)
             {
                 auto tmp = ColumnConst::create(tuple_columns[i], column->size());
@@ -1319,7 +1306,10 @@ public:
             constexpr size_t first_data_argument = Keyed;
 
             if (arguments.size() <= first_data_argument)
-                vec_to.assign(input_rows_count, static_cast<ToType>(filler));
+            {
+                /// Return a fixed random-looking magic number when input is empty
+                vec_to.assign(input_rows_count, static_cast<ToType>(0xe28dbde7fe22e41c));
+            }
 
             KeyColumnsType key_cols{};
             if constexpr (Keyed)

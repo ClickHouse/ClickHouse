@@ -112,7 +112,7 @@ struct fmt::formatter<DB::Part>
     static constexpr auto parse(format_parse_context & ctx) { return ctx.begin(); }
 
     template <typename FormatContext>
-    auto format(const DB::Part & part, FormatContext & ctx) const
+    auto format(const DB::Part & part, FormatContext & ctx)
     {
         return fmt::format_to(ctx.out(), "{} in replicas [{}]", part.description.describe(), fmt::join(part.replicas, ", "));
     }
@@ -125,7 +125,6 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
-extern const int ALL_CONNECTION_TRIES_FAILED;
 }
 
 class ParallelReplicasReadingCoordinator::ImplInterface
@@ -444,9 +443,6 @@ void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
             ErrorCodes::LOGICAL_ERROR, "Replica number ({}) is bigger than total replicas count ({})", replica_num, stats.size());
 
     ++stats[replica_num].number_of_requests;
-
-    if (replica_status[replica_num].is_announcement_received)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate announcement received for replica number {}", replica_num);
     replica_status[replica_num].is_announcement_received = true;
 
     LOG_DEBUG(log, "Sent initial requests: {} Replicas count: {}", sent_initial_requests, replicas_count);
@@ -1004,10 +1000,6 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
 
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)
 {
-    if (request.min_number_of_marks == 0)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
-
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleRequestMicroseconds);
 
     std::lock_guard lock(mutex);
@@ -1033,11 +1025,7 @@ void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica
     std::lock_guard lock(mutex);
 
     if (!pimpl)
-    {
         unavailable_nodes_registered_before_initialization.push_back(replica_number);
-        if (unavailable_nodes_registered_before_initialization.size() == replicas_count)
-            throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Can't connect to any replica chosen for query execution");
-    }
     else
         pimpl->markReplicaAsUnavailable(replica_number);
 }

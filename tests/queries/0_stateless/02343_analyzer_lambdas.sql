@@ -1,4 +1,4 @@
-SET enable_analyzer = 1;
+SET allow_experimental_analyzer = 1;
 
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table
@@ -49,11 +49,11 @@ WITH x -> * AS lambda SELECT lambda(1);
 WITH x -> * AS lambda SELECT lambda(1) FROM test_table;
 
 WITH cast(tuple(1), 'Tuple (value UInt64)') AS compound_value SELECT arrayMap(x -> compound_value.*, [1,2,3]);
-WITH cast(tuple(1, 1), 'Tuple (value_1 UInt64, value_2 UInt64)') AS compound_value SELECT arrayMap(x -> compound_value.*, [1,2,3]); -- { serverError UNSUPPORTED_METHOD }
+WITH cast(tuple(1, 1), 'Tuple (value_1 UInt64, value_2 UInt64)') AS compound_value SELECT arrayMap(x -> compound_value.*, [1,2,3]); -- { serverError 1 }
 WITH cast(tuple(1, 1), 'Tuple (value_1 UInt64, value_2 UInt64)') AS compound_value SELECT arrayMap(x -> plus(compound_value.*), [1,2,3]);
 
 WITH cast(tuple(1), 'Tuple (value UInt64)') AS compound_value SELECT id, test_table.* APPLY x -> compound_value.* FROM test_table;
-WITH cast(tuple(1, 1), 'Tuple (value_1 UInt64, value_2 UInt64)') AS compound_value SELECT id, test_table.* APPLY x -> compound_value.* FROM test_table; -- { serverError UNSUPPORTED_METHOD }
+WITH cast(tuple(1, 1), 'Tuple (value_1 UInt64, value_2 UInt64)') AS compound_value SELECT id, test_table.* APPLY x -> compound_value.* FROM test_table; -- { serverError 1 }
 WITH cast(tuple(1, 1), 'Tuple (value_1 UInt64, value_2 UInt64)') AS compound_value SELECT id, test_table.* APPLY x -> plus(compound_value.*) FROM test_table;
 
 SELECT 'Lambda untuple';
