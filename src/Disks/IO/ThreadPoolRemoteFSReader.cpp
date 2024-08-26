@@ -3,6 +3,7 @@
 #include <IO/AsyncReadCounters.h>
 #include <IO/SeekableReadBuffer.h>
 #include <base/getThreadId.h>
+#include <base/demangle.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -40,6 +41,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -136,6 +142,7 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
         if (request.ignore)
         {
             ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
+            chassert(request.ignore < request.size);
             reader.ignore(request.ignore);
         }
     }
@@ -152,11 +159,15 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
     IAsynchronousReader::Result read_result;
     if (result)
     {
-        chassert(reader.buffer().begin() == request.buf);
-        chassert(reader.buffer().end() <= request.buf + request.size);
-        read_result.size = reader.buffer().size();
-        read_result.offset = reader.offset();
-        ProfileEvents::increment(ProfileEvents::ThreadpoolReaderReadBytes, read_result.size);
+        if (reader.position() < request.buf || reader.buffer().end() > request.buf + request.size)
+        {
+            /// `reader` didn't put the data into the expected buffer. Maybe the ReadBuffer doesn't
+            /// support external buffer, maybe we switched buffer without calling reader.set().
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ThreadPoolRemoteFSReader got unexpected address range (seek_performed = {}, reader type: {}).", seek_performed, demangle(typeid(reader).name()));
+        }
+        read_result.size = reader.buffer().end() - request.buf;
+        read_result.offset = reader.position() - request.buf;
+        ProfileEvents::increment(ProfileEvents::ThreadpoolReaderReadBytes, reader.buffer().size());
     }
 
     read_result.execution_watch = std::move(watch);

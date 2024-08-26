@@ -14,6 +14,10 @@ SETTINGS disk = disk(
 INSERT INTO test SELECT 1, 'test';
 SELECT * FROM test;
 
+SELECT * FROM test SETTINGS min_bytes_to_use_mmap_io=1, local_filesystem_read_method='mmap';
+SELECT * FROM test SETTINGS local_filesystem_read_method='io_uring';
+SELECT * FROM test SETTINGS min_bytes_to_use_direct_io=1;
+
 DROP TABLE test SYNC;
 
 CREATE TABLE test (a Int32, b String)

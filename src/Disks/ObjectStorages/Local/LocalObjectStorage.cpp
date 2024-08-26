@@ -80,25 +80,35 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
 
 ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    if (!read_settings.enable_filesystem_cache)
+    LocalFSReadMethod changed_method = read_settings.local_fs_method;
+    switch (read_settings.local_fs_method)
+    {
+        case LocalFSReadMethod::mmap:
+            /// MMap read buffer doesn't support external buffer, required by ReadBufferFromRemoteFSGather.
+            changed_method = LocalFSReadMethod::pread;
+            LOG_INFO(log, "Changing local object storage filesystem read method from `mmap` to `pread`");
+            break;
+        case LocalFSReadMethod::pread_threadpool:
+        case LocalFSReadMethod::pread_fake_async:
+        case LocalFSReadMethod::io_uring:
+            if (read_settings.enable_filesystem_cache)
+            {
+                /// For now we cannot allow asynchronous reader from local filesystem when CachedObjectStorage is used.
+                changed_method = LocalFSReadMethod::pread;
+                LOG_INFO(log, "Changing local object storage filesystem read method to `pread`");
+            }
+            break;
+        default:
+            break;
+    }
+
+    if (changed_method == read_settings.local_fs_method && read_settings.direct_io_threshold == 0)
         return IObjectStorage::patchSettings(read_settings);
 
     auto modified_settings{read_settings};
-    /// For now we cannot allow asynchronous reader from local filesystem when CachedObjectStorage is used.
-    switch (modified_settings.local_fs_method)
-    {
-        case LocalFSReadMethod::pread_threadpool:
-        case LocalFSReadMethod::pread_fake_async:
-        {
-            modified_settings.local_fs_method = LocalFSReadMethod::pread;
-            LOG_INFO(log, "Changing local filesystem read method to `pread`");
-            break;
-        }
-        default:
-        {
-            break;
-        }
-    }
+    modified_settings.local_fs_method = changed_method;
+    /// O_DIRECT imposes buffer alignment restrictions, which ReadBufferFromRemoteFSGather doesn't support.
+    modified_settings.direct_io_threshold = 0;
     return IObjectStorage::patchSettings(modified_settings);
 }
 

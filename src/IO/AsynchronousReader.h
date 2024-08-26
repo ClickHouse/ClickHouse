@@ -49,6 +49,8 @@ public:
         size_t size = 0;
         char * buf = nullptr;
         Priority priority;
+        /// Skip the first `ignore` bytes. I.e. read `size - ignore` bytes at `offset + ignore`.
+        /// The skipping is done using ReadBuffer::ignore.
         size_t ignore = 0;
     };
 
