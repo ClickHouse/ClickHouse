@@ -201,7 +201,6 @@ cbrt
 ceil
 char
 cityHash64
-clamp
 coalesce
 concat
 concatAssumeInjective
@@ -416,6 +415,7 @@ logTrace
 lowCardinalityIndices
 lowCardinalityKeys
 lower
+lowerUTF8
 makeDate
 makeDate32
 makeDateTime
@@ -561,7 +561,6 @@ positionCaseInsensitive
 positionCaseInsensitiveUTF8
 positionUTF8
 pow
-printf
 proportionsZTest
 protocol
 queryID
@@ -876,6 +875,7 @@ tryBase58Decode
 tumble
 tumbleEnd
 tumbleStart
+tuple
 tupleConcat
 tupleDivide
 tupleDivideByNumber
@@ -896,6 +896,7 @@ tupleToNameValuePairs
 unbin
 unhex
 upper
+upperUTF8
 uptime
 validateNestedArraySizes
 version

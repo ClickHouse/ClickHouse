@@ -13,7 +13,6 @@ entry="/usr/share/clickhouse-test/performance/scripts/entrypoint.sh"
 # https://www.kernel.org/doc/Documentation/filesystems/tmpfs.txt
 # Double-escaped backslashes are a tribute to the engineering wonder of docker --
 # it gives '/bin/sh: 1: [bash,: not found' otherwise.
-numactl --hardware
 node=$(( RANDOM % $(numactl --hardware | sed -n 's/^.*available:\(.*\)nodes.*$/\1/p') ));
 echo Will bind to NUMA node $node;
 numactl --cpunodebind=$node --membind=$node $entry

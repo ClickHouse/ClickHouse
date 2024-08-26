@@ -16,7 +16,6 @@ struct PostgreSQLTableStructure
     {
         Int32 atttypid;
         Int32 atttypmod;
-        Int32 attnum;
         bool atthasdef;
         char attgenerated;
         std::string attr_def;

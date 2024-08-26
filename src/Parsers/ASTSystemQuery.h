@@ -95,14 +95,12 @@ public:
         START_CLEANUP,
         RESET_COVERAGE,
         REFRESH_VIEW,
-        WAIT_VIEW,
         START_VIEW,
         START_VIEWS,
         STOP_VIEW,
         STOP_VIEWS,
         CANCEL_VIEW,
         TEST_VIEW,
-        UNLOAD_PRIMARY_KEY,
         END
     };
 

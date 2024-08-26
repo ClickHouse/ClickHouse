@@ -12,7 +12,6 @@
 #include <Common/FailPoint.h>
 #include <Common/PageCache.h>
 #include <Common/HostResolvePool.h>
-#include <Core/ServerSettings.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Context.h>
@@ -52,12 +51,11 @@
 #include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageFile.h>
+#include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/HDFS/Configuration.h>
-#include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/StorageAzureBlob.h>
 #include <Storages/MaterializedView/RefreshTask.h>
+#include <Storages/HDFS/StorageHDFS.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -399,31 +397,22 @@ BlockIO InterpreterSystemQuery::execute()
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
-                {
-                    if (!cache_data->cache->isInitialized())
-                        continue;
-
                     cache_data->cache->removeAllReleasable(user_id);
-                }
             }
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
-
-                if (cache->isInitialized())
+                if (query.key_to_drop.empty())
                 {
-                    if (query.key_to_drop.empty())
-                    {
-                        cache->removeAllReleasable(user_id);
-                    }
+                    cache->removeAllReleasable(user_id);
+                }
+                else
+                {
+                    auto key = FileCacheKey::fromKeyString(query.key_to_drop);
+                    if (query.offset_to_drop.has_value())
+                        cache->removeFileSegment(key, query.offset_to_drop.value(), user_id);
                     else
-                    {
-                        auto key = FileCacheKey::fromKeyString(query.key_to_drop);
-                        if (query.offset_to_drop.has_value())
-                            cache->removeFileSegment(key, query.offset_to_drop.value(), user_id);
-                        else
-                            cache->removeKey(key, user_id);
-                    }
+                        cache->removeKey(key, user_id);
                 }
             }
             break;
@@ -502,17 +491,17 @@ BlockIO InterpreterSystemQuery::execute()
                 StorageFile::getSchemaCache(getContext()).clear();
 #if USE_AWS_S3
             if (caches_to_drop.contains("S3"))
-                StorageObjectStorage::getSchemaCache(getContext(), StorageS3Configuration::type_name).clear();
+                StorageS3::getSchemaCache(getContext()).clear();
 #endif
 #if USE_HDFS
             if (caches_to_drop.contains("HDFS"))
-                StorageObjectStorage::getSchemaCache(getContext(), StorageHDFSConfiguration::type_name).clear();
+                StorageHDFS::getSchemaCache(getContext()).clear();
 #endif
             if (caches_to_drop.contains("URL"))
                 StorageURL::getSchemaCache(getContext()).clear();
 #if USE_AZURE_BLOB_STORAGE
             if (caches_to_drop.contains("AZURE"))
-                StorageObjectStorage::getSchemaCache(getContext(), StorageAzureConfiguration::type_name).clear();
+                StorageAzureBlob::getSchemaCache(getContext()).clear();
 #endif
             break;
         }
@@ -663,20 +652,13 @@ BlockIO InterpreterSystemQuery::execute()
             startStopAction(ActionLocks::ViewRefresh, false);
             break;
         case Type::REFRESH_VIEW:
-            for (const auto & task : getRefreshTasks())
-                task->run();
-            break;
-        case Type::WAIT_VIEW:
-            for (const auto & task : getRefreshTasks())
-                task->wait();
+            getRefreshTask()->run();
             break;
         case Type::CANCEL_VIEW:
-            for (const auto & task : getRefreshTasks())
-                task->cancel();
+            getRefreshTask()->cancel();
             break;
         case Type::TEST_VIEW:
-            for (const auto & task : getRefreshTasks())
-                task->setFakeTime(query.fake_time_for_view);
+            getRefreshTask()->setFakeTime(query.fake_time_for_view);
             break;
         case Type::DROP_REPLICA:
             dropReplica(query);
@@ -717,8 +699,14 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
-            auto system_logs = getContext()->getSystemLogs();
-            system_logs.flush(true);
+
+            auto logs = getContext()->getSystemLogs();
+            std::vector<std::function<void()>> commands;
+            commands.reserve(logs.size());
+            for (auto * system_log : logs)
+                commands.emplace_back([system_log] { system_log->flush(true); });
+
+            executeCommandsAndThrowIfError(commands);
             break;
         }
         case Type::STOP_LISTEN:
@@ -743,12 +731,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::STOP_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::stop();
-            CannotAllocateThreadFaultInjector::setFaultProbability(0);
             break;
         case Type::START_THREAD_FUZZER:
             getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
-            CannotAllocateThreadFaultInjector::setFaultProbability(getContext()->getServerSettings().cannot_allocate_thread_fault_injection_probability);
             break;
         case Type::UNFREEZE:
         {
@@ -781,11 +767,6 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM);
             resetCoverage();
-            break;
-        }
-        case Type::UNLOAD_PRIMARY_KEY:
-        {
-            unloadPrimaryKeys();
             break;
         }
 
@@ -881,7 +862,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     auto & create = create_ast->as<ASTCreateQuery &>();
     create.attach = true;
 
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, LoadingStrictnessLevel::ATTACH);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, true, false);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
     auto data_path = database->getTableDataPath(create);
 
@@ -1165,42 +1146,6 @@ void InterpreterSystemQuery::waitLoadingParts()
     }
 }
 
-void InterpreterSystemQuery::unloadPrimaryKeys()
-{
-    if (!table_id.empty())
-    {
-        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
-        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
-
-        if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
-        {
-            LOG_TRACE(log, "Unloading primary keys for table {}", table_id.getFullTableName());
-            merge_tree->unloadPrimaryKeys();
-        }
-        else
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Command UNLOAD PRIMARY KEY is supported only for MergeTree table, but got: {}", table->getName());
-        }
-    }
-    else
-    {
-        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
-        LOG_TRACE(log, "Unloading primary keys for all tables");
-
-        for (auto & database : DatabaseCatalog::instance().getDatabases())
-        {
-            for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
-            {
-                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
-                {
-                    merge_tree->unloadPrimaryKeys();
-                }
-            }
-        }
-    }
-}
-
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
@@ -1249,15 +1194,15 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RESTART DISK is not supported");
 }
 
-RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
+RefreshTaskHolder InterpreterSystemQuery::getRefreshTask()
 {
     auto ctx = getContext();
     ctx->checkAccess(AccessType::SYSTEM_VIEWS);
-    auto tasks = ctx->getRefreshSet().findTasks(table_id);
-    if (tasks.empty())
+    auto task = ctx->getRefreshSet().getTask(table_id);
+    if (!task)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Refreshable view {} doesn't exist", table_id.getNameForLogs());
-    return tasks;
+    return task;
 }
 
 
@@ -1413,7 +1358,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::REFRESH_VIEW:
-        case Type::WAIT_VIEW:
         case Type::START_VIEW:
         case Type::START_VIEWS:
         case Type::STOP_VIEW:
@@ -1513,14 +1457,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             required_access.emplace_back(AccessType::SYSTEM_JEMALLOC);
-            break;
-        }
-        case Type::UNLOAD_PRIMARY_KEY:
-        {
-            if (!query.table)
-                required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
-            else
-                required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_THREAD_FUZZER:

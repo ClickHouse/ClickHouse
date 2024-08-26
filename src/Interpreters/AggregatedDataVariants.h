@@ -1,11 +1,10 @@
 #pragma once
+#include <boost/noncopyable.hpp>
+#include <memory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/ColumnsHashing.h>
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregationMethod.h>
-
-#include <memory>
-#include <boost/noncopyable.hpp>
-
 
 namespace DB
 {
@@ -288,7 +287,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_key_string_two_level) \
         M(low_cardinality_key_fixed_string_two_level)
 
-    enum class Type : uint8_t
+    enum class Type
     {
         EMPTY = 0,
         without_key,

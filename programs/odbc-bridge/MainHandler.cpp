@@ -9,7 +9,6 @@
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Core/Settings.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -132,7 +131,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         return;
     }
 
-    WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
+    WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
 
     try
     {
