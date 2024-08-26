@@ -245,7 +245,7 @@ class _NetworkManager:
         self._exec_run(cmd, privileged=True)
 
     def add_ip6tables_rule(self, **kwargs):
-        cmd = ["ip6tables-legacy", "--wait", "-I", "DOCKER-USER", "1"]
+        cmd = ["ip6tables", "--wait", "-I", "DOCKER-USER", "1"]
         cmd.extend(self._iptables_cmd_suffix(**kwargs))
         self._exec_run(cmd, privileged=True)
 
@@ -255,7 +255,7 @@ class _NetworkManager:
         self._exec_run(cmd, privileged=True)
 
     def delete_ip6tables_rule(self, **kwargs):
-        cmd = ["ip6tables-legacy", "--wait", "-D", "DOCKER-USER"]
+        cmd = ["ip6tables", "--wait", "-D", "DOCKER-USER"]
         cmd.extend(self._iptables_cmd_suffix(**kwargs))
         self._exec_run(cmd, privileged=True)
 
@@ -264,7 +264,7 @@ class _NetworkManager:
         return self._exec_run(cmd, privileged=True)
 
     def dump_v6_rules(self):
-        cmd = ["ip6tables-legacy", "-L", "DOCKER-USER"]
+        cmd = ["ip6tables", "-L", "DOCKER-USER"]
         return self._exec_run(cmd, privileged=True)
 
     @staticmethod
@@ -286,7 +286,7 @@ class _NetworkManager:
         for i in range(1000):
             iptables_iter = i
             # when rules will be empty, it will return error
-            res = subprocess.run("ip6tables-legacy --wait -D DOCKER-USER 1", shell=True)
+            res = subprocess.run("ip6tables --wait -D DOCKER-USER 1", shell=True)
 
             if res.returncode != 0:
                 logging.info(
