@@ -48,6 +48,8 @@ private:
     ColumnUnique(const ColumnUnique & other);
 
 public:
+    std::string getName() const override { return "Unique(" + getNestedColumn()->getName() + ")"; }
+
     MutableColumnPtr cloneEmpty() const override;
 
     const ColumnPtr & getNestedColumn() const override;

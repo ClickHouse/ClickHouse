@@ -16,7 +16,7 @@ def started_cluster():
 
         for node in (node1, node2):
             node.query(
-                "CREATE TABLE local_table(id UInt32, data JSON) ENGINE = MergeTree ORDER BY id",
+                "CREATE TABLE local_table(id UInt32, data Object('json')) ENGINE = MergeTree ORDER BY id",
                 settings={"allow_experimental_object_type": 1},
             )
             node.query(

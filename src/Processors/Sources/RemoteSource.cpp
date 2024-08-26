@@ -37,16 +37,23 @@ RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation
         progress(value.read_rows, value.read_bytes);
     });
 
-    query_executor->setProfileInfoCallback([this](const ProfileInfo & info)
-    {
-        if (rows_before_limit)
+    query_executor->setProfileInfoCallback(
+        [this](const ProfileInfo & info)
         {
-            if (info.hasAppliedLimit())
-                rows_before_limit->add(info.getRowsBeforeLimit());
-            else
-                manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
-        }
-    });
+            if (rows_before_limit)
+            {
+                if (info.hasAppliedLimit())
+                    rows_before_limit->add(info.getRowsBeforeLimit());
+                else
+                    manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
+            }
+
+            if (rows_before_aggregation)
+            {
+                if (info.hasAppliedAggregation())
+                    rows_before_aggregation->add(info.getRowsBeforeAggregation());
+            }
+        });
 }
 
 RemoteSource::~RemoteSource() = default;
@@ -184,7 +191,6 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     {
         if (manually_add_rows_before_limit_counter)
             rows_before_limit->add(rows);
-
         query_executor->finish();
         return {};
     }
