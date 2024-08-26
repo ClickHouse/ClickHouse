@@ -138,10 +138,13 @@ def check_args_and_update_paths(args):
 
 def check_iptables_legacy():
     iptables_path = shutil.which("iptables")
+    ip6tables_path = shutil.which("ip6tables")
 
     if iptables_path is None:
         print("Error: 'iptables' not found in PATH")
         sys.exit(1)
+    if ip6tables_path is None:
+        print("Error: 'ip6tables' not found in PATH, ignoring")
 
     try:
         file_info = os.stat(iptables_path)
@@ -153,27 +156,21 @@ def check_iptables_legacy():
             )
             sys.exit(1)
 
+        if not ip6tables_path:
+            return
+
+        file_info = os.stat(ip6tables_path)
+        file_info_str = str(file_info)
+
+        if "legacy" in file_info_str:
+            print(
+                "ip6tables is in 'legacy' mode. This is not supported. Please switch to 'nftables' mode."
+            )
+            sys.exit(1)
+
     except FileNotFoundError:
         print(f"Error: '{iptables_path}' not found")
         sys.exit(1)
-
-
-def check_iptables_forward_accept(ipv6=False):
-    command = "iptables"
-    if ipv6:
-        command = "ip6tables"
-    output = os.popen(command + "-S FORWARD").read()
-
-    if "-P FORWARD ACCEPT" not in output:
-        print(
-            f"'{command} -P FORWARD ACCEPT' is not set. This may cause issues in tests"
-        )
-
-
-def chech_prerequisites():
-    check_iptables_legacy()
-    check_iptables_forward_accept(ipv6=False)
-    check_iptables_forward_accept(ipv6=True)
 
 
 def docker_kill_handler_handler(signum, frame):
@@ -204,8 +201,6 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s [ %(process)d ] %(levelname)s : %(message)s (%(filename)s:%(lineno)s, %(funcName)s)",
     )
-
-    chech_prerequisites()
 
     parser = argparse.ArgumentParser(description="ClickHouse integration tests runner")
 
@@ -355,11 +350,23 @@ if __name__ == "__main__":
         help="Bind volume to this dir to use for dockerd files",
     )
 
+    parser.add_argument(
+        "--ignore-iptables-legacy-check",
+        action="store_true",
+        default=False,
+        help="Ignore iptables-legacy usage check",
+    )
+
     parser.add_argument("pytest_args", nargs="*", help="args for pytest command")
 
     args = parser.parse_args()
 
     check_args_and_update_paths(args)
+
+    if not args.ignore_iptables_legacy_check:
+        check_iptables_legacy()
+    else:
+        logging.warning("Skipping iptables-legacy check")
 
     parallel_args = ""
     if args.parallel:
