@@ -135,7 +135,8 @@ protected:
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(projection.type);
                     // 'sorting_key' column
-                    if (column_mask[src_index++]) {
+                    if (column_mask[src_index++])
+                    {
                         auto columns = projection.metadata->getSortingKeyColumns();
 
                         Array sorting_key;
@@ -147,7 +148,8 @@ protected:
                         res_columns[res_index++]->insert(sorting_key);
                     }
                     // 'query' column
-                    if (column_mask[src_index++]) {
+                    if (column_mask[src_index++])
+                    {
                         res_columns[res_index++]->insert(serializeAST(*projection.definition_ast->children.at(0)));
                     }
                 }
@@ -254,8 +256,7 @@ void ReadFromSystemProjections::initializePipeline(QueryPipelineBuilder & pipeli
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue;
 
-        /// Lazy database can contain only very primitive tables,
-        /// it cannot contain tables with data skipping indices.
+        /// Lazy database can contain only very primitive tables, it cannot contain tables with projections.
         /// Skip it to avoid unnecessary tables loading in the Lazy database.
         if (database->getEngineName() != "Lazy")
             column->insert(database_name);
