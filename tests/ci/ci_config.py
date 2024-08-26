@@ -424,7 +424,7 @@ class CI:
             pr_only=True,
             # TODO: approach with reference job names does not work because digest may not be calculated if job skipped in wf
             # reference_job_name=JobNames.INTEGRATION_TEST_TSAN,
-            timeout=4*3600  # to be able to process many updated tests
+            timeout=4 * 3600  # to be able to process many updated tests
         ),
         JobNames.COMPATIBILITY_TEST: CommonJobConfigs.COMPATIBILITY_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
