@@ -47,6 +47,8 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
     /// enable by default some feature flags
     feature_flags.enableFeatureFlag(KeeperFeatureFlag::FILTERED_LIST);
     feature_flags.enableFeatureFlag(KeeperFeatureFlag::MULTI_READ);
+    feature_flags.enableFeatureFlag(KeeperFeatureFlag::CHECK_NOT_EXISTS);
+    feature_flags.enableFeatureFlag(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
     system_nodes_with_data[keeper_api_feature_flags_path] = feature_flags.getFeatureFlags();
 
     /// for older clients, the default is equivalent to WITH_MULTI_READ version
