@@ -1,6 +1,6 @@
-if (ENABLE_BENCHMARKS)
+#if (ENABLE_BENCHMARKS)
     add_subdirectory(benchmarks)
-endif()
+#endif()
 
 if (ENABLE_EXAMPLES)
     add_subdirectory(examples)
