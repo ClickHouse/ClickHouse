@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
+
 namespace DB
 {
 
@@ -73,11 +74,12 @@ public:
         Int32 format_version_,
         String manifest_list_file_,
         Int32 current_schema_id_,
-        NamesAndTypesList schema_);
+        NamesAndTypesList schema_,
+        std::map<Int32, Poco::JSON::Object::Ptr> relevant_schemas_by_ids_);
 
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
     /// All subsequent calls will return saved list of files (because it cannot be changed without changing metadata file)
-    Strings getDataFiles() const override;
+    std::vector<DataFileInfo> getDataFilesInfo() const override;
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override { return schema; }
@@ -105,11 +107,13 @@ private:
     Int32 metadata_version;
     Int32 format_version;
     String manifest_list_file;
-    Int32 current_schema_id;
+    const Int32 current_schema_id;
     NamesAndTypesList schema;
     mutable Strings data_files;
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;
+    std::map<Int32, Poco::JSON::Object::Ptr> relevant_schemas_by_ids;
+    std::map<Int32, ActionsDag> transform_dags_by_ids;
     LoggerPtr log;
 };
 

@@ -22,7 +22,7 @@ public:
         ConfigurationPtr configuration_,
         ContextPtr context_);
 
-    Strings getDataFiles() const override;
+    Strings getDataFilesWithSchemaTransform() const override;
 
     NamesAndTypesList getTableSchema() const override { return {}; }
 
