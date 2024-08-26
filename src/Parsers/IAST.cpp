@@ -165,14 +165,20 @@ size_t IAST::checkDepthImpl(size_t max_depth) const
     return res;
 }
 
-String IAST::formatWithPossiblyHidingSensitiveData(size_t max_length, bool one_line, bool show_secrets, bool print_pretty_type_names, IdentifierQuotingStyle identifier_quoting_style) const
+String IAST::formatWithPossiblyHidingSensitiveData(
+    size_t max_length,
+    bool one_line,
+    bool show_secrets,
+    bool print_pretty_type_names,
+    bool always_quote_identifiers,
+    IdentifierQuotingStyle identifier_quoting_style) const
 {
 
     WriteBufferFromOwnString buf;
     FormatSettings settings(buf, one_line);
     settings.show_secrets = show_secrets;
     settings.print_pretty_type_names = print_pretty_type_names;
-    settings.always_quote_identifiers = identifier_quoting_style != IdentifierQuotingStyle::None;
+    settings.always_quote_identifiers = always_quote_identifiers;
     settings.identifier_quoting_style = identifier_quoting_style;
     format(settings);
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
@@ -211,13 +217,13 @@ String IAST::getColumnNameWithoutAlias() const
 }
 
 
-void IAST::FormatSettings::writeIdentifier(const String & name) const
+void IAST::FormatSettings::writeIdentifier(const String & name, bool force_quoting) const
 {
     switch (identifier_quoting_style)
     {
         case IdentifierQuotingStyle::None:
         {
-            if (always_quote_identifiers)
+            if (force_quoting || always_quote_identifiers)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Incompatible arguments: always_quote_identifiers = true && "
                                 "identifier_quoting_style == IdentifierQuotingStyle::None");
@@ -226,7 +232,7 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
         }
         case IdentifierQuotingStyle::Backticks:
         {
-            if (always_quote_identifiers)
+            if (force_quoting || always_quote_identifiers)
                 writeBackQuotedString(name, ostr);
             else
                 writeProbablyBackQuotedString(name, ostr);
@@ -234,7 +240,7 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
         }
         case IdentifierQuotingStyle::DoubleQuotes:
         {
-            if (always_quote_identifiers)
+            if (force_quoting || always_quote_identifiers)
                 writeDoubleQuotedString(name, ostr);
             else
                 writeProbablyDoubleQuotedString(name, ostr);
@@ -242,7 +248,7 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
         }
         case IdentifierQuotingStyle::BackticksMySQL:
         {
-            if (always_quote_identifiers)
+            if (force_quoting || always_quote_identifiers)
                 writeBackQuotedStringMySQL(name, ostr);
             else
                 writeProbablyBackQuotedStringMySQL(name, ostr);

@@ -59,6 +59,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"24.12",
         {
+            {"output_format_always_quote_identifiers", false, false, "New setting."},
             {"output_format_identifier_quoting_style", "Backticks", "Backticks", "New setting."}
         }
     },
