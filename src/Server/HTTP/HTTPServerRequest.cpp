@@ -173,7 +173,8 @@ void HTTPServerRequest::readRequest(ReadBuffer & in)
     setVersion(version);
 }
 
-std::string HTTPServerRequest::toStringForLogging() const {
+std::string HTTPServerRequest::toStringForLogging() const
+{
     return fmt::format(
         "Method: {}, Address: {}, User-Agent: {}{}, Content Type: {}, Transfer Encoding: {}, X-Forwarded-For: {}",
         getMethod(),
