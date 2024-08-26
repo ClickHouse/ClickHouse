@@ -361,7 +361,7 @@ class _NetworkManager:
     def _ensure_container(self):
         if self._container is None or self._container_expire_time <= time.time():
             image_name = "clickhouse/integration-helper:" + os.getenv(
-                "DOCKER_HELPER_TAG", ""
+                "DOCKER_HELPER_TAG", "latest"
             )
             for i in range(5):
                 if self._container is not None:
