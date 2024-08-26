@@ -85,7 +85,7 @@ class AutoReleaseInfo:
 def _prepare(token):
     assert len(token) > 10
     os.environ["GH_TOKEN"] = token
-    Shell.check("gh auth status")
+    Shell.run("gh auth status", check=True)
 
     gh = GitHub(token)
     prs = gh.get_release_pulls(GITHUB_REPOSITORY)
@@ -106,8 +106,9 @@ def _prepare(token):
         latest_release_tag_ref = refs[-1]
         latest_release_tag = repo.get_git_tag(latest_release_tag_ref.object.sha)
 
-        commits = Shell.get_output_or_raise(
+        commits = Shell.run(
             f"git rev-list --first-parent {latest_release_tag.tag}..origin/{pr.head.ref}",
+            check=True,
         ).split("\n")
         commit_num = len(commits)
         print(
@@ -127,13 +128,15 @@ def _prepare(token):
             )
             commit_num -= 1
 
-            is_completed = CI.GH.check_wf_completed(token=token, commit_sha=commit)
+            is_completed = CI.GHActions.check_wf_completed(
+                token=token, commit_sha=commit
+            )
             if not is_completed:
                 print(f"CI is in progress for [{commit}] - check previous commit")
                 commits_to_branch_head += 1
                 continue
 
-            commit_ci_status = CI.GH.get_commit_status_by_name(
+            commit_ci_status = CI.GHActions.get_commit_status_by_name(
                 token=token,
                 commit_sha=commit,
                 status_name=(CI.JobNames.BUILD_CHECK, "ClickHouse build check"),

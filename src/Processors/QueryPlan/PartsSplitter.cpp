@@ -49,7 +49,7 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
         case TypeIndex::Float32:
         case TypeIndex::Float64:
         case TypeIndex::Nullable:
-        case TypeIndex::ObjectDeprecated:
+        case TypeIndex::Object:
             return false;
         case TypeIndex::Array:
         {
@@ -943,7 +943,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
         auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
         auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
-        reorderColumns(actions, result.merging_pipes[i].getHeader(), filter_function->getColumnName());
+        reorderColumns(*actions, result.merging_pipes[i].getHeader(), filter_function->getColumnName());
         ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
         auto description = fmt::format(
             "filter values in ({}, {}]", i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");

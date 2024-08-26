@@ -420,12 +420,7 @@ class Backport:
             fetch_release_prs = self.gh.get_release_pulls(self._fetch_from)
             fetch_release_branches = [pr.head.ref for pr in fetch_release_prs]
             self.labels_to_backport = [
-                (
-                    f"v{branch}-must-backport"
-                    if self._repo_name == "ClickHouse/ClickHouse"
-                    else f"v{branch.replace('release/','')}-must-backport"
-                )
-                for branch in fetch_release_branches
+                f"v{branch}-must-backport" for branch in fetch_release_branches
             ]
 
             logging.info("Fetching from %s", self._fetch_from)
@@ -495,23 +490,17 @@ class Backport:
     def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
 
-        if any(label in pr_labels for label in self.must_create_backport_labels):
+        if (
+            any(label in pr_labels for label in self.must_create_backport_labels)
+            or self._repo_name != self._fetch_from
+        ):
             branches = [
                 ReleaseBranch(br, pr, self.repo, self.backport_created_label)
                 for br in self.release_branches
             ]  # type: List[ReleaseBranch]
         else:
             branches = [
-                ReleaseBranch(
-                    (
-                        br
-                        if self._repo_name == "ClickHouse/ClickHouse"
-                        else f"release/{br}"
-                    ),
-                    pr,
-                    self.repo,
-                    self.backport_created_label,
-                )
+                ReleaseBranch(br, pr, self.repo, self.backport_created_label)
                 for br in [
                     label.split("-", 1)[0][1:]  # v21.8-must-backport
                     for label in pr_labels

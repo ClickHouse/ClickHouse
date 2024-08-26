@@ -46,13 +46,12 @@ public:
 
     String getName() const override { return name; }
 
-    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override;
+    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override;
 
     Chunk generate() override;
 
     static std::shared_ptr<IIterator> createFileIterator(
         ConfigurationPtr configuration,
-        const StorageObjectStorage::QuerySettings & query_settings,
         ObjectStoragePtr object_storage,
         bool distributed_processing,
         const ContextPtr & local_context,
@@ -209,7 +208,7 @@ private:
 
     ObjectInfos object_infos;
     ObjectInfos * read_keys;
-    ExpressionActionsPtr filter_expr;
+    ActionsDAGPtr filter_dag;
     ObjectStorageIteratorPtr object_storage_iterator;
     bool recursive{false};
     std::vector<String> expanded_keys;

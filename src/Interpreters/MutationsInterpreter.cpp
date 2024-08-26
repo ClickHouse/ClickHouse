@@ -219,7 +219,7 @@ bool isStorageTouchedByMutations(
     Block tmp_block;
     while (executor.pull(tmp_block));
 
-    auto count = (*block.getByName("count()").column)[0].safeGet<UInt64>();
+    auto count = (*block.getByName("count()").column)[0].get<UInt64>();
     return count != 0;
 }
 
@@ -499,12 +499,6 @@ static void validateUpdateColumns(
             {
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", backQuote(column_name));
             }
-        }
-        else if (storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->hasDynamicSubcolumns())
-        {
-            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
-                            "Cannot update column {} with type {}: updates of columns with dynamic subcolumns are not supported",
-                            backQuote(column_name), storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->getName());
         }
     }
 }
@@ -1205,7 +1199,7 @@ void MutationsInterpreter::Source::read(
         const auto & names = first_stage.filter_column_names;
         size_t num_filters = names.size();
 
-        std::optional<ActionsDAG> filter;
+        ActionsDAGPtr filter;
         if (!first_stage.filter_column_names.empty())
         {
             ActionsDAG::NodeRawConstPtrs nodes(num_filters);
@@ -1219,7 +1213,7 @@ void MutationsInterpreter::Source::read(
             MergeTreeSequentialSourceType::Mutation,
             plan, *data, storage_snapshot,
             part, required_columns,
-            apply_deleted_mask_, std::move(filter), context_,
+            apply_deleted_mask_, filter, context_,
             getLogger("MutationsInterpreter"));
     }
     else
@@ -1288,17 +1282,17 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
+                    dag->appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), std::move(dag), stage.filter_column_names[i], false));
+                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentDataStream(), dag, stage.filter_column_names[i], false));
             }
             else
             {
                 auto dag = step->actions()->dag.clone();
                 if (step->actions()->project_input)
-                    dag.appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
+                    dag->appendInputsForUnusedColumns(plan.getCurrentDataStream().header);
                 /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), std::move(dag)));
+                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), dag));
             }
         }
 

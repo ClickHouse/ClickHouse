@@ -154,7 +154,6 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
         table_name,
         ColumnsDescription{*columns},
         ConstraintsDescription{},
-        /* comment = */ "",
         local_context);
 
     return storage;

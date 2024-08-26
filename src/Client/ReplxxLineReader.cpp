@@ -294,7 +294,6 @@ ReplxxLineReader::ReplxxLineReader(
     Suggest & suggest,
     const String & history_file_path_,
     bool multiline_,
-    bool ignore_shell_suspend,
     Patterns extenders_,
     Patterns delimiters_,
     const char word_break_characters_[],
@@ -364,8 +363,7 @@ ReplxxLineReader::ReplxxLineReader(
     rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code); });
 
     /// We don't want the default, "suspend" behavior, it confuses people.
-    if (ignore_shell_suspend)
-        rx.bind_key_internal(replxx::Replxx::KEY::control('Z'), "insert_character");
+    rx.bind_key_internal(replxx::Replxx::KEY::control('Z'), "insert_character");
 
     auto commit_action = [this](char32_t code)
     {

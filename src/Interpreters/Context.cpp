@@ -99,7 +99,6 @@
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
-#include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -380,10 +379,6 @@ struct ContextSharedPart : boost::noncopyable
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     OnceFlag system_logs_initialized;
     std::unique_ptr<SystemLogs> system_logs TSA_GUARDED_BY(mutex);                /// Used to log queries and operations on parts
-
-    mutable std::mutex dashboard_mutex;
-    std::optional<Context::Dashboards> dashboards;
-
     std::optional<S3SettingsByEndpoint> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
     std::vector<String> warnings TSA_GUARDED_BY(mutex);                           /// Store warning messages about server configuration.
 
@@ -619,7 +614,7 @@ struct ContextSharedPart : boost::noncopyable
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
           */
-        SHUTDOWN(log, "system logs", system_logs, flushAndShutdown());
+        SHUTDOWN(log, "system logs", system_logs, shutdown());
 
         LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown();
@@ -2271,7 +2266,7 @@ bool Context::displaySecretsInShowAndSelect() const
     return shared->server_settings.display_secrets_in_show_and_select;
 }
 
-Settings Context::getSettingsCopy() const
+Settings Context::getSettings() const
 {
     SharedLockGuard lock(mutex);
     return *settings;
@@ -2957,9 +2952,6 @@ ProgressCallback Context::getProgressCallback() const
 
 void Context::setProcessListElement(QueryStatusPtr elem)
 {
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have process list element");
-
     /// Set to a session or query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
     process_list_elem = elem;
     has_process_list_elem = elem.get();
@@ -4259,7 +4251,7 @@ std::shared_ptr<ObjectStorageQueueLog> Context::getS3QueueLog() const
     if (!shared->system_logs)
         return {};
 
-    return shared->system_logs->s3queue_log;
+    return shared->system_logs->s3_queue_log;
 }
 
 std::shared_ptr<ObjectStorageQueueLog> Context::getAzureQueueLog() const
@@ -4316,60 +4308,15 @@ std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
     return shared->system_logs->blob_storage_log;
 }
 
-SystemLogs Context::getSystemLogs() const
+std::vector<ISystemLog *> Context::getSystemLogs() const
 {
     SharedLockGuard lock(shared->mutex);
 
     if (!shared->system_logs)
         return {};
-    return *shared->system_logs;
+    return shared->system_logs->logs;
 }
 
-std::optional<Context::Dashboards> Context::getDashboards() const
-{
-    std::lock_guard lock(shared->dashboard_mutex);
-
-    if (!shared->dashboards)
-        return {};
-    return shared->dashboards;
-}
-
-namespace
-{
-
-String trim(const String & text)
-{
-    std::string_view view(text);
-    ::trim(view, '\n');
-    return String(view);
-}
-
-}
-
-void Context::setDashboardsConfig(const ConfigurationPtr & config)
-{
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config->keys("dashboards", keys);
-
-    Dashboards dashboards;
-    for (const auto & key : keys)
-    {
-        const auto & prefix = "dashboards." + key + ".";
-        dashboards.push_back({
-            { "dashboard", config->getString(prefix + "dashboard") },
-            { "title",     config->getString(prefix + "title") },
-            { "query",     trim(config->getString(prefix + "query")) },
-        });
-    }
-
-    {
-        std::lock_guard lock(shared->dashboard_mutex);
-        if (!dashboards.empty())
-            shared->dashboards.emplace(std::move(dashboards));
-        else
-            shared->dashboards.reset();
-    }
-}
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {

@@ -91,9 +91,8 @@ public:
         {
             ConfigurationPtr configuration = base_configuration->clone();
             configuration->setPaths(metadata->getDataFiles());
-            std::string sample_path;
             return Storage::resolveSchemaFromData(
-                object_storage_, configuration, format_settings_, sample_path, local_context);
+                object_storage_, configuration, format_settings_, local_context);
         }
     }
 

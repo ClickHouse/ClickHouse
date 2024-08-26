@@ -48,8 +48,6 @@ namespace DB
 
 class ASTSelectQuery;
 
-class SystemLogs;
-
 struct ContextSharedPart;
 class ContextAccess;
 class ContextAccessWrapper;
@@ -831,8 +829,7 @@ public:
     void setMacros(std::unique_ptr<Macros> && macros);
 
     bool displaySecretsInShowAndSelect() const;
-    Settings getSettingsCopy() const;
-    const Settings & getSettingsRef() const { return *settings; }
+    Settings getSettings() const;
     void setSettings(const Settings & settings_);
 
     /// Set settings by name.
@@ -956,6 +953,8 @@ public:
     void makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings);
     void makeSessionContext();
     void makeGlobalContext();
+
+    const Settings & getSettingsRef() const { return *settings; }
 
     void setProgressCallback(ProgressCallback callback);
     /// Used in executeQuery() to pass it to the QueryPipeline.
@@ -1152,11 +1151,7 @@ public:
     std::shared_ptr<BackupLog> getBackupLog() const;
     std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
 
-    SystemLogs getSystemLogs() const;
-
-    using Dashboards = std::vector<std::map<String, String>>;
-    std::optional<Dashboards> getDashboards() const;
-    void setDashboardsConfig(const ConfigurationPtr & config);
+    std::vector<ISystemLog *> getSystemLogs() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.

@@ -706,27 +706,6 @@ void ColumnNullable::reserve(size_t n)
     getNullMapData().reserve(n);
 }
 
-size_t ColumnNullable::capacity() const
-{
-    return getNullMapData().capacity();
-}
-
-void ColumnNullable::prepareForSquashing(const Columns & source_columns)
-{
-    size_t new_size = size();
-    Columns nested_source_columns;
-    nested_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-    {
-        const auto & source_nullable_column = assert_cast<const ColumnNullable &>(*source_column);
-        new_size += source_nullable_column.size();
-        nested_source_columns.push_back(source_nullable_column.getNestedColumnPtr());
-    }
-
-    nested_column->prepareForSquashing(nested_source_columns);
-    getNullMapData().reserve(new_size);
-}
-
 void ColumnNullable::shrinkToFit()
 {
     getNestedColumn().shrinkToFit();

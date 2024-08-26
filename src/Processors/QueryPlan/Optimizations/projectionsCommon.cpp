@@ -65,12 +65,12 @@ std::shared_ptr<PartitionIdToMaxBlock> getMaxAddedBlocks(ReadFromMergeTree * rea
     return {};
 }
 
-void QueryDAG::appendExpression(const ActionsDAG & expression)
+void QueryDAG::appendExpression(const ActionsDAGPtr & expression)
 {
     if (dag)
-        dag->mergeInplace(expression.clone());
+        dag->mergeInplace(std::move(*expression->clone()));
     else
-        dag = expression.clone();
+        dag = expression->clone();
 }
 
 const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
@@ -121,19 +121,22 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
         {
             if (prewhere_info->row_level_filter)
             {
-                appendExpression(*prewhere_info->row_level_filter);
+                appendExpression(prewhere_info->row_level_filter);
                 if (const auto * filter_expression = findInOutputs(*dag, prewhere_info->row_level_column_name, false))
                     filter_nodes.push_back(filter_expression);
                 else
                     return false;
             }
 
-            appendExpression(prewhere_info->prewhere_actions);
-            if (const auto * filter_expression
-                = findInOutputs(*dag, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column))
-                filter_nodes.push_back(filter_expression);
-            else
-                return false;
+            if (prewhere_info->prewhere_actions)
+            {
+                appendExpression(prewhere_info->prewhere_actions);
+                if (const auto * filter_expression
+                    = findInOutputs(*dag, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column))
+                    filter_nodes.push_back(filter_expression);
+                else
+                    return false;
+            }
         }
         return true;
     }
@@ -147,7 +150,7 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
     if (auto * expression = typeid_cast<ExpressionStep *>(step))
     {
         const auto & actions = expression->getExpression();
-        if (actions.hasArrayJoin())
+        if (actions->hasArrayJoin())
             return false;
 
         appendExpression(actions);
@@ -157,7 +160,7 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
     if (auto * filter = typeid_cast<FilterStep *>(step))
     {
         const auto & actions = filter->getExpression();
-        if (actions.hasArrayJoin())
+        if (actions->hasArrayJoin())
             return false;
 
         appendExpression(actions);
@@ -211,7 +214,7 @@ bool analyzeProjectionCandidate(
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
     const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks,
-    const ActionsDAG * dag)
+    const ActionsDAGPtr & dag)
 {
     MergeTreeData::DataPartsVector projection_parts;
     MergeTreeData::DataPartsVector normal_parts;
@@ -236,8 +239,7 @@ bool analyzeProjectionCandidate(
 
     auto projection_query_info = query_info;
     projection_query_info.prewhere_info = nullptr;
-    if (dag)
-        projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(dag->clone());
+    projection_query_info.filter_actions_dag = dag;
 
     auto projection_result_ptr = reader.estimateNumMarksToRead(
         std::move(projection_parts),

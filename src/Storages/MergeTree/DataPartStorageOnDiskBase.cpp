@@ -73,7 +73,12 @@ std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Logger
 
     for (int try_no = 0; try_no < 10; ++try_no)
     {
-        res = getPartDirForPrefix(prefix, detached, try_no);
+        if (prefix.empty())
+            res = part_dir + (try_no ? "_try" + DB::toString(try_no) : "");
+        else if (prefix.ends_with("_"))
+            res = prefix + part_dir + (try_no ? "_try" + DB::toString(try_no) : "");
+        else
+            res = prefix + "_" + part_dir + (try_no ? "_try" + DB::toString(try_no) : "");
 
         if (!volume->getDisk()->exists(full_relative_path / res))
             return res;
@@ -92,36 +97,6 @@ std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Logger
 
         LOG_WARNING(log, "Directory {} (to detach to) already exists. Will detach to directory with '_tryN' suffix.", res);
     }
-
-    return res;
-}
-
-String DataPartStorageOnDiskBase::getPartDirForPrefix(const String & prefix, bool detached, int try_no) const
-{
-    /// This function joins `prefix` and the part name and an attempt number returning something like "<prefix>_<part_name>_<tryN>".
-    String res = prefix;
-    if (!prefix.empty() && !prefix.ends_with("_"))
-        res += "_";
-
-    /// During RESTORE temporary part directories are created with names like "tmp_restore_all_2_2_0-XXXXXXXX".
-    /// To detach such a directory we need to rename it replacing "tmp_restore_" with a specified prefix,
-    /// and a random suffix with an attempt number.
-    String part_name;
-    if (detached && part_dir.starts_with("tmp_restore_"))
-    {
-        part_name = part_dir.substr(strlen("tmp_restore_"));
-        size_t endpos = part_name.find('-');
-        if (endpos != String::npos)
-            part_name.erase(endpos, String::npos);
-    }
-
-    if (!part_name.empty())
-        res += part_name;
-    else
-        res += part_dir;
-
-    if (try_no)
-        res += "_try" + DB::toString(try_no);
 
     return res;
 }

@@ -79,14 +79,14 @@ struct SoundexImpl
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+        ColumnString::Offsets & res_offsets)
     {
-        res_data.resize(input_rows_count * (length + 1));
-        res_offsets.resize(input_rows_count);
+        const size_t size = offsets.size();
+        res_data.resize(size * (length + 1));
+        res_offsets.resize(size);
 
         size_t prev_offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < size; ++i)
         {
             const char * value = reinterpret_cast<const char *>(&data[prev_offset]);
             const size_t value_length = offsets[i] - prev_offset - 1;
@@ -98,7 +98,7 @@ struct SoundexImpl
         }
     }
 
-    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column of type FixedString is not supported by soundex function");
     }

@@ -22,7 +22,6 @@
 #include <base/coverage.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/safeExit.h>
-#include <base/Numa.h>
 #include <Common/PoolId.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ClickHouseRevision.h>
@@ -140,7 +139,6 @@
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
 #   include <azure/core/diagnostics/logger.hpp>
 #endif
-
 
 #include <incbin.h>
 /// A minimal file used when the server is run without installation
@@ -756,12 +754,6 @@ try
         setenv("OPENSSL_CONF", config_dir.c_str(), true); /// NOLINT
     }
 
-    if (auto total_numa_memory = getNumaNodesTotalMemory(); total_numa_memory.has_value())
-    {
-        LOG_INFO(
-            log, "ClickHouse is bound to a subset of NUMA nodes. Total memory of all available nodes: {}", ReadableSize(*total_numa_memory));
-    }
-
     registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
@@ -850,7 +842,7 @@ try
 #endif
 
 #if defined(SANITIZER)
-    LOG_INFO(log, "Query Profiler is disabled because it cannot work under sanitizers"
+    LOG_INFO(log, "Query Profiler disabled because they cannot work under sanitizers"
         " when two different stack unwinding methods will interfere with each other.");
 #endif
 
@@ -919,10 +911,10 @@ try
             metrics.reserve(servers_to_start_before_tables.size() + servers.size());
 
             for (const auto & server : servers_to_start_before_tables)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
 
             for (const auto & server : servers)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
             return metrics;
         }
     );
@@ -1043,11 +1035,6 @@ try
         max_database_replicated_create_table_thread_pool_size,
         0, // We don't need any threads once all the tables will be created
         max_database_replicated_create_table_thread_pool_size);
-
-    getDatabaseCatalogDropTablesThreadPool().initialize(
-        server_settings.database_catalog_drop_table_concurrency,
-        0, // We don't need any threads if there are no DROP queries.
-        server_settings.database_catalog_drop_table_concurrency);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -1420,7 +1407,7 @@ try
     if (index_uncompressed_cache_size > max_cache_size)
     {
         index_uncompressed_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(index_uncompressed_cache_size));
+        LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setIndexUncompressedCache(index_uncompressed_cache_policy, index_uncompressed_cache_size, index_uncompressed_cache_size_ratio);
 
@@ -1430,7 +1417,7 @@ try
     if (index_mark_cache_size > max_cache_size)
     {
         index_mark_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(index_mark_cache_size));
+        LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
@@ -1438,7 +1425,7 @@ try
     if (mmap_cache_size > max_cache_size)
     {
         mmap_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mmap_cache_size));
+        LOG_INFO(log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setMMappedFileCache(mmap_cache_size);
 
@@ -1449,7 +1436,7 @@ try
     if (query_cache_max_size_in_bytes > max_cache_size)
     {
         query_cache_max_size_in_bytes = max_cache_size;
-        LOG_INFO(log, "Lowered query cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_cache_max_size_in_bytes));
+        LOG_INFO(log, "Lowered query cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setQueryCache(query_cache_max_size_in_bytes, query_cache_max_entries, query_cache_query_cache_max_entry_size_in_bytes, query_cache_max_entry_size_in_rows);
 
@@ -1595,8 +1582,6 @@ try
             global_context->setClustersConfig(config, has_zookeeper);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
-
-            global_context->setDashboardsConfig(config);
 
             if (global_context->isServerCompletelyStarted())
             {
@@ -1768,8 +1753,6 @@ try
                     new_server_settings.http_connections_warn_limit,
                     new_server_settings.http_connections_store_limit,
                 });
-
-            DNSResolver::instance().setFilterSettings(new_server_settings.dns_allow_resolve_names_to_ipv4, new_server_settings.dns_allow_resolve_names_to_ipv6);
 
             if (global_context->isServerCompletelyStarted())
                 CannotAllocateThreadFaultInjector::setFaultProbability(new_server_settings.cannot_allocate_thread_fault_injection_probability);
@@ -2430,7 +2413,6 @@ void Server::createServers(
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
     http_params->setTimeout(settings.http_receive_timeout);
     http_params->setKeepAliveTimeout(global_context->getServerSettings().keep_alive_timeout);
-    http_params->setMaxKeepAliveRequests(static_cast<int>(global_context->getServerSettings().max_keep_alive_requests));
 
     Poco::Util::AbstractConfiguration::Keys protocols;
     config.keys("protocols", protocols);

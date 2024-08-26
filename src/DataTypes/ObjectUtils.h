@@ -6,7 +6,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Columns/ColumnObjectDeprecated.h>
+#include <Columns/ColumnObject.h>
 
 namespace DB
 {
@@ -88,7 +88,7 @@ DataTypePtr unflattenTuple(
     const PathsInData & paths,
     const DataTypes & tuple_types);
 
-std::pair<ColumnPtr, DataTypePtr> unflattenObjectToTuple(const ColumnObjectDeprecated & column);
+std::pair<ColumnPtr, DataTypePtr> unflattenObjectToTuple(const ColumnObject & column);
 
 std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
     const PathsInData & paths,

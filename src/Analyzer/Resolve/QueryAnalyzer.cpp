@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeObjectDeprecated.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -63,8 +63,6 @@
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
-
-#include <Planner/PlannerActionsVisitor.h>
 
 #include <Core/Settings.h>
 
@@ -505,7 +503,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         ProfileEvents::increment(ProfileEvents::ScalarSubqueriesCacheMiss);
         auto subquery_context = Context::createCopy(context);
 
-        Settings subquery_settings = context->getSettingsCopy();
+        Settings subquery_settings = context->getSettings();
         subquery_settings.max_result_rows = 1;
         subquery_settings.extremes = false;
         subquery_context->setSettings(subquery_settings);
@@ -748,11 +746,11 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
         UInt64 pos;
         if (constant_node->getValue().getType() == Field::Types::UInt64)
         {
-            pos = constant_node->getValue().safeGet<UInt64>();
+            pos = constant_node->getValue().get<UInt64>();
         }
         else // Int64
         {
-            auto value = constant_node->getValue().safeGet<Int64>();
+            auto value = constant_node->getValue().get<Int64>();
             if (value > 0)
                 pos = value;
             else
@@ -1742,7 +1740,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get());
         if (!tuple_data_type)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Qualified matcher {} found a non-compound expression {} with type {}. Expected a tuple or an array of tuples. In scope {}",
+                "Qualified matcher {} find non compound expression {} with type {}. Expected tuple or array of tuples. In scope {}",
                 matcher_node->formatASTForErrorMessage(),
                 expression_query_tree_node->formatASTForErrorMessage(),
                 expression_query_tree_node->getResultType()->getName(),
@@ -4124,7 +4122,13 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
     {
         auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
-        auto column_to_interpolate_name = interpolate_node_typed.getExpressionName();
+        auto * column_to_interpolate = interpolate_node_typed.getExpression()->as<IdentifierNode>();
+        if (!column_to_interpolate)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "INTERPOLATE can work only for identifiers, but {} is found",
+                interpolate_node_typed.getExpression()->formatASTForErrorMessage());
+        auto column_to_interpolate_name = column_to_interpolate->getIdentifier().getFullName();
 
         resolveExpressionNode(interpolate_node_typed.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -4133,11 +4137,14 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
         auto & interpolation_to_resolve = interpolate_node_typed.getInterpolateExpression();
         IdentifierResolveScope interpolate_scope(interpolation_to_resolve, &scope /*parent_scope*/);
 
-        auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(column_to_interpolate_name, interpolate_node_typed.getExpression()->getResultType()), interpolate_node);
+        auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(column_to_interpolate_name, interpolate_node_typed.getExpression()->getResultType()), interpolate_node_typed.getExpression());
         if (is_column_constant)
             interpolate_scope.expression_argument_name_to_node.emplace(column_to_interpolate_name, fake_column_node);
 
         resolveExpressionNode(interpolation_to_resolve, interpolate_scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        if (is_column_constant)
+            interpolation_to_resolve = interpolation_to_resolve->cloneAndReplace(fake_column_node, interpolate_node_typed.getExpression());
     }
 }
 
@@ -4541,15 +4548,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     resolveExpressionNode(nodes[1], scope, /* allow_lambda_expression */false, /* allow_table_function */false);
                     if (auto * constant = nodes[1]->as<ConstantNode>())
                     {
-                        /// Serialize the constant value using datatype specific
-                        /// interfaces to match the deserialization in ReplaceQueryParametersVistor.
-                        WriteBufferFromOwnString buf;
-                        const auto & value = constant->getValue();
-                        auto real_type = constant->getResultType();
-                        auto temporary_column  = real_type->createColumn();
-                        temporary_column->insert(value);
-                        real_type->getDefaultSerialization()->serializeTextEscaped(*temporary_column, 0, buf, {});
-                        view_params[identifier_node->getIdentifier().getFullName()] = buf.str();
+                        view_params[identifier_node->getIdentifier().getFullName()] = convertFieldToString(constant->getValue());
                     }
                 }
             }

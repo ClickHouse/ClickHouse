@@ -30,7 +30,7 @@ cp ${user_files_tmp_dir}/tmp_numbers_1.csv ${user_files_tmp_dir}/tmp/tmp_numbers
 
 #################
 echo "Test 1: create filesystem database and check implicit calls"
-${CLICKHOUSE_CLIENT} --multiline -q """
+${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 DROP DATABASE IF EXISTS test1;
 CREATE DATABASE test1 ENGINE = Filesystem;
 """
@@ -57,20 +57,20 @@ ${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`/tmp/tmp.csv\`;" 2>&1
 ${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`../*/tmp_numbers_*.csv\`;" 2>&1 | tr '\n' ' ' | grep -oF "PATH_ACCESS_DENIED" > /dev/null && echo "OK" || echo 'FAIL' ||:
 ${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`../tmp_numbers_*.csv\`;" 2>&1 | tr '\n' ' ' | grep -oF "PATH_ACCESS_DENIED" > /dev/null && echo "OK" || echo 'FAIL' ||:
 ${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`../*.csv\`;" 2>&1 | tr '\n' ' ' | grep -oF "PATH_ACCESS_DENIED" > /dev/null && echo "OK" || echo 'FAIL' ||:
-${CLICKHOUSE_CLIENT} --multiline --query """
+${CLICKHOUSE_CLIENT} --multiline --multiquery --query """
 USE test1;
 SELECT COUNT(*) FROM \"../${tmp_dir}/tmp.csv\";
 """ 2>&1 | tr '\n' ' ' | grep -oF "PATH_ACCESS_DENIED" > /dev/null && echo "OK" || echo 'FAIL' ||:
 ${CLICKHOUSE_CLIENT} --query "SELECT COUNT(*) FROM test1.\`../../../../../../tmp.csv\`;" 2>&1 | tr '\n' ' ' | grep -oF "PATH_ACCESS_DENIED" > /dev/null && echo "OK" || echo 'FAIL' ||:
 
 # BAD_ARGUMENTS: path should be inside user_files
-${CLICKHOUSE_CLIENT} --multiline -q """
+${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 DROP DATABASE IF EXISTS test2;
 CREATE DATABASE test2 ENGINE = Filesystem('/tmp');
 """ 2>&1 | tr '\n' ' ' | grep -oF -e "UNKNOWN_TABLE" -e "BAD_ARGUMENTS" > /dev/null && echo "OK" || echo 'FAIL' ||:
 
 # BAD_ARGUMENTS: .../user_files/relative_unknown_dir does not exist
-${CLICKHOUSE_CLIENT} --multiline -q """
+${CLICKHOUSE_CLIENT} --multiline --multiquery -q """
 DROP DATABASE IF EXISTS test2;
 CREATE DATABASE test2 ENGINE = Filesystem('relative_unknown_dir');
 """ 2>&1 | tr '\n' ' ' | grep -oF -e "UNKNOWN_TABLE" -e "BAD_ARGUMENTS" > /dev/null && echo "OK" || echo 'FAIL' ||:
