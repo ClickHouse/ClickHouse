@@ -1,50 +1,65 @@
-#include <Storages/VirtualColumnUtils.h>
-
 #include <memory>
 #include <stack>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnSet.h>
-#include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/FilterDescription.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsLogical.h>
-#include <Functions/IFunction.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/indexHint.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ActionsVisitor.h>
+
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/misc.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
+
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/makeASTForLogicalFunction.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
+
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/FilterDescription.h>
+
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeDateTime.h>
+
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+
+#include <Storages/VirtualColumnUtils.h>
+#include <IO/WriteHelpers.h>
+#include <Common/re2.h>
 #include <Common/typeid_cast.h>
+#include <Formats/SchemaInferenceUtils.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Formats/FormatFactory.h>
+#include <Core/Settings.h>
+#include "Functions/FunctionsLogical.h"
+#include "Functions/IFunction.h"
+#include "Functions/IFunctionAdaptors.h"
+#include "Functions/indexHint.h"
+#include <Interpreters/convertFieldToType.h>
+#include <Parsers/makeASTForLogicalFunction.h>
+#include <Columns/ColumnSet.h>
+#include <Functions/FunctionHelpers.h>
+#include <Interpreters/ActionsVisitor.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 namespace VirtualColumnUtils
 {
@@ -114,14 +129,45 @@ NameSet getVirtualNamesForFileLikeStorage()
     return {"_path", "_file", "_size", "_time", "_etag"};
 }
 
-VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns)
+std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path)
+{
+    std::string pattern = "([^/]+)=([^/]+)/";
+    re2::StringPiece input_piece(path);
+
+    std::unordered_map<std::string, std::string> key_values;
+    std::string key, value;
+    std::unordered_map<std::string, std::string> used_keys;
+    while (RE2::FindAndConsume(&input_piece, pattern, &key, &value))
+    {
+        auto it = used_keys.find(key);
+        if (it != used_keys.end() && it->second != value)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed", path, key);
+        used_keys.insert({key, value});
+
+        auto col_name = key;
+        key_values[col_name] = value;
+    }
+    return key_values;
+}
+
+VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns, const ContextPtr & context, const std::string & path, std::optional<FormatSettings> format_settings_)
 {
     VirtualColumnsDescription desc;
 
     auto add_virtual = [&](const auto & name, const auto & type)
     {
         if (storage_columns.has(name))
+        {
+            if (!context->getSettingsRef().use_hive_partitioning)
+                return;
+
+            if (storage_columns.size() == 1)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot use hive partitioning for file {}: it contains only partition columns. Disable use_hive_partitioning setting to read this file", path);
+            auto local_type = storage_columns.get(name).type;
+            storage_columns.remove(name);
+            desc.addEphemeral(name, local_type, "");
             return;
+        }
 
         desc.addEphemeral(name, type, "");
     };
@@ -131,6 +177,22 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription
     add_virtual("_size", makeNullable(std::make_shared<DataTypeUInt64>()));
     add_virtual("_time", makeNullable(std::make_shared<DataTypeDateTime>()));
     add_virtual("_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
+
+    if (context->getSettingsRef().use_hive_partitioning)
+    {
+        auto map = parseHivePartitioningKeysAndValues(path);
+        auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
+        for (auto & item : map)
+        {
+            auto type = tryInferDataTypeByEscapingRule(item.second, format_settings, FormatSettings::EscapingRule::Raw);
+            if (type == nullptr)
+                type = std::make_shared<DataTypeString>();
+            if (type->canBeInsideLowCardinality())
+                add_virtual(item.first, std::make_shared<DataTypeLowCardinality>(type));
+            else
+                add_virtual(item.first, type);
+        }
+    }
 
     return desc;
 }
@@ -191,8 +253,12 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values)
+    VirtualsForFileLikeStorage virtual_values, ContextPtr context)
 {
+    std::unordered_map<std::string, std::string> hive_map;
+    if (context->getSettingsRef().use_hive_partitioning)
+        hive_map = parseHivePartitioningKeysAndValues(virtual_values.path);
+
     for (const auto & virtual_column : requested_virtual_columns)
     {
         if (virtual_column.name == "_path")
@@ -225,6 +291,10 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), virtual_values.last_modified->epochTime())->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
+        {
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(it->second), *virtual_column.type))->convertToFullColumnIfConst());
         }
         else if (virtual_column.name == "_etag")
         {

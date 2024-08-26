@@ -1,0 +1,4 @@
+('id','Int64')
+('key_1','Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))')
+{"obj":{"id":"1","key_1":[{"key_2":[{"key_3":[{"key_8":"65537"},{"key_4":[{"key_5":-0.02},{"key_7":"1023"},{"key_6":"9223372036854775807","key_7":"1"}]},{"key_4":[{"key_7":"65537"}]}]}]}]}}
+\N	\N	\N	\N

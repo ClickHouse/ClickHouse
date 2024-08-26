@@ -5,6 +5,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnsDescription.h>
+#include <Formats/FormatSettings.h>
 
 #include <unordered_set>
 
@@ -63,12 +64,16 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
     const ColumnWithTypeAndName & data = block.getByName(name);
     size_t rows = block.rows();
     for (size_t i = 0; i < rows; ++i)
-        res.insert((*data.column)[i].get<T>());
+        res.insert((*data.column)[i].safeGet<T>());
     return res;
 }
 
 NameSet getVirtualNamesForFileLikeStorage();
-VirtualColumnsDescription getVirtualsForFileLikeStorage(const ColumnsDescription & storage_columns);
+VirtualColumnsDescription getVirtualsForFileLikeStorage(
+    ColumnsDescription & storage_columns,
+    const ContextPtr & context,
+    const std::string & sample_path = "",
+    std::optional<FormatSettings> format_settings_ = std::nullopt);
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
 
@@ -100,7 +105,7 @@ struct VirtualsForFileLikeStorage
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values);
+    VirtualsForFileLikeStorage virtual_values, ContextPtr context);
 }
 
 }
