@@ -94,8 +94,6 @@ static inline auto createHandlersFactoryFromConfig(
 
     for (const auto & key : keys)
     {
-        LOG_DEBUG(&Poco::Logger::get("ACME"), "HTTP handler: {}", key);
-
         if (key == "defaults")
         {
             addDefaultHandlersFactory(*main_handler_factory, server, config, async_metrics);
@@ -151,15 +149,14 @@ static inline auto createHandlersFactoryFromConfig(
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
+#if USE_SSL
             else if (handler_type == "acme")
             {
-                if (server.config().getInt("port") != 80)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "ACME handler is allowed only on port 80");
-
                 auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ACMERequestHandler>>(server);
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
+#endif
             else if (handler_type == "binary")
             {
                 auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<BinaryWebUIRequestHandler>>(server);
@@ -261,11 +258,13 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     factory.addPathToHints("/binary");
     factory.addHandler(binary_handler);
 
+#if USE_SSL
     /// FIXME redundant if ACME is not enabled
     auto acme_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ACMERequestHandler>>(server);
     acme_handler->attachNonStrictPath(ACMEClient::ACME_CHALLENGE_HTTP_PATH);
     acme_handler->allowGetAndHeadRequest();
     factory.addHandler(acme_handler);
+#endif
 
     auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JavaScriptWebUIRequestHandler>>(server);
     js_handler->attachNonStrictPath("/js/");
