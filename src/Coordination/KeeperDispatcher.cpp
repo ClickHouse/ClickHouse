@@ -439,7 +439,7 @@ bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestP
             return false;
     }
 
-    KeeperStorage::RequestForSession request_info;
+    KeeperStorageBase::RequestForSession request_info;
     request_info.request = request;
     using namespace std::chrono;
     request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
@@ -449,7 +449,7 @@ bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestP
         return false;
 
     server->putLocalReadRequest(request_info);
-    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequets);
+    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
     return true;
 }
 

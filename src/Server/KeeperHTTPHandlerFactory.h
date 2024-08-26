@@ -51,12 +51,10 @@ class KeeperHTTPCommandsHandler : public HTTPRequestHandler
 {
 private:
     LoggerPtr log;
-    const IServer & server;
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
-    uint64_t keep_alive_timeout;
 
 public:
-    KeeperHTTPCommandsHandler(const IServer & server_, std::shared_ptr<KeeperDispatcher> keeper_dispatcher_);
+    KeeperHTTPCommandsHandler(std::shared_ptr<KeeperDispatcher> keeper_dispatcher_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };

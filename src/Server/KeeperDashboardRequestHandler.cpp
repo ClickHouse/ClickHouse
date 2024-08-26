@@ -2,7 +2,6 @@
 
 #if USE_NURAFT
 
-#include "IServer.h"
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #include <Poco/Net/HTTPServerResponse.h>
@@ -29,9 +28,6 @@ namespace DB
 void KeeperDashboardWebUIRequestHandler::handleRequest(
     HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    const auto & config = server.config();
-    const auto keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
-
     std::string html(reinterpret_cast<const char *>(gresource_keeper_dashboard_htmlData), gresource_keeper_dashboard_htmlSize);
 
     /// Replace a link to external JavaScript file to embedded file.
@@ -49,9 +45,9 @@ void KeeperDashboardWebUIRequestHandler::handleRequest(
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
-    setResponseDefaultHeaders(response, keep_alive_timeout);
+    setResponseDefaultHeaders(response);
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout)
+    WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD)
         .write(html.data(), html.size());
 }
 

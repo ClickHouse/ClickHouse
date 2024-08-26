@@ -96,7 +96,6 @@ KeeperHTTPStorageHandler::KeeperHTTPStorageHandler(const IServer & server_, std:
     : log(getLogger("KeeperHTTPStorageHandler"))
     , server(server_)
     , keeper_dispatcher(keeper_dispatcher_)
-    , keep_alive_timeout(server.config().getUInt("keeper_server.http_control.keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT))
     , session_timeout(
           server.config().getUInt("keeper_server.http_control.storage.session_timeout", Coordination::DEFAULT_SESSION_TIMEOUT_MS)
           * Poco::Timespan::MILLISECONDS)
@@ -128,13 +127,14 @@ void KeeperHTTPStorageHandler::performZooKeeperRequest(
     }
 }
 
-Coordination::ResponsePtr KeeperHTTPStorageHandler::awaitKeeperResponse(std::shared_ptr<Coordination::ZooKeeperRequest> request)
+Coordination::ZooKeeperResponsePtr KeeperHTTPStorageHandler::awaitKeeperResponse(std::shared_ptr<Coordination::ZooKeeperRequest> request)
 {
-    auto response_promise = std::make_shared<std::promise<Coordination::ResponsePtr>>();
+    auto response_promise = std::make_shared<std::promise<Coordination::ZooKeeperResponsePtr>>();
     auto response_future = response_promise->get_future();
 
     auto response_callback
-        = [response_promise](const Coordination::ResponsePtr & zk_response) mutable { response_promise->set_value(zk_response); };
+        = [response_promise](const Coordination::ZooKeeperResponsePtr & zk_response, Coordination::ZooKeeperRequestPtr) mutable
+    { response_promise->set_value(zk_response); };
 
     const auto session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
 
@@ -359,7 +359,7 @@ try
     if (storage_path.empty())
         storage_path = "/";
 
-    setResponseDefaultHeaders(response, keep_alive_timeout);
+    setResponseDefaultHeaders(response);
 
     if (keeper_dispatcher->isServerActive())
     {

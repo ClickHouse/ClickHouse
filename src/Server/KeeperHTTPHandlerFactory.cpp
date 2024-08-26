@@ -56,10 +56,10 @@ std::unique_ptr<HTTPRequestHandler> KeeperHTTPRequestHandlerFactory::createReque
 }
 
 void addDashboardHandlersToFactory(
-    KeeperHTTPRequestHandlerFactory & factory, const IServer & server, std::shared_ptr<KeeperDispatcher> keeper_dispatcher)
+    KeeperHTTPRequestHandlerFactory & factory, std::shared_ptr<KeeperDispatcher> keeper_dispatcher)
 {
-    auto dashboard_ui_creator = [&server]() -> std::unique_ptr<KeeperDashboardWebUIRequestHandler>
-    { return std::make_unique<KeeperDashboardWebUIRequestHandler>(server); };
+    auto dashboard_ui_creator = []() -> std::unique_ptr<KeeperDashboardWebUIRequestHandler>
+    { return std::make_unique<KeeperDashboardWebUIRequestHandler>(); };
 
     auto dashboard_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperDashboardWebUIRequestHandler>>(dashboard_ui_creator);
     dashboard_handler->attachStrictPath("/dashboard");
@@ -91,11 +91,10 @@ void addReadinessHandlerToFactory(
     factory.addHandler(readiness_handler);
 }
 
-void addCommandsHandlersToFactory(
-    KeeperHTTPRequestHandlerFactory & factory, const IServer & server, std::shared_ptr<KeeperDispatcher> keeper_dispatcher)
+void addCommandsHandlersToFactory(KeeperHTTPRequestHandlerFactory & factory, std::shared_ptr<KeeperDispatcher> keeper_dispatcher)
 {
-    auto creator = [&server, keeper_dispatcher]() -> std::unique_ptr<KeeperHTTPCommandsHandler>
-    { return std::make_unique<KeeperHTTPCommandsHandler>(server, keeper_dispatcher); };
+    auto creator = [keeper_dispatcher]() -> std::unique_ptr<KeeperHTTPCommandsHandler>
+    { return std::make_unique<KeeperHTTPCommandsHandler>(keeper_dispatcher); };
 
     auto commads_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperHTTPCommandsHandler>>(std::move(creator));
     commads_handler->attachNonStrictPath("/api/v1/commands");
@@ -126,8 +125,8 @@ void addDefaultHandlersToFactory(
     const Poco::Util::AbstractConfiguration & config)
 {
     addReadinessHandlerToFactory(factory, keeper_dispatcher, config);
-    addDashboardHandlersToFactory(factory, server, keeper_dispatcher);
-    addCommandsHandlersToFactory(factory, server, keeper_dispatcher);
+    addDashboardHandlersToFactory(factory, keeper_dispatcher);
+    addCommandsHandlersToFactory(factory, keeper_dispatcher);
     addStorageHandlersToFactory(factory, server, keeper_dispatcher);
 }
 
@@ -163,9 +162,9 @@ static inline auto createHandlersFactoryFromConfig(
             if (handler_type == "ready")
                 addReadinessHandlerToFactory(*main_handler_factory, keeper_dispatcher, config);
             if (handler_type == "dashboard")
-                addDashboardHandlersToFactory(*main_handler_factory, server, keeper_dispatcher);
+                addDashboardHandlersToFactory(*main_handler_factory, keeper_dispatcher);
             if (handler_type == "commands")
-                addCommandsHandlersToFactory(*main_handler_factory, server, keeper_dispatcher);
+                addCommandsHandlersToFactory(*main_handler_factory, keeper_dispatcher);
             if (handler_type == "storage")
                 addStorageHandlersToFactory(*main_handler_factory, server, keeper_dispatcher);
             else
@@ -243,11 +242,8 @@ void KeeperHTTPReadinessHandler::handleRequest(
     }
 }
 
-KeeperHTTPCommandsHandler::KeeperHTTPCommandsHandler(const IServer & server_, std::shared_ptr<KeeperDispatcher> keeper_dispatcher_)
-    : log(getLogger("KeeperHTTPCommandsHandler"))
-    , server(server_)
-    , keeper_dispatcher(keeper_dispatcher_)
-    , keep_alive_timeout(server.config().getUInt("keeper_server.http_control.keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT))
+KeeperHTTPCommandsHandler::KeeperHTTPCommandsHandler(std::shared_ptr<KeeperDispatcher> keeper_dispatcher_)
+    : log(getLogger("KeeperHTTPCommandsHandler")), keeper_dispatcher(keeper_dispatcher_)
 {
 }
 
@@ -277,7 +273,7 @@ try
     }
     const auto command = uri_segments[3];
 
-    setResponseDefaultHeaders(response, keep_alive_timeout);
+    setResponseDefaultHeaders(response);
 
     Poco::JSON::Object response_json;
     response.setContentType("application/json");

@@ -10,16 +10,11 @@
 namespace DB
 {
 
-class IServer;
-
 /// Response with HTML page that allows to send queries and show results in browser.
 class KeeperDashboardWebUIRequestHandler : public HTTPRequestHandler
 {
-private:
-    const IServer & server;
-
 public:
-    explicit KeeperDashboardWebUIRequestHandler(const IServer & server_) : server(server_) { }
+    explicit KeeperDashboardWebUIRequestHandler() = default;
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 
