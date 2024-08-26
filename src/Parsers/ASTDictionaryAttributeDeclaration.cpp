@@ -35,7 +35,7 @@ void ASTDictionaryAttributeDeclaration::formatImpl(const FormatSettings & settin
 {
     frame.need_parens = false;
 
-    settings.writeIdentifier(name);
+    settings.writeIdentifier(name, true);
 
     if (type)
     {
