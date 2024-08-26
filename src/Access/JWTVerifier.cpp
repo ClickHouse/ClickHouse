@@ -235,8 +235,8 @@ void IJWTVerifier::init(const JWTVerifierParams &_params)
 
 bool IJWTVerifier::verify(const String &claims, const String &token, SettingsChanges & settings) const
 {
-    try
-    {
+//    try
+//    {
         auto decoded_jwt = jwt::decode(token);
         if (!verify_impl(decoded_jwt))
             return false;
@@ -250,11 +250,11 @@ bool IJWTVerifier::verify(const String &claims, const String &token, SettingsCha
         for (const auto &it : string_settings)
             settings.insertSetting(it.first, it.second);
         return true;
-    }
-    catch (const std::exception &ex)
-    {
-        throw Exception(ErrorCodes::JWT_ERROR, "{}: Failed to validate JWT with exception {}", name, ex.what());
-    }
+//    }
+//    catch (const std::exception &ex)
+//    {
+//        throw Exception(ErrorCodes::JWT_ERROR, "{}: Failed to validate JWT with exception {}", name, ex.what());
+//    }
 }
 
 void SimpleJWTVerifierParams::validate() const
@@ -374,13 +374,6 @@ bool JWKSVerifier::verify_impl(const jwt::decoded_jwt<jwt::traits::kazuho_picojs
             LOG_TRACE(getLogger("JWTAuthentication"), "{}: Verifying {} with 'x5c' key", name, subject);
             public_key = jwt::helper::convert_base64_der_to_pem(x5c);
         }
-        else
-        {
-            LOG_TRACE(getLogger("JWTAuthentication"), "{}: `issuer` or `x5c` not present, verifying {} with RSA components", name, subject);
-            const auto modulus = jwk.get_jwk_claim("n").as_string();
-            const auto exponent = jwk.get_jwk_claim("e").as_string();
-            public_key = jwt::helper::create_public_key_from_rsa_components(modulus, exponent);
-        }
     }
     catch (const jwt::error::claim_not_present_exception &)
     {
@@ -389,6 +382,14 @@ bool JWKSVerifier::verify_impl(const jwt::decoded_jwt<jwt::traits::kazuho_picojs
     catch (const std::bad_cast &)
     {
         throw Exception(ErrorCodes::JWT_ERROR, "Invalid claim value type: must be string");
+    }
+
+    if (public_key.empty())
+    {
+        LOG_TRACE(getLogger("JWTAuthentication"), "{}: `issuer` or `x5c` not present, verifying {} with RSA components", name, subject);
+        const auto modulus = jwk.get_jwk_claim("n").as_string();
+        const auto exponent = jwk.get_jwk_claim("e").as_string();
+        public_key = jwt::helper::create_public_key_from_rsa_components(modulus, exponent);
     }
 
     if (algo == "rs256")

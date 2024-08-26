@@ -26,15 +26,15 @@ def started_cluster():
         cluster.shutdown()
 
 
-# def test_static_key(started_cluster):
-#     res = client.exec_in_container(
-#         [
-#             "bash",
-#             "-c",
-#             f'curl -H "X-ClickHouse-JWT-Token: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqd3RfdXNlciIsInJlc291cmNlX2FjY2VzcyI6InZpZXctcHJvZmlsZSJ9.TVnAmEMZeUqG-BD2K4f3Hk6LRvCiTr28W9dbjSGzi0Q" "http://{cluster.get_instance_ip(instance.name)}:8123/?query=SELECT%20currentUser()"',
-#         ]
-#     )
-#     assert res == "jwt_user\n"
+def test_static_key(started_cluster):
+    res = client.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f'curl -H "X-ClickHouse-JWT-Token: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqd3RfdXNlciIsInJlc291cmNlX2FjY2VzcyI6InZpZXctcHJvZmlsZSJ9.TVnAmEMZeUqG-BD2K4f3Hk6LRvCiTr28W9dbjSGzi0Q" "http://{cluster.get_instance_ip(instance.name)}:8123/?query=SELECT%20currentUser()"',
+        ]
+    )
+    assert res == "jwt_user\n"
 
 
 def test_static_jwks(started_cluster):
