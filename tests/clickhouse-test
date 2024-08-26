@@ -60,7 +60,6 @@ MESSAGES_TO_RETRY = [
     "is already started to be removing by another replica right now",
     # This is from LSan, and it indicates its own internal problem:
     "Unable to get registers from thread",
-    "You can retry",
 ]
 
 MAX_RETRIES = 3
@@ -3567,7 +3566,7 @@ if __name__ == "__main__":
             f"Cannot access the specified directory with queries ({args.queries})",
             file=sys.stderr,
         )
-        sys.exit(1)
+        assert False, "No --queries provided"
 
     CAPTURE_CLIENT_STACKTRACE = args.capture_client_stacktrace
 
