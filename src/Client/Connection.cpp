@@ -145,6 +145,9 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 /// work we need to pass host name separately. It will be send into TLS Hello packet to let
                 /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
                 static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
+                /// we want to postpone SSL handshake until first read or write operation
+                /// so any errors during negotiation would be properly processed
+                static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
 #else
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
 #endif

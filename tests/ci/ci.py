@@ -333,7 +333,10 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
             CI.JobNames.BUILD_CHECK,
         ):  # we might want to rerun build report job
             rerun_helper = RerunHelper(commit, _get_ext_check_name(job_name))
-            if rerun_helper.is_already_finished_by_status():
+            if (
+                rerun_helper.is_already_finished_by_status()
+                and not Utils.is_job_triggered_manually()
+            ):
                 print("WARNING: Rerunning job with GH status ")
                 status = rerun_helper.get_finished_status()
                 assert status
@@ -344,7 +347,7 @@ def _pre_action(s3, job_name, batch, indata, pr_info):
                 skip_status = status.state
 
         # ci cache check
-        if not to_be_skipped and not no_cache:
+        if not to_be_skipped and not no_cache and not Utils.is_job_triggered_manually():
             ci_cache = CiCache(s3, indata["jobs_data"]["digests"]).update()
             job_config = CI.get_job_config(job_name)
             if ci_cache.is_successful(
