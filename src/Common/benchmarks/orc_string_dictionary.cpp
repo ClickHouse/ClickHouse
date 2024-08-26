@@ -262,12 +262,13 @@ void NewSortedStringDictionary::clear()
     flatDict_.clear();
 }
 
+template <size_t cardinality>
 static std::vector<std::string> mockStrings()
 {
     std::vector<std::string> res(1000000);
     for (auto & s : res)
     {
-        s = "test string dictionary " + std::to_string(rand() % 100);
+        s = "test string dictionary " + std::to_string(rand() % cardinality);
     }
     return res;
 }
@@ -286,10 +287,10 @@ static NO_INLINE std::unique_ptr<DictionaryImpl> createAndWriteStringDictionary(
     return dict;
 }
 
-template <typename DictionaryImpl>
+template <typename DictionaryImpl, size_t cardinality>
 static void BM_writeStringDictionary(benchmark::State & state)
 {
-    auto strs = mockStrings();
+    auto strs = mockStrings<cardinality>();
     for (auto _ : state)
     {
         auto dict = createAndWriteStringDictionary<DictionaryImpl>(strs);
@@ -297,6 +298,14 @@ static void BM_writeStringDictionary(benchmark::State & state)
     }
 }
 
-BENCHMARK_TEMPLATE(BM_writeStringDictionary, OldSortedStringDictionary);
-BENCHMARK_TEMPLATE(BM_writeStringDictionary, NewSortedStringDictionary);
+BENCHMARK_TEMPLATE(BM_writeStringDictionary, OldSortedStringDictionary, 10);
+BENCHMARK_TEMPLATE(BM_writeStringDictionary, NewSortedStringDictionary, 10);
+BENCHMARK_TEMPLATE(BM_writeStringDictionary, OldSortedStringDictionary, 100);
+BENCHMARK_TEMPLATE(BM_writeStringDictionary, NewSortedStringDictionary, 100);
+BENCHMARK_TEMPLATE(BM_writeStringDictionary, OldSortedStringDictionary, 1000);
+BENCHMARK_TEMPLATE(BM_writeStringDictionary, NewSortedStringDictionary, 1000);
+BENCHMARK_TEMPLATE(BM_writeStringDictionary, OldSortedStringDictionary, 10000);
+BENCHMARK_TEMPLATE(BM_writeStringDictionary, NewSortedStringDictionary, 10000);
+BENCHMARK_TEMPLATE(BM_writeStringDictionary, OldSortedStringDictionary, 100000);
+BENCHMARK_TEMPLATE(BM_writeStringDictionary, NewSortedStringDictionary, 100000);
 
