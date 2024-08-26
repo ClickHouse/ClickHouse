@@ -132,10 +132,6 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
 
     if (!memory_efficient_aggregation)
     {
-        if (input_streams.front().header.has("__grouping_set"))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                 "Memory efficient merging of aggregated results is not supported for grouping sets.");
-
         /// We union several sources into one, paralleling the work.
         pipeline.resize(1);
 
@@ -145,6 +141,9 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
     }
     else
     {
+        if (input_streams.front().header.has("__grouping_set"))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                 "Memory efficient merging of aggregated results is not supported for grouping sets.");
         auto num_merge_threads = memory_efficient_merge_threads
                                  ? memory_efficient_merge_threads
                                  : max_threads;
