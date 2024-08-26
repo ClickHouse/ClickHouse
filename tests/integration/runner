@@ -152,7 +152,12 @@ def check_iptables_legacy():
 
         if "legacy" in file_info_str:
             print(
-                "iptables is in 'legacy' mode. This is not supported. Please switch to 'nftables' mode."
+                """
+                iptables is in 'legacy' mode. This is not supported.
+
+                Please switch to 'nftables' mode, usualy by installing `iptables-nft` or `nftables`, consult your distribution manual.
+                Or, use --ignore-iptables-legacy-check.
+                """
             )
             sys.exit(1)
 
@@ -164,7 +169,12 @@ def check_iptables_legacy():
 
         if "legacy" in file_info_str:
             print(
-                "ip6tables is in 'legacy' mode. This is not supported. Please switch to 'nftables' mode."
+                """
+                ip6tables is in 'legacy' mode. This is not supported.
+
+                Please switch to 'nftables' mode, usualy by installing `iptables-nft` or `nftables`, consult your distribution manual.
+                Or, use --ignore-iptables-legacy-check.
+                """
             )
             sys.exit(1)
 
