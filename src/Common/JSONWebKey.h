@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #if USE_SSL
 #include <Poco/Crypto/RSAKey.h>
 

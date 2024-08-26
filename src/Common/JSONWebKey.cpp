@@ -1,5 +1,7 @@
 #include <Common/JSONWebKey.h>
 
+#if USE_SSL
+
 #include <fmt/format.h>
 #include <Common/Base64.h>
 #include <Common/ErrorCodes.h>
@@ -38,3 +40,4 @@ JSONWebKey JSONWebKey::fromRSAKey(const Poco::Crypto::RSAKey & key)
 }
 
 }
+#endif
