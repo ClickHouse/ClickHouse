@@ -29,7 +29,9 @@ namespace DB
 PlayWebUIRequestHandler::PlayWebUIRequestHandler(IServer & server_) : server(server_) {}
 DashboardWebUIRequestHandler::DashboardWebUIRequestHandler(IServer & server_) : server(server_) {}
 BinaryWebUIRequestHandler::BinaryWebUIRequestHandler(IServer & server_) : server(server_) {}
+#if USE_SSL
 ACMERequestHandler::ACMERequestHandler(IServer & server_) : server(server_) {}
+#endif
 JavaScriptWebUIRequestHandler::JavaScriptWebUIRequestHandler(IServer & server_) : server(server_) {}
 
 static void handle(HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html)
@@ -71,6 +73,7 @@ void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPS
     handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
 }
 
+#if USE_SSL
 /// FIXME not a Web UI
 void ACMERequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
@@ -85,6 +88,7 @@ void ACMERequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerRe
 
     handle(request, response, { challenge });
 }
+#endif
 
 void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
