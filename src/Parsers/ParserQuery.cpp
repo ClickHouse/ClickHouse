@@ -26,9 +26,9 @@
 #include <Parsers/Access/ParserCreateUserQuery.h>
 #include <Parsers/Access/ParserDropAccessEntityQuery.h>
 #include <Parsers/Access/ParserGrantQuery.h>
+#include <Parsers/Access/ParserCheckGrantQuery.h>
 #include <Parsers/Access/ParserMoveAccessEntityQuery.h>
 #include <Parsers/Access/ParserSetRoleQuery.h>
-#include "Parsers/Access/ParserCheckGrantQuery.h"
 
 
 namespace DB
