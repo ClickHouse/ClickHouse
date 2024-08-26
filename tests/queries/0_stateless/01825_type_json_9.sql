@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS t_json;
 
 SET allow_experimental_object_type = 1;
 
-CREATE TABLE t_json(id UInt64, obj JSON) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_json(id UInt64, obj Object('json')) ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO t_json format JSONEachRow {"id": 1, "obj": {"foo": 1, "k1": 2}};
 

@@ -2,6 +2,7 @@ name: CreateRelease
 
 concurrency:
   group: release
+
 'on':
   workflow_dispatch:
     inputs:
@@ -26,6 +27,28 @@ concurrency:
         required: false
         default: false
         type: boolean
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git reference (branch or commit sha) from which to create the release'
+        required: true
+        type: string
+      type:
+        description: 'The type of release: "new" for a new release or "patch" for a patch release'
+        required: true
+        type: string
+      only-repo:
+        description: 'Run only repos updates including docker (repo-recovery, tests)'
+        required: false
+        default: false
+        type: boolean
+      dry-run:
+        description: 'Dry run'
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      ROBOT_CLICKHOUSE_COMMIT_TOKEN:
 
 jobs:
   CreateRelease:

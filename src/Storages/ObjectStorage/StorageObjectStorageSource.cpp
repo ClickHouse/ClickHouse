@@ -208,7 +208,7 @@ Chunk StorageObjectStorageSource::generate()
                   .filename = &filename,
                   .last_modified = object_info->metadata->last_modified,
                   .etag = &(object_info->metadata->etag)
-                }, getContext(), read_from_format_info.columns_description);
+                }, getContext());
 
             const auto & partition_columns = configuration->getPartitionColumns();
             if (!partition_columns.empty() && chunk_size && chunk.hasColumns())
@@ -280,7 +280,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const std::shared_ptr<IIterator> & file_iterator,
     const ConfigurationPtr & configuration,
     const ObjectStoragePtr & object_storage,
-    const ReadFromFormatInfo & read_from_format_info,
+    ReadFromFormatInfo & read_from_format_info,
     const std::optional<FormatSettings> & format_settings,
     const std::shared_ptr<const KeyCondition> & key_condition_,
     const ContextPtr & context_,

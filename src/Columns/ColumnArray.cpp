@@ -452,6 +452,11 @@ void ColumnArray::reserve(size_t n)
     getData().reserve(n); /// The average size of arrays is not taken into account here. Or it is considered to be no more than 1.
 }
 
+size_t ColumnArray::capacity() const
+{
+    return getOffsets().capacity();
+}
+
 void ColumnArray::prepareForSquashing(const Columns & source_columns)
 {
     size_t new_size = size();

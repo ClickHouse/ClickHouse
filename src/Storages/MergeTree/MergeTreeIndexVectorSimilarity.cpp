@@ -55,6 +55,7 @@ const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToSca
     {"f32", unum::usearch::scalar_kind_t::f32_k},
     {"f16", unum::usearch::scalar_kind_t::f16_k},
     {"i8", unum::usearch::scalar_kind_t::i8_k}};
+/// Usearch provides more quantizations but ^^ above ones seem the only ones comprehensively supported across all distance functions.
 
 template<typename T>
 concept is_set = std::same_as<T, std::set<typename T::key_type, typename T::key_compare, typename T::allocator_type>>;
@@ -97,9 +98,6 @@ USearchIndexWithSerialization::USearchIndexWithSerialization(
 
     unum::usearch::index_dense_config_t config(usearch_hnsw_params.m, usearch_hnsw_params.ef_construction, usearch_hnsw_params.ef_search);
     config.enable_key_lookups = false; /// we don't do row-to-vector lookups
-
-    if (auto error = config.validate(); error) /// already called in vectorSimilarityIndexValidator, call again because usearch may change the config in-place
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parameters passed to vector similarity index. Error: {}", String(error.release()));
 
     if (auto result = USearchIndex::make(metric, config); !result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not create vector similarity index. Error: {}", String(result.error.release()));
@@ -192,6 +190,8 @@ MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
 
 void MergeTreeIndexGranuleVectorSimilarity::serializeBinary(WriteBuffer & ostr) const
 {
+    LOG_TRACE(logger, "Start writing vector similarity index");
+
     if (empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty minmax index {}", backQuote(index_name));
 
@@ -209,6 +209,8 @@ void MergeTreeIndexGranuleVectorSimilarity::serializeBinary(WriteBuffer & ostr) 
 
 void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
+    LOG_TRACE(logger, "Start loading vector similarity index");
+
     UInt64 file_version;
     readIntBinary(file_version, istr);
     if (file_version != FILE_FORMAT_VERSION)
@@ -250,14 +252,47 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAnd
     return granule;
 }
 
+namespace
+{
+
+template <typename Column>
+void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & column_array_offsets, USearchIndexWithSerializationPtr & index, size_t dimensions, size_t rows)
+{
+    const auto & column_array_data = column_array->getData();
+    const auto & column_array_data_float = typeid_cast<const Column &>(column_array_data);
+    const auto & column_array_data_float_data = column_array_data_float.getData();
+
+    /// Check all sizes are the same
+    for (size_t row = 0; row < rows - 1; ++row)
+        if (column_array_offsets[row + 1] - column_array_offsets[row] != dimensions)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column with vector similarity index must have equal length");
+
+    /// Reserving space is mandatory
+    if (!index->try_reserve(roundUpToPowerOfTwoOrZero(index->size() + rows)))
+        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for vector similarity index");
+
+    for (size_t row = 0; row < rows; ++row)
+    {
+        if (auto result = index->add(static_cast<USearchIndex::vector_key_t>(index->size()), &column_array_data_float_data[column_array_offsets[row - 1]]); !result)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add data to vector similarity index. Error: {}", String(result.error.release()));
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::USearchAddCount);
+            ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, result.visited_members);
+            ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, result.computed_distances);
+        }
+    }
+}
+
+}
+
 void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "The provided position is not less than the number of block rows. Position: {}, Block rows: {}.",
-            *pos,
-            block.rows());
+            *pos, block.rows());
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
@@ -271,63 +306,53 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected block with single column");
 
     const String & index_column_name = index_sample_block.getByPosition(0).name;
-    ColumnPtr column_cut = block.getByName(index_column_name).column->cut(*pos, rows_read);
+    const ColumnPtr & index_column = block.getByName(index_column_name).column;
+    ColumnPtr column_cut = index_column->cut(*pos, rows_read);
 
-    if (const auto & column_array = typeid_cast<const ColumnArray *>(column_cut.get()))
-    {
-        const auto & column_array_data = column_array->getData();
-        const auto & column_array_data_float = typeid_cast<const ColumnFloat32 &>(column_array_data);
-        const auto & column_array_data_float_data = column_array_data_float.getData();
+    const auto * column_array = typeid_cast<const ColumnArray *>(column_cut.get());
+    if (!column_array)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array(Float*) column");
 
-        const auto & column_array_offsets = column_array->getOffsets();
-        const size_t num_rows = column_array_offsets.size();
+    if (column_array->empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Array is unexpectedly empty");
 
-        if (column_array->empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Array is unexpectedly empty");
+    /// The vector similarity algorithm naturally assumes that the indexed vectors have dimension >= 1. This condition is violated if empty arrays
+    /// are INSERTed into an vector-similarity-indexed column or if no value was specified at all in which case the arrays take on their default
+    /// values which is also empty.
+    if (column_array->isDefaultAt(0))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "The arrays in column '{}' must not be empty. Did you try to INSERT default values?", index_column_name);
 
-        /// The vector similarity algorithm naturally assumes that the indexed vectors have dimension >= 1. This condition is violated if empty arrays
-        /// are INSERTed into an vector-similarity-indexed column or if no value was specified at all in which case the arrays take on their default
-        /// values which is also empty.
-        if (column_array->isDefaultAt(0))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "The arrays in column '{}' must not be empty. Did you try to INSERT default values?", index_column_name);
+    const size_t rows = column_array->size();
 
-        /// Check all sizes are the same
-        const size_t dimensions = column_array_offsets[0];
-        for (size_t i = 0; i < num_rows - 1; ++i)
-            if (column_array_offsets[i + 1] - column_array_offsets[i] != dimensions)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column '{}' must have equal length", index_column_name);
+    const auto & column_array_offsets = column_array->getOffsets();
+    const size_t dimensions = column_array_offsets[0];
 
-        /// Also check that previously inserted blocks have the same size as this block.
-        /// Note that this guarantees consistency of dimension only within parts. We are unable to detect inconsistent dimensions across
-        /// parts - for this, a little help from the user is needed, e.g. CONSTRAINT cnstr CHECK length(array) = 42.
-        if (index && index->dimensions() != dimensions)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column '{}' must have equal length", index_column_name);
+    if (!index)
+        index = std::make_shared<USearchIndexWithSerialization>(dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 
-        if (!index)
-            index = std::make_shared<USearchIndexWithSerialization>(dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+    /// Also check that previously inserted blocks have the same size as this block.
+    /// Note that this guarantees consistency of dimension only within parts. We are unable to detect inconsistent dimensions across
+    /// parts - for this, a little help from the user is needed, e.g. CONSTRAINT cnstr CHECK length(array) = 42.
+    if (index->dimensions() != dimensions)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column with vector similarity index must have equal length");
 
-        /// We use Usearch's index_dense_t as index type which supports only 4 bio entries according to https://github.com/unum-cloud/usearch/tree/main/cpp
-        if (index->size() + num_rows > std::numeric_limits<UInt32>::max())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Size of vector similarity index in column {} would exceed 4 billion entries", index_column_name);
+    /// We use Usearch's index_dense_t as index type which supports only 4 bio entries according to https://github.com/unum-cloud/usearch/tree/main/cpp
+    if (index->size() + rows > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Size of vector similarity index would exceed 4 billion entries");
 
-        /// Reserving space is mandatory
-        if (!index->try_reserve(roundUpToPowerOfTwoOrZero(index->size() + num_rows)))
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not reserve memory for vector similarity index");
+    DataTypePtr data_type = block.getDataTypes()[0];
+    const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
+    if (!data_type_array)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
+    const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
 
-        for (size_t row = 0; row < num_rows; ++row)
-        {
-            if (auto result = index->add(static_cast<UInt32>(index->size()), &column_array_data_float_data[column_array_offsets[row - 1]]); !result)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add data to vector similarity index. Error: {}", String(result.error.release()));
-            else
-            {
-                ProfileEvents::increment(ProfileEvents::USearchAddCount);
-                ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, result.visited_members);
-                ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, result.computed_distances);
-            }
-        }
-    }
+    if (WhichDataType(nested_type_index).isFloat32())
+        updateImpl<ColumnFloat32>(column_array, column_array_offsets, index, dimensions, rows);
+    else if (WhichDataType(nested_type_index).isFloat64())
+        updateImpl<ColumnFloat64>(column_array, column_array_offsets, index, dimensions, rows);
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array(Float32) column");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
+
 
     *pos += rows_read;
 }
@@ -375,7 +400,7 @@ std::vector<size_t> MergeTreeIndexConditionVectorSimilarity::getUsefulRanges(Mer
             "does not match the dimension in the index ({})",
             vector_similarity_condition.getDimensions(), index->dimensions());
 
-    const std::vector<float> reference_vector = vector_similarity_condition.getReferenceVector();
+    const std::vector<Float64> reference_vector = vector_similarity_condition.getReferenceVector();
 
     auto search_result = index->search(reference_vector.data(), limit);
     if (!search_result)
@@ -486,7 +511,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
         if (!quantizationToScalarKind.contains(index.arguments[2].safeGet<String>()))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Third argument (quantization) of vector similarity index is not supported. Supported quantizations are: {}", joinByComma(quantizationToScalarKind));
 
-        /// Call Usearche's own parameter validation method for HNSW-specific parameters
+        /// Call Usearch's own parameter validation method for HNSW-specific parameters
         UInt64 m = index.arguments[3].safeGet<UInt64>();
         UInt64 ef_construction = index.arguments[4].safeGet<UInt64>();
         UInt64 ef_search = index.arguments[5].safeGet<UInt64>();
@@ -501,18 +526,14 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Vector similarity indexes must be created on a single column");
 
-    /// Check data type of the indexed column:
+    /// Check that the data type is Array(Float*)
     DataTypePtr data_type = index.sample_block.getDataTypes()[0];
-    if (const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get()))
-    {
-        TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
-        if (!WhichDataType(nested_type_index).isFloat32())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float32)");
-    }
-    else
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float32)");
-    }
+    const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
+    if (!data_type_array)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float*)");
+    TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
+    if (!WhichDataType(nested_type_index).isFloat())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float*)");
 }
 
 }
