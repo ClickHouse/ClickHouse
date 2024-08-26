@@ -3,7 +3,6 @@
 #include <Parsers/IAST.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
-#include "Parsers/ASTQueryParameter.h"
 
 
 namespace DB
@@ -21,6 +20,7 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
+    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     void replaceEmptyDatabase(const String & current_database);
     QueryKind getQueryKind() const override { return QueryKind::Check; }
 };
