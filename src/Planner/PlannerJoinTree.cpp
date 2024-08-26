@@ -1449,7 +1449,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     auto columns_from_left_table = left_plan.getCurrentDataStream().header.getNamesAndTypesList();
     auto columns_from_right_table = right_plan.getCurrentDataStream().header.getNamesAndTypesList();
-    table_join->setOutputColumns(columns_from_left_table, columns_from_right_table);
+    table_join->setInputColumns(columns_from_left_table, columns_from_right_table);
     // table_join->setColumnsFromJoinedTable(columns_from_right_table, left_table_names_set, "");
     UNUSED(left_table_names_set);
 
@@ -1459,6 +1459,9 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
             outer_scope_columns.contains(column_from_joined_table.name))
             table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Left);
+        else
+            table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Left);
+
     }
 
     for (auto & column_from_joined_table : columns_from_right_table)
@@ -1466,6 +1469,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         /// Add columns to output only if they are presented in outer scope, otherwise they can be dropped
         if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
             outer_scope_columns.contains(column_from_joined_table.name))
+            table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Right);
+        else
             table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Right);
     }
 

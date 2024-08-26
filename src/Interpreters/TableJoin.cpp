@@ -179,12 +179,19 @@ size_t TableJoin::rightKeyInclusion(const String & name) const
     return count;
 }
 
-void TableJoin::setOutputColumns(NamesAndTypesList left_output_columns, NamesAndTypesList right_output_columns)
+void TableJoin::setInputColumns(NamesAndTypesList left_output_columns, NamesAndTypesList right_output_columns)
 {
     columns_from_left_table = left_output_columns;
     columns_from_joined_table = right_output_columns;
 }
 
+
+const NamesAndTypesList & TableJoin::getOutputColumns(JoinTableSide side)
+{
+    if (side == JoinTableSide::Left)
+        return result_columns_from_left_table;
+    return columns_added_by_join;
+}
 
 void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix)
 {
