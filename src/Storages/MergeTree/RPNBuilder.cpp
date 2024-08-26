@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <Common/FieldVisitorToString.h>
-#include <Core/Settings.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -399,7 +398,7 @@ size_t RPNBuilderFunctionTreeNode::getArgumentsSize() const
         {
             const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(dag_node->function_base.get());
             const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get());
-            return index_hint->getActions().getOutputs().size();
+            return index_hint->getActions()->getOutputs().size();
         }
 
         return dag_node->children.size();
@@ -427,7 +426,7 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
         {
             const auto & adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor &>(*dag_node->function_base);
             const auto & index_hint = typeid_cast<const FunctionIndexHint &>(*adaptor.getFunction());
-            return RPNBuilderTreeNode(index_hint.getActions().getOutputs()[index], tree_context);
+            return RPNBuilderTreeNode(index_hint.getActions()->getOutputs()[index], tree_context);
         }
 
         return RPNBuilderTreeNode(dag_node->children[index], tree_context);

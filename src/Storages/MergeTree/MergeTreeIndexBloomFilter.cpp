@@ -201,7 +201,7 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
 }
 
 MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
-    const ActionsDAG * filter_actions_dag, ContextPtr context_, const Block & header_, size_t hash_functions_)
+    const ActionsDAGPtr & filter_actions_dag, ContextPtr context_, const Block & header_, size_t hash_functions_)
     : WithContext(context_), header(header_), hash_functions(hash_functions_)
 {
     if (!filter_actions_dag)
@@ -348,19 +348,19 @@ bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTre
         {
             if (const_value.getType() == Field::Types::UInt64)
             {
-                out.function = const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                out.function = const_value.get<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
 
             if (const_value.getType() == Field::Types::Int64)
             {
-                out.function = const_value.safeGet<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                out.function = const_value.get<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
 
             if (const_value.getType() == Field::Types::Float64)
             {
-                out.function = const_value.safeGet<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                out.function = const_value.get<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
         }
@@ -371,78 +371,67 @@ bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTre
 
 bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent)
 {
-    if (!node.isFunction())
-        return false;
+    bool maybe_useful = false;
 
-    const auto function = node.toFunctionNode();
-    auto arguments_size = function.getArgumentsSize();
-    auto function_name = function.getFunctionName();
-
-    if (parent == nullptr)
+    if (node.isFunction())
     {
-        /// Recurse a little bit for indexOf().
+        const auto function = node.toFunctionNode();
+        auto arguments_size = function.getArgumentsSize();
+        auto function_name = function.getFunctionName();
+
         for (size_t i = 0; i < arguments_size; ++i)
         {
             auto argument = function.getArgumentAt(i);
             if (traverseFunction(argument, out, &node))
-                return true;
+                maybe_useful = true;
         }
-    }
 
-    if (arguments_size != 2)
-        return false;
+        if (arguments_size != 2)
+            return false;
 
-    /// indexOf() should be inside comparison function, e.g. greater(indexOf(key, 42), 0).
-    /// Other conditions should be at top level, e.g. equals(key, 42), not equals(equals(key, 42), 1).
-    if ((function_name == "indexOf") != (parent != nullptr))
-        return false;
+        auto lhs_argument = function.getArgumentAt(0);
+        auto rhs_argument = function.getArgumentAt(1);
 
-    auto lhs_argument = function.getArgumentAt(0);
-    auto rhs_argument = function.getArgumentAt(1);
-
-    if (functionIsInOrGlobalInOperator(function_name))
-    {
-        if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)
+        if (functionIsInOrGlobalInOperator(function_name))
         {
-            if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext()); prepared_set)
+            if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)
             {
-                if (prepared_set->hasExplicitSetElements())
+                if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext()); prepared_set)
                 {
-                    const auto prepared_info = getPreparedSetInfo(prepared_set);
-                    if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
-                        return true;
+                    if (prepared_set->hasExplicitSetElements())
+                    {
+                        const auto prepared_info = getPreparedSetInfo(prepared_set);
+                        if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
+                            maybe_useful = true;
+                    }
                 }
             }
         }
-        return false;
+        else if (function_name == "equals" ||
+                 function_name == "notEquals" ||
+                 function_name == "has" ||
+                 function_name == "mapContains" ||
+                 function_name == "indexOf" ||
+                 function_name == "hasAny" ||
+                 function_name == "hasAll")
+        {
+            Field const_value;
+            DataTypePtr const_type;
+
+            if (rhs_argument.tryGetConstant(const_value, const_type))
+            {
+                if (traverseTreeEquals(function_name, lhs_argument, const_type, const_value, out, parent))
+                    maybe_useful = true;
+            }
+            else if (lhs_argument.tryGetConstant(const_value, const_type))
+            {
+                if (traverseTreeEquals(function_name, rhs_argument, const_type, const_value, out, parent))
+                    maybe_useful = true;
+            }
+        }
     }
 
-    if (function_name == "equals" ||
-        function_name == "notEquals" ||
-        function_name == "has" ||
-        function_name == "mapContains" ||
-        function_name == "indexOf" ||
-        function_name == "hasAny" ||
-        function_name == "hasAll")
-    {
-        Field const_value;
-        DataTypePtr const_type;
-
-        if (rhs_argument.tryGetConstant(const_value, const_type))
-        {
-            if (traverseTreeEquals(function_name, lhs_argument, const_type, const_value, out, parent))
-                return true;
-        }
-        else if (lhs_argument.tryGetConstant(const_value, const_type) && (function_name == "equals" || function_name == "notEquals"))
-        {
-            if (traverseTreeEquals(function_name, rhs_argument, const_type, const_value, out, parent))
-                return true;
-        }
-
-        return false;
-    }
-
-    return false;
+    return maybe_useful;
 }
 
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
@@ -703,7 +692,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 const bool is_nullable = actual_type->isNullable();
                 auto mutable_column = actual_type->createColumn();
 
-                for (const auto & f : value_field.safeGet<Array>())
+                for (const auto & f : value_field.get<Array>())
                 {
                     if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
                         return false;
@@ -774,7 +763,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
         if (which.isTuple() && key_node_function_name == "tuple")
         {
-            const Tuple & tuple = value_field.safeGet<const Tuple &>();
+            const Tuple & tuple = value_field.get<const Tuple &>();
             const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
 
             if (tuple.size() != key_node_function_arguments_size)
@@ -908,7 +897,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator(con
     return std::make_shared<MergeTreeIndexAggregatorBloomFilter>(bits_per_row, hash_functions, index.column_names);
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG * filter_actions_dag, ContextPtr context) const
+MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(filter_actions_dag, context, index.sample_block, hash_functions);
 }
@@ -963,7 +952,7 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach)
     {
         const auto & argument = index.arguments[0];
 
-        if (!attach && (argument.getType() != Field::Types::Float64 || argument.safeGet<Float64>() < 0 || argument.safeGet<Float64>() > 1))
+        if (!attach && (argument.getType() != Field::Types::Float64 || argument.get<Float64>() < 0 || argument.get<Float64>() > 1))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The BloomFilter false positive must be a double number between 0 and 1.");
     }
 }

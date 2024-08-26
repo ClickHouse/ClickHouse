@@ -29,7 +29,6 @@
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/JSONBuilder.h>
-#include <Core/Settings.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -44,7 +43,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -70,7 +68,7 @@ namespace
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
             /// we need to read statistic when `allow_statistics_optimize` is enabled.
-            bool only_analyze = !data.getContext()->getSettingsRef().allow_statistics_optimize;
+            bool only_analyze = !data.getContext()->getSettings().allow_statistics_optimize;
             InterpreterSelectQuery interpreter(
                 node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze(only_analyze).modify());
 
@@ -172,7 +170,6 @@ struct QueryASTSettings
 struct QueryTreeSettings
 {
     bool run_passes = true;
-    bool dump_tree = true;
     bool dump_passes = false;
     bool dump_ast = false;
     Int64 passes = -1;
@@ -182,7 +179,6 @@ struct QueryTreeSettings
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"run_passes", run_passes},
-        {"dump_tree", dump_tree},
         {"dump_passes", dump_passes},
         {"dump_ast", dump_ast}
     };
@@ -332,7 +328,7 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
 
         if (settings.hasBooleanSetting(change.name))
         {
-            auto value = change.value.safeGet<UInt64>();
+            auto value = change.value.get<UInt64>();
             if (value > 1)
                 throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for setting \"{}\". "
                                 "Expected boolean type", value, change.name);
@@ -341,7 +337,7 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
         }
         else
         {
-            auto value = change.value.safeGet<UInt64>();
+            auto value = change.value.get<UInt64>();
             settings.setIntegerSetting(change.name, value);
         }
     }
@@ -402,11 +398,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERY TREE query");
 
             auto settings = checkAndGetSettings<QueryTreeSettings>(ast.getSettings());
-            if (!settings.dump_tree && !settings.dump_ast)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'dump_tree' or 'dump_ast' must be set for EXPLAIN QUERY TREE query");
-
             auto query_tree = buildQueryTree(ast.getExplainedQuery(), getContext());
-            bool need_newline = false;
 
             if (settings.run_passes)
             {
@@ -418,26 +410,23 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (settings.dump_passes)
                 {
                     query_tree_pass_manager.dump(buf, pass_index);
-                    need_newline = true;
+                    if (pass_index > 0)
+                        buf << '\n';
                 }
 
                 query_tree_pass_manager.run(query_tree, pass_index);
-            }
-
-            if (settings.dump_tree)
-            {
-                if (need_newline)
-                    buf << "\n\n";
 
                 query_tree->dumpTree(buf);
-                need_newline = true;
+            }
+            else
+            {
+                query_tree->dumpTree(buf);
             }
 
             if (settings.dump_ast)
             {
-                if (need_newline)
-                    buf << "\n\n";
-
+                buf << '\n';
+                buf << '\n';
                 query_tree->toAST()->format(IAST::FormatSettings(buf, false));
             }
 
@@ -535,13 +524,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
             else if (dynamic_cast<const ASTInsertQuery *>(ast.getExplainedQuery().get()))
             {
-                InterpreterInsertQuery insert(
-                    ast.getExplainedQuery(),
-                    getContext(),
-                    /* allow_materialized */ false,
-                    /* no_squash */ false,
-                    /* no_destination */ false,
-                    /* async_isnert */ false);
+                InterpreterInsertQuery insert(ast.getExplainedQuery(), getContext());
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
             }

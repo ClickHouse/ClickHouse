@@ -1,10 +1,9 @@
-#include <Core/Settings.h>
-#include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
+#include <Formats/FormatFactory.h>
 
 namespace DB
 {

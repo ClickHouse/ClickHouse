@@ -2,6 +2,8 @@
 # Tags: long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# reset --log_comment
+CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
@@ -31,10 +33,13 @@ select v.\`LowCardinality(String)\` from test format Null;
 select count() from test where isNotNull(v.\`LowCardinality(String)\`);
 select v.\`Tuple(a UInt32, b UInt32)\` from test format Null;
 select v.\`Tuple(a UInt32, b UInt32)\`.a from test format Null;
+select count() from test where isNotNull(v.\`Tuple(a UInt32, b UInt32)\`.a);
 select v.\`Tuple(a UInt32, b UInt32)\`.b from test format Null;
+select count() from test where isNotNull(v.\`Tuple(a UInt32, b UInt32)\`.b);
 select v.\`Array(UInt64)\` from test format Null;
 select count() from test where not empty(v.\`Array(UInt64)\`);
-select v.\`Array(UInt64)\`.size0 from test format Null;"
+select v.\`Array(UInt64)\`.size0 from test format Null;
+select count() from test where isNotNull(v.\`Array(UInt64)\`.size0);"
 }
 
 function run()

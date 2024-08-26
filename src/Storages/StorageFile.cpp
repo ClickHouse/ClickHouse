@@ -53,10 +53,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
-#include <Formats/SchemaInferenceUtils.h>
-#include "base/defines.h"
-
-#include <Core/Settings.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -371,21 +367,12 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     }
     else if (path.find_first_of("*?{") == std::string::npos)
     {
-        if (!fs::is_directory(path))
-        {
-            std::error_code error;
-            size_t size = fs::file_size(path, error);
-            if (!error)
-                total_bytes_to_read += size;
+        std::error_code error;
+        size_t size = fs::file_size(path, error);
+        if (!error)
+            total_bytes_to_read += size;
 
-            paths.push_back(path);
-        }
-        else
-        {
-            /// We list non-directory files under that directory.
-            paths = listFilesWithRegexpMatching(path / fs::path("*"), total_bytes_to_read);
-            can_be_directory = false;
-        }
+        paths.push_back(path);
     }
     else
     {
@@ -430,9 +417,7 @@ namespace
                 {
                     for (const auto & path : paths)
                     {
-                        auto format_from_path = FormatFactory::instance().tryGetFormatFromFileName(path);
-                        /// Use this format only if we have a schema reader for it.
-                        if (format_from_path && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_path))
+                        if (auto format_from_path = FormatFactory::instance().tryGetFormatFromFileName(path))
                         {
                             format = format_from_path;
                             break;
@@ -517,7 +502,7 @@ namespace
             StorageFile::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
         }
 
-        String getLastFilePath() const override
+        String getLastFileName() const override
         {
             if (current_index != 0)
                 return paths[current_index - 1];
@@ -721,9 +706,7 @@ namespace
                     /// If format is unknown we can try to determine it by the file name.
                     if (!format)
                     {
-                        auto format_from_file = FormatFactory::instance().tryGetFormatFromFileName(*filename);
-                        /// Use this format only if we have a schema reader for it.
-                        if (format_from_file && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file))
+                        if (auto format_from_file = FormatFactory::instance().tryGetFormatFromFileName(*filename))
                             format = format_from_file;
                     }
 
@@ -794,7 +777,7 @@ namespace
             format = format_name;
         }
 
-        String getLastFilePath() const override
+        String getLastFileName() const override
         {
             return last_read_file_path;
         }
@@ -1113,8 +1096,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     storage_metadata.setConstraints(args.constraints);
     storage_metadata.setComment(args.comment);
     setInMemoryMetadata(storage_metadata);
-
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), args.getContext(), paths.empty() ? "" : paths[0], format_settings));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 
@@ -1138,16 +1120,12 @@ StorageFileSource::FilesIterator::FilesIterator(
     bool distributed_processing_)
     : WithContext(context_), files(files_), archive_info(std::move(archive_info_)), distributed_processing(distributed_processing_)
 {
-    std::optional<ActionsDAG> filter_dag;
+    ActionsDAGPtr filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
         filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
     if (filter_dag)
-    {
-        VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
-        auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-        VirtualColumnUtils::filterByPathOrFile(files, files, actions, virtual_columns);
-    }
+        VirtualColumnUtils::filterByPathOrFile(files, files, filter_dag, virtual_columns, context_);
 }
 
 String StorageFileSource::FilesIterator::next()
@@ -1256,7 +1234,7 @@ StorageFileSource::~StorageFileSource()
     beforeDestroy();
 }
 
-void StorageFileSource::setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_)
+void StorageFileSource::setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_)
 {
     setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
 }
@@ -1468,7 +1446,7 @@ Chunk StorageFileSource::generate()
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
                     .last_modified = current_file_last_modified
-                }, getContext(), columns_description);
+                });
 
             return chunk;
         }
@@ -1770,12 +1748,6 @@ public:
         initialize();
     }
 
-    ~StorageFileSink() override
-    {
-        if (isCancelled())
-            cancelBuffers();
-    }
-
     void initialize()
     {
         std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer;
@@ -1807,21 +1779,43 @@ public:
 
     String getName() const override { return "StorageFileSink"; }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
-        if (isCancelled())
+        std::lock_guard cancel_lock(cancel_mutex);
+        if (cancelled)
             return;
-        writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
+        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+    }
+
+    void onCancel() override
+    {
+        std::lock_guard cancel_lock(cancel_mutex);
+        finalize();
+        cancelled = true;
+    }
+
+    void onException(std::exception_ptr exception) override
+    {
+        std::lock_guard cancel_lock(cancel_mutex);
+        try
+        {
+            std::rethrow_exception(exception);
+        }
+        catch (...)
+        {
+            /// An exception context is needed to proper delete write buffers without finalization
+            release();
+        }
     }
 
     void onFinish() override
     {
-        chassert(!isCancelled());
-        finalizeBuffers();
+        std::lock_guard cancel_lock(cancel_mutex);
+        finalize();
     }
 
 private:
-    void finalizeBuffers()
+    void finalize()
     {
         if (!writer)
             return;
@@ -1834,25 +1828,17 @@ private:
         catch (...)
         {
             /// Stop ParallelFormattingOutputFormat correctly.
-            releaseBuffers();
+            release();
             throw;
         }
 
         write_buf->finalize();
     }
 
-    void releaseBuffers()
+    void release()
     {
         writer.reset();
         write_buf.reset();
-    }
-
-    void cancelBuffers()
-    {
-        if (writer)
-            writer->cancel();
-        if (write_buf)
-            write_buf->cancel();
     }
 
     StorageMetadataPtr metadata_snapshot;
@@ -1871,6 +1857,9 @@ private:
 
     int flags;
     std::unique_lock<std::shared_timed_mutex> lock;
+
+    std::mutex cancel_mutex;
+    bool cancelled = false;
 };
 
 class PartitionedStorageFileSink : public PartitionedSink
@@ -2187,12 +2176,12 @@ void registerStorageFile(StorageFactory & factory)
             {
                 auto type = literal->value.getType();
                 if (type == Field::Types::Int64)
-                    source_fd = static_cast<int>(literal->value.safeGet<Int64>());
+                    source_fd = static_cast<int>(literal->value.get<Int64>());
                 else if (type == Field::Types::UInt64)
-                    source_fd = static_cast<int>(literal->value.safeGet<UInt64>());
+                    source_fd = static_cast<int>(literal->value.get<UInt64>());
                 else if (type == Field::Types::String)
                     StorageFile::parseFileSource(
-                        literal->value.safeGet<String>(),
+                        literal->value.get<String>(),
                         source_path,
                         storage_args.path_to_archive,
                         factory_args.getLocalContext()->getSettingsRef().allow_archive_path_syntax);

@@ -8,11 +8,9 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/Utils.h>
-#include <Core/Settings.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeTuple.h>
 
 namespace DB
 {
@@ -662,7 +660,6 @@ private:
             bool is_any_nullable = false;
             Tuple args;
             args.reserve(equals_functions.size());
-            DataTypes tuple_element_types;
             /// first we create tuple from RHS of equals functions
             for (const auto & equals : equals_functions)
             {
@@ -675,18 +672,16 @@ private:
                 if (const auto * rhs_literal = equals_arguments[1]->as<ConstantNode>())
                 {
                     args.push_back(rhs_literal->getValue());
-                    tuple_element_types.push_back(rhs_literal->getResultType());
                 }
                 else
                 {
                     const auto * lhs_literal = equals_arguments[0]->as<ConstantNode>();
                     assert(lhs_literal);
                     args.push_back(lhs_literal->getValue());
-                    tuple_element_types.push_back(lhs_literal->getResultType());
                 }
             }
 
-            auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
+            auto rhs_node = std::make_shared<ConstantNode>(std::move(args));
 
             auto in_function = std::make_shared<FunctionNode>("in");
 

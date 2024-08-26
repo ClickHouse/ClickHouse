@@ -432,7 +432,7 @@ struct WhichDataType
     constexpr bool isMap() const {return idx == TypeIndex::Map; }
     constexpr bool isSet() const { return idx == TypeIndex::Set; }
     constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
-    constexpr bool isObjectDeprecated() const { return idx == TypeIndex::ObjectDeprecated; }
+    constexpr bool isObject() const { return idx == TypeIndex::Object; }
 
     constexpr bool isNothing() const { return idx == TypeIndex::Nothing; }
     constexpr bool isNullable() const { return idx == TypeIndex::Nullable; }
@@ -444,7 +444,6 @@ struct WhichDataType
 
     constexpr bool isVariant() const { return idx == TypeIndex::Variant; }
     constexpr bool isDynamic() const { return idx == TypeIndex::Dynamic; }
-    constexpr bool isObject() const { return idx == TypeIndex::Object; }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
@@ -503,10 +502,9 @@ bool isArray(TYPE data_type); \
 bool isTuple(TYPE data_type); \
 bool isMap(TYPE data_type); \
 bool isInterval(TYPE data_type); \
-bool isObjectDeprecated(TYPE data_type); \
+bool isObject(TYPE data_type); \
 bool isVariant(TYPE data_type); \
 bool isDynamic(TYPE data_type); \
-bool isObject(TYPE data_type); \
 bool isNothing(TYPE data_type); \
 \
 bool isColumnedAsNumber(TYPE data_type); \

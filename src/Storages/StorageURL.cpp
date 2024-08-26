@@ -36,10 +36,6 @@
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
-
-#include <Formats/SchemaInferenceUtils.h>
-#include <Core/ServerSettings.h>
-#include <Core/Settings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 
@@ -92,20 +88,9 @@ static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys = {
     std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].value)"),
 };
 
-bool urlWithGlobs(const String & uri)
+static bool urlWithGlobs(const String & uri)
 {
     return (uri.find('{') != std::string::npos && uri.find('}') != std::string::npos) || uri.find('|') != std::string::npos;
-}
-
-String getSampleURI(String uri, ContextPtr context)
-{
-    if (urlWithGlobs(uri))
-    {
-        auto uris = parseRemoteDescription(uri, 0, uri.size(), ',', context->getSettingsRef().glob_expansion_max_elements);
-        if (!uris.empty())
-            return uris[0];
-    }
-    return uri;
 }
 
 static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
@@ -166,8 +151,7 @@ IStorageURLBase::IStorageURLBase(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns(), context_, getSampleURI(uri, context_), format_settings));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 
@@ -212,7 +196,7 @@ public:
     {
         uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
 
-        std::optional<ActionsDAG> filter_dag;
+        ActionsDAGPtr filter_dag;
         if (!uris.empty())
             filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
@@ -223,9 +207,7 @@ public:
             for (const auto & uri : uris)
                 paths.push_back(Poco::URI(uri).getPath());
 
-            VirtualColumnUtils::buildSetsForDAG(*filter_dag, context);
-            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-            VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns);
+            VirtualColumnUtils::filterByPathOrFile(uris, paths, filter_dag, virtual_columns, context);
         }
     }
 
@@ -428,14 +410,13 @@ Chunk StorageURLSource::generate()
             size_t chunk_size = 0;
             if (input_format)
                 chunk_size = input_format->getApproxBytesReadForChunk();
-
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, requested_virtual_columns,
                 {
                     .path = curr_uri.getPath(),
-                    .size = current_file_size,
-                }, getContext(), columns_description);
+                    .size = current_file_size
+                });
             return chunk;
         }
 
@@ -479,7 +460,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
         setCredentials(credentials, request_uri);
 
-        const auto & settings = context_->getSettingsRef();
+        const auto settings = context_->getSettings();
 
         auto proxy_config = getProxyConfiguration(request_uri.getScheme());
 
@@ -584,20 +565,42 @@ StorageURLSink::StorageURLSink(
 }
 
 
-void StorageURLSink::consume(Chunk & chunk)
+void StorageURLSink::consume(Chunk chunk)
 {
-    if (isCancelled())
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
         return;
-    writer->write(getHeader().cloneWithColumns(chunk.getColumns()));
+    writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+}
+
+void StorageURLSink::onCancel()
+{
+    std::lock_guard lock(cancel_mutex);
+    finalize();
+    cancelled = true;
+}
+
+void StorageURLSink::onException(std::exception_ptr exception)
+{
+    std::lock_guard lock(cancel_mutex);
+    try
+    {
+        std::rethrow_exception(exception);
+    }
+    catch (...)
+    {
+        /// An exception context is needed to proper delete write buffers without finalization
+        release();
+    }
 }
 
 void StorageURLSink::onFinish()
 {
-    finalizeBuffers();
-    releaseBuffers();
+    std::lock_guard lock(cancel_mutex);
+    finalize();
 }
 
-void StorageURLSink::finalizeBuffers()
+void StorageURLSink::finalize()
 {
     if (!writer)
         return;
@@ -610,25 +613,17 @@ void StorageURLSink::finalizeBuffers()
     catch (...)
     {
         /// Stop ParallelFormattingOutputFormat correctly.
-        releaseBuffers();
+        release();
         throw;
     }
 
     write_buf->finalize();
 }
 
-void StorageURLSink::releaseBuffers()
+void StorageURLSink::release()
 {
     writer.reset();
     write_buf.reset();
-}
-
-void StorageURLSink::cancelBuffers()
-{
-    if (writer)
-        writer->cancel();
-    if (write_buf)
-        write_buf->cancel();
 }
 
 class PartitionedStorageURLSink : public PartitionedSink
@@ -738,9 +733,7 @@ namespace
                     {
                         for (const auto & url : options)
                         {
-                            auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url);
-                            /// Use this format only if we have a schema reader for it.
-                            if (format_from_file_name && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file_name))
+                            if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url))
                             {
                                 format = format_from_file_name;
                                 break;
@@ -854,7 +847,7 @@ namespace
             format = format_name;
         }
 
-        String getLastFilePath() const override { return current_url_option; }
+        String getLastFileName() const override { return current_url_option; }
 
         bool supportsLastReadBufferRecreation() const override { return true; }
 
@@ -1175,7 +1168,6 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
 void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     createIterator(nullptr);
-    const auto & settings = context->getSettingsRef();
 
     if (is_empty_glob)
     {
@@ -1186,6 +1178,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     Pipes pipes;
     pipes.reserve(num_streams);
 
+    const auto & settings = context->getSettingsRef();
     const size_t max_parsing_threads = num_streams >= settings.max_parsing_threads ? 1 : (settings.max_parsing_threads  / num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
@@ -1327,7 +1320,7 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
     const Poco::Net::HTTPBasicCredentials & credentials,
     const ContextPtr & context)
 {
-    const auto & settings = context->getSettingsRef();
+    auto settings = context->getSettingsRef();
 
     auto uri = Poco::URI(url);
 
@@ -1401,11 +1394,6 @@ StorageURLWithFailover::StorageURLWithFailover(
     }
 }
 
-StorageURLSink::~StorageURLSink()
-{
-    if (isCancelled())
-        cancelBuffers();
-}
 
 FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Arguments & args)
 {
@@ -1596,5 +1584,4 @@ void registerStorageURL(StorageFactory & factory)
             .source_access_type = AccessType::URL,
         });
 }
-
 }

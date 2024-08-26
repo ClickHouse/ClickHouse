@@ -45,7 +45,6 @@ namespace DB
     M(Arrow)                  /** ->. Should be distinguished from minus operator. */ \
     M(QuestionMark) \
     M(Colon) \
-    M(Caret) \
     M(DoubleColon) \
     M(Equals) \
     M(NotEquals) \

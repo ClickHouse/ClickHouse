@@ -5,7 +5,6 @@
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
-#include <DataTypes/DataTypeDateTime64.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>

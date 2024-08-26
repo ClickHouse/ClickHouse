@@ -25,7 +25,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
-#include <Interpreters/convertFieldToType.h>
 
 namespace CurrentMetrics
 {
@@ -55,7 +54,7 @@ namespace ErrorCodes
         }                                                              \
     } while (false)
 
-/// Decode min/max value from column chunk statistics. Returns Null if missing or unsupported.
+/// Decode min/max value from column chunk statistics.
 ///
 /// There are two questionable decisions in this implementation:
 ///  * We parse the value from the encoded byte string instead of casting the parquet::Statistics
@@ -63,7 +62,7 @@ namespace ErrorCodes
 ///  * We dispatch based on the parquet logical+converted+physical type instead of the ClickHouse type.
 /// The idea is that this is similar to what we'll have to do when reimplementing Parquet parsing in
 /// ClickHouse instead of using Arrow (for speed). So, this is an exercise in parsing Parquet manually.
-static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type::type physical_type, const parquet::ColumnDescriptor & descr, TypeIndex type_hint)
+static std::optional<Field> decodePlainParquetValueSlow(const std::string & data, parquet::Type::type physical_type, const parquet::ColumnDescriptor & descr)
 {
     using namespace parquet;
 
@@ -119,6 +118,8 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
         if (data.size() != size || size < 1 || size > 32)
             throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected decimal size: {} (actual {})", size, data.size());
 
+        /// For simplicity, widen all decimals to 256-bit. It should compare correctly with values
+        /// of different bitness.
         Int256 val = 0;
         memcpy(&val, data.data(), size);
         if (big_endian)
@@ -127,19 +128,7 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
         if (size < 32 && (val >> (size * 8 - 1)) != 0)
             val |= ~((Int256(1) << (size * 8)) - 1);
 
-        auto narrow = [&](auto x) -> Field
-        {
-            memcpy(&x, &val, sizeof(x));
-            return Field(DecimalField<decltype(x)>(x, static_cast<UInt32>(scale)));
-        };
-        if (size <= 4)
-            return narrow(Decimal32(0));
-        else if (size <= 8)
-            return narrow(Decimal64(0));
-        else if (size <= 16)
-            return narrow(Decimal128(0));
-        else
-            return narrow(Decimal256(0));
+        return Field(DecimalField<Decimal256>(Decimal256(val), static_cast<UInt32>(scale)));
     }
     while (false);
 
@@ -196,6 +185,8 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
         return Field(val);
     }
 
+    /// Strings.
+
     if (physical_type == Type::type::BYTE_ARRAY || physical_type == Type::type::FIXED_LEN_BYTE_ARRAY)
     {
         /// Arrow's parquet decoder handles missing min/max values slightly incorrectly.
@@ -222,31 +213,14 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
         /// TODO: Remove this workaround either when we implement our own Parquet decoder that
         ///       doesn't have this bug, or if it's fixed in Arrow.
         if (data.empty())
-            return Field();
+            return std::nullopt;
 
-        /// Long integers, encoded either as text or as little-endian bytes.
-        /// The parquet file doesn't know that it's numbers, so the min/max are produced by comparing
-        /// strings lexicographically. So these min and max are mostly useless to us.
-        /// There's one case where they're not useless: min == max; currently we don't make use of this.
-        switch (type_hint)
-        {
-            case TypeIndex::UInt128:
-            case TypeIndex::UInt256:
-            case TypeIndex::Int128:
-            case TypeIndex::Int256:
-            case TypeIndex::IPv6:
-                return Field();
-            default: break;
-        }
-
-        /// Strings.
         return Field(data);
     }
 
-    /// This type is deprecated in Parquet.
-    /// TODO: But turns out it's still used in practice, we should support it.
+    /// This one's deprecated in Parquet.
     if (physical_type == Type::type::INT96)
-        return Field();
+        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Parquet INT96 type is deprecated and not supported");
 
     /// Integers.
 
@@ -309,13 +283,15 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
             continue;
         auto stats = it->second;
 
-        DataTypePtr type = header.getByPosition(idx).type;
-        if (type->lowCardinality())
-            type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
-        if (type->isNullable())
-            type = assert_cast<const DataTypeNullable &>(*type).getNestedType();
-        Field default_value = type->getDefault();
-        TypeIndex type_index = type->getTypeId();
+        auto default_value = [&]() -> Field
+        {
+            DataTypePtr type = header.getByPosition(idx).type;
+            if (type->lowCardinality())
+                type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
+            if (type->isNullable())
+                type = assert_cast<const DataTypeNullable &>(*type).getNestedType();
+            return type->getDefault();
+        };
 
         /// Only primitive fields are supported, not arrays, maps, tuples, or Nested.
         /// Arrays, maps, and Nested can't be meaningfully supported because Parquet only has min/max
@@ -323,47 +299,14 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
         /// Same limitation for tuples, but maybe it would make sense to have some kind of tuple
         /// expansion in KeyCondition to accept ranges per element instead of whole tuple.
 
-        Field min;
-        Field max;
+        std::optional<Field> min;
+        std::optional<Field> max;
         if (stats->HasMinMax())
         {
             try
             {
-                min = decodePlainParquetValueSlow(stats->EncodeMin(), stats->physical_type(), *stats->descr(), type_index);
-                max = decodePlainParquetValueSlow(stats->EncodeMax(), stats->physical_type(), *stats->descr(), type_index);
-
-                /// If the data type in parquet file substantially differs from the requested data type,
-                /// it's sometimes correct to just typecast the min/max values.
-                /// Other times it's incorrect, e.g.:
-                ///   INSERT INTO FUNCTION file('t.parquet', Parquet, 'x String') VALUES ('1'), ('100'), ('2');
-                ///   SELECT * FROM file('t.parquet', Parquet, 'x Int64') WHERE x >= 3;
-                /// If we just typecast min/max from string to integer, this query will incorrectly return empty result.
-                /// Allow conversion in some simple cases, otherwise ignore the min/max values.
-                auto min_type = min.getType();
-                auto max_type = max.getType();
-                min = convertFieldToType(min, *type);
-                max = convertFieldToType(max, *type);
-                auto ok_cast = [&](Field::Types::Which from, Field::Types::Which to) -> bool
-                {
-                    if (from == to)
-                        return true;
-                    /// Decimal -> wider decimal.
-                    if (Field::isDecimal(from) || Field::isDecimal(to))
-                        return Field::isDecimal(from) && Field::isDecimal(to) && to >= from;
-                    /// Integer -> IP.
-                    if (to == Field::Types::IPv4)
-                        return from == Field::Types::UInt64;
-                    /// Disable index for everything else, especially string <-> number.
-                    return false;
-                };
-                if (!(ok_cast(min_type, min.getType()) && ok_cast(max_type, max.getType())) &&
-                    !(min == max) &&
-                    !(min_type == Field::Types::Int64 && min.getType() == Field::Types::UInt64 && min.safeGet<Int64>() >= 0) &&
-                    !(max_type == Field::Types::UInt64 && max.getType() == Field::Types::Int64 && max.safeGet<UInt64>() <= UInt64(INT64_MAX)))
-                {
-                    min = Field();
-                    max = Field();
-                }
+                min = decodePlainParquetValueSlow(stats->EncodeMin(), stats->physical_type(), *stats->descr());
+                max = decodePlainParquetValueSlow(stats->EncodeMax(), stats->physical_type(), *stats->descr());
             }
             catch (Exception & e)
             {
@@ -385,7 +328,7 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
         {
             /// Single-point range containing either the default value of one of the infinities.
             if (null_as_default)
-                hyperrectangle[idx].right = hyperrectangle[idx].left = default_value;
+                hyperrectangle[idx].right = hyperrectangle[idx].left = default_value();
             else
                 hyperrectangle[idx].right = hyperrectangle[idx].left;
             continue;
@@ -396,31 +339,32 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
             if (null_as_default)
             {
                 /// Make sure the range contains the default value.
-                if (!min.isNull() && applyVisitor(FieldVisitorAccurateLess(), default_value, min))
-                    min = default_value;
-                if (!max.isNull() && applyVisitor(FieldVisitorAccurateLess(), max, default_value))
-                    max = default_value;
+                Field def = default_value();
+                if (min.has_value() && applyVisitor(FieldVisitorAccurateLess(), def, *min))
+                    min = def;
+                if (max.has_value() && applyVisitor(FieldVisitorAccurateLess(), *max, def))
+                    max = def;
             }
             else
             {
                 /// Make sure the range reaches infinity on at least one side.
-                if (!min.isNull() && !max.isNull())
-                    min = Field();
+                if (min.has_value() && max.has_value())
+                    min.reset();
             }
         }
         else
         {
             /// If the column doesn't have nulls, exclude both infinities.
-            if (min.isNull())
+            if (!min.has_value())
                 hyperrectangle[idx].left_included = false;
-            if (max.isNull())
+            if (!max.has_value())
                 hyperrectangle[idx].right_included = false;
         }
 
-        if (!min.isNull())
-            hyperrectangle[idx].left = std::move(min);
-        if (!max.isNull())
-            hyperrectangle[idx].right = std::move(max);
+        if (min.has_value())
+            hyperrectangle[idx].left = std::move(min.value());
+        if (max.has_value())
+            hyperrectangle[idx].right = std::move(max.value());
     }
 
     return hyperrectangle;
@@ -476,7 +420,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     int num_row_groups = metadata->num_row_groups();
     row_group_batches.reserve(num_row_groups);
 
-    auto adaptive_chunk_size = [&](int row_group_idx) -> size_t
+    auto adative_chunk_size = [&](int row_group_idx) -> size_t
     {
         size_t total_size = 0;
         auto row_group_meta = metadata->RowGroup(row_group_idx);
@@ -513,7 +457,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         row_group_batches.back().row_groups_idxs.push_back(row_group);
         row_group_batches.back().total_rows += metadata->RowGroup(row_group)->num_rows();
         row_group_batches.back().total_bytes_compressed += metadata->RowGroup(row_group)->total_compressed_size();
-        auto rows = adaptive_chunk_size(row_group);
+        auto rows = adative_chunk_size(row_group);
         row_group_batches.back().adaptive_chunk_size = rows ? rows : format_settings.parquet.max_block_size;
     }
 }

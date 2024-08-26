@@ -1,6 +1,7 @@
 #pragma once
 #include <base/types.h>
 #include <Core/UUID.h>
+#include <tuple>
 #include <Parsers/IAST_fwd.h>
 #include <Core/QualifiedTableName.h>
 #include <Common/Exception.h>
@@ -27,6 +28,7 @@ class ASTQueryWithTableAndOutput;
 class ASTTableIdentifier;
 class Context;
 
+// TODO(ilezhankin): refactor and merge |ASTTableIdentifier|
 struct StorageID
 {
     String database_name;
