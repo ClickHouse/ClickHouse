@@ -25,7 +25,7 @@ ColumnsDescription DeadLetterQueueElement::getColumnsDescription()
     {
         {"stream_type", stream_type, "Stream type. Possible values: 'Kafka'."},
         {"event_date", std::make_shared<DataTypeDate>(), "Message consuming date."},
-        {"event_time", std::make_shared<DataTypeDateTime>(), "Message consuming time."},
+        {"event_time", std::make_shared<DataTypeDateTime>(), "Message consuming date and time."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Query starting time with microseconds precision."},
         {"database_name", low_cardinality_string, "ClickHouse database Kafka table belongs to."},
         {"table_name", low_cardinality_string, "ClickHouse table name."},
