@@ -927,8 +927,6 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                 virtual_columns[6]->insert(headers_names);
                 virtual_columns[7]->insert(headers_values);
 
-                LOG_DEBUG(&Poco::Logger::get("StorageKafka2"), "pollConsumer");
-
                 if (getHandleKafkaErrorMode() == ExtStreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
@@ -944,14 +942,12 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                 }
                 else if (getHandleKafkaErrorMode() == ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE)
                 {
-                    LOG_DEBUG(&Poco::Logger::get("KafkaSource"), "generateImpl: DEAD_LETTER_QUEUE");
                     if (exception_message)
                     {
 
                         const auto time_now = std::chrono::system_clock::now();
 
                         auto dead_letter_queue = getContext()->getDeadLetterQueue();
-                        LOG_DEBUG(&Poco::Logger::get("KafkaSource"), "generateImpl: calling dead_letter_queue->add");
                         dead_letter_queue->add(
                             DeadLetterQueueElement{
                                 .stream_type = DeadLetterQueueElement::StreamType::Kafka,
