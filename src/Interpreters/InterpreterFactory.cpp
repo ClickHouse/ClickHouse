@@ -60,6 +60,7 @@
 #include <Parsers/ASTExternalDDLQuery.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
+#include "Parsers/Access/ASTCheckGrantQuery.h"
 #include <Core/Settings.h>
 
 
@@ -303,6 +304,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTShowGrantsQuery>())
     {
         interpreter_name = "InterpreterShowGrantsQuery";
+    }
+    else if (query->as<ASTCheckGrantQuery>())
+    {
+        interpreter_name = "InterpreterCheckGrantQuery";
     }
     else if (query->as<ASTShowAccessEntitiesQuery>())
     {
