@@ -1,12 +1,17 @@
 SELECT dateTrunc('DAY', toDateTime('2022-03-01 12:55:55'));
 SELECT dateTrunc('MONTH', toDateTime64('2022-03-01 12:55:55', 2));
 SELECT dateTrunc('WEEK', toDate('2022-03-01'));
+SELECT dateTrunc('WEEK', toDate32('2022-03-01'));
 SELECT dateTrunc('Day', toDateTime('2022-03-01 12:55:55'));
 SELECT dateTrunc('Month', toDateTime64('2022-03-01 12:55:55', 2));
 SELECT dateTrunc('Week', toDate('2022-03-01'));
+SELECT dateTrunc('Week', toDate32('2022-03-01'));
 SELECT dateTrunc('day', toDateTime('2022-03-01 12:55:55'));
 SELECT dateTrunc('month', toDateTime64('2022-03-01 12:55:55', 2));
+SELECT dateTrunc('day', toDate32('2022-03-01'));
+SELECT dateTrunc('month', toDate32('2022-03-01'));
 SELECT dateTrunc('week', toDate('2022-03-01'));
+SELECT dateTrunc('week', toDate32('2022-03-01'));
 SELECT dateTrunc('Nanosecond', toDateTime64('2022-03-01 12:12:12.0123', 3));
 SELECT dateTrunc('MicroSecond', toDateTime64('2022-03-01 12:12:12.0123456', 7));
 SELECT dateTrunc('MILLISECOND', toDateTime64('2022-03-01 12:12:12.012324251', 9));
@@ -25,3 +30,6 @@ SELECT dateTrunc('MILLISECOND', toDateTime('2022-03-01')); -- {  serverError ILL
 SELECT dateTrunc('Nanosecond', toDate('2022-03-01')); -- {  serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT dateTrunc('MicroSecond', toDate('2022-03-01')); -- {  serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT dateTrunc('MILLISECOND', toDate('2022-03-01')); -- {  serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT dateTrunc('Nanosecond', toDate32('2022-03-01')); -- {  serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT dateTrunc('MicroSecond', toDate32('2022-03-01')); -- {  serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT dateTrunc('MILLISECOND', toDate32('2022-03-01')); -- {  serverError ILLEGAL_TYPE_OF_ARGUMENT }
