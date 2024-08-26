@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 static bool memoryBoundMergingWillBeUsed(
     const DataStream & input_stream,
     bool memory_bound_merging_of_aggregation_results_enabled,
@@ -93,6 +98,10 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
 
     if (memoryBoundMergingWillBeUsed())
     {
+        if (input_streams.front().header.has("__grouping_set"))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                 "Memory bound merging of aggregated results is not supported for grouping sets.");
+
         auto transform = std::make_shared<FinishAggregatingInOrderTransform>(
             pipeline.getHeader(),
             pipeline.getNumStreams(),
@@ -123,6 +132,10 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
 
     if (!memory_efficient_aggregation)
     {
+        if (input_streams.front().header.has("__grouping_set"))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                 "Memory efficient merging of aggregated results is not supported for grouping sets.");
+
         /// We union several sources into one, paralleling the work.
         pipeline.resize(1);
 
