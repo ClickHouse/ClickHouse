@@ -91,8 +91,6 @@ namespace ErrorCodes
 
 void registerStorageKafka(StorageFactory & factory)
 {
-    LOG_DEBUG(&Poco::Logger::get("registerStorageKafka"), "Top of registerStorageKafka");
-
     auto creator_fn = [](const StorageFactory::Arguments & args) -> std::shared_ptr<IStorage>
     {
         ASTs & engine_args = args.engine_args;
@@ -109,9 +107,7 @@ void registerStorageKafka(StorageFactory & factory)
 
         if (has_settings)
         {
-            LOG_DEBUG(&Poco::Logger::get("registerStorageKafka"), "registerStorageKafka: before loadFromQuery");
             kafka_settings->loadFromQuery(*args.storage_def);
-            LOG_DEBUG(&Poco::Logger::get("registerStorageKafka"), "registerStorageKafka: after loadFromQuery");
         }
 
 // Check arguments and settings
@@ -179,9 +175,7 @@ void registerStorageKafka(StorageFactory & factory)
             CHECK_KAFKA_STORAGE_ARGUMENT(12, kafka_poll_timeout_ms, 0)
             CHECK_KAFKA_STORAGE_ARGUMENT(13, kafka_flush_interval_ms, 0)
             CHECK_KAFKA_STORAGE_ARGUMENT(14, kafka_thread_per_consumer, 0)
-            LOG_DEBUG(&Poco::Logger::get("registerStorageKafka"), "registerStorageKafka: before kafka_handle_error_mode CHECK_KAFKA_STORAGE_ARGUMENT");
             CHECK_KAFKA_STORAGE_ARGUMENT(15, kafka_handle_error_mode, 0)
-            LOG_DEBUG(&Poco::Logger::get("registerStorageKafka"), "registerStorageKafka: after kafka_handle_error_mode CHECK_KAFKA_STORAGE_ARGUMENT");
             CHECK_KAFKA_STORAGE_ARGUMENT(16, kafka_commit_on_select, 0)
             CHECK_KAFKA_STORAGE_ARGUMENT(17, kafka_max_rows_per_message, 0)
         }
@@ -308,8 +302,6 @@ void registerStorageKafka(StorageFactory & factory)
         return std::make_shared<StorageKafka2>(
             args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
     };
-
-
 
     factory.registerStorage(
         "Kafka",
