@@ -64,7 +64,7 @@ SETTINGS
 -   `kafka_poll_max_batch_size` - Максимальное количество сообщений в одном poll Kafka. По умолчанию: (../../../operations/settings/settings.md#setting-max_block_size)
 -   `kafka_flush_interval_ms` - Таймаут для сброса данных из Kafka. По умолчанию: (../../../operations/settings/settings.md#stream-flush-interval-ms)
 -   `kafka_thread_per_consumer` — включает или отключает предоставление отдельного потока каждому потребителю (по умолчанию `0`). При включенном режиме каждый потребитель сбрасывает данные независимо и параллельно, при отключённом — строки с данными от нескольких потребителей собираются в один блок.
--   `kafka_handle_error_mode` - Способ обработки ошибок для Kafka. Возможные значения: default, stream.
+-   `kafka_handle_error_mode` - Способ обработки ошибок для Kafka. Возможные значения: default, stream, dead_letter_queue.
 -   `kafka_commit_on_select` - Сообщение о commit при запросе select. По умолчанию: `false`.
 -   `kafka_max_rows_per_message` - Максимальное количество строк записанных в одно сообщение Kafka для формата row-based. По умолчанию: `1`.
 
