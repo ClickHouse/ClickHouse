@@ -15,7 +15,7 @@ bool cgroupsV2Enabled();
 /// Assumes that cgroupsV2Enabled() is enabled.
 bool cgroupsV2MemoryControllerEnabled();
 
-/// Detects which cgroup v2 the process belongs to and returns the filesystem path to the cgroup.
-/// Returns an empty path the cgroup cannot be determined.
+/// Detects which cgroup the process belong and returns the path to it in sysfs (for cgroups v2).
+/// Returns an empty path if the cgroup cannot be determined.
 /// Assumes that cgroupsV2Enabled() is enabled.
 std::filesystem::path cgroupV2PathOfProcess();

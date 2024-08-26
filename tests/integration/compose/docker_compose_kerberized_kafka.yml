@@ -52,7 +52,7 @@ services:
       net.ipv4.ip_local_port_range: '55000 65535'
 
   kafka_kerberos:
-    image: clickhouse/kerberos-kdc:${DOCKER_KERBEROS_KDC_TAG:-latest}
+    image: altinityinfra/kerberos-kdc:${DOCKER_KERBEROS_KDC_TAG:-latest}
     hostname: kafka_kerberos
     volumes:
       - ${KERBERIZED_KAFKA_DIR}/secrets:/tmp/keytab

@@ -1,4 +1,4 @@
-# docker build -t clickhouse/test-util .
+# docker build -t altinityinfra/test-util .
 FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror

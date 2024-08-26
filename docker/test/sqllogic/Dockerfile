@@ -1,6 +1,6 @@
-# docker build -t clickhouse/sqllogic-test .
+# docker build -t altinityinfra/sqllogic-test .
 ARG FROM_TAG=latest
-FROM clickhouse/test-base:$FROM_TAG
+FROM altinityinfra/test-base:$FROM_TAG
 
 RUN apt-get update --yes \
     && env DEBIAN_FRONTEND=noninteractive \

@@ -39,6 +39,7 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
     {
         /// First, we identify the path of the cgroup the process belongs
         std::filesystem::path cgroup_path = cgroupV2PathOfProcess();
+
         if (cgroup_path.empty())
             return default_cpu_count;
 

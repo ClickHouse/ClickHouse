@@ -11,14 +11,30 @@ name: Build docker images
         required: false
         type: boolean
         default: false
+    secrets:
+      secret_envs:
+        description: if given, it's passed to the environments
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        description: the access key to the aws param store.
+        required: true
+      AWS_ACCESS_KEY_ID:
+        description: the access key id to the aws param store.
+        required: true
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
 jobs:
   DockerBuildAarch64:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-system-ubuntu-22.04]
     if: |
       !failure() && !cancelled() && toJson(fromJson(inputs.data).docker_data.missing_aarch64) != '[]'
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
         with:
           ref: ${{ fromJson(inputs.data).git_ref }}
       - name: Build images
@@ -28,12 +44,12 @@ jobs:
             --image-tags '${{ toJson(fromJson(inputs.data).docker_data.images) }}' \
             --missing-images '${{ toJson(fromJson(inputs.data).docker_data.missing_aarch64) }}'
   DockerBuildAmd64:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-system-ubuntu-22.04]
     if: |
       !failure() && !cancelled() && toJson(fromJson(inputs.data).docker_data.missing_amd64) != '[]'
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
         with:
           ref: ${{ fromJson(inputs.data).git_ref }}
       - name: Build images
@@ -44,12 +60,12 @@ jobs:
             --missing-images '${{ toJson(fromJson(inputs.data).docker_data.missing_amd64) }}'
   DockerMultiArchManifest:
     needs: [DockerBuildAmd64, DockerBuildAarch64]
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-system-ubuntu-22.04]
     if: |
       !failure() && !cancelled() && (toJson(fromJson(inputs.data).docker_data.missing_multi) != '[]' || inputs.set_latest)
     steps:
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
         with:
           ref: ${{ fromJson(inputs.data).git_ref }}
       - name: Build images

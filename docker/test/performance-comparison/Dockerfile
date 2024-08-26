@@ -1,7 +1,7 @@
-# docker build -t clickhouse/performance-comparison .
+# docker build -t altinityinfra/performance-comparison .
 
 ARG FROM_TAG=latest
-FROM clickhouse/test-base:$FROM_TAG
+FROM altinityinfra/test-base:$FROM_TAG
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
@@ -43,4 +43,4 @@ COPY run.sh /
 
 CMD ["bash", "/run.sh"]
 
-# docker run --network=host --volume <workspace>:/workspace --volume=<output>:/output -e PR_TO_TEST=<> -e SHA_TO_TEST=<> clickhouse/performance-comparison
+# docker run --network=host --volume <workspace>:/workspace --volume=<output>:/output -e PR_TO_TEST=<> -e SHA_TO_TEST=<> altinityinfra/performance-comparison

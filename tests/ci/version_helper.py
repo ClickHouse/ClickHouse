@@ -48,6 +48,7 @@ class ClickHouseVersion:
         revision: Union[int, str],
         git: Optional[Git],
         tweak: Optional[Union[int, str]] = None,
+        flavour: Optional[str] = None,
     ):
         self._major = int(major)
         self._minor = int(minor)
@@ -61,6 +62,7 @@ class ClickHouseVersion:
             self._tweak = self._git.tweak
         self._describe = ""
         self._description = ""
+        self._flavour = flavour
 
     def update(self, part: PART_TYPE) -> "ClickHouseVersion":
         """If part is valid, returns a new version"""
@@ -139,9 +141,12 @@ class ClickHouseVersion:
 
     @property
     def string(self):
-        return ".".join(
+        version_as_string = ".".join(
             (str(self.major), str(self.minor), str(self.patch), str(self.tweak))
         )
+        if self._flavour:
+            version_as_string = f"{version_as_string}.{self._flavour}"
+        return version_as_string
 
     @property
     def is_lts(self) -> bool:
@@ -167,7 +172,10 @@ class ClickHouseVersion:
         if version_type not in VersionType.VALID:
             raise ValueError(f"version type {version_type} not in {VersionType.VALID}")
         self._description = version_type
-        self._describe = f"v{self.string}-{version_type}"
+        if version_type == self._flavour:
+            self._describe = f"v{self.string}"
+        else:
+            self._describe = f"v{self.string}-{version_type}"
 
     def copy(self) -> "ClickHouseVersion":
         copy = ClickHouseVersion(
@@ -228,16 +236,19 @@ class VersionType:
     LTS = "lts"
     NEW = "new"
     PRESTABLE = "prestable"
-    STABLE = "stable"
+    STABLE = "altinitystable"
     TESTING = "testing"
-    VALID = (NEW, TESTING, PRESTABLE, STABLE, LTS)
+    VALID = (NEW, TESTING, PRESTABLE, STABLE, LTS,
+             "stable" # NOTE (vnemkov): we don't use that directly, but it is used in unit-tests
+            )
 
 
 def validate_version(version: str) -> None:
+    # NOTE(vnemkov): minor but imporant fixes, so versions with 'flavour' are threated as valid (e.g. 22.8.8.4.altinitystable)
     parts = version.split(".")
-    if len(parts) != 4:
+    if len(parts) < 4:
         raise ValueError(f"{version} does not contain 4 parts")
-    for part in parts:
+    for part in parts[:4]:
         int(part)
 
 
@@ -278,6 +289,9 @@ def get_version_from_repo(
         versions["patch"],
         versions["revision"],
         git,
+        # Explicitly use tweak value from version file
+        tweak=versions.get("tweak", versions["revision"]),
+        flavour=versions.get("flavour", None)
     )
     # Since 24.5 we have tags like v24.6.1.1-new, and we must check if the release
     # branch already has it's own commit. It's necessary for a proper tweak version
@@ -297,8 +311,17 @@ def get_version_from_string(
     version: str, git: Optional[Git] = None
 ) -> ClickHouseVersion:
     validate_version(version)
-    parts = version.split(".")
-    return ClickHouseVersion(parts[0], parts[1], parts[2], -1, git, parts[3])
+    # dict for simple handling of missing parts with parts.get(index, default)
+    parts = dict(enumerate(version.split(".")))
+    return ClickHouseVersion(
+        parts[0],
+        parts[1],
+        parts[2],
+        -1,
+        git,
+        parts.get(3, None),
+        parts.get(4, None)
+    )
 
 
 def get_version_from_tag(tag: str) -> ClickHouseVersion:
@@ -404,7 +427,7 @@ def update_contributors(
     get_abs_path(relative_contributors_path).write_text(content, encoding="utf-8")
 
 
-def update_version_local(version, version_type="testing"):
+def update_version_local(version : ClickHouseVersion, version_type="testing"):
     update_contributors()
     version.with_description(version_type)
     update_cmake_version(version)

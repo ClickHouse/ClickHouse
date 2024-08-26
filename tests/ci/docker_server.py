@@ -346,10 +346,10 @@ def main():
         assert not args.image_path and not args.image_repo
         if "server image" in args.check_name:
             image_path = "docker/server"
-            image_repo = "clickhouse/clickhouse-server"
+            image_repo = "altinityinfra/clickhouse-server"
         elif "keeper image" in args.check_name:
             image_path = "docker/keeper"
-            image_repo = "clickhouse/clickhouse-keeper"
+            image_repo = "altinityinfra/clickhouse-keeper"
         else:
             assert False, "Invalid --check-name"
     else:

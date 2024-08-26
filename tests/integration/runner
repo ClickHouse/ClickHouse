@@ -29,7 +29,7 @@ CONFIG_DIR_IN_REPO = "programs/server"
 INTEGRATION_DIR_IN_REPO = "tests/integration"
 UTILS_DIR_IN_REPO = "utils"
 
-DIND_INTEGRATION_TESTS_IMAGE_NAME = "clickhouse/integration-tests-runner"
+DIND_INTEGRATION_TESTS_IMAGE_NAME = "altinityinfra/integration-tests-runner"
 
 
 def check_args_and_update_paths(args):

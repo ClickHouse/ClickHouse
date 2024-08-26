@@ -126,6 +126,7 @@ std::optional<std::string> getCgroupsV2FileName()
         return {};
 
     std::filesystem::path current_cgroup = cgroupV2PathOfProcess();
+
     if (current_cgroup.empty())
         return {};
 

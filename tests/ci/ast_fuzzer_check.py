@@ -15,7 +15,7 @@ from report import FAIL, FAILURE, OK, SUCCESS, JobReport, TestResult
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
-IMAGE_NAME = "clickhouse/fuzzer"
+IMAGE_NAME = "altinityinfra/fuzzer"
 
 
 def get_run_command(

@@ -24,6 +24,7 @@ std::optional<uint64_t> getCgroupsV2MemoryLimit()
         return {};
 
     std::filesystem::path current_cgroup = cgroupV2PathOfProcess();
+
     if (current_cgroup.empty())
         return {};
 

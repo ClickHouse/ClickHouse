@@ -1,4 +1,4 @@
-# docker build -t clickhouse/mysql-golang-client .
+# docker build -t altinityinfra/mysql-golang-client .
 # MySQL golang client docker container
 
 FROM golang:1.17
