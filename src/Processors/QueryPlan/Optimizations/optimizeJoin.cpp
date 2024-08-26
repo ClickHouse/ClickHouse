@@ -10,6 +10,8 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Core/Settings.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+
 #include <Interpreters/TableJoin.h>
 
 #include <Common/logger_useful.h>
@@ -50,15 +52,15 @@ void optimizeJoin(QueryPlan::Node & node, QueryPlan::Nodes &)
         return;
 
     const auto & join = join_step->getJoin();
-    if (join->pipelineType() != JoinPipelineType::FillRightFirst || !join->isCloneSupported())
+    if (join->pipelineType() != JoinPipelineType::FillRightFirst || !join->isCloneSupported() || typeid_cast<const HashJoin *>(join.get()))
         return;
 
     const auto & table_join = join->getTableJoin();
-    if (table_join.strictness() != JoinStrictness::All)
-        return;
-
     auto kind = table_join.kind();
-    if (kind != JoinKind::Inner && kind != JoinKind::Left && kind != JoinKind::Right && kind != JoinKind::Full)
+    if (table_join.hasUsing()
+     || table_join.strictness() != JoinStrictness::All
+     || (kind != JoinKind::Inner && kind != JoinKind::Left
+      && kind != JoinKind::Right && kind != JoinKind::Full))
         return;
 
     bool need_swap = false;

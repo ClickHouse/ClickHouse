@@ -1216,7 +1216,10 @@ IBlocksStreamPtr HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
 {
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
+
     size_t left_columns_count = left_sample_block.columns();
+    if (table_join->enableEnalyzer())
+        left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
 
     bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
     if (!flag_per_row)

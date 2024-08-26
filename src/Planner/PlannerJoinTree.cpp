@@ -1444,14 +1444,12 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     }
 
     const Block & left_header = left_plan.getCurrentDataStream().header;
-    auto left_table_names = left_header.getNames();
-    NameSet left_table_names_set(left_table_names.begin(), left_table_names.end());
+    const Block & right_header = right_plan.getCurrentDataStream().header;
 
-    auto columns_from_left_table = left_plan.getCurrentDataStream().header.getNamesAndTypesList();
-    auto columns_from_right_table = right_plan.getCurrentDataStream().header.getNamesAndTypesList();
+    auto columns_from_left_table = left_header.getNamesAndTypesList();
+    auto columns_from_right_table = right_header.getNamesAndTypesList();
     table_join->setInputColumns(columns_from_left_table, columns_from_right_table);
     // table_join->setColumnsFromJoinedTable(columns_from_right_table, left_table_names_set, "");
-    UNUSED(left_table_names_set);
 
     for (auto & column_from_joined_table : columns_from_left_table)
     {
@@ -1459,9 +1457,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
             outer_scope_columns.contains(column_from_joined_table.name))
             table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Left);
-        else
-            table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Left);
-
+        // else
+        //     table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Left);
     }
 
     for (auto & column_from_joined_table : columns_from_right_table)

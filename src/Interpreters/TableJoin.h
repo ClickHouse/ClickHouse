@@ -202,6 +202,8 @@ private:
 
     bool is_join_with_constant = false;
 
+    bool enable_analyzer = false;
+
     Names requiredJoinedNames() const;
 
     /// Create converting actions and change key column names if required
@@ -266,6 +268,8 @@ public:
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
     TemporaryDataOnDiskScopePtr getTempDataOnDisk() { return tmp_data; }
+    bool enableEnalyzer() const { return enable_analyzer; }
+    void assertEnableEnalyzer() const;
 
     ActionsDAG createJoinedBlockActions(ContextPtr context) const;
 
@@ -398,10 +402,12 @@ public:
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only
 
-    void setColumnsFromJoinedTable(NamesAndTypesList columns_from_joined_table_value, const NameSet & left_table_columns, const String & right_table_prefix)
+    void setColumnsFromJoinedTable(NamesAndTypesList columns_from_joined_table_value, const NameSet & left_table_columns, const String & right_table_prefix, const NamesAndTypesList & columns_from_left_table_)
     {
         columns_from_joined_table = std::move(columns_from_joined_table_value);
         deduplicateAndQualifyColumnNames(left_table_columns, right_table_prefix);
+        result_columns_from_left_table = columns_from_left_table_;
+        columns_from_left_table = columns_from_left_table_;
     }
 
     void setInputColumns(NamesAndTypesList left_output_columns, NamesAndTypesList right_output_columns);

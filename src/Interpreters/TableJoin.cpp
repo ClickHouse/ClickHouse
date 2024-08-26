@@ -119,6 +119,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , max_memory_usage(settings.max_memory_usage)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
+    , enable_analyzer(settings.allow_experimental_analyzer)
 {
 }
 
@@ -137,6 +138,8 @@ void TableJoin::resetCollected()
     clauses.clear();
     columns_from_joined_table.clear();
     columns_added_by_join.clear();
+    columns_from_left_table.clear();
+    result_columns_from_left_table.clear();
     original_names.clear();
     renames.clear();
     left_type_map.clear();
@@ -996,6 +999,8 @@ size_t TableJoin::getMaxMemoryUsage() const
 
 void TableJoin::swapSides()
 {
+    assertEnableEnalyzer();
+
     std::swap(key_asts_left, key_asts_right);
     std::swap(left_type_map, right_type_map);
     for (auto & clause : clauses)
@@ -1012,6 +1017,12 @@ void TableJoin::swapSides()
         table_join.kind = JoinKind::Right;
     else if (table_join.kind == JoinKind::Right)
         table_join.kind = JoinKind::Left;
+}
+
+void TableJoin::assertEnableEnalyzer() const
+{
+    if (!enable_analyzer)
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "TableJoin: analyzer is disabled");
 }
 
 }
