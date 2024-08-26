@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+from threading import Thread
+from queue import Queue
+
+CURDIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(CURDIR, "helpers"))
+
+from pure_http_client import ClickHouseClient
+
+
+client = ClickHouseClient()
+
+
+client.query("DROP TABLE IF EXISTS test SYNC")
+client.query(
+    """
+CREATE TABLE test
+(
+    c_id String,
+    p_id String,
+    d UInt32,
+)
+Engine = ReplicatedMergeTree('/clickhouse/tables/{database}/test/test_table', '1')
+ORDER BY (c_id, p_id)
+"""
+)
+
+
+def attempt_mutation(q):
+    try:
+        client.query(
+            "ALTER TABLE test DROP COLUMN x SETTINGS mutations_sync=2",
+            with_retries=False,
+        )
+    except ValueError as e:
+        assert "BAD_ARGUMENTS" in str(e)
+        q.put("OK")
+
+
+client.query("INSERT INTO test SELECT '1', '11', '111' FROM numbers(5)")
+client.query("SYSTEM ENABLE FAILPOINT infinite_sleep")
+client.query(
+    "ALTER TABLE test UPDATE d = d + sleepEachRow(0.3) where 1 SETTINGS mutations_sync=0"
+)
+client.query("ALTER TABLE test ADD COLUMN x UInt32 default 0 SETTINGS mutations_sync=0")
+client.query("ALTER TABLE test UPDATE d = x + 1 where 1 SETTINGS mutations_sync=0")
+
+q = Queue()
+t = Thread(target=attempt_mutation, args=(q,))
+t.start()
+t.join()
+assert not q.empty()
+assert q.get() == "OK"
+
+client.query("SYSTEM DISABLE FAILPOINT infinite_sleep")
+
+client.query("ALTER TABLE test UPDATE x = x + 1 where 1 SETTINGS mutations_sync=2")
+client.query("ALTER TABLE test DROP COLUMN x SETTINGS mutations_sync=2")
+client.query("SELECT * from test format Null")
+client.query("DROP TABLE test")

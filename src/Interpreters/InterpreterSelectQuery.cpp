@@ -1232,7 +1232,7 @@ SortDescription InterpreterSelectQuery::getSortDescription(const ASTSelectQuery 
 
         std::shared_ptr<Collator> collator;
         if (order_by_elem.getCollation())
-            collator = std::make_shared<Collator>(order_by_elem.getCollation()->as<ASTLiteral &>().value.get<String>());
+            collator = std::make_shared<Collator>(order_by_elem.getCollation()->as<ASTLiteral &>().value.safeGet<String>());
 
         if (order_by_elem.with_fill)
         {

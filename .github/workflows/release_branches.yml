@@ -130,6 +130,7 @@ jobs:
     with:
       build_name: package_debug
       data: ${{ needs.RunConfig.outputs.data }}
+      force: true
   BuilderBinDarwin:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -482,7 +483,7 @@ jobs:
         if: ${{ !failure() }}
         run: |
           # update overall ci report
-          python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+          python3 ./tests/ci/finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
       - name: Check Workflow results
         if: ${{ !cancelled() }}
         run: |
@@ -490,5 +491,4 @@ jobs:
           cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
           ${{ toJson(needs) }}
           EOF
-
           python3 ./tests/ci/ci_buddy.py --check-wf-status

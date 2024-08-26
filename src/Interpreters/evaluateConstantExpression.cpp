@@ -297,7 +297,7 @@ namespace
             {
                 if (tuple_literal->value.getType() == Field::Types::Tuple)
                 {
-                    const auto & tuple = tuple_literal->value.get<const Tuple &>();
+                    const auto & tuple = tuple_literal->value.safeGet<const Tuple &>();
                     for (const auto & child : tuple)
                     {
                         const auto dnf = analyzeEquals(identifier, child, expr);
@@ -792,7 +792,7 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
     else if (const auto * literal = node->as<ASTLiteral>())
     {
         // Check if it's always true or false.
-        if (literal->value.getType() == Field::Types::UInt64 && literal->value.get<UInt64>() == 0)
+        if (literal->value.getType() == Field::Types::UInt64 && literal->value.safeGet<UInt64>() == 0)
             return {result};
         else
             return {};
