@@ -4,20 +4,21 @@
 
 #if USE_ICU
 
-#include <Columns/ColumnString.h>
-#include <Functions/LowerUpperImpl.h>
-#include <unicode/unistr.h>
-#include <unicode/ucasemap.h>
-#include <unicode/utypes.h>
-#include <unicode/urename.h>
-#include <Common/StringUtils.h>
+#    include <Columns/ColumnString.h>
+#    include <Functions/LowerUpperImpl.h>
+#    include <unicode/ucasemap.h>
+#    include <unicode/unistr.h>
+#    include <unicode/urename.h>
+#    include <unicode/utypes.h>
+#    include <Common/StringUtils.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
 }
 
 template <char not_case_lower_bound, char not_case_upper_bound, bool upper>
