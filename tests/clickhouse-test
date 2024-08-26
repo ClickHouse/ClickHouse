@@ -2573,12 +2573,12 @@ def do_run_tests(jobs, test_suite: TestSuite):
             try:
                 clickhouse_execute(
                     args,
-                    query="SELECT 1 /*hang up check*/",
-                    max_http_retries=5,
-                    timeout=20,
+                    query="SELECT 1 /*hung check*/",
+                    max_http_retries=20,
+                    timeout=10,
                 )
             except Exception:
-                print("Hang up check failed")
+                print("Hung check failed")
                 server_died.set()
 
             if server_died.is_set():
