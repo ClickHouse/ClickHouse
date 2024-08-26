@@ -1,9 +1,12 @@
 <clickhouse>
     <jwt_verifiers>
-        <single_key_validator>
-            <algo>hs256</algo>
-            <single_key>my_secret</single_key>
-            <single_key_in_base64>false</single_key_in_base64>
-        </single_key_validator>
+<!--        <single_key_validator>-->
+<!--            <algo>hs256</algo>-->
+<!--            <single_key>my_secret</single_key>-->
+<!--            <single_key_in_base64>false</single_key_in_base64>-->
+<!--        </single_key_validator>-->
+        <static_jwks_validator>
+            <static_jwks>{"keys": [{"kty": "RSA", "alg": "RS256", "kid": "mykid", "n": "lICGC8S5pObyASih5qfmwuclG0oKsbzY2z9vgwqyhTYQOWcqYcTjVV4aQ30qb6E0-5W6rJ-jx9zx6GuAEGMiG_aWJEdbUAMGp-L1kz4lrw5U6GlwoZIvk4wqoRwsiyc-mnDMQAmiZLBNyt3wU6YnKgYmb4O1cSzcZ5HMbImJpj4tpYjqnIazvYMn_9Pxjkl0ezLCr52av0UkWHro1H4QMVfuEoNmHuWPww9jgHn-I-La0xdOhRpAa0XnJi65dXZd4330uWjeJwt413yz881uS4n1OLOGKG8ImDcNlwU_guyvk0n0aqT0zkOAPp9_yYo13MPWmiRCfOX8ozdN7VDIJw", "e": "AQAB"}]}</static_jwks>
+        </static_jwks_validator>
     </jwt_verifiers>
 </clickhouse>

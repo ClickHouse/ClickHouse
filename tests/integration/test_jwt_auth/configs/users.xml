@@ -6,7 +6,7 @@
     <users>
         <jwt_user>
             <jwt>
-                <claims>{"resource_access":{"account": {"roles": ["view-profile"]}}}</claims>
+                <claims>{"resource_access": "view-profile"}</claims>
             </jwt>
             <profile>default</profile>
             <quota>default</quota>
