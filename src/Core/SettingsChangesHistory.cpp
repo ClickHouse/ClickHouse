@@ -59,6 +59,11 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"24.12",
         {
+            {"output_format_identifier_quoting_style", 1, 1, "New setting."}
+        }
+    },
+    {"24.12",
+        {
         }
     },
     {"24.11",
