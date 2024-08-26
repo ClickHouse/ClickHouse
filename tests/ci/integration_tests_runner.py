@@ -873,21 +873,45 @@ class ClickhouseIntegrationTestsRunner:
     def run_impl(self, repo_path, build_path):
         stopwatch = Stopwatch()
         if self.flaky_check or self.bugfix_validate_check:
-            return self.run_flaky_check(
-                repo_path, build_path, should_fail=self.bugfix_validate_check
+            result_state, status_text, test_result, tests_log_paths = (
+                self.run_flaky_check(
+                    repo_path, build_path, should_fail=self.bugfix_validate_check
+                )
+            )
+        else:
+            result_state, status_text, test_result, tests_log_paths = (
+                self.run_normal_check(build_path, repo_path)
             )
 
-        self._install_clickhouse(build_path)
+        if self.soft_deadline_time < time.time():
+            status_text = "Timeout, " + status_text
+            result_state = "failure"
 
+        if timeout_expired:
+            logging.error(
+                "Job killed by external timeout signal - setting status to failure!"
+            )
+            status_text = "Job timeout expired, " + status_text
+            result_state = "failure"
+            # add mock test case to make timeout visible in job report and in ci db
+            test_result.insert(
+                0, (JOB_TIMEOUT_TEST_NAME, "FAIL", f"{stopwatch.duration_seconds}", "")
+            )
+
+        if "(memory)" in self.params["context_name"]:
+            result_state = "success"
+
+        return result_state, status_text, test_result, tests_log_paths
+
+    def run_normal_check(self, build_path, repo_path):
+        self._install_clickhouse(build_path)
         logging.info("Pulling images")
         self._pre_pull_images(repo_path)
-
         logging.info(
             "Dump iptables before run %s",
             subprocess.check_output("sudo iptables -nvL", shell=True),
         )
         all_tests = self._get_all_tests(repo_path)
-
         if self.run_by_hash_total != 0:
             grouped_tests = self.group_test_by_file(all_tests)
             all_filtered_by_hash_tests = []
@@ -895,7 +919,6 @@ class ClickhouseIntegrationTestsRunner:
                 if stringhash(group) % self.run_by_hash_total == self.run_by_hash_num:
                     all_filtered_by_hash_tests += tests_in_group
             all_tests = all_filtered_by_hash_tests
-
         parallel_skip_tests = self._get_parallel_tests_skip_list(repo_path)
         logging.info(
             "Found %s tests first 3 %s", len(all_tests), " ".join(all_tests[:3])
@@ -927,14 +950,12 @@ class ClickhouseIntegrationTestsRunner:
             len(not_found_tests),
             " ".join(not_found_tests[:3]),
         )
-
         grouped_tests = self.group_test_by_file(filtered_sequential_tests)
         i = 0
         for par_group in chunks(filtered_parallel_tests, PARALLEL_GROUP_SIZE):
             grouped_tests[f"parallel{i}"] = par_group
             i += 1
         logging.info("Found %s tests groups", len(grouped_tests))
-
         counters = {
             "ERROR": [],
             "PASSED": [],
@@ -945,14 +966,11 @@ class ClickhouseIntegrationTestsRunner:
         }  # type: Dict
         tests_times = defaultdict(float)
         tests_log_paths = defaultdict(list)
-
         items_to_run = list(grouped_tests.items())
-
         logging.info("Total test groups %s", len(items_to_run))
         if self.shuffle_test_groups():
             logging.info("Shuffling test groups")
             random.shuffle(items_to_run)
-
         for group, tests in items_to_run:
             if timeout_expired:
                 print("Timeout expired - break tests execution")
@@ -980,7 +998,6 @@ class ClickhouseIntegrationTestsRunner:
             if len(counters["FAILED"]) + len(counters["ERROR"]) >= 20:
                 logging.info("Collected more than 20 failed/error tests, stopping")
                 break
-
         if counters["FAILED"] or counters["ERROR"]:
             logging.info(
                 "Overall status failure, because we have tests in FAILED or ERROR state"
@@ -989,7 +1006,6 @@ class ClickhouseIntegrationTestsRunner:
         else:
             logging.info("Overall success!")
             result_state = "success"
-
         test_result = []
         for state in (
             "ERROR",
@@ -1009,33 +1025,14 @@ class ClickhouseIntegrationTestsRunner:
                 (c, text_state, f"{tests_times[c]:.2f}", tests_log_paths[c])
                 for c in counters[state]
             ]
-
         failed_sum = len(counters["FAILED"]) + len(counters["ERROR"])
         status_text = f"fail: {failed_sum}, passed: {len(counters['PASSED'])}"
-
-        if self.soft_deadline_time < time.time():
-            status_text = "Timeout, " + status_text
-            result_state = "failure"
-
-        if timeout_expired:
-            logging.error(
-                "Job killed by external timeout signal - setting status to failure!"
-            )
-            status_text = "Job timeout expired, " + status_text
-            result_state = "failure"
-            # add mock test case to make timeout visible in job report and in ci db
-            test_result.insert(
-                0, (JOB_TIMEOUT_TEST_NAME, "FAIL", f"{stopwatch.duration_seconds}", "")
-            )
 
         if not counters or sum(len(counter) for counter in counters.values()) == 0:
             status_text = "No tests found for some reason! It's a bug"
             result_state = "failure"
 
-        if "(memory)" in self.params["context_name"]:
-            result_state = "success"
-
-        return result_state, status_text, test_result, []
+        return result_state, status_text, test_result, tests_log_paths
 
 
 def write_results(results_file, status_file, results, status):
@@ -1068,7 +1065,9 @@ def run():
         logging.info("Clearing dmesg before run")
         subprocess.check_call("sudo -E dmesg --clear", shell=True)
 
-    state, description, test_results, _ = runner.run_impl(repo_path, build_path)
+    state, description, test_results, _test_log_paths = runner.run_impl(
+        repo_path, build_path
+    )
     logging.info("Tests finished")
 
     if IS_CI:
