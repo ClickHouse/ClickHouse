@@ -18,6 +18,7 @@ class Envs:
     )
     S3_BUILDS_BUCKET = os.getenv("S3_BUILDS_BUCKET", "clickhouse-builds")
     GITHUB_WORKFLOW = os.getenv("GITHUB_WORKFLOW", "")
+    GITHUB_ACTOR = os.getenv("GITHUB_ACTOR", "")
 
 
 class WithIter(type):
@@ -102,21 +103,29 @@ class GH:
         assert len(commit_sha) == 40
         assert Utils.is_hex(commit_sha)
         assert not Utils.is_hex(token)
-        url = f"https://api.github.com/repos/{Envs.GITHUB_REPOSITORY}/commits/{commit_sha}/statuses?per_page={200}"
+
+        url = f"https://api.github.com/repos/{Envs.GITHUB_REPOSITORY}/commits/{commit_sha}/statuses"
         headers = {
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github.v3+json",
         }
-        response = requests.get(url, headers=headers, timeout=5)
 
         if isinstance(status_name, str):
             status_name = (status_name,)
-        if response.status_code == 200:
-            assert "next" not in response.links, "Response truncated"
-            statuses = response.json()
-            for status in statuses:
-                if status["context"] in status_name:
-                    return status["state"]  # type: ignore
+
+        while url:
+            response = requests.get(url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                statuses = response.json()
+                for status in statuses:
+                    if status["context"] in status_name:
+                        return status["state"]  # type: ignore
+
+                # Check if there is a next page
+                url = response.links.get("next", {}).get("url")
+            else:
+                break
+
         return ""
 
     @staticmethod
@@ -274,3 +283,7 @@ class Utils:
         ):
             res = res.replace(*r)
         return res
+
+    @staticmethod
+    def is_job_triggered_manually():
+        return "robot" not in Envs.GITHUB_ACTOR

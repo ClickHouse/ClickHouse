@@ -9,7 +9,6 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
-
 namespace DB
 {
 
@@ -46,7 +45,9 @@ static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & sel
     // It is flattened later, when we process UNION ALL/DISTINCT.
     const auto * last_select = children.back()->as<ASTSelectQuery>();
     if (last_select && last_select->settings())
-        InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext(/* ignore_setting_constraints= */ false);
+    {
+        InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext();
+    }
 }
 
 void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMutablePtr context_)
@@ -54,20 +55,10 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
     if (!ast)
         return;
 
-    /// First apply the outermost settings. Then they could be overridden by deeper settings.
-    if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
-    {
-        if (query_with_output->settings_ast)
-            InterpreterSetQuery(query_with_output->settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
-
-        if (const auto * create_query = ast->as<ASTCreateQuery>(); create_query && create_query->select)
-            applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context_);
-    }
-
     if (const auto * select_query = ast->as<ASTSelectQuery>())
     {
         if (auto new_settings = select_query->settings())
-            InterpreterSetQuery(new_settings, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
+            InterpreterSetQuery(new_settings, context_).executeForCurrentContext();
     }
     else if (const auto * select_with_union_query = ast->as<ASTSelectWithUnionQuery>())
     {
@@ -76,15 +67,28 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
     else if (const auto * explain_query = ast->as<ASTExplainQuery>())
     {
         if (explain_query->settings_ast)
-            InterpreterSetQuery(explain_query->settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
+            InterpreterSetQuery(explain_query->settings_ast, context_).executeForCurrentContext();
 
         applySettingsFromQuery(explain_query->getExplainedQuery(), context_);
+    }
+    else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
+    {
+        if (query_with_output->settings_ast)
+            InterpreterSetQuery(query_with_output->settings_ast, context_).executeForCurrentContext();
+
+        if (const auto * create_query = ast->as<ASTCreateQuery>())
+        {
+            if (create_query->select)
+            {
+                applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context_);
+            }
+        }
     }
     else if (auto * insert_query = ast->as<ASTInsertQuery>())
     {
         context_->setInsertFormat(insert_query->format);
         if (insert_query->settings_ast)
-            InterpreterSetQuery(insert_query->settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
+            InterpreterSetQuery(insert_query->settings_ast, context_).executeForCurrentContext();
     }
 }
 
