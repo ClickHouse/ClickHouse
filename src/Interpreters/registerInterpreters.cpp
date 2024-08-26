@@ -45,6 +45,7 @@ void registerInterpreterDropNamedCollectionQuery(InterpreterFactory & factory);
 void registerInterpreterGrantQuery(InterpreterFactory & factory);
 void registerInterpreterShowCreateAccessEntityQuery(InterpreterFactory & factory);
 void registerInterpreterShowGrantsQuery(InterpreterFactory & factory);
+void registerInterpreterCheckGrantQuery(InterpreterFactory & factory);
 void registerInterpreterShowAccessEntitiesQuery(InterpreterFactory & factory);
 void registerInterpreterShowAccessQuery(InterpreterFactory & factory);
 void registerInterpreterShowPrivilegesQuery(InterpreterFactory & factory);
@@ -104,6 +105,7 @@ void registerInterpreters()
     registerInterpreterGrantQuery(factory);
     registerInterpreterShowCreateAccessEntityQuery(factory);
     registerInterpreterShowGrantsQuery(factory);
+    registerInterpreterCheckGrantQuery(factory);
     registerInterpreterShowAccessEntitiesQuery(factory);
     registerInterpreterShowAccessQuery(factory);
     registerInterpreterShowPrivilegesQuery(factory);
