@@ -62,10 +62,8 @@ struct LowerUpperUTF8Impl
             else
                 dst_size = ucasemap_utf8ToLower(
                     case_map, reinterpret_cast<char *>(&res_data[curr_offset]), res_data.size() - curr_offset, src, src_size, &error_code);
-            // std::cout << size << ":" << out_size << ":" << static_cast<size_t>(res_data[curr_offset + out_size - 1]) << ":" << error_code
-            //   << std::endl;
 
-            if (error_code == U_BUFFER_OVERFLOW_ERROR)
+            if (error_code == U_BUFFER_OVERFLOW_ERROR || error_code == U_STRING_NOT_TERMINATED_WARNING)
             {
                 size_t new_size = curr_offset + dst_size + 1;
                 res_data.resize(new_size);
