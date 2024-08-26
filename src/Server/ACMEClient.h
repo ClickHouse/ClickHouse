@@ -1,5 +1,6 @@
 #pragma once
 
+#if USE_SSL
 #include <boost/core/noncopyable.hpp>
 
 #include <Core/BackgroundSchedulePool.h>
@@ -122,3 +123,4 @@ private:
 
 }
 }
+#endif

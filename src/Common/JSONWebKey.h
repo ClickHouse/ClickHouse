@@ -1,5 +1,6 @@
 #pragma once
 
+#if USE_SSL
 #include <Poco/Crypto/RSAKey.h>
 
 namespace DB
@@ -16,3 +17,4 @@ struct JSONWebKey
 };
 
 }
+#endif

@@ -2,6 +2,7 @@
 #include <sstream>
 #include <Server/ACMEClient.h>
 
+#if USE_SSL
 #include <Core/BackgroundSchedulePool.h>
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <IO/HTTPCommon.h>
@@ -628,3 +629,4 @@ std::string ACMEClient::requestChallenge(const std::string & uri)
 
 }
 }
+#endif
