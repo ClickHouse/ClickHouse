@@ -95,7 +95,7 @@ void SetCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) co
         client->zookeeper->set(
             client->getAbsolutePath(query->args[0].safeGet<String>()),
             query->args[1].safeGet<String>(),
-            static_cast<Int32>(query->args[2].get<Int32>()));
+            static_cast<Int32>(query->args[2].safeGet<Int32>()));
 }
 
 bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
@@ -494,7 +494,7 @@ void RMCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
 {
     Int32 version{-1};
     if (query->args.size() == 2)
-        version = static_cast<Int32>(query->args[1].get<Int32>());
+        version = static_cast<Int32>(query->args[1].safeGet<Int32>());
 
     client->zookeeper->remove(client->getAbsolutePath(query->args[0].safeGet<String>()), version);
 }
@@ -549,7 +549,7 @@ void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient
     String leaving;
     String new_members;
 
-    auto operation = query->args[0].get<ReconfigCommand::Operation>();
+    auto operation = query->args[0].safeGet<ReconfigCommand::Operation>();
     switch (operation)
     {
         case static_cast<UInt8>(ReconfigCommand::Operation::ADD):

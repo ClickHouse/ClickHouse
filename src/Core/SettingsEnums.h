@@ -311,6 +311,7 @@ enum class LightweightMutationProjectionMode : uint8_t
 {
     THROW,
     DROP,
+    REBUILD,
 };
 
 DECLARE_SETTING_ENUM(LightweightMutationProjectionMode)
