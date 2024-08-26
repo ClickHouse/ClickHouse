@@ -453,6 +453,7 @@ Chunk StorageURLSource::generate()
                     .size = current_file_size,
                 },
                 getContext());
+            chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
             if (need_headers_virtual_column)
             {
                 if (!http_response_headers_initialized)
