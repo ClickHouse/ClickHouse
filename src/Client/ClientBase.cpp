@@ -1894,24 +1894,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     {
         /// Temporarily apply query settings to context.
         std::optional<Settings> old_settings;
-
-        /// Since client_context is a global context,
-        /// create a copy to avoid data race with another thread (e.g. parallel formatting thread) reading global settings
-        auto old_client_context = client_context;
-
         SCOPE_EXIT_SAFE({
             if (old_settings)
-                client_context = old_client_context;
+                client_context->setSettings(*old_settings);
         });
 
         auto apply_query_settings = [&](const IAST & settings_ast)
         {
             if (!old_settings)
-            {
                 old_settings.emplace(client_context->getSettingsRef());
-                client_context = Context::createCopy(client_context);
-                client_context->setSettings(client_context->getSettingsCopy());
-            }
             client_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
             client_context->resetSettingsToDefaultValue(settings_ast.as<ASTSetQuery>()->default_settings);
         };
