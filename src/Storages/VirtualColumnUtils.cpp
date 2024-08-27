@@ -46,6 +46,7 @@
 #include "Functions/IFunction.h"
 #include "Functions/IFunctionAdaptors.h"
 #include "Functions/indexHint.h"
+#include <IO/ReadBufferFromString.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Columns/ColumnSet.h>
@@ -197,7 +198,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
     return desc;
 }
 
-static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx)
+static void addFilterDataToVirtualColumns(Block & block, const String & path, size_t idx, ColumnsWithTypeAndName partitioning_keys, const ContextPtr & context)
 {
     if (block.has("_path"))
         block.getByName("_path").column->assumeMutableRef().insert(path);
@@ -214,18 +215,31 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
         block.getByName("_file").column->assumeMutableRef().insert(file);
     }
 
+    for (const auto & item : partitioning_keys)
+    {
+        if (block.has(item.name))
+        {
+            auto column = block.getByName(item.name).column;
+            ReadBufferFromString buf(item.column->getDataAt(0).toView());
+            item.type->getDefaultSerialization()->deserializeWholeText(column->assumeMutableRef(), buf, getFormatSettings(context));
+        }
+    }
+
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
-std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns)
+std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const String & path, const ContextPtr & context)
 {
     if (!predicate || virtual_columns.empty())
         return {};
 
     Block block;
+    std::unordered_map<std::string, std::string> keys;
+    if (context->getSettingsRef().use_hive_partitioning)
+        keys = parseHivePartitioningKeysAndValues(path);
     for (const auto & column : virtual_columns)
     {
-        if (column.name == "_file" || column.name == "_path")
+        if (column.name == "_file" || column.name == "_path" || keys.contains(column.name))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
@@ -233,18 +247,31 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * pr
     return splitFilterDagForAllowedInputs(predicate, &block);
 }
 
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns)
+ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
 {
     Block block;
+    std::unordered_map<std::string, std::string> keys;
+    ColumnsWithTypeAndName partitioning_columns;
+    if (context->getSettingsRef().use_hive_partitioning)
+        keys = parseHivePartitioningKeysAndValues(paths[0]);
     for (const auto & column : virtual_columns)
     {
         if (column.name == "_file" || column.name == "_path")
             block.insert({column.type->createColumn(), column.type, column.name});
+
+        auto it = keys.find(column.name);
+        if (it != keys.end())
+        {
+            auto c = std::make_shared<DataTypeString>()->createColumn();
+            c->insert(it->second);
+            block.insert({column.type->createColumn(), column.type, column.name});
+            partitioning_columns.push_back({c->getPtr(), column.type, column.name});
+        }
     }
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     for (size_t i = 0; i != paths.size(); ++i)
-        addPathAndFileToVirtualColumns(block, paths[i], i);
+        addFilterDataToVirtualColumns(block, paths[i], i, partitioning_columns, context);
 
     filterBlockWithExpression(actions, block);
 

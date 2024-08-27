@@ -214,7 +214,10 @@ public:
 
         std::optional<ActionsDAG> filter_dag;
         if (!uris.empty())
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
+        {
+            String partitioning_path = Poco::URI(uris[0]).getPath();
+            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, partitioning_path, context);
+        }
 
         if (filter_dag)
         {
@@ -225,7 +228,7 @@ public:
 
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-            VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns);
+            VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns, context);
         }
     }
 
