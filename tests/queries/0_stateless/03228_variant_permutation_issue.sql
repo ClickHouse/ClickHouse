@@ -1,6 +1,5 @@
 SET allow_experimental_variant_type = 1;
 
-select 'test';
 drop table if exists test;
 create table test (id UInt32, data Variant(String), version UInt64) engine=ReplacingMergeTree(version) order by id;
 insert into test values (1, NULL, 1), (2, 'bar', 1), (3, 'bar', 1);
