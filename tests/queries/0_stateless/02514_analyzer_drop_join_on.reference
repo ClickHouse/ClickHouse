@@ -12,20 +12,17 @@ Header: count() UInt64
     Header: __table1.a2 String
       Join (JOIN FillRightFirst)
       Header: __table1.a2 String
-              __table3.c1 UInt64
         Expression ((JOIN actions + DROP unused columns after JOIN))
         Header: __table1.a2 String
                 __table3.c1 UInt64
           Join (JOIN FillRightFirst)
           Header: __table1.a2 String
-                  __table2.b1 UInt64
                   __table3.c1 UInt64
             Expression ((JOIN actions + DROP unused columns after JOIN))
             Header: __table1.a2 String
                     __table2.b1 UInt64
               Join (JOIN FillRightFirst)
-              Header: __table1.a1 UInt64
-                      __table1.a2 String
+              Header: __table1.a2 String
                       __table2.b1 UInt64
                 Expression ((JOIN actions + Change column names to column identifiers))
                 Header: __table1.a1 UInt64
@@ -106,7 +103,6 @@ Header: bx String
       Header: __table1.a2 String
               __table2.bx String
               __table4.c2 String
-              __table4.c1 UInt64
         Expression
         Header: __table1.a2 String
                 __table2.bx String
@@ -115,7 +111,6 @@ Header: bx String
           Join (JOIN FillRightFirst)
           Header: __table1.a2 String
                   __table2.bx String
-                  __table2.b1 UInt64
                   __table4.c2 String
                   __table4.c1 UInt64
             Expression ((JOIN actions + DROP unused columns after JOIN))
@@ -123,8 +118,7 @@ Header: bx String
                     __table2.bx String
                     __table2.b1 UInt64
               Join (JOIN FillRightFirst)
-              Header: __table1.a1 UInt64
-                      __table1.a2 String
+              Header: __table1.a2 String
                       __table2.bx String
                       __table2.b1 UInt64
                 Expression ((JOIN actions + Change column names to column identifiers))
