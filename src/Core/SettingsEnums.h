@@ -311,9 +311,19 @@ enum class LightweightMutationProjectionMode : uint8_t
 {
     THROW,
     DROP,
+    REBUILD,
 };
 
 DECLARE_SETTING_ENUM(LightweightMutationProjectionMode)
+
+enum class DeduplicateMergeProjectionMode : uint8_t
+{
+    THROW,
+    DROP,
+    REBUILD,
+};
+
+DECLARE_SETTING_ENUM(DeduplicateMergeProjectionMode)
 
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
 

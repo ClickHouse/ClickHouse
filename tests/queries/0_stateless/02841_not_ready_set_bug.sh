@@ -11,3 +11,20 @@ $CLICKHOUSE_CLIENT --max_threads=2 --max_result_rows=1 --result_overflow_mode=br
 
 $CLICKHOUSE_CLIENT -q "SELECT * FROM system.tables WHERE 1 in (SELECT number from numbers(2)) AND database = currentDatabase() format Null"
 $CLICKHOUSE_CLIENT -q "SELECT xor(1, 0) FROM system.parts WHERE 1 IN (SELECT 1) FORMAT Null"
+
+# (Not all of these tests are effective because some of these tables are empty.)
+$CLICKHOUSE_CLIENT -nq "
+    select * from system.columns where table in (select '123');
+    select * from system.replicas where database in (select '123');
+    select * from system.data_skipping_indices where database in (select '123');
+    select * from system.databases where name in (select '123');
+    select * from system.mutations where table in (select '123');
+    select * from system.part_moves_between_shards where database in (select '123');
+    select * from system.replication_queue where database in (select '123');
+    select * from system.distribution_queue where database in (select '123');
+"
+$CLICKHOUSE_CLIENT -nq "
+    create table a (x Int8) engine MergeTree order by x;
+    insert into a values (1);
+    select * from mergeTreeIndex(currentDatabase(), 'a') where part_name in (select '123');
+"

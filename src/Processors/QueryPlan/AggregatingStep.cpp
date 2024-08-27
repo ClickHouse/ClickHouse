@@ -134,7 +134,6 @@ AggregatingStep::AggregatingStep(
     {
         output_stream->sort_description = group_by_sort_description;
         output_stream->sort_scope = DataStream::SortScope::Global;
-        output_stream->has_single_port = true;
     }
 }
 
@@ -147,7 +146,6 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     {
         output_stream->sort_description = group_by_sort_description;
         output_stream->sort_scope = DataStream::SortScope::Global;
-        output_stream->has_single_port = true;
     }
 
     explicit_sorting_required_for_aggregation_in_order = false;

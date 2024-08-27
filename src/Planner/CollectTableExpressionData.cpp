@@ -46,7 +46,7 @@ public:
         auto column_source_node = column_node->getColumnSource();
         auto column_source_node_type = column_source_node->getNodeType();
 
-        if (column_source_node_type == QueryTreeNodeType::LAMBDA)
+        if (column_source_node_type == QueryTreeNodeType::LAMBDA || column_source_node_type == QueryTreeNodeType::INTERPOLATE)
             return;
 
         /// JOIN using expression

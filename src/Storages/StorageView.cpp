@@ -97,7 +97,7 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
-    Settings view_settings = view_context->getSettings();
+    Settings view_settings = view_context->getSettingsCopy();
     view_settings.max_result_rows = 0;
     view_settings.max_result_bytes = 0;
     view_settings.extremes = false;

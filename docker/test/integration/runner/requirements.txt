@@ -74,6 +74,7 @@ protobuf==4.25.2
 psycopg2-binary==2.9.6
 py4j==0.10.9.5
 py==1.11.0
+pyarrow==17.0.0
 pycparser==2.22
 pycryptodome==3.20.0
 pymongo==3.11.0

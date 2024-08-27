@@ -505,7 +505,7 @@ class Backport:
                 ReleaseBranch(
                     (
                         br
-                        if self._repo_name == "ClickHouse/Clickhouse"
+                        if self._repo_name == "ClickHouse/ClickHouse"
                         else f"release/{br}"
                     ),
                     pr,

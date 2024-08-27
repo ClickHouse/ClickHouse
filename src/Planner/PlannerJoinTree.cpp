@@ -417,20 +417,20 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
             /// We evaluate sampling for Merge lazily so we need to get all the columns
             if (storage_snapshot->storage.getName() == "Merge")
             {
-                const auto columns = storage_snapshot->getMetadataForQuery()->getColumns().getAll();
+                const auto columns = storage_snapshot->metadata->getColumns().getAll();
                 for (const auto & column : columns)
                     required_columns.insert(column.name);
             }
             else
             {
-                auto columns_required_for_sampling = storage_snapshot->getMetadataForQuery()->getColumnsRequiredForSampling();
+                auto columns_required_for_sampling = storage_snapshot->metadata->getColumnsRequiredForSampling();
                 required_columns.insert(columns_required_for_sampling.begin(), columns_required_for_sampling.end());
             }
         }
 
         if (table_expression_modifiers->hasFinal())
         {
-            auto columns_required_for_final = storage_snapshot->getMetadataForQuery()->getColumnsRequiredForFinal();
+            auto columns_required_for_final = storage_snapshot->metadata->getColumnsRequiredForFinal();
             required_columns.insert(columns_required_for_final.begin(), columns_required_for_final.end());
         }
     }

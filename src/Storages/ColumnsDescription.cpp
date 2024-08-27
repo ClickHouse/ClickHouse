@@ -197,7 +197,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
             }
 
             if (col_ast->comment)
-                comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
+                comment = col_ast->comment->as<ASTLiteral &>().value.safeGet<String>();
 
             if (col_ast->codec)
                 codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);

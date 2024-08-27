@@ -214,10 +214,6 @@ static void setLazyExecutionInfo(
             }
 
             lazy_execution_info.short_circuit_ancestors_info[parent].insert(indexes.begin(), indexes.end());
-            /// After checking arguments_with_disabled_lazy_execution, if there is no relation with parent,
-            /// disable the current node.
-            if (indexes.empty())
-                lazy_execution_info.can_be_lazy_executed = false;
         }
         else
             /// If lazy execution is disabled for one of parents, we should disable it for current node.

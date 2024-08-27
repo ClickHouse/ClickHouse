@@ -48,6 +48,8 @@ namespace DB
 
 class ASTSelectQuery;
 
+class SystemLogs;
+
 struct ContextSharedPart;
 class ContextAccess;
 class ContextAccessWrapper;
@@ -829,7 +831,8 @@ public:
     void setMacros(std::unique_ptr<Macros> && macros);
 
     bool displaySecretsInShowAndSelect() const;
-    Settings getSettings() const;
+    Settings getSettingsCopy() const;
+    const Settings & getSettingsRef() const { return *settings; }
     void setSettings(const Settings & settings_);
 
     /// Set settings by name.
@@ -954,8 +957,6 @@ public:
     void makeSessionContext();
     void makeGlobalContext();
 
-    const Settings & getSettingsRef() const { return *settings; }
-
     void setProgressCallback(ProgressCallback callback);
     /// Used in executeQuery() to pass it to the QueryPipeline.
     ProgressCallback getProgressCallback() const;
@@ -1067,7 +1068,7 @@ public:
     void setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
     void updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<QueryCache> getQueryCache() const;
-    void clearQueryCache() const;
+    void clearQueryCache(const std::optional<String> & tag) const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
@@ -1151,7 +1152,11 @@ public:
     std::shared_ptr<BackupLog> getBackupLog() const;
     std::shared_ptr<BlobStorageLog> getBlobStorageLog() const;
 
-    std::vector<ISystemLog *> getSystemLogs() const;
+    SystemLogs getSystemLogs() const;
+
+    using Dashboards = std::vector<std::map<String, String>>;
+    std::optional<Dashboards> getDashboards() const;
+    void setDashboardsConfig(const ConfigurationPtr & config);
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
