@@ -111,7 +111,10 @@ void MergingAggregatedTransform::addBlock(Block block)
 {
     if (grouping_sets.size() == 1)
     {
-        grouping_sets[0].bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(block));
+        auto bucket = block.info.bucket_num;
+        if (grouping_sets[0].reordering_key_columns_actions)
+            grouping_sets[0].reordering_key_columns_actions->execute(block);
+        grouping_sets[0].bucket_to_blocks[bucket].emplace_back(std::move(block));
         return;
     }
 
