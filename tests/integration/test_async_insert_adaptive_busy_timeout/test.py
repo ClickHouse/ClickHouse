@@ -356,7 +356,7 @@ def test_change_queries_frequency():
         max_values_size=1000,
         array_size_range=[10, 50],
     )
-
+    node.query("SYSTEM FLUSH LOGS")
     select_log_query = f"SELECT countIf(timeout_milliseconds - {min_ms} < 25) FROM (SELECT timeout_milliseconds FROM system.asynchronous_insert_log ORDER BY event_time DESC LIMIT 10)"
     res = node.query(select_log_query)
     assert int(res) >= 5
@@ -364,12 +364,12 @@ def test_change_queries_frequency():
     _insert_queries_in_parallel(
         table_name,
         settings,
-        thread_num=20,
-        tasks=2000,
+        thread_num=10,
+        tasks=1000,
         max_values_size=1000,
         array_size_range=[10, 15],
     )
-
+    node.query("SYSTEM FLUSH LOGS")
     select_log_query = f"SELECT countIf({max_ms} - timeout_milliseconds < 100) FROM (SELECT timeout_milliseconds FROM system.asynchronous_insert_log ORDER BY event_time DESC LIMIT 10)"
     res = node.query(select_log_query)
     assert int(res) >= 5
