@@ -115,7 +115,10 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.column_name = getIdentifierName(command->column);
         return res;
     }
-    else if (parse_alter_commands && command->type == ASTAlterCommand::MODIFY_COLUMN)
+    /// MODIFY COLUMN x REMOVE MATERIALIZED is a valid alter command, but doesn't have any specified column type, thus no mutation is needed
+    else if (
+        parse_alter_commands && command->type == ASTAlterCommand::MODIFY_COLUMN && command->col_decl
+        && command->col_decl->as<ASTColumnDeclaration &>().type)
     {
         MutationCommand res;
         res.ast = command->ptr();
