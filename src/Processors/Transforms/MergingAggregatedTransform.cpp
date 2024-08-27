@@ -25,6 +25,42 @@ Block MergingAggregatedTransform::appendGroupingIfNeeded(const Block & in_header
     return out_header;
 }
 
+/// We should keep the order for GROUPING SET keys.
+/// Initiator creates a separate Aggregator for every group, so should we do here.
+/// Otherwise, two-level aggregation will split the data into different buckets,
+/// and the result may have duplicating rows.
+static ActionsDAG makeReorderingActions(const Block & in_header, const GroupingSetsParams & params)
+{
+    ActionsDAG reordering(in_header.getColumnsWithTypeAndName());
+    auto & outputs = reordering.getOutputs();
+    ActionsDAG::NodeRawConstPtrs new_outputs;
+    new_outputs.reserve(in_header.columns() + params.used_keys.size() - params.used_keys.size());
+
+    std::unordered_map<std::string_view, size_t> index;
+    for (size_t pos = 0; pos < outputs.size(); ++pos)
+        index.emplace(outputs[pos]->result_name, pos);
+
+    for (const auto & used_name : params.used_keys)
+    {
+        auto & idx = index[used_name];
+        new_outputs.push_back(outputs[idx]);
+    }
+
+    for (const auto & used_name : params.used_keys)
+        index[used_name] = outputs.size();
+    for (const auto & missing_name : params.missing_keys)
+        index[missing_name] = outputs.size();
+
+    for (const auto * output : outputs)
+    {
+        if (index[output->result_name] != outputs.size())
+            new_outputs.push_back(output);
+    }
+
+    outputs.swap(new_outputs);
+    return reordering;
+}
+
 MergingAggregatedTransform::~MergingAggregatedTransform() = default;
 
 MergingAggregatedTransform::MergingAggregatedTransform(
@@ -52,33 +88,7 @@ MergingAggregatedTransform::MergingAggregatedTransform(
         {
             size_t group = grouping_sets.size();
 
-            ActionsDAG reordering(in_header.getColumnsWithTypeAndName());
-            auto & outputs = reordering.getOutputs();
-            ActionsDAG::NodeRawConstPtrs new_outputs;
-            new_outputs.reserve(in_header.columns() + grouping_set_params.used_keys.size() - grouping_set_params.used_keys.size());
-
-            std::unordered_map<std::string_view, size_t> index;
-            for (size_t pos = 0; pos < outputs.size(); ++pos)
-                index.emplace(outputs[pos]->result_name, pos);
-
-            for (const auto & used_name : grouping_set_params.used_keys)
-            {
-                auto & idx = index[used_name];
-                new_outputs.push_back(outputs[idx]);
-            }
-
-            for (const auto & used_name : grouping_set_params.used_keys)
-                index[used_name] = outputs.size();
-            for (const auto & missing_name : grouping_set_params.missing_keys)
-                index[missing_name] = outputs.size();
-
-            for (const auto * output : outputs)
-            {
-                if (index[output->result_name] != outputs.size())
-                    new_outputs.push_back(output);
-            }
-
-            outputs.swap(new_outputs);
+            auto reordering = makeReorderingActions(in_header, grouping_set_params);
 
             Aggregator::Params set_params(grouping_set_params.used_keys,
                 params.aggregates,
