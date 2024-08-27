@@ -220,11 +220,11 @@ SELECT '----- variable arrays -----';
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Array(Nullable(UInt64))) Engine=TinyLog;
-INSERT INTO test1_00395(col1) VALUES([2,3,7,NULL]);
-INSERT INTO test1_00395(col1) VALUES([NULL,3,7,4]);
-INSERT INTO test1_00395(col1) VALUES([2,NULL,7,NULL]);
-INSERT INTO test1_00395(col1) VALUES([2,3,NULL,4]);
-INSERT INTO test1_00395(col1) VALUES([NULL,NULL,NULL,NULL]);
+INSERT INTO test1_00395(col1) VALUES([2,3,7,NULL]),
+                                    ([NULL,3,7,4]),
+                                    ([2,NULL,7,NULL]),
+                                    ([2,3,NULL,4]),
+                                    ([NULL,NULL,NULL,NULL]);
 
 SELECT arrayElement(col1, 1) FROM test1_00395;
 SELECT arrayElement(col1, 2) FROM test1_00395;
@@ -233,11 +233,11 @@ SELECT arrayElement(col1, 4) FROM test1_00395;
 
 DROP TABLE IF EXISTS test1_00395;
 CREATE TABLE test1_00395(col1 Array(Nullable(String))) Engine=TinyLog;
-INSERT INTO test1_00395(col1) VALUES(['a','bc','def',NULL]);
-INSERT INTO test1_00395(col1) VALUES([NULL,'bc','def','ghij']);
-INSERT INTO test1_00395(col1) VALUES(['a',NULL,'def',NULL]);
-INSERT INTO test1_00395(col1) VALUES(['a','bc',NULL,'ghij']);
-INSERT INTO test1_00395(col1) VALUES([NULL,NULL,NULL,NULL]);
+INSERT INTO test1_00395(col1) VALUES(['a','bc','def',NULL]),
+                                    ([NULL,'bc','def','ghij']),
+                                    (['a',NULL,'def',NULL]),
+                                    (['a','bc',NULL,'ghij']),
+                                    ([NULL,NULL,NULL,NULL]);
 
 SELECT arrayElement(col1, 1) FROM test1_00395;
 SELECT arrayElement(col1, 2) FROM test1_00395;
