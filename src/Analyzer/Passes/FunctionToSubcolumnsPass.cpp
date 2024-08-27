@@ -232,6 +232,8 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
     const auto & storage_snapshot = table_node->getStorageSnapshot();
     auto column = first_argument_column_node->getColumn();
 
+    /// If view source is set we cannot optimize because it doesn't support moving functions to subcolumns.
+    /// The storage is replaced to the view source but it happens only after building a query tree and applying passes.
     auto view_source = context->getViewSource();
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
