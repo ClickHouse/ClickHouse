@@ -100,18 +100,17 @@ Block HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         added_columns.buildOutput();
 
     const auto & table_join = join.table_join;
-    if (table_join->enableEnalyzer())
+    std::set<size_t> block_columns_to_erase;
+    if (table_join->enableEnalyzer() && !table_join->hasUsing())
     {
         std::unordered_set<String> left_output_columns;
         for (const auto & out_column : table_join->getOutputColumns(JoinTableSide::Left))
             left_output_columns.insert(out_column.name);
-        std::set<size_t> to_erase;
         for (size_t i = 0; i < block.columns(); ++i)
         {
             if (!left_output_columns.contains(block.getByPosition(i).name))
-                to_erase.insert(i);
+                block_columns_to_erase.insert(i);
         }
-        block.erase(to_erase);
     }
     size_t existing_columns = block.columns();
 
@@ -176,6 +175,7 @@ Block HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             block.safeGetByPosition(pos).column = block.safeGetByPosition(pos).column->replicate(*offsets_to_replicate);
         }
     }
+    block.erase(block_columns_to_erase);
     return remaining_block;
 }
 
