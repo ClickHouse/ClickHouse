@@ -10,6 +10,7 @@ node2 = cluster.add_instance(
     "node2", with_zookeeper=True, main_configs=["configs/distributed_servers.xml"]
 )
 
+
 def fill_nodes(nodes):
     for node in nodes:
         node.query(
