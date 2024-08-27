@@ -191,20 +191,6 @@ void MergingAggregatedTransform::addBlock(Block block)
     }
 }
 
-// void MergingAggregatedTransform::appendGroupingColumn(UInt64 group, BlocksList & block_list)
-// {
-//     auto grouping_position = getOutputPort().getHeader().getPositionByName("__grouping_set");
-//     for (auto & block : block_list)
-//     {
-//         auto num_rows = block.rows();
-//         ColumnWithTypeAndName col;
-//         col.type = std::make_shared<DataTypeUInt64>();
-//         col.name = "__grouping_set";
-//         col.column = ColumnUInt64::create(num_rows, group);
-//         block.insert(grouping_position, std::move(col));
-//     }
-// }
-
 void MergingAggregatedTransform::consume(Chunk chunk)
 {
     if (!consume_started)
@@ -248,25 +234,6 @@ void MergingAggregatedTransform::consume(Chunk chunk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo in MergingAggregatedTransform.");
 }
 
-// static void debugBlock(const Block & block)
-// {
-//     std::cerr << block.dumpStructure() << std::endl;
-//     size_t rows = block.rows();
-//     for (size_t row = 0; row < rows; ++row)
-//     {
-//         for (size_t col = 0; col < block.columns(); ++col)
-//         {
-//             const auto & c = block.getByPosition(col);
-//             if (c.column->isNumeric())
-//                 std::cerr << c.column->getUInt(row) << ' ';
-//             else
-//                 std::cerr << c.column->getDataAt(row).toString() << ' ';
-
-//         }
-//         std::cerr << std::endl;
-//     }
-// }
-
 Chunk MergingAggregatedTransform::generate()
 {
     if (!generate_started)
@@ -283,14 +250,6 @@ Chunk MergingAggregatedTransform::generate()
             auto & bucket_to_blocks = grouping_set.bucket_to_blocks;
             AggregatedDataVariants data_variants;
 
-            // std::cerr << "== Group " << group << std::endl;
-            // for (const auto & [buk, lst] : bucket_to_blocks)
-            // {
-            //     std::cerr << ".. buk " << buk << std::endl;
-            //     for (const auto & b : lst)
-            //         debugBlock(b);
-            // }
-
             /// TODO: this operation can be made async. Add async for IAccumulatingTransform.
             params->aggregator.mergeBlocks(std::move(bucket_to_blocks), data_variants, max_threads, is_cancelled);
             auto merged_blocks = params->aggregator.convertToBlocks(data_variants, params->final, max_threads);
@@ -298,10 +257,6 @@ Chunk MergingAggregatedTransform::generate()
             if (grouping_set.creating_missing_keys_actions)
                 for (auto & block : merged_blocks)
                     grouping_set.creating_missing_keys_actions->execute(block);
-
-            // std::cerr << "== Merged " << group << std::endl;
-            // for (const auto & b : merged_blocks)
-            //     debugBlock(b);
 
             blocks.splice(blocks.end(), std::move(merged_blocks));
         }
