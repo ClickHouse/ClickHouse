@@ -1,8 +1,4 @@
-BEFORE	a_r1	x	String		
-BEFORE	a_r1	y	String	MATERIALIZED	\'str\'
-BEFORE	a_r2	x	String		
-BEFORE	a_r2	y	String	MATERIALIZED	\'str\'
-AFTER	a_r1	x	String		
-AFTER	a_r1	y	String		
-AFTER	a_r2	x	String		
-AFTER	a_r2	y	String		
+BEFORE	a	x	String		
+BEFORE	a	y	String	MATERIALIZED	\'str\'
+AFTER	a	x	String		
+AFTER	a	y	String		
