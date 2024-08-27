@@ -1,7 +1,9 @@
 #include <Processors/Transforms/MergingAggregatedTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypesNumber.h>
 
 namespace DB
@@ -23,19 +25,93 @@ Block MergingAggregatedTransform::appendGroupingIfNeeded(const Block & in_header
     return out_header;
 }
 
+MergingAggregatedTransform::~MergingAggregatedTransform() = default;
+
 MergingAggregatedTransform::MergingAggregatedTransform(
-    Block header_, AggregatingTransformParamsPtr params_, size_t max_threads_)
-    : IAccumulatingTransform(header_, appendGroupingIfNeeded(header_, params_->getHeader()))
-    , params(std::move(params_)), max_threads(max_threads_), has_grouping_sets(header_.has("__grouping_set"))
+    Block header_,
+    Aggregator::Params params,
+    bool final,
+    GroupingSetsParamsList grouping_sets_params,
+    size_t max_threads_)
+    : IAccumulatingTransform(header_, appendGroupingIfNeeded(header_, params.getHeader(header_, final)))
+    , max_threads(max_threads_)
 {
+    if (!grouping_sets_params.empty())
+    {
+        if (!header_.has("__grouping_set"))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Cannot find __grouping_set column in header of MergingAggregatedTransform with grouping sets."
+                "Header {}", header_.dumpStructure());
+
+        auto in_header = header_;
+        in_header.erase(header_.getPositionByName("__grouping_set"));
+        auto out_header = params.getHeader(header_, final);
+
+        grouping_sets.reserve(grouping_sets_params.size());
+        for (const auto & grouping_set_params : grouping_sets_params)
+        {
+            size_t group = grouping_sets.size();
+
+            ActionsDAG reordering(in_header.getColumnsWithTypeAndName());
+            auto & outputs = reordering.getOutputs();
+            ActionsDAG::NodeRawConstPtrs new_outputs;
+            new_outputs.reserve(in_header.columns() + grouping_set_params.used_keys.size() - grouping_set_params.used_keys.size());
+
+            std::unordered_map<std::string_view, size_t> index;
+            for (size_t pos = 0; pos < outputs.size(); ++pos)
+                index.emplace(outputs[pos]->result_name, pos);
+
+            for (const auto & used_name : grouping_set_params.used_keys)
+            {
+                auto & idx = index[used_name];
+                new_outputs.push_back(outputs[idx]);
+            }
+
+            for (const auto & used_name : grouping_set_params.used_keys)
+                index[used_name] = outputs.size();
+            for (const auto & missing_name : grouping_set_params.missing_keys)
+                index[missing_name] = outputs.size();
+
+            for (const auto * output : outputs)
+            {
+                if (index[output->result_name] != outputs.size())
+                    new_outputs.push_back(output);
+            }
+
+            outputs.swap(new_outputs);
+
+            Aggregator::Params set_params(grouping_set_params.used_keys,
+                params.aggregates,
+                params.overflow_row,
+                params.max_threads,
+                params.max_block_size,
+                params.min_hit_rate_to_use_consecutive_keys_optimization);
+
+            auto transform_params = std::make_shared<AggregatingTransformParams>(reordering.updateHeader(in_header), std::move(set_params), final);
+
+            auto creating = AggregatingStep::makeCreatingMissingKeysForGroupingSetDAG(
+                transform_params->getHeader(),
+                out_header,
+                grouping_sets_params, group, false);
+
+            auto & groupiung_set = grouping_sets.emplace_back();
+            groupiung_set.reordering_key_columns_actions = std::make_shared<ExpressionActions>(std::move(reordering));
+            groupiung_set.creating_missing_keys_actions = std::make_shared<ExpressionActions>(std::move(creating));
+            groupiung_set.params = std::move(transform_params);
+        }
+    }
+    else
+    {
+        auto & groupiung_set = grouping_sets.emplace_back();
+        groupiung_set.params = std::make_shared<AggregatingTransformParams>(header_, std::move(params), final);
+    }
 }
 
 void MergingAggregatedTransform::addBlock(Block block)
 {
-    if (!has_grouping_sets)
+    if (grouping_sets.size() == 1)
     {
-        auto & bucket_to_blocks = grouping_sets[0];
-        bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(block));
+        grouping_sets[0].bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(block));
         return;
     }
 
@@ -49,13 +125,12 @@ void MergingAggregatedTransform::addBlock(Block block)
     if (!grouping_column_typed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected UInt64 column for __grouping_set, got {}", grouping_column->getName());
 
-    /// Enumerate groups and fill the selector.
-    std::map<UInt64, size_t> enumerated_groups;
     IColumn::Selector selector;
 
     const auto & grouping_data = grouping_column_typed->getData();
     size_t num_rows = grouping_data.size();
     UInt64 last_group = grouping_data[0];
+    UInt64 max_group = last_group;
     for (size_t row = 1; row < num_rows; ++row)
     {
         auto group = grouping_data[row];
@@ -65,32 +140,32 @@ void MergingAggregatedTransform::addBlock(Block block)
             continue;
 
         /// Optimization for single group.
-        if (enumerated_groups.empty())
-        {
+        if (selector.empty())
             selector.reserve(num_rows);
-            enumerated_groups.emplace(last_group, enumerated_groups.size());
-        }
 
         /// Fill the last equal range.
-        selector.resize_fill(row, enumerated_groups[last_group]);
-        /// Enumerate new group if did not see it before.
-        enumerated_groups.emplace(group, enumerated_groups.size());
-
+        selector.resize_fill(row, last_group);
         last_group = group;
+        max_group = std::max(last_group, max_group);
     }
 
+    if (max_group >= grouping_sets.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid group number {}. Number of groups {}.", last_group, grouping_sets.size());
+
     /// Optimization for single group.
-    if (enumerated_groups.empty())
+    if (selector.empty())
     {
-        auto & bucket_to_blocks = grouping_sets[last_group];
-        bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(block));
+        auto bucket = block.info.bucket_num;
+        grouping_sets[last_group].reordering_key_columns_actions->execute(block);
+        grouping_sets[last_group].bucket_to_blocks[bucket].emplace_back(std::move(block));
         return;
     }
 
     /// Fill the last equal range.
-    selector.resize_fill(num_rows, enumerated_groups[last_group]);
+    selector.resize_fill(num_rows, last_group);
 
-    const size_t num_groups = enumerated_groups.size();
+    const size_t num_groups = max_group + 1;
     Blocks splitted_blocks(num_groups);
 
     for (size_t group_id = 0; group_id < num_groups; ++group_id)
@@ -104,28 +179,28 @@ void MergingAggregatedTransform::addBlock(Block block)
             splitted_blocks[group_id].getByPosition(col_idx_in_block).column = std::move(splitted_columns[group_id]);
     }
 
-    for (auto [group, group_id] : enumerated_groups)
+    for (size_t group = 0; group < num_groups; ++group)
     {
-        auto & bucket_to_blocks = grouping_sets[group];
-        auto & splitted_block = splitted_blocks[group_id];
+        auto & splitted_block = splitted_blocks[group];
         splitted_block.info = block.info;
-        bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(splitted_block));
+        grouping_sets[group].reordering_key_columns_actions->execute(splitted_block);
+        grouping_sets[group].bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(splitted_block));
     }
 }
 
-void MergingAggregatedTransform::appendGroupingColumn(UInt64 group, BlocksList & block_list)
-{
-    auto grouping_position = getOutputPort().getHeader().getPositionByName("__grouping_set");
-    for (auto & block : block_list)
-    {
-        auto num_rows = block.rows();
-        ColumnWithTypeAndName col;
-        col.type = std::make_shared<DataTypeUInt64>();
-        col.name = "__grouping_set";
-        col.column = ColumnUInt64::create(num_rows, group);
-        block.insert(grouping_position, std::move(col));
-    }
-}
+// void MergingAggregatedTransform::appendGroupingColumn(UInt64 group, BlocksList & block_list)
+// {
+//     auto grouping_position = getOutputPort().getHeader().getPositionByName("__grouping_set");
+//     for (auto & block : block_list)
+//     {
+//         auto num_rows = block.rows();
+//         ColumnWithTypeAndName col;
+//         col.type = std::make_shared<DataTypeUInt64>();
+//         col.name = "__grouping_set";
+//         col.column = ColumnUInt64::create(num_rows, group);
+//         block.insert(grouping_position, std::move(col));
+//     }
+// }
 
 void MergingAggregatedTransform::consume(Chunk chunk)
 {
@@ -170,6 +245,25 @@ void MergingAggregatedTransform::consume(Chunk chunk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo in MergingAggregatedTransform.");
 }
 
+// static void debugBlock(const Block & block)
+// {
+//     std::cerr << block.dumpStructure() << std::endl;
+//     size_t rows = block.rows();
+//     for (size_t row = 0; row < rows; ++row)
+//     {
+//         for (size_t col = 0; col < block.columns(); ++col)
+//         {
+//             const auto & c = block.getByPosition(col);
+//             if (c.column->isNumeric())
+//                 std::cerr << c.column->getUInt(row) << ' ';
+//             else
+//                 std::cerr << c.column->getDataAt(row).toString() << ' ';
+
+//         }
+//         std::cerr << std::endl;
+//     }
+// }
+
 Chunk MergingAggregatedTransform::generate()
 {
     if (!generate_started)
@@ -180,15 +274,31 @@ Chunk MergingAggregatedTransform::generate()
         /// Exception safety. Make iterator valid in case any method below throws.
         next_block = blocks.begin();
 
-        for (auto & [group, group_blocks] : grouping_sets)
+        for (auto & grouping_set : grouping_sets)
         {
-            /// TODO: this operation can be made async. Add async for IAccumulatingTransform.
+            auto & params = grouping_set.params;
+            auto & bucket_to_blocks = grouping_set.bucket_to_blocks;
             AggregatedDataVariants data_variants;
-            params->aggregator.mergeBlocks(std::move(group_blocks), data_variants, max_threads, is_cancelled);
+
+            // std::cerr << "== Group " << group << std::endl;
+            // for (const auto & [buk, lst] : bucket_to_blocks)
+            // {
+            //     std::cerr << ".. buk " << buk << std::endl;
+            //     for (const auto & b : lst)
+            //         debugBlock(b);
+            // }
+
+            /// TODO: this operation can be made async. Add async for IAccumulatingTransform.
+            params->aggregator.mergeBlocks(std::move(bucket_to_blocks), data_variants, max_threads, is_cancelled);
             auto merged_blocks = params->aggregator.convertToBlocks(data_variants, params->final, max_threads);
 
-            if (has_grouping_sets)
-                appendGroupingColumn(group, merged_blocks);
+            if (grouping_set.creating_missing_keys_actions)
+                for (auto & block : merged_blocks)
+                    grouping_set.creating_missing_keys_actions->execute(block);
+
+            // std::cerr << "== Merged " << group << std::endl;
+            // for (const auto & b : merged_blocks)
+            //     debugBlock(b);
 
             blocks.splice(blocks.end(), std::move(merged_blocks));
         }

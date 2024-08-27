@@ -6,13 +6,24 @@
 namespace DB
 {
 
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
 /** A pre-aggregate stream of blocks in which each block is already aggregated.
   * Aggregate functions in blocks should not be finalized so that their states can be merged.
   */
 class MergingAggregatedTransform : public IAccumulatingTransform
 {
 public:
-    MergingAggregatedTransform(Block header_, AggregatingTransformParamsPtr params_, size_t max_threads_);
+    MergingAggregatedTransform(
+        Block header_,
+        Aggregator::Params params_,
+        bool final_,
+        GroupingSetsParamsList grouping_sets_params,
+        size_t max_threads_);
+
+    ~MergingAggregatedTransform() override;
+
     String getName() const override { return "MergingAggregatedTransform"; }
 
     static Block appendGroupingIfNeeded(const Block & in_header, Block out_header);
@@ -22,13 +33,19 @@ protected:
     Chunk generate() override;
 
 private:
-    AggregatingTransformParamsPtr params;
     LoggerPtr log = getLogger("MergingAggregatedTransform");
     size_t max_threads;
 
-    using GroupingSets = std::unordered_map<UInt64, Aggregator::BucketToBlocks>;
+    struct GroupingSet
+    {
+        Aggregator::BucketToBlocks bucket_to_blocks;
+        ExpressionActionsPtr reordering_key_columns_actions;
+        ExpressionActionsPtr creating_missing_keys_actions;
+        AggregatingTransformParamsPtr params;
+    };
+
+    using GroupingSets = std::vector<GroupingSet>;
     GroupingSets grouping_sets;
-    const bool has_grouping_sets;
 
     UInt64 total_input_rows = 0;
     UInt64 total_input_blocks = 0;
@@ -40,7 +57,6 @@ private:
     bool generate_started = false;
 
     void addBlock(Block block);
-    void appendGroupingColumn(UInt64 group, BlocksList & block_list);
 };
 
 }
