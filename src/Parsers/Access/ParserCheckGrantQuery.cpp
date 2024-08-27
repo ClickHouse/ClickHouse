@@ -216,7 +216,7 @@ bool ParserCheckGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     AccessRightsElements elements;
 
-    if (!parseElementsWithoutOptions(pos, expected, elements) )
+    if (!parseElementsWithoutOptions(pos, expected, elements))
         return false;
 
     throwIfNotGrantable(elements);
