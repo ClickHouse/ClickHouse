@@ -109,7 +109,7 @@ namespace
 
         if (has_no_password_authentication_method && user.authentication_methods.size() > 1)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Authentication method 'no_password' cannot co-exist with other authentication methods.");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Authentication method 'no_password' cannot co-exist with other authentication methods");
         }
 
         if (!query.alter)
