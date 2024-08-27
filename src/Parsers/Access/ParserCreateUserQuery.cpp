@@ -25,11 +25,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 namespace
 {
     bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, std::optional<String> & new_name)
