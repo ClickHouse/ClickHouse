@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel
 
 DROP USER IF EXISTS u_03174_no_login;
 
