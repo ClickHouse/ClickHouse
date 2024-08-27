@@ -130,7 +130,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
     }
 
     /// If column or deserialization state was provided, iterate over dynamic paths,
-    if (column_object || structure_state)
+    if (settings.enumerate_dynamic_streams && (column_object || structure_state))
     {
         /// Enumerate dynamic paths in sorted order for consistency.
         const auto * dynamic_paths = column_object ? &column_object->getDynamicPaths() : nullptr;
@@ -199,7 +199,7 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
     auto object_state = std::make_shared<SerializeBinaryBulkStateObject>(serialization_version);
     object_state->max_dynamic_paths = column_object.getMaxDynamicPaths();
     /// Write max_dynamic_paths parameter.
-    writeBinaryLittleEndian(object_state->max_dynamic_paths, *stream);
+    writeVarUInt(object_state->max_dynamic_paths, *stream);
     /// Write all dynamic paths in sorted order.
     object_state->sorted_dynamic_paths.reserve(dynamic_paths.size());
     for (const auto & [path, _] : dynamic_paths)
@@ -354,7 +354,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
         readBinaryLittleEndian(serialization_version, *structure_stream);
         auto structure_state = std::make_shared<DeserializeBinaryBulkStateObjectStructure>(serialization_version);
         /// Read max_dynamic_paths parameter.
-        readBinaryLittleEndian(structure_state->max_dynamic_paths, *structure_stream);
+        readVarUInt(structure_state->max_dynamic_paths, *structure_stream);
         /// Read the sorted list of dynamic paths.
         size_t dynamic_paths_size;
         readVarUInt(dynamic_paths_size, *structure_stream);
