@@ -102,17 +102,14 @@ function test
   echo "Create user with no identification"
   ${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} $1"
 
-  echo "Add identified with"
-  ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} $1 ADD IDENTIFIED WITH plaintext_password by '7'"
+  echo "Add identified with, should not be allowed because user is currently identified with no_password and it can not co-exist with other auth types"
+  ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} $1 ADD IDENTIFIED WITH plaintext_password by '7'" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
 
-  ${CLICKHOUSE_CLIENT} --query "SHOW CREATE USER ${user}"
-
-  echo "Try to provide no_password mixed with other authentication methods, should not be allowed"
-  ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} $1 ADD IDENTIFIED WITH plaintext_password by '8', no_password" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
+  echo "Try to add no_password mixed with other authentication methods, should not be allowed"
+  ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} $1 ADD IDENTIFIED WITH plaintext_password by '8', no_password" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
 
   echo "Adding no_password, should fail"
-  ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} $1 ADD IDENTIFIED WITH no_password" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
-  ${CLICKHOUSE_CLIENT} --query "SHOW CREATE USER ${user}"
+  ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} $1 ADD IDENTIFIED WITH no_password" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
 
   echo "Replacing existing authentication methods in favor of no_password, should succeed"
   ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} $1 IDENTIFIED WITH no_password"
@@ -139,7 +136,7 @@ function test
   ${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} $1 IDENTIFIED WITH BY '1';" 2>&1 | grep -m1 -o "Syntax error"
 
   echo "Create user with ADD identification, should fail, add is not allowed for create query"
-  ${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} $1 ADD IDENTIFIED WITH plaintext_password by '1'" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
+  ${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} $1 ADD IDENTIFIED WITH plaintext_password by '1'" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
 
   echo "Trailing comma should result in syntax error"
   ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} $1 ADD IDENTIFIED WITH plaintext_password by '1'," 2>&1 | grep -m1 -o "SYNTAX_ERROR"
@@ -148,18 +145,20 @@ function test
   ${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} $1 IDENTIFIED plaintext_password by '1'" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
 
   echo "RESET AUTHENTICATION METHODS TO NEW can only be used on alter statement"
-  ${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} $1 RESET AUTHENTICATION METHODS TO NEW" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
+  ${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} $1 RESET AUTHENTICATION METHODS TO NEW" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
 
   echo "ADD NOT IDENTIFIED should result in syntax error"
   ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} $1 ADD NOT IDENTIFIED" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
 
   echo "RESET AUTHENTICATION METHODS TO NEW cannot be used along with [ADD] IDENTIFIED clauses"
-  ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} $1 IDENTIFIED WITH plaintext_password by '1' RESET AUTHENTICATION METHODS TO NEW" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
+  ${CLICKHOUSE_CLIENT} --query "ALTER USER ${user} $1 IDENTIFIED WITH plaintext_password by '1' RESET AUTHENTICATION METHODS TO NEW" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
 
   ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}"
 
 }
 
 test ""
+
+echo "On cluster tests"
 
 test "ON CLUSTER test_shard_localhost"

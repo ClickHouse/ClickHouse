@@ -28,13 +28,12 @@ Syntax error
 CREATE Multiple identified with, not allowed
 Syntax error
 Create user with no identification
-Add identified with
-CREATE USER u01_03174 IDENTIFIED WITH plaintext_password
-Try to provide no_password mixed with other authentication methods, should not be allowed
+Add identified with, should not be allowed because user is currently identified with no_password and it can not co-exist with other auth types
 BAD_ARGUMENTS
+Try to add no_password mixed with other authentication methods, should not be allowed
+SYNTAX_ERROR
 Adding no_password, should fail
-BAD_ARGUMENTS
-CREATE USER u01_03174 IDENTIFIED WITH plaintext_password
+SYNTAX_ERROR
 Replacing existing authentication methods in favor of no_password, should succeed
 CREATE USER u01_03174 IDENTIFIED WITH no_password
 Trying to auth with no pwd, should succeed
@@ -46,17 +45,18 @@ CREATE USER u01_03174 IDENTIFIED WITH sha256_password, plaintext_password, bcryp
 Use WITH without providing authentication type, should fail
 Syntax error
 Create user with ADD identification, should fail, add is not allowed for create query
-BAD_ARGUMENTS
+SYNTAX_ERROR
 Trailing comma should result in syntax error
 SYNTAX_ERROR
 First auth method can't specify type if WITH keyword is not present
 SYNTAX_ERROR
 RESET AUTHENTICATION METHODS TO NEW can only be used on alter statement
-BAD_ARGUMENTS
+SYNTAX_ERROR
 ADD NOT IDENTIFIED should result in syntax error
 SYNTAX_ERROR
 RESET AUTHENTICATION METHODS TO NEW cannot be used along with [ADD] IDENTIFIED clauses
-BAD_ARGUMENTS
+SYNTAX_ERROR
+On cluster tests
 localhost	9000	0		0	0
 localhost	9000	0		0	0
 Basic authentication after user creation
@@ -98,14 +98,12 @@ Syntax error
 localhost	9000	0		0	0
 Create user with no identification
 localhost	9000	0		0	0
-Add identified with
-localhost	9000	0		0	0
-CREATE USER u01_03174 IDENTIFIED WITH plaintext_password
-Try to provide no_password mixed with other authentication methods, should not be allowed
+Add identified with, should not be allowed because user is currently identified with no_password and it can not co-exist with other auth types
 BAD_ARGUMENTS
+Try to add no_password mixed with other authentication methods, should not be allowed
+SYNTAX_ERROR
 Adding no_password, should fail
-BAD_ARGUMENTS
-CREATE USER u01_03174 IDENTIFIED WITH plaintext_password
+SYNTAX_ERROR
 Replacing existing authentication methods in favor of no_password, should succeed
 localhost	9000	0		0	0
 CREATE USER u01_03174 IDENTIFIED WITH no_password
@@ -123,14 +121,14 @@ localhost	9000	0		0	0
 Use WITH without providing authentication type, should fail
 Syntax error
 Create user with ADD identification, should fail, add is not allowed for create query
-BAD_ARGUMENTS
+SYNTAX_ERROR
 Trailing comma should result in syntax error
 SYNTAX_ERROR
 First auth method can't specify type if WITH keyword is not present
 SYNTAX_ERROR
 RESET AUTHENTICATION METHODS TO NEW can only be used on alter statement
-BAD_ARGUMENTS
+SYNTAX_ERROR
 ADD NOT IDENTIFIED should result in syntax error
 SYNTAX_ERROR
 RESET AUTHENTICATION METHODS TO NEW cannot be used along with [ADD] IDENTIFIED clauses
-BAD_ARGUMENTS
+SYNTAX_ERROR
