@@ -1625,37 +1625,327 @@ If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Mo
 
 Converts a date with time to a certain fixed date, while preserving the time.
 
+**Syntax**
+
+```sql
+toTime(date[,timezone])
+```
+
+**Arguments**
+
+- `date` — Date to convert to a time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+- `timezone` (optional) — Timezone for the returned value. [String](../data-types/string.md).
+
+**Returned value**
+
+- DateTime with date equated to `1970-01-02` while preserving the time. [DateTime](../data-types/datetime.md).
+
+:::note
+If the `date` input argument contained sub-second components,
+they will be dropped in the returned `DateTime` value with second-accuracy.
+:::
+
+**Example**
+
+Query:
+
+```sql
+SELECT toTime(toDateTime64('1970-12-10 01:20:30.3000',3)) AS result, toTypeName(result);
+```
+
+Result:
+
+```response
+
+```
+
 ## toRelativeYearNum
 
-Converts a date, or date with time, to the number of the year, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of years elapsed since a certain fixed point in the past. 
+
+**Syntax**
+
+```sql
+toRelativeYearNum(date)
+```
+
+**Arguments**
+
+- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- The number of years from a fixed reference point in the past. [UInt16](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toRelativeYearNum(toDate('2002-12-08')) AS y1,
+    toRelativeYearNum(toDate('2010-10-26')) AS y2
+```
+
+Result:
+
+```response
+┌───y1─┬───y2─┐
+│ 2002 │ 2010 │
+└──────┴──────┘
+```
 
 ## toRelativeQuarterNum
 
-Converts a date, or date with time, to the number of the quarter, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of quarters elapsed since a certain fixed point in the past.
+
+**Syntax**
+
+```sql
+toRelativeQuarterNum(date)
+```
+
+**Arguments**
+
+- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- The number of quarters from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toRelativeQuarterNum(toDate('1993-11-25')) AS q1,
+  toRelativeQuarterNum(toDate('2005-01-05')) AS q2
+```
+
+Result:
+
+```response
+┌───q1─┬───q2─┐
+│ 7975 │ 8020 │
+└──────┴──────┘
+```
 
 ## toRelativeMonthNum
 
-Converts a date, or date with time, to the number of the month, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of months elapsed since a certain fixed point in the past.
+
+**Syntax**
+
+```sql
+toRelativeMonthNum(date)
+```
+
+**Arguments**
+
+- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- The number of months from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toRelativeMonthNum(toDate('2001-04-25')) AS m1,
+  toRelativeMonthNum(toDate('2009-07-08')) AS m2
+```
+
+Result:
+
+```response
+┌────m1─┬────m2─┐
+│ 24016 │ 24115 │
+└───────┴───────┘
+```
 
 ## toRelativeWeekNum
 
-Converts a date, or date with time, to the number of the week, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of weeks elapsed since a certain fixed point in the past.
+
+**Syntax**
+
+```sql
+toRelativeWeekNum(date)
+```
+
+**Arguments**
+
+- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- The number of weeks from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toRelativeWeekNum(toDate('2000-02-29')) AS w1,
+  toRelativeWeekNum(toDate('2001-01-12')) AS w2
+```
+
+Result:
+
+```response
+┌───w1─┬───w2─┐
+│ 1574 │ 1619 │
+└──────┴──────┘
+```
 
 ## toRelativeDayNum
 
-Converts a date, or date with time, to the number of the day, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of days elapsed since a certain fixed point in the past.
+
+**Syntax**
+
+```sql
+toRelativeDayNum(date)
+```
+
+**Arguments**
+
+- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- The number of days from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toRelativeDayNum(toDate('1993-10-05')) AS d1,
+  toRelativeDayNum(toDate('2000-09-20')) AS d2
+```
+
+Result:
+
+```response
+┌───d1─┬────d2─┐
+│ 8678 │ 11220 │
+└──────┴───────┘
+```
 
 ## toRelativeHourNum
 
-Converts a date, or date with time, to the number of the hour, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of hours elapsed since a certain fixed point in the past.
+
+**Syntax**
+
+```sql
+toRelativeHourNum(date)
+```
+
+**Arguments**
+
+- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- The number of hours from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toRelativeHourNum(toDateTime('1993-10-05 05:20:36')) AS h1,
+  toRelativeHourNum(toDateTime('2000-09-20 14:11:29')) AS h2
+```
+
+Result:
+
+```response
+┌─────h1─┬─────h2─┐
+│ 208276 │ 269292 │
+└────────┴────────┘
+```
 
 ## toRelativeMinuteNum
 
-Converts a date, or date with time, to the number of the minute, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of minutes elapsed since a certain fixed point in the past.
+
+**Syntax**
+
+```sql
+toRelativeMinuteNum(date)
+```
+
+**Arguments**
+
+- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- The number of minutes from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toRelativeMinuteNum(toDateTime('1993-10-05 05:20:36')) AS m1,
+  toRelativeMinuteNum(toDateTime('2000-09-20 14:11:29')) AS m2
+```
+
+Result:
+
+```response
+┌───────m1─┬───────m2─┐
+│ 12496580 │ 16157531 │
+└──────────┴──────────┘
+```
 
 ## toRelativeSecondNum
 
-Converts a date, or date with time, to the number of the second, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of the seconds elapsed since a certain fixed point in the past.
+
+**Syntax**
+
+```sql
+toRelativeSecondNum(date)
+```
+
+**Arguments**
+
+- `date` — Date or date with time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- The number of seconds from a fixed reference point in the past. [UInt32](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+  toRelativeSecondNum(toDateTime('1993-10-05 05:20:36')) AS s1,
+  toRelativeSecondNum(toDateTime('2000-09-20 14:11:29')) AS s2
+```
+
+Result:
+
+```response
+┌────────s1─┬────────s2─┐
+│ 749794836 │ 969451889 │
+└───────────┴───────────┘
+```
 
 ## toISOYear
 
