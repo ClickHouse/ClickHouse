@@ -209,7 +209,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     },
 };
 
-std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimization(const QueryTreeNodePtr & node)
+std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node)
@@ -231,6 +231,10 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
     const auto & storage = table_node->getStorage();
     const auto & storage_snapshot = table_node->getStorageSnapshot();
     auto column = first_argument_column_node->getColumn();
+
+    auto view_source = context->getViewSource();
+    if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
+        return {};
 
     if (!storage->supportsOptimizationToSubcolumns() || storage->isVirtualColumn(column.name, storage_snapshot->metadata))
         return {};
@@ -266,7 +270,7 @@ public:
             return;
         }
 
-        auto [function_node, first_argument_node, table_node] = getTypedNodesForOptimization(node);
+        auto [function_node, first_argument_node, table_node] = getTypedNodesForOptimization(node, getContext());
         if (function_node && first_argument_node && table_node)
         {
             enterImpl(*function_node, *first_argument_node, *table_node);
@@ -416,7 +420,7 @@ public:
         if (!getSettings().optimize_functions_to_subcolumns)
             return;
 
-        auto [function_node, first_argument_column_node, table_node] = getTypedNodesForOptimization(node);
+        auto [function_node, first_argument_column_node, table_node] = getTypedNodesForOptimization(node, getContext());
         if (!function_node || !first_argument_column_node || !table_node)
             return;
 
