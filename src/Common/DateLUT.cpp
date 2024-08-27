@@ -46,7 +46,7 @@ std::string determineDefaultTimeZone()
     /// may give wrong timezone names - store the name as it is, if possible.
     std::string tz_name;
 
-    if (tz_env_var)
+    if (!tz_env_var.empty())
     {
         error_prefix = std::string("Could not determine time zone from TZ variable value: '") + tz_env_var + "': ";
 
