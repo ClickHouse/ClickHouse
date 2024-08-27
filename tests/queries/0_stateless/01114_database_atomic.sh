@@ -53,10 +53,20 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE test_01114_2.mt UUID '$explicit_uuid' (n UIn
 $CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW CREATE TABLE test_01114_2.mt" | sed "s/$explicit_uuid/00001114-0000-4000-8000-000000000002/g"
 $CLICKHOUSE_CLIENT -q "SELECT name, uuid, create_table_query FROM system.tables WHERE database='test_01114_2'" | sed "s/$explicit_uuid/00001114-0000-4000-8000-000000000002/g"
 
+RANDOM_COMMENT="$RANDOM"
+$CLICKHOUSE_CLIENT --function_sleep_max_microseconds_per_block 60000000 -q "SELECT count(col), sum(col) FROM (SELECT n + sleepEachRow(1.5) AS col FROM test_01114_1.mt) -- ${RANDOM_COMMENT}" &     # 33s (1.5s * 22 rows per partition), result: 110, 5995
+$CLICKHOUSE_CLIENT --function_sleep_max_microseconds_per_block 60000000 -q "INSERT INTO test_01114_2.mt SELECT number + sleepEachRow(1.5) FROM numbers(30) -- ${RANDOM_COMMENT}" &                  # 45s (1.5s * 30 rows)
 
-$CLICKHOUSE_CLIENT --function_sleep_max_microseconds_per_block 60000000 -q "SELECT count(col), sum(col) FROM (SELECT n + sleepEachRow(1.5) AS col FROM test_01114_1.mt)" &     # 33s (1.5s * 22 rows per partition), result: 110, 5995
-$CLICKHOUSE_CLIENT --function_sleep_max_microseconds_per_block 60000000 -q "INSERT INTO test_01114_2.mt SELECT number + sleepEachRow(1.5) FROM numbers(30)" &                  # 45s (1.5s * 30 rows)
-sleep 1   # SELECT and INSERT should start before the following RENAMEs
+it=0
+while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id != queryID() AND current_database = currentDatabase() AND query LIKE '%-- ${RANDOM_COMMENT}%'") -ne 2 ]]; do
+    it=$((it+1))
+    if [ $it -ge 50 ];
+    then
+        echo "Failed to wait for first batch of queries"
+        $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id != queryID() AND current_database = currentDatabase() AND query LIKE '%-- ${RANDOM_COMMENT}%'"
+    fi
+    sleep 0.1
+done
 
 $CLICKHOUSE_CLIENT -nm -q "
 RENAME TABLE test_01114_1.mt TO test_01114_1.mt_tmp;
@@ -79,8 +89,18 @@ INSERT INTO test_01114_1.mt SELECT 's' || toString(number) FROM numbers(5);
 SELECT count() FROM test_01114_1.mt
 " # result: 5
 
-$CLICKHOUSE_CLIENT --function_sleep_max_microseconds_per_block 60000000 -q "SELECT tuple(s, sleepEachRow(3)) FROM test_01114_1.mt" > /dev/null &    # 15s (3s * 5 rows)
-sleep 1
+RANDOM_TUPLE="${RANDOM}_tuple"
+$CLICKHOUSE_CLIENT --function_sleep_max_microseconds_per_block 60000000 -q "SELECT tuple(s, sleepEachRow(3)) FROM test_01114_1.mt -- ${RANDOM_TUPLE}" > /dev/null &    # 15s (3s * 5 rows)
+it=0
+while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id != queryID() AND current_database = currentDatabase() AND query LIKE '%-- ${RANDOM_TUPLE}%'") -ne 1 ]]; do
+    it=$((it+1))
+    if [ $it -ge 50 ];
+    then
+        echo "Failed to wait for second batch of queries"
+        $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id != queryID() AND current_database = currentDatabase() AND query LIKE '%-- ${RANDOM_TUPLE}%'"
+    fi
+    sleep 0.1
+done
 $CLICKHOUSE_CLIENT -q "DROP DATABASE test_01114_1" --database_atomic_wait_for_drop_and_detach_synchronously=0 && echo "dropped"
 
 wait # for INSERT and SELECT
