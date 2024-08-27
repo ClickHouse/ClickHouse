@@ -64,7 +64,7 @@ void SerializationDynamic::enumerateStreams(
     const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateDynamic>(data.deserialize_state) : nullptr;
 
     /// If column is nullptr and we don't have deserialize state yet, nothing to enumerate as we don't have any variants.
-    if (!column_dynamic && !deserialize_state)
+    if (!settings.enumerate_dynamic_streams || (!column_dynamic && !deserialize_state))
         return;
 
     const auto & variant_type = column_dynamic ? column_dynamic->getVariantInfo().variant_type : checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(deserialize_state->structure_state)->variant_type;
