@@ -237,7 +237,7 @@ SettingFieldMaxThreads & SettingFieldMaxThreads::operator=(const Field & f)
 String SettingFieldMaxThreads::toString() const
 {
     if (is_auto)
-        return "auto(" + ::DB::toString(value) + ")";
+        return "'auto(" + ::DB::toString(value) + ")'";
     else
         return ::DB::toString(value);
 }
