@@ -16,7 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_GRANT;
-    extern const int SYNTAX_ERROR;
 }
 
 namespace
