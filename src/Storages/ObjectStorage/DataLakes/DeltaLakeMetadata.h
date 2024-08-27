@@ -6,6 +6,8 @@
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
+#include <vector>
+
 namespace DB
 {
 
@@ -20,7 +22,7 @@ public:
         ConfigurationPtr configuration_,
         ContextPtr context_);
 
-    Strings getDataFiles() const override { return data_files; }
+    std::vector<DataFileInfo> getDataFilesInfo() const override { return data_files; }
 
     NamesAndTypesList getTableSchema() const override { return schema; }
 
@@ -45,7 +47,7 @@ public:
     }
 
 private:
-    mutable Strings data_files;
+    mutable std::vector<DataFileInfo> data_files;
     NamesAndTypesList schema;
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;

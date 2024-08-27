@@ -8,6 +8,9 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
+#    include <Poco/JSON/Array.h>
+#    include <Poco/JSON/Object.h>
+#    include <Poco/JSON/Parser.h>
 
 namespace DB
 {
@@ -113,7 +116,7 @@ private:
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;
     std::map<Int32, Poco::JSON::Object::Ptr> relevant_schemas_by_ids;
-    std::map<Int32, ActionsDag> transform_dags_by_ids;
+    std::map<Int32, ActionsDAG> transform_dags_by_ids;
     LoggerPtr log;
 };
 

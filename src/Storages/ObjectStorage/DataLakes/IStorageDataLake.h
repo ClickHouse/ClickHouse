@@ -107,7 +107,7 @@ public:
 
         current_metadata = std::move(new_metadata);
         auto updated_configuration = base_configuration->clone();
-        updated_configuration->setPaths(current_metadata->getDataFiles());
+        updated_configuration->setPaths(current_metadata->getDataFileInfos());
         updated_configuration->setPartitionColumns(current_metadata->getPartitionColumns());
 
         Storage::configuration = updated_configuration;

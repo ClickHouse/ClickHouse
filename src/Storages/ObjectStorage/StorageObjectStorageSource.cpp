@@ -138,7 +138,7 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
             std::vector<String> paths;
             paths.reserve(keys.size());
             for (const auto & key : keys)
-                paths.push_back(fs::path(configuration->getNamespace()) / key);
+                paths.push_back(fs::path(configuration->getNamespace()) / key.data_path);
 
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));

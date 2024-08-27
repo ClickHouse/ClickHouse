@@ -8,12 +8,16 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
 
+#include "Storages/ObjectStorage/DataFileInfo.h"
+
+
 namespace DB
 {
 
 class ReadBufferIterator;
 class SchemaCache;
 class NamedCollection;
+
 
 /**
  * A general class containing implementation for external table engines
@@ -173,8 +177,8 @@ public:
     virtual Path getPath() const = 0;
     virtual void setPath(const Path & path) = 0;
 
-    virtual const Paths & getPaths() const = 0;
-    virtual void setPaths(const Paths & paths) = 0;
+    virtual const DataFileInfos & getPaths() const = 0;
+    virtual void setPaths(const DataFileInfos & paths) = 0;
 
     virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;

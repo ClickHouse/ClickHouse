@@ -334,7 +334,7 @@ SinkToStoragePtr StorageObjectStorage::write(
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
             *object_storage, *configuration, settings, paths.front(), paths.size()))
     {
-        paths.push_back(*new_key);
+        paths.emplace_back(*new_key, std::nullopt, std::nullopt);
     }
     configuration->setPaths(paths);
 

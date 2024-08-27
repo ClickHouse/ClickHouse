@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
-#include <Disks/ObjectStorages/IObjectStorage_fwd.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Core/Types.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage_fwd.h>
+#include <Interpreters/Context_fwd.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include "IDataLakeMetadata.h"
 
 namespace DB
 {
@@ -22,7 +23,7 @@ public:
         ConfigurationPtr configuration_,
         ContextPtr context_);
 
-    Strings getDataFilesWithSchemaTransform() const override;
+    std::vector<DataFileInfo> getDataFilesInfo() const override;
 
     NamesAndTypesList getTableSchema() const override { return {}; }
 
@@ -49,7 +50,7 @@ public:
 private:
     const ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
-    mutable Strings data_files;
+    mutable std::vector<DataFileInfo> data_files;
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;
 

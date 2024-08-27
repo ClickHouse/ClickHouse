@@ -6,6 +6,8 @@
 #include <IO/S3Settings.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#    include "Storages/ObjectStorage/DataFileInfo.h"
+
 namespace DB
 {
 
@@ -27,8 +29,8 @@ public:
     Path getPath() const override { return url.key; }
     void setPath(const Path & path) override { url.key = path; }
 
-    const Paths & getPaths() const override { return keys; }
-    void setPaths(const Paths & paths) override { keys = paths; }
+    const DataFileInfos & getPaths() const override { return keys; }
+    void setPaths(const DataFileInfos & paths) override { keys = paths; }
 
     String getNamespace() const override { return url.bucket; }
     String getDataSourceDescription() const override;
@@ -55,7 +57,7 @@ private:
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 
     S3::URI url;
-    std::vector<String> keys;
+    DataFileInfos keys;
 
     S3::AuthSettings auth_settings;
     S3::RequestSettings request_settings;

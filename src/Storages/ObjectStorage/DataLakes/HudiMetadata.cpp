@@ -96,10 +96,15 @@ HudiMetadata::HudiMetadata(
 {
 }
 
-Strings HudiMetadata::getDataFiles() const
+Strings HudiMetadata::getDataFilesInfo() const
 {
     if (data_files.empty())
-        data_files = getDataFilesImpl();
+    {
+        for (const auto & data_file_name : getDataFilesImpl)
+        {
+            data_files.push_back({data_file_name, std::nullopt, std::nullopt});
+        }
+    }
     return data_files;
 }
 

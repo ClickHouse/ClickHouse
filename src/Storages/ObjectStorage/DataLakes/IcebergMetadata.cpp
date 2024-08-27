@@ -247,7 +247,7 @@ DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & t
 
 std::map<Int32, Poco::JSON::Object::Ptr> getRelevantSchemasByIds(const Poco::JSON::Object::Ptr & metadata_object, int format_version)
 {
-    std::map<Int32, Poco::JSON::Object::Ptr> relevant_schemas_by_ids<Int32, Poco::JSON::Object::Ptr> schemas_by_id;
+    std::map<Int32, Poco::JSON::Object::Ptr> schemas_by_id;
     if (format_version == 2)
     {
         auto schemas = metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>();
@@ -265,6 +265,21 @@ std::map<Int32, Poco::JSON::Object::Ptr> getRelevantSchemasByIds(const Poco::JSO
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported format");
     }
     return schemas_by_id;
+}
+
+NamesAndTypesList getClickhouseSchemaFromIcebergSchema(const Poco::JSON::Object::Ptr & schema)
+{
+    NamesAndTypesList names_and_types;
+    auto fields = schema->get("fields").extract<Poco::JSON::Array::Ptr>();
+    for (size_t i = 0; i != fields->size(); ++i)
+    {
+        auto field = fields->getObject(static_cast<UInt32>(i));
+        auto name = field->getValue<String>("name");
+        bool required = field->getValue<bool>("required");
+        names_and_types.push_back({name, getFieldType(field, "type", required)});
+    }
+
+    return std::move(names_and_types);
 }
 
 std::pair<NamesAndTypesList, Int32> parseTableSchema(
@@ -300,22 +315,7 @@ std::pair<NamesAndTypesList, Int32> parseTableSchema(
     return {getClickhouseSchemaFromIcebergSchema(schema), current_schema_id};
 }
 
-NamesAndTypesList getClickhouseSchemaFromIcebergSchema(const Poco::JSON::Object::Ptr & schema)
-{
-    NamesAndTypesList names_and_types;
-    auto fields = schema->get("fields").extract<Poco::JSON::Array::Ptr>();
-    for (size_t i = 0; i != fields->size(); ++i)
-    {
-        auto field = fields->getObject(static_cast<UInt32>(i));
-        auto name = field->getValue<String>("name");
-        bool required = field->getValue<bool>("required");
-        names_and_types.push_back({name, getFieldType(field, "type", required)});
-    }
-
-    return std::move(names_and_types);
-}
-
-ActionsDag getSchemaTransformDag(const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema)
+ActionsDAG getSchemaTransformDag(const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema)
 {
     return ActionsDAG{};
 }
