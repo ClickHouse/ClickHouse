@@ -1,2 +1,0 @@
-PLEASE ADD THE NEW SETTING TO SettingsChangesHistory.cpp: distributed_query_retries WAS ADDED
-PLEASE ADD THE SETTING VALUE CHANGE TO SettingsChangesHistory.cpp: distributed_query_retries WAS CHANGED FROM  TO 3
