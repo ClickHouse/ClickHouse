@@ -18,11 +18,11 @@
 #include <Core/ExternalTable.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTNameTypePair.h>
+#include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/MessageHeader.h>
-#include "Parsers/IdentifierQuotingStyle.h"
 
 
 namespace DB
@@ -88,7 +88,13 @@ void BaseExternalTable::parseStructureFromStructureField(const std::string & arg
         if (column)
             structure.emplace_back(
                 column->name,
-                column->type->formatWithPossiblyHidingSensitiveData(0, true, true, false, false, IdentifierQuotingStyle::Backticks));
+                column->type->formatWithPossiblyHidingSensitiveData(
+                    /*max_length=*/0,
+                    /*one_line=*/true,
+                    /*show_secrets=*/true,
+                    /*print_pretty_type_names=*/false,
+                    /*always_quote_identifiers=*/false,
+                    /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks));
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing table structure: expected column definition, got {}", child->formatForErrorMessage());
     }
@@ -108,7 +114,12 @@ void BaseExternalTable::parseStructureFromTypesField(const std::string & argumen
         structure.emplace_back(
             "_" + toString(i + 1),
             type_list_raw->children[i]->formatWithPossiblyHidingSensitiveData(
-                0, true, true, false, false, IdentifierQuotingStyle::Backticks));
+                /*max_length=*/0,
+                /*one_line=*/true,
+                /*show_secrets=*/true,
+                /*print_pretty_type_names=*/false,
+                /*always_quote_identifiers=*/false,
+                /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks));
 }
 
 void BaseExternalTable::initSampleBlock()
