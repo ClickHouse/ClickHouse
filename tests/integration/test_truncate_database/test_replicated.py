@@ -6,6 +6,7 @@ def fill_nodes(nodes, shard):
     for node in nodes:
         node.query(
             """
+                DROP DATABASE IF EXISTS test;
                 CREATE DATABASE test;
 
                 CREATE TABLE test.test_table(date Date, id UInt32)
@@ -33,8 +34,6 @@ def start_cluster():
     try:
         cluster.start()
 
-        fill_nodes([node1, node2, node3], 1)
-
         yield cluster
 
     except Exception as ex:
@@ -45,6 +44,8 @@ def start_cluster():
 
 
 def test_truncate_database_replicated(start_cluster):
+    fill_nodes([node1, node2, node3], 1)
+
     node1.query(
         "INSERT INTO test.test_table SELECT number, toString(number) FROM numbers(100)"
     )
