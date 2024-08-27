@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
-. "$CUR_DIR"/../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} --query_id="test_03231_1" --query "
     SELECT countDistinct(_path) FROM file('$CURDIR/data_hive/partitioning/column0=*/sample.parquet') WHERE column0 = 'Elizabeth';
