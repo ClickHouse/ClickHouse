@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP USER IF EXISTS u_03174_no_login;
 
 CREATE USER u_03174_no_login;

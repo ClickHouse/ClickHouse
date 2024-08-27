@@ -1,0 +1,6 @@
+CREATE USER u_03174_no_login IDENTIFIED WITH plaintext_password, sha256_password, bcrypt_password, sha256_password
+localhost	9000	0		0	0
+CREATE USER u_03174_no_login IDENTIFIED WITH plaintext_password, sha256_password, bcrypt_password, sha256_password
+CREATE USER u_03174_no_login IDENTIFIED WITH sha256_password, plaintext_password, bcrypt_password, sha256_password
+localhost	9000	0		0	0
+CREATE USER u_03174_no_login IDENTIFIED WITH sha256_password, plaintext_password, bcrypt_password, sha256_password
