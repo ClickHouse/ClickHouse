@@ -3112,7 +3112,8 @@ TYPED_TEST(CoordinationTest, TestFeatureFlags)
     feature_flags.setFeatureFlags(get_response.data);
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::FILTERED_LIST));
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::MULTI_READ));
-    ASSERT_FALSE(feature_flags.isEnabled(KeeperFeatureFlag::CHECK_NOT_EXISTS));
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::CHECK_NOT_EXISTS));
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS));
 }
 
 TYPED_TEST(CoordinationTest, TestSystemNodeModify)
