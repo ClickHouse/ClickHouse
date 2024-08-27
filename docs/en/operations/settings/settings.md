@@ -3226,7 +3226,7 @@ Default value: `0`.
 
 ## lightweight_deletes_sync {#lightweight_deletes_sync}
 
-The same as 'mutation_sync', but controls only execution of lightweight deletes.
+The same as [`mutations_sync`](#mutations_sync), but controls only execution of lightweight deletes.
 
 Possible values:
 
