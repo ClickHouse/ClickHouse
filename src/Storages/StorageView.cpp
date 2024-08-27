@@ -116,14 +116,7 @@ StorageView::StorageView(
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
-    if (!is_parameterized_view_)
-    {
-        /// If CREATE query is to create parameterized view, then we dont want to set columns
-        if (!query.isParameterizedView())
-            storage_metadata.setColumns(columns_);
-    }
-    else
-        storage_metadata.setColumns(columns_);
+    storage_metadata.setColumns(columns_);
 
     storage_metadata.setComment(comment);
     if (query.sql_security)
