@@ -2137,9 +2137,9 @@ class TestSuite:
             )
         )
         self.all_tags: Dict[str, Set[str]] = all_tags_and_random_settings_limits[0]
-        self.all_random_settings_limits: Dict[
-            str, Dict[str, (int, int)]
-        ] = all_tags_and_random_settings_limits[1]
+        self.all_random_settings_limits: Dict[str, Dict[str, (int, int)]] = (
+            all_tags_and_random_settings_limits[1]
+        )
         self.sequential_tests = []
         self.parallel_tests = []
         for test_name in self.all_tests:
