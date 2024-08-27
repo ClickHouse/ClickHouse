@@ -971,15 +971,14 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
             adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(header, columns, *format, insert_context);
     }
 
-    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
+    auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
         current_exception = e.displayText();
         LOG_ERROR(logger, "Failed parsing for query '{}' with query id {}. {}",
             key.query_str, current_entry->query_id, current_exception);
 
-        for (const auto & column : result_columns)
-            if (column->size() > total_rows)
-                column->popBack(column->size() - total_rows);
+        for (size_t i = 0; i < result_columns.size(); ++i)
+            result_columns[i]->rollback(*checkpoints[i]);
 
         current_entry->finish(std::current_exception());
         return 0;

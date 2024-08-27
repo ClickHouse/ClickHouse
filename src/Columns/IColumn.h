@@ -49,6 +49,40 @@ struct EqualRange
 
 using EqualRanges = std::vector<EqualRange>;
 
+/// A checkpoint that contains size of column and all its subcolumns.
+/// It can be used to rollback column to the previous state, for example
+/// after failed parsing when column may be in inconsistent state.
+struct ColumnCheckpoint
+{
+    explicit ColumnCheckpoint(size_t size_) : size(size_) {}
+    size_t size = 0;
+};
+
+using ColumnCheckpointPtr = std::shared_ptr<const ColumnCheckpoint>;
+using ColumnCheckpoints = std::vector<ColumnCheckpointPtr>;
+
+struct ColumnCheckpointWithNested : public ColumnCheckpoint
+{
+    ColumnCheckpointWithNested(size_t size_, ColumnCheckpointPtr nested_)
+        : ColumnCheckpoint(size_)
+        , nested(std::move(nested_))
+    {
+    }
+
+    ColumnCheckpointPtr nested;
+};
+
+struct ColumnCheckpointWithNestedTuple : public ColumnCheckpoint
+{
+    ColumnCheckpointWithNestedTuple(size_t size_, ColumnCheckpoints nested_)
+        : ColumnCheckpoint(size_)
+        , nested(std::move(nested_))
+    {
+    }
+
+    ColumnCheckpoints nested;
+};
+
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
 {
@@ -508,6 +542,13 @@ public:
     /// Make memory region readonly with mprotect if it is large enough.
     /// The operation is slow and performed only for debug builds.
     virtual void protect() {}
+
+    /// Returns checkpoint of current state of column.
+    virtual ColumnCheckpointPtr getCheckpoint() const { return std::make_shared<ColumnCheckpoint>(size()); }
+
+    /// Rollbacks column to the checkpoint.
+    /// Unlike 'popBack' this method should work correctly even if column has invalid state.
+    virtual void rollback(const ColumnCheckpoint & checkpoint) { popBack(size() - checkpoint.size); }
 
     /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
     /// Shallow: doesn't do recursive calls; don't do call for itself.

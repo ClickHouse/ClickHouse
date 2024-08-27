@@ -161,21 +161,18 @@ Chunk RabbitMQSource::generateImpl()
     std::optional<String> exception_message;
     size_t total_rows = 0;
 
-    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
+    auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
         if (handle_error_mode == StreamingHandleErrorMode::STREAM)
         {
             exception_message = e.message();
-            for (const auto & column : result_columns)
+            for (size_t i = 0; i < result_columns.size(); ++i)
             {
-                // We could already push some rows to result_columns
-                // before exception, we need to fix it.
-                auto cur_rows = column->size();
-                if (cur_rows > total_rows)
-                    column->popBack(cur_rows - total_rows);
+                // We could already push some rows to result_columns before exception, we need to fix it.
+                result_columns[i]->rollback(*checkpoints[i]);
 
                 // All data columns will get default value in case of error.
-                column->insertDefault();
+                result_columns[i]->insertDefault();
             }
 
             return 1;

@@ -30,6 +30,23 @@ const std::shared_ptr<SerializationDynamic> & getDynamicSerialization()
     return dynamic_serialization;
 }
 
+struct ColumnObjectCheckpoint : public ColumnCheckpoint
+{
+    using CheckpointsMap = std::unordered_map<String, ColumnCheckpointPtr>;
+
+    ColumnObjectCheckpoint(size_t size_, CheckpointsMap typed_paths_, CheckpointsMap dynamic_paths_, ColumnCheckpointPtr shared_data_)
+        : ColumnCheckpoint(size_)
+        , typed_paths(std::move(typed_paths_))
+        , dynamic_paths(std::move(dynamic_paths_))
+        , shared_data(std::move(shared_data_))
+    {
+    }
+
+    CheckpointsMap typed_paths;
+    CheckpointsMap dynamic_paths;
+    ColumnCheckpointPtr shared_data;
+};
+
 }
 
 ColumnObject::ColumnObject(
@@ -653,6 +670,41 @@ void ColumnObject::popBack(size_t n)
     for (auto & [_, column] : dynamic_paths_ptrs)
         column->popBack(n);
     shared_data->popBack(n);
+}
+
+ColumnCheckpointPtr ColumnObject::getCheckpoint() const
+{
+    auto get_checkpoints = [](const auto & columns)
+    {
+        std::unordered_map<String, ColumnCheckpointPtr> checkpoints;
+        for (const auto & [name, column] : columns)
+            checkpoints[name] = column->getCheckpoint();
+
+        return checkpoints;
+    };
+
+    return std::make_shared<ColumnObjectCheckpoint>(size(), get_checkpoints(typed_paths), get_checkpoints(dynamic_paths_ptrs), shared_data->getCheckpoint());
+}
+
+void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
+{
+    const auto & object_checkpoint = assert_cast<const ColumnObjectCheckpoint &>(checkpoint);
+
+    for (auto & [name, column] : typed_paths)
+    {
+        const auto & nested_checkpoint = object_checkpoint.typed_paths.at(name);
+        chassert(nested_checkpoint);
+        column->rollback(*nested_checkpoint);
+    }
+
+    for (auto & [name, column] : dynamic_paths_ptrs)
+    {
+        const auto & nested_checkpoint = object_checkpoint.dynamic_paths.at(name);
+        chassert(nested_checkpoint);
+        column->rollback(*nested_checkpoint);
+    }
+
+    shared_data->rollback(*object_checkpoint.shared_data);
 }
 
 StringRef ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const

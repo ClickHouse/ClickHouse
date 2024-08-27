@@ -254,6 +254,27 @@ void ColumnTuple::popBack(size_t n)
         column->popBack(n);
 }
 
+ColumnCheckpointPtr ColumnTuple::getCheckpoint() const
+{
+    ColumnCheckpoints checkpoints;
+    checkpoints.reserve(columns.size());
+
+    for (const auto & column : columns)
+        checkpoints.push_back(column->getCheckpoint());
+
+    return std::make_shared<ColumnCheckpointWithNestedTuple>(size(), std::move(checkpoints));
+}
+
+void ColumnTuple::rollback(const ColumnCheckpoint & checkpoint)
+{
+    column_length = checkpoint.size;
+    const auto & checkpoints = assert_cast<const ColumnCheckpointWithNestedTuple &>(checkpoint).nested;
+
+    chassert(columns.size() == checkpoints.size());
+    for (size_t i = 0; i < columns.size(); ++i)
+        columns[i]->rollback(*checkpoints[i]);
+}
+
 StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     if (columns.empty())

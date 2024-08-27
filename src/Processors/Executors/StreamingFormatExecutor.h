@@ -19,12 +19,12 @@ public:
     /// and exception to rethrow it or add context to it.
     /// Should return number of new rows, which are added in callback
     /// to result columns in comparison to previous call of `execute`.
-    using ErrorCallback = std::function<size_t(const MutableColumns &, Exception &)>;
+    using ErrorCallback = std::function<size_t(const MutableColumns &, const ColumnCheckpoints &, Exception &)>;
 
     StreamingFormatExecutor(
         const Block & header_,
         InputFormatPtr format_,
-        ErrorCallback on_error_ = [](const MutableColumns &, Exception & e) -> size_t { throw std::move(e); },
+        ErrorCallback on_error_ = [](const MutableColumns &, const ColumnCheckpoints, Exception & e) -> size_t { throw std::move(e); },
         SimpleTransformPtr adding_defaults_transform_ = nullptr);
 
     /// Returns numbers of new read rows.
@@ -40,6 +40,8 @@ public:
     MutableColumns getResultColumns();
 
 private:
+    void setCheckpoints();
+
     const Block header;
     const InputFormatPtr format;
     const ErrorCallback on_error;
@@ -47,6 +49,7 @@ private:
 
     InputPort port;
     MutableColumns result_columns;
+    ColumnCheckpoints checkpoints;
 };
 
 }

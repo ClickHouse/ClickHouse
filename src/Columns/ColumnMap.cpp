@@ -312,6 +312,16 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
     max = std::move(map_max_value);
 }
 
+ColumnCheckpointPtr ColumnMap::getCheckpoint() const
+{
+    return nested->getCheckpoint();
+}
+
+void ColumnMap::rollback(const ColumnCheckpoint & checkpoint)
+{
+    nested->rollback(checkpoint);
+}
+
 void ColumnMap::forEachSubcolumn(MutableColumnCallback callback)
 {
     callback(nested);

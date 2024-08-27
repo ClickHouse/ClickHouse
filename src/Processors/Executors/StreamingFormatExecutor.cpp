@@ -21,6 +21,7 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     , adding_defaults_transform(std::move(adding_defaults_transform_))
     , port(format->getPort().getHeader(), format.get())
     , result_columns(header.cloneEmptyColumns())
+    , checkpoints(result_columns.size())
 {
     connect(format->getPort(), port);
 }
@@ -45,6 +46,8 @@ size_t StreamingFormatExecutor::execute(ReadBuffer & buffer)
 
 size_t StreamingFormatExecutor::execute()
 {
+    setCheckpoints();
+
     try
     {
         size_t new_rows = 0;
@@ -77,19 +80,19 @@ size_t StreamingFormatExecutor::execute()
     catch (Exception & e)
     {
         format->resetParser();
-        return on_error(result_columns, e);
+        return on_error(result_columns, checkpoints, e);
     }
     catch (std::exception & e)
     {
         format->resetParser();
         auto exception = Exception(Exception::CreateFromSTDTag{}, e);
-        return on_error(result_columns, exception);
+        return on_error(result_columns, checkpoints, exception);
     }
     catch (...)
     {
         format->resetParser();
-        auto exception = Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknowk exception while executing StreamingFormatExecutor with format {}", format->getName());
-        return on_error(result_columns, exception);
+        auto exception = Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception while executing StreamingFormatExecutor with format {}", format->getName());
+        return on_error(result_columns, checkpoints, exception);
     }
 }
 
@@ -105,5 +108,12 @@ size_t StreamingFormatExecutor::insertChunk(Chunk chunk)
 
     return chunk_rows;
 }
+
+void StreamingFormatExecutor::setCheckpoints()
+{
+    for (size_t i = 0; i < result_columns.size(); ++i)
+        checkpoints[i] = result_columns[i]->getCheckpoint();
+}
+
 
 }
