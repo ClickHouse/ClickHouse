@@ -217,13 +217,13 @@ String IAST::getColumnNameWithoutAlias() const
 }
 
 
-void IAST::FormatSettings::writeIdentifier(const String & name, bool force_quoting) const
+void IAST::FormatSettings::writeIdentifier(const String & name) const
 {
     switch (identifier_quoting_style)
     {
         case IdentifierQuotingStyle::None:
         {
-            if (force_quoting || always_quote_identifiers)
+            if (always_quote_identifiers)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Incompatible arguments: always_quote_identifiers = true && "
                                 "identifier_quoting_style == IdentifierQuotingStyle::None");
@@ -232,7 +232,7 @@ void IAST::FormatSettings::writeIdentifier(const String & name, bool force_quoti
         }
         case IdentifierQuotingStyle::Backticks:
         {
-            if (force_quoting || always_quote_identifiers)
+            if (always_quote_identifiers)
                 writeBackQuotedString(name, ostr);
             else
                 writeProbablyBackQuotedString(name, ostr);
@@ -240,7 +240,7 @@ void IAST::FormatSettings::writeIdentifier(const String & name, bool force_quoti
         }
         case IdentifierQuotingStyle::DoubleQuotes:
         {
-            if (force_quoting || always_quote_identifiers)
+            if (always_quote_identifiers)
                 writeDoubleQuotedString(name, ostr);
             else
                 writeProbablyDoubleQuotedString(name, ostr);
@@ -248,10 +248,38 @@ void IAST::FormatSettings::writeIdentifier(const String & name, bool force_quoti
         }
         case IdentifierQuotingStyle::BackticksMySQL:
         {
-            if (force_quoting || always_quote_identifiers)
+            if (always_quote_identifiers)
                 writeBackQuotedStringMySQL(name, ostr);
             else
                 writeProbablyBackQuotedStringMySQL(name, ostr);
+            break;
+        }
+    }
+}
+
+
+void IAST::FormatSettings::quoteIdentifier(const String & name) const
+{
+    switch (identifier_quoting_style)
+    {
+        case IdentifierQuotingStyle::None:
+        {
+            writeBackQuotedString(name, ostr);
+            break;
+        }
+        case IdentifierQuotingStyle::Backticks:
+        {
+            writeBackQuotedString(name, ostr);
+            break;
+        }
+        case IdentifierQuotingStyle::DoubleQuotes:
+        {
+            writeDoubleQuotedString(name, ostr);
+            break;
+        }
+        case IdentifierQuotingStyle::BackticksMySQL:
+        {
+            writeBackQuotedStringMySQL(name, ostr);
             break;
         }
     }

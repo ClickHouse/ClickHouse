@@ -237,8 +237,10 @@ public:
         {
         }
 
-        // If `force_quoting` is true, `name` is always quoted regardless of `always_quote_identifiers`
-        void writeIdentifier(const String & name, bool force_quoting = false) const;
+        void writeIdentifier(const String & name) const;
+        // Quote identifier `name` even when `always_quote_identifiers` is false.
+        // If `identifier_quoting_style` is `IdentifierQuotingStyle::None`, quote it with `IdentifierQuotingStyle::Backticks`
+        void quoteIdentifier(const String & name) const;
     };
 
     /// State. For example, a set of nodes can be remembered, which we already walk through.
