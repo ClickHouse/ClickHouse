@@ -1,5 +1,6 @@
 #include <Access/LDAPAccessStorage.h>
 #include <Access/AccessControl.h>
+#include <Access/AccessChangesNotifier.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/User.h>
 #include <Access/Role.h>
@@ -177,7 +178,8 @@ void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, const UUID & role_id, 
             return entity_;
         };
 
-        memory_storage.update(user_ids, update_func);
+        if (!memory_storage.update(user_ids, update_func).empty())
+            access_control.getChangesNotifier().sendNotifications();
     }
 
     // Actualize granted_role_* mappings.
@@ -312,7 +314,8 @@ void LDAPAccessStorage::updateAssignedRolesNoLock(const UUID & id, const String 
         return entity_;
     };
 
-    memory_storage.update(id, update_func);
+    if (memory_storage.update(id, update_func))
+        access_control.getChangesNotifier().sendNotifications();
 }
 
 
@@ -496,6 +499,7 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
 
         assignRolesNoLock(*new_user, external_roles);
         id = memory_storage.insert(new_user);
+        access_control.getChangesNotifier().sendNotifications();
     }
     else
     {
