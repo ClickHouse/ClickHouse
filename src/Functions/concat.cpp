@@ -1,5 +1,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -219,11 +220,11 @@ public:
     {
         if (arguments.size() == 1)
             return FunctionFactory::instance().getImpl("toString", context)->build(arguments);
-        if (!arguments.empty() && std::ranges::all_of(arguments, [](const auto & elem) { return isArray(elem.type); }))
+        if (!arguments.empty() && std::ranges::all_of(arguments, [](const auto & elem) { return isArray(removeNullable(elem.type)); }))
             return FunctionFactory::instance().getImpl("arrayConcat", context)->build(arguments);
-        if (!arguments.empty() && std::ranges::all_of(arguments, [](const auto & elem) { return isMap(elem.type); }))
+        if (!arguments.empty() && std::ranges::all_of(arguments, [](const auto & elem) { return isMap(removeNullable(elem.type)); }))
             return FunctionFactory::instance().getImpl("mapConcat", context)->build(arguments);
-        if (!arguments.empty() && std::ranges::all_of(arguments, [](const auto & elem) { return isTuple(elem.type); }))
+        if (!arguments.empty() && std::ranges::all_of(arguments, [](const auto & elem) { return isTuple(removeNullable(elem.type)); }))
             return FunctionFactory::instance().getImpl("tupleConcat", context)->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
             FunctionConcat::create(context),
