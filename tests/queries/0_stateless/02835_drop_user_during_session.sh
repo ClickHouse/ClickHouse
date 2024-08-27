@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-debug
+# Tags: no-debug, no-random-settings, no-random-merge-tree-settings
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
