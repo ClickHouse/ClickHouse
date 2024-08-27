@@ -17,7 +17,7 @@ SELECT 'prefer_localhost_replica=1, remote query with a lot of union all' AS tes
 -- query with lot of dummy union all will create a lot of streams
 -- let's check how many threads clickhouse will start for that
 
-select count() from remote('127.0.0.1:9000', view(
+select count() from remote('127.0.0.1', view(
 {% for n in range(77) -%}
 SELECT * FROM system.one {{ "UNION ALL" if not loop.last }}
 {% endfor -%}
@@ -49,7 +49,7 @@ WHERE
 --------------------
 SELECT 'prefer_localhost_replica=0, remote query with a lot of union all' AS testname;
 
-select count() from remote('127.0.0.1:9000', view(
+select count() from remote('127.0.0.1', view(
 {% for n in range(77) -%}
 SELECT * FROM system.one {{ "UNION ALL" if not loop.last }}
 {% endfor -%}
@@ -85,7 +85,7 @@ SELECT 'prefer_localhost_replica=1, async_socket_for_remote=0, remote query with
 -- now is happens only for async_socket_for_remote=0 (while it is 1 by default)
 -- see https://github.com/ClickHouse/ClickHouse/issues/53287
 
-select count() from remote('127.0.0.1:9000', view(
+select count() from remote('127.0.0.1', view(
 {% for n in range(77) -%}
 SELECT * FROM system.one {{ "UNION ALL" if not loop.last }}
 {% endfor -%}

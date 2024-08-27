@@ -1584,8 +1584,6 @@ class TestCase:
             coverage_prefix = os.getenv("CLICKHOUSE_WRITE_COVERAGE", "coverage")
             file_pattern = coverage_prefix + ".*"
             matching_files = glob.glob(file_pattern)
-            # TODO remove before merge
-            print(result.case_name, coverage_prefix, matching_files)
             for file_path in matching_files:
                 try:
                     body = read_file_as_binary_string(file_path)
@@ -1729,8 +1727,24 @@ class TestCase:
             )
             replace_in_file(
                 self.stdout_file,
+                f"port {os.environ['CLICKHOUSE_PORT_TCP']}",
+                "port 9000",
+            )
+            replace_in_file(
+                self.stdout_file,
                 f"localhost	{os.environ['CLICKHOUSE_PORT_TCP']}",
                 "localhost	9000",
+            )
+            replace_in_file(
+                self.stdout_file,
+                f"127.0.0.1:{os.environ['CLICKHOUSE_PORT_TCP']}",
+                "127.0.0.1:9000",
+            )
+        if os.environ.get("CLICKHOUSE_PORT_MYSQL"):
+            replace_in_file(
+                self.stdout_file,
+                f"127.0.0.1:{os.environ['CLICKHOUSE_PORT_MYSQL']}",
+                "127.0.0.1:9004",
             )
 
         if os.environ.get("CLICKHOUSE_PORT_TCP_SECURE"):
@@ -2634,7 +2648,7 @@ def do_run_tests(jobs, test_suite: TestSuite):
     manager = multiprocessing.Manager()
     parallel_tests = manager.list()
     parallel_tests.extend(test_suite.parallel_tests)
-    is_concurrent = jobs > 1
+    is_concurrent = (jobs > 1) or (args.run_parallel_only or args.run_no_parallel_only)
 
     processes = []
     for _ in range(jobs):

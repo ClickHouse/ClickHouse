@@ -7,15 +7,20 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+${CLICKHOUSE_CLIENT} --query "SYSTEM DROP DNS CACHE"
+
 ${CLICKHOUSE_CLIENT} --query "
-    DROP USER IF EXISTS dns_fail_1, dns_fail_2;
+    DROP USER IF EXISTS dns_fail_1, dns_fail_2, dns_fail_3;
     CREATE USER dns_fail_1 HOST NAME 'non.existing.host.name', '${MYHOSTNAME}';
-    CREATE USER dns_fail_2 HOST NAME '${MYHOSTNAME}', 'non.existing.host.name';"
+    CREATE USER dns_fail_2 HOST NAME '${MYHOSTNAME}', 'non.existing.host.name';
+    CREATE USER dns_fail_3 HOST NAME 'localhost', 'non.existing.host.name';"
 
 ${CLICKHOUSE_CLIENT} --query "SELECT 1" --user dns_fail_1 --host ${MYHOSTNAME}
 
 ${CLICKHOUSE_CLIENT} --query "SELECT 2" --user dns_fail_2 --host ${MYHOSTNAME}
 
-${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS dns_fail_1, dns_fail_2"
+${CLICKHOUSE_CLIENT} --query "SELECT 3" --user dns_fail_3 --host ${MYHOSTNAME}
+
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS dns_fail_1, dns_fail_2, dns_fail_3"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP DNS CACHE"
