@@ -115,8 +115,6 @@ fi
 # Run a CH instance to execute sequential tests on it in parallel with all other tests.
 if [[ "$RUN_SEQUENTIAL_TESTS_IN_PARALLEL" -eq 1 ]]; then
   mkdir -p /var/run/clickhouse-server3 /etc/clickhouse-server3 /var/lib/clickhouse3
-  # use half of available memory for each server
-  sudo find /etc/clickhouse-server/ -type f -name '*.xml' -exec sed -i "s|<max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>|<max_server_memory_usage_to_ram_ratio>0.46</max_server_memory_usage_to_ram_ratio>|g" {} \;
   cp -r -L /etc/clickhouse-server/* /etc/clickhouse-server3/
 
   sudo chown clickhouse:clickhouse /var/run/clickhouse-server3 /var/lib/clickhouse3 /etc/clickhouse-server3/
@@ -142,11 +140,14 @@ if [[ "$RUN_SEQUENTIAL_TESTS_IN_PARALLEL" -eq 1 ]]; then
   replace "s|8123|18123|g"
   replace "s|/var/lib/clickhouse/|/var/lib/clickhouse3/|g"
   replace "s|/etc/clickhouse-server/|/etc/clickhouse-server3/|g"
+  replace "s|<path>/var/lib/clickhouse/access/</path>|<path>/var/lib/clickhouse3/access/</path>|g"
   # distributed cache
   replace "s|<tcp_port>10001</tcp_port>|<tcp_port>10004</tcp_port>|g"
   replace "s|<tcp_port>10002</tcp_port>|<tcp_port>10005</tcp_port>|g"
   replace "s|<tcp_port>10003</tcp_port>|<tcp_port>10006</tcp_port>|g"
-#  replace "s|<max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>|<max_server_memory_usage_to_ram_ratio>0.46</max_server_memory_usage_to_ram_ratio>|g"
+    # use half of available memory for each server
+  sudo find /etc/clickhouse-server/ -type f -name '*.xml' -exec sed -i "s|<max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>|<max_server_memory_usage_to_ram_ratio>0.55</max_server_memory_usage_to_ram_ratio>|g" {} \;
+  replace "s|<max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>|<max_server_memory_usage_to_ram_ratio>0.4</max_server_memory_usage_to_ram_ratio>|g"
 
   sudo -E -u clickhouse /usr/bin/clickhouse server --daemon --config /etc/clickhouse-server3/config.xml \
   --pid-file /var/run/clickhouse-server3/clickhouse-server.pid \
@@ -350,7 +351,7 @@ function run_tests()
     else
         # All other configurations are OK.
         ADDITIONAL_OPTIONS+=('--jobs')
-        ADDITIONAL_OPTIONS+=('3')
+        ADDITIONAL_OPTIONS+=('5')
     fi
 
     if [[ -n "$RUN_BY_HASH_NUM" ]] && [[ -n "$RUN_BY_HASH_TOTAL" ]]; then
@@ -405,7 +406,6 @@ fi
 
 function run_no_parallel_test()
 {
-    export CLICKHOUSE_CLIENT_OPT=" --port 19000 "
     export CLICKHOUSE_CONFIG="/etc/clickhouse-server3/config.xml"
     export CLICKHOUSE_CONFIG_DIR="/etc/clickhouse-server3"
     export CLICKHOUSE_CONFIG_GREP="/etc/clickhouse-server3/preprocessed/config.xml"
@@ -423,7 +423,7 @@ function run_no_parallel_test()
     export CLICKHOUSE_PORT_MYSQL="19004"
     export CLICKHOUSE_PORT_POSTGRESQL="19005"
     export CLICKHOUSE_WRITE_COVERAGE="coverage_no_parallel"
-    export ADDITIONAL_OPTIONS=("--run-no-parallel-only")
+    export ADDITIONAL_OPTIONS+=" --run-no-parallel-only"
     run_tests
 }
 
@@ -432,7 +432,7 @@ if [[ "$RUN_SEQUENTIAL_TESTS_IN_PARALLEL" -eq 1 ]]; then
   run_no_parallel_test &
   PID1=$!
 
-  export ADDITIONAL_OPTIONS=("--run-parallel-only")
+  export ADDITIONAL_OPTIONS+=" --run-parallel-only"
   run_tests &
   PID2=$!
 
