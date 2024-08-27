@@ -9,7 +9,7 @@ ${CLICKHOUSE_CLIENT} --query_id="test_03231_1" --query "
 "
 
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id='test_03231_1';
+    SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id='test_03231_1' WHERE current_database = currentDatabase();
 "
 
 ${CLICKHOUSE_CLIENT} --query_id="test_03231_2" --query "
@@ -17,7 +17,7 @@ ${CLICKHOUSE_CLIENT} --query_id="test_03231_2" --query "
 "
 
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id='test_03231_2';
+    SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id='test_03231_2' WHERE current_database = currentDatabase();
 "
 
 ${CLICKHOUSE_CLIENT} --query_id="test_03231_3" --query "
@@ -25,5 +25,5 @@ ${CLICKHOUSE_CLIENT} --query_id="test_03231_3" --query "
 "
 
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id='test_03231_3';
+    SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id='test_03231_3' WHERE current_database = currentDatabase();
 "
