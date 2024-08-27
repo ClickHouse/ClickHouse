@@ -329,11 +329,15 @@ def assert_nested_table_is_created(
         table = schema_name + "." + table_name
 
     print(f"Checking table {table} exists in {materialized_database}")
-    database_tables = instance.query(f"SHOW TABLES FROM `{materialized_database}` WHERE name = '{table}'")
+    database_tables = instance.query(
+        f"SHOW TABLES FROM `{materialized_database}` WHERE name = '{table}'"
+    )
 
     while table not in database_tables:
         time.sleep(0.2)
-        database_tables = instance.query(f"SHOW TABLES FROM `{materialized_database}` WHERE name = '{table}'")
+        database_tables = instance.query(
+            f"SHOW TABLES FROM `{materialized_database}` WHERE name = '{table}'"
+        )
 
     assert table in database_tables
 
