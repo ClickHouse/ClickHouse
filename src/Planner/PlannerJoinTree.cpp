@@ -1535,6 +1535,14 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Right);
     }
 
+    if (table_join->getOutputColumns(JoinTableSide::Left).empty() && table_join->getOutputColumns(JoinTableSide::Right).empty())
+    {
+        if (!columns_from_left_table.empty())
+            table_join->setUsedColumn(columns_from_left_table.front(), JoinTableSide::Left);
+        else if (!columns_from_right_table.empty())
+            table_join->setUsedColumn(columns_from_right_table.front(), JoinTableSide::Right);
+    }
+
     auto join_algorithm = chooseJoinAlgorithm(table_join, join_node.getRightTableExpression(), left_header, right_header, planner_context);
 
     auto result_plan = QueryPlan();
