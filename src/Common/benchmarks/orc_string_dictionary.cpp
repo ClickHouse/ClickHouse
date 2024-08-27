@@ -25,7 +25,7 @@ public:
 
     size_t size() const;
 
-    // return total length of strings in the dictioanry
+    // return total length of strings in the dictionary
     uint64_t length() const;
 
     void clear();
@@ -112,7 +112,7 @@ size_t OldSortedStringDictionary::size() const
     return dict.size();
 }
 
-// return total length of strings in the dictioanry
+// return total length of strings in the dictionary
 uint64_t OldSortedStringDictionary::length() const
 {
     return totalLength;
@@ -160,7 +160,7 @@ public:
     // return count of entries
     size_t size() const;
 
-    // return total length of strings in the dictioanry
+    // return total length of strings in the dictionary
     uint64_t length() const;
 
     void clear();
@@ -249,7 +249,7 @@ size_t NewSortedStringDictionary::size() const
     return flatDict_.size();
 }
 
-// return total length of strings in the dictioanry
+// return total length of strings in the dictionary
 uint64_t NewSortedStringDictionary::length() const
 {
     return totalLength_;
