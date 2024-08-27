@@ -1,10 +1,12 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <DataTypes/Serializations/SerializationObjectTypedPath.h>
 #include <DataTypes/Serializations/SerializationObjectDynamicPath.h>
 #include <DataTypes/Serializations/SerializationSubObject.h>
 #include <Columns/ColumnObject.h>
+#include <Common/CurrentThread.h>
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
@@ -511,13 +513,24 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
 
 static DataTypePtr createJSON(const ASTPtr & arguments)
 {
+    auto context = CurrentThread::getQueryContext();
+    if (!context)
+        context = Context::getGlobalContextInstance();
+
+    if (context->getSettingsRef().use_json_alias_for_old_object_type)
+    {
+        if (arguments && !arguments->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Experimental Object type doesn't support any arguments. If you want to use new JSON type, set setting allow_experimental_json_type = 1");
+
+        return std::make_shared<DataTypeObjectDeprecated>("JSON", false);
+    }
+
     return createObject(arguments, DataTypeObject::SchemaFormat::JSON);
 }
 
 void registerDataTypeJSON(DataTypeFactory & factory)
 {
-    if (!Context::getGlobalContextInstance()->getSettingsRef().use_json_alias_for_old_object_type)
-        factory.registerDataType("JSON", createJSON, DataTypeFactory::Case::Insensitive);
+    factory.registerDataType("JSON", createJSON, DataTypeFactory::Case::Insensitive);
 }
 
 }
