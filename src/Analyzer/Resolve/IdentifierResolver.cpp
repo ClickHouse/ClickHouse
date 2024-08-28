@@ -692,7 +692,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromStorage(
         result_column_node = it->second;
     }
     /// Check if it's a dynamic subcolumn
-    else
+    else if (table_expression_data.supports_subcolumns)
     {
         auto [column_name, dynamic_subcolumn_name] = Nested::splitName(identifier_full_name);
         auto jt = table_expression_data.column_name_to_column_node.find(column_name);

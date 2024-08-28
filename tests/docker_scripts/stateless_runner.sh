@@ -339,7 +339,7 @@ export -f run_tests
 if [ "$NUM_TRIES" -gt "1" ]; then
     # We don't run tests with Ordinary database in PRs, only in master.
     # So run new/changed tests with Ordinary at least once in flaky check.
-    NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests \
+    NUM_TRIES=1 USE_DATABASE_ORDINARY=1 run_tests \
       | sed 's/All tests have finished/Redacted: a message about tests finish is deleted/' | sed 's/No tests were run/Redacted: a message about no tests run is deleted/' ||:
 fi
 
