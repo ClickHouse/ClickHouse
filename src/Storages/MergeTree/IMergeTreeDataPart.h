@@ -742,6 +742,8 @@ private:
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;
+
+    LoggerPtr log = getLogger("IMergeTreeDataPart");
 };
 
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;

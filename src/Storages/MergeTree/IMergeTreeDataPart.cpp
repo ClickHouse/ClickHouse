@@ -16,6 +16,8 @@
 #include <IO/HashingWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/S3Common.h>
+#include <IO/S3/getObjectInfo.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/TransactionLog.h>
@@ -2066,13 +2068,39 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
         .make_source_readonly = true,
         .external_transaction = disk_transaction
     };
-    return getDataPartStorage().freeze(
-        storage.relative_data_path,
-        *maybe_path_in_detached,
-        Context::getGlobalContextInstance()->getReadSettings(),
-        Context::getGlobalContextInstance()->getWriteSettings(),
-        /* save_metadata_callback= */ {},
-        params);
+
+    const auto freeze = [this, &relative_data_path = storage.relative_data_path, &path_in_detached = *maybe_path_in_detached](
+                            const IDataPartStorage::ClonePartParams & clone_part_params)
+    {
+        return getDataPartStorage().freeze(
+            relative_data_path,
+            relative_data_path,
+            Context::getGlobalContextInstance()->getReadSettings(),
+            Context::getGlobalContextInstance()->getWriteSettings(),
+            /* save_metadata_callback= */ {},
+            clone_part_params);
+    };
+
+    try
+    {
+        return freeze(params);
+    }
+    catch (const S3Exception & ex)
+    {
+        // We have to check code NO_SUCH_KEY and RESOURCE_NOT_FOUND as well.
+        if (S3::isNotFoundError(ex.getS3ErrorCode()) && params.copy_instead_of_hardlink)
+        {
+            params.copy_instead_of_hardlink = false;
+            LOG_WARNING(
+                log, "Necessary key is absented in object storage. Trying to fix this by using hard links instead of the copy part");
+            return freeze(params);
+        }
+        throw;
+    }
+    catch (...)
+    {
+        throw;
+    }
 }
 
 MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(
