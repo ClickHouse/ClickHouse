@@ -13,6 +13,7 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+#include <Poco/Environment.h>
 
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
@@ -372,7 +373,7 @@ try
 
     LOG_FATAL(log, "########## Short fault info ############");
     LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {}",
-              VERSION_STRING, VERSION_OFFICIAL, daemon ? daemon->build_id : "", GIT_HASH, SYSTEM_PROCESSOR,
+              VERSION_STRING, VERSION_OFFICIAL, daemon ? daemon->build_id : "", GIT_HASH, Poco::Environment::osArchitecture(),
               thread_num, sig);
 
     std::string signal_description = "Unknown signal";
