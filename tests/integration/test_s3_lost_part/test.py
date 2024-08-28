@@ -53,16 +53,6 @@ def create_replicated_table(node, table_name):
         """
     )
 
-def list_s3_objects(cluster, prefix=""):
-    minio = cluster.minio_client
-    prefix_len = len(prefix)
-    return [
-        obj.object_name[prefix_len:]
-        for obj in minio.list_objects(
-            cluster.minio_bucket, prefix=prefix, recursive=True
-        )
-    ]
-
 
 def test_s3_lost_part(start_cluster):
     create_replicated_table(replica1, "no_key_found_disk_repl")
