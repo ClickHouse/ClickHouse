@@ -121,9 +121,14 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const ColumnIndexToBF & co
         if (element.function == Function::FUNCTION_EQUALS
                  || element.function == Function::FUNCTION_NOT_EQUALS)
         {
-            // hash data
-            // rpn -> header indexes
-            // bloom filter structure -> parquet index
+            // in case bloom filter is not present for this row group
+            // https://github.com/ClickHouse/ClickHouse/pull/62966#discussion_r1722361237
+            if (!column_index_to_column_bf.contains(element.key_columns[0]))
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
             bool maybe_true = maybeTrueOnBloomFilter(element.columns[0], column_index_to_column_bf.at(element.key_columns[0]), false);
 
             rpn_stack.emplace_back(maybe_true, true);
@@ -137,6 +142,14 @@ bool ParquetBloomFilterCondition::mayBeTrueOnRowGroup(const ColumnIndexToBF & co
             bool maybe_true = true;
             for (auto column_index = 0u; column_index < element.columns.size(); column_index++)
             {
+                // in case bloom filter is not present for this row group
+                // https://github.com/ClickHouse/ClickHouse/pull/62966#discussion_r1722361237
+                if (!column_index_to_column_bf.contains(element.key_columns[column_index]))
+                {
+                    rpn_stack.emplace_back(true, true);
+                    continue;
+                }
+
                 bool column_maybe_contains = maybeTrueOnBloomFilter(
                     element.columns[column_index],
                     column_index_to_column_bf.at(element.key_columns[column_index]),
