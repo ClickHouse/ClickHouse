@@ -182,4 +182,4 @@ def test_multiple_tables(started_cluster):
     for i in order:
         assert query(f"select count() from test.table_{i}") == "100\n"
     for i in range(tables_count):
-        query(f"drop table test.table_{i}")
+        query(f"drop table test.table_{i} sync")

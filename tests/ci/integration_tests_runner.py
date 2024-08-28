@@ -33,7 +33,7 @@ CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-odbc-bridge"
 CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-library-bridge"
 
-FLAKY_TRIES_COUNT = 5  # run whole pytest several times
+FLAKY_TRIES_COUNT = 3  # run whole pytest several times
 FLAKY_REPEAT_COUNT = 5  # runs test case in single module several times
 MAX_TIME_SECONDS = 3600
 
