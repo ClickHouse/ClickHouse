@@ -100,7 +100,6 @@ Create user with no identification
 localhost	9000	0		0	0
 Add identified with, should not be allowed because user is currently identified with no_password and it can not co-exist with other auth types
 BAD_ARGUMENTS
-BAD_ARGUMENTS
 Try to add no_password mixed with other authentication methods, should not be allowed
 SYNTAX_ERROR
 Adding no_password, should fail
