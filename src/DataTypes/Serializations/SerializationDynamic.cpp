@@ -64,7 +64,7 @@ void SerializationDynamic::enumerateStreams(
     const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateDynamic>(data.deserialize_state) : nullptr;
 
     /// If column is nullptr and we don't have deserialize state yet, nothing to enumerate as we don't have any variants.
-    if (!column_dynamic && !deserialize_state)
+    if (!settings.enumerate_dynamic_streams || (!column_dynamic && !deserialize_state))
         return;
 
     const auto & variant_type = column_dynamic ? column_dynamic->getVariantInfo().variant_type : checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(deserialize_state->structure_state)->variant_type;
@@ -115,7 +115,7 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
     dynamic_state->max_dynamic_types = column_dynamic.getMaxDynamicTypes();
     /// Write max_dynamic_types parameter, because it can differ from the max_dynamic_types
     /// that is specified in the Dynamic type (we could decrease it before merge).
-    writeBinaryLittleEndian(dynamic_state->max_dynamic_types, *stream);
+    writeVarUInt(dynamic_state->max_dynamic_types, *stream);
 
     dynamic_state->variant_type = variant_info.variant_type;
     dynamic_state->variant_names = variant_info.variant_names;
@@ -123,7 +123,7 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
 
     /// Write information about variants.
     size_t num_variants = dynamic_state->variant_names.size() - 1; /// Don't write shared variant, Dynamic column should always have it.
-    writeBinaryLittleEndian(num_variants, *stream);
+    writeVarUInt(num_variants, *stream);
     if (settings.data_types_binary_encoding)
     {
         const auto & variants = assert_cast<const DataTypeVariant &>(*dynamic_state->variant_type).getVariants();
@@ -252,11 +252,11 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
         readBinaryLittleEndian(structure_version, *structure_stream);
         auto structure_state = std::make_shared<DeserializeBinaryBulkStateDynamicStructure>(structure_version);
         /// Read max_dynamic_types parameter.
-        readBinaryLittleEndian(structure_state->max_dynamic_types, *structure_stream);
+        readVarUInt(structure_state->max_dynamic_types, *structure_stream);
         /// Read information about variants.
         DataTypes variants;
         size_t num_variants;
-        readBinaryLittleEndian(num_variants, *structure_stream);
+        readVarUInt(num_variants, *structure_stream);
         variants.reserve(num_variants + 1); /// +1 for shared variant.
         if (settings.data_types_binary_encoding)
         {

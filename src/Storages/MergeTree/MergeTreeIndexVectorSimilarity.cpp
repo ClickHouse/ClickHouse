@@ -190,6 +190,8 @@ MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
 
 void MergeTreeIndexGranuleVectorSimilarity::serializeBinary(WriteBuffer & ostr) const
 {
+    LOG_TRACE(logger, "Start writing vector similarity index");
+
     if (empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty minmax index {}", backQuote(index_name));
 
@@ -207,6 +209,8 @@ void MergeTreeIndexGranuleVectorSimilarity::serializeBinary(WriteBuffer & ostr) 
 
 void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
+    LOG_TRACE(logger, "Start loading vector similarity index");
+
     UInt64 file_version;
     readIntBinary(file_version, istr);
     if (file_version != FILE_FORMAT_VERSION)

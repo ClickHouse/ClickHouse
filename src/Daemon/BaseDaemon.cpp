@@ -22,7 +22,6 @@
 #include <cstring>
 #include <unistd.h>
 #include <algorithm>
-#include <typeinfo>
 #include <iostream>
 #include <memory>
 
@@ -452,8 +451,6 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     build_id = SymbolIndex::instance().getBuildIDHex();
 #endif
 
-    git_hash = GIT_HASH;
-
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
 
@@ -466,7 +463,7 @@ void BaseDaemon::logRevision() const
 {
     logger().information("Starting " + std::string{VERSION_FULL}
         + " (revision: " + std::to_string(ClickHouseRevision::getVersionRevision())
-        + ", git hash: " + (git_hash.empty() ? "<unknown>" : git_hash)
+        + ", git hash: " + std::string(GIT_HASH)
         + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
         + ", PID " + std::to_string(getpid()));
 }

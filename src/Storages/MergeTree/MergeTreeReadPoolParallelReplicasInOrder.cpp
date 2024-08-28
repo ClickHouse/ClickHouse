@@ -6,6 +6,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrder(
@@ -36,6 +37,10 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
 {
     for (const auto & info : per_part_infos)
         min_marks_per_task = std::max(min_marks_per_task, info->min_marks_per_task);
+
+    if (min_marks_per_task == 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
 
     for (const auto & part : parts_ranges)
         request.push_back({part.data_part->info, MarkRanges{}});
