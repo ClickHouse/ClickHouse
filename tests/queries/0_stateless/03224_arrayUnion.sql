@@ -20,9 +20,6 @@ select arraySort(arrayUnion([1,2], [1,2,3,4])) from array_union order by arr;
 select '-------';
 select arraySort(arrayUnion([], [])) from array_union order by arr;
 select '-------';
-
-optimize table array_union;
-
 select arraySort(arrayUnion(arr, [1,2])) from array_union order by arr;
 select '-------';
 select arraySort(arrayUnion(arr, [])) from array_union order by arr;
