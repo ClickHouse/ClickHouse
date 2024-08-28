@@ -1,7 +1,6 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
-#include <Core/Settings.h>
 #include <base/sleep.h>
 
 namespace DB
@@ -236,7 +235,7 @@ bool NamedCollectionFactory::loadIfNot(std::lock_guard<std::mutex> & lock)
     loadFromConfig(context->getConfigRef(), lock);
     loadFromSQL(lock);
 
-    if (metadata_storage->isReplicated())
+    if (metadata_storage->supportsPeriodicUpdate())
     {
         update_task = context->getSchedulePool().createTask("NamedCollectionsMetadataStorage", [this]{ updateFunc(); });
         update_task->activate();
@@ -356,13 +355,6 @@ void NamedCollectionFactory::reloadFromSQL()
     auto collections = metadata_storage->getAll();
     removeById(NamedCollection::SourceId::SQL, lock);
     add(std::move(collections), lock);
-}
-
-bool NamedCollectionFactory::usesReplicatedStorage()
-{
-    std::lock_guard lock(mutex);
-    loadIfNot(lock);
-    return metadata_storage->isReplicated();
 }
 
 void NamedCollectionFactory::updateFunc()

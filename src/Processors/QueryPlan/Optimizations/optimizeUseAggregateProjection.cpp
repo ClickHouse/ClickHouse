@@ -17,7 +17,6 @@
 #include <Analyzer/QueryNode.h>
 
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
@@ -43,7 +42,7 @@ static DAGIndex buildDAGIndex(const ActionsDAG & dag)
 /// Required analysis info from aggregate projection.
 struct AggregateProjectionInfo
 {
-    std::optional<ActionsDAG> before_aggregation;
+    ActionsDAGPtr before_aggregation;
     Names keys;
     AggregateDescriptions aggregates;
 
@@ -78,7 +77,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
 
     AggregateProjectionInfo info;
     info.context = interpreter.getContext();
-    info.before_aggregation = analysis_result.before_aggregation->dag.clone();
+    info.before_aggregation = analysis_result.before_aggregation;
     info.keys = query_analyzer->aggregationKeys().getNames();
     info.aggregates = query_analyzer->aggregates();
 
@@ -255,19 +254,26 @@ static void appendAggregateFunctions(
 
         const auto * node = input;
 
-        if (!DataTypeAggregateFunction::strictEquals(type, node->result_type))
-            /// Cast to aggregate types specified in query if it's not
-            /// strictly the same as the one specified in projection. This
-            /// is required to generate correct results during finalization.
-            node = &proj_dag.addCast(*node, type, aggregate.column_name);
-        else if (node->result_name != aggregate.column_name)
-            node = &proj_dag.addAlias(*node, aggregate.column_name);
+        if (node->result_name != aggregate.column_name)
+        {
+            if (DataTypeAggregateFunction::strictEquals(type, node->result_type))
+            {
+                node = &proj_dag.addAlias(*node, aggregate.column_name);
+            }
+            else
+            {
+                /// Cast to aggregate types specified in query if it's not
+                /// strictly the same as the one specified in projection. This
+                /// is required to generate correct results during finalization.
+                node = &proj_dag.addCast(*node, type, aggregate.column_name);
+            }
+        }
 
         proj_dag_outputs.push_back(node);
     }
 }
 
-std::optional<ActionsDAG> analyzeAggregateProjection(
+ActionsDAGPtr analyzeAggregateProjection(
     const AggregateProjectionInfo & info,
     const QueryDAG & query,
     const DAGIndex & query_index,
@@ -387,7 +393,7 @@ std::optional<ActionsDAG> analyzeAggregateProjection(
     // LOG_TRACE(getLogger("optimizeUseProjections"), "Folding actions by projection");
 
     auto proj_dag = query.dag->foldActionsByProjection(new_inputs, query_key_nodes);
-    appendAggregateFunctions(proj_dag, aggregates, *matched_aggregates);
+    appendAggregateFunctions(*proj_dag, aggregates, *matched_aggregates);
     return proj_dag;
 }
 
@@ -399,7 +405,7 @@ struct AggregateProjectionCandidate : public ProjectionCandidate
 
     /// Actions which need to be applied to columns from projection
     /// in order to get all the columns required for aggregation.
-    ActionsDAG dag;
+    ActionsDAGPtr dag;
 };
 
 struct MinMaxProjectionCandidate
@@ -474,13 +480,13 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates))
         {
             // LOG_TRACE(getLogger("optimizeUseProjections"), "Projection analyzed DAG {}", proj_dag->dumpDAG());
-            AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
+            AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(proj_dag)};
 
             // LOG_TRACE(getLogger("optimizeUseProjections"), "Projection sample block {}", sample_block.dumpStructure());
             auto block = reading.getMergeTreeData().getMinMaxCountProjectionBlock(
                 metadata,
-                candidate.dag.getRequiredColumnsNames(),
-                (dag.filter_node ? &*dag.dag : nullptr),
+                candidate.dag->getRequiredColumnsNames(),
+                (dag.filter_node ? dag.dag : nullptr),
                 parts,
                 max_added_blocks.get(),
                 context);
@@ -509,11 +515,10 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     if (!candidates.minmax_projection)
     {
-        auto it = std::find_if(
-            agg_projections.begin(),
-            agg_projections.end(),
-            [&](const auto * projection)
-            { return projection->name == context->getSettingsRef().preferred_optimize_projection_name.value; });
+        auto it = std::find_if(agg_projections.begin(), agg_projections.end(), [&](const auto * projection)
+        {
+            return projection->name == context->getSettings().preferred_optimize_projection_name.value;
+        });
 
         if (it != agg_projections.end())
         {
@@ -531,7 +536,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
             if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates))
             {
                 // LOG_TRACE(getLogger("optimizeUseProjections"), "Projection analyzed DAG {}", proj_dag->dumpDAG());
-                AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
+                AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(proj_dag)};
                 candidate.projection = projection;
                 candidates.real.emplace_back(std::move(candidate));
             }
@@ -659,7 +664,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         /// Selecting best candidate.
         for (auto & candidate : candidates.real)
         {
-            auto required_column_names = candidate.dag.getRequiredColumnsNames();
+            auto required_column_names = candidate.dag->getRequiredColumnsNames();
 
             bool analyzed = analyzeProjectionCandidate(
                 candidate,
@@ -670,7 +675,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
                 query_info,
                 context,
                 max_added_blocks,
-                &candidate.dag);
+                candidate.dag);
 
             if (!analyzed)
                 continue;
@@ -750,7 +755,9 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
     else
     {
         auto storage_snapshot = reading->getStorageSnapshot();
-        auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, best_candidate->projection->metadata);
+        auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, storage_snapshot->metadata);
+        proj_snapshot->addProjection(best_candidate->projection);
+
         auto projection_query_info = query_info;
         projection_query_info.prewhere_info = nullptr;
         projection_query_info.filter_actions_dag = nullptr;
@@ -758,7 +765,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         projection_reading = reader.readFromParts(
             /* parts = */ {},
             /* alter_conversions = */ {},
-            best_candidate->dag.getRequiredColumnsNames(),
+            best_candidate->dag->getRequiredColumnsNames(),
             proj_snapshot,
             projection_query_info,
             context,
@@ -770,7 +777,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
 
         if (!projection_reading)
         {
-            auto header = proj_snapshot->getSampleBlockForColumns(best_candidate->dag.getRequiredColumnsNames());
+            auto header = proj_snapshot->getSampleBlockForColumns(best_candidate->dag->getRequiredColumnsNames());
             Pipe pipe(std::make_shared<NullSource>(std::move(header)));
             projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         }
@@ -801,19 +808,17 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
     if (best_candidate)
     {
         aggregate_projection_node = &nodes.emplace_back();
-
         if (candidates.has_filter)
         {
-            const auto & result_name = best_candidate->dag.getOutputs().front()->result_name;
             aggregate_projection_node->step = std::make_unique<FilterStep>(
                 projection_reading_node.step->getOutputStream(),
-                std::move(best_candidate->dag),
-                result_name,
+                best_candidate->dag,
+                best_candidate->dag->getOutputs().front()->result_name,
                 true);
         }
         else
             aggregate_projection_node->step
-                = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputStream(), std::move(best_candidate->dag));
+                = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputStream(), best_candidate->dag);
 
         aggregate_projection_node->children.push_back(&projection_reading_node);
     }

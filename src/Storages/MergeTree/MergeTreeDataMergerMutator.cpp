@@ -11,7 +11,6 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
@@ -118,11 +117,11 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation() const
         occupied >= data_settings->max_number_of_mutations_for_replica)
         return 0;
 
-    /// A DataPart can be stored only at a single disk. Get the maximum reservable free space at all disks.
+    /// DataPart can be store only at one disk. Get maximum reservable free space at all disks.
     UInt64 disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
     auto max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
 
-    /// Allow mutations only if there are enough threads, otherwise, leave free threads for merges.
+    /// Allow mutations only if there are enough threads, leave free threads for merges else
     if (occupied <= 1
         || max_tasks_count - occupied >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
         return static_cast<UInt64>(disk_space / DISK_USAGE_COEFFICIENT_TO_RESERVE);

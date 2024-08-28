@@ -1,14 +1,14 @@
 #pragma once
 
-#include "config.h"
-
 #if USE_AWS_S3
 #    include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #endif
-#if USE_AZURE_BLOB_STORAGE
+#if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 #    include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #endif
-#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
+#    include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
+#endif
 #include <Disks/ObjectStorages/MetadataStorageMetrics.h>
 
 namespace ProfileEvents
@@ -42,7 +42,7 @@ inline MetadataStorageMetrics MetadataStorageMetrics::create<S3ObjectStorage, Me
 }
 #endif
 
-#if USE_AZURE_BLOB_STORAGE
+#if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 template <>
 inline MetadataStorageMetrics MetadataStorageMetrics::create<AzureObjectStorage, MetadataStorageType::PlainRewritable>()
 {
@@ -53,6 +53,7 @@ inline MetadataStorageMetrics MetadataStorageMetrics::create<AzureObjectStorage,
 }
 #endif
 
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 template <>
 inline MetadataStorageMetrics MetadataStorageMetrics::create<LocalObjectStorage, MetadataStorageType::PlainRewritable>()
 {
@@ -61,5 +62,6 @@ inline MetadataStorageMetrics MetadataStorageMetrics::create<LocalObjectStorage,
         .directory_removed = ProfileEvents::DiskPlainRewritableLocalDirectoryRemoved,
         .directory_map_size = CurrentMetrics::DiskPlainRewritableLocalDirectoryMapSize};
 }
+#endif
 
 }

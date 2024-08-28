@@ -15,7 +15,6 @@
 #include <boost/algorithm/hex.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 
-#include <Access/Common/SSLCertificateSubjects.h>
 #include "config.h"
 
 #if USE_SSL
@@ -108,7 +107,7 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 {
     return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash)
         && (lhs.ldap_server_name == rhs.ldap_server_name) && (lhs.kerberos_realm == rhs.kerberos_realm)
-        && (lhs.ssl_certificate_subjects == rhs.ssl_certificate_subjects)
+        && (lhs.ssl_certificate_common_names == rhs.ssl_certificate_common_names)
 #if USE_SSH
         && (lhs.ssh_keys == rhs.ssh_keys)
 #endif
@@ -136,7 +135,6 @@ void AuthenticationData::setPassword(const String & password_)
         case AuthenticationType::BCRYPT_PASSWORD:
         case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
-        case AuthenticationType::JWT:
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
@@ -253,7 +251,6 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
 
         case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
-        case AuthenticationType::JWT:
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
@@ -278,16 +275,11 @@ String AuthenticationData::getSalt() const
     return salt;
 }
 
-void AuthenticationData::setSSLCertificateSubjects(SSLCertificateSubjects && ssl_certificate_subjects_)
+void AuthenticationData::setSSLCertificateCommonNames(boost::container::flat_set<String> common_names_)
 {
-    if (ssl_certificate_subjects_.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'SSL CERTIFICATE' authentication type requires a non-empty list of subjects.");
-    ssl_certificate_subjects = std::move(ssl_certificate_subjects_);
-}
-
-void AuthenticationData::addSSLCertificateSubject(SSLCertificateSubjects::Type type_, String && subject_)
-{
-    ssl_certificate_subjects.insert(type_, std::move(subject_));
+    if (common_names_.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'SSL CERTIFICATE' authentication type requires a non-empty list of common names.");
+    ssl_certificate_common_names = std::move(common_names_);
 }
 
 std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
@@ -330,10 +322,6 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
             node->children.push_back(std::make_shared<ASTLiteral>(getLDAPServerName()));
             break;
         }
-        case AuthenticationType::JWT:
-        {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is available only in ClickHouse Cloud");
-        }
         case AuthenticationType::KERBEROS:
         {
             const auto & realm = getKerberosRealm();
@@ -345,14 +333,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         }
         case AuthenticationType::SSL_CERTIFICATE:
         {
-            using SSLCertificateSubjects::Type::CN;
-            using SSLCertificateSubjects::Type::SAN;
-
-            const auto &subjects = getSSLCertificateSubjects();
-            SSLCertificateSubjects::Type cert_subject_type = !subjects.at(SAN).empty() ? SAN : CN;
-
-            node->ssl_cert_subject_type = toString(cert_subject_type);
-            for (const auto & name : getSSLCertificateSubjects().at(cert_subject_type))
+            for (const auto & name : getSSLCertificateCommonNames())
                 node->children.push_back(std::make_shared<ASTLiteral>(name));
 
             break;
@@ -526,9 +507,11 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     }
     else if (query.type == AuthenticationType::SSL_CERTIFICATE)
     {
-        auto ssl_cert_subject_type = parseSSLCertificateSubjectType(*query.ssl_cert_subject_type);
+        boost::container::flat_set<String> common_names;
         for (const auto & arg : args)
-            auth_data.addSSLCertificateSubject(ssl_cert_subject_type, checkAndGetLiteralArgument<String>(arg, "ssl_certificate_subject"));
+            common_names.insert(checkAndGetLiteralArgument<String>(arg, "common_name"));
+
+        auth_data.setSSLCertificateCommonNames(std::move(common_names));
     }
     else if (query.type == AuthenticationType::HTTP)
     {

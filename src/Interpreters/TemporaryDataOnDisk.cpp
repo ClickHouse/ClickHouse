@@ -3,8 +3,6 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromEmptyFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Formats/NativeWriter.h>
@@ -65,7 +63,7 @@ TemporaryDataOnDisk::TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, Cu
 
 std::unique_ptr<WriteBufferFromFileBase> TemporaryDataOnDisk::createRawStream(size_t max_file_size)
 {
-    if (file_cache && file_cache->isInitialized())
+    if (file_cache)
     {
         auto holder = createCacheFile(max_file_size);
         return std::make_unique<WriteBufferToFileSegment>(std::move(holder));
@@ -81,7 +79,7 @@ std::unique_ptr<WriteBufferFromFileBase> TemporaryDataOnDisk::createRawStream(si
 
 TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, size_t max_file_size)
 {
-    if (file_cache && file_cache->isInitialized())
+    if (file_cache)
     {
         auto holder = createCacheFile(max_file_size);
 
@@ -226,37 +224,25 @@ struct TemporaryFileStream::OutputWriter
     bool finalized = false;
 };
 
-TemporaryFileStream::Reader::Reader(const String & path_, const Block & header_, size_t size_)
-    : path(path_)
-    , size(size_ ? std::min<size_t>(size_, DBMS_DEFAULT_BUFFER_SIZE) : DBMS_DEFAULT_BUFFER_SIZE)
-    , header(header_)
+TemporaryFileStream::Reader::Reader(const String & path, const Block & header_, size_t size)
+    : in_file_buf(path, size ? std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size) : DBMS_DEFAULT_BUFFER_SIZE)
+    , in_compressed_buf(in_file_buf)
+    , in_reader(in_compressed_buf, header_, DBMS_TCP_PROTOCOL_VERSION)
 {
     LOG_TEST(getLogger("TemporaryFileStream"), "Reading {} from {}", header_.dumpStructure(), path);
 }
 
-TemporaryFileStream::Reader::Reader(const String & path_, size_t size_)
-    : path(path_)
-    , size(size_ ? std::min<size_t>(size_, DBMS_DEFAULT_BUFFER_SIZE) : DBMS_DEFAULT_BUFFER_SIZE)
+TemporaryFileStream::Reader::Reader(const String & path, size_t size)
+    : in_file_buf(path, size ? std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size) : DBMS_DEFAULT_BUFFER_SIZE)
+    , in_compressed_buf(in_file_buf)
+    , in_reader(in_compressed_buf, DBMS_TCP_PROTOCOL_VERSION)
 {
     LOG_TEST(getLogger("TemporaryFileStream"), "Reading from {}", path);
 }
 
 Block TemporaryFileStream::Reader::read()
 {
-    if (!in_reader)
-    {
-        if (fs::exists(path))
-            in_file_buf = std::make_unique<ReadBufferFromFile>(path, size);
-        else
-            in_file_buf = std::make_unique<ReadBufferFromEmptyFile>();
-
-        in_compressed_buf = std::make_unique<CompressedReadBuffer>(*in_file_buf);
-        if (header.has_value())
-            in_reader = std::make_unique<NativeReader>(*in_compressed_buf, header.value(), DBMS_TCP_PROTOCOL_VERSION);
-        else
-            in_reader = std::make_unique<NativeReader>(*in_compressed_buf, DBMS_TCP_PROTOCOL_VERSION);
-    }
-    return in_reader->read();
+    return in_reader.read();
 }
 
 TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_)

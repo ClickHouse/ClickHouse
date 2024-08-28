@@ -4,7 +4,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
-#include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/StorageID.h>
 
@@ -203,7 +202,7 @@ StoragePtr StorageFactory::get(
     }
 
     if (query.comment)
-        comment = query.comment->as<ASTLiteral &>().value.safeGet<String>();
+        comment = query.comment->as<ASTLiteral &>().value.get<String>();
 
     ASTs empty_engine_args;
     Arguments arguments{

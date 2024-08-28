@@ -10,7 +10,7 @@ sidebar_label: Visual Interfaces
 
 ### ch-ui {#ch-ui}
 
-[ch-ui](https://github.com/caioricciuti/ch-ui) is a simple React.js app interface for ClickHouse databases designed for executing queries and visualizing data. Built with React and the ClickHouse client for web, it offers a sleek and user-friendly UI for easy database interactions.
+[ch-ui](https://github.com/caioricciuti/ch-ui) is a simple React.js app interface for ClickHouse databases, designed for executing queries and visualizing data. Built with React and the ClickHouse client for web, it offers a sleek and user-friendly UI for easy database interactions.
 
 Features:
 
@@ -25,7 +25,7 @@ Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) pr
 
 Features:
 
-- Works with ClickHouse directly from the browser without the need to install additional software.
+- Works with ClickHouse directly from the browser, without the need to install additional software.
 - Query editor with syntax highlighting.
 - Auto-completion of commands.
 - Tools for graphical analysis of query execution.
@@ -63,7 +63,7 @@ Features:
 
 - Table list with filtering and metadata.
 - Table preview with filtering and sorting.
-- Read-only query execution.
+- Read-only queries execution.
 
 ### Redash {#redash}
 
@@ -75,23 +75,23 @@ Features:
 
 - Powerful editor of queries.
 - Database explorer.
-- Visualization tool that allows you to represent data in different forms.
+- Visualization tools, that allow you to represent data in different forms.
 
 ### Grafana {#grafana}
 
 [Grafana](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) is a platform for monitoring and visualization.
 
-"Grafana allows you to query, visualize, alert on and understand your metrics no matter where they are stored. Create, explore, and share dashboards with your team and foster a data-driven culture. Trusted and loved by the community" &mdash; grafana.com.
+"Grafana allows you to query, visualize, alert on and understand your metrics no matter where they are stored. Create, explore, and share dashboards with your team and foster a data driven culture. Trusted and loved by the community" &mdash; grafana.com.
 
-ClickHouse data source plugin provides support for ClickHouse as a backend database.
+ClickHouse datasource plugin provides a support for ClickHouse as a backend database.
 
-### qryn {#qryn}
+### qryn (#qryn)
 
 [qryn](https://metrico.in) is a polyglot, high-performance observability stack for ClickHouse _(formerly cLoki)_ with native Grafana integrations allowing users to ingest and analyze logs, metrics and telemetry traces from any agent supporting Loki/LogQL, Prometheus/PromQL, OTLP/Tempo, Elastic, InfluxDB and many more.
 
 Features:
 
-- Built-in Explore UI and LogQL CLI for querying, extracting and visualizing data
+- Built in Explore UI and LogQL CLI for querying, extracting and visualizing data
 - Native Grafana APIs support for querying, processing, ingesting, tracing and alerting without plugins
 - Powerful pipeline to dynamically search, filter and extract data from logs, events, traces and beyond
 - Ingestion and PUSH APIs transparently compatible with LogQL, PromQL, InfluxDB, Elastic and many more
@@ -139,7 +139,7 @@ Features:
 
 ### DBM {#dbm}
 
-[DBM](https://github.com/devlive-community/dbm) DBM is a visual management tool for ClickHouse!
+[DBM](https://dbm.incubator.edurt.io/) DBM is a visual management tool for ClickHouse!
 
 Features:
 
@@ -151,7 +151,7 @@ Features:
 - Support custom query
 - Support multiple data sources management(connection test, monitoring)
 - Support monitor (processor, connection, query)
-- Support migrating data
+- Support migrate data
 
 ### Bytebase {#bytebase}
 
@@ -169,7 +169,7 @@ Features:
 
 ### Zeppelin-Interpreter-for-ClickHouse {#zeppelin-interpreter-for-clickhouse}
 
-[Zeppelin-Interpreter-for-ClickHouse](https://github.com/SiderZhang/Zeppelin-Interpreter-for-ClickHouse) is a [Zeppelin](https://zeppelin.apache.org) interpreter for ClickHouse. Compared with the JDBC interpreter, it can provide better timeout control for long-running queries.
+[Zeppelin-Interpreter-for-ClickHouse](https://github.com/SiderZhang/Zeppelin-Interpreter-for-ClickHouse) is a [Zeppelin](https://zeppelin.apache.org) interpreter for ClickHouse. Compared with JDBC interpreter, it can provide better timeout control for long running queries.
 
 ### ClickCat {#clickcat}
 
@@ -179,7 +179,7 @@ Features:
 
 - An online SQL editor which can run your SQL code without any installing.
 - You can observe all processes and mutations. For those unfinished processes, you can kill them in ui.
-- The Metrics contain Cluster Analysis, Data Analysis, and Query Analysis.
+- The Metrics contains Cluster Analysis,Data Analysis,Query Analysis.
 
 ### ClickVisual {#clickvisual}
 
@@ -332,7 +332,7 @@ Learn more about the product at [TABLUM.IO](https://tablum.io/)
 
 ### CKMAN {#ckman}
 
-[CKMAN](https://www.github.com/housepower/ckman) is a tool for managing and monitoring ClickHouse clusters!
+[CKMAN] (https://www.github.com/housepower/ckman) is a tool for managing and monitoring ClickHouse clusters!
 
 Features:
 

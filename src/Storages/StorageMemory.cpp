@@ -1,5 +1,5 @@
+#include <cassert>
 #include <Common/Exception.h>
-#include <Core/Settings.h>
 
 #include <boost/noncopyable.hpp>
 #include <Interpreters/MutationsInterpreter.h>
@@ -37,6 +37,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/copyData.h>
 
+
 namespace DB
 {
 
@@ -62,7 +63,7 @@ public:
 
     String getName() const override { return "MemorySink"; }
 
-    void consume(Chunk & chunk) override
+    void consume(Chunk chunk) override
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         storage_snapshot->metadata->check(block, true);
@@ -407,7 +408,7 @@ namespace
                 auto data_file_path = temp_dir / fs::path{file_paths[data_bin_pos]}.filename();
                 auto data_out_compressed = temp_disk->writeFile(data_file_path);
                 auto data_out = std::make_unique<CompressedWriteBuffer>(*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
-                NativeWriter block_out{*data_out, 0, metadata_snapshot->getSampleBlock(), std::nullopt, false, &index};
+                NativeWriter block_out{*data_out, 0, metadata_snapshot->getSampleBlock(), false, &index};
                 for (const auto & block : *blocks)
                     block_out.write(block);
                 data_out->finalize();

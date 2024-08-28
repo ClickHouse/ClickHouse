@@ -40,7 +40,7 @@ static IColumn & extractNestedColumn(IColumn & column)
 
 void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const auto & map = field.safeGet<const Map &>();
+    const auto & map = field.get<const Map &>();
     writeVarUInt(map.size(), ostr);
     for (const auto & elem : map)
     {
@@ -55,15 +55,15 @@ void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const
 {
     size_t size;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+    if (settings.max_binary_array_size && size > settings.max_binary_array_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large map size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.binary.max_binary_string_size);
+            settings.max_binary_array_size);
     field = Map();
-    Map & map = field.safeGet<Map &>();
+    Map & map = field.get<Map &>();
     map.reserve(size);
     for (size_t i = 0; i < size; ++i)
     {

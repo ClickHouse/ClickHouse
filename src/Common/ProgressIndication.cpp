@@ -1,7 +1,6 @@
 #include "ProgressIndication.h"
 #include <algorithm>
 #include <cstddef>
-#include <iostream>
 #include <numeric>
 #include <filesystem>
 #include <cmath>
@@ -93,19 +92,19 @@ void ProgressIndication::writeFinalProgress()
     if (progress.read_rows < 1000)
         return;
 
-    output_stream << "Processed " << formatReadableQuantity(progress.read_rows) << " rows, "
+    std::cout << "Processed " << formatReadableQuantity(progress.read_rows) << " rows, "
                 << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
 
     UInt64 elapsed_ns = getElapsedNanoseconds();
     if (elapsed_ns)
-        output_stream << " (" << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
+        std::cout << " (" << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
                     << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
     else
-        output_stream << ". ";
+        std::cout << ". ";
 
     auto peak_memory_usage = getMemoryUsage().peak;
     if (peak_memory_usage >= 0)
-        output_stream << "\nPeak memory usage: " << formatReadableSizeWithBinarySuffix(peak_memory_usage) << ".";
+        std::cout << "\nPeak memory usage: " << formatReadableSizeWithBinarySuffix(peak_memory_usage) << ".";
 }
 
 void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
@@ -126,7 +125,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
 
     const char * indicator = indicators[increment % 8];
 
-    size_t terminal_width = getTerminalWidth(in_fd, err_fd);
+    size_t terminal_width = getTerminalWidth();
 
     if (!written_progress_chars)
     {

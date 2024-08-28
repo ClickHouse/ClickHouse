@@ -1,4 +1,8 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS codecs;
+
+-- test what should work
 
 CREATE TABLE codecs
 (

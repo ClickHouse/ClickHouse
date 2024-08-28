@@ -197,16 +197,6 @@ void DistributedAsyncInsertBatch::readText(ReadBuffer & in)
         UInt64 idx;
         in >> idx >> "\n";
         files.push_back(std::filesystem::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
-
-        ReadBufferFromFile header_buffer(files.back());
-        const DistributedAsyncInsertHeader & header = DistributedAsyncInsertHeader::read(header_buffer, parent.log);
-        total_bytes += total_bytes;
-
-        if (header.rows)
-        {
-            total_rows += header.rows;
-            total_bytes += header.bytes;
-        }
     }
 
     recovered = true;

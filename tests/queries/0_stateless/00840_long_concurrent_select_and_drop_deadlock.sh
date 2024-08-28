@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: deadlock, no-debug, no-parallel
+# Tags: deadlock, no-parallel, no-debug
 
 # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
 
@@ -49,7 +49,7 @@ function thread_select()
 export -f thread_drop_create
 export -f thread_select
 
-TIMEOUT=30
+TIMEOUT=60
 thread_drop_create $TIMEOUT &
 thread_select $TIMEOUT &
 

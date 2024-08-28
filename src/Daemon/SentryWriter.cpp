@@ -19,7 +19,7 @@
 #include "config.h"
 #include <Common/config_version.h>
 
-#if USE_SENTRY
+#if USE_SENTRY && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 
 #    include <sentry.h>
 #    include <cstdio>
