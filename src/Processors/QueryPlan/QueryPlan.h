@@ -20,6 +20,7 @@ using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
+class ReadBuffer;
 class WriteBuffer;
 
 class QueryPlan;
@@ -53,6 +54,9 @@ public:
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
     const DataStream & getCurrentDataStream() const; /// Checks that (isInitialized() && !isCompleted())
+
+    void serialize(WriteBuffer & out) const;
+    static QueryPlan deserialize(ReadBuffer & in);
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 

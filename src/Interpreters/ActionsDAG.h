@@ -130,6 +130,9 @@ public:
     std::string dumpNames() const;
     std::string dumpDAG() const;
 
+    void serialize(WriteBuffer & out) const;
+    static ActionsDAG deserialize(ReadBuffer & in);
+
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
     const Node & addColumn(ColumnWithTypeAndName column);

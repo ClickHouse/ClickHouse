@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Common/typeid_cast.h>
 
 namespace DB::QueryPlanOptimizations
@@ -62,6 +63,12 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     /// Special cases for sorting steps.
     if (tryUpdateLimitForSortingSteps(child_node, limit->getLimitForSorting()))
         return 0;
+
+    if (auto * distinct = typeid_cast<DistinctStep *>(child.get()))
+    {
+        distinct->updateLimitHint(limit->getLimitForSorting());
+        return 0;
+    }
 
     /// Special case for TotalsHaving. Totals may be incorrect if we push down limit.
     if (typeid_cast<const TotalsHavingStep *>(child.get()))

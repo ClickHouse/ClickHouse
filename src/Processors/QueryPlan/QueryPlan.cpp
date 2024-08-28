@@ -1,6 +1,7 @@
 #include <stack>
 
 #include <Common/JSONBuilder.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
@@ -16,6 +17,8 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -563,6 +566,150 @@ void QueryPlan::explainEstimate(MutableColumns & columns)
 std::pair<QueryPlan::Nodes, QueryPlanResourceHolder> QueryPlan::detachNodesAndResources(QueryPlan && plan)
 {
     return {std::move(plan.nodes), std::move(plan.resources)};
+}
+
+static void serializeHeader(const Block & header, WriteBuffer & out)
+{
+    /// Write only names and types.
+    /// Constants should be filled by step.
+
+    writeVarUInt(header.columns(), out);
+    for (const auto & column : header)
+    {
+        writeStringBinary(column.name, out);
+        encodeDataType(column.type, out);
+    }
+}
+
+static Block deserializeHeader(ReadBuffer & in)
+{
+    UInt64 num_columns;
+    readVarUInt(num_columns, in);
+
+    ColumnsWithTypeAndName columns(num_columns);
+
+    for (auto & column : columns)
+    {
+        readStringBinary(column.name, in);
+        column.type = decodeDataType(in);
+    }
+
+    return Block(std::move(columns));
+}
+
+void QueryPlan::serialize(WriteBuffer & out) const
+{
+    checkInitialized();
+
+    struct Frame
+    {
+        Node * node = {};
+        size_t next_child = 0;
+    };
+
+    std::stack<Frame> stack;
+    stack.push(Frame{.node = root});
+    while (!stack.empty())
+    {
+        auto & frame = stack.top();
+        auto * node = frame.node;
+        if (frame.next_child == 0)
+        {
+            writeVarUInt(node->children.size(), out);
+        }
+
+        if (frame.next_child < node->children.size())
+        {
+            stack.push(Frame{.node = node->children[frame.next_child]});
+            ++frame.next_child;
+            continue;
+        }
+
+        stack.pop();
+
+        writeStringBinary(node->step->getSerializationName(), out);
+        writeStringBinary(node->step->getStepDescription(), out);
+
+        QueryPlanSerializationSettings settings;
+        node->step->serializeSettings(settings);
+
+        settings.writeChangedBinary(out);
+        node->step->serialize(out);
+
+        if (node->step->hasOutputStream())
+            serializeHeader(node->step->getOutputStream().header, out);
+        else
+            serializeHeader({}, out);
+    }
+}
+
+QueryPlan QueryPlan::deserialize(ReadBuffer & in)
+{
+    QueryPlanStepRegistry & step_registry = QueryPlanStepRegistry::instance();
+
+    using NodePtr = Node *;
+    struct Frame
+    {
+        NodePtr & to_fill;
+        size_t next_child = 0;
+        std::vector<Node *> children = {};
+    };
+
+    std::stack<Frame> stack;
+
+    QueryPlan plan;
+    stack.push(Frame{.to_fill = plan.root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.top();
+        if (frame.next_child == 0)
+        {
+            UInt64 num_children;
+            readVarUInt(num_children, in);
+            frame.children.resize(num_children);
+        }
+
+        if (frame.next_child < frame.children.size())
+        {
+            stack.push(Frame{.to_fill = frame.children[frame.next_child]});
+            ++frame.next_child;
+            continue;
+        }
+
+        std::string step_name;
+        std::string step_description;
+        readStringBinary(step_name, in);
+        readStringBinary(step_description, in);
+
+        QueryPlanSerializationSettings settings;
+        settings.readBinary(in);
+
+        DataStreams input_streams;
+        input_streams.reserve(frame.children.size());
+        for (const auto & child : frame.children)
+            input_streams.push_back(child->step->getOutputStream());
+
+        auto step = step_registry.createStep(in, step_name, input_streams, settings);
+
+        auto header = deserializeHeader(in);
+        if (step->hasOutputStream())
+        {
+            assertCompatibleHeader(step->getOutputStream().header, header,
+                 fmt::format("deserialization of query plan step {}", step_name));
+        }
+        else if (header.columns())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Deserialized step {} has no output stream, but deserialized header is not empty : {}",
+                step_name, header.dumpStructure());
+
+        auto & node = plan.nodes.emplace_back(std::move(step), std::move(frame.children));
+        frame.to_fill = &node;
+
+        stack.pop();
+    }
+
+    return plan;
 }
 
 }

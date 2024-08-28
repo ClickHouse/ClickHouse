@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/JoiningTransform.h>
@@ -88,6 +89,25 @@ void ExpressionStep::updateOutputStream()
         if (alias_node)
             output_stream->sort_description[i].column_name = alias_node->result_name;
     }
+}
+
+void ExpressionStep::serialize(WriteBuffer & out) const
+{
+    actions_dag.serialize(out);
+}
+
+std::unique_ptr<IQueryPlanStep> ExpressionStep::deserialize(ReadBuffer & in, const DataStreams & input_streams_, QueryPlanSerializationSettings &)
+{
+    ActionsDAG actions_dag = ActionsDAG::deserialize(in);
+    if (input_streams_.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ExpressionStep must have one input stream");
+
+    return std::make_unique<ExpressionStep>(input_streams_.front(), std::move(actions_dag));
+}
+
+void registerExpressionStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("Expression", ExpressionStep::deserialize);
 }
 
 }

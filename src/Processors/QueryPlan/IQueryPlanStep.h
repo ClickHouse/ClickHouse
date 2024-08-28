@@ -63,6 +63,8 @@ using DataStreams = std::vector<DataStream>;
 class QueryPlan;
 using QueryPlanRawPtrs = std::list<QueryPlan *>;
 
+struct QueryPlanSerializationSettings;
+
 /// Single step of query plan.
 class IQueryPlanStep
 {
@@ -70,6 +72,7 @@ public:
     virtual ~IQueryPlanStep() = default;
 
     virtual String getName() const = 0;
+    virtual String getSerializationName() const { return getName(); }
 
     /// Add processors from current step to QueryPipeline.
     /// Calling this method, we assume and don't check that:
@@ -87,6 +90,9 @@ public:
     /// Methods to describe what this step is needed for.
     const std::string & getStepDescription() const { return step_description; }
     void setStepDescription(std::string description) { step_description = std::move(description); }
+
+    virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
+    virtual void serialize(WriteBuffer & /*buf*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for {}", getName()); }
 
     struct FormatSettings
     {

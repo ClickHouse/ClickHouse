@@ -25,6 +25,10 @@ public:
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
+    void serialize(WriteBuffer & out) const override;
+
+    static std::unique_ptr<IQueryPlanStep> deserialize(ReadBuffer & in, const DataStreams & input_streams_, QueryPlanSerializationSettings &);
+
 private:
     void updateOutputStream() override;
 
