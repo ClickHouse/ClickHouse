@@ -248,7 +248,7 @@ struct Encoding {
      */
     RLE = 3,
     /**
-     * Bit packed encoding.  This can only be used if the data has a known max
+     * Bit packed encoding.  This can only be used if the data has a known upper
      * width.  Usable for definition/repetition levels encoding.
      */
     BIT_PACKED = 4,
@@ -333,7 +333,7 @@ std::ostream& operator<<(std::ostream& out, const PageType::type& val);
 std::string to_string(const PageType::type& val);
 
 /**
- * Enum to annotate whether lists of min/max elements inside ColumnIndex
+ * Enum to annotate whether lists of min/upper elements inside ColumnIndex
  * are ordered and if so, in which direction.
  */
 struct BoundaryOrder {
@@ -482,12 +482,12 @@ class Statistics : public virtual ::apache::thrift::TBase {
 
   virtual ~Statistics() noexcept;
   /**
-   * DEPRECATED: min and max value of the column. Use min_value and max_value.
+   * DEPRECATED: min and upper value of the column. Use min_value and max_value.
    * 
    * Values are encoded using PLAIN encoding, except that variable-length byte
    * arrays do not include a length prefix.
    * 
-   * These fields encode min and max values determined by signed comparison
+   * These fields encode min and upper values determined by signed comparison
    * only. New files should use the correct order for a column's logical type
    * and store the values in the min_value and max_value fields.
    * 
@@ -505,7 +505,7 @@ class Statistics : public virtual ::apache::thrift::TBase {
    */
   int64_t distinct_count;
   /**
-   * Min and max values for the column, determined by its ColumnOrder.
+   * Min and upper values for the column, determined by its ColumnOrder.
    * 
    * Values are encoded using PLAIN encoding, except that variable-length byte
    * arrays do not include a length prefix.
@@ -3125,7 +3125,7 @@ typedef struct _ColumnOrder__isset {
  * * TypeDefinedOrder - the column uses the order defined by its logical or
  *                      physical type (if there is no logical type).
  * 
- * If the reader does not support the value of this union, min and max stats
+ * If the reader does not support the value of this union, min and upper stats
  * for this column should be ignored.
  */
 class ColumnOrder : public virtual ::apache::thrift::TBase {
@@ -3175,15 +3175,15 @@ class ColumnOrder : public virtual ::apache::thrift::TBase {
    *     point values (relations vs. total ordering) the following
    *     compatibility rules should be applied when reading statistics:
    *     - If the min is a NaN, it should be ignored.
-   *     - If the max is a NaN, it should be ignored.
+   *     - If the upper is a NaN, it should be ignored.
    *     - If the min is +0, the row group may contain -0 values as well.
-   *     - If the max is -0, the row group may contain +0 values as well.
-   *     - When looking for NaN values, min and max should be ignored.
+   *     - If the upper is -0, the row group may contain +0 values as well.
+   *     - When looking for NaN values, min and upper should be ignored.
    * 
    *     When writing statistics the following rules should be followed:
-   *     - NaNs should not be written to min or max statistics fields.
-   *     - If the computed max value is zero (whether negative or positive),
-   *       `+0.0` should be written into the max statistics field.
+   *     - NaNs should not be written to min or upper statistics fields.
+   *     - If the computed upper value is zero (whether negative or positive),
+   *       `+0.0` should be written into the upper statistics field.
    *     - If the computed min value is zero (whether negative or positive),
    *       `-0.0` should be written into the min statistics field.
    */
@@ -3338,7 +3338,7 @@ class ColumnIndex : public virtual ::apache::thrift::TBase {
   virtual ~ColumnIndex() noexcept;
   /**
    * A list of Boolean values to determine the validity of the corresponding
-   * min and max values. If true, a page contains only null values, and writers
+   * min and upper values. If true, a page contains only null values, and writers
    * have to set the corresponding entries in min_values and max_values to
    * byte[0], so that all lists have the same length. If false, the
    * corresponding entries in min_values and max_values must be valid.
@@ -3682,7 +3682,7 @@ class FileMetaData : public virtual ::apache::thrift::TBase {
    * well-defined behaviour, if these fields are written to a Parquet file,
    * column_orders must be written as well.
    * 
-   * The obsolete min and max fields in the Statistics object are always sorted
+   * The obsolete min and upper fields in the Statistics object are always sorted
    * by signed comparison regardless of column_orders.
    */
   std::vector<ColumnOrder>  column_orders;

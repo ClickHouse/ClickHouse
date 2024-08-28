@@ -447,6 +447,7 @@ private:
     arrow::util::RleDecoder idx_decoder;
     std::unique_ptr<DictDecoder> dict_decoder;
     PaddedPODArray<typename DataType::FieldType> dict;
+    PaddedPODArray<typename DataType::FieldType> batch_buffer;
 };
 
 void computeRowSetPlainString(const uint8_t * start, OptionalRowSet & row_set, ColumnFilterPtr filter, size_t rows_to_read);
@@ -530,6 +531,10 @@ public:
         ParquetReader * parquetReader,
         std::shared_ptr<parquet::RowGroupMetaData> rowGroupReader,
         std::unordered_map<String, ColumnFilterPtr> filters);
+    ~RowGroupChunkReader()
+    {
+        printMetrics(std::cerr);
+    }
     Chunk readChunk(size_t rows);
     bool hasMoreRows() const { return remain_rows > 0; }
     void printMetrics(std::ostream & out) const

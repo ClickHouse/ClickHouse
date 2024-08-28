@@ -83,7 +83,6 @@ void ParquetReader::setRemainFilter(std::optional<ActionsDAG> & expr)
 }
 std::unique_ptr<RowGroupChunkReader> ParquetReader::getRowGroupChunkReader(size_t row_group_idx)
 {
-    std::lock_guard lock(file_mutex);
     return std::make_unique<RowGroupChunkReader>(this, meta_data->RowGroup(static_cast<int>(row_group_idx)), filters);
 }
 std::unique_ptr<SubRowGroupRangeReader> ParquetReader::getSubRowGroupRangeReader(std::vector<Int32> row_group_indices_)

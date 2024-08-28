@@ -71,12 +71,13 @@ enum ColumnFilterKind
     AlwaysFalse,
     IsNull,
     IsNotNull,
-    Int64Range,
-    Int64MultiRange,
+    BigIntRange,
+    NegatedBigintRange,
     Int64In,
     FloatRange,
     DoubleRange,
-    ByteValues
+    ByteValues,
+    NegatedByteValues
 };
 
 class FilterHelper
@@ -220,44 +221,49 @@ public:
     ColumnFilterPtr clone(std::optional<bool>) const override { return std::make_shared<AlwaysFalseFilter>(); }
 };
 using OptionalFilter = std::optional<std::pair<String, ColumnFilterPtr>>;
-class Int64RangeFilter : public ColumnFilter
+class BigIntRangeFilter : public ColumnFilter
 {
+    friend class NegatedBigIntRangeFilter;
 public:
     static OptionalFilter create(const ActionsDAG::Node & node);
-    explicit Int64RangeFilter(const Int64 min_, const Int64 max_, bool null_allowed_)
-        : ColumnFilter(Int64Range, null_allowed_)
-        , max(max_)
+    explicit BigIntRangeFilter(const Int64 min_, const Int64 max_, bool null_allowed_)
+        : ColumnFilter(BigIntRange, null_allowed_)
+        , upper(max_)
         , min(min_)
         , lower32(static_cast<Int32>(std::max<Int64>(min, std::numeric_limits<int32_t>::min())))
-        , upper32(static_cast<Int32>(std::min<Int64>(max, std::numeric_limits<int32_t>::max())))
+        , upper32(static_cast<Int32>(std::min<Int64>(upper, std::numeric_limits<int32_t>::max())))
         , lower16(static_cast<Int16>(std::max<Int64>(min, std::numeric_limits<int16_t>::min())))
-        , upper16(static_cast<Int16>(std::min<Int64>(max, std::numeric_limits<int16_t>::max())))
-        , is_single_value(max == min)
+        , upper16(static_cast<Int16>(std::min<Int64>(upper, std::numeric_limits<int16_t>::max())))
+        , is_single_value(upper == min)
     {
     }
-    ~Int64RangeFilter() override = default;
-    bool testInt64(Int64 int64) const override { return int64 >= min && int64 <= max; }
-    bool testInt32(Int32 int32) const override { return int32 >= min && int32 <= max; }
-    bool testInt16(Int16 int16) const override { return int16 >= min && int16 <= max; }
-    bool testInt64Range(Int64 lower, Int64 upper) const override { return min >= lower && max <= upper; }
+    ~BigIntRangeFilter() override = default;
+    bool testInt64(Int64 int64) const override { return int64 >= min && int64 <= upper; }
+    bool testInt32(Int32 int32) const override { return int32 >= min && int32 <= upper; }
+    bool testInt16(Int16 int16) const override { return int16 >= min && int16 <= upper; }
+    bool testInt64Range(Int64 lower, Int64 upper_) const override { return min >= lower && upper_ <= upper; }
     void testInt64Values(RowSet & row_set, size_t offset, size_t len, const Int64 * data) const override;
     void testInt32Values(RowSet & row_set, size_t offset, size_t len, const Int32 * data) const override;
     void testInt16Values(RowSet & row_set, size_t offset, size_t len, const Int16 * data) const override;
     ColumnFilterPtr merge(const ColumnFilter * filter) const override;
     ColumnFilterPtr clone(std::optional<bool> null_allowed_) const override
     {
-        return std::make_shared<Int64RangeFilter>(min, max, null_allowed_.value_or(null_allowed));
+        return std::make_shared<BigIntRangeFilter>(min, upper, null_allowed_.value_or(null_allowed));
     }
+    
     String toString() const override
     {
-        return fmt::format("Int64RangeFilter: [{}, {}] {}", min, max, null_allowed ? "with nulls" : "no nulls");
+        return fmt::format("BigIntRangeFilter: [{}, {}] {}", min, upper, null_allowed ? "with nulls" : "no nulls");
     }
 
+    Int64 getUpper() const { return upper; }
+    Int64 getMin() const { return min; }
+
 private:
-    template <class T>
+    template <class T, bool negated = false>
     void testIntValues(RowSet & row_set, size_t offset, size_t len, const T * data) const;
 
-    const Int64 max;
+    const Int64 upper;
     const Int64 min;
     const int32_t lower32;
     const int32_t upper32;
@@ -265,8 +271,43 @@ private:
     const int16_t upper16;
     bool is_single_value [[maybe_unused]];
 };
+
+class NegatedBigIntRangeFilter : public ColumnFilter
+{
+public:
+    static OptionalFilter create(const ActionsDAG::Node & node);
+    NegatedBigIntRangeFilter(int64_t lower, int64_t upper, bool null_allowed_)
+        : ColumnFilter(ColumnFilterKind::NegatedBigintRange, null_allowed_),
+        non_negated(std::make_unique<BigIntRangeFilter>(lower, upper, !null_allowed_)) {
+    }
+
+    bool testInt64(Int64 int64) const override { return !non_negated->testInt64(int64); }
+    bool testInt32(Int32 int32) const override { return !non_negated->testInt32(int32); }
+    bool testInt16(Int16 int16) const override { return !non_negated->testInt16(int16); }
+    void testInt64Values(RowSet & row_set, size_t offset, size_t len, const Int64 * data) const override
+    {
+        non_negated->testIntValues<Int64, true>(row_set, offset, len, data);
+    }
+    void testInt32Values(RowSet & row_set, size_t offset, size_t len, const Int32 * data) const override
+    {
+        non_negated->testIntValues<Int32, true>(row_set, offset, len, data);
+    }
+    void testInt16Values(RowSet & row_set, size_t offset, size_t len, const Int16 * data) const override
+    {
+        non_negated->testIntValues<Int16, true>(row_set, offset, len, data);
+    }
+
+    ColumnFilterPtr merge(const ColumnFilter * filter) const override;
+    ColumnFilterPtr clone(std::optional<bool> null_allowed_) const override;
+
+private:
+    std::unique_ptr<BigIntRangeFilter> non_negated;
+};
+
+
 class ByteValuesFilter : public ColumnFilter
 {
+    friend class NegatedByteValuesFilter;
 public:
     static OptionalFilter create(const ActionsDAG::Node & node);
     ByteValuesFilter(const std::vector<String> & values_, bool null_allowed_)
@@ -300,6 +341,27 @@ private:
     String upper;
     std::unordered_set<String> values;
     std::unordered_set<size_t> lengths;
+};
+
+class NegatedByteValuesFilter : public ColumnFilter
+{
+public:
+    static OptionalFilter create(const ActionsDAG::Node & node);
+    NegatedByteValuesFilter(const std::vector<String> & values_, bool null_allowed_)
+        : ColumnFilter(NegatedByteValues, null_allowed_), non_negated(std::make_unique<ByteValuesFilter>(values_, !null_allowed_))
+    {
+    }
+    NegatedByteValuesFilter(const NegatedByteValuesFilter & other, bool nullAllowed)
+        : ColumnFilter(ColumnFilterKind::NegatedByteValues, nullAllowed)
+        , non_negated(std::make_unique<ByteValuesFilter>(*other.non_negated, other.non_negated->null_allowed))
+    {
+    }
+    bool testString(const String & string) const override { return !non_negated->testString(string); }
+    ColumnFilterPtr merge (const ColumnFilter * filter) const override;
+    ColumnFilterPtr clone(std::optional<bool> null_allowed_) const override;
+
+private:
+    std::unique_ptr<ByteValuesFilter> non_negated;
 };
 
 class AbstractRange : public ColumnFilter

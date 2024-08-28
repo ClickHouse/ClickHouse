@@ -180,7 +180,7 @@ TEST(Processors, BenchmarkReadInt64)
     {
         ReadBufferFromFile in(path);
         auto reader = openParquet(header, in);
-        reader->addFilter("x", std::make_shared<Int64RangeFilter>(-1, -1, false));
+        reader->addFilter("x", std::make_shared<BigIntRangeFilter>(-1, -1, false));
         int count [[maybe_unused]] = 0;
         while (auto block = reader->read())
         {
@@ -233,7 +233,7 @@ TEST(Processors, TestReadNullableInt64)
 
     ReadBufferFromFile in(path);
     auto reader = openParquet(header, in);
-    //    reader->addFilter("x", std::make_shared<Int64RangeFilter>( 1000, 2000));
+    //    reader->addFilter("x", std::make_shared<BigIntRangeFilter>( 1000, 2000));
     int count = 0;
     int null_count2 = 0;
     while (auto block = reader->read())
@@ -292,7 +292,7 @@ TEST(Processors, TestReadNullableFloat)
 
     ReadBufferFromFile in(path);
     auto reader = openParquet(header, in);
-    //    reader->addFilter("x", std::make_shared<Int64RangeFilter>( 1000, 2000));
+    //    reader->addFilter("x", std::make_shared<BigIntRangeFilter>( 1000, 2000));
     int count = 0;
     int null_count2 = 0;
     bool first = true;
@@ -510,4 +510,61 @@ TEST(TestRowSet, TestRowSet)
     ASSERT_FALSE(rowSet.none());
     ASSERT_TRUE(rowSet.any());
     ASSERT_FALSE(rowSet.all());
+}
+
+TEST(TestColumnFilter, TestColumnIntFilter)
+{
+    BigIntRangeFilter filter(100, 200, false);
+    BigIntRangeFilter filter2(200, 200, false);
+
+    ASSERT_TRUE(!filter.testInt16(99));
+    ASSERT_TRUE(filter.testInt16(100));
+    ASSERT_TRUE(filter.testInt16(150));
+    ASSERT_TRUE(filter.testInt16(200));
+    ASSERT_TRUE(filter2.testInt16(200));
+    ASSERT_TRUE(!filter.testInt16(210));
+    ASSERT_TRUE(!filter2.testInt16(210));
+
+    ASSERT_TRUE(!filter.testInt32(99));
+    ASSERT_TRUE(filter.testInt32(100));
+    ASSERT_TRUE(filter.testInt32(150));
+    ASSERT_TRUE(filter.testInt32(200));
+    ASSERT_TRUE(filter2.testInt32(200));
+    ASSERT_TRUE(!filter.testInt32(210));
+    ASSERT_TRUE(!filter2.testInt32(210));
+
+    ASSERT_TRUE(!filter.testInt64(99));
+    ASSERT_TRUE(filter.testInt64(100));
+    ASSERT_TRUE(filter.testInt64(150));
+    ASSERT_TRUE(filter.testInt64(200));
+    ASSERT_TRUE(filter2.testInt64(200));
+    ASSERT_TRUE(!filter.testInt64(210));
+    ASSERT_TRUE(!filter2.testInt64(210));
+
+    PaddedPODArray<Int16> int16_values = {99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 150, 200, 210, 211, 231, 24, 25, 26, 27, 28,
+                                          99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 150, 200, 210, 211, 231, 24, 25, 26, 27, 28};
+    RowSet set1(int16_values.size());
+    filter.testInt16Values(set1, 0, int16_values.size(), int16_values.data());
+    ASSERT_EQ(set1.count(), 22);
+    set1.setAllTrue();
+    filter2.testInt16Values(set1, 0, int16_values.size(), int16_values.data());
+    ASSERT_EQ(set1.count(), 2);
+
+    PaddedPODArray<Int32> int32_values = {99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 150, 200, 210, 211, 231, 24, 25, 26, 27, 28,
+                                          99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 150, 200, 210, 211, 231, 24, 25, 26, 27, 28};
+    RowSet set2(int32_values.size());
+    filter.testInt32Values(set2, 0, int32_values.size(), int32_values.data());
+    ASSERT_EQ(set2.count(), 22);
+    set2.setAllTrue();
+    filter2.testInt32Values(set2, 0, int32_values.size(), int32_values.data());
+    ASSERT_EQ(set2.count(), 2);
+
+    PaddedPODArray<Int64> int64_values = {99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 150, 200, 210, 211, 231, 24, 25, 26, 27, 28,
+                                          99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 150, 200, 210, 211, 231, 24, 25, 26, 27, 28};
+    RowSet set3(int64_values.size());
+    filter.testInt64Values(set3, 0, int64_values.size(), int64_values.data());
+    ASSERT_EQ(set3.count(), 22);
+    set3.setAllTrue();
+    filter2.testInt64Values(set3, 0, int64_values.size(), int64_values.data());
+    ASSERT_EQ(set3.count(), 2);
 }

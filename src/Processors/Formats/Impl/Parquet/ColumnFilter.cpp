@@ -20,6 +20,7 @@ struct PhysicTypeTraits
     using simd_type = xsimd::batch<simd_internal_type>;
     using simd_bool_type = xsimd::batch_bool<simd_internal_type>;
     using simd_idx_type = xsimd::batch<simd_internal_type>;
+    using idx_type = simd_internal_type;
 };
 template struct PhysicTypeTraits<Int32>;
 template struct PhysicTypeTraits<Int64>;
@@ -29,6 +30,7 @@ template<> struct PhysicTypeTraits<Float32>
     using simd_type = xsimd::batch<simd_internal_type>;
     using simd_bool_type = xsimd::batch_bool<simd_internal_type>;
     using simd_idx_type = xsimd::batch<Int32>;
+    using idx_type = Int32;
 };
 template<> struct PhysicTypeTraits<Float64>
 {
@@ -36,6 +38,7 @@ template<> struct PhysicTypeTraits<Float64>
     using simd_type = xsimd::batch<simd_internal_type>;
     using simd_bool_type = xsimd::batch_bool<simd_internal_type>;
     using simd_idx_type = xsimd::batch<Int64>;
+    using idx_type = Int64;
 };
 template<> struct PhysicTypeTraits<DateTime64>
 {
@@ -43,6 +46,7 @@ template<> struct PhysicTypeTraits<DateTime64>
     using simd_type = xsimd::batch<simd_internal_type>;
     using simd_bool_type = xsimd::batch_bool<simd_internal_type>;
     using simd_idx_type = xsimd::batch<simd_internal_type>;
+    using idx_type = simd_internal_type;
 };
 
 template <typename T, typename S>
@@ -89,31 +93,22 @@ void FilterHelper::filterPlainFixedData(const S* src, PaddedPODArray<T> & dst, c
 }
 
 template void FilterHelper::filterPlainFixedData<Int16, Int32>(Int32 const*, DB::PaddedPODArray<Int16>&, DB::RowSet const&, size_t);
+template void FilterHelper::filterPlainFixedData<Int16, Int16>(Int16 const*, DB::PaddedPODArray<Int16>&, DB::RowSet const&, size_t);
 template void FilterHelper::filterPlainFixedData<Int32, Int32>(Int32 const*, DB::PaddedPODArray<Int32>&, DB::RowSet const&, size_t);
 template void FilterHelper::filterPlainFixedData<Int64, Int64>(const Int64* src, PaddedPODArray<Int64> & dst, const RowSet & row_set, size_t rows_to_read);
 template void FilterHelper::filterPlainFixedData<Float32, Float32>(const Float32* src, PaddedPODArray<Float32> & dst, const RowSet & row_set, size_t rows_to_read);
 template void FilterHelper::filterPlainFixedData<Float64, Float64>(const Float64* src, PaddedPODArray<Float64> & dst, const RowSet & row_set, size_t rows_to_read);
 template void FilterHelper::filterPlainFixedData<DateTime64, Int64>(const Int64* src, PaddedPODArray<DateTime64> & dst, const RowSet & row_set, size_t rows_to_read);
+template void FilterHelper::filterPlainFixedData<DateTime64, DateTime64>(const DateTime64* src, PaddedPODArray<DateTime64> & dst, const RowSet & row_set, size_t rows_to_read);
 
 template <typename T>
 void FilterHelper::gatherDictFixedValue(
     const PaddedPODArray<T> & dict, PaddedPODArray<T> & dst, const PaddedPODArray<Int32> & idx, size_t rows_to_read)
 {
-    using batch_type = PhysicTypeTraits<T>::simd_type;
-    using idx_batch_type = PhysicTypeTraits<T>::simd_idx_type;
-    using simd_internal_type = PhysicTypeTraits<T>::simd_internal_type;
-    auto increment = batch_type::size;
-    auto num_batched = rows_to_read / increment;
-    dst.resize(dst.size() + (num_batched * increment));
-    for (size_t i = 0; i < num_batched; ++i)
+    dst.resize(rows_to_read);
+    for (size_t i = 0; i < rows_to_read; ++i)
     {
-        auto rows = i * increment;
-        idx_batch_type idx_batch = idx_batch_type::load_unaligned(idx.data() + rows);
-        batch_type::gather(reinterpret_cast<const simd_internal_type *>(dict.data()), idx_batch).store_aligned(reinterpret_cast<simd_internal_type *>(dst.data() + rows));
-    }
-    for (size_t i = num_batched * increment; i < rows_to_read; ++i)
-    {
-        dst.push_back(dict[idx[i]]);
+        dst[i] = dict[idx[i]];
     }
 }
 
@@ -176,8 +171,8 @@ template void FilterHelper::filterDictFixedData(const PaddedPODArray<DateTime64>
 template void FilterHelper::filterDictFixedData(const PaddedPODArray<Int16> & dict, PaddedPODArray<Int16> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read);
 
 
-template<class T>
-void Int64RangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len, const T * data) const
+template <class T, bool negated>
+void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len, const T * data) const
 {
     using batch_type = xsimd::batch<T>;
     using bool_type = xsimd::batch_bool<T>;
@@ -186,7 +181,7 @@ void Int64RangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len
     batch_type min_batch = batch_type::broadcast(min);
     batch_type max_batch;
     if (!is_single_value)
-        max_batch = batch_type::broadcast(max);
+        max_batch = batch_type::broadcast(upper);
     bool aligned = offset % increment == 0;
     for (size_t i = 0; i < num_batched; ++i)
     {
@@ -220,6 +215,8 @@ void Int64RangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len
         }
         else
             mask = (value >= min_batch) && (value <= max_batch);
+        if constexpr (negated)
+            mask = ~mask;
         if (aligned)
             mask.store_aligned(row_set.maskReference().data() + rows);
         else
@@ -227,24 +224,24 @@ void Int64RangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len
     }
     for (size_t i = offset + (num_batched * increment); i < offset + len ; ++i)
     {
-        row_set.maskReference()[i] = data[i] >= min & data[i] <= max;
+        row_set.maskReference()[i] = data[i] >= min & data[i] <= upper;
     }
 }
 
-template void Int64RangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len, const Int64 * data) const;
-template void Int64RangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len, const Int32 * data) const;
-template void Int64RangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len, const Int16 * data) const;
+template void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len, const Int64 * data) const;
+template void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len, const Int32 * data) const;
+template void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t len, const Int16 * data) const;
 
-void Int64RangeFilter::testInt64Values(DB::RowSet & row_set, size_t offset, size_t len, const Int64 * data) const
+void BigIntRangeFilter::testInt64Values(DB::RowSet & row_set, size_t offset, size_t len, const Int64 * data) const
 {
     testIntValues(row_set, offset, len, data);
 }
 
-void Int64RangeFilter::testInt32Values(RowSet & row_set, size_t offset, size_t len, const Int32 * data) const
+void BigIntRangeFilter::testInt32Values(RowSet & row_set, size_t offset, size_t len, const Int32 * data) const
 {
     testIntValues(row_set, offset, len, data);
 }
-void Int64RangeFilter::testInt16Values(RowSet & row_set, size_t offset, size_t len, const Int16 * data) const
+void BigIntRangeFilter::testInt16Values(RowSet & row_set, size_t offset, size_t len, const Int16 * data) const
 {
     testIntValues(row_set, offset, len, data);
 }
@@ -304,7 +301,7 @@ ActionsDAG::NodeRawConstPtrs getConstantNode(const ActionsDAG::Node & node)
     return result;
 }
 
-OptionalFilter Int64RangeFilter::create(const ActionsDAG::Node & node)
+OptionalFilter BigIntRangeFilter::create(const ActionsDAG::Node & node)
 {
     if (!isCompareColumnWithConst(node))
         return std::nullopt;
@@ -318,23 +315,23 @@ OptionalFilter Int64RangeFilter::create(const ActionsDAG::Node & node)
     ColumnFilterPtr filter = nullptr;
     if (func_name == "equals")
     {
-        filter = std::make_shared<Int64RangeFilter>(value, value, false);
+        filter = std::make_shared<BigIntRangeFilter>(value, value, false);
     }
     else if (func_name == "less")
     {
-        filter = std::make_shared<Int64RangeFilter>(std::numeric_limits<Int64>::min(), value - 1, false);
+        filter = std::make_shared<BigIntRangeFilter>(std::numeric_limits<Int64>::min(), value - 1, false);
     }
     else if (func_name == "greater")
     {
-        filter = std::make_shared<Int64RangeFilter>(value + 1, std::numeric_limits<Int64>::max(), false);
+        filter = std::make_shared<BigIntRangeFilter>(value + 1, std::numeric_limits<Int64>::max(), false);
     }
     else if (func_name == "lessOrEquals")
     {
-        filter = std::make_shared<Int64RangeFilter>(std::numeric_limits<Int64>::min(), value, true);
+        filter = std::make_shared<BigIntRangeFilter>(std::numeric_limits<Int64>::min(), value, true);
     }
     else if (func_name == "greaterOrEquals")
     {
-        filter = std::make_shared<Int64RangeFilter>(value, std::numeric_limits<Int64>::max(), true);
+        filter = std::make_shared<BigIntRangeFilter>(value, std::numeric_limits<Int64>::max(), true);
     }
     if (filter)
     {
@@ -351,7 +348,7 @@ ColumnFilterPtr nullOrFalse(bool null_allowed) {
     return std::make_unique<AlwaysFalseFilter>();
 }
 
-ColumnFilterPtr Int64RangeFilter::merge(const ColumnFilter * other) const
+ColumnFilterPtr BigIntRangeFilter::merge(const ColumnFilter * other) const
 {
     switch (other->kind())
     {
@@ -360,16 +357,16 @@ ColumnFilterPtr Int64RangeFilter::merge(const ColumnFilter * other) const
         case IsNull:
             return other->merge(this);
         case IsNotNull:
-            return std::make_shared<Int64RangeFilter>(min, max, false);
-        case Int64Range: {
+            return std::make_shared<BigIntRangeFilter>(min, upper, false);
+        case BigIntRange: {
             bool both_null_allowed = null_allowed && other->testNull();
-            const auto * other_range = dynamic_cast<const Int64RangeFilter *>(other);
-            if (other_range->min > max || other_range->max < min)
+            const auto * other_range = dynamic_cast<const BigIntRangeFilter *>(other);
+            if (other_range->min > upper || other_range->upper < min)
             {
                 return nullOrFalse(both_null_allowed);
             }
-            return std::make_shared<Int64RangeFilter>(
-                std::max(min, other_range->min), std::min(max, other_range->max), both_null_allowed);
+            return std::make_shared<BigIntRangeFilter>(
+                std::max(min, other_range->min), std::min(upper, other_range->upper), both_null_allowed);
         }
         default:
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Can't merge filter of kind {}", magic_enum::enum_name(other->kind()));
@@ -509,6 +506,176 @@ ColumnFilterPtr FloatRangeFilter<T>::merge(const ColumnFilter * other) const
 
 template <> class FloatRangeFilter<Float32>;
 template <> class FloatRangeFilter<Float64>;
+
+ColumnFilterPtr NegatedByteValuesFilter::merge(const ColumnFilter * other) const
+{
+    switch (other->kind())
+    {
+        case ColumnFilterKind::AlwaysTrue:
+        case ColumnFilterKind::AlwaysFalse:
+        case ColumnFilterKind::IsNull:
+            return other->merge(this);
+        case ColumnFilterKind::IsNotNull:
+            return this->clone(false);
+        case ColumnFilterKind::ByteValues:
+            return other->merge(this);
+        default:
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Can't merge filter of kind {}", magic_enum::enum_name(other->kind()));
+    }
+}
+
+
+ColumnFilterPtr NegatedBigIntRangeFilter::clone(std::optional<bool> null_allowed_) const
+{
+    return std::make_shared<NegatedBigIntRangeFilter>(non_negated->min, non_negated->upper, null_allowed_.value_or(null_allowed));
+}
+OptionalFilter NegatedBigIntRangeFilter::create(const ActionsDAG::Node & node)
+{
+    if (!isCompareColumnWithConst(node))
+        return std::nullopt;
+    const auto * input_node = getInputNode(node);
+    auto name = input_node->result_name;
+    if (!isInt64(input_node->result_type) && !isInt32(input_node->result_type) && !isInt16(input_node->result_type))
+        return std::nullopt;
+    auto constant_nodes = getConstantNode(node);
+    auto func_name = node.function_base->getName();
+    Int64 value = constant_nodes.front()->column->getInt(0);
+    ColumnFilterPtr filter = nullptr;
+    if (func_name == "notEquals")
+    {
+        filter = std::make_shared<NegatedBigIntRangeFilter>(value, value, false);
+    }
+    if (filter)
+    {
+        return std::make_optional(std::make_pair(name, filter));
+    }
+    return std::nullopt;
+}
+ColumnFilterPtr NegatedBigIntRangeFilter::merge(const ColumnFilter * ) const
+{
+//    switch (other->kind()) {
+//        case ColumnFilterKind::AlwaysTrue:
+//        case ColumnFilterKind::AlwaysFalse:
+//        case ColumnFilterKind::IsNull:
+//            return other->merge(this);
+//        case ColumnFilterKind::IsNotNull:
+//            return this->clone(false);
+//        case ColumnFilterKind::BigIntRange: {
+//            bool bothNullAllowed = null_allowed && other->testNull();
+//            auto otherRange = static_cast<const BigIntRangeFilter*>(other);
+//            std::vector<std::unique_ptr<BigIntRangeFilter>> rangeList;
+//            rangeList.emplace_back(std::make_unique<BigIntRangeFilter>(
+//                otherRange->getMin(), otherRange->getUpper(), false));
+//            return combineNegatedRangeOnIntRanges(
+//                this->lower(), this->get(), rangeList, bothNullAllowed);
+//        }
+//        case FilterKind::kNegatedBigintRange: {
+//            bool bothNullAllowed = nullAllowed_ && other->testNull();
+//            auto otherNegatedRange = static_cast<const NegatedBigintRange*>(other);
+//            if (this->lower() > otherNegatedRange->lower()) {
+//                return other->mergeWith(this);
+//            }
+//            assert(this->lower() <= otherNegatedRange->lower());
+//            if (this->upper() + 1 < otherNegatedRange->lower()) {
+//                std::vector<std::unique_ptr<common::BigintRange>> outRanges;
+//                int64_t smallLower = this->lower();
+//                int64_t smallUpper = this->upper();
+//                int64_t bigLower = otherNegatedRange->lower();
+//                int64_t bigUpper = otherNegatedRange->upper();
+//                if (smallLower > std::numeric_limits<int64_t>::min()) {
+//                    outRanges.emplace_back(std::make_unique<common::BigintRange>(
+//                        std::numeric_limits<int64_t>::min(), smallLower - 1, false));
+//                }
+//                if (smallUpper < std::numeric_limits<int64_t>::max() &&
+//                    bigLower > std::numeric_limits<int64_t>::min()) {
+//                    outRanges.emplace_back(std::make_unique<common::BigintRange>(
+//                        smallUpper + 1, bigLower - 1, false));
+//                }
+//                if (bigUpper < std::numeric_limits<int64_t>::max()) {
+//                    outRanges.emplace_back(std::make_unique<common::BigintRange>(
+//                        bigUpper + 1, std::numeric_limits<int64_t>::max(), false));
+//                }
+//                return combineBigintRanges(std::move(outRanges), bothNullAllowed);
+//            }
+//            return std::make_unique<common::NegatedBigintRange>(
+//                this->lower(),
+//                std::max<int64_t>(this->upper(), otherNegatedRange->upper()),
+//                bothNullAllowed);
+//        }
+//        case FilterKind::kBigintMultiRange: {
+//            bool bothNullAllowed = nullAllowed_ && other->testNull();
+//            auto otherMultiRanges = static_cast<const BigintMultiRange*>(other);
+//            return combineNegatedRangeOnIntRanges(
+//                this->lower(),
+//                this->upper(),
+//                otherMultiRanges->ranges(),
+//                bothNullAllowed);
+//        }
+//        case FilterKind::kBigintValuesUsingHashTable:
+//        case FilterKind::kBigintValuesUsingBitmask:
+//            return other->mergeWith(this);
+//        case FilterKind::kNegatedBigintValuesUsingHashTable:
+//        case FilterKind::kNegatedBigintValuesUsingBitmask: {
+//            bool bothNullAllowed = nullAllowed_ && other->testNull();
+//            std::vector<int64_t> rejectedValues;
+//            if (other->kind() == FilterKind::kNegatedBigintValuesUsingHashTable) {
+//                auto otherHashTable =
+//                    static_cast<const NegatedBigintValuesUsingHashTable*>(other);
+//                rejectedValues = otherHashTable->values();
+//            } else {
+//                auto otherBitmask =
+//                    static_cast<const NegatedBigintValuesUsingBitmask*>(other);
+//                rejectedValues = otherBitmask->values();
+//            }
+//            if (nonNegated_->isSingleValue()) {
+//                if (other->testInt64(this->lower())) {
+//                    rejectedValues.push_back(this->lower());
+//                }
+//                return createNegatedBigintValues(rejectedValues, bothNullAllowed);
+//            }
+//            return combineNegatedRangeOnIntRanges(
+//                this->lower(),
+//                this->upper(),
+//                negatedValuesToRanges(rejectedValues),
+//                bothNullAllowed);
+//        }
+//        default:
+//            VELOX_UNREACHABLE();
+
+        throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported merge operation");
+//    }
+}
+
+DB::OptionalFilter DB::NegatedByteValuesFilter::create(const ActionsDAG::Node & node)
+{
+    if (!isCompareColumnWithConst(node))
+        return std::nullopt;
+    const auto * input_node = getInputNode(node);
+    auto name = input_node->result_name;
+    if (!isString(input_node->result_type))
+        return std::nullopt;
+    auto constant_nodes = getConstantNode(node);
+    auto func_name = node.function_base->getName();
+    ColumnFilterPtr filter = nullptr;
+    if (func_name == "notEquals")
+    {
+        auto value = constant_nodes.front()->column->getDataAt(0);
+        String str;
+        str.resize(value.size);
+        memcpy(str.data(), value.data, value.size);
+        std::vector<String> values = {str};
+        filter = std::make_shared<NegatedByteValuesFilter>(values, false);
+    }
+    if (filter)
+    {
+        return std::make_optional(std::make_pair(name, filter));
+    }
+    return std::nullopt;
+}
+ColumnFilterPtr NegatedByteValuesFilter::clone(std::optional<bool> ) const
+{
+    return nullptr;
+}
 
 OptionalFilter createFloatRangeFilter(const ActionsDAG::Node & node)
 {
