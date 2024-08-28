@@ -1,4 +1,4 @@
-FROM ubuntu:20.04 AS glibc-donor
+FROM ubuntu:22.04 AS glibc-donor
 ARG TARGETARCH
 
 RUN arch=${TARGETARCH:-amd64} \
