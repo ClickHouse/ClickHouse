@@ -421,8 +421,12 @@ void logQueryFinish(
             Progress p;
             p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
 
-            UInt64 real_time_microseconds = (*info.profile_counters)[ProfileEvents::RealTimeMicroseconds];
-            p.incrementRealTimeMicroseconds(real_time_microseconds);
+
+            if (info.profile_counters)
+            {
+                UInt64 real_time_microseconds = (*info.profile_counters)[ProfileEvents::RealTimeMicroseconds];
+                p.incrementRealTimeMicroseconds(real_time_microseconds);
+            }
             progress_callback(p);
         }
 
