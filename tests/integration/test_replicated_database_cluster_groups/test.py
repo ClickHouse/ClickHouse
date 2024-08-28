@@ -111,7 +111,7 @@ def test_cluster_groups(started_cluster):
 
     for node in [backup_node_1, backup_node_2, main_node_2]:
         node.query("SYSTEM SYNC DATABASE REPLICA cluster_groups;")
-    
+
     assert_create_query(all_nodes, "cluster_groups.table_1", expected_1)
     assert_create_query(all_nodes, "cluster_groups.table_2", expected_2)
 
