@@ -1381,7 +1381,7 @@ Default value: `2`.
 
 Close connection before returning connection to the pool.
 
-Default value: true.
+Default value: false.
 
 ## odbc_bridge_connection_pool_size {#odbc-bridge-connection-pool-size}
 
@@ -2855,13 +2855,23 @@ The minimum chunk size in bytes, which each thread will parse in parallel.
 
 ## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
 
-Sleep time for merge selecting when no part is selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to ClickHouse Keeper in large-scale clusters.
+Minimum time to wait before trying to select parts to merge again after no parts were selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to ClickHouse Keeper in large-scale clusters.
 
 Possible values:
 
 - Any positive integer.
 
 Default value: `5000`.
+
+## max_merge_selecting_sleep_ms
+
+Maximum time to wait before trying to select parts to merge again after no parts were selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to ClickHouse Keeper in large-scale clusters.
+
+Possible values:
+
+- Any positive integer.
+
+Default value: `60000`.
 
 ## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
@@ -5619,6 +5629,18 @@ Default value: `10000000`.
 Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 
 Default value: `1GiB`.
+
+## use_json_alias_for_old_object_type
+
+When enabled, `JSON` data type alias will be used to create an old [Object('json')](../../sql-reference/data-types/json.md) type instead of the new [JSON](../../sql-reference/data-types/newjson.md) type.
+
+Default value: `false`.
+
+## type_json_skip_duplicated_paths
+
+When enabled, ClickHouse will skip duplicated paths during parsing of [JSON](../../sql-reference/data-types/newjson.md) object. Only the value of the first occurrence of each path will be inserted.
+
+Default value: `false`
 
 ## restore_replace_external_engines_to_null
 

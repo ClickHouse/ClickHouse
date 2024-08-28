@@ -121,6 +121,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_MANY_TABLES;
     extern const int TOO_MANY_DATABASES;
+    extern const int THERE_IS_NO_COLUMN;
 }
 
 namespace fs = std::filesystem;
@@ -700,7 +701,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec, enable_zstd_qat_codec);
         }
 
-        column.statistics.column_name = column.name; /// We assign column name here for better exception error message.
         if (col_decl.statistics_desc)
         {
             if (!skip_checks && !context_->getSettingsRef().allow_experimental_statistics)
@@ -847,6 +847,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
+        properties.columns_inferred_from_select_query = true;
     }
     else if (create.as_table_function)
     {
@@ -933,6 +934,105 @@ void validateVirtualColumns(const IStorage & storage)
                 "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
                 storage_column.name, storage.getName());
         }
+    }
+}
+
+void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database)
+{
+    /// This is not strict validation, just catches common errors that would make the view not work.
+    /// It's possible to circumvent these checks by ALTERing the view or target table after creation;
+    /// we should probably do some of these checks on ALTER as well.
+
+    NamesAndTypesList all_output_columns;
+    bool check_columns = false;
+    if (create.hasTargetTableID(ViewTarget::To))
+     {
+        if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(
+                create.getTargetTableID(ViewTarget::To), getContext()))
+        {
+            all_output_columns = to_table->getInMemoryMetadataPtr()->getSampleBlock().getNamesAndTypesList();
+            check_columns = true;
+        }
+    }
+    else if (!properties.columns_inferred_from_select_query)
+    {
+        all_output_columns = properties.columns.getInsertable();
+        check_columns = true;
+    }
+
+    if (create.refresh_strategy && !create.refresh_strategy->append)
+    {
+        if (database && database->getEngineName() != "Atomic")
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Refreshable materialized views (except with APPEND) only support Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
+    }
+
+    Block input_block;
+
+    if (check_columns)
+    {
+        try
+        {
+            if (getContext()->getSettingsRef().allow_experimental_analyzer)
+            {
+                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+            }
+            else
+            {
+                input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
+                    getContext(),
+                    SelectQueryOptions().analyze()).getSampleBlock();
+            }
+        }
+        catch (Exception &)
+        {
+            if (!getContext()->getSettingsRef().allow_materialized_view_with_bad_select)
+                throw;
+            check_columns = false;
+        }
+    }
+
+    if (check_columns)
+    {
+        std::unordered_map<std::string_view, DataTypePtr> output_types;
+        for (const NameAndTypePair & nt : all_output_columns)
+            output_types[nt.name] = nt.type;
+
+        ColumnsWithTypeAndName input_columns;
+        ColumnsWithTypeAndName output_columns;
+        for (const auto & input_column : input_block)
+        {
+            auto it = output_types.find(input_column.name);
+            if (it != output_types.end())
+            {
+                input_columns.push_back(input_column.cloneEmpty());
+                output_columns.push_back(ColumnWithTypeAndName(it->second->createColumn(), it->second, input_column.name));
+            }
+            else if (create.refresh_strategy)
+            {
+                /// Unrecognized columns produced by SELECT query are allowed by regular materialized
+                /// views, but not by refreshable ones. This is in part because it was easier to
+                /// implement, in part because refreshable views have less concern about ALTERing target
+                /// tables.
+                ///
+                /// The motivating scenario for allowing this in regular MV is ALTERing the table+query.
+                /// Suppose the user removes a column from target table, then a minute later
+                /// correspondingly updates the view's query to not produce that column.
+                /// If MV didn't allow unrecognized columns then during that minute all INSERTs into the
+                /// source table would fail - unacceptable.
+                /// For refreshable views, during that minute refreshes will fail - acceptable.
+                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "SELECT query outputs column with name '{}', which is not found in the target table. Use 'AS' to assign alias that matches a column name.", input_column.name);
+            }
+        }
+
+        if (input_columns.empty())
+            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "None of the columns produced by the SELECT query are present in the target table. Use 'AS' to assign aliases that match column names.");
+
+        ActionsDAG::makeConvertingActions(
+            input_columns,
+            output_columns,
+            ActionsDAG::MatchColumnsMode::Position
+        );
     }
 }
 
@@ -1131,13 +1231,6 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
         if (create.uuid == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Table UUID is not specified in DDL log");
     }
-
-    if (create.refresh_strategy && database->getEngineName() != "Atomic")
-        throw Exception(ErrorCodes::INCORRECT_QUERY,
-            "Refreshable materialized view requires Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
-            /// TODO: Support Replicated databases, only with Shared/ReplicatedMergeTree.
-            ///       Figure out how to make the refreshed data appear all at once on other
-            ///       replicas; maybe a replicated SYSTEM SYNC REPLICA query before the rename?
 
     if (database->getUUID() != UUIDHelpers::Nil)
     {
@@ -1359,50 +1452,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
-    /// Check type compatible for materialized dest table and select columns
-    if (create.is_materialized_view_with_external_target() && create.select && mode <= LoadingStrictnessLevel::CREATE)
-    {
-        if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(create.getTargetTableID(ViewTarget::To), getContext()))
-        {
-            Block input_block;
-
-            if (getContext()->getSettingsRef().allow_experimental_analyzer)
-            {
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
-            }
-            else
-            {
-                input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
-                    getContext(),
-                    SelectQueryOptions().analyze()).getSampleBlock();
-            }
-
-            Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
-
-            ColumnsWithTypeAndName input_columns;
-            ColumnsWithTypeAndName output_columns;
-            for (const auto & input_column : input_block)
-            {
-                if (const auto * output_column = output_block.findByName(input_column.name))
-                {
-                    input_columns.push_back(input_column.cloneEmpty());
-                    output_columns.push_back(output_column->cloneEmpty());
-                }
-            }
-
-            ActionsDAG::makeConvertingActions(
-                input_columns,
-                output_columns,
-                ActionsDAG::MatchColumnsMode::Position
-            );
-        }
-    }
-
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;
     // In case of an ON CLUSTER query, the database may not be present on the initiator node
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+
+    /// Check type compatible for materialized dest table and select columns
+    if (create.select && create.is_materialized_view && mode <= LoadingStrictnessLevel::CREATE)
+        validateMaterializedViewColumnsAndEngine(create, properties, database);
 
     bool allow_heavy_populate = getContext()->getSettingsRef().database_replicated_allow_heavy_create && create.is_populate;
     if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))

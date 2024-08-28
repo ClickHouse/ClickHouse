@@ -12,6 +12,7 @@
 #include <IO/Operators.h>
 #include <cstdlib>
 #include <bit>
+#include <utility>
 
 #include <base/simd.h>
 
@@ -855,6 +856,12 @@ void readBackQuotedString(String & s, ReadBuffer & buf)
     readBackQuotedStringInto<false>(s, buf);
 }
 
+bool tryReadBackQuotedString(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    return readAnyQuotedStringInto<'`', false, String, bool>(s, buf);
+}
+
 void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
 {
     s.clear();
@@ -1270,6 +1277,81 @@ ReturnType readJSONArrayInto(Vector & s, ReadBuffer & buf)
 template void readJSONArrayInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template bool readJSONArrayInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
+std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer)
+{
+    if (buf.eof() || *buf.position() != '{')
+        throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object should start with '{{'");
+
+    char * start = buf.position();
+    bool use_object_buffer = false;
+    object_buffer.clear();
+
+    ++buf.position();
+    Int64 balance = 1;
+    bool quotes = false;
+
+    while (true)
+    {
+        if (!buf.hasPendingData() && !use_object_buffer)
+        {
+            use_object_buffer = true;
+            object_buffer.append(start, buf.position() - start);
+        }
+
+        if (buf.eof())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF while reading JSON object");
+
+        char * next_pos = find_first_symbols<'\\', '{', '}', '"'>(buf.position(), buf.buffer().end());
+        if (use_object_buffer)
+            object_buffer.append(buf.position(), next_pos - buf.position());
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        if (use_object_buffer)
+            object_buffer.push_back(*buf.position());
+
+        if (*buf.position() == '\\')
+        {
+            ++buf.position();
+            if (!buf.hasPendingData() && !use_object_buffer)
+            {
+                use_object_buffer = true;
+                object_buffer.append(start, buf.position() - start);
+            }
+
+            if (buf.eof())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF while reading JSON object");
+
+            if (use_object_buffer)
+                object_buffer.push_back(*buf.position());
+            ++buf.position();
+
+            continue;
+        }
+
+        if (*buf.position() == '"')
+            quotes = !quotes;
+        else if (!quotes) // can be only opening_bracket or closing_bracket
+            balance += *buf.position() == '{' ? 1 : -1;
+
+        ++buf.position();
+
+        if (balance == 0)
+        {
+            if (use_object_buffer)
+                return object_buffer;
+            return {start, buf.position()};
+        }
+
+        if (balance < 0)
+            break;
+    }
+
+    throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object should have equal number of opening and closing brackets");
+}
+
 template <typename ReturnType>
 ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char * allowed_delimiters)
 {
@@ -1407,10 +1489,8 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         size_t size = buf.read(s_pos, remaining_date_size);
         if (size != remaining_date_size)
         {
-            s_pos[size] = 0;
-
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", s);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", std::string_view(s, already_read_length + size));
             else
                 return false;
         }
@@ -1440,10 +1520,8 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
 
             if (size != time_broken_down_length)
             {
-                s_pos[size] = 0;
-
                 if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time component of DateTime {}", s);
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time component of DateTime {}", std::string_view(s, size));
                 else
                     return false;
             }
@@ -1916,6 +1994,11 @@ static ReturnType readParsedValueInto(Vector & s, ReadBuffer & buf, ParseFunc pa
     s.append(peekable_buf.position(), end);
     peekable_buf.position() = end;
     return ReturnType(true);
+}
+
+void readParsedValueIntoString(String & s, ReadBuffer & buf, std::function<void(ReadBuffer &)> parse_func)
+{
+    readParsedValueInto<void>(s, buf, std::move(parse_func));
 }
 
 template <typename ReturnType = void, typename Vector>

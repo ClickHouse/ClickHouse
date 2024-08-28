@@ -79,6 +79,10 @@ const Processors & PipelineExecutor::getProcessors() const
 
 void PipelineExecutor::cancel(ExecutionStatus reason)
 {
+    /// It is allowed to cancel not started query by user.
+    if (reason == ExecutionStatus::CancelledByUser)
+        tryUpdateExecutionStatus(ExecutionStatus::NotStarted, reason);
+
     tryUpdateExecutionStatus(ExecutionStatus::Executing, reason);
     finish();
     graph->cancel();
@@ -441,7 +445,7 @@ String PipelineExecutor::dumpPipeline() const
         }
     }
 
-    std::vector<IProcessor::Status> statuses;
+    std::vector<std::optional<IProcessor::Status>> statuses;
     std::vector<IProcessor *> proc_list;
     statuses.reserve(graph->nodes.size());
     proc_list.reserve(graph->nodes.size());

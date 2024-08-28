@@ -172,6 +172,7 @@ public:
     }
 
     void reserve(size_t n) override { idx.reserve(n); }
+    size_t capacity() const override { return idx.capacity(); }
     void shrinkToFit() override { idx.shrinkToFit(); }
 
     /// Don't count the dictionary size as it can be shared between different blocks.
@@ -309,6 +310,7 @@ public:
 
         void popBack(size_t n) { positions->popBack(n); }
         void reserve(size_t n) { positions->reserve(n); }
+        size_t capacity() const { return positions->capacity(); }
         void shrinkToFit() { positions->shrinkToFit(); }
 
         UInt64 getMaxPositionForCurrentType() const;

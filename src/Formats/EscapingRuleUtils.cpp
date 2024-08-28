@@ -464,7 +464,7 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
                 settings.json.read_arrays_as_strings,
                 settings.json.try_infer_objects_as_tuples,
                 settings.json.infer_incomplete_types_as_strings,
-                settings.json.allow_object_type,
+                settings.json.allow_deprecated_object_type,
                 settings.json.use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects);
             break;
         default:

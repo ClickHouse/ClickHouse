@@ -92,7 +92,7 @@ public:
         std::exception_ptr exception;
 
         /// Last state for profiling.
-        IProcessor::Status last_processor_status = IProcessor::Status::NeedData;
+        std::optional<IProcessor::Status> last_processor_status;
 
         /// Ports which have changed their state since last processor->prepare() call.
         /// They changed when neighbour processors interact with connected ports.
