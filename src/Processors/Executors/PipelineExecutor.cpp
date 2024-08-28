@@ -79,6 +79,10 @@ const Processors & PipelineExecutor::getProcessors() const
 
 void PipelineExecutor::cancel(ExecutionStatus reason)
 {
+    /// It is allowed to cancel not started query by user.
+    if (reason == ExecutionStatus::CancelledByUser)
+        tryUpdateExecutionStatus(ExecutionStatus::NotStarted, reason);
+
     tryUpdateExecutionStatus(ExecutionStatus::Executing, reason);
     finish();
     graph->cancel();

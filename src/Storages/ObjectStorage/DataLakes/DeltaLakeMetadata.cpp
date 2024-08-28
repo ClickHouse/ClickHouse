@@ -3,7 +3,7 @@
 #include "config.h"
 #include <set>
 
-#if USE_AWS_S3 && USE_PARQUET
+#if USE_PARQUET
 
 #include <Common/logger_useful.h>
 #include <Columns/ColumnString.h>
@@ -425,8 +425,9 @@ struct DeltaLakeMetadataImpl
             {
                 auto field = fields->getObject(static_cast<Int32>(i));
                 element_names.push_back(field->getValue<String>("name"));
-                auto required = field->getValue<bool>("required");
-                element_types.push_back(getFieldType(field, "type", required));
+
+                auto is_nullable = field->getValue<bool>("nullable");
+                element_types.push_back(getFieldType(field, "type", is_nullable));
             }
 
             return std::make_shared<DataTypeTuple>(element_types, element_names);
@@ -434,16 +435,16 @@ struct DeltaLakeMetadataImpl
 
         if (type_name == "array")
         {
-            bool is_nullable = type->getValue<bool>("containsNull");
-            auto element_type = getFieldType(type, "elementType", is_nullable);
+            bool element_nullable = type->getValue<bool>("containsNull");
+            auto element_type = getFieldType(type, "elementType", element_nullable);
             return std::make_shared<DataTypeArray>(element_type);
         }
 
         if (type_name == "map")
         {
-            bool is_nullable = type->getValue<bool>("containsNull");
             auto key_type = getFieldType(type, "keyType", /* is_nullable */false);
-            auto value_type = getFieldType(type, "valueType", is_nullable);
+            bool value_nullable = type->getValue<bool>("valueContainsNull");
+            auto value_type = getFieldType(type, "valueType", value_nullable);
             return std::make_shared<DataTypeMap>(key_type, value_type);
         }
 

@@ -92,13 +92,14 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     /// We will find out how many rows we would have read without sampling.
     LOG_DEBUG(log, "Preliminary index scan with condition: {}", key_condition.toString());
 
+    MarkRanges exact_ranges;
     for (const auto & part : parts)
     {
-        MarkRanges exact_ranges;
-        markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, &exact_ranges, settings, log);
-        for (const auto & range : exact_ranges)
+        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, &exact_ranges, settings, log);
+        for (const auto & range : part_ranges)
             rows_count += part->index_granularity.getRowsCountInRange(range);
     }
+    UNUSED(exact_ranges);
 
     return rows_count;
 }
@@ -369,7 +370,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             /// If sample and final are used together no need to calculate sampling expression twice.
             /// The first time it was calculated for final, because sample key is a part of the PK.
             /// So, assume that we already have calculated column.
-            ASTPtr sampling_key_ast = metadata_snapshot->getSamplingKeyAST();
+            ASTPtr sampling_key_ast;
 
             if (final)
             {
@@ -377,6 +378,12 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
                 /// We do spoil available_real_columns here, but it is not used later.
                 available_real_columns.emplace_back(sampling_key.column_names[0], std::move(sampling_column_type));
             }
+            else
+            {
+                sampling_key_ast = metadata_snapshot->getSamplingKeyAST()->clone();
+            }
+
+            chassert(sampling_key_ast != nullptr);
 
             if (has_lower_limit)
             {
