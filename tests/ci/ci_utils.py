@@ -286,4 +286,7 @@ class Utils:
 
     @staticmethod
     def is_job_triggered_manually():
-        return "robot" not in Envs.GITHUB_ACTOR
+        return (
+            "robot" not in Envs.GITHUB_ACTOR
+            and "clickhouse-ci" not in Envs.GITHUB_ACTOR
+        )
