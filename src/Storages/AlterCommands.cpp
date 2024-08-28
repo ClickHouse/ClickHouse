@@ -1519,7 +1519,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                if (next_command.type == AlterCommand::RENAME_COLUMN)
                {
                    if (next_command.column_name == command.rename_to)
-                       throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transitive renames in a single ALTER query are not allowed (don't make sense)");
+                       throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transitive renames in a single ALTER query are not allowed (doesn't make sense)");
                    else if (next_command.column_name == command.column_name)
                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column '{}' to two different names in a single ALTER query",
                                            backQuote(command.column_name));
@@ -1567,16 +1567,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (from_nested_table_name != to_nested_table_name)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
             }
-            else if (!from_nested && !to_nested)
-            {
-                all_columns.rename(command.column_name, command.rename_to);
-                renamed_columns.emplace(command.column_name);
-                renamed_columns.emplace(command.rename_to);
-            }
-            else
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from nested struct to normal column and vice versa");
-            }
+
+            all_columns.rename(command.column_name, command.rename_to);
+            renamed_columns.emplace(command.column_name);
+            renamed_columns.emplace(command.rename_to);
         }
         else if (command.type == AlterCommand::REMOVE_TTL && !metadata.hasAnyTableTTL())
         {

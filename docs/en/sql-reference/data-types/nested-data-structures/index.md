@@ -102,4 +102,19 @@ For an INSERT query, you should pass all the component column arrays of a nested
 
 For a DESCRIBE query, the columns in a nested data structure are listed separately in the same way.
 
-The ALTER query for elements in a nested data structure has limitations.
+The ALTER query for elements in a nested data structure has limitations:
+
+ - Rename for the whole nested structure is not supported, example:
+   ``` sql
+
+   ALTER TABLE test.visits RENAME COLUMN Goals to GoalsRenamed;
+
+   ```
+ - Rename one nested field to another nested field are only supported if they have the same prefix before the first dot (`.`):
+    ``` sql
+   ALTER TABLE nested_table RENAME COLUMN type1.x to type1.x_renamed; # supported
+   ALTER TABLE nested_table RENAME COLUMN type1.x to type1_renamed.x; # not supported
+   ALTER TABLE nested_table RENAME COLUMN type1.x.y to type1.y.x; # supported
+   ```
+
+ - Rename nested columns to not nested and vice versa is supported
