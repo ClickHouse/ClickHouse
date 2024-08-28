@@ -214,10 +214,7 @@ public:
 
         std::optional<ActionsDAG> filter_dag;
         if (!uris.empty())
-        {
-            String partitioning_path = Poco::URI(uris[0]).getPath();
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, partitioning_path, context);
-        }
+            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context);
 
         if (filter_dag)
         {

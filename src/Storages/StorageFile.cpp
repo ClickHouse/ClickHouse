@@ -355,14 +355,18 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
 {
     fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
     fs::path fs_table_path(table_path);
+    LOG_TRACE(getLogger("testing the paths"), "{} , {}", user_files_absolute_path, fs_table_path);
     if (fs_table_path.is_relative())
         fs_table_path = user_files_absolute_path / fs_table_path;
+
+    LOG_TRACE(getLogger("testing the paths"), "fs_table_path = {}", fs_table_path);
 
     Strings paths;
 
     /// Do not use fs::canonical or fs::weakly_canonical.
     /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
     String path = fs::absolute(fs_table_path).lexically_normal(); /// Normalize path.
+    LOG_TRACE(getLogger("testing the paths"), "path = {}", path);
     bool can_be_directory = true;
 
     if (path.find(PartitionedSink::PARTITION_ID_WILDCARD) != std::string::npos)
@@ -395,7 +399,10 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     }
 
     for (const auto & cur_path : paths)
+    {
         checkCreationIsAllowed(context, user_files_absolute_path, cur_path, can_be_directory);
+        LOG_TRACE(getLogger("checking all paths"), "{}", cur_path);
+    }
 
     return paths;
 }
@@ -1140,7 +1147,7 @@ StorageFileSource::FilesIterator::FilesIterator(
 {
     std::optional<ActionsDAG> filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, files[0], context_);
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context_);
 
     if (filter_dag)
     {

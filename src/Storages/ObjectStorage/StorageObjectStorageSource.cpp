@@ -131,11 +131,10 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
     else
     {
         ConfigurationPtr copy_configuration = configuration->clone();
-        auto keys = configuration->getPaths();
-        String partitioning_path =  fs::path(configuration->getNamespace()) / keys[0];
-        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, partitioning_path, local_context);
+        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context);
         if (filter_dag)
         {
+            auto keys = configuration->getPaths();
             std::vector<String> paths;
             paths.reserve(keys.size());
             for (const auto & key : keys)
@@ -515,7 +514,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         }
 
         recursive = key_with_globs == "/**";
-        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, key_with_globs, local_context))
+        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context))
         {
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
             filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
