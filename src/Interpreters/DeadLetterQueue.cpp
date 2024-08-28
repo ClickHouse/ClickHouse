@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
-
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -29,9 +29,9 @@ ColumnsDescription DeadLetterQueueElement::getColumnsDescription()
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Query starting time with microseconds precision."},
         {"database_name", low_cardinality_string, "ClickHouse database Kafka table belongs to."},
         {"table_name", low_cardinality_string, "ClickHouse table name."},
-        {"topic_name", low_cardinality_string, "Topic name."},
-        {"partition", std::make_shared<DataTypeUInt64>(), "Partition."},
-        {"offset", std::make_shared<DataTypeUInt64>(), "Offset."},
+        {"topic_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Topic name."},
+        {"partition", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Partition."},
+        {"offset", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Offset."},
         {"raw_message", std::make_shared<DataTypeString>(), "Message body."},
         {"error", std::make_shared<DataTypeString>(), "Error text."}
     };
