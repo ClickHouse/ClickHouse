@@ -90,7 +90,7 @@ namespace
             if (number_of_authentication_methods > max_number_of_authentication_methods)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "User can not be created/updated because it exceeds the allowed quantity of authentication methods per user."
+                                "User can not be created/updated because it exceeds the allowed quantity of authentication methods per user. "
                                 "Check the `max_authentication_methods_per_user` setting");
             }
         }
