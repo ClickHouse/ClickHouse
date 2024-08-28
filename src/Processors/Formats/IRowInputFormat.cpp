@@ -104,6 +104,7 @@ Chunk IRowInputFormat::read()
 
     size_t num_columns = header.columns();
     MutableColumns columns = header.cloneEmptyColumns();
+    ColumnCheckpoints checkpoints(columns.size());
 
     block_missing_values.clear();
 
@@ -130,6 +131,9 @@ Chunk IRowInputFormat::read()
         {
             try
             {
+                for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
+                    checkpoints[column_idx] = columns[column_idx]->getCheckpoint();
+
                 info.read_columns.clear();
                 continue_reading = readRow(columns, info);
 
@@ -193,14 +197,9 @@ Chunk IRowInputFormat::read()
 
                 syncAfterError();
 
-                /// Truncate all columns in block to initial size (remove values, that was appended to only part of columns).
-
+                /// Rollback all columns in block to initial size (remove values, that was appended to only part of columns).
                 for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
-                {
-                    auto & column = columns[column_idx];
-                    if (column->size() > num_rows)
-                        column->popBack(column->size() - num_rows);
-                }
+                    columns[column_idx]->rollback(*checkpoints[column_idx]);
             }
         }
     }

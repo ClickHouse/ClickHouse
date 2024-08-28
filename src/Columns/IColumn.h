@@ -54,8 +54,10 @@ using EqualRanges = std::vector<EqualRange>;
 /// after failed parsing when column may be in inconsistent state.
 struct ColumnCheckpoint
 {
+    size_t size;
+
     explicit ColumnCheckpoint(size_t size_) : size(size_) {}
-    size_t size = 0;
+    virtual ~ColumnCheckpoint() = default;
 };
 
 using ColumnCheckpointPtr = std::shared_ptr<const ColumnCheckpoint>;
@@ -64,19 +66,17 @@ using ColumnCheckpoints = std::vector<ColumnCheckpointPtr>;
 struct ColumnCheckpointWithNested : public ColumnCheckpoint
 {
     ColumnCheckpointWithNested(size_t size_, ColumnCheckpointPtr nested_)
-        : ColumnCheckpoint(size_)
-        , nested(std::move(nested_))
+        : ColumnCheckpoint(size_), nested(std::move(nested_))
     {
     }
 
     ColumnCheckpointPtr nested;
 };
 
-struct ColumnCheckpointWithNestedTuple : public ColumnCheckpoint
+struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
 {
-    ColumnCheckpointWithNestedTuple(size_t size_, ColumnCheckpoints nested_)
-        : ColumnCheckpoint(size_)
-        , nested(std::move(nested_))
+    ColumnCheckpointWithMultipleNested(size_t size_, ColumnCheckpoints nested_)
+        : ColumnCheckpoint(size_), nested(std::move(nested_))
     {
     }
 
@@ -548,6 +548,7 @@ public:
 
     /// Rollbacks column to the checkpoint.
     /// Unlike 'popBack' this method should work correctly even if column has invalid state.
+    /// Sizes of columns in checkpoint must be less or equal than current.
     virtual void rollback(const ColumnCheckpoint & checkpoint) { popBack(size() - checkpoint.size); }
 
     /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
