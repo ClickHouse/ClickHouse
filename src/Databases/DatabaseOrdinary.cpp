@@ -1,6 +1,5 @@
 #include <filesystem>
 
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
@@ -32,7 +31,6 @@
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Core/Defines.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -47,7 +45,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int NOT_IMPLEMENTED;
-    extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
 }
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
@@ -55,7 +52,7 @@ static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 static constexpr const char * const CONVERT_TO_REPLICATED_FLAG_NAME = "convert_to_replicated";
 
 DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context_)
-    : DatabaseOrdinary(name_, metadata_path_, std::filesystem::path("data") / escapeForFileName(name_) / "", "DatabaseOrdinary (" + name_ + ")", context_)
+    : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
 {
 }
 
@@ -79,20 +76,6 @@ static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr contex
     const auto & server_settings = context->getServerSettings();
     String replica_path = server_settings.default_replica_path;
     String replica_name = server_settings.default_replica_name;
-
-    /// Check that replica path doesn't exist
-    Macros::MacroExpansionInfo info;
-    StorageID table_id = StorageID(create_query->getDatabase(), create_query->getTable(), create_query->uuid);
-    info.table_id = table_id;
-    info.expand_special_macros_only = false;
-
-    String zookeeper_path = context->getMacros()->expand(replica_path, info);
-    if (context->getZooKeeper()->exists(zookeeper_path))
-        throw Exception(
-            ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER,
-            "Found existing ZooKeeper path {} while trying to convert table {} to replicated. Table will not be converted.",
-            zookeeper_path, backQuote(table_id.getFullTableName())
-        );
 
     auto args = std::make_shared<ASTExpressionList>();
     args->children.push_back(std::make_shared<ASTLiteral>(replica_path));
@@ -198,7 +181,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
         try
         {
-            auto ast = parseQueryFromMetadata(log, local_context, full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
+            auto ast = parseQueryFromMetadata(log, getContext(), full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
             if (ast)
             {
                 FunctionNameNormalizer::visit(ast.get());
@@ -227,23 +210,8 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 if (fs::exists(full_path.string() + detached_suffix))
                 {
                     const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
-                    LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
-
-                    std::lock_guard lock(mutex);
                     permanently_detached_tables.push_back(table_name);
-
-                    const auto detached_table_name = create_query->getTable();
-
-                    snapshot_detached_tables.emplace(
-                        detached_table_name,
-                        SnapshotDetachedTable{
-                            .database = create_query->getDatabase(),
-                            .table = detached_table_name,
-                            .uuid = create_query->uuid,
-                            .metadata_path = getObjectMetadataPath(detached_table_name),
-                            .is_permanently = true});
-
-                    LOG_TRACE(log, "Add permanently detached table {} to system.detached_tables", detached_table_name);
+                    LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
                     return;
                 }
 
@@ -265,7 +233,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
         }
     };
 
-    iterateMetadataFiles(process_metadata);
+    iterateMetadataFiles(local_context, process_metadata);
 
     size_t objects_in_database = metadata.parsed_tables.size() - prev_tables_count;
     size_t dictionaries_in_database = metadata.total_dictionaries - prev_total_dictionaries;
@@ -507,12 +475,6 @@ DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_c
     return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
 }
 
-DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOrdinary::getDetachedTablesIterator(
-    ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
-{
-    return DatabaseWithOwnTablesBase::getDetachedTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
-}
-
 Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
 {
     std::set<String> unique_names;
@@ -565,7 +527,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     }
 
     /// The create query of the table has been just changed, we need to update dependencies too.
-    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
+    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies, loading_dependencies);
 

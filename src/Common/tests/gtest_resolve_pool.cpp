@@ -1,39 +1,12 @@
 #include <IO/WriteBufferFromFile.h>
+#include <base/sleep.h>
 #include <Common/CurrentThread.h>
 #include <Common/HostResolvePool.h>
-#include <base/defines.h>
-
-#include <gtest/gtest.h>
+#include "base/defines.h"
 
 #include <optional>
-#include <chrono>
 #include <thread>
-
-
-using namespace std::literals::chrono_literals;
-
-
-auto now()
-{
-    return std::chrono::steady_clock::now();
-}
-
-void sleep_until(auto time_point)
-{
-    std::this_thread::sleep_until(time_point);
-}
-
-void sleep_for(auto duration)
-{
-    std::this_thread::sleep_for(duration);
-}
-
-size_t toMilliseconds(auto duration)
-{
-   return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-}
-
-const auto epsilon = 1ms;
+#include <gtest/gtest.h>
 
 class ResolvePoolMock : public DB::HostResolver
 {
@@ -294,14 +267,13 @@ TEST_F(ResolvePoolTest, CanFailAndHeal)
 
 TEST_F(ResolvePoolTest, CanExpire)
 {
-    auto history = 5ms;
-    auto resolver = make_resolver(toMilliseconds(history));
+    auto resolver = make_resolver();
 
     auto expired_addr = resolver->resolve();
     ASSERT_TRUE(addresses.contains(*expired_addr));
-    addresses.erase(*expired_addr);
 
-    sleep_for(history + epsilon);
+    addresses.erase(*expired_addr);
+    sleepForSeconds(1);
 
     for (size_t i = 0; i < 1000; ++i)
     {
@@ -338,19 +310,12 @@ TEST_F(ResolvePoolTest, DuplicatesInAddresses)
     ASSERT_EQ(3, DB::CurrentThread::getProfileEvents()[metrics.discovered]);
 }
 
-void check_no_failed_address(size_t iteration, auto & resolver, auto & addresses, auto & failed_addr, auto & metrics, auto deadline)
+void check_no_failed_address(size_t iteration, auto & resolver, auto & addresses, auto & failed_addr, auto & metrics)
 {
     ASSERT_EQ(iteration, DB::CurrentThread::getProfileEvents()[metrics.failed]);
     for (size_t i = 0; i < 100; ++i)
     {
         auto next_addr = resolver->resolve();
-
-        if (now() > deadline)
-        {
-            ASSERT_NE(i, 0);
-            break;
-        }
-
         ASSERT_TRUE(addresses.contains(*next_addr));
         ASSERT_NE(*next_addr, *failed_addr);
     }
@@ -358,50 +323,39 @@ void check_no_failed_address(size_t iteration, auto & resolver, auto & addresses
 
 TEST_F(ResolvePoolTest, BannedForConsiquenceFail)
 {
-    auto history = 10ms;
-    auto resolver = make_resolver(toMilliseconds(history));
+    size_t history_ms = 5;
+    auto resolver = make_resolver(history_ms);
+
 
     auto failed_addr = resolver->resolve();
     ASSERT_TRUE(addresses.contains(*failed_addr));
 
-
     failed_addr.setFail();
-    auto start_at = now();
-
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
-    check_no_failed_address(1, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
+    check_no_failed_address(1, resolver, addresses, failed_addr, metrics);
 
-    sleep_until(start_at + history + epsilon);
-
+    sleepForMilliseconds(history_ms + 1);
     resolver->update();
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
 
     failed_addr.setFail();
-    start_at = now();
+    check_no_failed_address(2, resolver, addresses, failed_addr, metrics);
 
-    check_no_failed_address(2, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
-
-    sleep_until(start_at + history + epsilon);
-
+    sleepForMilliseconds(history_ms + 1);
     resolver->update();
-
-    // too much time has passed
-    if (now() > start_at + 2*history - epsilon)
-        return;
-
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
 
     // ip still banned adter history_ms + update, because it was his second consiquent fail
-    check_no_failed_address(2, resolver, addresses, failed_addr, metrics, start_at + 2*history - epsilon);
+    check_no_failed_address(2, resolver, addresses, failed_addr, metrics);
 }
 
 TEST_F(ResolvePoolTest, NoAditionalBannForConcurrentFail)
 {
-    auto history = 10ms;
-    auto resolver = make_resolver(toMilliseconds(history));
+    size_t history_ms = 5;
+    auto resolver = make_resolver(history_ms);
 
     auto failed_addr = resolver->resolve();
     ASSERT_TRUE(addresses.contains(*failed_addr));
@@ -410,16 +364,12 @@ TEST_F(ResolvePoolTest, NoAditionalBannForConcurrentFail)
     failed_addr.setFail();
     failed_addr.setFail();
 
-    auto start_at = now();
-
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
-    check_no_failed_address(3, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
+    check_no_failed_address(3, resolver, addresses, failed_addr, metrics);
 
-    sleep_until(start_at + history + epsilon);
-
+    sleepForMilliseconds(history_ms + 1);
     resolver->update();
-
     // ip is cleared after just 1 history_ms interval.
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
@@ -427,8 +377,8 @@ TEST_F(ResolvePoolTest, NoAditionalBannForConcurrentFail)
 
 TEST_F(ResolvePoolTest, StillBannedAfterSuccess)
 {
-    auto history = 5ms;
-    auto resolver = make_resolver(toMilliseconds(history));
+    size_t history_ms = 5;
+    auto resolver = make_resolver(history_ms);
 
     auto failed_addr = resolver->resolve();
     ASSERT_TRUE(addresses.contains(*failed_addr));
@@ -445,12 +395,11 @@ TEST_F(ResolvePoolTest, StillBannedAfterSuccess)
     }
     chassert(again_addr);
 
-    auto start_at = now();
     failed_addr.setFail();
 
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
-    check_no_failed_address(1, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
+    check_no_failed_address(1, resolver, addresses, failed_addr, metrics);
 
     again_addr = std::nullopt; // success;
 

@@ -1,4 +1,3 @@
-SET output_format_pretty_display_footer_column_names=0;
 SELECT 123456789 AS x FORMAT PrettyCompact;
 SELECT toNullable(123456789) AS x FORMAT PrettyCompact;
 SELECT toLowCardinality(toNullable(123456789)) AS x FORMAT PrettyCompact;

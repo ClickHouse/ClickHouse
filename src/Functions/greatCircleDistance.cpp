@@ -94,13 +94,13 @@ struct Impl
         }
     }
 
-    static NO_SANITIZE_UNDEFINED size_t toIndex(T x)
+    static inline NO_SANITIZE_UNDEFINED size_t toIndex(T x)
     {
         /// Implementation specific behaviour on overflow or infinite value.
         return static_cast<size_t>(x);
     }
 
-    static T degDiff(T f)
+    static inline T degDiff(T f)
     {
         f = std::abs(f);
         if (f > 180)
@@ -108,7 +108,7 @@ struct Impl
         return f;
     }
 
-    T fastCos(T x)
+    inline T fastCos(T x)
     {
         T y = std::abs(x) * (T(COS_LUT_SIZE) / T(PI) / T(2.0));
         size_t i = toIndex(y);
@@ -117,7 +117,7 @@ struct Impl
         return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
     }
 
-    T fastSin(T x)
+    inline T fastSin(T x)
     {
         T y = std::abs(x) * (T(COS_LUT_SIZE) / T(PI) / T(2.0));
         size_t i = toIndex(y);
@@ -128,7 +128,7 @@ struct Impl
 
     /// fast implementation of asin(sqrt(x))
     /// max error in floats 0.00369%, in doubles 0.00072%
-    T fastAsinSqrt(T x)
+    inline T fastAsinSqrt(T x)
     {
         if (x < T(0.122))
         {

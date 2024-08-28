@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypeCustom.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ASTDataType.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
@@ -10,7 +10,6 @@
 #include <Common/StringUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
-#include <Core/Settings.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
 
@@ -22,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TYPE;
+    extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
 }
@@ -82,9 +82,15 @@ DataTypePtr DataTypeFactory::tryGet(const ASTPtr & ast) const
 template <bool nullptr_on_error>
 DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
 {
-    if (const auto * type = ast->as<ASTDataType>())
+    if (const auto * func = ast->as<ASTFunction>())
     {
-        return getImpl<nullptr_on_error>(type->name, type->arguments);
+        if (func->parameters)
+        {
+            if constexpr (nullptr_on_error)
+                return nullptr;
+            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE, "Data type cannot have multiple parenthesized parameters.");
+        }
+        return getImpl<nullptr_on_error>(func->name, func->arguments);
     }
 
     if (const auto * ident = ast->as<ASTIdentifier>())
@@ -100,7 +106,7 @@ DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
 
     if constexpr (nullptr_on_error)
         return nullptr;
-    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for data type: {}.", ast->getID());
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for data type.");
 }
 
 DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr & parameters) const
@@ -117,6 +123,23 @@ template <bool nullptr_on_error>
 DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const ASTPtr & parameters) const
 {
     String family_name = getAliasToOrName(family_name_param);
+
+    if (endsWith(family_name, "WithDictionary"))
+    {
+        ASTPtr low_cardinality_params = std::make_shared<ASTExpressionList>();
+        String param_name = family_name.substr(0, family_name.size() - strlen("WithDictionary"));
+        if (parameters)
+        {
+            auto func = std::make_shared<ASTFunction>();
+            func->name = param_name;
+            func->arguments = parameters;
+            low_cardinality_params->children.push_back(func);
+        }
+        else
+            low_cardinality_params->children.push_back(std::make_shared<ASTIdentifier>(param_name));
+
+        return getImpl<nullptr_on_error>("LowCardinality", low_cardinality_params);
+    }
 
     const auto * creator = findCreatorByName<nullptr_on_error>(family_name);
     if constexpr (nullptr_on_error)
@@ -150,14 +173,8 @@ DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) cons
     return type;
 }
 
-DataTypePtr DataTypeFactory::getCustom(const String & base_name, DataTypeCustomDescPtr customization) const
-{
-    auto type = get(base_name);
-    type->setCustomization(std::move(customization));
-    return type;
-}
 
-void DataTypeFactory::registerDataType(const String & family_name, Value creator, Case case_sensitiveness)
+void DataTypeFactory::registerDataType(const String & family_name, Value creator, CaseSensitiveness case_sensitiveness)
 {
     if (creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family {} has been provided  a null constructor", family_name);
@@ -171,12 +188,12 @@ void DataTypeFactory::registerDataType(const String & family_name, Value creator
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family name '{}' is not unique",
             family_name);
 
-    if (case_sensitiveness == Case::Insensitive
+    if (case_sensitiveness == CaseInsensitive
         && !case_insensitive_data_types.emplace(family_name_lowercase, creator).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the case insensitive data type family name '{}' is not unique", family_name);
 }
 
-void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness)
+void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, CaseSensitiveness case_sensitiveness)
 {
     if (creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type {} has been provided  a null constructor",
@@ -190,7 +207,7 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
     }, case_sensitiveness);
 }
 
-void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, Case case_sensitiveness)
+void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
 {
     registerDataType(family_name, [creator](const ASTPtr & ast)
     {
@@ -201,7 +218,7 @@ void DataTypeFactory::registerDataTypeCustom(const String & family_name, Creator
     }, case_sensitiveness);
 }
 
-void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, Case case_sensitiveness)
+void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
 {
     registerDataTypeCustom(name, [name, creator](const ASTPtr & ast)
     {
@@ -273,10 +290,9 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);
     registerDataTypeMap(*this);
-    registerDataTypeObjectDeprecated(*this);
+    registerDataTypeObject(*this);
     registerDataTypeVariant(*this);
     registerDataTypeDynamic(*this);
-    registerDataTypeJSON(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()

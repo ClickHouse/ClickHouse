@@ -22,7 +22,7 @@ SELECT * FROM 01686_test WHERE key = NULL OR key = 0;
 SELECT '--';
 SELECT * FROM 01686_test WHERE key IN (123, 456, -123) ORDER BY key;
 SELECT '--';
-SELECT * FROM 01686_test WHERE key = 'Hello'; -- { serverError TYPE_MISMATCH }
+SELECT * FROM 01686_test WHERE key = 'Hello'; -- { serverError 53 }
 
 DETACH TABLE 01686_test SYNC;
 ATTACH TABLE 01686_test;

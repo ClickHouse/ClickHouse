@@ -7,6 +7,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
@@ -18,10 +19,7 @@
 #include <Interpreters/ProfileEventsExt.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-#include <IO/ReadBufferFromPocoSocketChunked.h>
-#include <IO/WriteBufferFromPocoSocketChunked.h>
 
-#include "Core/Types.h"
 #include "IServer.h"
 #include "Interpreters/AsynchronousInsertQueue.h"
 #include "Server/TCPProtocolStackData.h"
@@ -188,8 +186,6 @@ private:
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
     UInt32 client_tcp_protocol_version = 0;
-    String proto_send_chunked_cl = "notchunked";
-    String proto_recv_chunked_cl = "notchunked";
     String quota_key;
 
     /// Connection settings, which are extracted from a context.
@@ -208,8 +204,8 @@ private:
     ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::NO_QUERY;
 
     /// Streams for reading/writing from/to client connection socket.
-    std::shared_ptr<ReadBufferFromPocoSocketChunked> in;
-    std::shared_ptr<WriteBufferFromPocoSocketChunked> out;
+    std::shared_ptr<ReadBuffer> in;
+    std::shared_ptr<WriteBuffer> out;
 
     ProfileEvents::Event read_event;
     ProfileEvents::Event write_event;
@@ -230,13 +226,8 @@ private:
     std::optional<UInt64> nonce;
     String cluster;
 
-    /// `out_mutex` protects `out` (WriteBuffer).
-    /// So it is used for method sendData(), sendProgress(), sendLogs(), etc.
-    std::mutex out_mutex;
-    /// `task_callback_mutex` protects tasks callbacks.
-    /// Inside these callbacks we might also change cancellation status,
-    /// so it also protects cancellation status checks.
     std::mutex task_callback_mutex;
+    std::mutex fatal_error_mutex;
 
     /// At the moment, only one ongoing query in the connection is supported at a time.
     QueryState state;

@@ -3,12 +3,12 @@
 #include <Server/IServer.h>
 
 #include <Compression/CompressedWriteBuffer.h>
-#include <Core/ServerSettings.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
@@ -81,14 +81,16 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
 void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
     setThreadName("IntersrvHandler");
+    ThreadStatus thread_status;
 
     /// In order to work keep-alive.
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
     Output used_output;
+    const auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-        response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, write_event);
+        response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout, write_event);
 
     auto finalize_output = [&]
     {
