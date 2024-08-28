@@ -271,7 +271,7 @@ static ParquetBloomFilterCondition::ColumnIndexToBF buildColumnIndexToBF(
     parquet::BloomFilterReader & bf_reader,
     int row_group,
     const parquet::SchemaDescriptor * parquet_schema_descriptor,
-    const std::unordered_map<std::size_t, int> & clickhouse_column_index_to_parquet_index,
+    const std::vector<std::pair<std::size_t, int>> & clickhouse_column_index_to_parquet_index,
     const std::unordered_set<std::size_t> & filtering_columns
 )
 {
