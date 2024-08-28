@@ -157,8 +157,4 @@ function test
 
 }
 
-test ""
-
-echo "On cluster tests"
-
 test "ON CLUSTER test_shard_localhost"
