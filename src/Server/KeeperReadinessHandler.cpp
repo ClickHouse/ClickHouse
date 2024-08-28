@@ -5,7 +5,6 @@
 #include <memory>
 
 #include <IO/HTTPCommon.h>
-#include <IO/Operators.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>

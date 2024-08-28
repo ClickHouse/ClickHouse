@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database, no-shared-merge-tree
+# Tags: zookeeper, no-replicated-database
 # Tag no-replicated-database: Old syntax is not allowed
-# no-shared-merge-tree -- old syntax
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
