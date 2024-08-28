@@ -59,7 +59,7 @@ bool checkKeyEncoded(const S &key)
 template<bool use_rocksdb = true, bool child_prefix = false, typename S>
 inline std::string getEncodedKey(const S & key)
 {
-    if constexpr(!use_rocksdb)
+    if constexpr (!use_rocksdb)
         return key;
     WriteBufferFromOwnString key_buffer;
     UInt16 depth = getKeyDepth(key) + (child_prefix ? 1 : 0);
