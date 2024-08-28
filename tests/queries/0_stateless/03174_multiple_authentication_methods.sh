@@ -16,12 +16,12 @@ ssh_key="-----BEGIN OPENSSH PRIVATE KEY-----
 
 function test_login_no_pwd
 {
-  ${CLICKHOUSE_CLIENT} --user $1 --query "select 1"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=$1" -d "select 1"
 }
 
 function test_login_pwd
 {
-  ${CLICKHOUSE_CLIENT} --user $1 --password $2 --query "select 1"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=$1&password=$2" -d "select 1"
 }
 
 function test_login_pwd_expect_error
