@@ -109,6 +109,9 @@ def test_cluster_groups(started_cluster):
     expected_1 = "CREATE TABLE cluster_groups.table_1\\n(\\n    `d` Date,\\n    `k` UInt64\\n)\\nENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')\\nPARTITION BY toYYYYMM(d)\\nORDER BY k\\nSETTINGS index_granularity = 8192"
     expected_2 = "CREATE TABLE cluster_groups.table_2\\n(\\n    `d` Date,\\n    `k` UInt64\\n)\\nENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')\\nPARTITION BY toYYYYMM(d)\\nORDER BY k\\nSETTINGS index_granularity = 8192"
 
+    for node in [backup_node_1, backup_node_2, main_node_2]:
+        node.query("SYSTEM SYNC DATABASE REPLICA cluster_groups;")
+    
     assert_create_query(all_nodes, "cluster_groups.table_1", expected_1)
     assert_create_query(all_nodes, "cluster_groups.table_2", expected_2)
 
