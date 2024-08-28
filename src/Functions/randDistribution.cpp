@@ -237,7 +237,14 @@ private:
         }
         else
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter number {} of function {} is expected to be constant or ColumnVector", parameter_number, getName());
+            std::string expectedType;
+            if(std::is_same_v<UInt64, ResultType>)
+                expectedType = "UInt64";
+            else if(std::is_same_v<Float64, ResultType>)
+                expectedType = "Float64";
+
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter number {} of function {} is expected to be {} but is {}",
+                parameter_number, getName(), expectedType, col->getName());
         }
 
         if (isNaN(parameter) || !std::isfinite(parameter))
