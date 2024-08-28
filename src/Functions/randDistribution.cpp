@@ -93,6 +93,9 @@ struct ChiSquaredDistribution
 
     static void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container)
     {
+        if(container.empty())
+            return;
+
         if (degree_of_freedom <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
 
@@ -110,6 +113,9 @@ struct StudentTDistribution
 
     static void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container)
     {
+        if(container.empty())
+            return;
+
         if (degree_of_freedom <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
 
@@ -127,6 +133,9 @@ struct FisherFDistribution
 
     static void generate(Float64 d1, Float64 d2, ColumnFloat64::Container & container)
     {
+        if(container.empty())
+            return;
+
         if (d1 <= 0 || d2 <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
 
