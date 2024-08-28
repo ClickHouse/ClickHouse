@@ -893,6 +893,12 @@ ContextData::ContextData(const ContextData &o) :
 {
 }
 
+void ContextData::resetSharedContext()
+{
+    std::lock_guard<std::mutex> lock(mutex_shared_context);
+    shared = nullptr;
+}
+
 Context::Context() = default;
 Context::Context(const Context & rhs) : ContextData(rhs), std::enable_shared_from_this<Context>(rhs) {}
 
@@ -912,14 +918,6 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
     res->query_access_info = std::make_shared<QueryAccessInfo>();
     res->query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     return res;
-}
-
-void Context::initGlobal()
-{
-    assert(!global_context_instance);
-    global_context_instance = shared_from_this();
-    DatabaseCatalog::init(shared_from_this());
-    EventNotifier::init();
 }
 
 SharedContextHolder Context::createShared()
@@ -2692,7 +2690,11 @@ void Context::makeSessionContext()
 
 void Context::makeGlobalContext()
 {
-    initGlobal();
+    assert(!global_context_instance);
+    global_context_instance = shared_from_this();
+    DatabaseCatalog::init(shared_from_this());
+    EventNotifier::init();
+
     global_context = shared_from_this();
 }
 
@@ -4088,8 +4090,13 @@ void Context::initializeTraceCollector()
 }
 
 /// Call after unexpected crash happen.
-void Context::handleCrash() const TSA_NO_THREAD_SAFETY_ANALYSIS
+void Context::handleCrash() const
 {
+    std::lock_guard<std::mutex> lock(mutex_shared_context);
+    if (!shared)
+        return;
+
+    SharedLockGuard lock2(shared->mutex);
     if (shared->system_logs)
         shared->system_logs->handleCrash();
 }
