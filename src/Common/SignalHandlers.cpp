@@ -371,8 +371,8 @@ try
     /// in case of double fault.
 
     LOG_FATAL(log, "########## Short fault info ############");
-    LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) Received signal {}",
-              VERSION_STRING, VERSION_OFFICIAL, daemon ? daemon->build_id : "", GIT_HASH,
+    LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {}",
+              VERSION_STRING, VERSION_OFFICIAL, daemon ? daemon->build_id : "", GIT_HASH, SYSTEM_PROCESSOR,
               thread_num, sig);
 
     std::string signal_description = "Unknown signal";
