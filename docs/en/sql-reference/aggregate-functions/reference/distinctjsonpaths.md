@@ -82,3 +82,44 @@ Result:
 │ {'a':['Int64'],'b':['Array(Nullable(Int64))','String'],'c.d.e':['Date'],'c.d.f':['Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))']} │
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Note**
+
+If JSON declaration contains paths with specified types, these paths will be always included in the result of `distinctJSONPaths/distinctJSONPathsAndTypes` functions even if input data didn't have values for these paths.
+
+```sql
+DROP TABLE IF EXISTS test_json;
+CREATE TABLE test_json(json JSON(a UInt32)) ENGINE = Memory;
+INSERT INTO test_json VALUES ('{"b" : "Hello"}'), ('{"b" : "World", "c" : [1, 2, 3]}');
+```
+
+```sql
+SELECT json FROM test_json;
+```
+
+```text
+┌─json──────────────────────────────────┐
+│ {"a":0,"b":"Hello"}                   │
+│ {"a":0,"b":"World","c":["1","2","3"]} │
+└───────────────────────────────────────┘
+```
+
+```sql
+SELECT distinctJSONPaths(json) FROM test_json;
+```
+
+```text
+┌─distinctJSONPaths(json)─┐
+│ ['a','b','c']           │
+└─────────────────────────┘
+```
+
+```sql
+SELECT distinctJSONPathsAndTypes(json) FROM test_json;
+```
+
+```text
+┌─distinctJSONPathsAndTypes(json)────────────────────────────────┐
+│ {'a':['UInt32'],'b':['String'],'c':['Array(Nullable(Int64))']} │
+└────────────────────────────────────────────────────────────────┘
+```

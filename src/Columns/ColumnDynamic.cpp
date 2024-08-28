@@ -997,7 +997,7 @@ String ColumnDynamic::getTypeNameAt(size_t row_num) const
     return variant_info.variant_names[discr];
 }
 
-void ColumnDynamic::getAllTypeNames(std::unordered_set<String> & names) const
+void ColumnDynamic::getAllTypeNamesInto(std::unordered_set<String> & names) const
 {
     auto shared_variant_discr = getSharedVariantDiscriminator();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)

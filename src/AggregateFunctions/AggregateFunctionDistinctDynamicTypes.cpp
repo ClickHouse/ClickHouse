@@ -106,7 +106,7 @@ public:
         /// In this case we can avoid iterating over all rows because we can get all types
         /// in Dynamic column in a more efficient way.
         else
-            assert_cast<const ColumnDynamic & >(*columns[0]).getAllTypeNames(data(place).data);
+            assert_cast<const ColumnDynamic & >(*columns[0]).getAllTypeNamesInto(data(place).data);
     }
 
     void addManyDefaults(

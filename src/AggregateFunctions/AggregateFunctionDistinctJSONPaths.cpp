@@ -146,7 +146,7 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
             ReadBufferFromMemory buf(value.data, value.size);
             auto type = decodeDataType(buf);
             /// We should not have Nulls here but let's check just in case.
-            chassert(!isNothingType(type));
+            chassert(!isNothing(type));
             data[path].insert(type->getName());
         }
     }
@@ -160,7 +160,7 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
             /// Add dynamic path only if it has at least one non-null value.
             /// getNumberOfDefaultRows for Dynamic column is O(1).
             if (dynamic_column->getNumberOfDefaultRows() != dynamic_column->size())
-                dynamic_column->getAllTypeNames(data[path]);
+                dynamic_column->getAllTypeNamesInto(data[path]);
         }
 
         /// Iterate over all paths in shared data and decode the data types.
@@ -172,7 +172,7 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
             ReadBufferFromMemory buf(value.data, value.size);
             auto type = decodeDataType(buf);
             /// We should not have Nulls here but let's check just in case.
-            chassert(!isNothingType(type));
+            chassert(!isNothing(type));
             data[path].insert(type->getName());
         }
     }
@@ -255,7 +255,7 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
     }
 };
 
-/// Calculates the list of distinct data types in Dynamic column.
+/// Calculates the list of distinct paths or pairs (path, type) in JSON column.
 template <typename Data>
 class AggregateFunctionDistinctJSONPathsAndTypes final : public IAggregateFunctionDataHelper<Data, AggregateFunctionDistinctJSONPathsAndTypes<Data>>
 {
