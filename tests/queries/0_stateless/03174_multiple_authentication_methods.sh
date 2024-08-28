@@ -89,6 +89,28 @@ function test
   echo "Should work"
   test_login_pwd ${user} '6'
 
+  echo "Multiple identified with, not allowed"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER USER ${user} $1 IDENTIFIED WITH plaintext_password by '7', IDENTIFIED plaintext_password by '8'" 2>&1 | grep -m1 -o "Syntax error"
+
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "DROP USER ${user} $1"
+
+  echo "CREATE Multiple identified with, not allowed"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "CREATE USER ${user} $1 IDENTIFIED WITH plaintext_password by '7', IDENTIFIED WITH plaintext_password by '8'" 2>&1 | grep -m1 -o "Syntax error"
+
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "DROP USER IF EXISTS ${user} $1"
+
+  echo "Create user with no identification"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "CREATE USER ${user} $1"
+
+  echo "Add identified with, should not be allowed because user is currently identified with no_password and it can not co-exist with other auth types"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER USER ${user} $1 ADD IDENTIFIED WITH plaintext_password by '7'" 2>&1 | grep -m1 -o "BAD_ARGUMENTS"
+
+  echo "Try to add no_password mixed with other authentication methods, should not be allowed"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER USER ${user} $1 ADD IDENTIFIED WITH plaintext_password by '8', no_password" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
+
+  echo "Adding no_password, should fail"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER USER ${user} $1 ADD IDENTIFIED WITH no_password" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
+
   echo "Replacing existing authentication methods in favor of no_password, should succeed"
   ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER USER ${user} $1 IDENTIFIED WITH no_password"
   ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SHOW CREATE USER ${user}"
@@ -96,7 +118,43 @@ function test
   echo "Trying to auth with no pwd, should succeed"
   test_login_no_pwd ${user}
 
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "DROP USER IF EXISTS ${user} $1"
+
+  echo "Create user with mix both implicit and explicit auth type, starting with with"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "CREATE USER ${user} $1 IDENTIFIED WITH plaintext_password by '1', by '2', bcrypt_password by '3', by '4';"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SHOW CREATE USER ${user}"
+
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "DROP USER IF EXISTS ${user} $1"
+
+  echo "Create user with mix both implicit and explicit auth type, starting with by"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "CREATE USER ${user} $1 IDENTIFIED by '1', plaintext_password by '2', bcrypt_password by '3', by '4';"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SHOW CREATE USER ${user}"
+
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "DROP USER IF EXISTS ${user} $1"
+
+  echo "Use WITH without providing authentication type, should fail"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "CREATE USER ${user} $1 IDENTIFIED WITH BY '1';" 2>&1 | grep -m1 -o "Syntax error"
+
+  echo "Create user with ADD identification, should fail, add is not allowed for create query"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "CREATE USER ${user} $1 ADD IDENTIFIED WITH plaintext_password by '1'" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
+
+  echo "Trailing comma should result in syntax error"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER USER ${user} $1 ADD IDENTIFIED WITH plaintext_password by '1'," 2>&1 | grep -m1 -o "SYNTAX_ERROR"
+
+  echo "First auth method can't specify type if WITH keyword is not present"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "CREATE USER ${user} $1 IDENTIFIED plaintext_password by '1'" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
+
+  echo "RESET AUTHENTICATION METHODS TO NEW can only be used on alter statement"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "CREATE USER ${user} $1 RESET AUTHENTICATION METHODS TO NEW" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
+
+  echo "ADD NOT IDENTIFIED should result in syntax error"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER USER ${user} $1 ADD NOT IDENTIFIED" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
+
+  echo "RESET AUTHENTICATION METHODS TO NEW cannot be used along with [ADD] IDENTIFIED clauses"
+  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER USER ${user} $1 IDENTIFIED WITH plaintext_password by '1' RESET AUTHENTICATION METHODS TO NEW" 2>&1 | grep -m1 -o "SYNTAX_ERROR"
+
   ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "DROP USER IF EXISTS ${user}"
+
 }
 
 test ""
