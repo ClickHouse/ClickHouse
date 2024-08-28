@@ -419,6 +419,9 @@ void logQueryFinish(
         {
             Progress p;
             p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
+
+            UInt64 cpu_real_time = (*info.profile_counters)[ProfileEvents::RealTimeMicroseconds];
+            p.incrementRealTimeMicroseconds(cpu_real_time);
             progress_callback(p);
         }
 
