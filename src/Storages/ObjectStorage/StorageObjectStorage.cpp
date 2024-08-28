@@ -331,10 +331,9 @@ SinkToStoragePtr StorageObjectStorage::write(
     }
 
     auto paths = configuration->getPaths();
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, settings, paths.front(), paths.size()))
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().data_path, paths.size()))
     {
-        paths.emplace_back(*new_key, std::nullopt, std::nullopt);
+        paths.emplace_back(*new_key);
     }
     configuration->setPaths(paths);
 
@@ -369,7 +368,7 @@ void StorageObjectStorage::truncate(
 
     StoredObjects objects;
     for (const auto & key : configuration->getPaths())
-        objects.emplace_back(key);
+        objects.emplace_back(key.data_path);
 
     object_storage->removeObjectsIfExist(objects);
 }

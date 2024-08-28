@@ -28,7 +28,7 @@ namespace VirtualColumnUtils
 /// Otherwise calling filter*() outside applyFilters() will throw "Not-ready Set is passed"
 /// if there are subqueries.
 ///
-/// Similar to filterBlockWithExpression(buildFilterExpression(splitFilterDagForAllowedInputs(...)))./// Similar to filterBlockWithQuery, but uses ActionsDAG as a predicate.
+/// Similar to yPalockWithExpression(buildFilterExpression(splitFilterDagForAllowedInputs(...)))./// Similar to filterBlockWithQuery, but uses ActionsDAG as a predicate.
 /// Basically it is filterBlockWithDAG(splitFilterDagForAllowedInputs).
 /// If allow_filtering_with_partial_predicate is true, then the filtering will be done even if some part of the predicate
 /// cannot be evaluated using the columns from the block.

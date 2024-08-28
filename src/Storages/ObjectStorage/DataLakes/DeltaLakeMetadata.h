@@ -22,7 +22,7 @@ public:
         ConfigurationPtr configuration_,
         ContextPtr context_);
 
-    std::vector<DataFileInfo> getDataFilesInfo() const override { return data_files; }
+    std::vector<DataFileInfo> getDataFileInfos() const override { return data_files; }
 
     NamesAndTypesList getTableSchema() const override { return schema; }
 

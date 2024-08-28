@@ -1,19 +1,20 @@
 #include "StorageObjectStorageSource.h"
-#include <Storages/VirtualColumnUtils.h>
+#include <optional>
+#include <Core/Settings.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <Processors/Sources/ConstChunkGenerator.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Transforms/ExtractColumnsTransform.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/Archives/createArchiveReader.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <IO/Archives/createArchiveReader.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Sources/ConstChunkGenerator.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/ExtractColumnsTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
-#include <Core/Settings.h>
 
 namespace fs = std::filesystem;
 
@@ -569,7 +570,10 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
                 return {};
             }
 
-            new_batch = std::move(result.value());
+            for (const auto & relative_metadata : *result)
+            {
+                new_batch.emplace_back(std::make_shared<ObjectInfo>(relative_metadata->relative_path, relative_metadata->metadata));
+            }
             for (auto it = new_batch.begin(); it != new_batch.end();)
             {
                 if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
@@ -639,7 +643,7 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
         /// TODO: should we add metadata if we anyway fetch it if file_progress_callback is passed?
         for (auto && key : keys)
         {
-            auto object_info = std::make_shared<ObjectInfo>(key);
+            auto object_info = std::make_shared<ObjectInfo>(key.data_path, std::nullopt, key.initial_schema, key.schema_transform);
             read_keys_->emplace_back(object_info);
         }
     }
@@ -658,17 +662,17 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::KeysIterator::ne
         ObjectMetadata object_metadata{};
         if (ignore_non_existent_files)
         {
-            auto metadata = object_storage->tryGetObjectMetadata(key);
+            auto metadata = object_storage->tryGetObjectMetadata(key.data_path);
             if (!metadata)
                 continue;
         }
         else
-            object_metadata = object_storage->getObjectMetadata(key);
+            object_metadata = object_storage->getObjectMetadata(key.data_path);
 
         if (file_progress_callback)
             file_progress_callback(FileProgress(0, object_metadata.size_bytes));
 
-        return std::make_shared<ObjectInfo>(key, object_metadata);
+        return std::make_shared<ObjectInfo>(key.data_path, object_metadata);
     }
 }
 

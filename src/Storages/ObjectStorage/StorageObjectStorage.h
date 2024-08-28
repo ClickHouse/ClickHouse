@@ -1,14 +1,17 @@
 #pragma once
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <optional>
 #include <Core/SchemaInferenceMode.h>
-#include <Storages/IStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/prepareReadingFromFormat.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
+#include <Storages/prepareReadingFromFormat.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 #include "Storages/ObjectStorage/DataFileInfo.h"
+
+#include <memory>
 
 
 namespace DB
@@ -29,7 +32,26 @@ class StorageObjectStorage : public IStorage
 public:
     class Configuration;
     using ConfigurationPtr = std::shared_ptr<Configuration>;
-    using ObjectInfo = RelativePathWithMetadata;
+
+    struct ObjectInfo : public RelativePathWithMetadata
+    {
+        ObjectInfo(
+            String relative_path_,
+            std::optional<ObjectMetadata> metadata_ = std::nullopt,
+            std::shared_ptr<NamesAndTypesList> initial_schema_ = nullptr,
+            std::shared_ptr<ActionsDAG> schema_transformer_ = nullptr)
+            : RelativePathWithMetadata(std::move(relative_path_), std::move(metadata_))
+            , initial_schema(std::move(initial_schema_))
+            , schema_transformer(std::move(schema_transformer_))
+        {
+        }
+
+        ObjectInfo() = default;
+
+    public:
+        std::shared_ptr<NamesAndTypesList> initial_schema;
+        std::shared_ptr<ActionsDAG> schema_transformer;
+    };
     using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
     using ObjectInfos = std::vector<ObjectInfoPtr>;
 

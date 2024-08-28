@@ -51,7 +51,7 @@ public:
         try
         {
             metadata = DataLakeMetadata::create(object_storage, base_configuration, context);
-            configuration->setPaths(metadata->getDataFiles());
+            configuration->setPaths(metadata->getDataFileInfos());
             if (use_schema_from_metadata)
                 schema_from_metadata = metadata->getTableSchema();
         }
@@ -90,7 +90,7 @@ public:
         else
         {
             ConfigurationPtr configuration = base_configuration->clone();
-            configuration->setPaths(metadata->getDataFiles());
+            configuration->setPaths(metadata->getDataFileInfos());
             std::string sample_path;
             return Storage::resolveSchemaFromData(
                 object_storage_, configuration, format_settings_, sample_path, local_context);

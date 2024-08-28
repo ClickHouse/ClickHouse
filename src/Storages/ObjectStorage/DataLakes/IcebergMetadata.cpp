@@ -279,7 +279,7 @@ NamesAndTypesList getClickhouseSchemaFromIcebergSchema(const Poco::JSON::Object:
         names_and_types.push_back({name, getFieldType(field, "type", required)});
     }
 
-    return std::move(names_and_types);
+    return names_and_types;
 }
 
 std::pair<NamesAndTypesList, Int32> parseTableSchema(
@@ -315,9 +315,10 @@ std::pair<NamesAndTypesList, Int32> parseTableSchema(
     return {getClickhouseSchemaFromIcebergSchema(schema), current_schema_id};
 }
 
-ActionsDAG getSchemaTransformDag(const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema)
+std::shared_ptr<ActionsDAG> getSchemaTransformDag(
+    [[maybe_unused]] const Poco::JSON::Object::Ptr & old_schema, [[maybe_unused]] const Poco::JSON::Object::Ptr & new_schema)
 {
-    return ActionsDAG{};
+    return std::make_shared<ActionsDAG>();
 }
 
 MutableColumns parseAvro(avro::DataFileReaderBase & file_reader, const Block & header, const FormatSettings & settings)
@@ -397,7 +398,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
     auto relevant_schemas_by_ids = getRelevantSchemasByIds(object, format_version);
 
-    auto [schema, schema_id] = parseTableSchema(object, format_version);
+    auto [schema, schema_id] = parseTableSchema(object, format_version, relevant_schemas_by_ids);
 
     auto current_snapshot_id = object->getValue<Int64>("current-snapshot-id");
     auto snapshots = object->get("snapshots").extract<Poco::JSON::Array::Ptr>();
@@ -415,8 +416,15 @@ DataLakeMetadataPtr IcebergMetadata::create(
     }
 
     return std::make_unique<IcebergMetadata>(
-               object_storage, configuration, local_context, metadata_version, format_version, manifest_list_file, schema_id, schema),
-        ;
+        object_storage,
+        configuration,
+        local_context,
+        metadata_version,
+        format_version,
+        manifest_list_file,
+        schema_id,
+        schema,
+        relevant_schemas_by_ids);
 }
 
 /**
@@ -444,14 +452,14 @@ DataLakeMetadataPtr IcebergMetadata::create(
  * │      1 │ 2252246380142525104 │ ('/iceberg_data/db/table_name/data/a=2/00000-1-c9535a00-2f4f-405c-bcfa-6d4f9f477235-00003.parquet','PARQUET',(2),1,631,67108864,[(1,46),(2,48)],[(1,1),(2,1)],[(1,0),(2,0)],[],[(1,'\0\0\0\0\0\0\0'),(2,'3')],[(1,'\0\0\0\0\0\0\0'),(2,'3')],NULL,[4],0) │
  * └────────┴─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  */
-Strings IcebergMetadata::getDataFilesInfo() const
+DataFileInfos IcebergMetadata::getDataFileInfos() const
 {
-    if (!data_files.empty())
-        return data_files;
+    if (!data_file_infos.empty())
+        return data_file_infos;
 
     Strings manifest_files;
     if (manifest_list_file.empty())
-        return data_files;
+        return data_file_infos;
 
     LOG_TEST(log, "Collect manifest files from manifest list {}", manifest_list_file);
 
@@ -481,7 +489,7 @@ Strings IcebergMetadata::getDataFilesInfo() const
         manifest_files.emplace_back(std::filesystem::path(configuration->getPath()) / "metadata" / filename);
     }
 
-    std::set<std::pair<String, Int32>> files;
+    std::map<String, Int32> files;
     LOG_TEST(log, "Collect data files");
     for (const auto & manifest_file : manifest_files)
     {
@@ -614,45 +622,43 @@ Strings IcebergMetadata::getDataFilesInfo() const
             if (ManifestEntryStatus(status) == ManifestEntryStatus::DELETED)
             {
                 LOG_TEST(log, "Processing delete file for path: {}", file_path);
-                chassert(!files.contains(file_path));
+                chassert(files.count(file_path) == 0);
             }
             else
             {
                 LOG_TEST(log, "Processing data file for path: {}", file_path);
-                files.insert({file_path, schema_object_id});
+                files[file_path] = schema_object_id;
             }
         }
-    }
 
-    std::vector<DataFileInfo> data_file_infos;
+        if (!relevant_schemas_by_ids.count(schema_object_id))
+        {
+            relevant_schemas_by_ids[schema_object_id] = schema_object;
+        }
+        if (!transform_dags_by_ids.count(schema_object_id))
+        {
+            transform_dags_by_ids[schema_object_id]
+                = getSchemaTransformDag(relevant_schemas_by_ids[schema_object_id], relevant_schemas_by_ids[current_schema_id]);
+        }
+    }
 
 
     for (const auto & [file_path, schema_object_id] : files)
     {
         if (current_schema_id == schema_object_id)
         {
-            data_file_infos.emplace_back(file_path, std::nullopt, std::nullopt);
+            data_file_infos.emplace_back(DataFileInfo{file_path});
         }
         else
         {
-            if (!relevant_schemas_by_ids.count(schema_object_id))
-            {
-                relevant_schemas_by_ids[schema_object_id] = schema_object;
-            }
-            if (!transform_dags_by_ids.count(schema_object_id))
-            {
-                transform_dags_by_ids[schema_object_id]
-                    = getSchemaTransformDag(relevant_schemas_by_ids[schema_object_id], relevant_schemas_by_ids[current_schema_id]);
-            }
             data_file_infos.emplace_back(
                 file_path,
-                getClickhouseSchemaFromIcebergSchema(relevant_schemas_by_ids[schema_object_id]),
-                transform_dags_by_ids[schema_object_id])
+                std::make_shared<NamesAndTypesList>(getClickhouseSchemaFromIcebergSchema(relevant_schemas_by_ids[schema_object_id])),
+                transform_dags_by_ids[schema_object_id]);
         }
     }
 
-    data_files = std::vector<std::string>(files.begin(), files.end());
-    return data_files;
+    return data_file_infos;
 }
 
 }

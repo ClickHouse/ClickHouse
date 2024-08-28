@@ -82,7 +82,7 @@ public:
 
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
     /// All subsequent calls will return saved list of files (because it cannot be changed without changing metadata file)
-    std::vector<DataFileInfo> getDataFilesInfo() const override;
+    DataFileInfos getDataFileInfos() const override;
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override { return schema; }
@@ -112,11 +112,11 @@ private:
     String manifest_list_file;
     const Int32 current_schema_id;
     NamesAndTypesList schema;
-    mutable Strings data_files;
+    mutable DataFileInfos data_file_infos;
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;
-    std::map<Int32, Poco::JSON::Object::Ptr> relevant_schemas_by_ids;
-    std::map<Int32, ActionsDAG> transform_dags_by_ids;
+    mutable std::map<Int32, Poco::JSON::Object::Ptr> relevant_schemas_by_ids;
+    mutable std::map<Int32, std::shared_ptr<ActionsDAG>> transform_dags_by_ids;
     LoggerPtr log;
 };
 
