@@ -101,7 +101,7 @@ Block HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
 
     const auto & table_join = join.table_join;
     std::set<size_t> block_columns_to_erase;
-    if (table_join->enableEnalyzer() && !table_join->hasUsing())
+    if (join.canRemoveColumnsFromLeftBlock())
     {
         std::unordered_set<String> left_output_columns;
         for (const auto & out_column : table_join->getOutputColumns(JoinTableSide::Left))
