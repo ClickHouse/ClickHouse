@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_MUTATION_COMMAND;
     extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -115,10 +116,10 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.column_name = getIdentifierName(command->column);
         return res;
     }
-    /// MODIFY COLUMN x REMOVE MATERIALIZED is a valid alter command, but doesn't have any specified column type, thus no mutation is needed
+    /// MODIFY COLUMN x REMOVE MATERIALIZED/RESET SETTING/MODIFY SETTING is a valid alter command, but doesn't have any specified column type,
+    /// thus no mutation is needed
     else if (
-        parse_alter_commands && command->type == ASTAlterCommand::MODIFY_COLUMN && command->col_decl
-        && command->col_decl->as<ASTColumnDeclaration &>().type)
+        parse_alter_commands && command->type == ASTAlterCommand::MODIFY_COLUMN && command->remove_property.empty() && nullptr == command->settings_changes && nullptr == command->settings_resets)
     {
         MutationCommand res;
         res.ast = command->ptr();
