@@ -1,7 +1,6 @@
 #include <chrono>
 #include <gtest/gtest.h>
 
-#include "Coordination/RocksDBContainer.h"
 #include "config.h"
 
 #if USE_NURAFT

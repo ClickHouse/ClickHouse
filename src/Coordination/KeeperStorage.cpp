@@ -20,7 +20,6 @@
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
-#include "Coordination/RocksDBContainer.h"
 
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperCommon.h>
