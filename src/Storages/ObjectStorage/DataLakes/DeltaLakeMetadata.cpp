@@ -3,7 +3,7 @@
 #include "config.h"
 #include <set>
 
-#if USE_PARQUET
+#if USE_AWS_S3 && USE_PARQUET
 
 #include <Common/logger_useful.h>
 #include <Columns/ColumnString.h>
