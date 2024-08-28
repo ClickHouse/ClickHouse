@@ -928,7 +928,7 @@ AggregationInputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::No
     buildSortingDAG(node, dag, fixed_columns, limit);
 
     if (dag && !fixed_columns.empty())
-        enreachFixedColumns(*dag, fixed_columns);
+        enrichFixedColumns(*dag, fixed_columns);
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
