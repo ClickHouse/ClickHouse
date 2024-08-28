@@ -1717,6 +1717,24 @@ Result:
 [[1,1,2,3],[1,2,3,4]]
 ```
 
+## arrayUnion(arr)
+
+Takes multiple arrays, returns an array that contains all elements that are present in any of the source arrays.
+
+Example:
+```sql
+SELECT
+    arrayUnion([-2, 1], [10, 1], [-2], []) as num_example,
+    arrayUnion(['hi'], [], ['hello', 'hi']) as str_example,
+    arrayUnion([1, 3, NULL], [2, 3, NULL]) as null_example
+```
+
+```text
+┌─num_example─┬─str_example────┬─null_example─┐
+│ [10,-2,1]   │ ['hello','hi'] │ [3,2,1,NULL] │
+└─────────────┴────────────────┴──────────────┘
+```
+
 ## arrayIntersect(arr)
 
 Takes multiple arrays, returns an array with elements that are present in all source arrays.
