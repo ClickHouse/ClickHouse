@@ -996,7 +996,7 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
             header.insert(ColumnWithTypeAndName{type, name});
     }
 
-    if (format_settings.schema_inference_make_columns_nullable)
+    if (format_settings.schema_inference_make_columns_nullable == 1)
         return getNamesAndRecursivelyNullableTypes(header);
     return header.getNamesAndTypesList();
 }
