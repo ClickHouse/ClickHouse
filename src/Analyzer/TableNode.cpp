@@ -10,8 +10,6 @@
 
 #include <Interpreters/Context.h>
 
-#include <Core/Settings.h>
-
 namespace DB
 {
 
@@ -33,14 +31,6 @@ TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
         storage_->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout),
         storage_->getStorageSnapshot(storage_->getInMemoryMetadataPtr(), context))
 {
-}
-
-void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & context)
-{
-    storage = std::move(storage_value);
-    storage_id = storage->getStorageID();
-    storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
-    storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
 }
 
 void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const

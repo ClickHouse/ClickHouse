@@ -86,7 +86,7 @@ public:
     }
 
     /// Return object into pool. Client must return same object that was borrowed.
-    void returnObject(T && object_to_return)
+    inline void returnObject(T && object_to_return)
     {
         {
             std::lock_guard lock(objects_mutex);
@@ -99,20 +99,20 @@ public:
     }
 
     /// Max pool size
-    size_t maxSize() const
+    inline size_t maxSize() const
     {
         return max_size;
     }
 
     /// Allocated objects size by the pool. If allocatedObjectsSize == maxSize then pool is full.
-    size_t allocatedObjectsSize() const
+    inline size_t allocatedObjectsSize() const
     {
         std::lock_guard lock(objects_mutex);
         return allocated_objects_size;
     }
 
     /// Returns allocatedObjectsSize == maxSize
-    bool isFull() const
+    inline bool isFull() const
     {
         std::lock_guard lock(objects_mutex);
         return allocated_objects_size == max_size;
@@ -120,7 +120,7 @@ public:
 
     /// Borrowed objects size. If borrowedObjectsSize == allocatedObjectsSize and pool is full.
     /// Then client will wait during borrowObject function call.
-    size_t borrowedObjectsSize() const
+    inline size_t borrowedObjectsSize() const
     {
         std::lock_guard lock(objects_mutex);
         return borrowed_objects_size;
@@ -129,7 +129,7 @@ public:
 private:
 
     template <typename FactoryFunc>
-    T allocateObjectForBorrowing(const std::unique_lock<std::mutex> &, FactoryFunc && func)
+    inline T allocateObjectForBorrowing(const std::unique_lock<std::mutex> &, FactoryFunc && func)
     {
         ++allocated_objects_size;
         ++borrowed_objects_size;
@@ -137,7 +137,7 @@ private:
         return std::forward<FactoryFunc>(func)();
     }
 
-    T borrowFromObjects(const std::unique_lock<std::mutex> &)
+    inline T borrowFromObjects(const std::unique_lock<std::mutex> &)
     {
         T dst;
         detail::moveOrCopyIfThrow(std::move(objects.back()), dst);

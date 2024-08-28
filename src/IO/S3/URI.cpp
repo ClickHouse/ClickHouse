@@ -1,15 +1,14 @@
 #include <IO/S3/URI.h>
-
-#if USE_AWS_S3
+#include <Poco/URI.h>
+#include "Common/Macros.h"
 #include <Interpreters/Context.h>
-#include <Common/Macros.h>
+#include <Storages/NamedCollectionsHelpers.h>
+#if USE_AWS_S3
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
-#include <IO/Archives/ArchiveUtils.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
-
 
 namespace DB
 {
@@ -31,29 +30,27 @@ namespace ErrorCodes
 namespace S3
 {
 
-URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
+URI::URI(const std::string & uri_)
 {
     /// Case when bucket name represented in domain name of S3 URL.
-    /// E.g. (https://bucket-name.s3.region.amazonaws.com/key)
+    /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
     /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
     static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3express[\-a-z0-9]+|s3|cos|obs|oss|eos)([.\-][a-z0-9\-.:]+))");
 
-    /// Case when AWS Private Link Interface is being used
-    /// E.g. (bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w.s3.us-east-1.vpce.amazonaws.com/bucket-name/key)
-    /// https://docs.aws.amazon.com/AmazonS3/latest/userguide/privatelink-interface-endpoints.html
-    static const RE2 aws_private_link_style_pattern(R"(bucket\.vpce\-([a-z0-9\-.]+)\.vpce\.amazonaws\.com(:\d{1,5})?)");
-
-    /// Case when bucket name and key represented in the path of S3 URL.
-    /// E.g. (https://s3.region.amazonaws.com/bucket-name/key)
+    /// Case when bucket name and key represented in path of S3 URL.
+    /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
     /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
     static const RE2 path_style_pattern("^/([^/]*)/(.*)");
 
-    if (allow_archive_path_syntax)
-        std::tie(uri_str, archive_pattern) = getURIAndArchivePattern(uri_);
-    else
-        uri_str = uri_;
+    static constexpr auto S3 = "S3";
+    static constexpr auto S3EXPRESS = "S3EXPRESS";
+    static constexpr auto COSN = "COSN";
+    static constexpr auto COS = "COS";
+    static constexpr auto OBS = "OBS";
+    static constexpr auto OSS = "OSS";
+    static constexpr auto EOS = "EOS";
 
-    uri = Poco::URI(uri_str);
+    uri = Poco::URI(uri_);
 
     std::unordered_map<std::string, std::string> mapper;
     auto context = Context::getGlobalContextInstance();
@@ -70,7 +67,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         else
         {
             mapper["s3"] = "https://{bucket}.s3.amazonaws.com";
-            mapper["gs"] = "https://storage.googleapis.com/{bucket}";
+            mapper["gs"] = "https://{bucket}.storage.googleapis.com";
             mapper["oss"] = "https://{bucket}.oss.aliyuncs.com";
         }
 
@@ -78,7 +75,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
             URIConverter::modifyURI(uri, mapper);
     }
 
-    storage_name = "S3";
+    storage_name = S3;
 
     if (uri.getHost().empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
@@ -86,13 +83,11 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     /// Extract object version ID from query string.
     bool has_version_id = false;
     for (const auto & [query_key, query_value] : uri.getQueryParameters())
-    {
         if (query_key == "versionId")
         {
             version_id = query_value;
             has_version_id = true;
         }
-    }
 
     /// Poco::URI will ignore '?' when parsing the path, but if there is a versionId in the http parameter,
     /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
@@ -108,10 +103,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     String name;
     String endpoint_authority_from_uri;
 
-    bool is_using_aws_private_link_interface = re2::RE2::FullMatch(uri.getAuthority(), aws_private_link_style_pattern);
-
-    if (!is_using_aws_private_link_interface
-        && re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
+    if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
     {
         is_virtual_hosted_style = true;
         endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
@@ -124,8 +116,14 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         }
 
         boost::to_upper(name);
-        if (name == "COS")
-            storage_name = "COSN";
+        /// For S3Express it will look like s3express-eun1-az1, i.e. contain region and AZ info
+        if (name != S3 && !name.starts_with(S3EXPRESS) && name != COS && name != OBS && name != OSS && name != EOS)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Object storage system name is unrecognized in virtual hosted style S3 URI: {}",
+                            quoteString(name));
+
+        if (name == COS)
+            storage_name = COSN;
         else
             storage_name = name;
     }
@@ -136,22 +134,13 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         validateBucket(bucket, uri);
     }
     else
-    {
-        /// Custom endpoint, e.g. a public domain of Cloudflare R2,
-        /// which could be served by a custom server-side code.
-        storage_name = "S3";
-        bucket = "default";
-        is_virtual_hosted_style = false;
-        endpoint = uri.getScheme() + "://" + uri.getAuthority();
-        if (!uri.getPath().empty())
-            key = uri.getPath().substr(1);
-    }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket or key name are invalid in S3 URI.");
 }
 
 void URI::addRegionToURI(const std::string &region)
 {
-    if (auto pos = endpoint.find(".amazonaws.com"); pos != std::string::npos)
-        endpoint = endpoint.substr(0, pos) + "." + region + endpoint.substr(pos);
+    if (auto pos = endpoint.find("amazonaws.com"); pos != std::string::npos)
+        endpoint = endpoint.substr(0, pos) + region + "." + endpoint.substr(pos);
 }
 
 void URI::validateBucket(const String & bucket, const Poco::URI & uri)
@@ -159,45 +148,10 @@ void URI::validateBucket(const String & bucket, const Poco::URI & uri)
     /// S3 specification requires at least 3 and at most 63 characters in bucket name.
     /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
     if (bucket.length() < 3 || bucket.length() > 63)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Bucket name length is out of bounds in virtual hosted style S3 URI: {}{}",
-            quoteString(bucket),
-            !uri.empty() ? " (" + uri.toString() + ")" : "");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI: {}{}",
+                        quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
 }
 
-std::pair<std::string, std::optional<std::string>> URI::getURIAndArchivePattern(const std::string & source)
-{
-    size_t pos = source.find("::");
-    if (pos == String::npos)
-        return {source, std::nullopt};
-
-    std::string_view path_to_archive_view = std::string_view{source}.substr(0, pos);
-    bool contains_spaces_around_operator = false;
-    while (path_to_archive_view.ends_with(' '))
-    {
-        contains_spaces_around_operator = true;
-        path_to_archive_view.remove_suffix(1);
-    }
-
-    std::string_view archive_pattern_view = std::string_view{source}.substr(pos + 2);
-    while (archive_pattern_view.starts_with(' '))
-    {
-        contains_spaces_around_operator = true;
-        archive_pattern_view.remove_prefix(1);
-    }
-
-    /// possible situations when the first part can be archive is only if one of the following is true:
-    /// - it contains supported extension
-    /// - it contains spaces after or before :: (URI cannot contain spaces)
-    /// - it contains characters that could mean glob expression
-    if (archive_pattern_view.empty() || path_to_archive_view.empty()
-        || (!contains_spaces_around_operator && !hasSupportedArchiveExtension(path_to_archive_view)
-            && path_to_archive_view.find_first_of("*?{") == std::string_view::npos))
-        return {source, std::nullopt};
-
-    return std::pair{std::string{path_to_archive_view}, std::string{archive_pattern_view}};
-}
 }
 
 }

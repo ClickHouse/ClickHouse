@@ -23,7 +23,6 @@ public:
         const Block & header,
         const SortDescription & description_,
         size_t max_merged_block_size_,
-        size_t max_block_bytes,
         UInt64 limit_,
         bool increase_sort_description_compile_attempts,
         size_t max_bytes_before_remerge_,
@@ -47,7 +46,6 @@ private:
     size_t max_bytes_before_external_sort;
     TemporaryDataOnDiskPtr tmp_data;
     size_t min_free_disk_space;
-    size_t max_block_bytes;
 
     size_t sum_rows_in_blocks = 0;
     size_t sum_bytes_in_blocks = 0;

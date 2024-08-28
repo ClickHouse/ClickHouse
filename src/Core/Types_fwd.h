@@ -32,7 +32,7 @@ struct IPv6;
 
 struct Null;
 
-enum class TypeIndex : uint8_t;
+enum class TypeIndex;
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;
