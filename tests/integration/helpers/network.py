@@ -164,10 +164,12 @@ class PartitionManager:
 
     @staticmethod
     def _is_ipv6_rule(rule):
-        if "source" in rule:
+        if rule.get("source"):
             return ipaddress.ip_address(rule["source"]).version == 6
-        if "destination" in rule:
+        if rule.get("destination"):
             return ipaddress.ip_address(rule["destination"]).version == 6
+
+        return False
 
     def _add_rule(self, rule):
         if self._is_ipv6_rule(rule):
