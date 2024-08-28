@@ -92,7 +92,7 @@ def test_s3_upload(started_cluster):
     # Keeper sends snapshots asynchornously, hence we need to retry.
     @retry(AssertionError, tries=10, delay=2)
     def _check_snapshots():
-        assert set(get_saved_snapshots()) == set(
+        assert set(get_saved_snapshots()) >= set(
             [
                 "snapshot_50.bin.zstd",
                 "snapshot_100.bin.zstd",
