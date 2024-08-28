@@ -1289,12 +1289,16 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 template <typename Collection>
 struct CollectionOfLiteralsLayer
 {
-    explicit CollectionOfLiteralsLayer(IParser::Pos & pos) : literal_begin(pos)
+    explicit CollectionOfLiteralsLayer(IParser::Pos & pos, TokenType closing_bracket_)
+        : literal_begin(pos)
+        , closing_bracket(closing_bracket_)
     {
+        pos.increaseDepth();
         ++pos;
     }
 
     IParser::Pos literal_begin;
+    TokenType closing_bracket;
     Collection arr;
 };
 
@@ -1305,8 +1309,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         return false;
 
     std::vector<CollectionOfLiteralsLayer<Collection>> layers;
-    layers.emplace_back(pos);
-    pos.increaseDepth();
+    layers.emplace_back(pos, closing_bracket);
 
     ParserLiteral literal_p;
 
@@ -1314,13 +1317,22 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
     {
         if (!layers.back().arr.empty())
         {
-            if (pos->type == closing_bracket)
+            if (pos->type == layers.back().closing_bracket)
             {
                 std::shared_ptr<ASTLiteral> literal;
 
-                /// Parse one-element tuples (e.g. (1)) later as single values for backward compatibility.
+                // /// Parse one-element tuples (e.g. (1)) later as single values for backward compatibility.
                 if (std::is_same_v<Collection, Tuple> && layers.back().arr.size() == 1)
+                {
+                    if (layers.size() > 1)
+                    {
+                        layers[layers.size() - 2].arr.push_back(layers.back().arr[0]);
+                        layers.pop_back();
+                        pos.decreaseDepth();
+                        continue;
+                    }
                     return false;
+                }
 
                 literal = std::make_shared<ASTLiteral>(std::move(layers.back().arr));
                 literal->begin = layers.back().literal_begin;
@@ -1360,8 +1372,17 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         }
         else if (pos->type == opening_bracket)
         {
-            layers.emplace_back(pos);
-            pos.increaseDepth();
+            layers.emplace_back(pos, closing_bracket);
+        }
+        else if (pos->type == TokenType::BareWord && std::string_view(pos->begin, pos->end) == FunctionName<Collection>::value)
+        {
+            ++pos;
+            if (pos.isValid() && pos->type == TokenType::OpeningRoundBracket)
+            {
+                layers.emplace_back(pos, TokenType::ClosingRoundBracket);
+            }
+            else
+                return false;
         }
         else
             return false;

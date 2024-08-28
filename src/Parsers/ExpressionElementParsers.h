@@ -313,6 +313,12 @@ protected:
 private:
     TokenType opening_bracket;
     TokenType closing_bracket;
+
+    template <typename> struct FunctionName;
+    template <> struct FunctionName<Array> { static constexpr auto value = "array"; };
+    template <> struct FunctionName<Tuple> { static constexpr auto value = "tuple"; };
+
+    std::string_view function_name = FunctionName<Collection>::value;
 };
 
 /// A tuple of literals with same type.

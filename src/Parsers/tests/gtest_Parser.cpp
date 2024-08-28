@@ -662,3 +662,49 @@ INSTANTIATE_TEST_SUITE_P(
                 "WITH\n    table_1 AS\n    (\n        SELECT\n            country,\n            city,\n            c + some_derived_value AS _expr_1\n        FROM matches\n        WHERE start_date > toDate('2023-05-30')\n    ),\n    table_0 AS\n    (\n        SELECT\n            country,\n            city,\n            AVG(_expr_1) AS _expr_0,\n            MAX(_expr_1) AS aggr\n        FROM table_1\n        WHERE _expr_1 > 0\n        GROUP BY\n            country,\n            city\n    )\nSELECT\n    country,\n    city,\n    _expr_0,\n    aggr,\n    CONCAT(city, ' in ', country) AS place,\n    LEFT(country, 2) AS country_code\nFROM table_0\nORDER BY\n    aggr ASC,\n    country DESC\nLIMIT 20",
             },
         })));
+
+namespace DB { std::ostream & operator<<(std::ostream & stream, const Field & field) { return stream << field.dump(); } }
+
+TEST(ParserTest, parseTupleLiterals)
+try
+{
+    ParserTupleOfLiterals parser;
+
+    auto parse_tuple = [&](std::string_view text) -> std::optional<Tuple>
+    {
+        try
+        {
+            auto ast = parseQuery(parser, text.begin(), text.end(), 0, 0, 0);
+            const auto * literal = typeid_cast<const ASTLiteral *>(ast.get());
+            if (!literal || literal->value.getType() != Field::Types::Tuple)
+                return {};
+            return literal->value.safeGet<Tuple>();
+        }
+        catch (const DB::Exception & e)
+        {
+            std::cerr << e.displayText() << std::endl;
+            return {};
+        }
+    };
+
+    const auto & tuple = parse_tuple("((1, 2), (3, 4))");
+    ASSERT_TRUE(tuple && tuple->size() == 2);
+
+    std::vector<std::string_view> test_cases = {
+        // "((1, 2,), (3, 4,),)",
+        // "  (    (\t\t 1  \r\n ,  2  ,\n ) \t\t,   (  3  ,  4 \t, ) ,  )   ",
+        "(((1, 2)), (3, 4))",
+        "(((1), 2), (3, 4))",
+        "(tuple(1, 2), (3, 4))",
+    };
+    for (size_t i = 0; i < test_cases.size(); ++i)
+    {
+        SCOPED_TRACE(fmt::format("Test case #{}: {}", i + 1, test_cases[i]));
+        EXPECT_EQ(tuple, parse_tuple(test_cases[i]));
+    }
+}
+catch (...)
+{
+    std::cerr << getCurrentExceptionMessage(true) << std::endl;
+    throw;
+}
