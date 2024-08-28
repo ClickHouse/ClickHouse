@@ -33,6 +33,7 @@ DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options) FOR
 6. │ t.b       │ UInt64                    │              │                    │              │ ZSTD(1)          │                │            1 │
    └───────────┴───────────────────────────┴──────────────┴────────────────────┴──────────────┴──────────────────┴────────────────┴──────────────┘
 SET describe_compact_output = 0, describe_include_virtual_columns = 1, describe_include_subcolumns = 0;
+
 DESCRIBE TABLE t_describe_options FORMAT PrettyCompactNoEscapes;
     ┌─name───────────┬─type──────────────────────┬─default_type─┬─default_expression─┬─comment─────────────────────────────────────────────────────────────────────────────────┬─codec_expression─┬─ttl_expression─┬─is_virtual─┐
  1. │ id             │ UInt64                    │              │                    │ index column                                                                            │                  │                │          0 │
