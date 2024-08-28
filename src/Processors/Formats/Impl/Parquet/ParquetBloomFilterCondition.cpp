@@ -219,7 +219,7 @@ std::unordered_set<std::size_t> ParquetBloomFilterCondition::getFilteringColumnK
 std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParquetBloomFilterCondition(
     const std::vector<KeyCondition::RPNElement> & rpn,
     const Block & header,
-    const std::unordered_map<std::size_t, int> & clickhouse_column_index_to_parquet_index,
+    const std::vector<std::pair<std::size_t, int>> & clickhouse_column_index_to_parquet_index,
     const std::unique_ptr<parquet::RowGroupMetaData> & parquet_rg_metadata)
 {
     std::vector<ParquetBloomFilterCondition::ConditionElement> condition_elements;
@@ -241,7 +241,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                 continue;
             }
 
-            auto parquet_column_index = clickhouse_column_index_to_parquet_index.at(rpn_element.key_column);
+            auto parquet_column_index = clickhouse_column_index_to_parquet_index[rpn_element.key_column].second;
 
             bool column_has_bloom_filter = parquet_rg_metadata->ColumnChunk(parquet_column_index)->bloom_filter_offset().has_value();
             if (!column_has_bloom_filter)
@@ -286,7 +286,7 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
             {
                 const auto & set_column = ordered_set[i];
 
-                auto parquet_column_index = clickhouse_column_index_to_parquet_index.at(indexes_mapping[i].key_index);
+                auto parquet_column_index = clickhouse_column_index_to_parquet_index[indexes_mapping[i].key_index].second;
                 bool column_has_bloom_filter = parquet_rg_metadata->ColumnChunk(parquet_column_index)->bloom_filter_offset().has_value();
                 if (!column_has_bloom_filter)
                 {
