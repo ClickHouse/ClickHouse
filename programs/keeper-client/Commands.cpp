@@ -693,10 +693,6 @@ public:
         Coordination::Stat src_stat;
         String data = client->zookeeper->get(src, &src_stat);
 
-        // allow to copy only persistent nodes
-        if (src_stat.ephemeralOwner)
-            throw std::runtime_error("TODO: it is possible to copy only persistent nodes");
-
         Coordination::Requests ops{
             zkutil::makeCheckRequest(src, src_stat.version),
             zkutil::makeCreateRequest(dest, data, zkutil::CreateMode::Persistent), // Do we need to copy ACLs here?
@@ -714,8 +710,6 @@ public:
                 return true;
             case Coordination::Error::ZBADVERSION:
                 return false;
-            case Coordination::Error::ZNODEEXISTS:
-                throw std::runtime_error("TODO: Destination path already exists");
             default:
                 zkutil::KeeperMultiException::check(code, ops, responses);
         }
@@ -757,7 +751,6 @@ void CPCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) con
     while (!operation.perform())
         ;
 }
-
 
 bool MVCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
