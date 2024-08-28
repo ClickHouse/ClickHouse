@@ -49,8 +49,8 @@ struct AggregateFunctionDistinctJSONPathsData
         /// Iterate over paths in shared data in this row.
         const auto [shared_data_paths, _] = column.getSharedDataPathsAndValues();
         const auto & shared_data_offsets = column.getSharedDataOffsets();
-        size_t start = shared_data_offsets[static_cast<ssize_t>(row_num) - 1];
-        size_t end = shared_data_offsets[static_cast<ssize_t>(row_num)];
+        const size_t start = shared_data_offsets[static_cast<ssize_t>(row_num) - 1];
+        const size_t end = shared_data_offsets[static_cast<ssize_t>(row_num)];
         for (size_t i = start; i != end; ++i)
             data.insert(shared_data_paths->getDataAt(i).toString());
     }
@@ -137,8 +137,8 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
         /// Iterate over paths om shared data in this row and decode the data types.
         const auto [shared_data_paths, shared_data_values] = column.getSharedDataPathsAndValues();
         const auto & shared_data_offsets = column.getSharedDataOffsets();
-        size_t start = shared_data_offsets[static_cast<ssize_t>(row_num) - 1];
-        size_t end = shared_data_offsets[static_cast<ssize_t>(row_num)];
+        const size_t start = shared_data_offsets[static_cast<ssize_t>(row_num) - 1];
+        const size_t end = shared_data_offsets[static_cast<ssize_t>(row_num)];
         for (size_t i = start; i != end; ++i)
         {
             auto path = shared_data_paths->getDataAt(i).toString();
@@ -146,8 +146,8 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
             ReadBufferFromMemory buf(value.data, value.size);
             auto type = decodeDataType(buf);
             /// We should not have Nulls here but let's check just in case.
-            if (!isNothing(type))
-                data[path].insert(type->getName());
+            chassert(!isNothingType(type));
+            data[path].insert(type->getName());
         }
     }
 
@@ -172,8 +172,8 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
             ReadBufferFromMemory buf(value.data, value.size);
             auto type = decodeDataType(buf);
             /// We should not have Nulls here but let's check just in case.
-            if (!isNothing(type))
-                data[path].insert(type->getName());
+            chassert(!isNothingType(type));
+            data[path].insert(type->getName());
         }
     }
 
@@ -200,7 +200,7 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
         size_t paths_size, types_size;
         readVarUInt(paths_size, buf);
         if (paths_size > DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {}): {}", DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE, paths_size);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size for paths (maximum: {}): {}", DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE, paths_size);
 
         data.reserve(paths_size);
         String path, type;
@@ -209,7 +209,7 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
             readStringBinary(path, buf);
             readVarUInt(types_size, buf);
             if (types_size > DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE)
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {}): {}", DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE, types_size);
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size for types (maximum: {}): {}", DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE, types_size);
 
             data[path].reserve(types_size);
             for (size_t j = 0; j != types_size; ++j)

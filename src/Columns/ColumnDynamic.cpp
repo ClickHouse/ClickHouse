@@ -983,7 +983,7 @@ ColumnPtr ColumnDynamic::compress() const
 String ColumnDynamic::getTypeNameAt(size_t row_num) const
 {
     const auto & variant_col = getVariantColumn();
-    size_t discr = variant_col.globalDiscriminatorAt(row_num);
+    const size_t discr = variant_col.globalDiscriminatorAt(row_num);
     if (discr == ColumnVariant::NULL_DISCRIMINATOR)
         return "";
 
