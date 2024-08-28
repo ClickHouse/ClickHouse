@@ -183,13 +183,23 @@ bool ReadBufferFromRemoteFSGather::nextImpl()
     if (!current_buf)
         return false;
 
-    if (readImpl())
+    bool result = readImpl();
+    if (!result)
+    {
+        if (!moveToNextBuffer())
+            return false;
+        result = readImpl();
+    }
+    if (result)
+    {
+        if (!use_external_buffer)
+        {
+            working_buffer = Buffer(position(), working_buffer.end());
+            pos = working_buffer.begin();
+        }
         return true;
-
-    if (!moveToNextBuffer())
-        return false;
-
-    return readImpl();
+    }
+    return false;
 }
 
 bool ReadBufferFromRemoteFSGather::moveToNextBuffer()
@@ -215,7 +225,6 @@ bool ReadBufferFromRemoteFSGather::readImpl()
     if (result)
     {
         file_offset_of_buffer_end += current_buf->available();
-        nextimpl_working_buffer_offset = current_buf->offset();
 
         chassert(current_buf->available());
         chassert(blobs_to_read.size() != 1 || file_offset_of_buffer_end == current_buf->getFileOffsetOfBufferEnd());
@@ -238,6 +247,7 @@ void ReadBufferFromRemoteFSGather::reset()
     current_object = StoredObject();
     current_buf_idx = {};
     current_buf.reset();
+    resetWorkingBuffer();
 }
 
 off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
