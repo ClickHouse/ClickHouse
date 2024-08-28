@@ -227,8 +227,11 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create) 
         /// We use Nullable(DateTime64(3)) as the default type of the `min_time` and `max_time` columns.
         /// It's nullable because it allows the aggregation (see aggregate_min_time_and_max_time) work correctly even
         /// for rows in the "tags" table which doesn't have `min_time` and `max_time` (because they have no matching rows in the "data" table).
-        make_new_column(TimeSeriesColumnNames::MinTime, make_nullable(timestamp_type));
-        make_new_column(TimeSeriesColumnNames::MaxTime, make_nullable(timestamp_type));
+
+        if (!is_next_column_named(TimeSeriesColumnNames::MinTime))
+            make_new_column(TimeSeriesColumnNames::MinTime, make_nullable(timestamp_type));
+        if (!is_next_column_named(TimeSeriesColumnNames::MaxTime))
+            make_new_column(TimeSeriesColumnNames::MaxTime, make_nullable(timestamp_type));
     }
 
     /// Add missing columns for the "metrics" table.

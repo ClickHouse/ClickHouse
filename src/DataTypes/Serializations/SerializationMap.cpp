@@ -40,7 +40,7 @@ static IColumn & extractNestedColumn(IColumn & column)
 
 void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const auto & map = field.get<const Map &>();
+    const auto & map = field.safeGet<const Map &>();
     writeVarUInt(map.size(), ostr);
     for (const auto & elem : map)
     {
@@ -63,7 +63,7 @@ void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const
             size,
             settings.binary.max_binary_string_size);
     field = Map();
-    Map & map = field.get<Map &>();
+    Map & map = field.safeGet<Map &>();
     map.reserve(size);
     for (size_t i = 0; i < size; ++i)
     {

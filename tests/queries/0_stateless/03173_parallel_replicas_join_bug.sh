@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-$CLICKHOUSE_CLIENT -nq "
+$CLICKHOUSE_CLIENT -q "
   CREATE TABLE ids (id UUID, whatever String) Engine=MergeTree ORDER BY tuple();
   INSERT INTO ids VALUES ('a1451105-722e-4fe7-bfaa-65ad2ae249c2', 'whatever');
 
@@ -16,7 +16,7 @@ $CLICKHOUSE_CLIENT -nq "
   INSERT INTO data2 VALUES ('a1451105-722e-4fe7-bfaa-65ad2ae249c2', '2000-01-02', 'CREATED');
 "
 
-$CLICKHOUSE_CLIENT -nq "
+$CLICKHOUSE_CLIENT -q "
 SET enable_analyzer = 1, cluster_for_parallel_replicas = 'parallel_replicas', max_parallel_replicas = 10, allow_experimental_parallel_reading_from_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, max_threads = 1;
 
 SELECT
