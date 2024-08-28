@@ -11,6 +11,7 @@
 #include <IO/Operators.h>
 
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
