@@ -1,3 +1,4 @@
+#include <type_traits>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -12,6 +13,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getMostSubtype.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -173,14 +175,16 @@ DataTypePtr FunctionArrayIntersect<Mode>::getReturnTypeImpl(const DataTypes & ar
 
     DataTypePtr result_type;
 
-    if (!nested_types.empty())
-        result_type = getMostSubtype(nested_types, true);
-
-    // If found any DataTypeNothing in IntersectMode or all DattaTypeNothing in UnionMode
+    // If any DataTypeNothing in ArrayModeIntersect or all arrays in ArrayModeUnion are DataTypeNothing
     if (has_nothing || nested_types.empty())
         result_type = std::make_shared<DataTypeNothing>();
     else
-        result_type = getMostSubtype(nested_types, true);
+    {
+        if (std::is_same_v<Mode, ArrayModeIntersect>)
+            result_type = getMostSubtype(nested_types, true);
+        else
+            result_type = getLeastSupertype(nested_types);
+    }
 
     return std::make_shared<DataTypeArray>(result_type);
 }
@@ -429,7 +433,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::executeImpl(const ColumnsWithTypeAndName
     for (size_t i = 0; i < num_args; ++i)
         data_types.push_back(arguments[i].type);
 
-    auto return_type_with_nulls = getMostSubtype(data_types, true, true);
+    auto return_type_with_nulls = getReturnTypeImpl(data_types);
     auto casted_columns = castColumns(arguments, result_type, return_type_with_nulls);
 
     UnpackedArrays arrays = prepareArrays(casted_columns.casted, casted_columns.initial);
