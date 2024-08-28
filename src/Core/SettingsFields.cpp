@@ -237,6 +237,7 @@ SettingFieldMaxThreads & SettingFieldMaxThreads::operator=(const Field & f)
 String SettingFieldMaxThreads::toString() const
 {
     if (is_auto)
+        /// Removing quotes this will introduce incompatibility between replicas with different version.
         return "'auto(" + ::DB::toString(value) + ")'";
     else
         return ::DB::toString(value);
