@@ -16,7 +16,7 @@ Most `ALTER TABLE` queries modify table settings or data:
 - [INDEX](/docs/en/sql-reference/statements/alter/skipping-index.md)
 - [CONSTRAINT](/docs/en/sql-reference/statements/alter/constraint.md)
 - [TTL](/docs/en/sql-reference/statements/alter/ttl.md)
-- [STATISTICS](/docs/en/sql-reference/statements/alter/statistics.md)
+- [STATISTIC](/docs/en/sql-reference/statements/alter/statistic.md)
 - [APPLY DELETED MASK](/docs/en/sql-reference/statements/alter/apply-deleted-mask.md)
 
 :::note
@@ -42,7 +42,7 @@ These `ALTER` statements modify entities related to role-based access control:
 
 ## Mutations
 
-`ALTER` queries that are intended to manipulate table data are implemented with a mechanism called “mutations”, most notably [ALTER TABLE ... DELETE](/docs/en/sql-reference/statements/alter/delete.md) and [ALTER TABLE ... UPDATE](/docs/en/sql-reference/statements/alter/update.md). They are asynchronous background processes similar to merges in [MergeTree](/docs/en/engines/table-engines/mergetree-family/index.md) tables that to produce new “mutated” versions of parts.
+`ALTER` queries that are intended to manipulate table data are implemented with a mechanism called “mutations”, most notably [ALTER TABLE … DELETE](/docs/en/sql-reference/statements/alter/delete.md) and [ALTER TABLE … UPDATE](/docs/en/sql-reference/statements/alter/update.md). They are asynchronous background processes similar to merges in [MergeTree](/docs/en/engines/table-engines/mergetree-family/index.md) tables that to produce new “mutated” versions of parts.
 
 For `*MergeTree` tables mutations execute by **rewriting whole data parts**. There is no atomicity - parts are substituted for mutated parts as soon as they are ready and a `SELECT` query that started executing during a mutation will see data from parts that have already been mutated along with data from parts that have not been mutated yet.
 

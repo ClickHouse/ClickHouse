@@ -11,7 +11,6 @@
 #include <Parsers/queryToString.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
-#include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Databases/DatabaseReplicated.h>
@@ -238,7 +237,6 @@ private:
     Int64 timeout_seconds = 120;
     bool is_replicated_database = false;
     bool throw_on_timeout = true;
-    bool throw_on_timeout_only_active = false;
     bool only_running_hosts = false;
 
     bool timeout_exceeded = false;
@@ -318,8 +316,8 @@ DDLQueryStatusSource::DDLQueryStatusSource(
     , log(getLogger("DDLQueryStatusSource"))
 {
     auto output_mode = context->getSettingsRef().distributed_ddl_output_mode;
-    throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE;
-    throw_on_timeout_only_active = output_mode == DistributedDDLOutputMode::THROW_ONLY_ACTIVE || output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE;
+    throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::THROW_ONLY_ACTIVE
+        || output_mode == DistributedDDLOutputMode::NONE || output_mode == DistributedDDLOutputMode::NONE_ONLY_ACTIVE;
 
     if (hosts_to_wait)
     {
@@ -453,7 +451,7 @@ Chunk DDLQueryStatusSource::generate()
                                         "({} of them are currently executing the task, {} are inactive). "
                                         "They are going to execute the query in background. Was waiting for {} seconds{}";
 
-            if (throw_on_timeout || (throw_on_timeout_only_active && !stop_waiting_offline_hosts))
+            if (throw_on_timeout)
             {
                 if (!first_exception)
                     first_exception = std::make_unique<Exception>(Exception(ErrorCodes::TIMEOUT_EXCEEDED,
@@ -538,7 +536,7 @@ Chunk DDLQueryStatusSource::generate()
             ExecutionStatus status(-1, "Cannot obtain error message");
 
             /// Replicated database retries in case of error, it should not write error status.
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifdef ABORT_ON_LOGICAL_ERROR
             bool need_check_status = true;
 #else
             bool need_check_status = !is_replicated_database;

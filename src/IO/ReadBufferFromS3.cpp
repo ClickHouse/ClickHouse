@@ -25,6 +25,8 @@ namespace ProfileEvents
     extern const Event ReadBufferFromS3InitMicroseconds;
     extern const Event ReadBufferFromS3Bytes;
     extern const Event ReadBufferFromS3RequestsErrors;
+    extern const Event ReadBufferFromS3ResetSessions;
+    extern const Event ReadBufferFromS3PreservedSessions;
     extern const Event ReadBufferSeekCancelConnection;
     extern const Event S3GetObject;
     extern const Event DiskS3GetObject;
@@ -49,7 +51,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     const String & bucket_,
     const String & key_,
     const String & version_id_,
-    const S3::RequestSettings & request_settings_,
+    const S3Settings::RequestSettings & request_settings_,
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t offset_,
@@ -311,15 +313,15 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     return offset;
 }
 
-std::optional<size_t> ReadBufferFromS3::tryGetFileSize()
+size_t ReadBufferFromS3::getFileSize()
 {
     if (file_size)
-        return file_size;
+        return *file_size;
 
-    auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id);
+    auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id, request_settings);
 
     file_size = object_size;
-    return file_size;
+    return *file_size;
 }
 
 off_t ReadBufferFromS3::getPosition()

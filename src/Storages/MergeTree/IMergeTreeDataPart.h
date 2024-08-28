@@ -43,6 +43,7 @@ class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 
 class IMergeTreeReader;
+class IMergeTreeDataPartWriter;
 class MarkCache;
 class UncompressedCache;
 class MergeTreeTransaction;
@@ -73,6 +74,7 @@ public:
     using VirtualFields = std::unordered_map<String, Field>;
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
+    using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
@@ -103,6 +105,15 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
+
+    virtual MergeTreeWriterPtr getWriter(
+        const NamesAndTypesList & columns_list,
+        const StorageMetadataPtr & metadata_snapshot,
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const Statistics & stats_to_recalc_,
+        const CompressionCodecPtr & default_codec_,
+        const MergeTreeWriterSettings & writer_settings,
+        const MergeTreeIndexGranularity & computed_index_granularity) = 0;
 
     virtual bool isStoredOnDisk() const = 0;
 
@@ -161,8 +172,6 @@ public:
 
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
 
-    const SerializationByName & getSerializations() const { return serializations; }
-
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
 
@@ -171,7 +180,7 @@ public:
 
     void remove();
 
-    ColumnsStatistics loadStatistics() const;
+    Statistics loadStatistics() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -192,13 +201,10 @@ public:
     /// take place, you must take original name of column for this part from
     /// storage and pass it to this method.
     std::optional<size_t> getColumnPosition(const String & column_name) const;
-    const NameToNumber & getColumnPositions() const { return column_name_to_position; }
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
-    /// We pass a list of available columns since the ones available in the current storage snapshot might be smaller
-    /// than the one the table has (e.g a DROP COLUMN happened) and we don't want to get a column not in the snapshot
-    String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const;
+    String getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
@@ -212,7 +218,6 @@ public:
 
     /// Compute part block id for zero level part. Otherwise throws an exception.
     /// If token is not empty, block id is calculated based on it instead of block data
-    UInt128 getPartBlockIDHash() const;
     String getZeroLevelPartBlockID(std::string_view token) const;
 
     void setName(const String & new_name);
@@ -372,7 +377,6 @@ public:
     void setIndex(const Columns & cols_);
     void setIndex(Columns && cols_);
     void unloadIndex();
-    bool isIndexLoaded() const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
@@ -442,8 +446,6 @@ public:
 
     bool hasProjection(const String & projection_name) const { return projection_parts.contains(projection_name); }
 
-    bool hasProjection() const { return !projection_parts.empty(); }
-
     bool hasBrokenProjection(const String & projection_name) const;
 
     /// Return true, if all projections were loaded successfully and none was marked as broken.
@@ -466,23 +468,23 @@ public:
     /// File with compression codec name which was used to compress part columns
     /// by default. Some columns may have their own compression codecs, but
     /// default will be stored in this file.
-    static constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
+    static inline constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
 
     /// "delete-on-destroy.txt" is deprecated. It is no longer being created, only is removed.
-    static constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED = "delete-on-destroy.txt";
+    static inline constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED = "delete-on-destroy.txt";
 
-    static constexpr auto UUID_FILE_NAME = "uuid.txt";
+    static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
 
     /// File that contains information about kinds of serialization of columns
     /// and information that helps to choose kind of serialization later during merging
     /// (number of rows, number of rows with default values, etc).
-    static constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
+    static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
 
     /// Version used for transactions.
-    static constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
+    static inline constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
 
 
-    static constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
+    static inline constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
 
     /// One of part files which is used to check how many references (I'd like
     /// to say hardlinks, but it will confuse even more) we have for the part
@@ -494,7 +496,7 @@ public:
     /// it was mutation without any change for source part. In this case we
     /// really don't need to remove data from remote FS and need only decrement
     /// reference counter locally.
-    static constexpr auto FILE_FOR_REFERENCES_CHECK = "checksums.txt";
+    static inline constexpr auto FILE_FOR_REFERENCES_CHECK = "checksums.txt";
 
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after

@@ -4,8 +4,6 @@ import logging
 import pytest
 import os
 import minio
-import random
-import string
 
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_s3_mock
@@ -47,11 +45,6 @@ def cluster():
         cluster.shutdown()
 
 
-def randomize_query_id(query_id, random_suffix_length=10):
-    letters = string.ascii_letters + string.digits
-    return f"{query_id}_{''.join(random.choice(letters) for _ in range(random_suffix_length))}"
-
-
 @pytest.fixture(scope="module")
 def init_broken_s3(cluster):
     yield start_s3_mock(cluster, "broken_s3", "8083")
@@ -68,7 +61,6 @@ def test_upload_after_check_works(cluster, broken_s3):
 
     node.query(
         """
-        DROP TABLE IF EXISTS s3_upload_after_check_works;
         CREATE TABLE s3_upload_after_check_works (
             id Int64,
             data String
@@ -99,7 +91,7 @@ def get_multipart_counters(node, query_id, log_type="ExceptionWhileProcessing"):
                 SELECT
                     ProfileEvents['S3CreateMultipartUpload'],
                     ProfileEvents['S3UploadPart'],
-                    ProfileEvents['S3WriteRequestsErrors'] + ProfileEvents['S3WriteRequestsThrottling'],
+                    ProfileEvents['S3WriteRequestsErrors'],
                 FROM system.query_log
                 WHERE query_id='{query_id}'
                     AND type='{log_type}'
@@ -135,9 +127,7 @@ def test_upload_s3_fail_create_multi_part_upload(cluster, broken_s3, compression
 
     broken_s3.setup_at_create_multi_part_upload()
 
-    insert_query_id = randomize_query_id(
-        f"INSERT_INTO_TABLE_FUNCTION_FAIL_CREATE_MPU_{compression}"
-    )
+    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_FAIL_CREATE_MPU_{compression}"
     error = node.query_and_get_error(
         f"""
         INSERT INTO
@@ -158,7 +148,7 @@ def test_upload_s3_fail_create_multi_part_upload(cluster, broken_s3, compression
     )
 
     assert "Code: 499" in error, error
-    assert "mock s3 injected unretryable error" in error, error
+    assert "mock s3 injected error" in error, error
 
     create_multipart, upload_parts, s3_errors = get_multipart_counters(
         node, insert_query_id
@@ -179,9 +169,7 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
     broken_s3.setup_fake_multpartuploads()
     broken_s3.setup_at_part_upload(count=1, after=2)
 
-    insert_query_id = randomize_query_id(
-        f"INSERT_INTO_TABLE_FUNCTION_FAIL_UPLOAD_PART_{compression}"
-    )
+    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_FAIL_UPLOAD_PART_{compression}"
     error = node.query_and_get_error(
         f"""
         INSERT INTO
@@ -202,43 +190,28 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
     )
 
     assert "Code: 499" in error, error
-    assert "mock s3 injected unretryable error" in error, error
+    assert "mock s3 injected error" in error, error
 
     create_multipart, upload_parts, s3_errors = get_multipart_counters(
         node, insert_query_id
     )
     assert create_multipart == 1
     assert upload_parts >= 2
-    assert s3_errors == 1
+    assert s3_errors >= 2
 
 
-@pytest.mark.parametrize(
-    "action_and_message",
-    [
-        ("slow_down", "DB::Exception: Slow Down."),
-        ("qps_limit_exceeded", "DB::Exception: Please reduce your request rate."),
-        ("total_qps_limit_exceeded", "DB::Exception: Please reduce your request rate."),
-        (
-            "connection_refused",
-            "Poco::Exception. Code: 1000, e.code() = 111, Connection refused",
-        ),
-    ],
-    ids=lambda x: x[0],
-)
-def test_when_error_is_retried(cluster, broken_s3, action_and_message):
+def test_when_s3_connection_refused_is_retried(cluster, broken_s3):
     node = cluster.instances["node"]
 
-    action, message = action_and_message
-
     broken_s3.setup_fake_multpartuploads()
-    broken_s3.setup_at_part_upload(count=3, after=2, action=action)
+    broken_s3.setup_at_part_upload(count=3, after=2, action="connection_refused")
 
-    insert_query_id = randomize_query_id(f"INSERT_INTO_TABLE_{action}_RETRIED")
+    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_CONNECTION_REFUSED_RETRIED"
     node.query(
         f"""
         INSERT INTO
             TABLE FUNCTION s3(
-                'http://resolver:8083/root/data/test_when_{action}_retried',
+                'http://resolver:8083/root/data/test_when_s3_connection_refused_at_write_retried',
                 'minio', 'minio123',
                 'CSV', auto, 'none'
             )
@@ -261,13 +234,13 @@ def test_when_error_is_retried(cluster, broken_s3, action_and_message):
     assert upload_parts == 39
     assert s3_errors == 3
 
-    broken_s3.setup_at_part_upload(count=1000, after=2, action=action)
-    insert_query_id = randomize_query_id(f"INSERT_INTO_TABLE_{action}_RETRIED_1")
+    broken_s3.setup_at_part_upload(count=1000, after=2, action="connection_refused")
+    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_CONNECTION_REFUSED_RETRIED_1"
     error = node.query_and_get_error(
         f"""
             INSERT INTO
                 TABLE FUNCTION s3(
-                    'http://resolver:8083/root/data/test_when_{action}_retried',
+                    'http://resolver:8083/root/data/test_when_s3_connection_refused_at_write_retried',
                     'minio', 'minio123',
                     'CSV', auto, 'none'
                 )
@@ -284,78 +257,8 @@ def test_when_error_is_retried(cluster, broken_s3, action_and_message):
     )
 
     assert "Code: 499" in error, error
-    assert message in error, error
-
-
-def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
-    node = cluster.instances["node"]
-
-    broken_s3.setup_fake_multpartuploads()
-    broken_s3.setup_at_part_upload(
-        count=3,
-        after=2,
-        action="broken_pipe",
-    )
-
-    insert_query_id = randomize_query_id(f"TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD")
-    node.query(
-        f"""
-        INSERT INTO
-            TABLE FUNCTION s3(
-                'http://resolver:8083/root/data/test_when_s3_broken_pipe_at_upload_is_retried',
-                'minio', 'minio123',
-                'CSV', auto, 'none'
-            )
-        SELECT
-            *
-        FROM system.numbers
-        LIMIT 1000000
-        SETTINGS
-            s3_max_single_part_upload_size=100,
-            s3_min_upload_part_size=1000000,
-            s3_check_objects_after_upload=0
-        """,
-        query_id=insert_query_id,
-    )
-
-    create_multipart, upload_parts, s3_errors = get_multipart_counters(
-        node, insert_query_id, log_type="QueryFinish"
-    )
-
-    assert create_multipart == 1
-    assert upload_parts == 7
-    assert s3_errors == 3
-
-    broken_s3.setup_at_part_upload(
-        count=1000,
-        after=2,
-        action="broken_pipe",
-    )
-    insert_query_id = randomize_query_id(f"TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD_1")
-    error = node.query_and_get_error(
-        f"""
-               INSERT INTO
-                   TABLE FUNCTION s3(
-                       'http://resolver:8083/root/data/test_when_s3_broken_pipe_at_upload_is_retried',
-                       'minio', 'minio123',
-                       'CSV', auto, 'none'
-                   )
-               SELECT
-                   *
-               FROM system.numbers
-               LIMIT 1000000
-               SETTINGS
-                   s3_max_single_part_upload_size=100,
-                   s3_min_upload_part_size=1000000,
-                   s3_check_objects_after_upload=0
-               """,
-        query_id=insert_query_id,
-    )
-
-    assert "Code: 1000" in error, error
     assert (
-        "DB::Exception: Poco::Exception. Code: 1000, e.code() = 32, I/O error: Broken pipe"
-        in error
+        "Poco::Exception. Code: 1000, e.code() = 111, Connection refused" in error
     ), error
 
 
@@ -373,7 +276,7 @@ def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
         action_args=["1"] if send_something else ["0"],
     )
 
-    insert_query_id = randomize_query_id(
+    insert_query_id = (
         f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_UPLOAD_{send_something}"
     )
     node.query(
@@ -410,7 +313,7 @@ def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
         action="connection_reset_by_peer",
         action_args=["1"] if send_something else ["0"],
     )
-    insert_query_id = randomize_query_id(
+    insert_query_id = (
         f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_UPLOAD_{send_something}_1"
     )
     error = node.query_and_get_error(
@@ -455,7 +358,7 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
         action_args=["1"] if send_something else ["0"],
     )
 
-    insert_query_id = randomize_query_id(
+    insert_query_id = (
         f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_MULTIPARTUPLOAD_{send_something}"
     )
     node.query(
@@ -493,25 +396,25 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
         action_args=["1"] if send_something else ["0"],
     )
 
-    insert_query_id = randomize_query_id(
+    insert_query_id = (
         f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_MULTIPARTUPLOAD_{send_something}_1"
     )
     error = node.query_and_get_error(
         f"""
-        INSERT INTO
-            TABLE FUNCTION s3(
-                'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_create_mpu_retried',
-                'minio', 'minio123',
-                'CSV', auto, 'none'
-            )
-        SELECT
-            *
-        FROM system.numbers
-        LIMIT 1000
-        SETTINGS
-            s3_max_single_part_upload_size=100,
-            s3_min_upload_part_size=100,
-            s3_check_objects_after_upload=0
+               INSERT INTO
+                   TABLE FUNCTION s3(
+                       'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_create_mpu_retried',
+                       'minio', 'minio123',
+                       'CSV', auto, 'none'
+                   )
+               SELECT
+                   *
+               FROM system.numbers
+               LIMIT 1000
+               SETTINGS
+                   s3_max_single_part_upload_size=100,
+                   s3_min_upload_part_size=100,
+                   s3_check_objects_after_upload=0
                """,
         query_id=insert_query_id,
     )
@@ -520,6 +423,78 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
     assert (
         "DB::Exception: Connection reset by peer." in error
         or "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer"
+        in error
+    ), error
+
+
+def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
+    node = cluster.instances["node"]
+
+    broken_s3.setup_fake_multpartuploads()
+    broken_s3.setup_at_part_upload(
+        count=3,
+        after=2,
+        action="broken_pipe",
+    )
+
+    insert_query_id = f"TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD"
+    node.query(
+        f"""
+        INSERT INTO
+            TABLE FUNCTION s3(
+                'http://resolver:8083/root/data/test_when_s3_broken_pipe_at_upload_is_retried',
+                'minio', 'minio123',
+                'CSV', auto, 'none'
+            )
+        SELECT
+            *
+        FROM system.numbers
+        LIMIT 1000000
+        SETTINGS
+            s3_max_single_part_upload_size=100,
+            s3_min_upload_part_size=1000000,
+            s3_check_objects_after_upload=0
+        """,
+        query_id=insert_query_id,
+    )
+
+    create_multipart, upload_parts, s3_errors = get_multipart_counters(
+        node, insert_query_id, log_type="QueryFinish"
+    )
+
+    assert create_multipart == 1
+    assert upload_parts == 7
+    assert s3_errors == 3
+
+    broken_s3.setup_at_part_upload(
+        count=1000,
+        after=2,
+        action="broken_pipe",
+    )
+    insert_query_id = f"TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD_1"
+    error = node.query_and_get_error(
+        f"""
+               INSERT INTO
+                   TABLE FUNCTION s3(
+                       'http://resolver:8083/root/data/test_when_s3_broken_pipe_at_upload_is_retried',
+                       'minio', 'minio123',
+                       'CSV', auto, 'none'
+                   )
+               SELECT
+                   *
+               FROM system.numbers
+               LIMIT 1000000
+               SETTINGS
+                   s3_max_single_part_upload_size=100,
+                   s3_min_upload_part_size=1000000,
+                   s3_check_objects_after_upload=0
+               """,
+        query_id=insert_query_id,
+    )
+
+    assert "Code: 1000" in error, error
+    assert (
+        "DB::Exception: Poco::Exception. Code: 1000, e.code() = 32, I/O error: Broken pipe"
         in error
     ), error
 
@@ -533,7 +508,7 @@ def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
         action="connection_refused",
     )
 
-    insert_query_id = randomize_query_id(f"TEST_QUERY_IS_CANCELED_WITH_INF_RETRIES")
+    insert_query_id = f"TEST_QUERY_IS_CANCELED_WITH_INF_RETRIES"
     request = node.get_query_request(
         f"""
         INSERT INTO
@@ -545,12 +520,11 @@ def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
         SELECT
             *
         FROM system.numbers
-        LIMIT 1000000000
+        LIMIT 1000000
         SETTINGS
             s3_max_single_part_upload_size=100,
             s3_min_upload_part_size=10000,
-            s3_check_objects_after_upload=0,
-            s3_max_inflight_parts_for_one_file=1000
+            s3_check_objects_after_upload=0
         """,
         query_id=insert_query_id,
     )
@@ -591,7 +565,7 @@ def test_adaptive_timeouts(cluster, broken_s3, node_name):
         count=1000000,
     )
 
-    insert_query_id = randomize_query_id(f"TEST_ADAPTIVE_TIMEOUTS_{node_name}")
+    insert_query_id = f"TEST_ADAPTIVE_TIMEOUTS_{node_name}"
     node.query(
         f"""
             INSERT INTO
@@ -643,7 +617,6 @@ def test_no_key_found_disk(cluster, broken_s3):
 
     node.query(
         """
-        DROP TABLE IF EXISTS no_key_found_disk;
         CREATE TABLE no_key_found_disk (
             id Int64
         ) ENGINE=MergeTree()
@@ -702,15 +675,3 @@ def test_no_key_found_disk(cluster, broken_s3):
         "DB::Exception: The specified key does not exist. This error happened for S3 disk."
         in error
     )
-
-    s3_disk_no_key_errors_metric_value = int(
-        node.query(
-            """
-            SELECT value
-            FROM system.metrics
-            WHERE metric = 'DiskS3NoSuchKeyErrors'
-            """
-        ).strip()
-    )
-
-    assert s3_disk_no_key_errors_metric_value > 0

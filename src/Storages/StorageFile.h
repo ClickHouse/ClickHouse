@@ -89,7 +89,6 @@ public:
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     bool supportsSubcolumns() const override { return true; }
-    bool supportsOptimizationToSubcolumns() const override { return false; }
 
     bool supportsDynamicSubcolumns() const override { return true; }
 
@@ -266,7 +265,7 @@ private:
         return storage->getName();
     }
 
-    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override;
+    void setKeyCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) override;
 
     bool tryGetCountFromCache(const struct stat & file_stat);
 
@@ -280,7 +279,6 @@ private:
     FilesIteratorPtr files_iterator;
     String current_path;
     std::optional<size_t> current_file_size;
-    std::optional<Poco::Timestamp> current_file_last_modified;
     struct stat current_archive_stat;
     std::optional<String> filename_override;
     Block sample_block;

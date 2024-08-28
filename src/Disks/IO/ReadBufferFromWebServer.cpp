@@ -1,12 +1,9 @@
 #include "ReadBufferFromWebServer.h"
 
-#include <Core/ServerSettings.h>
-#include <Core/Settings.h>
-#include <IO/Operators.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/logger_useful.h>
-
+#include <IO/Operators.h>
 #include <thread>
 
 

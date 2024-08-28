@@ -36,6 +36,7 @@ String ISerialization::kindToString(Kind kind)
         case Kind::SPARSE:
             return "Sparse";
     }
+    UNREACHABLE();
 }
 
 ISerialization::Kind ISerialization::stringToKind(const String & str)
@@ -63,9 +64,6 @@ String ISerialization::Substream::toString() const
 
     if (type == VariantElement)
         return fmt::format("VariantElement({})", variant_element_name);
-
-    if (type == VariantElementNullMap)
-        return fmt::format("VariantElementNullMap({}.null)", variant_element_name);
 
     return String(magic_enum::enum_name(type));
 }
@@ -198,16 +196,8 @@ String getNameForSubstreamPath(
             stream_name += ".variant_offsets";
         else if (it->type == Substream::VariantElement)
             stream_name += "." + it->variant_element_name;
-        else if (it->type == Substream::VariantElementNullMap)
-            stream_name += "." + it->variant_element_name + ".null";
         else if (it->type == SubstreamType::DynamicStructure)
             stream_name += ".dynamic_structure";
-        else if (it->type == SubstreamType::ObjectStructure)
-            stream_name += ".object_structure";
-        else if (it->type == SubstreamType::ObjectSharedData)
-            stream_name += ".object_shared_data";
-        else if (it->type == SubstreamType::ObjectTypedPath || it->type == SubstreamType::ObjectDynamicPath)
-            stream_name += "." + it->object_path_name;
     }
 
     return stream_name;
@@ -406,18 +396,7 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
     return path[last_elem].type == Substream::NullMap
             || path[last_elem].type == Substream::TupleElement
             || path[last_elem].type == Substream::ArraySizes
-            || path[last_elem].type == Substream::VariantElement
-            || path[last_elem].type == Substream::VariantElementNullMap
-            || path[last_elem].type == Substream::ObjectTypedPath;
-}
-
-bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
-{
-    if (prefix_len == 0 || prefix_len > path.size())
-        return false;
-
-    size_t last_elem = prefix_len - 1;
-    return path[last_elem].type == Substream::VariantElementNullMap;
+            || path[last_elem].type == Substream::VariantElement;
 }
 
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)

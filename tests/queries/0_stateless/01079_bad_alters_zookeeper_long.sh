@@ -26,10 +26,6 @@ while [[ $($CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='00000000
     sleep 1
 done
 
-while [[ $($CLICKHOUSE_CLIENT --query "SELECT * FROM system.replication_queue WHERE type='ALTER_METADATA' AND database = '$CLICKHOUSE_DATABASE'" 2>&1) ]]; do
-    sleep 1
-done
-
 $CLICKHOUSE_CLIENT --query "SHOW CREATE TABLE table_for_bad_alters;" # Type changed, but we can revert back
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO table_for_bad_alters VALUES(2, 2, 7)"

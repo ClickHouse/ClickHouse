@@ -17,7 +17,6 @@
 #include <Analyzer/QueryNode.h>
 
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
@@ -43,7 +42,7 @@ static DAGIndex buildDAGIndex(const ActionsDAG & dag)
 /// Required analysis info from aggregate projection.
 struct AggregateProjectionInfo
 {
-    std::optional<ActionsDAG> before_aggregation;
+    ActionsDAGPtr before_aggregation;
     Names keys;
     AggregateDescriptions aggregates;
 
@@ -78,7 +77,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
 
     AggregateProjectionInfo info;
     info.context = interpreter.getContext();
-    info.before_aggregation = analysis_result.before_aggregation->dag.clone();
+    info.before_aggregation = analysis_result.before_aggregation;
     info.keys = query_analyzer->aggregationKeys().getNames();
     info.aggregates = query_analyzer->aggregates();
 
@@ -255,19 +254,26 @@ static void appendAggregateFunctions(
 
         const auto * node = input;
 
-        if (!DataTypeAggregateFunction::strictEquals(type, node->result_type))
-            /// Cast to aggregate types specified in query if it's not
-            /// strictly the same as the one specified in projection. This
-            /// is required to generate correct results during finalization.
-            node = &proj_dag.addCast(*node, type, aggregate.column_name);
-        else if (node->result_name != aggregate.column_name)
-            node = &proj_dag.addAlias(*node, aggregate.column_name);
+        if (node->result_name != aggregate.column_name)
+        {
+            if (DataTypeAggregateFunction::strictEquals(type, node->result_type))
+            {
+                node = &proj_dag.addAlias(*node, aggregate.column_name);
+            }
+            else
+            {
+                /// Cast to aggregate types specified in query if it's not
+                /// strictly the same as the one specified in projection. This
+                /// is required to generate correct results during finalization.
+                node = &proj_dag.addCast(*node, type, aggregate.column_name);
+            }
+        }
 
         proj_dag_outputs.push_back(node);
     }
 }
 
-std::optional<ActionsDAG> analyzeAggregateProjection(
+ActionsDAGPtr analyzeAggregateProjection(
     const AggregateProjectionInfo & info,
     const QueryDAG & query,
     const DAGIndex & query_index,
@@ -387,7 +393,7 @@ std::optional<ActionsDAG> analyzeAggregateProjection(
     // LOG_TRACE(getLogger("optimizeUseProjections"), "Folding actions by projection");
 
     auto proj_dag = query.dag->foldActionsByProjection(new_inputs, query_key_nodes);
-    appendAggregateFunctions(proj_dag, aggregates, *matched_aggregates);
+    appendAggregateFunctions(*proj_dag, aggregates, *matched_aggregates);
     return proj_dag;
 }
 
@@ -399,7 +405,7 @@ struct AggregateProjectionCandidate : public ProjectionCandidate
 
     /// Actions which need to be applied to columns from projection
     /// in order to get all the columns required for aggregation.
-    ActionsDAG dag;
+    ActionsDAGPtr dag;
 };
 
 struct MinMaxProjectionCandidate
@@ -415,9 +421,6 @@ struct AggregateProjectionCandidates
 
     /// This flag means that DAG for projection candidate should be used in FilterStep.
     bool has_filter = false;
-
-    /// If not empty, try to find exact ranges from parts to speed up trivial count queries.
-    String only_count_column;
 };
 
 AggregateProjectionCandidates getAggregateProjectionCandidates(
@@ -474,13 +477,13 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates))
         {
             // LOG_TRACE(getLogger("optimizeUseProjections"), "Projection analyzed DAG {}", proj_dag->dumpDAG());
-            AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
+            AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(proj_dag)};
 
             // LOG_TRACE(getLogger("optimizeUseProjections"), "Projection sample block {}", sample_block.dumpStructure());
             auto block = reading.getMergeTreeData().getMinMaxCountProjectionBlock(
                 metadata,
-                candidate.dag.getRequiredColumnsNames(),
-                (dag.filter_node ? &*dag.dag : nullptr),
+                candidate.dag->getRequiredColumnsNames(),
+                (dag.filter_node ? dag.dag : nullptr),
                 parts,
                 max_added_blocks.get(),
                 context);
@@ -499,21 +502,14 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
                 candidates.minmax_projection.emplace(std::move(minmax));
             }
         }
-        else
-        {
-            /// Trivial count optimization only applies after @can_use_minmax_projection.
-            if (keys.empty() && aggregates.size() == 1 && typeid_cast<const AggregateFunctionCount *>(aggregates[0].function.get()))
-                candidates.only_count_column = aggregates[0].column_name;
-        }
     }
 
     if (!candidates.minmax_projection)
     {
-        auto it = std::find_if(
-            agg_projections.begin(),
-            agg_projections.end(),
-            [&](const auto * projection)
-            { return projection->name == context->getSettingsRef().preferred_optimize_projection_name.value; });
+        auto it = std::find_if(agg_projections.begin(), agg_projections.end(), [&](const auto * projection)
+        {
+            return projection->name == context->getSettings().preferred_optimize_projection_name.value;
+        });
 
         if (it != agg_projections.end())
         {
@@ -531,7 +527,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
             if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates))
             {
                 // LOG_TRACE(getLogger("optimizeUseProjections"), "Projection analyzed DAG {}", proj_dag->dumpDAG());
-                AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
+                AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(proj_dag)};
                 candidate.projection = projection;
                 candidates.real.emplace_back(std::move(candidate));
             }
@@ -588,21 +584,13 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
     ContextPtr context = reading->getContext();
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
     AggregateProjectionCandidate * best_candidate = nullptr;
-
-    /// Stores row count from exact ranges of parts.
-    size_t exact_count = 0;
-
     if (candidates.minmax_projection)
     {
         best_candidate = &candidates.minmax_projection->candidate;
     }
-    else if (!candidates.real.empty() || !candidates.only_count_column.empty())
+    else if (!candidates.real.empty())
     {
-        auto ordinary_reading_select_result = reading->getAnalyzedResult();
-        bool find_exact_ranges = !candidates.only_count_column.empty();
-        if (!ordinary_reading_select_result || (!ordinary_reading_select_result->has_exact_ranges && find_exact_ranges))
-            ordinary_reading_select_result = reading->selectRangesToRead(find_exact_ranges);
-
+        auto ordinary_reading_select_result = reading->selectRangesToRead();
         size_t ordinary_reading_marks = ordinary_reading_select_result->selected_marks;
 
         /// Nothing to read. Ignore projections.
@@ -612,54 +600,12 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
             return {};
         }
 
-        auto & parts_with_ranges = ordinary_reading_select_result->parts_with_ranges;
-
-        if (!candidates.only_count_column.empty())
-        {
-            for (auto & part_with_ranges : parts_with_ranges)
-            {
-                MarkRanges new_ranges;
-                auto & ranges = part_with_ranges.ranges;
-                const auto & exact_ranges = part_with_ranges.exact_ranges;
-                if (exact_ranges.empty())
-                    continue;
-
-                size_t i = 0;
-                size_t len = exact_ranges.size();
-                for (auto & range : ranges)
-                {
-                    while (i < len && exact_ranges[i].begin < range.end)
-                    {
-                        chassert(exact_ranges[i].begin >= range.begin);
-                        chassert(exact_ranges[i].end <= range.end);
-
-                        /// Found some marks which are not exact
-                        if (range.begin < exact_ranges[i].begin)
-                            new_ranges.emplace_back(range.begin, exact_ranges[i].begin);
-
-                        range.begin = exact_ranges[i].end;
-                        ordinary_reading_marks -= exact_ranges[i].end - exact_ranges[i].begin;
-                        exact_count += part_with_ranges.data_part->index_granularity.getRowsCountInRange(exact_ranges[i]);
-                        ++i;
-                    }
-
-                    /// Current range still contains some marks which are not exact
-                    if (range.begin < range.end)
-                        new_ranges.emplace_back(range);
-                }
-                chassert(i == len);
-                part_with_ranges.ranges = std::move(new_ranges);
-            }
-
-            std::erase_if(parts_with_ranges, [&](const auto & part_with_ranges) { return part_with_ranges.ranges.empty(); });
-            if (parts_with_ranges.empty())
-                chassert(ordinary_reading_marks == 0);
-        }
+        const auto & parts_with_ranges = ordinary_reading_select_result->parts_with_ranges;
 
         /// Selecting best candidate.
         for (auto & candidate : candidates.real)
         {
-            auto required_column_names = candidate.dag.getRequiredColumnsNames();
+            auto required_column_names = candidate.dag->getRequiredColumnsNames();
 
             bool analyzed = analyzeProjectionCandidate(
                 candidate,
@@ -670,7 +616,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
                 query_info,
                 context,
                 max_added_blocks,
-                &candidate.dag);
+                candidate.dag);
 
             if (!analyzed)
                 continue;
@@ -684,20 +630,8 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
 
         if (!best_candidate)
         {
-            if (exact_count > 0)
-            {
-                if (ordinary_reading_marks > 0)
-                {
-                    ordinary_reading_select_result->selected_marks = ordinary_reading_marks;
-                    ordinary_reading_select_result->selected_rows -= exact_count;
-                    reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
-                }
-            }
-            else
-            {
-                reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
-                return {};
-            }
+            reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
+            return {};
         }
     }
     else
@@ -705,11 +639,10 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         return {};
     }
 
+    chassert(best_candidate != nullptr);
+
     QueryPlanStepPtr projection_reading;
     bool has_ordinary_parts;
-    String selected_projection_name;
-    if (best_candidate)
-        selected_projection_name = best_candidate->projection->name;
 
     /// Add reading from projection step.
     if (candidates.minmax_projection)
@@ -721,36 +654,12 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         has_ordinary_parts = false;
     }
-    else if (best_candidate == nullptr)
-    {
-        chassert(exact_count > 0);
-
-        auto agg_count = std::make_shared<AggregateFunctionCount>(DataTypes{});
-
-        std::vector<char> state(agg_count->sizeOfData());
-        AggregateDataPtr place = state.data();
-        agg_count->create(place);
-        SCOPE_EXIT_MEMORY_SAFE(agg_count->destroy(place));
-        agg_count->set(place, exact_count);
-
-        auto column = ColumnAggregateFunction::create(agg_count);
-        column->insertFrom(place);
-
-        Block block_with_count{
-            {std::move(column),
-             std::make_shared<DataTypeAggregateFunction>(agg_count, DataTypes{}, Array{}),
-             candidates.only_count_column}};
-
-        Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(block_with_count)));
-        projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-
-        selected_projection_name = "Optimized trivial count";
-        has_ordinary_parts = reading->getAnalyzedResult() != nullptr;
-    }
     else
     {
         auto storage_snapshot = reading->getStorageSnapshot();
-        auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, best_candidate->projection->metadata);
+        auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, storage_snapshot->metadata);
+        proj_snapshot->addProjection(best_candidate->projection);
+
         auto projection_query_info = query_info;
         projection_query_info.prewhere_info = nullptr;
         projection_query_info.filter_actions_dag = nullptr;
@@ -758,7 +667,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         projection_reading = reader.readFromParts(
             /* parts = */ {},
             /* alter_conversions = */ {},
-            best_candidate->dag.getRequiredColumnsNames(),
+            best_candidate->dag->getRequiredColumnsNames(),
             proj_snapshot,
             projection_query_info,
             context,
@@ -770,7 +679,7 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
 
         if (!projection_reading)
         {
-            auto header = proj_snapshot->getSampleBlockForColumns(best_candidate->dag.getRequiredColumnsNames());
+            auto header = proj_snapshot->getSampleBlockForColumns(best_candidate->dag->getRequiredColumnsNames());
             Pipe pipe(std::make_shared<NullSource>(std::move(header)));
             projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         }
@@ -785,56 +694,46 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
         context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
         {
             .storage_id = reading->getMergeTreeData().getStorageID(),
-            .projection_name = selected_projection_name,
+            .projection_name = best_candidate->projection->name,
         });
     }
 
     // LOG_TRACE(getLogger("optimizeUseProjections"), "Projection reading header {}",
     //           projection_reading->getOutputStream().header.dumpStructure());
 
-    projection_reading->setStepDescription(selected_projection_name);
+    projection_reading->setStepDescription(best_candidate->projection->name);
+
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
+    auto & expr_or_filter_node = nodes.emplace_back();
 
-    /// Root node of optimized child plan using @projection_name
-    QueryPlan::Node * aggregate_projection_node = nullptr;
-
-    if (best_candidate)
+    if (candidates.has_filter)
     {
-        aggregate_projection_node = &nodes.emplace_back();
-
-        if (candidates.has_filter)
-        {
-            const auto & result_name = best_candidate->dag.getOutputs().front()->result_name;
-            aggregate_projection_node->step = std::make_unique<FilterStep>(
-                projection_reading_node.step->getOutputStream(),
-                std::move(best_candidate->dag),
-                result_name,
-                true);
-        }
-        else
-            aggregate_projection_node->step
-                = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputStream(), std::move(best_candidate->dag));
-
-        aggregate_projection_node->children.push_back(&projection_reading_node);
+        expr_or_filter_node.step = std::make_unique<FilterStep>(
+            projection_reading_node.step->getOutputStream(),
+            best_candidate->dag,
+            best_candidate->dag->getOutputs().front()->result_name,
+            true);
     }
-    else /// trivial count optimization
-    {
-        aggregate_projection_node = &projection_reading_node;
-    }
+    else
+        expr_or_filter_node.step = std::make_unique<ExpressionStep>(
+            projection_reading_node.step->getOutputStream(),
+            best_candidate->dag);
+
+    expr_or_filter_node.children.push_back(&projection_reading_node);
 
     if (!has_ordinary_parts)
     {
         /// All parts are taken from projection
-        aggregating->requestOnlyMergeForAggregateProjection(aggregate_projection_node->step->getOutputStream());
-        node.children.front() = aggregate_projection_node;
+        aggregating->requestOnlyMergeForAggregateProjection(expr_or_filter_node.step->getOutputStream());
+        node.children.front() = &expr_or_filter_node;
     }
     else
     {
-        node.step = aggregating->convertToAggregatingProjection(aggregate_projection_node->step->getOutputStream());
-        node.children.push_back(aggregate_projection_node);
+        node.step = aggregating->convertToAggregatingProjection(expr_or_filter_node.step->getOutputStream());
+        node.children.push_back(&expr_or_filter_node);
     }
 
-    return selected_projection_name;
+    return best_candidate->projection->name;
 }
 
 }

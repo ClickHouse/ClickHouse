@@ -1,6 +1,4 @@
 #include <Storages/System/StorageSystemSettings.h>
-
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>

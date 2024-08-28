@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -o errexit
 set -o pipefail
 
-$CLICKHOUSE_CLIENT --query="
+$CLICKHOUSE_CLIENT -n --query="
     DROP TABLE IF EXISTS users;
     CREATE TABLE users (UserID UInt64) ENGINE = Log;
     INSERT INTO users VALUES (1468013291393583084);

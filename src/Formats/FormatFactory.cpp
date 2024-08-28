@@ -17,7 +17,6 @@
 #include <Common/Exception.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
-#include <Core/Settings.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -123,7 +122,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.import_nested_json = settings.input_format_import_nested_json;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
-    format_settings.json.max_depth = settings.input_format_json_max_depth;
     format_settings.json.array_of_rows = settings.output_format_json_array_of_rows;
     format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;
     format_settings.json.write_named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
@@ -146,13 +144,11 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.validate_types_from_metadata = settings.input_format_json_validate_types_from_metadata;
     format_settings.json.validate_utf8 = settings.output_format_json_validate_utf8;
     format_settings.json_object_each_row.column_for_object_name = settings.format_json_object_each_row_column_for_object_name;
-    format_settings.json.allow_deprecated_object_type = context->getSettingsRef().allow_experimental_object_type;
-    format_settings.json.allow_json_type = context->getSettingsRef().allow_experimental_json_type;
+    format_settings.json.allow_object_type = context->getSettingsRef().allow_experimental_object_type;
     format_settings.json.compact_allow_variable_number_of_columns = settings.input_format_json_compact_allow_variable_number_of_columns;
     format_settings.json.try_infer_objects_as_tuples = settings.input_format_json_try_infer_named_tuples_from_objects;
     format_settings.json.throw_on_bad_escape_sequence = settings.input_format_json_throw_on_bad_escape_sequence;
     format_settings.json.ignore_unnecessary_fields = settings.input_format_json_ignore_unnecessary_fields;
-    format_settings.json.type_json_skip_duplicated_paths = settings.type_json_skip_duplicated_paths;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.force_null_for_omitted_fields = settings.input_format_force_null_for_omitted_fields;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
@@ -162,23 +158,20 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.case_insensitive_column_matching = settings.input_format_parquet_case_insensitive_column_matching;
     format_settings.parquet.preserve_order = settings.input_format_parquet_preserve_order;
     format_settings.parquet.filter_push_down = settings.input_format_parquet_filter_push_down;
-    format_settings.parquet.use_native_reader = settings.input_format_parquet_use_native_reader;
     format_settings.parquet.allow_missing_columns = settings.input_format_parquet_allow_missing_columns;
     format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference;
     format_settings.parquet.output_string_as_string = settings.output_format_parquet_string_as_string;
     format_settings.parquet.output_fixed_string_as_fixed_byte_array = settings.output_format_parquet_fixed_string_as_fixed_byte_array;
     format_settings.parquet.max_block_size = settings.input_format_parquet_max_block_size;
-    format_settings.parquet.prefer_block_bytes = settings.input_format_parquet_prefer_block_bytes;
     format_settings.parquet.output_compression_method = settings.output_format_parquet_compression_method;
     format_settings.parquet.output_compliant_nested_types = settings.output_format_parquet_compliant_nested_types;
     format_settings.parquet.use_custom_encoder = settings.output_format_parquet_use_custom_encoder;
     format_settings.parquet.parallel_encoding = settings.output_format_parquet_parallel_encoding;
     format_settings.parquet.data_page_size = settings.output_format_parquet_data_page_size;
     format_settings.parquet.write_batch_size = settings.output_format_parquet_batch_size;
-    format_settings.parquet.write_page_index = settings.output_format_parquet_write_page_index;
     format_settings.parquet.local_read_min_bytes_for_seek = settings.input_format_parquet_local_file_min_bytes_for_seek;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
-    format_settings.pretty.color = settings.output_format_pretty_color.valueOr(2);
+    format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_value_width = settings.output_format_pretty_max_value_width;
@@ -186,8 +179,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.highlight_digit_groups = settings.output_format_pretty_highlight_digit_groups;
     format_settings.pretty.output_format_pretty_row_numbers = settings.output_format_pretty_row_numbers;
     format_settings.pretty.output_format_pretty_single_large_number_tip_threshold = settings.output_format_pretty_single_large_number_tip_threshold;
-    format_settings.pretty.output_format_pretty_display_footer_column_names = settings.output_format_pretty_display_footer_column_names;
-    format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows = settings.output_format_pretty_display_footer_column_names_min_rows;
     format_settings.protobuf.input_flatten_google_wrappers = settings.input_format_protobuf_flatten_google_wrappers;
     format_settings.protobuf.output_nullables_with_google_wrappers = settings.output_format_protobuf_nullables_with_google_wrappers;
     format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference;
@@ -217,6 +208,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.tsv.allow_variable_number_of_columns = settings.input_format_tsv_allow_variable_number_of_columns;
     format_settings.tsv.crlf_end_of_line_input = settings.input_format_tsv_crlf_end_of_line;
     format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
+    format_settings.values.allow_data_after_semicolon = settings.input_format_values_allow_data_after_semicolon;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
     format_settings.values.escape_quote_with_quote = settings.output_format_values_escape_quote_with_quote;
@@ -245,7 +237,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.output_row_index_stride = settings.output_format_orc_row_index_stride;
     format_settings.orc.use_fast_decoder = settings.input_format_orc_use_fast_decoder;
     format_settings.orc.filter_push_down = settings.input_format_orc_filter_push_down;
-    format_settings.orc.reader_time_zone_name = settings.input_format_orc_reader_time_zone_name;
     format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
     format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference;
@@ -254,10 +245,10 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.msgpack.number_of_columns = settings.input_format_msgpack_number_of_columns;
     format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
-    format_settings.max_bytes_to_read_for_schema_inference = settings.input_format_max_bytes_to_read_for_schema_inference;
+    format_settings.max_bytes_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
     format_settings.schema_inference_hints = settings.schema_inference_hints;
-    format_settings.schema_inference_make_columns_nullable = settings.schema_inference_make_columns_nullable.valueOr(2);
+    format_settings.schema_inference_make_columns_nullable = settings.schema_inference_make_columns_nullable;
     format_settings.mysql_dump.table_name = settings.input_format_mysql_dump_table_name;
     format_settings.mysql_dump.map_column_names = settings.input_format_mysql_dump_map_column_names;
     format_settings.sql_insert.max_batch_size = settings.output_format_sql_insert_max_batch_size;
@@ -268,22 +259,16 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.try_infer_integers = settings.input_format_try_infer_integers;
     format_settings.try_infer_dates = settings.input_format_try_infer_dates;
     format_settings.try_infer_datetimes = settings.input_format_try_infer_datetimes;
-    format_settings.try_infer_datetimes_only_datetime64 = settings.input_format_try_infer_datetimes_only_datetime64;
     format_settings.try_infer_exponent_floats = settings.input_format_try_infer_exponent_floats;
     format_settings.markdown.escape_special_characters = settings.output_format_markdown_escape_special_characters;
     format_settings.bson.output_string_as_string = settings.output_format_bson_string_as_string;
     format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_bson_skip_fields_with_unsupported_types_in_schema_inference;
-    format_settings.binary.max_binary_string_size = settings.format_binary_max_string_size;
-    format_settings.binary.max_binary_array_size = settings.format_binary_max_array_size;
-    format_settings.binary.encode_types_in_binary_format = settings.output_format_binary_encode_types_in_binary_format;
-    format_settings.binary.decode_types_in_binary_format = settings.input_format_binary_decode_types_in_binary_format;
+    format_settings.max_binary_string_size = settings.format_binary_max_string_size;
+    format_settings.max_binary_array_size = settings.format_binary_max_array_size;
     format_settings.native.allow_types_conversion = settings.input_format_native_allow_types_conversion;
-    format_settings.native.encode_types_in_binary_format = settings.output_format_native_encode_types_in_binary_format;
-    format_settings.native.decode_types_in_binary_format = settings.input_format_native_decode_types_in_binary_format;
     format_settings.max_parser_depth = context->getSettingsRef().max_parser_depth;
     format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.date_time_overflow_behavior = settings.date_time_overflow_behavior;
-    format_settings.try_infer_variant = settings.input_format_try_infer_variants;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)

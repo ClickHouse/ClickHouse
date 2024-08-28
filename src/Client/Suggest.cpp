@@ -214,7 +214,7 @@ void Suggest::fillWordsFromBlock(const Block & block)
     Words new_words;
     new_words.reserve(rows);
     for (size_t i = 0; i < rows; ++i)
-        new_words.emplace_back(column[i].safeGet<String>());
+        new_words.emplace_back(column[i].get<String>());
 
     addWords(std::move(new_words));
 }

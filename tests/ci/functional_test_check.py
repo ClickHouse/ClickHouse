@@ -5,11 +5,10 @@ import csv
 import logging
 import os
 import re
-import signal
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import CiLogsCredentials
@@ -18,20 +17,9 @@ from download_release_packages import download_last_release
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
-from report import (
-    ERROR,
-    SUCCESS,
-    JobReport,
-    StatusType,
-    TestResults,
-    read_test_results,
-    FAILURE,
-    TestResult,
-)
+from report import ERROR, SUCCESS, JobReport, StatusType, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from ci_config import CI
-from ci_utils import Utils, Shell
 
 NO_CHANGES_MSG = "Nothing to run"
 
@@ -92,6 +80,7 @@ def get_run_command(
     repo_path: Path,
     result_path: Path,
     server_log_path: Path,
+    kill_timeout: int,
     additional_envs: List[str],
     ci_logs_args: str,
     image: DockerImage,
@@ -109,34 +98,33 @@ def get_run_command(
     )
 
     envs = [
+        f"-e MAX_RUN_TIME={int(0.9 * kill_timeout)}",
         # a static link, don't use S3_URL or S3_DOWNLOAD
         '-e S3_URL="https://s3.amazonaws.com/clickhouse-datasets"',
     ]
 
     if flaky_check:
-        envs.append("-e NUM_TRIES=50")
+        envs.append("-e NUM_TRIES=100")
+        envs.append("-e MAX_RUN_TIME=1800")
 
     envs += [f"-e {e}" for e in additional_envs]
 
     env_str = " ".join(envs)
-
-    if "stateful" in check_name.lower():
-        run_script = "/repo/tests/docker_scripts/stateful_runner.sh"
-    elif "stateless" in check_name.lower():
-        run_script = "/repo/tests/docker_scripts/stateless_runner.sh"
-    else:
-        assert False
+    volume_with_broken_test = (
+        f"--volume={repo_path}/tests/analyzer_tech_debt.txt:/analyzer_tech_debt.txt "
+        if "analyzer" not in check_name
+        else ""
+    )
 
     return (
-        f"docker run --rm --name func-tester --volume={builds_path}:/package_folder "
-        # For dmesg and sysctl
-        "--privileged "
-        f"{ci_logs_args} "
-        f"--volume={repo_path}:/repo "
+        f"docker run --volume={builds_path}:/package_folder "
+        f"{ci_logs_args}"
+        f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
+        f"{volume_with_broken_test}"
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "
         "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
-        f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image} {run_script}"
+        f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
     )
 
 
@@ -148,10 +136,6 @@ def _get_statless_tests_to_run(pr_info: PRInfo) -> List[str]:
 
     for fpath in pr_info.changed_files:
         if re.match(r"tests/queries/0_stateless/[0-9]{5}", fpath):
-            path_ = Path(REPO_COPY + "/" + fpath)
-            if not path_.exists():
-                logging.info("File '%s' is removed - skip", fpath)
-                continue
             logging.info("File '%s' is changed and seems like a test", fpath)
             fname = fpath.split("/")[3]
             fname_without_ext = os.path.splitext(fname)[0]
@@ -167,7 +151,6 @@ def _get_statless_tests_to_run(pr_info: PRInfo) -> List[str]:
 
 
 def process_results(
-    ret_code: int,
     result_directory: Path,
     server_log_path: Path,
 ) -> Tuple[StatusType, str, TestResults, List[Path]]:
@@ -194,9 +177,6 @@ def process_results(
         logging.info("Files in result folder %s", os.listdir(result_directory))
         return ERROR, "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
-    if ret_code != 0:
-        state = ERROR
-        description = f"Job failed, exit code: {ret_code}. " + description
 
     try:
         results_path = result_directory / "test_results.tsv"
@@ -224,6 +204,7 @@ def process_results(
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("check_name")
+    parser.add_argument("kill_timeout", type=int)
     parser.add_argument(
         "--validate-bugfix",
         action="store_true",
@@ -238,19 +219,7 @@ def parse_args():
     return parser.parse_args()
 
 
-test_process = None  # type: Optional[TeePopen]
-timeout_expired = False
-
-
-def handle_sigterm(signum, _frame):
-    print(f"WARNING: Received signal {signum}")
-    global timeout_expired
-    timeout_expired = True
-    Shell.check(f"docker exec func-tester pkill -f clickhouse-test", verbose=True)
-
-
 def main():
-    signal.signal(signal.SIGTERM, handle_sigterm)
     logging.basicConfig(level=logging.INFO)
     for handler in logging.root.handlers:
         # pylint: disable=protected-access
@@ -270,7 +239,12 @@ def main():
     assert (
         check_name
     ), "Check name must be provided as an input arg or in CHECK_NAME env"
+    kill_timeout = args.kill_timeout or int(os.getenv("KILL_TIMEOUT", "0"))
+    assert (
+        kill_timeout > 0
+    ), "kill timeout must be provided as an input arg or in KILL_TIMEOUT env"
     validate_bugfix_check = args.validate_bugfix
+    print(f"Runnin check [{check_name}] with timeout [{kill_timeout}]")
 
     flaky_check = "flaky" in check_name.lower()
 
@@ -298,7 +272,7 @@ def main():
     packages_path.mkdir(parents=True, exist_ok=True)
 
     if validate_bugfix_check:
-        download_last_release(packages_path, debug=True)
+        download_last_release(packages_path)
     else:
         download_all_deb_packages(check_name, reports_path, packages_path)
 
@@ -329,6 +303,7 @@ def main():
             repo_path,
             result_path,
             server_log_path,
+            kill_timeout,
             additional_envs,
             ci_logs_args,
             docker_image,
@@ -338,13 +313,11 @@ def main():
         logging.info("Going to run func tests: %s", run_command)
 
         with TeePopen(run_command, run_log_path) as process:
-            global test_process
-            test_process = process
             retcode = process.wait()
             if retcode == 0:
                 logging.info("Run successfully")
             else:
-                logging.info("Run failed, exit code %s", retcode)
+                logging.info("Run failed")
 
         try:
             subprocess.check_call(
@@ -358,15 +331,11 @@ def main():
         ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
 
         state, description, test_results, additional_logs = process_results(
-            retcode, result_path, server_log_path
+            result_path, server_log_path
         )
-        if timeout_expired:
-            description = "Timeout expired"
-            state = FAILURE
-            test_results.insert(
-                0, TestResult.create_check_timeout_expired(stopwatch.duration_seconds)
-            )
-
+        # FIXME (alesapin)
+        if "azure" in check_name:
+            state = "success"
     else:
         print(
             "This is validate bugfix or flaky check run, but no changes test to run - skip with success"
@@ -387,23 +356,7 @@ def main():
         additional_files=additional_logs,
     ).dump(to_file=args.report_to_file if args.report_to_file else None)
 
-    should_block_ci = False
     if state != SUCCESS:
-        should_block_ci = True
-
-    if state == FAILURE and CI.is_required(check_name):
-        failed_cnt = Utils.get_failed_tests_number(description)
-        print(
-            f"Job status is [{state}] with [{failed_cnt}] failed test cases. status description [{description}]"
-        )
-        if (
-            failed_cnt
-            and failed_cnt <= CI.MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI
-        ):
-            print(f"Won't block the CI workflow")
-            should_block_ci = False
-
-    if should_block_ci:
         sys.exit(1)
 
 

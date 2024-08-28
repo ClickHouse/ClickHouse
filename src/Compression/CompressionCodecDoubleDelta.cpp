@@ -21,11 +21,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 /** NOTE DoubleDelta is surprisingly bad name. The only excuse is that it comes from an academic paper.
   * Most people will think that "double delta" is just applying delta transform twice.
   * But in fact it is something more than applying delta transform twice.
@@ -147,9 +142,9 @@ namespace ErrorCodes
 {
     extern const int CANNOT_COMPRESS;
     extern const int CANNOT_DECOMPRESS;
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int ILLEGAL_CODEC_PARAMETER;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -168,8 +163,9 @@ inline Int64 getMaxValueForByteSize(Int8 byte_size)
         case sizeof(UInt64):
             return std::numeric_limits<Int64>::max();
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "only 1, 2, 4 and 8 data sizes are supported");
+            assert(false && "only 1, 2, 4 and 8 data sizes are supported");
     }
+    UNREACHABLE();
 }
 
 struct WriteSpec

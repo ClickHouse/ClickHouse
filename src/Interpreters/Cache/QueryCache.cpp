@@ -126,11 +126,6 @@ bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
 namespace
 {
 
-bool isQueryCacheRelatedSetting(const String & setting_name)
-{
-    return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
-}
-
 class RemoveQueryCacheSettingsMatcher
 {
 public:
@@ -146,7 +141,7 @@ public:
 
             auto is_query_cache_related_setting = [](const auto & change)
             {
-                return isQueryCacheRelatedSetting(change.name);
+                return change.name.starts_with("query_cache_") || change.name.ends_with("_query_cache");
             };
 
             std::erase_if(set_clause->changes, is_query_cache_related_setting);
@@ -182,36 +177,17 @@ ASTPtr removeQueryCacheSettings(ASTPtr ast)
     return transformed_ast;
 }
 
-IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
+IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database)
 {
     ast = removeQueryCacheSettings(ast);
 
-    /// Hash the AST, we must consider aliases (issue #56258)
+    /// Hash the AST, it must consider aliases (issue #56258)
     SipHash hash;
     ast->updateTreeHash(hash, /*ignore_aliases=*/ false);
 
     /// Also hash the database specified via SQL `USE db`, otherwise identifiers in same query (AST) may mean different columns in different
     /// tables (issue #64136)
     hash.update(current_database);
-
-    /// Finally, hash the (changed) settings as they might affect the query result (e.g. think of settings `additional_table_filters` and `limit`).
-    /// Note: allChanged() returns the settings in random order. Also, update()-s of the composite hash must be done in deterministic order.
-    ///       Therefore, collect and sort the settings first, then hash them.
-    Settings::Range changed_settings = settings.allChanged();
-    std::vector<std::pair<String, String>> changed_settings_sorted; /// (name, value)
-    for (const auto & setting : changed_settings)
-    {
-        const String & name = setting.getName();
-        const String & value = setting.getValueString();
-        if (!isQueryCacheRelatedSetting(name)) /// see removeQueryCacheSettings() why this is a good idea
-            changed_settings_sorted.push_back({name, value});
-    }
-    std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
-    for (const auto & setting : changed_settings_sorted)
-    {
-        hash.update(setting.first);
-        hash.update(setting.second);
-    }
 
     return getSipHash128AsPair(hash);
 }
@@ -228,13 +204,12 @@ String queryStringFromAST(ASTPtr ast)
 QueryCache::Key::Key(
     ASTPtr ast_,
     const String & current_database,
-    const Settings & settings,
     Block header_,
     std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_)
-    : ast_hash(calculateAstHash(ast_, current_database, settings))
+    : ast_hash(calculateAstHash(ast_, current_database))
     , header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
@@ -242,18 +217,11 @@ QueryCache::Key::Key(
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
     , query_string(queryStringFromAST(ast_))
-    , tag(settings.query_cache_tag)
 {
 }
 
-QueryCache::Key::Key(
-    ASTPtr ast_,
-    const String & current_database,
-    const Settings & settings,
-    std::optional<UUID> user_id_,
-    const std::vector<UUID> & current_user_roles_)
-    : QueryCache::Key(ast_, current_database, settings, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false)
-    /// ^^ dummy values for everything != AST, current database, user name/roles
+QueryCache::Key::Key(ASTPtr ast_, const String & current_database, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_)
+    : QueryCache::Key(ast_, current_database, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST, current database, user name/roles
 {
 }
 
@@ -619,18 +587,9 @@ QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::millis
     return Writer(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
 
-void QueryCache::clear(const std::optional<String> & tag)
+void QueryCache::clear()
 {
-    if (tag)
-    {
-        auto predicate = [tag](const Key & key, const Cache::MappedPtr &) { return key.tag == tag.value(); };
-        cache.remove(predicate);
-    }
-    else
-    {
-        cache.clear();
-    }
-
+    cache.clear();
     std::lock_guard lock(mutex);
     times_executed.clear();
 }

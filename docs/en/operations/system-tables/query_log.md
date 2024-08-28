@@ -113,8 +113,6 @@ Columns:
 - `used_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `functions`, which were used during query execution.
 - `used_storages` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `storages`, which were used during query execution.
 - `used_table_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `table functions`, which were used during query execution.
-- `used_privileges` ([Array(String)](../../sql-reference/data-types/array.md)) - Privileges which were successfully checked during query execution.
-- `missing_privileges` ([Array(String)](../../sql-reference/data-types/array.md)) - Privileges that are missing during query execution.
 - `query_cache_usage` ([Enum8](../../sql-reference/data-types/enum.md)) — Usage of the [query cache](../query-cache.md) during query execution. Values:
     - `'Unknown'` = Status unknown.
     - `'None'` = The query result was neither written into nor read from the query cache.
@@ -196,8 +194,6 @@ used_formats:                          []
 used_functions:                        []
 used_storages:                         []
 used_table_functions:                  []
-used_privileges:                       []
-missing_privileges:                    []
 query_cache_usage:                     None
 ```
 

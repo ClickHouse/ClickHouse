@@ -24,10 +24,9 @@
 #include <Parsers/queryToString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MergeTree/Backup.h>
+#include <Storages/MergeTree/localBackup.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/JSON.h>
 #include <boost/algorithm/string/join.hpp>
@@ -376,12 +375,6 @@ void IMergeTreeDataPart::unloadIndex()
     index_loaded = false;
 }
 
-bool IMergeTreeDataPart::isIndexLoaded() const
-{
-    std::scoped_lock lock(index_mutex);
-    return index_loaded;
-}
-
 void IMergeTreeDataPart::setName(const String & new_name)
 {
     mutable_name = new_name;
@@ -428,7 +421,7 @@ std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
     if (storage.minmax_idx_date_column_pos != -1 && minmax_idx->initialized)
     {
         const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_date_column_pos];
-        return {DayNum(hyperrectangle.left.safeGet<UInt64>()), DayNum(hyperrectangle.right.safeGet<UInt64>())};
+        return {DayNum(hyperrectangle.left.get<UInt64>()), DayNum(hyperrectangle.right.get<UInt64>())};
     }
     else
         return {};
@@ -444,15 +437,15 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
         if (hyperrectangle.left.getType() == Field::Types::UInt64)
         {
             assert(hyperrectangle.right.getType() == Field::Types::UInt64);
-            return {hyperrectangle.left.safeGet<UInt64>(), hyperrectangle.right.safeGet<UInt64>()};
+            return {hyperrectangle.left.get<UInt64>(), hyperrectangle.right.get<UInt64>()};
         }
         /// The case of DateTime64
         else if (hyperrectangle.left.getType() == Field::Types::Decimal64)
         {
             assert(hyperrectangle.right.getType() == Field::Types::Decimal64);
 
-            auto left = hyperrectangle.left.safeGet<DecimalField<Decimal64>>();
-            auto right = hyperrectangle.right.safeGet<DecimalField<Decimal64>>();
+            auto left = hyperrectangle.left.get<DecimalField<Decimal64>>();
+            auto right = hyperrectangle.right.get<DecimalField<Decimal64>>();
 
             assert(left.getScale() == right.getScale());
 
@@ -652,12 +645,15 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
     return checksum->second.file_size;
 }
 
-String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const
+String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const
 {
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(with_subcolumns);
+    auto columns_list = columns_description.get(options);
+
     std::optional<std::string> minimum_size_column;
     UInt64 minimum_size = std::numeric_limits<UInt64>::max();
 
-    for (const auto & column : available_columns)
+    for (const auto & column : columns_list)
     {
         if (!hasColumnFiles(column))
             continue;
@@ -677,16 +673,16 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const NamesAnd
     return *minimum_size_column;
 }
 
-ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
+Statistics IMergeTreeDataPart::loadStatistics() const
 {
     const auto & metadata_snaphost = storage.getInMemoryMetadata();
 
     auto total_statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snaphost.getColumns());
 
-    ColumnsStatistics result;
+    Statistics result;
     for (auto & stat : total_statistics)
     {
-        String file_name = stat->getFileName() + STATS_FILE_SUFFIX;
+        String file_name = stat->getFileName() + STAT_FILE_SUFFIX;
         String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
 
         if (!metadata_manager->exists(file_name))
@@ -739,35 +735,12 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     }
     catch (...)
     {
-        /// Don't scare people with broken part error if it's retryable.
+        /// Don't scare people with broken part error
         if (!isRetryableException(std::current_exception()))
-        {
-            LOG_ERROR(storage.log, "Part {} is broken and needs manual correction", getDataPartStorage().getFullPath());
-
-            if (Exception * e = exception_cast<Exception *>(std::current_exception()))
-            {
-                /// Probably there is something wrong with files of this part.
-                /// So it can be helpful to add to the error message some information about those files.
-                String files_in_part;
-
-                for (auto it = getDataPartStorage().iterate(); it->isValid(); it->next())
-                {
-                    std::string file_info;
-                    if (!getDataPartStorage().isDirectory(it->name()))
-                        file_info = fmt::format(" ({} bytes)", getDataPartStorage().getFileSize(it->name()));
-
-                    files_in_part += fmt::format("{}{}{}", (files_in_part.empty() ? "" : ", "), it->name(), file_info);
-
-                }
-                if (!files_in_part.empty())
-                    e->addMessage("Part contains files: {}", files_in_part);
-                if (isEmpty())
-                    e->addMessage("Part is empty");
-            }
-        }
+            LOG_ERROR(storage.log, "Part {} is broken and need manual correction", getDataPartStorage().getFullPath());
 
         // There could be conditions that data part to be loaded is broken, but some of meta infos are already written
-        // into metadata before exception, need to clean them all.
+        // into meta data before exception, need to clean them all.
         metadata_manager->deleteAll(/*include_projection*/ true);
         metadata_manager->assertAllDeleted(/*include_projection*/ true);
         throw;
@@ -807,7 +780,7 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(const Stri
     const char * projection_extension = is_temp_projection ? ".tmp_proj" : ".proj";
     auto projection_storage = getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
     MergeTreeDataPartBuilder builder(storage, projection_name, projection_storage);
-    return builder.withPartInfo(MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION).withParentPart(this);
+    return builder.withPartInfo({"all", 0, 0, 0}).withParentPart(this);
 }
 
 void IMergeTreeDataPart::addProjectionPart(
@@ -1604,7 +1577,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
             if (getFileNameForColumn(column))
                 loaded_columns.push_back(column);
 
-        if (loaded_columns.empty())
+        if (columns.empty())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
         if (!is_readonly_storage)
@@ -1651,9 +1624,11 @@ void IMergeTreeDataPart::loadColumns(bool require)
 }
 
 
+/// Project part / part with project parts / compact part doesn't support LWD.
 bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
 {
-    return (part_type == MergeTreeDataPartType::Wide || part_type == MergeTreeDataPartType::Compact);
+    return (part_type == MergeTreeDataPartType::Wide || part_type == MergeTreeDataPartType::Compact) &&
+        parent_part == nullptr && projection_parts.empty();
 }
 
 bool IMergeTreeDataPart::hasLightweightDelete() const
@@ -2136,27 +2111,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
             }
         }
 
-        const auto & data_part_storage = getDataPartStorage();
-        for (const auto & [filename, checksum] : checksums.files)
-        {
-            try
-            {
-                checksum.checkSize(data_part_storage, filename);
-            }
-            catch (const Exception & ex)
-            {
-                /// For projection parts check will mark them broken in loadProjections
-                if (!parent_part && filename.ends_with(".proj"))
-                {
-                    std::string projection_name = fs::path(filename).stem();
-                    LOG_INFO(storage.log, "Projection {} doesn't exist on start for part {}, marking it as broken", projection_name, name);
-                    if (hasProjection(projection_name))
-                        markProjectionPartAsBroken(projection_name, ex.message(), ex.code());
-                }
-                else
-                    throw;
-            }
-        }
+        checksums.checkSizes(getDataPartStorage());
     }
     else
     {
@@ -2367,26 +2322,21 @@ String IMergeTreeDataPart::getUniqueId() const
     return getDataPartStorage().getUniqueId();
 }
 
-UInt128 IMergeTreeDataPart::getPartBlockIDHash() const
-{
-    SipHash hash;
-    checksums.computeTotalChecksumDataOnly(hash);
-    return hash.get128();
-}
-
 String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
 {
     if (info.level != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);
 
+    SipHash hash;
     if (token.empty())
     {
-        const auto hash_value = getPartBlockIDHash();
-        return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
+        checksums.computeTotalChecksumDataOnly(hash);
+    }
+    else
+    {
+        hash.update(token.data(), token.size());
     }
 
-    SipHash hash;
-    hash.update(token.data(), token.size());
     const auto hash_value = hash.get128();
     return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
 }

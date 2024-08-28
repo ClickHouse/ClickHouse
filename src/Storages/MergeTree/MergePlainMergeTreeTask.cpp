@@ -165,10 +165,9 @@ void MergePlainMergeTreeTask::finish()
 ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const
 {
     auto context = Context::createCopy(storage.getContext());
-    context->makeQueryContextForMerge(*storage.getSettings());
+    context->makeQueryContext();
     auto queryId = getQueryId();
     context->setCurrentQueryId(queryId);
-    context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MERGE);
     return context;
 }
 

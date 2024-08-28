@@ -19,16 +19,16 @@ enum class JoinKind : uint8_t
 
 const char * toString(JoinKind kind);
 
-constexpr bool isLeft(JoinKind kind)         { return kind == JoinKind::Left; }
-constexpr bool isRight(JoinKind kind)        { return kind == JoinKind::Right; }
-constexpr bool isInner(JoinKind kind)        { return kind == JoinKind::Inner; }
-constexpr bool isFull(JoinKind kind)         { return kind == JoinKind::Full; }
-constexpr bool isCrossOrComma(JoinKind kind) { return kind == JoinKind::Comma || kind == JoinKind::Cross; }
-constexpr bool isRightOrFull(JoinKind kind)  { return kind == JoinKind::Right || kind == JoinKind::Full; }
-constexpr bool isLeftOrFull(JoinKind kind)   { return kind == JoinKind::Left  || kind == JoinKind::Full; }
-constexpr bool isInnerOrRight(JoinKind kind) { return kind == JoinKind::Inner || kind == JoinKind::Right; }
-constexpr bool isInnerOrLeft(JoinKind kind)  { return kind == JoinKind::Inner || kind == JoinKind::Left; }
-constexpr bool isPaste(JoinKind kind)        { return kind == JoinKind::Paste; }
+inline constexpr bool isLeft(JoinKind kind)         { return kind == JoinKind::Left; }
+inline constexpr bool isRight(JoinKind kind)        { return kind == JoinKind::Right; }
+inline constexpr bool isInner(JoinKind kind)        { return kind == JoinKind::Inner; }
+inline constexpr bool isFull(JoinKind kind)         { return kind == JoinKind::Full; }
+inline constexpr bool isCrossOrComma(JoinKind kind) { return kind == JoinKind::Comma || kind == JoinKind::Cross; }
+inline constexpr bool isRightOrFull(JoinKind kind)  { return kind == JoinKind::Right || kind == JoinKind::Full; }
+inline constexpr bool isLeftOrFull(JoinKind kind)   { return kind == JoinKind::Left  || kind == JoinKind::Full; }
+inline constexpr bool isInnerOrRight(JoinKind kind) { return kind == JoinKind::Inner || kind == JoinKind::Right; }
+inline constexpr bool isInnerOrLeft(JoinKind kind)  { return kind == JoinKind::Inner || kind == JoinKind::Left; }
+inline constexpr bool isPaste(JoinKind kind)        { return kind == JoinKind::Paste; }
 
 /// Allows more optimal JOIN for typical cases.
 enum class JoinStrictness : uint8_t
@@ -66,7 +66,7 @@ enum class ASOFJoinInequality : uint8_t
 
 const char * toString(ASOFJoinInequality asof_join_inequality);
 
-constexpr ASOFJoinInequality getASOFJoinInequality(std::string_view func_name)
+inline constexpr ASOFJoinInequality getASOFJoinInequality(std::string_view func_name)
 {
     ASOFJoinInequality inequality = ASOFJoinInequality::None;
 
@@ -82,7 +82,7 @@ constexpr ASOFJoinInequality getASOFJoinInequality(std::string_view func_name)
     return inequality;
 }
 
-constexpr ASOFJoinInequality reverseASOFJoinInequality(ASOFJoinInequality inequality)
+inline constexpr ASOFJoinInequality reverseASOFJoinInequality(ASOFJoinInequality inequality)
 {
     if (inequality == ASOFJoinInequality::Less)
         return ASOFJoinInequality::Greater;

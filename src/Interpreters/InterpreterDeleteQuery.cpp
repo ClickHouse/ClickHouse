@@ -2,8 +2,6 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/ContextAccess.h>
-#include <Core/Settings.h>
-#include <Core/ServerSettings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
@@ -17,7 +15,6 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 
 
 namespace DB
@@ -28,7 +25,6 @@ namespace ErrorCodes
     extern const int TABLE_IS_READ_ONLY;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
-    extern const int QUERY_IS_PROHIBITED;
 }
 
 
@@ -52,9 +48,6 @@ BlockIO InterpreterDeleteQuery::execute()
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
-
-    if (getContext()->getGlobalContext()->getServerSettings().disable_insertion_and_mutation)
-        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
@@ -91,18 +84,6 @@ BlockIO InterpreterDeleteQuery::execute()
                             "Lightweight delete mutate is disabled. "
                             "Set `enable_lightweight_delete` setting to enable it");
 
-        if (metadata_snapshot->hasProjections())
-        {
-            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(table.get()))
-                if (merge_tree_data->getSettings()->lightweight_mutation_projection_mode == LightweightMutationProjectionMode::THROW)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "DELETE query is not allowed for table {} because as it has projections and setting "
-                        "lightweight_mutation_projection_mode is set to THROW. "
-                        "User should change lightweight_mutation_projection_mode OR "
-                        "drop all the projections manually before running the query",
-                        table_id.getFullTableName());
-        }
-
         /// Build "ALTER ... UPDATE _row_exists = 0 WHERE predicate" query
         String alter_query =
             "ALTER TABLE " + table->getStorageID().getFullTableName()
@@ -126,9 +107,7 @@ BlockIO InterpreterDeleteQuery::execute()
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "DELETE query is not supported for table {}",
-            table->getStorageID().getFullTableName());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE query is not supported for table {}", table->getStorageID().getFullTableName());
     }
 }
 

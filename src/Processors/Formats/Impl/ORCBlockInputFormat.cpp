@@ -103,7 +103,7 @@ static void getFileReaderAndSchema(
     if (is_stopped)
         return;
 
-    auto result = arrow::adapters::orc::ORCFileReader::Open(arrow_file, ArrowMemoryPool::instance());
+    auto result = arrow::adapters::orc::ORCFileReader::Open(arrow_file, arrow::default_memory_pool());
     if (!result.ok())
         throw Exception::createDeprecated(result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
     file_reader = std::move(result).ValueOrDie();
@@ -160,11 +160,8 @@ NamesAndTypesList ORCSchemaReader::readSchema()
 {
     initializeIfNeeded();
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
-        *schema,
-        "ORC",
-        format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference,
-        format_settings.schema_inference_make_columns_nullable != 0);
-    if (format_settings.schema_inference_make_columns_nullable == 1)
+        *schema, "ORC", format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference);
+    if (format_settings.schema_inference_make_columns_nullable)
         return getNamesAndRecursivelyNullableTypes(header);
     return header.getNamesAndTypesList();
 }

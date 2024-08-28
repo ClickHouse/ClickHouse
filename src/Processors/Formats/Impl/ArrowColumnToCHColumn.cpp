@@ -22,7 +22,6 @@
 #include <Common/DateLUTImpl.h>
 #include <base/types.h>
 #include <Processors/Chunk.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnArray.h>
@@ -133,31 +132,16 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
         const size_t chunk_length = chunk.length();
 
-        const size_t null_count = chunk.null_count();
-        if (null_count == 0)
+        for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
         {
-            for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
+            if (!chunk.IsNull(offset_i) && buffer)
             {
                 const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
                 column_chars_t.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
-                column_chars_t.emplace_back('\0');
-
-                column_offsets.emplace_back(column_chars_t.size());
             }
-        }
-        else
-        {
-            for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
-            {
-                if (!chunk.IsNull(offset_i) && buffer)
-                {
-                    const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
-                    column_chars_t.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
-                }
-                column_chars_t.emplace_back('\0');
+            column_chars_t.emplace_back('\0');
 
-                column_offsets.emplace_back(column_chars_t.size());
-            }
+            column_offsets.emplace_back(column_chars_t.size());
         }
     }
     return {std::move(internal_column), std::move(internal_type), column_name};
@@ -727,7 +711,6 @@ struct ReadColumnFromArrowColumnSettings
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
     bool allow_arrow_null_type;
     bool skip_columns_with_unsupported_types;
-    bool allow_inferring_nullable_columns;
 };
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
@@ -1110,7 +1093,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     bool is_map_nested_column,
     const ReadColumnFromArrowColumnSettings & settings)
 {
-    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && type_hint->isNullable())) && settings.allow_inferring_nullable_columns;
+    bool read_as_nullable_column = arrow_column->null_count() || is_nullable_column || (type_hint && type_hint->isNullable());
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::LIST &&
         arrow_column->type()->id() != arrow::Type::LARGE_LIST &&
@@ -1159,7 +1142,7 @@ static void checkStatus(const arrow::Status & status, const String & column_name
 /// Create empty arrow column using specified field
 static std::shared_ptr<arrow::ChunkedArray> createArrowColumn(const std::shared_ptr<arrow::Field> & field, const String & format_name)
 {
-    arrow::MemoryPool * pool = ArrowMemoryPool::instance();
+    arrow::MemoryPool * pool = arrow::default_memory_pool();
     std::unique_ptr<arrow::ArrayBuilder> array_builder;
     arrow::Status status = MakeBuilder(pool, field->type(), &array_builder);
     checkStatus(status, field->name(), format_name);
@@ -1174,16 +1157,14 @@ static std::shared_ptr<arrow::ChunkedArray> createArrowColumn(const std::shared_
 Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
     const arrow::Schema & schema,
     const std::string & format_name,
-    bool skip_columns_with_unsupported_types,
-    bool allow_inferring_nullable_columns)
+    bool skip_columns_with_unsupported_types)
 {
     ReadColumnFromArrowColumnSettings settings
     {
         .format_name = format_name,
         .date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore,
         .allow_arrow_null_type = false,
-        .skip_columns_with_unsupported_types = skip_columns_with_unsupported_types,
-        .allow_inferring_nullable_columns = allow_inferring_nullable_columns,
+        .skip_columns_with_unsupported_types = skip_columns_with_unsupported_types
     };
 
     ColumnsWithTypeAndName sample_columns;
@@ -1257,8 +1238,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(const NameToArrowColumn & nam
         .format_name = format_name,
         .date_time_overflow_behavior = date_time_overflow_behavior,
         .allow_arrow_null_type = true,
-        .skip_columns_with_unsupported_types = false,
-        .allow_inferring_nullable_columns = true
+        .skip_columns_with_unsupported_types = false
     };
 
     Columns columns;

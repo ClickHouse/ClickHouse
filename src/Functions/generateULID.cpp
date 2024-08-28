@@ -85,7 +85,8 @@ The function returns a value of type FixedString(26).
             {"ulid", "SELECT generateULID()", ""},
             {"multiple", "SELECT generateULID(1), generateULID(2)", ""}},
         .categories{"ULID"}
-    });
+    },
+    FunctionFactory::CaseSensitive);
 }
 
 }

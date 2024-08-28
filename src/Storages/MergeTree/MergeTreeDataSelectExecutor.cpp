@@ -6,12 +6,10 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
-#include <Storages/MergeTree/VectorSimilarityCondition.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTIdentifier.h>
@@ -38,7 +36,6 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Core/UUID.h>
-#include <Core/Settings.h>
 #include <Common/CurrentMetrics.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -49,6 +46,7 @@
 #include <Functions/IFunction.h>
 
 #include <IO/WriteBufferFromOStream.h>
+#include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
 namespace CurrentMetrics
 {
@@ -92,14 +90,19 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     /// We will find out how many rows we would have read without sampling.
     LOG_DEBUG(log, "Preliminary index scan with condition: {}", key_condition.toString());
 
-    MarkRanges exact_ranges;
     for (const auto & part : parts)
     {
-        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, &exact_ranges, settings, log);
-        for (const auto & range : part_ranges)
-            rows_count += part->index_granularity.getRowsCountInRange(range);
+        MarkRanges ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, settings, log);
+
+        /** In order to get a lower bound on the number of rows that match the condition on PK,
+          *  consider only guaranteed full marks.
+          * That is, do not take into account the first and last marks, which may be incomplete.
+          */
+        for (const auto & range : ranges)
+            if (range.end - range.begin > 2)
+                rows_count += part->index_granularity.getRowsCountInRange({range.begin + 1, range.end - 1});
+
     }
-    UNUSED(exact_ranges);
 
     return rows_count;
 }
@@ -370,7 +373,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             /// If sample and final are used together no need to calculate sampling expression twice.
             /// The first time it was calculated for final, because sample key is a part of the PK.
             /// So, assume that we already have calculated column.
-            ASTPtr sampling_key_ast;
+            ASTPtr sampling_key_ast = metadata_snapshot->getSamplingKeyAST();
 
             if (final)
             {
@@ -378,12 +381,6 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
                 /// We do spoil available_real_columns here, but it is not used later.
                 available_real_columns.emplace_back(sampling_key.column_names[0], std::move(sampling_column_type));
             }
-            else
-            {
-                sampling_key_ast = metadata_snapshot->getSamplingKeyAST()->clone();
-            }
-
-            chassert(sampling_key_ast != nullptr);
 
             if (has_lower_limit)
             {
@@ -437,7 +434,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
             ASTPtr query = sampling.filter_function;
             auto syntax_result = TreeRewriter(context).analyze(query, available_real_columns);
-            sampling.filter_expression = std::make_shared<const ActionsDAG>(ExpressionAnalyzer(sampling.filter_function, syntax_result, context).getActionsDAG(false));
+            sampling.filter_expression = ExpressionAnalyzer(sampling.filter_function, syntax_result, context).getActionsDAG(false);
         }
     }
 
@@ -451,7 +448,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 }
 
 void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
-    std::optional<KeyCondition> & part_offset_condition, const ActionsDAG * filter_dag, ContextPtr context)
+    std::optional<KeyCondition> & part_offset_condition, const ActionsDAGPtr & filter_dag, ContextPtr context)
 {
     if (!filter_dag)
         return;
@@ -472,10 +469,10 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
         return;
 
     part_offset_condition.emplace(KeyCondition{
-        &*dag,
+        dag,
         context,
         sample.getNames(),
-        std::make_shared<ExpressionActions>(ActionsDAG(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
+        std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
         {}});
 }
 
@@ -483,7 +480,7 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
     const MergeTreeData::DataPartsVector & parts,
-    const ActionsDAG * filter_dag,
+    const ActionsDAGPtr & filter_dag,
     ContextPtr context)
 {
     if (!filter_dag)
@@ -495,7 +492,7 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
         return {};
 
     auto virtual_columns_block = data.getBlockWithVirtualsForFilter(metadata_snapshot, parts);
-    VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), virtual_columns_block);
+    VirtualColumnUtils::filterBlockWithDAG(dag, virtual_columns_block, context);
     return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 }
 
@@ -599,8 +596,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     LoggerPtr log,
     size_t num_streams,
     ReadFromMergeTree::IndexStats & index_stats,
-    bool use_skip_indexes,
-    bool find_exact_ranges)
+    bool use_skip_indexes)
 {
     chassert(alter_conversions.empty() || parts.size() == alter_conversions.size());
 
@@ -672,14 +668,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             if (metadata_snapshot->hasPrimaryKey() || part_offset_condition)
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
-                ranges.ranges = markRangesFromPKRange(
-                    part,
-                    metadata_snapshot,
-                    key_condition,
-                    part_offset_condition,
-                    find_exact_ranges ? &ranges.exact_ranges : nullptr,
-                    settings,
-                    log);
+                ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, part_offset_condition, settings, log);
             }
             else if (total_marks_count)
             {
@@ -769,16 +758,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
                 num_threads);
 
-
-            /// Instances of ThreadPool "borrow" threads from the global thread pool.
-            /// We intentionally use scheduleOrThrow here to avoid a deadlock.
-            /// For example, queries can already be running with threads from the
-            /// global pool, and if we saturate max_thread_pool_size whilst requesting
-            /// more in this loop, queries will block infinitely.
-            /// So we wait until lock_acquire_timeout, and then raise an exception.
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
             {
-                pool.scheduleOrThrow([&, part_index, thread_group = CurrentThread::getGroup()]
+                pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()]
                 {
                     setThreadName("MergeTreeIndex");
 
@@ -790,7 +772,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         CurrentThread::attachToGroupIfDetached(thread_group);
 
                     process_part(part_index);
-                }, Priority{}, context->getSettingsRef().lock_acquire_timeout.totalMicroseconds());
+                });
             }
 
             pool.wait();
@@ -920,7 +902,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     /// 1. estimate the number of rows to read; 2. projection reading, which doesn't have alter_conversions.
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
-        /*alter_conversions=*/{},
+        /*alter_conversions=*/ {},
         metadata_snapshot,
         query_info,
         context,
@@ -929,8 +911,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         data,
         column_names_to_return,
         log,
-        indexes,
-        /*find_exact_ranges*/false);
+        indexes);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
@@ -1021,13 +1002,11 @@ size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
 
 /// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
 /// In other words, it removes subranges from whole range, that definitely could not contain required keys.
-/// If @exact_ranges is not null, fill it with ranges containing marks of fully matched records.
 MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const MergeTreeData::DataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
     const KeyCondition & key_condition,
     const std::optional<KeyCondition> & part_offset_condition,
-    MarkRanges * exact_ranges,
     const Settings & settings,
     LoggerPtr log)
 {
@@ -1040,11 +1019,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
     bool has_final_mark = part->index_granularity.hasFinalMark();
 
-    bool key_condition_useful = !key_condition.alwaysUnknownOrTrue();
-    bool part_offset_condition_useful = part_offset_condition && !part_offset_condition->alwaysUnknownOrTrue();
-
     /// If index is not used.
-    if (!key_condition_useful && !part_offset_condition_useful)
+    if (key_condition.alwaysUnknownOrTrue() && (!part_offset_condition || part_offset_condition->alwaysUnknownOrTrue()))
     {
         if (has_final_mark)
             res.push_back(MarkRange(0, marks_count - 1));
@@ -1053,10 +1029,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         return res;
     }
-
-    /// If conditions are relaxed, don't fill exact ranges.
-    if (key_condition.isRelaxed() || (part_offset_condition && part_offset_condition->isRelaxed()))
-        exact_ranges = nullptr;
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
@@ -1107,11 +1079,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::vector<FieldRef> part_offset_left(2);
     std::vector<FieldRef> part_offset_right(2);
 
-    auto check_in_range = [&](const MarkRange & range, BoolMask initial_mask = {})
+    auto may_be_true_in_range = [&](MarkRange & range)
     {
-        auto check_key_condition = [&]()
+        bool key_condition_maybe_true = true;
+        if (!key_condition.alwaysUnknownOrTrue())
         {
-            if (range.end == marks_count)
+            if (range.end == marks_count && !has_final_mark)
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
@@ -1125,6 +1098,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             }
             else
             {
+                if (has_final_mark && range.end == marks_count)
+                    range.end -= 1; /// Remove final empty mark. It's useful only for primary key condition.
+
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
                     if ((*index_columns)[i].column)
@@ -1140,17 +1116,19 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                 }
             }
-            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask);
-        };
+            key_condition_maybe_true = key_condition.mayBeTrueInRange(used_key_size, index_left.data(), index_right.data(), key_types);
+        }
 
-        auto check_part_offset_condition = [&]()
+        bool part_offset_condition_maybe_true = true;
+
+        if (part_offset_condition && !part_offset_condition->alwaysUnknownOrTrue())
         {
             auto begin = part->index_granularity.getMarkStartingRow(range.begin);
             auto end = part->index_granularity.getMarkStartingRow(range.end) - 1;
             if (begin > end)
             {
                 /// Empty mark (final mark)
-                return BoolMask(false, true);
+                part_offset_condition_maybe_true = false;
             }
             else
             {
@@ -1159,23 +1137,16 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 part_offset_left[1] = part->name;
                 part_offset_right[1] = part->name;
 
-                return part_offset_condition->checkInRange(
-                    2, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
+                part_offset_condition_maybe_true
+                    = part_offset_condition->mayBeTrueInRange(2, part_offset_left.data(), part_offset_right.data(), part_offset_types);
             }
-        };
-
-        if (key_condition_useful && part_offset_condition_useful)
-            return check_key_condition() & check_part_offset_condition();
-        else if (key_condition_useful)
-            return check_key_condition();
-        else if (part_offset_condition_useful)
-            return check_part_offset_condition();
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Condition is useless but check_in_range still gets called. It is a bug");
+        }
+        return key_condition_maybe_true && part_offset_condition_maybe_true;
     };
 
-    bool key_condition_exact_range = !key_condition_useful || key_condition.matchesExactContinuousRange();
-    bool part_offset_condition_exact_range = !part_offset_condition_useful || part_offset_condition->matchesExactContinuousRange();
+    bool key_condition_exact_range = key_condition.alwaysUnknownOrTrue() || key_condition.matchesExactContinuousRange();
+    bool part_offset_condition_exact_range
+        = !part_offset_condition || part_offset_condition->alwaysUnknownOrTrue() || part_offset_condition->matchesExactContinuousRange();
     const String & part_name = part->isProjectionPart() ? fmt::format("{}.{}", part->name, part->getParentPart()->name) : part->name;
 
     if (!key_condition_exact_range || !part_offset_condition_exact_range)
@@ -1191,11 +1162,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part->index_granularity_info.fixed_index_granularity,
             part->index_granularity_info.index_granularity_bytes);
 
-        /// There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
-        /// At each step, take the left segment and check if it fits.
-        /// If fits, split it into smaller ones and put them on the stack. If not, discard it.
-        /// If the segment is already of one mark length, add it to response and discard it.
-        std::vector<MarkRange> ranges_stack = { {0, marks_count - (has_final_mark ? 1 : 0)} };
+        /** There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
+          * At each step, take the left segment and check if it fits.
+          * If fits, split it into smaller ones and put them on the stack. If not, discard it.
+          * If the segment is already of one mark length, add it to response and discard it.
+          */
+        std::vector<MarkRange> ranges_stack = { {0, marks_count} };
 
         size_t steps = 0;
 
@@ -1206,9 +1178,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
             ++steps;
 
-            auto result
-                = check_in_range(range, exact_ranges && range.end == range.begin + 1 ? BoolMask() : BoolMask::consider_only_can_be_true);
-            if (!result.can_be_true)
+            if (!may_be_true_in_range(range))
                 continue;
 
             if (range.end == range.begin + 1)
@@ -1218,14 +1188,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     res.push_back(range);
                 else
                     res.back().end = range.end;
-
-                if (exact_ranges && !result.can_be_false)
-                {
-                    if (exact_ranges->empty() || range.begin - exact_ranges->back().end > min_marks_for_seek)
-                        exact_ranges->push_back(range);
-                    else
-                        exact_ranges->back().end = range.end;
-                }
             }
             else
             {
@@ -1240,12 +1202,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             }
         }
 
-        LOG_TRACE(
-            log,
-            "Used generic exclusion search {}over index for part {} with {} steps",
-            exact_ranges ? "with exact ranges " : "",
-            part_name,
-            steps);
+        LOG_TRACE(log, "Used generic exclusion search over index for part {} with {} steps", part_name, steps);
     }
     else
     {
@@ -1259,84 +1216,40 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         MarkRange result_range;
 
-        size_t last_mark = marks_count - (has_final_mark ? 1 : 0);
         size_t searched_left = 0;
-        size_t searched_right = last_mark;
+        size_t searched_right = marks_count;
 
-        bool check_left = false;
-        bool check_right = false;
         while (searched_left + 1 < searched_right)
         {
             const size_t middle = (searched_left + searched_right) / 2;
             MarkRange range(0, middle);
-            if (check_in_range(range, BoolMask::consider_only_can_be_true).can_be_true)
+            if (may_be_true_in_range(range))
                 searched_right = middle;
             else
                 searched_left = middle;
             ++steps;
-            check_left = true;
         }
         result_range.begin = searched_left;
         LOG_TRACE(log, "Found (LEFT) boundary mark: {}", searched_left);
 
-        searched_right = last_mark;
+        searched_right = marks_count;
         while (searched_left + 1 < searched_right)
         {
             const size_t middle = (searched_left + searched_right) / 2;
-            MarkRange range(middle, last_mark);
-            if (check_in_range(range, BoolMask::consider_only_can_be_true).can_be_true)
+            MarkRange range(middle, marks_count);
+            if (may_be_true_in_range(range))
                 searched_left = middle;
             else
                 searched_right = middle;
             ++steps;
-            check_right = true;
         }
         result_range.end = searched_right;
         LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", searched_right);
 
-        if (result_range.begin < result_range.end)
-        {
-            if (exact_ranges)
-            {
-                if (result_range.begin + 1 == result_range.end)
-                {
-                    auto check_result = check_in_range(result_range);
-                    if (check_result.can_be_true)
-                    {
-                        if (!check_result.can_be_false)
-                            exact_ranges->emplace_back(result_range);
-                        res.emplace_back(std::move(result_range));
-                    }
-                }
-                else
-                {
-                    /// Candidate range with size > 1 is already can_be_true
-                    auto result_exact_range = result_range;
-                    if (check_in_range({result_range.begin, result_range.begin + 1}, BoolMask::consider_only_can_be_false).can_be_false)
-                        ++result_exact_range.begin;
+        if (result_range.begin < result_range.end && may_be_true_in_range(result_range))
+            res.emplace_back(std::move(result_range));
 
-                    if (check_in_range({result_range.end - 1, result_range.end}, BoolMask::consider_only_can_be_false).can_be_false)
-                        --result_exact_range.end;
-
-                    if (result_exact_range.begin < result_exact_range.end)
-                    {
-                        chassert(check_in_range(result_exact_range, BoolMask::consider_only_can_be_false) == BoolMask(true, false));
-                        exact_ranges->emplace_back(std::move(result_exact_range));
-                    }
-
-                    res.emplace_back(std::move(result_range));
-                }
-            }
-            else
-            {
-                /// Candidate range with both ends checked is already can_be_true
-                if ((check_left && check_right) || check_in_range(result_range, BoolMask::consider_only_can_be_true).can_be_true)
-                    res.emplace_back(std::move(result_range));
-            }
-        }
-
-        LOG_TRACE(
-            log, "Found {} range {}in {} steps", res.empty() ? "empty" : "continuous", exact_ranges ? "with exact range " : "", steps);
+        LOG_TRACE(log, "Found {} range in {} steps", res.empty() ? "empty" : "continuous", steps);
     }
 
     return res;
@@ -1413,10 +1326,11 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 reader.read(granule);
 
-            if (index_helper->isVectorSimilarityIndex())
+            auto ann_condition = std::dynamic_pointer_cast<IMergeTreeIndexConditionApproximateNearestNeighbor>(condition);
+            if (ann_condition != nullptr)
             {
                 /// An array of indices of useful ranges.
-                auto result = condition->getUsefulRanges(granule);
+                auto result = ann_condition->getUsefulRanges(granule);
 
                 for (auto range : result)
                 {
