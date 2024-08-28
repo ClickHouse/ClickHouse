@@ -160,13 +160,13 @@ DataTypePtr FunctionArrayIntersect<Mode>::getReturnTypeImpl(const DataTypes & ar
         const auto & nested_type = array_type->getNestedType();
 
         if (typeid_cast<const DataTypeNothing *>(nested_type.get()))
-            has_nothing = true;
-        // {
-        //     if (std::is_same_v<Mode, ArrayModeIntersect>) {
-        //         has_nothing = true;
-        //         break;
-        //     }
-        // }
+        {
+            if (std::is_same_v<Mode, ArrayModeIntersect>)
+            {
+                has_nothing = true;
+                break;
+            }
+        }
         else
             nested_types.push_back(nested_type);
     }
@@ -176,13 +176,11 @@ DataTypePtr FunctionArrayIntersect<Mode>::getReturnTypeImpl(const DataTypes & ar
     if (!nested_types.empty())
         result_type = getMostSubtype(nested_types, true);
 
-    if (has_nothing)
+    // If found any DataTypeNothing in IntersectMode or all DattaTypeNothing in UnionMode
+    if (has_nothing || nested_types.empty())
         result_type = std::make_shared<DataTypeNothing>();
-    // // If found any DataTypeNothing in IntersectMode or all DattaTypeNothing in UnionMode
-    // if (has_nothing || nested_types.empty())
-    //     result_type = std::make_shared<DataTypeNothing>();
-    // else
-    //     result_type = getMostSubtype(nested_types, true);
+    else
+        result_type = getMostSubtype(nested_types, true);
 
     return std::make_shared<DataTypeArray>(result_type);
 }
