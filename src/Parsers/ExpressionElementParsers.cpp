@@ -1289,16 +1289,17 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 template <typename Collection>
 struct CollectionOfLiteralsLayer
 {
-    explicit CollectionOfLiteralsLayer(IParser::Pos & pos, TokenType closing_bracket_)
+    explicit CollectionOfLiteralsLayer(IParser::Pos & pos, bool is_functional_style_ = false)
         : literal_begin(pos)
-        , closing_bracket(closing_bracket_)
+        , is_functional_style(is_functional_style_)
     {
         pos.increaseDepth();
         ++pos;
     }
 
     IParser::Pos literal_begin;
-    TokenType closing_bracket;
+    /// Functional-style literal definition, e.g. `tuple(1, 2, 3)`, or `array(1, 2, 3)`.
+    bool is_functional_style = false;
     Collection arr;
 };
 
@@ -1309,7 +1310,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         return false;
 
     std::vector<CollectionOfLiteralsLayer<Collection>> layers;
-    layers.emplace_back(pos, closing_bracket);
+    layers.emplace_back(pos);
 
     ParserLiteral literal_p;
 
@@ -1317,17 +1318,21 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
     {
         if (!layers.back().arr.empty())
         {
-            if (pos->type == layers.back().closing_bracket)
+            auto expected_closing = layers.back().is_functional_style ? TokenType::ClosingRoundBracket : closing_bracket;
+            if (pos->type == expected_closing)
             {
                 std::shared_ptr<ASTLiteral> literal;
 
-                // /// Parse one-element tuples (e.g. (1)) later as single values for backward compatibility.
-                if (std::is_same_v<Collection, Tuple> && layers.back().arr.size() == 1)
+                if (std::is_same_v<Collection, Tuple> && layers.back().arr.size() == 1 && !layers.back().is_functional_style)
                 {
+                    /// Single element inside round brackets is not a tuple, but a scalar.
+                    /// We need to merge it with the previous layer.
+                    /// Example: (1, (2)) is parsed as tuple(1, 2) instead of tuple(1, tuple(2)).
                     if (layers.size() > 1)
                     {
                         layers[layers.size() - 2].arr.push_back(layers.back().arr[0]);
                         layers.pop_back();
+                        ++pos;
                         pos.decreaseDepth();
                         continue;
                     }
@@ -1372,14 +1377,14 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         }
         else if (pos->type == opening_bracket)
         {
-            layers.emplace_back(pos, closing_bracket);
+            layers.emplace_back(pos);
         }
         else if (pos->type == TokenType::BareWord && std::string_view(pos->begin, pos->end) == FunctionName<Collection>::value)
         {
             ++pos;
             if (pos.isValid() && pos->type == TokenType::OpeningRoundBracket)
             {
-                layers.emplace_back(pos, TokenType::ClosingRoundBracket);
+                layers.emplace_back(pos, true);
             }
             else
                 return false;
