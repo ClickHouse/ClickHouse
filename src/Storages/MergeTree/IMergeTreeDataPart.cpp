@@ -76,7 +76,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
-
 void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const PartMetadataManagerPtr & manager)
 {
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
@@ -2069,21 +2068,20 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
         .external_transaction = disk_transaction
     };
 
-    const auto freeze = [this, &relative_data_path = storage.relative_data_path, &path_in_detached = *maybe_path_in_detached](
-                            const IDataPartStorage::ClonePartParams & clone_part_params)
+    const auto freeze = [&]()
     {
         return getDataPartStorage().freeze(
-            relative_data_path,
-            relative_data_path,
+            storage.relative_data_path,
+            *maybe_path_in_detached,
             Context::getGlobalContextInstance()->getReadSettings(),
             Context::getGlobalContextInstance()->getWriteSettings(),
             /* save_metadata_callback= */ {},
-            clone_part_params);
+            params);
     };
 
     try
     {
-        return freeze(params);
+        return freeze();
     }
     catch (const S3Exception & ex)
     {
@@ -2092,8 +2090,11 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
         {
             params.copy_instead_of_hardlink = false;
             LOG_WARNING(
-                log, "Necessary key is absented in object storage. Trying to fix this by using hard links instead of the copy part");
-            return freeze(params);
+                log, "Necessary key is absented in object storage. Trying to fix this by using hard links instead of the copy part.");
+            auto result = freeze();
+
+            LOG_TRACE(log, "Repairing with copy hard links is finished successfully.");
+            return result;
         }
         throw;
     }

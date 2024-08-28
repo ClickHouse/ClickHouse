@@ -2,9 +2,12 @@
 
 import logging
 import pytest
+import time
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
+
+logging.getLogger().setLevel(logging.INFO)
 
 replica1 = cluster.add_instance(
     "replica1",
@@ -49,34 +52,82 @@ def create_replicated_table(node, table_name):
         ORDER BY id
         SETTINGS
             storage_policy='s3',
-            allow_remote_fs_zero_copy_replication=1
+            allow_remote_fs_zero_copy_replication=1,
+            max_cleanup_delay_period=31
         """
     )
 
-def list_s3_objects(cluster, prefix=""):
-    minio = cluster.minio_client
-    prefix_len = len(prefix)
-    return [
-        obj.object_name[prefix_len:]
-        for obj in minio.list_objects(
-            cluster.minio_bucket, prefix=prefix, recursive=True
-        )
-    ]
+
+def check_replica_before_broke(node, table_name):
+    active_parts_name_before_drop = node.query(
+        f"SELECT name FROM system.parts WHERE table='{table_name}'"
+    ).strip()
+    assert active_parts_name_before_drop == "all_0_0_0"
+
+    detached_parts_before_drop = node.query(
+        f"SELECT count(*) FROM system.detached_parts WHERE table='{table_name}'"
+    ).strip()
+    assert detached_parts_before_drop == "0"
+
+
+def check_replica_after_broke_s3(node, table_name):
+    CANCEL_FETCH_MSG_LOG = (
+        "Cancel fetch for broken part"
+    )
+
+    error = node.query_and_get_error(f"SELECT * FROM {table_name}").strip()
+    assert (
+        "DB::Exception: The specified key does not exist. This error happened for S3 disk."
+        in error
+    )
+
+    assert replica1.wait_for_log_line(
+        regexp=CANCEL_FETCH_MSG_LOG, timeout=60, look_behind_lines=2000
+    )
+
+    detached_parts_name_after_drop = node.query(
+        f"SELECT name FROM system.detached_parts WHERE table='{table_name}'"
+    ).strip()
+    assert detached_parts_name_after_drop == "broken_all_0_0_0"
+
+    active_parts_name_after_drop = node.query(
+        f"SELECT name FROM system.parts WHERE table='{table_name}'"
+    ).strip()
+    assert active_parts_name_after_drop == ""
+
+    data = node.query("SELECT * FROM no_key_found_disk_repl").strip()
+    assert data == ""
+
+
+def check_replica_after_insert(node, table_name):
+    data = node.query("SELECT * FROM no_key_found_disk_repl").strip()
+    assert data == "2"
+
+    detached_parts_name_after_drop = node.query(
+        f"SELECT name FROM system.detached_parts WHERE table='{table_name}'"
+    ).strip()
+    assert detached_parts_name_after_drop == "broken_all_0_0_0"
+
+    active_parts_name_after_drop = node.query(
+        f"SELECT name FROM system.parts WHERE table='{table_name}'"
+    ).strip()
+    assert active_parts_name_after_drop == "all_1_1_0"
 
 
 def test_s3_lost_part(start_cluster):
-    create_replicated_table(replica1, "no_key_found_disk_repl")
-    create_replicated_table(replica2, "no_key_found_disk_repl")
+    table_name = "no_key_found_disk_repl"
+    create_replicated_table(replica1, table_name)
+    create_replicated_table(replica2, table_name)
 
-    replica1.query("INSERT INTO no_key_found_disk_repl VALUES (1)")
-    data = replica1.query("SELECT * FROM no_key_found_disk_repl").strip()
+    replica1.query(f"INSERT INTO {table_name} VALUES (1)")
+    data = replica1.query(f"SELECT * FROM {table_name}").strip()
     assert data == "1"
 
     uuid = replica1.query(
-        """
+        f"""
         SELECT uuid
         FROM system.tables
-        WHERE name = 'no_key_found_disk_repl'
+        WHERE name = '{table_name}'
         """
     ).strip()
     assert uuid
@@ -97,16 +148,17 @@ def test_s3_lost_part(start_cluster):
     )
     assert len(remote_pathes) > 0
 
+    check_replica_before_broke(replica1, table_name)
+    check_replica_before_broke(replica2, table_name)
+
     for path in remote_pathes:
         assert cluster.minio_client.stat_object(cluster.minio_bucket, path).size > 0
         cluster.minio_client.remove_object(cluster.minio_bucket, path)
 
-    error = replica2.query_and_get_error("SELECT * FROM no_key_found_disk_repl").strip()
-    assert (
-        "DB::Exception: The specified key does not exist. This error happened for S3 disk."
-        in error
-    )
+    check_replica_after_broke_s3(replica1, table_name)
+    check_replica_after_broke_s3(replica2, table_name)
 
-    data = replica2.query("SELECT * FROM no_key_found_disk_repl").strip()
-    assert data == ""
+    replica1.query("INSERT INTO no_key_found_disk_repl VALUES (2)")
 
+    check_replica_after_insert(replica1, table_name)
+    check_replica_after_insert(replica2, table_name)

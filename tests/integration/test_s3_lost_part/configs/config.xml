@@ -7,10 +7,10 @@
                     <host>replica1</host>
                     <port>9000</port>
                 </replica>
-                <!-- <replica>
+                <replica>
                     <host>replica2</host>
                     <port>9000</port>
-                </replica> -->
+                </replica>
             </shard>
         </test_cluster>
     </remote_servers>

@@ -4144,6 +4144,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     auto zookeeper = getZooKeeper();
 
     DataPartPtr broken_part;
+    bool cancel_fetch_for_broken = false;
     auto outdate_broken_part = [this, &broken_part]()
     {
         if (!broken_part)
@@ -4175,6 +4176,12 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
             part->was_removed_as_broken = true;
             part->makeCloneInDetached("broken", getInMemoryMetadataPtr(), /*disk_transaction*/ {});
             broken_part = part;
+
+            if (part->isStoredOnRemoteDiskWithZeroCopySupport() && part->storage.supportsReplication()
+                && part->storage.getSettings()->allow_remote_fs_zero_copy_replication)
+            {
+                cancel_fetch_for_broken = true;
+            }
         }
         else
         {
@@ -4258,9 +4265,11 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         log_entry->source_replica = "";
         log_entry->new_part_name = part_name;
 
-        ops.emplace_back(zkutil::makeCreateRequest(
-            fs::path(replica_path) / "queue/queue-", log_entry->toString(),
-            zkutil::CreateMode::PersistentSequential));
+        if (!cancel_fetch_for_broken)
+        {
+            ops.emplace_back(zkutil::makeCreateRequest(
+                fs::path(replica_path) / "queue/queue-", log_entry->toString(), zkutil::CreateMode::PersistentSequential));
+        }
 
         Coordination::Responses results;
         auto rc = zookeeper->tryMulti(ops, results, /* check_session_valid */ true);
@@ -4272,6 +4281,13 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         }
 
         zkutil::KeeperMultiException::check(rc, ops, results);
+
+        if (cancel_fetch_for_broken)
+        {
+            outdate_broken_part();
+            LOG_TRACE(log, "Cancel fetch for broken part {}", part_name);
+            return;
+        }
 
         String path_created = dynamic_cast<const Coordination::CreateResponse &>(*results.back()).path_created;
         log_entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
