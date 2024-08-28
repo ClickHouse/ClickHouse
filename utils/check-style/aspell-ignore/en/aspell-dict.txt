@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2942
+personal_ws-1.1 en 2943
 AArch
 ACLs
 ALTERs
@@ -1187,6 +1187,7 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arrayUnion
 arrayUniq
 arrayWithConstant
 arrayZip

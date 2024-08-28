@@ -671,7 +671,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                     all_has_nullable = false;
 
                 // Add the value if all arrays have the value for intersect
-                // or if there was at least one occurence in all of the arrays
+                // or if there was at least one occurrence in all of the arrays
                 if (pair && pair->getMapped() == args)
                 {
                     insertElement<Map, ColumnType, is_numeric_column>(pair, result_offset, result_data, null_map, use_null_map);
