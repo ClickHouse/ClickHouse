@@ -383,6 +383,16 @@ size_t HashJoin::getTotalByteCount() const
     return res;
 }
 
+bool HashJoin::isUsedByAnotherAlgorithm() const
+{
+    return table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO) || table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
+}
+
+bool HashJoin::canRemoveColumnsFromLeftBlock() const
+{
+    return table_join->enableEnalyzer() && !table_join->hasUsing() && !isUsedByAnotherAlgorithm();
+}
+
 void HashJoin::initRightBlockStructure(Block & saved_block_sample)
 {
     if (isCrossOrComma(kind))
@@ -394,8 +404,7 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
 
     bool multiple_disjuncts = !table_join->oneDisjunct();
     /// We could remove key columns for LEFT | INNER HashJoin but we should keep them for JoinSwitcher (if any).
-    bool save_key_columns = table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO) ||
-                            table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH) ||
+    bool save_key_columns = isUsedByAnotherAlgorithm() ||
                             isRightOrFull(kind) ||
                             multiple_disjuncts ||
                             table_join->getMixedJoinExpression();
@@ -1230,7 +1239,7 @@ IBlocksStreamPtr HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
         return {};
 
     size_t left_columns_count = left_sample_block.columns();
-    if (table_join->enableEnalyzer() && !table_join->hasUsing())
+    if (canRemoveColumnsFromLeftBlock())
         left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
 
     bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
