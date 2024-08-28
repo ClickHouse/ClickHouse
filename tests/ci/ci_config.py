@@ -323,22 +323,22 @@ class CI:
             required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2
         ),
         JobNames.STATELESS_TEST_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_TSAN], num_batches=4
+            required_builds=[BuildNames.PACKAGE_TSAN], num_batches=3
         ),
         JobNames.STATELESS_TEST_MSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_MSAN], num_batches=4
+            required_builds=[BuildNames.PACKAGE_MSAN], num_batches=3
         ),
         JobNames.STATELESS_TEST_UBSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_UBSAN], num_batches=2
+            required_builds=[BuildNames.PACKAGE_UBSAN], num_batches=1
         ),
         JobNames.STATELESS_TEST_DEBUG: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=2
+            required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=1
         ),
         JobNames.STATELESS_TEST_RELEASE: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
         ),
         JobNames.STATELESS_TEST_RELEASE_COVERAGE: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_RELEASE_COVERAGE], num_batches=6
+            required_builds=[BuildNames.PACKAGE_RELEASE_COVERAGE], num_batches=5
         ),
         JobNames.STATELESS_TEST_AARCH64: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
@@ -351,7 +351,7 @@ class CI:
             required_builds=[BuildNames.PACKAGE_DEBUG], num_batches=1
         ),
         JobNames.STATELESS_TEST_AZURE_ASAN: CommonJobConfigs.STATELESS_TEST.with_properties(
-            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=3, release_only=True
+            required_builds=[BuildNames.PACKAGE_ASAN], num_batches=2, release_only=True
         ),
         JobNames.STATELESS_TEST_S3_TSAN: CommonJobConfigs.STATELESS_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
