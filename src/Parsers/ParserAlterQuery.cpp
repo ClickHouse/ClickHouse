@@ -1,6 +1,8 @@
-#include <Common/typeid_cast.h>
-#include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/ParserAlterQuery.h>
+
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -9,13 +11,18 @@
 #include <Parsers/ParserRefreshStrategy.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTLiteral.h>
+#include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int SYNTAX_ERROR;
+}
 
 bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -725,8 +732,23 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!parser_modify_col_decl.parse(pos, command_col_decl, expected))
                     return false;
 
+                auto check_no_type = [&](const std::string_view keyword)
+                {
+                    if (!command_col_decl)
+                        return;
+                    const auto & column_decl = command_col_decl->as<const ASTColumnDeclaration &>();
+
+                    if (!column_decl.children.empty() || column_decl.null_modifier.has_value() || !column_decl.default_specifier.empty()
+                        || column_decl.ephemeral_default || column_decl.primary_key_specifier)
+                    {
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot specify column properties before '{}'", keyword);
+                    }
+                };
+
                 if (s_remove.ignore(pos, expected))
                 {
+                    check_no_type(s_remove.getName());
+
                     if (s_default.ignore(pos, expected))
                         command->remove_property = toStringView(Keyword::DEFAULT);
                     else if (s_materialized.ignore(pos, expected))
@@ -746,11 +768,15 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 }
                 else if (s_modify_setting.ignore(pos, expected))
                 {
+                    check_no_type(s_modify_setting.getName());
+
                     if (!parser_settings.parse(pos, command_settings_changes, expected))
                         return false;
                 }
                 else if (s_reset_setting.ignore(pos, expected))
                 {
+                    check_no_type(s_reset_setting.getName());
+
                     if (!parser_reset_setting.parse(pos, command_settings_resets, expected))
                         return false;
                 }
