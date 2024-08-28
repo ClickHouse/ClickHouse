@@ -1,15 +1,11 @@
-QueryStart	script_line_number_test	DROP DATABASE IF EXISTS \n03221_db;	7
-QueryStart	script_line_number_test	DROP DATABASE IF EXISTS \n03221_db1;	9
-QueryStart	script_line_number_test	DROP DATABASE IF EXISTS \n03221_db2;	13
-QueryStart	script_line_number_test	CREATE DATABASE 03221_db;	16
-QueryStart	script_line_number_test	CREATE DATABASE\n03221_db1;	17
-QueryStart	script_line_number_test	CREATE DATABASE\n\n03221_db2;	19
-QueryStart	script_line_number_test	CREATE TABLE 03221_db.t   (n Int8) ENGINE=MergeTree ORDER BY n;	24
-QueryStart	script_line_number_test	CREATE TABLE 03221_db1.t1 (n Int8) ENGINE=MergeTree ORDER BY n;	25
-QueryStart	script_line_number_test	CREATE TABLE 03221_db2.t2 (n Int8) ENGINE=MergeTree ORDER BY n;	26
-QueryStart	script_line_number_test	INSERT INTO 03221_db.t   \nSELECT * FROM numbers(10);	28
-QueryStart	script_line_number_test	INSERT \nINTO \n03221_db1.t1\nSELECT\n*\nFROM\nnumbers(10);	31
-QueryStart	script_line_number_test	INSERT INTO 03221_db2.t2 \n\nSELECT * FROM numbers(10);	39
-QueryStart	script_line_number_test	DROP \nDATABASE 03221_db;	46
-QueryStart	script_line_number_test	DROP DATABASE\n03221_db1;	48
-QueryStart	script_line_number_test	DROP\nDATABASE\n03221_db2;	50
+3
+4
+5
+7
+8
+9
+12
+13
+14
+16
+18
