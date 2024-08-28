@@ -120,6 +120,7 @@ Columns:
     - `'None'` = The query result was neither written into nor read from the query cache.
     - `'Write'` = The query result was written into the query cache.
     - `'Read'` = The query result was read from the query cache.
+- `script_line_number` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Line number of query. When script is being executed from file, script_line_number is being set to current query line number.
 
 **Example**
 
@@ -184,6 +185,7 @@ forwarded_for:
 quota_key:
 revision:                              54456
 log_comment:
+script_line_number:                    1
 thread_ids:                            [30776,31174]
 ProfileEvents:                         {'Query':1,'NetworkSendElapsedMicroseconds':59,'NetworkSendBytes':2643,'SelectedRows':69,'SelectedBytes':6187,'ContextLock':9,'RWLockAcquiredReadLocks':1,'RealTimeMicroseconds':817,'UserTimeMicroseconds':427,'SystemTimeMicroseconds':212,'OSCPUVirtualTimeMicroseconds':639,'OSReadChars':894,'OSWriteChars':319}
 Settings:                              {'load_balancing':'random','max_memory_usage':'10000000000'}
