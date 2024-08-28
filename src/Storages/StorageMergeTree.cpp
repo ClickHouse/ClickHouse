@@ -263,7 +263,7 @@ std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
     return getTotalActiveSizeInRows();
 }
 
-std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
+std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr local_context) const
 {
     auto parts = getVisibleDataPartsVector(local_context);
     return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, parts);
@@ -505,18 +505,18 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
         additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
     }
 
-    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
-    Int64 version = increment.get();
-    entry.commit(version);
-    String mutation_id = entry.file_name;
-    if (txn)
-        txn->addMutation(shared_from_this(), mutation_id);
-
-    bool alter_conversions_mutations_updated = updateAlterConversionsMutations(entry.commands, alter_conversions_mutations, /* remove= */ false);
-
+    Int64 version;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
+        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+        version = increment.get();
+        entry.commit(version);
+        String mutation_id = entry.file_name;
+        if (txn)
+            txn->addMutation(shared_from_this(), mutation_id);
+
+        bool alter_conversions_mutations_updated = updateAlterConversionsMutations(entry.commands, alter_conversions_mutations, /* remove= */ false);
         bool inserted = current_mutations_by_version.try_emplace(version, std::move(entry)).second;
         if (!inserted)
         {
@@ -527,9 +527,9 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
             }
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
         }
-    }
 
-    LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
+        LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
+    }
     background_operations_assignee.trigger();
     return version;
 }
@@ -895,7 +895,7 @@ void StorageMergeTree::loadDeduplicationLog()
     std::string path = fs::path(relative_data_path) / "deduplication_logs";
 
     /// If either there is already a deduplication log, or we will be able to use it.
-    if (!disk->isReadOnly() || disk->exists(path))
+    if (disk->exists(path) || !disk->isReadOnly())
     {
         deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, settings->non_replicated_deduplication_window, format_version, disk);
         deduplication_log->load();
@@ -1568,12 +1568,10 @@ bool StorageMergeTree::optimize(
 {
     assertNotReadonly();
 
-    if (deduplicate && getInMemoryMetadataPtr()->hasProjections()
-        && getSettings()->deduplicate_merge_projection_mode == DeduplicateMergeProjectionMode::THROW)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+    if (deduplicate && getInMemoryMetadataPtr()->hasProjections())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
-                    "User should drop all the projections manually before running the query, "
-                    "or consider drop or rebuild option of deduplicate_merge_projection_mode",
+                    "User should drop all the projections manually before running the query",
                     getStorageID().getTableName());
 
     if (deduplicate)

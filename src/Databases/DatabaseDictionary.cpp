@@ -111,7 +111,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, Co
         buffer << ") Engine = Dictionary(" << backQuoteIfNeed(table_name) << ")";
     }
 
-    const auto & settings = getContext()->getSettingsRef();
+    auto settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
     const char * pos = query.data();
     std::string error_message;
@@ -133,7 +133,7 @@ ASTPtr DatabaseDictionary::getCreateDatabaseQuery() const
         if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
             buffer << " COMMENT " << backQuote(comment_value);
     }
-    const auto & settings = getContext()->getSettingsRef();
+    auto settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
     return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
 }

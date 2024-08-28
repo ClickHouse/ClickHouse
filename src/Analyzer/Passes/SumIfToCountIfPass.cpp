@@ -66,7 +66,7 @@ public:
 
             resolveAggregateFunctionNodeByName(*function_node, "countIf");
 
-            if (constant_value_literal.safeGet<UInt64>() != 1)
+            if (constant_value_literal.get<UInt64>() != 1)
             {
                 /// Rewrite `sumIf(123, cond)` into `123 * countIf(cond)`
                 node = getMultiplyFunction(std::move(multiplier_node), node);
@@ -105,8 +105,8 @@ public:
         const auto & if_true_condition_constant_value_literal = if_true_condition_constant_node->getValue();
         const auto & if_false_condition_constant_value_literal = if_false_condition_constant_node->getValue();
 
-        auto if_true_condition_value = if_true_condition_constant_value_literal.safeGet<UInt64>();
-        auto if_false_condition_value = if_false_condition_constant_value_literal.safeGet<UInt64>();
+        auto if_true_condition_value = if_true_condition_constant_value_literal.get<UInt64>();
+        auto if_false_condition_value = if_false_condition_constant_value_literal.get<UInt64>();
 
         if (if_false_condition_value == 0)
         {

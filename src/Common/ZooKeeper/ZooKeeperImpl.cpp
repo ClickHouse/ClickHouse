@@ -536,7 +536,7 @@ void ZooKeeper::connect(
                     compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4", {}));
                 }
 
-                original_index.store(node.original_index);
+                original_index = static_cast<Int8>(node.original_index);
                 break;
             }
             catch (...)
@@ -1013,6 +1013,9 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
 
     LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
              session_id, already_started, requests_queue.isFinished(), reason);
+
+    /// Reset the original index.
+    original_index = -1;
 
     auto expire_session_if_not_expired = [&]
     {
@@ -1528,30 +1531,6 @@ void ZooKeeper::close()
         throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push close request to queue within operation timeout of {} ms", args.operation_timeout_ms);
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperClose);
-}
-
-
-std::optional<int8_t> ZooKeeper::getConnectedNodeIdx() const
-{
-    int8_t res = original_index.load();
-    if (res == -1)
-        return std::nullopt;
-    else
-        return res;
-}
-
-String ZooKeeper::getConnectedHostPort() const
-{
-    auto idx = getConnectedNodeIdx();
-    if (idx)
-        return args.hosts[*idx];
-    else
-        return "";
-}
-
-int32_t ZooKeeper::getConnectionXid() const
-{
-    return next_xid.load();
 }
 
 

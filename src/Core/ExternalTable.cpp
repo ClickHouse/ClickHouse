@@ -49,7 +49,7 @@ ExternalTableDataPtr BaseExternalTable::getData(ContextPtr context)
 {
     initReadBuffer();
     initSampleBlock();
-    auto input = context->getInputFormat(format, *read_buffer, sample_block, context->getSettingsRef().get("max_block_size").safeGet<UInt64>());
+    auto input = context->getInputFormat(format, *read_buffer, sample_block, context->getSettingsRef().get("max_block_size").get<UInt64>());
 
     auto data = std::make_unique<ExternalTableData>();
     data->pipe = std::make_unique<QueryPipelineBuilder>();
@@ -85,7 +85,7 @@ void BaseExternalTable::parseStructureFromStructureField(const std::string & arg
         /// We use `formatWithPossiblyHidingSensitiveData` instead of `getColumnNameWithoutAlias` because `column->type` is an ASTFunction.
         /// `getColumnNameWithoutAlias` will return name of the function with `(arguments)` even if arguments is empty.
         if (column)
-            structure.emplace_back(column->name, column->type->formatWithPossiblyHidingSensitiveData(0, true, true, false));
+            structure.emplace_back(column->name, column->type->formatWithPossiblyHidingSensitiveData(0, true, true));
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing table structure: expected column definition, got {}", child->formatForErrorMessage());
     }
@@ -102,7 +102,7 @@ void BaseExternalTable::parseStructureFromTypesField(const std::string & argumen
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing table structure: {}", error);
 
     for (size_t i = 0; i < type_list_raw->children.size(); ++i)
-        structure.emplace_back("_" + toString(i + 1), type_list_raw->children[i]->formatWithPossiblyHidingSensitiveData(0, true, true, false));
+        structure.emplace_back("_" + toString(i + 1), type_list_raw->children[i]->formatWithPossiblyHidingSensitiveData(0, true, true));
 }
 
 void BaseExternalTable::initSampleBlock()

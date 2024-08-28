@@ -34,7 +34,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_STORAGE;
     extern const int NO_REPLICA_NAME_GIVEN;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -538,9 +537,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (replica_name.empty())
             throw Exception(ErrorCodes::NO_REPLICA_NAME_GIVEN, "No replica name in config{}", verbose_help_message);
-        // '\t' and '\n' will interrupt parsing 'source replica' in ReplicatedMergeTreeLogEntryData::readText
-        if (replica_name.find('\t') != String::npos || replica_name.find('\n') != String::npos)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name must not contain '\\t' or '\\n'");
 
         arg_cnt = engine_args.size(); /// Update `arg_cnt` here because extractZooKeeperPathAndReplicaNameFromEngineArgs() could add arguments.
         arg_num = 2;                  /// zookeeper_path and replica_name together are always two arguments.
@@ -595,7 +591,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             if (ast->value.getType() != Field::Types::String)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, format_str, error_msg);
 
-            graphite_config_name = ast->value.safeGet<String>();
+            graphite_config_name = ast->value.get<String>();
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, format_str, error_msg);
@@ -831,18 +827,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             if (isFloat(data_types[i]))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Floating point partition key is not supported: {}", metadata.partition_key.column_names[i]);
-    }
-
-    if (metadata.hasProjections() && args.mode == LoadingStrictnessLevel::CREATE)
-    {
-        /// Now let's handle the merge tree family. Note we only handle in the mode of CREATE due to backward compatibility.
-        /// Otherwise, it would fail to start in the case of existing projections with special mergetree.
-        if (merging_params.mode != MergeTreeData::MergingParams::Mode::Ordinary
-            && storage_settings->deduplicate_merge_projection_mode == DeduplicateMergeProjectionMode::THROW)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Projection is fully supported in {}MergeTree with deduplicate_merge_projection_mode = throw. "
-                "Use 'drop' or 'rebuild' option of deduplicate_merge_projection_mode.",
-                merging_params.getModeName());
     }
 
     if (arg_num != arg_cnt)

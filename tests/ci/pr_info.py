@@ -2,7 +2,6 @@
 import json
 import logging
 import os
-import re
 from typing import Dict, List, Set, Union
 from urllib.parse import quote
 
@@ -329,13 +328,7 @@ class PRInfo:
 
     @property
     def is_release(self) -> bool:
-        return self.is_master or (
-            self.is_push_event
-            and (
-                bool(re.match(r"^2[1-9]\.[1-9][0-9]*$", self.head_ref))
-                or bool(re.match(r"^release/2[1-9]\.[1-9][0-9]*$", self.head_ref))
-            )
-        )
+        return self.number == 0 and not self.is_merge_queue
 
     @property
     def is_pr(self):
@@ -343,10 +336,6 @@ class PRInfo:
             assert self.number
             return True
         return False
-
-    @property
-    def is_push_event(self) -> bool:
-        return self.event_type == EventType.PUSH
 
     @property
     def is_scheduled(self) -> bool:

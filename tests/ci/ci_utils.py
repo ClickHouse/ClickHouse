@@ -2,11 +2,10 @@ import json
 import os
 import re
 import subprocess
-import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, List, Union, Optional, Sequence
+from typing import Any, Iterator, List, Union, Optional, Sequence, Tuple
 
 import requests
 
@@ -16,9 +15,41 @@ class Envs:
     WORKFLOW_RESULT_FILE = os.getenv(
         "WORKFLOW_RESULT_FILE", "/tmp/workflow_results.json"
     )
-    S3_BUILDS_BUCKET = os.getenv("S3_BUILDS_BUCKET", "clickhouse-builds")
-    GITHUB_WORKFLOW = os.getenv("GITHUB_WORKFLOW", "")
-    GITHUB_ACTOR = os.getenv("GITHUB_ACTOR", "")
+
+
+LABEL_CATEGORIES = {
+    "pr-backward-incompatible": ["Backward Incompatible Change"],
+    "pr-bugfix": [
+        "Bug Fix",
+        "Bug Fix (user-visible misbehavior in an official stable release)",
+        "Bug Fix (user-visible misbehaviour in official stable or prestable release)",
+        "Bug Fix (user-visible misbehavior in official stable or prestable release)",
+    ],
+    "pr-critical-bugfix": ["Critical Bug Fix (crash, LOGICAL_ERROR, data loss, RBAC)"],
+    "pr-build": [
+        "Build/Testing/Packaging Improvement",
+        "Build Improvement",
+        "Build/Testing Improvement",
+        "Build",
+        "Packaging Improvement",
+    ],
+    "pr-documentation": [
+        "Documentation (changelog entry is not required)",
+        "Documentation",
+    ],
+    "pr-feature": ["New Feature"],
+    "pr-improvement": ["Improvement"],
+    "pr-not-for-changelog": [
+        "Not for changelog (changelog entry is not required)",
+        "Not for changelog",
+    ],
+    "pr-performance": ["Performance Improvement"],
+    "pr-ci": ["CI Fix or Improvement (changelog entry is not required)"],
+}
+
+CATEGORY_TO_LABEL = {
+    c: lb for lb, categories in LABEL_CATEGORIES.items() for c in categories
+}
 
 
 class WithIter(type):
@@ -36,7 +67,22 @@ def cd(path: Union[Path, str]) -> Iterator[None]:
         os.chdir(oldpwd)
 
 
-class GH:
+def is_hex(s):
+    try:
+        int(s, 16)
+        return True
+    except ValueError:
+        return False
+
+
+def normalize_string(string: str) -> str:
+    res = string.lower()
+    for r in ((" ", "_"), ("(", "_"), (")", "_"), (",", "_"), ("/", "_"), ("-", "_")):
+        res = res.replace(*r)
+    return res
+
+
+class GHActions:
     class ActionsNames:
         RunConfig = "RunConfig"
 
@@ -45,10 +91,9 @@ class GH:
         FAILURE = "failure"
         PENDING = "pending"
         SUCCESS = "success"
-        SKIPPED = "skipped"
 
     @classmethod
-    def get_workflow_results(cls):
+    def _get_workflow_results(cls):
         if not Path(Envs.WORKFLOW_RESULT_FILE).exists():
             print(
                 f"ERROR: Failed to get workflow results from file [{Envs.WORKFLOW_RESULT_FILE}]"
@@ -59,29 +104,18 @@ class GH:
                 res = json.load(json_file)
             except json.JSONDecodeError as e:
                 print(f"ERROR: json decoder exception {e}")
-                json_file.seek(0)
-                print("    File content:")
-                print(json_file.read())
                 return {}
         return res
 
     @classmethod
     def print_workflow_results(cls):
-        res = cls.get_workflow_results()
+        res = cls._get_workflow_results()
         results = [f"{job}: {data['result']}" for job, data in res.items()]
         cls.print_in_group("Workflow results", results)
 
     @classmethod
-    def is_workflow_ok(cls) -> bool:
-        res = cls.get_workflow_results()
-        for _job, data in res.items():
-            if data["result"] == "failure":
-                return False
-        return bool(res)
-
-    @classmethod
     def get_workflow_job_result(cls, wf_job_name: str) -> Optional[str]:
-        res = cls.get_workflow_results()
+        res = cls._get_workflow_results()
         if wf_job_name in res:
             return res[wf_job_name]["result"]  # type: ignore
         else:
@@ -101,31 +135,23 @@ class GH:
     ) -> str:
         assert len(token) == 40
         assert len(commit_sha) == 40
-        assert Utils.is_hex(commit_sha)
-        assert not Utils.is_hex(token)
-
-        url = f"https://api.github.com/repos/{Envs.GITHUB_REPOSITORY}/commits/{commit_sha}/statuses"
+        assert is_hex(commit_sha)
+        assert not is_hex(token)
+        url = f"https://api.github.com/repos/{Envs.GITHUB_REPOSITORY}/commits/{commit_sha}/statuses?per_page={200}"
         headers = {
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github.v3+json",
         }
+        response = requests.get(url, headers=headers, timeout=5)
 
         if isinstance(status_name, str):
             status_name = (status_name,)
-
-        while url:
-            response = requests.get(url, headers=headers, timeout=5)
-            if response.status_code == 200:
-                statuses = response.json()
-                for status in statuses:
-                    if status["context"] in status_name:
-                        return status["state"]  # type: ignore
-
-                # Check if there is a next page
-                url = response.links.get("next", {}).get("url")
-            else:
-                break
-
+        if response.status_code == 200:
+            assert "next" not in response.links, "Response truncated"
+            statuses = response.json()
+            for status in statuses:
+                if status["context"] in status_name:
+                    return status["state"]  # type: ignore
         return ""
 
     @staticmethod
@@ -159,84 +185,72 @@ class GH:
         return False
 
     @staticmethod
-    def get_pr_url_by_branch(branch, repo=None):
-        repo = repo or Envs.GITHUB_REPOSITORY
-        get_url_cmd = f"gh pr list --repo {repo} --head {branch} --json url --jq '.[0].url' --state open"
-        url = Shell.get_output(get_url_cmd)
-        if not url:
-            print(f"WARNING: No open PR found, branch [{branch}] - search for merged")
-            get_url_cmd = f"gh pr list --repo {repo} --head {branch} --json url --jq '.[0].url' --state merged"
-            url = Shell.get_output(get_url_cmd)
+    def get_pr_url_by_branch(repo, branch):
+        get_url_cmd = (
+            f"gh pr list --repo {repo} --head {branch} --json url --jq '.[0].url'"
+        )
+        url = Shell.run(get_url_cmd)
         if not url:
             print(f"ERROR: PR nor found, branch [{branch}]")
         return url
 
-    @staticmethod
-    def is_latest_release_branch(branch):
-        latest_branch = Shell.get_output(
-            'gh pr list --label release --repo ClickHouse/ClickHouse --search "sort:created" -L1 --json headRefName'
-        )
-        if latest_branch:
-            latest_branch = json.loads(latest_branch)[0]["headRefName"]
-        print(
-            f"Latest branch [{latest_branch}], release branch [{branch}], release latest [{latest_branch == branch}]"
-        )
-        return latest_branch == branch
-
 
 class Shell:
     @classmethod
-    def get_output_or_raise(cls, command):
-        return cls.get_output(command, strict=True)
-
-    @classmethod
-    def get_output(cls, command, strict=False):
+    def run_strict(cls, command):
         res = subprocess.run(
             command,
             shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            check=strict,
+            check=True,
         )
         return res.stdout.strip()
 
     @classmethod
-    def check(
-        cls,
-        command,
-        strict=False,
-        verbose=False,
-        dry_run=False,
-        stdin_str=None,
-        **kwargs,
-    ):
+    def run(cls, command, check=False, dry_run=False):
         if dry_run:
             print(f"Dry-ryn. Would run command [{command}]")
-            return True
-        if verbose:
-            print(f"Run command [{command}]")
-        proc = subprocess.Popen(
+            return ""
+        print(f"Run command [{command}]")
+        res = ""
+        result = subprocess.run(
             command,
             shell=True,
-            stderr=subprocess.STDOUT,
             stdout=subprocess.PIPE,
-            stdin=subprocess.PIPE if stdin_str else None,
-            universal_newlines=True,
-            start_new_session=True,
-            bufsize=1,
-            errors="backslashreplace",
-            **kwargs,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
         )
-        if stdin_str:
-            proc.communicate(input=stdin_str)
-        elif proc.stdout:
-            for line in proc.stdout:
-                sys.stdout.write(line)
-        proc.wait()
-        if strict:
-            assert proc.returncode == 0
-        return proc.returncode == 0
+        if result.returncode == 0:
+            print(f"stdout: {result.stdout.strip()}")
+            res = result.stdout
+        else:
+            print(
+                f"ERROR: stdout: {result.stdout.strip()}, stderr: {result.stderr.strip()}"
+            )
+            if check:
+                assert result.returncode == 0
+        return res.strip()
+
+    @classmethod
+    def run_as_daemon(cls, command):
+        print(f"Run daemon command [{command}]")
+        subprocess.Popen(command.split(" "))  # pylint:disable=consider-using-with
+        return 0, ""
+
+    @classmethod
+    def check(cls, command):
+        result = subprocess.run(
+            command,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        return result.returncode == 0
 
 
 class Utils:
@@ -260,30 +274,82 @@ class Utils:
 
     @staticmethod
     def clear_dmesg():
-        Shell.check("sudo dmesg --clear", verbose=True)
+        Shell.run("sudo dmesg --clear ||:")
 
     @staticmethod
-    def is_hex(s):
-        try:
-            int(s, 16)
-            return True
-        except ValueError:
-            return False
+    def check_pr_description(pr_body: str, repo_name: str) -> Tuple[str, str]:
+        """The function checks the body to being properly formatted according to
+        .github/PULL_REQUEST_TEMPLATE.md, if the first returned string is not empty,
+        then there is an error."""
+        lines = list(map(lambda x: x.strip(), pr_body.split("\n") if pr_body else []))
+        lines = [re.sub(r"\s+", " ", line) for line in lines]
 
-    @staticmethod
-    def normalize_string(string: str) -> str:
-        res = string.lower()
-        for r in (
-            (" ", "_"),
-            ("(", "_"),
-            (")", "_"),
-            (",", "_"),
-            ("/", "_"),
-            ("-", "_"),
-        ):
-            res = res.replace(*r)
-        return res
+        # Check if body contains "Reverts ClickHouse/ClickHouse#36337"
+        if [
+            True for line in lines if re.match(rf"\AReverts {repo_name}#[\d]+\Z", line)
+        ]:
+            return "", LABEL_CATEGORIES["pr-not-for-changelog"][0]
 
-    @staticmethod
-    def is_job_triggered_manually():
-        return "robot" not in Envs.GITHUB_ACTOR
+        category = ""
+        entry = ""
+        description_error = ""
+
+        i = 0
+        while i < len(lines):
+            if re.match(r"(?i)^[#>*_ ]*change\s*log\s*category", lines[i]):
+                i += 1
+                if i >= len(lines):
+                    break
+                # Can have one empty line between header and the category
+                # itself. Filter it out.
+                if not lines[i]:
+                    i += 1
+                    if i >= len(lines):
+                        break
+                category = re.sub(r"^[-*\s]*", "", lines[i])
+                i += 1
+
+                # Should not have more than one category. Require empty line
+                # after the first found category.
+                if i >= len(lines):
+                    break
+                if lines[i]:
+                    second_category = re.sub(r"^[-*\s]*", "", lines[i])
+                    description_error = (
+                        "More than one changelog category specified: "
+                        f"'{category}', '{second_category}'"
+                    )
+                    return description_error, category
+
+            elif re.match(
+                r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
+            ):
+                i += 1
+                # Can have one empty line between header and the entry itself.
+                # Filter it out.
+                if i < len(lines) and not lines[i]:
+                    i += 1
+                # All following lines until empty one are the changelog entry.
+                entry_lines = []
+                while i < len(lines) and lines[i]:
+                    entry_lines.append(lines[i])
+                    i += 1
+                entry = " ".join(entry_lines)
+                # Don't accept changelog entries like '...'.
+                entry = re.sub(r"[#>*_.\- ]", "", entry)
+                # Don't accept changelog entries like 'Close #12345'.
+                entry = re.sub(r"^[\w\-\s]{0,10}#?\d{5,6}\.?$", "", entry)
+            else:
+                i += 1
+
+        if not category:
+            description_error = "Changelog category is empty"
+        # Filter out the PR categories that are not for changelog.
+        elif "(changelog entry is not required)" in category:
+            pass  # to not check the rest of the conditions
+        elif category not in CATEGORY_TO_LABEL:
+            description_error, category = f"Category '{category}' is not valid", ""
+        elif not entry:
+            description_error = f"Changelog entry required for category '{category}'"
+
+        return description_error, category

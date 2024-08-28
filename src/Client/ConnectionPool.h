@@ -73,8 +73,6 @@ public:
         const String & default_database_,
         const String & user_,
         const String & password_,
-        const String & proto_send_chunked_,
-        const String & proto_recv_chunked_,
         const String & quota_key_,
         const String & cluster_,
         const String & cluster_secret_,
@@ -87,8 +85,6 @@ public:
         , default_database(default_database_)
         , user(user_)
         , password(password_)
-        , proto_send_chunked(proto_send_chunked_)
-        , proto_recv_chunked(proto_recv_chunked_)
         , quota_key(quota_key_)
         , cluster(cluster_)
         , cluster_secret(cluster_secret_)
@@ -120,9 +116,7 @@ protected:
     {
         return std::make_shared<Connection>(
             host, port,
-            default_database, user, password,
-            proto_send_chunked, proto_recv_chunked,
-            SSHKey(), /*jwt*/ "", quota_key,
+            default_database, user, password, SSHKey(), /*jwt*/ "", quota_key,
             cluster, cluster_secret,
             client_name, compression, secure);
     }
@@ -131,8 +125,6 @@ private:
     String default_database;
     String user;
     String password;
-    String proto_send_chunked;
-    String proto_recv_chunked;
     String quota_key;
 
     /// For inter-server authorization
@@ -158,8 +150,6 @@ public:
         String default_database;
         String user;
         String password;
-        String proto_send_chunked;
-        String proto_recv_chunked;
         String quota_key;
         String cluster;
         String cluster_secret;
@@ -183,8 +173,6 @@ public:
         String default_database,
         String user,
         String password,
-        String proto_send_chunked,
-        String proto_recv_chunked,
         String quota_key,
         String cluster,
         String cluster_secret,
@@ -202,7 +190,6 @@ inline bool operator==(const ConnectionPoolFactory::Key & lhs, const ConnectionP
 {
     return lhs.max_connections == rhs.max_connections && lhs.host == rhs.host && lhs.port == rhs.port
         && lhs.default_database == rhs.default_database && lhs.user == rhs.user && lhs.password == rhs.password
-        && lhs.proto_send_chunked == rhs.proto_send_chunked && lhs.proto_recv_chunked == rhs.proto_recv_chunked
         && lhs.quota_key == rhs.quota_key
         && lhs.cluster == rhs.cluster && lhs.cluster_secret == rhs.cluster_secret && lhs.client_name == rhs.client_name
         && lhs.compression == rhs.compression && lhs.secure == rhs.secure && lhs.priority == rhs.priority;

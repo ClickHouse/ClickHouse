@@ -15,7 +15,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
 class FunctionChar : public IFunction
@@ -37,7 +36,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "Number of arguments for function {} can't be {}, should be at least 1",
                             getName(), arguments.size());
 
@@ -103,11 +102,14 @@ private:
         const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data);
 
         if (!src_data_concrete)
+        {
             return false;
+        }
 
         for (size_t row = 0; row < rows; ++row)
+        {
             out_vec[row * size_per_row + column_idx] = static_cast<char>(src_data_concrete->getInt(row));
-
+        }
         return true;
     }
 };

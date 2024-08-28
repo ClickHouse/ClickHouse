@@ -9,7 +9,7 @@
 namespace DB
 {
 
-void IProcessor::cancel() noexcept
+void IProcessor::cancel()
 {
 
     bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
@@ -55,12 +55,9 @@ void IProcessor::dump() const
 }
 
 
-std::string IProcessor::statusToName(std::optional<Status> status)
+std::string IProcessor::statusToName(Status status)
 {
-    if (status == std::nullopt)
-        return "NotStarted";
-
-    switch (*status)
+    switch (status)
     {
         case Status::NeedData:
             return "NeedData";

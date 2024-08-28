@@ -8,78 +8,6 @@ sidebar_label: Replacing in Strings
 
 [General strings functions](string-functions.md) and [functions for searching in strings](string-search-functions.md) are described separately.
 
-## overlay
-
-Replace part of the string `input` with another string `replace`, starting at the 1-based index `offset`.
-
-**Syntax**
-
-```sql
-overlay(s, replace, offset[, length])
-```
-
-**Parameters**
-
-- `input`: A string type [String](../data-types/string.md).
-- `replace`: A string type [String](../data-types/string.md).
-- `offset`: An integer type [Int](../data-types/int-uint.md). If `offset` is negative, it is counted from the end of the `input` string.
-- `length`: Optional. An integer type [Int](../data-types/int-uint.md). `length` specifies the length of the snippet within input to be replaced. If `length` is not specified, the number of bytes removed from `input` equals the length of `replace`; otherwise `length` bytes are removed.
-
-**Returned value**
-
-- A [String](../data-types/string.md) data type value.
-
-**Example**
-
-```sql
-SELECT overlay('ClickHouse SQL', 'CORE', 12) AS res;
-```
-
-Result:
-
-```text
-┌─res─────────────┐
-│ ClickHouse CORE │
-└─────────────────┘
-```
-
-## overlayUTF8
-
-Replace part of the string `input` with another string `replace`, starting at the 1-based index `offset`.
-
-Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
-
-**Syntax**
-
-```sql
-overlayUTF8(s, replace, offset[, length])
-```
-
-**Parameters**
-
-- `s`: A string type [String](../data-types/string.md).
-- `replace`: A string type [String](../data-types/string.md).
-- `offset`: An integer type [Int](../data-types/int-uint.md). If `offset` is negative, it is counted from the end of the `input` string.
-- `length`: Optional. An integer type [Int](../data-types/int-uint.md). `length` specifies the length of the snippet within input to be replaced. If `length` is not specified, the number of characters removed from `input` equals the length of `replace`; otherwise `length` characters are removed.
-
-**Returned value**
-
-- A [String](../data-types/string.md) data type value.
-
-**Example**
-
-```sql
-SELECT overlayUTF8('ClickHouse是一款OLAP数据库', '开源', 12, 2) AS res;
-```
-
-Result:
-
-```text
-┌─res────────────────────────┐
-│ ClickHouse是开源OLAP数据库   │
-└────────────────────────────┘
-```
-
 ## replaceOne
 
 Replaces the first occurrence of the substring `pattern` in `haystack` by the `replacement` string.
@@ -294,29 +222,4 @@ SELECT translateUTF8('Münchener Straße', 'üß', 'us') AS res;
 ┌─res──────────────┐
 │ Munchener Strase │
 └──────────────────┘
-```
-
-## printf
-
-The `printf` function formats the given string with the values (strings, integers, floating-points etc.) listed in the arguments, similar to printf function in C++. The format string can contain format specifiers starting with `%` character. Anything not contained in `%` and the following format specifier is considered literal text and copied verbatim into the output. Literal `%` character can be escaped by `%%`.
-
-**Syntax**
-
-``` sql
-printf(format, arg1, arg2, ...)
-```
-
-**Example**
-
-Query:
-
-``` sql
-select printf('%%%s %s %d', 'Hello', 'World', 2024);
-```
-
-
-``` response
-┌─printf('%%%s %s %d', 'Hello', 'World', 2024)─┐
-│ %Hello World 2024                            │
-└──────────────────────────────────────────────┘
 ```

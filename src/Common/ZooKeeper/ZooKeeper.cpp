@@ -128,15 +128,16 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
         ShuffleHosts shuffled_hosts = shuffleHosts();
 
         impl = std::make_unique<Coordination::ZooKeeper>(shuffled_hosts, args, zk_log);
-        auto node_idx = impl->getConnectedNodeIdx();
+        Int8 node_idx = impl->getConnectedNodeIdx();
 
         if (args.chroot.empty())
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
         else
             LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(args.hosts, ","), args.chroot);
 
+
         /// If the balancing strategy has an optimal node then it will be the first in the list
-        bool connected_to_suboptimal_node = node_idx && static_cast<UInt8>(*node_idx) != shuffled_hosts[0].original_index;
+        bool connected_to_suboptimal_node = node_idx != shuffled_hosts[0].original_index;
         bool respect_az = args.prefer_local_availability_zone && !args.client_availability_zone.empty();
         bool may_benefit_from_reconnecting = respect_az || args.get_priority_load_balancing.hasOptimalNode();
         if (connected_to_suboptimal_node && may_benefit_from_reconnecting)
@@ -144,7 +145,7 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
             auto reconnect_timeout_sec = getSecondsUntilReconnect(args);
             LOG_DEBUG(log, "Connected to a suboptimal ZooKeeper host ({}, index {})."
                            " To preserve balance in ZooKeeper usage, this ZooKeeper session will expire in {} seconds",
-                      impl->getConnectedHostPort(), *node_idx, reconnect_timeout_sec);
+                      impl->getConnectedHostPort(), node_idx, reconnect_timeout_sec);
 
             auto reconnect_task_holder = DB::Context::getGlobalContextInstance()->getSchedulePool().createTask("ZKReconnect", [this, optimal_host = shuffled_hosts[0]]()
             {
@@ -153,15 +154,13 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
                     LOG_DEBUG(log, "Trying to connect to a more optimal node {}", optimal_host.host);
                     ShuffleHosts node{optimal_host};
                     std::unique_ptr<Coordination::IKeeper> new_impl = std::make_unique<Coordination::ZooKeeper>(node, args, zk_log);
-
-                    auto new_node_idx = new_impl->getConnectedNodeIdx();
-                    chassert(new_node_idx.has_value());
+                    Int8 new_node_idx = new_impl->getConnectedNodeIdx();
 
                     /// Maybe the node was unavailable when getting AZs first time, update just in case
-                    if (args.availability_zone_autodetect && availability_zones[*new_node_idx].empty())
+                    if (args.availability_zone_autodetect && availability_zones[new_node_idx].empty())
                     {
-                        availability_zones[*new_node_idx] = new_impl->tryGetAvailabilityZone();
-                        LOG_DEBUG(log, "Got availability zone for {}: {}", optimal_host.host, availability_zones[*new_node_idx]);
+                        availability_zones[new_node_idx] = new_impl->tryGetAvailabilityZone();
+                        LOG_DEBUG(log, "Got availability zone for {}: {}", optimal_host.host, availability_zones[new_node_idx]);
                     }
 
                     optimal_impl = std::move(new_impl);
@@ -1526,7 +1525,7 @@ void ZooKeeper::setServerCompletelyStarted()
         zk->setServerCompletelyStarted();
 }
 
-std::optional<int8_t> ZooKeeper::getConnectedHostIdx() const
+Int8 ZooKeeper::getConnectedHostIdx() const
 {
     return impl->getConnectedNodeIdx();
 }
@@ -1545,10 +1544,10 @@ String ZooKeeper::getConnectedHostAvailabilityZone() const
 {
     if (args.implementation != "zookeeper" || !impl)
         return "";
-    std::optional<int8_t> idx = impl->getConnectedNodeIdx();
-    if (!idx)
+    Int8 idx = impl->getConnectedNodeIdx();
+    if (idx < 0)
         return "";     /// session expired
-    return availability_zones.at(*idx);
+    return availability_zones.at(idx);
 }
 
 size_t getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)
@@ -1570,7 +1569,7 @@ size_t getFailedOpIndex(Coordination::Error exception_code, const Coordination::
 
 
 KeeperMultiException::KeeperMultiException(Coordination::Error exception_code, size_t failed_op_index_, const Coordination::Requests & requests_, const Coordination::Responses & responses_)
-        : KeeperException(exception_code, "Transaction failed ({}): Op #{}, path", exception_code, failed_op_index_),
+        : KeeperException(exception_code, "Transaction failed: Op #{}, path", failed_op_index_),
           requests(requests_), responses(responses_), failed_op_index(failed_op_index_)
 {
     addMessage(getPathForFirstFailedOp());

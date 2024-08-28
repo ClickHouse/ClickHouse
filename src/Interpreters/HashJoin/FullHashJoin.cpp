@@ -1,4 +1,4 @@
-#include <Interpreters/HashJoin/HashJoinMethodsImpl.h>
+#include <Interpreters/HashJoin/HashJoinMethods.h>
 
 namespace DB
 {
