@@ -52,8 +52,10 @@ const std::unordered_map<String, unum::usearch::metric_kind_t> distanceFunctionT
 
 /// Maps from user-facing name to internal name
 const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToScalarKind = {
+    {"f64", unum::usearch::scalar_kind_t::f64_k},
     {"f32", unum::usearch::scalar_kind_t::f32_k},
     {"f16", unum::usearch::scalar_kind_t::f16_k},
+    {"bf16", unum::usearch::scalar_kind_t::bf16_k},
     {"i8", unum::usearch::scalar_kind_t::i8_k}};
 /// Usearch provides more quantizations but ^^ above ones seem the only ones comprehensively supported across all distance functions.
 
@@ -190,6 +192,8 @@ MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
 
 void MergeTreeIndexGranuleVectorSimilarity::serializeBinary(WriteBuffer & ostr) const
 {
+    LOG_TRACE(logger, "Start writing vector similarity index");
+
     if (empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty minmax index {}", backQuote(index_name));
 
@@ -207,6 +211,8 @@ void MergeTreeIndexGranuleVectorSimilarity::serializeBinary(WriteBuffer & ostr) 
 
 void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
+    LOG_TRACE(logger, "Start loading vector similarity index");
+
     UInt64 file_version;
     readIntBinary(file_version, istr);
     if (file_version != FILE_FORMAT_VERSION)
@@ -457,7 +463,7 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
 {
     /// Default parameters:
     unum::usearch::metric_kind_t metric_kind = distanceFunctionToMetricKind.at(index.arguments[1].safeGet<String>());
-    unum::usearch::scalar_kind_t scalar_kind = unum::usearch::scalar_kind_t::f32_k;
+    unum::usearch::scalar_kind_t scalar_kind = unum::usearch::scalar_kind_t::bf16_k;
     UsearchHnswParams usearch_hnsw_params;
 
     /// Optional parameters:

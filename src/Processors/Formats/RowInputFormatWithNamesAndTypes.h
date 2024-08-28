@@ -26,6 +26,7 @@ class FormatWithNamesAndTypesReader;
 ///    will be compared types from header.
 /// It's important that firstly this class reads/skips names and only
 /// then reads/skips types. So you can this invariant.
+template <typename FormatReaderImpl>
 class RowInputFormatWithNamesAndTypes : public RowInputFormatWithDiagnosticInfo
 {
 protected:
@@ -41,7 +42,7 @@ protected:
         bool with_names_,
         bool with_types_,
         const FormatSettings & format_settings_,
-        std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_,
+        std::unique_ptr<FormatReaderImpl> format_reader_,
         bool try_detect_header_ = false);
 
     void resetParser() override;
@@ -70,7 +71,7 @@ private:
     bool is_header_detected = false;
 
 protected:
-    std::unique_ptr<FormatWithNamesAndTypesReader> format_reader;
+    std::unique_ptr<FormatReaderImpl> format_reader;
     Block::NameMap column_indexes_by_names;
 };
 
