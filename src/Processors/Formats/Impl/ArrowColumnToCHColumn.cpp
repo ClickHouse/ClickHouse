@@ -712,6 +712,7 @@ struct ReadColumnFromArrowColumnSettings
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
     bool allow_arrow_null_type;
     bool skip_columns_with_unsupported_types;
+    bool allow_inferring_nullable_columns;
 };
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
@@ -1094,7 +1095,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     bool is_map_nested_column,
     const ReadColumnFromArrowColumnSettings & settings)
 {
-    bool read_as_nullable_column = arrow_column->null_count() || is_nullable_column || (type_hint && type_hint->isNullable());
+    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && type_hint->isNullable())) && settings.allow_inferring_nullable_columns;
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::LIST &&
         arrow_column->type()->id() != arrow::Type::LARGE_LIST &&
@@ -1158,14 +1159,16 @@ static std::shared_ptr<arrow::ChunkedArray> createArrowColumn(const std::shared_
 Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
     const arrow::Schema & schema,
     const std::string & format_name,
-    bool skip_columns_with_unsupported_types)
+    bool skip_columns_with_unsupported_types,
+    bool allow_inferring_nullable_columns)
 {
     ReadColumnFromArrowColumnSettings settings
     {
         .format_name = format_name,
         .date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore,
         .allow_arrow_null_type = false,
-        .skip_columns_with_unsupported_types = skip_columns_with_unsupported_types
+        .skip_columns_with_unsupported_types = skip_columns_with_unsupported_types,
+        .allow_inferring_nullable_columns = allow_inferring_nullable_columns,
     };
 
     ColumnsWithTypeAndName sample_columns;
@@ -1239,7 +1242,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(const NameToArrowColumn & nam
         .format_name = format_name,
         .date_time_overflow_behavior = date_time_overflow_behavior,
         .allow_arrow_null_type = true,
-        .skip_columns_with_unsupported_types = false
+        .skip_columns_with_unsupported_types = false,
+        .allow_inferring_nullable_columns = true
     };
 
     Columns columns;
