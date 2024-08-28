@@ -193,7 +193,7 @@ public:
             if (iter && iter->Valid())
             {
                 auto new_pair = std::make_shared<KVPair>();
-                #ifdef NDEBUG
+                #ifndef NDEBUG
                     checkKeyEncoded(iter->key().ToStringView());
                 #endif
                 new_pair->key = StringRef(getDecodedKey(iter->key().ToStringView()));
@@ -281,7 +281,7 @@ public:
 
     bool contains(const std::string & key)
     {
-    #ifdef NDEBUG
+    #ifndef NDEBUG
         checkKeyEncoded(key);
     #endif
         std::string buffer_str;
@@ -295,7 +295,7 @@ public:
 
     const_iterator find(StringRef key_)
     {
-    #ifdef NDEBUG
+    #ifndef NDEBUG
         checkKeyEncoded(key_.toView());
     #endif
         std::string buffer_str;
@@ -329,7 +329,7 @@ public:
 
     const_iterator updateValue(StringRef key_, ValueUpdater updater)
     {
-    #ifdef NDEBUG
+    #ifndef NDEBUG
         checkKeyEncoded(key_.toView());
     #endif
         const std::string & key = key_.toString();
@@ -347,7 +347,7 @@ public:
 
     bool insert(const std::string & key, Node & value)
     {
-    #ifdef NDEBUG
+    #ifndef NDEBUG
         checkKeyEncoded(key);
     #endif
         std::string value_str;
@@ -372,7 +372,7 @@ public:
     template<bool need_to_get = true>
     void insertOrReplace(const std::string & key, Node & value)
     {
-    #ifdef NDEBUG
+    #ifndef NDEBUG
         checkKeyEncoded(key);
     #endif
         bool increase_counter = false;
@@ -410,7 +410,7 @@ public:
 
     bool erase(const std::string & key)
     {
-    #ifdef NDEBUG
+    #ifndef NDEBUG
         checkKeyEncoded(key);
     #endif
         auto status = rocksdb_ptr->Delete(write_options, key);
