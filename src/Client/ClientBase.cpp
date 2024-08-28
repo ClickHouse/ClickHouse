@@ -687,6 +687,16 @@ void ClientBase::adjustSettings()
     global_context->setSettings(settings);
 }
 
+void ClientBase::createClientContext()
+{
+    /// It's necessary to use a separate context for client-related purposes.
+    /// We can't just change the global context because it can be used in background tasks
+    /// (for example, for merges in case of clickhouse-local, or for ParallelFormattingOutputFormat in case of clickhouse-client)
+    /// and those background tasks don't expect that the global context can suddenly change.
+    client_context = Context::createCopy(global_context);
+    initClientContext();
+}
+
 void ClientBase::initClientContext()
 {
     client_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
@@ -694,6 +704,9 @@ void ClientBase::initClientContext()
     client_context->setQueryKindInitial();
     client_context->setQueryKind(query_kind);
     client_context->setQueryParameters(query_parameters);
+
+    if (auto query_id = getClientConfiguration().getString("query_id", ""); !query_id.empty())
+        client_context->setCurrentQueryId(query_id);
 }
 
 bool ClientBase::isRegularFile(int fd)

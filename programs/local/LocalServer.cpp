@@ -878,16 +878,6 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 }
 
 
-void LocalServer::createClientContext()
-{
-    /// In case of clickhouse-local it's necessary to use a separate context for client-related purposes.
-    /// We can't just change the global context because it is used in background tasks (for example, in merges)
-    /// which don't expect that the global context can suddenly change.
-    client_context = Context::createCopy(global_context);
-    initClientContext();
-}
-
-
 void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &, const std::vector<Arguments> &)
 {
     if (options.count("table"))

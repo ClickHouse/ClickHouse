@@ -65,8 +65,6 @@ private:
     void applyCmdOptions(ContextMutablePtr context);
     void applyCmdSettings(ContextMutablePtr context);
 
-    void createClientContext();
-
     ServerSettings server_settings;
 
     std::optional<StatusFile> status;

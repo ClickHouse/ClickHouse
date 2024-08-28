@@ -343,6 +343,11 @@ try
     initTTYBuffer(toProgressOption(config().getString("progress", "default")));
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
+    /// Must be called after we stopped initializing the global context and changing its settings.
+    /// After this point the global context must be stayed almost unchanged till shutdown,
+    /// and all necessary changes must be made to the client context instead.
+    createClientContext();
+
     {
         // All that just to set DB::CurrentThread::get().getGlobalContext()
         // which is required for client timezone (pushed from server) to work.
@@ -1160,13 +1165,6 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if (options.count("opentelemetry-tracestate"))
         global_context->getClientTraceContext().tracestate = options["opentelemetry-tracestate"].as<std::string>();
-
-    /// The global context can be used concurrently with the client context,
-    /// for example by ParallelFormattingOutputFormat,
-    /// so we need to copy global context to client.
-    client_context = Context::createCopy(global_context);
-
-    initClientContext();
 }
 
 
@@ -1193,10 +1191,6 @@ void Client::processConfig()
     {
         echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
-
-        auto query_id = config().getString("query_id", "");
-        if (!query_id.empty())
-            client_context->setCurrentQueryId(query_id);
     }
     print_stack_trace = config().getBool("stacktrace", false);
 
