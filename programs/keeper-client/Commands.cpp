@@ -677,4 +677,112 @@ void GetAllChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperCl
     std::cout << totalNumChildren << "\n";
 }
 
+namespace
+{
+
+class CPMVOperation
+{
+public:
+    CPMVOperation(String src_, String dest_, bool remove_src_, KeeperClient * client_)
+        : src(std::move(src_)), dest(std::move(dest_)), remove_src(remove_src_), client(client_)
+    {
+    }
+
+    bool perform()
+    {
+        Coordination::Stat src_stat;
+        String data = client->zookeeper->get(src, &src_stat);
+
+        // allow to copy only persistent nodes
+        if (src_stat.ephemeralOwner)
+            throw std::runtime_error("TODO: it is possible to copy only persistent nodes");
+
+        Coordination::Requests ops{
+            zkutil::makeCheckRequest(src, src_stat.version),
+            zkutil::makeCreateRequest(dest, data, zkutil::CreateMode::Persistent), // Do we need to copy ACLs here?
+        };
+
+        if (remove_src)
+            ops.push_back(zkutil::makeRemoveRequest(src, src_stat.version));
+
+        Coordination::Responses responses;
+        auto code = client->zookeeper->tryMultiNoThrow(ops, responses);
+
+        switch (code)
+        {
+            case Coordination::Error::ZOK:
+                return true;
+            case Coordination::Error::ZBADVERSION:
+                return false;
+            case Coordination::Error::ZNODEEXISTS:
+                throw std::runtime_error("TODO: Destination path already exists");
+            default:
+                zkutil::KeeperMultiException::check(code, ops, responses);
+        }
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unreachable");
+    }
+
+private:
+    String src;
+    String dest;
+    bool remove_src = false;
+    KeeperClient * client = nullptr;
+};
+
+}
+
+bool CPCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, [[maybe_unused]] Expected & expected) const
+{
+    String src_path;
+    if (!parseKeeperPath(pos, expected, src_path))
+        return false;
+    node->args.push_back(std::move(src_path));
+
+    String to_path;
+    if (!parseKeeperPath(pos, expected, to_path))
+        return false;
+    node->args.push_back(std::move(to_path));
+
+    return true;
+}
+
+void CPCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+{
+    auto src = client->getAbsolutePath(query->args[0].safeGet<String>());
+    auto dest = client->getAbsolutePath(query->args[1].safeGet<String>());
+
+    CPMVOperation operation(std::move(src), std::move(dest), /*remove_src_=*/false, /*client_=*/client);
+
+    while (!operation.perform())
+        ;
+}
+
+
+bool MVCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+{
+    String src_path;
+    if (!parseKeeperPath(pos, expected, src_path))
+        return false;
+    node->args.push_back(std::move(src_path));
+
+    String to_path;
+    if (!parseKeeperPath(pos, expected, to_path))
+        return false;
+    node->args.push_back(std::move(to_path));
+
+    return true;
+}
+
+void MVCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+{
+    auto src = client->getAbsolutePath(query->args[0].safeGet<String>());
+    auto dest = client->getAbsolutePath(query->args[1].safeGet<String>());
+
+    CPMVOperation operation(std::move(src), std::move(dest), /*remove_src_=*/true, /*client_=*/client);
+
+    while (!operation.perform())
+        ;
+}
+
 }
