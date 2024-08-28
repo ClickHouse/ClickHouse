@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel, no-tsan
+-- Tags: no-fasttest, no-parallel, no-tsan, no-msan
 
 set output_format_parquet_use_custom_encoder = 1;
 set output_format_parquet_row_group_size = 1000;
