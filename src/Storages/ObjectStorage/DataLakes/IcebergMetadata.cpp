@@ -318,7 +318,56 @@ std::pair<NamesAndTypesList, Int32> parseTableSchema(
 std::shared_ptr<ActionsDAG> getSchemaTransformDag(
     [[maybe_unused]] const Poco::JSON::Object::Ptr & old_schema, [[maybe_unused]] const Poco::JSON::Object::Ptr & new_schema)
 {
-    return std::make_shared<ActionsDAG>();
+    std::map<size_t, NameAndTypePair> old_schema_entries;
+    std::map<size_t, NameAndTypePair> new_schema_entries;
+    auto fields = old_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
+    for (size_t i = 0; i != fields->size(); ++i)
+    {
+        auto field = fields->getObject(static_cast<UInt32>(i));
+        auto name = field->getValue<String>("name");
+        bool required = field->getValue<bool>("required");
+        size_t id = field->getValue<size_t>("id");
+        old_schema_entries[id] = {name, getFieldType(field, "type", required)};
+    }
+    fields = new_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
+    for (size_t i = 0; i != fields->size(); ++i)
+    {
+        auto field = fields->getObject(static_cast<UInt32>(i));
+        auto name = field->getValue<String>("name");
+        bool required = field->getValue<bool>("required");
+        size_t id = field->getValue<size_t>("id");
+        new_schema_entries[id] = {name, getFieldType(field, "type", required)};
+    }
+    std::shared_ptr<ActionsDAG> dag;
+    auto& outputs = dag->getOutputs();
+    for (const auto& [id, name_and_type] : old_schema_entries) {
+        const ActionsDAG::Node & input_node = dag->addInput(name_and_type.name, name_and_type.type);
+        if (new_schema_entries.count(id)) {
+            if (new_schema_entries[id].type != name_and_type.type) {
+                throw Exception(
+                ErrorCodes::UNSUPPORTED_METHOD,
+                "Type promotion for schema evolution is not implemeted yet");
+            }
+            if (name_and_type.name != new_schema_entries[id].name) {
+                const ActionsDAG::Node & alias_node = dag->addAlias(input_node, new_schema_entries[id].name);
+                outputs.push_back(&alias_node);
+            } else {
+                outputs.push_back(&input_node);
+            }
+            new_schema_entries.erase(id);
+        }
+    }
+    for (const auto& [_id, name_and_type] : new_schema_entries) {
+        if (!name_and_type.type->isNullable()) {
+            throw Exception(
+                ErrorCodes::UNSUPPORTED_METHOD,
+                "Can't add a column with required values to the table");
+        }
+        ColumnPtr default_type_column = name_and_type.type->createColumnConstWithDefaultValue(0);
+        const auto & constant = dag->addColumn({default_type_column, name_and_type.type, name_and_type.name});
+        outputs.push_back(&constant);
+    }
+    return dag;
 }
 
 MutableColumns parseAvro(avro::DataFileReaderBase & file_reader, const Block & header, const FormatSettings & settings)

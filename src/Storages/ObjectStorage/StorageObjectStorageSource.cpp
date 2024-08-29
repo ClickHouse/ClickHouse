@@ -15,6 +15,9 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+
 
 namespace fs = std::filesystem;
 
@@ -383,6 +386,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             input_format->needOnlyCount();
 
         builder.init(Pipe(input_format));
+
+        if (object_info->schema_transformer) {
+            auto schema_modifying_actions = std::make_shared<ExpressionActions>(object_info->schema_transformer->clone());
+            builder.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
+            });
+        }
+
 
         if (read_from_format_info.columns_description.hasDefaults())
         {
