@@ -714,7 +714,7 @@ public:
             ops.push_back(zkutil::makeRemoveRequest(src, src_stat.version));
 
         Coordination::Responses responses;
-        auto code = client->zookeeper->tryMultiNoThrow(ops, responses);
+        auto code = client->zookeeper->tryMulti(ops, responses);
 
         switch (code)
         {
