@@ -11,7 +11,7 @@ function random {
      cat /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z' | fold -w ${1:-8} | head -n 1
 }
 
-${CLICKHOUSE_CLIENT} --multiline --multiquery -q "
+${CLICKHOUSE_CLIENT} --multiline -q "
 drop table if exists ttt;
 
 CREATE TABLE ttt (id Int32, value String)
@@ -46,7 +46,7 @@ ${CLICKHOUSE_CLIENT}  -q "
 select count() from system.filesystem_cache_log where query_id = '$query_id' AND read_type == 'READ_FROM_CACHE';
 "
 
-${CLICKHOUSE_CLIENT} --multiline --multiquery -q "
+${CLICKHOUSE_CLIENT} --multiline -q "
 select count() from ttt;
 drop table ttt sync;
 "

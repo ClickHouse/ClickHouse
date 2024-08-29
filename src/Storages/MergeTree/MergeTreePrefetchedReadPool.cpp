@@ -329,7 +329,7 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
             part_stat.sum_marks += range.end - range.begin;
 
         const auto & columns = settings.merge_tree_determine_task_size_by_prewhere_columns && prewhere_info
-            ? prewhere_info->prewhere_actions->getRequiredColumnsNames()
+            ? prewhere_info->prewhere_actions.getRequiredColumnsNames()
             : column_names;
 
         part_stat.approx_size_of_mark = getApproximateSizeOfGranule(*read_info.data_part, columns);
@@ -394,6 +394,10 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
         }
 
         part_stat.prefetch_step_marks = std::max(part_stat.prefetch_step_marks, per_part_infos[i]->min_marks_per_task);
+
+        if (part_stat.prefetch_step_marks == 0)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
 
         LOG_DEBUG(
             log,

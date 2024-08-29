@@ -65,7 +65,7 @@ static size_t calculateMinMarksPerTask(
         /// Which means in turn that for most of the rows we will read only the columns from prewhere clause.
         /// So it makes sense to use only them for the estimation.
         const auto & columns = settings.merge_tree_determine_task_size_by_prewhere_columns && prewhere_info
-            ? prewhere_info->prewhere_actions->getRequiredColumnsNames()
+            ? prewhere_info->prewhere_actions.getRequiredColumnsNames()
             : columns_to_read;
         const size_t part_compressed_bytes = getApproxSizeOfPart(*part.data_part, columns);
 
@@ -85,6 +85,7 @@ static size_t calculateMinMarksPerTask(
             min_marks_per_task = heuristic_min_marks;
         }
     }
+
     LOG_TEST(&Poco::Logger::get("MergeTreeReadPoolBase"), "Will use min_marks_per_task={}", min_marks_per_task);
     return min_marks_per_task;
 }

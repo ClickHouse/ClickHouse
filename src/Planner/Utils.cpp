@@ -11,14 +11,18 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Columns/getLeastSuperColumn.h>
+#include <Columns/ColumnSet.h>
 
 #include <IO/WriteBufferFromString.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/indexHint.h>
 
 #include <Storages/StorageDummy.h>
 
 #include <Interpreters/Context.h>
+
+#include <AggregateFunctions/WindowFunction.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/ConstantNode.h>
@@ -32,6 +36,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/WindowNode.h>
 
 #include <Core/Settings.h>
 
@@ -442,22 +447,22 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
     collectSourceColumns(filter_query_tree, planner_context, false /*keep_alias_columns*/);
     collectSets(filter_query_tree, *planner_context);
 
-    auto filter_actions_dag = std::make_shared<ActionsDAG>();
+    ActionsDAG filter_actions_dag;
 
     PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-    auto expression_nodes = actions_visitor.visit(*filter_actions_dag, filter_query_tree);
+    auto expression_nodes = actions_visitor.visit(filter_actions_dag, filter_query_tree);
     if (expression_nodes.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Filter actions must return single output node. Actual {}",
             expression_nodes.size());
 
-    auto & filter_actions_outputs = filter_actions_dag->getOutputs();
+    auto & filter_actions_outputs = filter_actions_dag.getOutputs();
     filter_actions_outputs = std::move(expression_nodes);
 
     std::string filter_node_name = filter_actions_outputs[0]->result_name;
     bool remove_filter_column = true;
 
-    for (const auto & filter_input_node : filter_actions_dag->getInputs())
+    for (const auto & filter_input_node : filter_actions_dag.getInputs())
         if (table_expression_required_names_without_filter.contains(filter_input_node->result_name))
             filter_actions_outputs.push_back(filter_input_node);
 
@@ -475,6 +480,50 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings)
                 parser, additional_result_filter.data(), additional_result_filter.data() + additional_result_filter.size(),
                 "additional result filter", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
     return additional_result_filter_ast;
+}
+
+void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.column)
+        {
+            const IColumn * column = node.column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+                column = &column_const->getDataColumn();
+
+            if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
+                useful_sets.insert(column_set->getData());
+        }
+
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->getName() == "indexHint")
+        {
+            ActionsDAG::NodeRawConstPtrs children;
+            if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
+            {
+                if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
+                {
+                    appendSetsFromActionsDAG(index_hint->getActions(), useful_sets);
+                }
+            }
+        }
+    }
+}
+
+std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node)
+{
+    if (!node.isWindowFunction())
+        return {};
+    auto & window_node = node.getWindowNode()->as<WindowNode &>();
+    const auto & window_frame = window_node.getWindowFrame();
+    if (!window_frame.is_default)
+        return window_frame;
+    auto aggregate_function = node.getAggregateFunction();
+    if (const auto * win_func = dynamic_cast<const IWindowFunction *>(aggregate_function.get()))
+    {
+        return win_func->getDefaultFrame();
+    }
+    return {};
 }
 
 }

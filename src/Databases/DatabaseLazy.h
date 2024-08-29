@@ -12,7 +12,7 @@ class DatabaseLazyIterator;
 class Context;
 
 /** Lazy engine of databases.
-  * Works like DatabaseOrdinary, but stores in memory only cache.
+  * Works like DatabaseOrdinary, but stores only recently accessed tables in memory.
   * Can be used only with *Log engines.
   */
 class DatabaseLazy final : public DatabaseOnDisk

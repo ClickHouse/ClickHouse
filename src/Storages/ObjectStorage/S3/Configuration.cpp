@@ -142,14 +142,14 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
 
 void StorageS3Configuration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
-    const auto settings = context->getSettingsRef();
+    const auto & settings = context->getSettingsRef();
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
-        url = S3::URI(std::filesystem::path(collection.get<String>("url")) / filename);
+        url = S3::URI(std::filesystem::path(collection.get<String>("url")) / filename, settings.allow_archive_path_syntax);
     else
-        url = S3::URI(collection.get<String>("url"));
+        url = S3::URI(collection.get<String>("url"), settings.allow_archive_path_syntax);
 
     auth_settings.access_key_id = collection.getOrDefault<String>("access_key_id", "");
     auth_settings.secret_access_key = collection.getOrDefault<String>("secret_access_key", "");
@@ -330,7 +330,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     }
 
     /// This argument is always the first
-    url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"));
+    url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"), context->getSettingsRef().allow_archive_path_syntax);
 
     if (engine_args_to_idx.contains("format"))
     {

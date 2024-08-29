@@ -80,7 +80,7 @@ void readFinalFromNestedStorage(
 
         auto step = std::make_unique<FilterStep>(
             query_plan.getCurrentDataStream(),
-            actions,
+            std::move(actions),
             filter_column_name,
             false);
 

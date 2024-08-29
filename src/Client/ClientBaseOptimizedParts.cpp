@@ -1,4 +1,4 @@
-#include <Client/ClientBase.h>
+#include <Client/ClientApplicationBase.h>
 #include <Core/BaseSettingsProgramOptions.h>
 
 namespace DB
@@ -80,7 +80,7 @@ private:
 
 }
 
-void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
+void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
     if (allow_repeated_settings)
         addProgramOptionsAsMultitokens(cmd_settings, options_description.main_description.value());
