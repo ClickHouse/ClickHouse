@@ -690,15 +690,9 @@ public:
     {
     }
 
-    bool isTryLimitReached() const 
-    {
-        return failed_tries_count >= kTryLimit;
-    }
+    bool isTryLimitReached() const { return failed_tries_count >= kTryLimit; }
 
-    bool isCompleted() const
-    {
-        return is_completed;
-    }
+    bool isCompleted() const { return is_completed; }
 
     void perform()
     {
@@ -718,13 +712,11 @@ public:
 
         switch (code)
         {
-            case Coordination::Error::ZOK:
-            {
+            case Coordination::Error::ZOK: {
                 is_completed = true;
                 return;
             }
-            case Coordination::Error::ZBADVERSION:
-            {
+            case Coordination::Error::ZBADVERSION: {
                 ++failed_tries_count;
 
                 if (isTryLimitReached())
