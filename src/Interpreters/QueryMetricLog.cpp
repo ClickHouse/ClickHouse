@@ -95,7 +95,7 @@ void QueryMetricLogElement::appendToBlock(MutableColumns & columns) const
 void QueryMetricLog::shutdown()
 {
     stopCollect();
-    SystemLog<QueryMetricLogElement>::shutdown();
+    Base::shutdown();
 }
 
 void QueryMetricLog::stopCollect()

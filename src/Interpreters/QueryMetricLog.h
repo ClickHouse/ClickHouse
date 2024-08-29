@@ -45,6 +45,7 @@ class QueryMetricLog : public SystemLog<QueryMetricLogElement>
 {
     using SystemLog<QueryMetricLogElement>::SystemLog;
     using TimePoint = std::chrono::system_clock::time_point;
+    using Base = SystemLog<QueryMetricLogElement>;
 
 public:
     void shutdown() final;
