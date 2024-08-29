@@ -424,6 +424,7 @@ function run_no_parallel_test()
     export CLICKHOUSE_PORT_POSTGRESQL="19005"
     export CLICKHOUSE_WRITE_COVERAGE="coverage_no_parallel"
     export ADDITIONAL_OPTIONS+=" --run-no-parallel-only"
+
     run_tests
 }
 
