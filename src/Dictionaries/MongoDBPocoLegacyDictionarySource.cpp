@@ -5,8 +5,8 @@
 #include "MongoDBPocoLegacyDictionarySource.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/StorageMongoDBPocoLegacySocketFactory.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #endif
 
 namespace DB
@@ -23,11 +23,6 @@ extern const int SUPPORT_IS_DISABLED;
 #endif
 }
 
-#if USE_MONGODB
-static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
-    "host", "port", "user", "password", "db", "database", "uri", "collection", "name", "method", "options"};
-#endif
-
 void registerDictionarySourceMongoDBPocoLegacy(DictionarySourceFactory & factory)
 {
     #if USE_MONGODB
@@ -41,35 +36,52 @@ void registerDictionarySourceMongoDBPocoLegacy(DictionarySourceFactory & factory
         bool created_from_ddl)
     {
         const auto config_prefix = root_config_prefix + ".mongodb";
-        ExternalDataSourceConfiguration configuration;
-        auto has_config_key = [](const String & key) { return dictionary_allowed_keys.contains(key); };
-        auto named_collection = getExternalDataSourceConfiguration(config, config_prefix, context, has_config_key);
+        auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, config_prefix, context) : nullptr;
+
+        String host, username, password, database, method, options, collection;
+        UInt16 port;
         if (named_collection)
         {
-            configuration = named_collection->configuration;
+            validateNamedCollection(
+                *named_collection,
+                /* required_keys */{"collection"},
+                /* optional_keys */ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>{
+                "host", "port", "user", "password", "db", "database", "uri", "name", "method", "options"});
+
+            host = named_collection->getOrDefault<String>("host", "");
+            port = static_cast<UInt16>(named_collection->getOrDefault<UInt64>("port", 0));
+            username = named_collection->getOrDefault<String>("user", "");
+            password = named_collection->getOrDefault<String>("password", "");
+            database = named_collection->getAnyOrDefault<String>({"db", "database"}, "");
+            method = named_collection->getOrDefault<String>("method", "");
+            collection = named_collection->getOrDefault<String>("collection", "");
+            options = named_collection->getOrDefault<String>("options", "");
         }
         else
         {
-            configuration.host = config.getString(config_prefix + ".host", "");
-            configuration.port = config.getUInt(config_prefix + ".port", 0);
-            configuration.username = config.getString(config_prefix + ".user", "");
-            configuration.password = config.getString(config_prefix + ".password", "");
-            configuration.database = config.getString(config_prefix + ".db", "");
+            host = config.getString(config_prefix + ".host", "");
+            port = config.getUInt(config_prefix + ".port", 0);
+            username = config.getString(config_prefix + ".user", "");
+            password = config.getString(config_prefix + ".password", "");
+            database = config.getString(config_prefix + ".db", "");
+            method = config.getString(config_prefix + ".method", "");
+            collection = config.getString(config_prefix + ".collection");
+            options = config.getString(config_prefix + ".options", "");
         }
 
         if (created_from_ddl)
-            context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
+            context->getRemoteHostFilter().checkHostAndPort(host, toString(port));
 
         return std::make_unique<MongoDBPocoLegacyDictionarySource>(dict_struct,
             config.getString(config_prefix + ".uri", ""),
-            configuration.host,
-            configuration.port,
-            configuration.username,
-            configuration.password,
-            config.getString(config_prefix + ".method", ""),
-            configuration.database,
-            config.getString(config_prefix + ".collection"),
-            config.getString(config_prefix + ".options", ""),
+            host,
+            port,
+            username,
+            password,
+            method,
+            database,
+            collection,
+            options,
             sample_block);
     };
     #else

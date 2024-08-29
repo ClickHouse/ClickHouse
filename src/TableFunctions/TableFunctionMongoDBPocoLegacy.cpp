@@ -2,7 +2,6 @@
 
 #if USE_MONGODB
 #include <Storages/StorageMongoDBPocoLegacy.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 
 #include <Common/Exception.h>
 
