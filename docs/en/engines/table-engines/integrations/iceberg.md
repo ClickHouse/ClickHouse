@@ -20,7 +20,7 @@ CREATE TABLE iceberg_table_azure
     ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
 
 CREATE TABLE iceberg_table_local
-    ENGINE = ICebergLocal(path_to_table, [,format] [,compression_method])
+    ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
 ```
 
 **Engine arguments**

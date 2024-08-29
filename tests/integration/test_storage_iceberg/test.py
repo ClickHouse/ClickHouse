@@ -165,9 +165,8 @@ def generate_data(spark, start, end):
     return df
 
 
-def create_iceberg_table(
+def get_creation_expression(
     storage_type,
-    node,
     table_name,
     cluster,
     format="Parquet",
@@ -182,36 +181,50 @@ def create_iceberg_table(
         print(bucket)
         if table_function:
             return f"icebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
-        node.query(
-            f"""
-            DROP TABLE IF EXISTS {table_name};
-            CREATE TABLE {table_name}
-            ENGINE=IcebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
-        )
+        else:
+            return f"""
+                DROP TABLE IF EXISTS {table_name};
+                CREATE TABLE {table_name}
+                ENGINE=IcebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
     elif storage_type == "azure":
         if table_function:
             return f"""
                 icebergAzure(azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})
             """
-        node.query(
-            f"""
-            DROP TABLE IF EXISTS {table_name};
-            CREATE TABLE {table_name}
-            ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})"""
-        )
+        else:
+            return f"""
+                DROP TABLE IF EXISTS {table_name};
+                CREATE TABLE {table_name}
+                ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})"""
     elif storage_type == "local":
         if table_function:
             return f"""
                 icebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})
             """
-        node.query(
-            f"""
-            DROP TABLE IF EXISTS {table_name};
-            CREATE TABLE {table_name}
-            ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format});"""
-        )
+        else:
+            return f"""
+                DROP TABLE IF EXISTS {table_name};
+                CREATE TABLE {table_name}
+                ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format});"""
     else:
         raise Exception(f"Unknown iceberg storage type: {storage_type}")
+
+
+def get_uuid_str():
+    return str(uuid.uuid4()).replace("-", "_")
+
+
+def create_iceberg_table(
+    storage_type,
+    node,
+    table_name,
+    cluster,
+    format="Parquet",
+    **kwargs,
+):
+    node.query(
+        get_creation_expression(storage_type, table_name, cluster, format, **kwargs)
+    )
 
 
 def create_initial_data_file(
@@ -258,7 +271,14 @@ def default_upload_directory(
 def test_single_iceberg_file(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
-    TABLE_NAME = "test_single_iceberg_file_" + format_version + "_" + storage_type
+    TABLE_NAME = (
+        "test_single_iceberg_file_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
 
     write_iceberg_from_df(spark, generate_data(spark, 0, 100), TABLE_NAME)
 
@@ -281,7 +301,14 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type):
 def test_partition_by(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
-    TABLE_NAME = "test_partition_by_" + format_version + "_" + storage_type
+    TABLE_NAME = (
+        "test_partition_by_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
 
     write_iceberg_from_df(
         spark,
@@ -311,7 +338,14 @@ def test_multiple_iceberg_files(started_cluster, format_version, storage_type):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = "test_multiple_iceberg_files_" + format_version + "_" + storage_type
+    TABLE_NAME = (
+        "test_multiple_iceberg_files_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
 
     write_iceberg_from_df(
         spark,
@@ -364,7 +398,9 @@ def test_multiple_iceberg_files(started_cluster, format_version, storage_type):
 def test_types(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
-    TABLE_NAME = "test_types_" + format_version + "_" + storage_type
+    TABLE_NAME = (
+        "test_types_" + format_version + "_" + storage_type + "_" + get_uuid_str()
+    )
 
     data = [
         (
@@ -404,8 +440,8 @@ def test_types(started_cluster, format_version, storage_type):
         == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
     )
 
-    table_function_expr = create_iceberg_table(
-        storage_type, instance, TABLE_NAME, started_cluster, table_function=True
+    table_function_expr = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster, table_function=True
     )
     assert (
         instance.query(f"SELECT a, b, c, d, e FROM {table_function_expr}").strip()
@@ -430,7 +466,14 @@ def test_delete_files(started_cluster, format_version, storage_type):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = "test_delete_files_" + format_version + "_" + storage_type
+    TABLE_NAME = (
+        "test_delete_files_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
 
     write_iceberg_from_df(
         spark,
@@ -496,7 +539,14 @@ def test_evolved_schema(started_cluster, format_version, storage_type):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = "test_evolved_schema_" + format_version + "_" + storage_type
+    TABLE_NAME = (
+        "test_evolved_schema_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
 
     write_iceberg_from_df(
         spark,
@@ -542,7 +592,7 @@ def test_row_based_deletes(started_cluster, storage_type):
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    TABLE_NAME = "test_row_based_deletes_" + storage_type
+    TABLE_NAME = "test_row_based_deletes_" + storage_type + "_" + get_uuid_str()
 
     spark.sql(
         f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')"
@@ -587,6 +637,8 @@ def test_schema_inference(started_cluster, format_version, storage_type):
             + format_version
             + "_"
             + storage_type
+            + "_"
+            + get_uuid_str()
         )
 
         # Types time, timestamptz, fixed are not supported in Spark.
@@ -645,7 +697,14 @@ def test_schema_inference(started_cluster, format_version, storage_type):
 def test_metadata_file_selection(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
-    TABLE_NAME = "test_metadata_selection_" + format_version + "_" + storage_type
+    TABLE_NAME = (
+        "test_metadata_selection_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
 
     spark.sql(
         f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')"
@@ -674,7 +733,12 @@ def test_metadata_file_format_with_uuid(started_cluster, format_version, storage
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = (
-        "test_metadata_selection_with_uuid_" + format_version + "_" + storage_type
+        "test_metadata_selection_with_uuid_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
     )
 
     spark.sql(
@@ -689,7 +753,7 @@ def test_metadata_file_format_with_uuid(started_cluster, format_version, storage
     for i in range(50):
         os.rename(
             f"/iceberg_data/default/{TABLE_NAME}/metadata/v{i + 1}.metadata.json",
-            f"/iceberg_data/default/{TABLE_NAME}/metadata/{str(i).zfill(5)}-{uuid.uuid4()}.metadata.json",
+            f"/iceberg_data/default/{TABLE_NAME}/metadata/{str(i).zfill(5)}-{get_uuid_str()}.metadata.json",
         )
 
     files = default_upload_directory(
@@ -707,7 +771,7 @@ def test_metadata_file_format_with_uuid(started_cluster, format_version, storage
 def test_restart_broken_s3(started_cluster):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
-    TABLE_NAME = "test_restart_broken_table_function_s3"
+    TABLE_NAME = "test_restart_broken_table_function_s3" + "_" + get_uuid_str()
 
     minio_client = started_cluster.minio_client
     bucket = "broken2"
