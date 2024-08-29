@@ -64,7 +64,7 @@ def generate_data(q, total_number, use_token):
             empty_insert_stmt = (
                 "insert into t_async_insert_dedup values format JSONEachRow"
             )
-            q.put((empty_insert_stmt, token))
+            q.put((empty_insert_stmt, ""))
         else:
             # insert new data.
             chunk_size = random.randint(1, max_chunk_size)
