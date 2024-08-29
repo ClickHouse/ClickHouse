@@ -33,7 +33,6 @@ DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options) FOR
 6. │ t.b       │ UInt64                    │              │                    │              │ ZSTD(1)          │                │            1 │
    └───────────┴───────────────────────────┴──────────────┴────────────────────┴──────────────┴──────────────────┴────────────────┴──────────────┘
 SET describe_compact_output = 0, describe_include_virtual_columns = 1, describe_include_subcolumns = 0;
-
 DESCRIBE TABLE t_describe_options FORMAT PrettyCompactNoEscapes;
     ┌─name───────────┬─type──────────────────────┬─default_type─┬─default_expression─┬─comment─────────────────────────────────────────────────────────────────────────────────┬─codec_expression─┬─ttl_expression─┬─is_virtual─┐
  1. │ id             │ UInt64                    │              │                    │ index column                                                                            │                  │                │          0 │
@@ -62,6 +61,8 @@ DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options) FOR
 10. │ _row_exists    │ UInt8                     │              │                    │ Persisted mask created by lightweight delete that show whether row exists or is deleted │                  │                │          1 │
 11. │ _block_number  │ UInt64                    │              │                    │ Persisted original number of block that was assigned at insert                          │ Delta, LZ4       │                │          1 │
 12. │ _shard_num     │ UInt32                    │              │                    │ Deprecated. Use function shardNum instead                                               │                  │                │          1 │
+13. │ _database      │ LowCardinality(String)    │              │                    │ The name of database which the row comes from                                           │                  │                │          1 │
+14. │ _table         │ LowCardinality(String)    │              │                    │ The name of table which the row comes from                                              │                  │                │          1 │
     └────────────────┴───────────────────────────┴──────────────┴────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────┴──────────────────┴────────────────┴────────────┘
 SET describe_compact_output = 0, describe_include_virtual_columns = 1, describe_include_subcolumns = 1;
 DESCRIBE TABLE t_describe_options FORMAT PrettyCompactNoEscapes;
@@ -95,9 +96,11 @@ DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options) FOR
 10. │ _row_exists    │ UInt8                     │              │                    │ Persisted mask created by lightweight delete that show whether row exists or is deleted │                  │                │            0 │          1 │
 11. │ _block_number  │ UInt64                    │              │                    │ Persisted original number of block that was assigned at insert                          │ Delta, LZ4       │                │            0 │          1 │
 12. │ _shard_num     │ UInt32                    │              │                    │ Deprecated. Use function shardNum instead                                               │                  │                │            0 │          1 │
-13. │ arr.size0      │ UInt64                    │              │                    │                                                                                         │                  │                │            1 │          0 │
-14. │ t.a            │ String                    │              │                    │                                                                                         │ ZSTD(1)          │                │            1 │          0 │
-15. │ t.b            │ UInt64                    │              │                    │                                                                                         │ ZSTD(1)          │                │            1 │          0 │
+13. │ _database      │ LowCardinality(String)    │              │                    │ The name of database which the row comes from                                           │                  │                │            0 │          1 │
+14. │ _table         │ LowCardinality(String)    │              │                    │ The name of table which the row comes from                                              │                  │                │            0 │          1 │
+15. │ arr.size0      │ UInt64                    │              │                    │                                                                                         │                  │                │            1 │          0 │
+16. │ t.a            │ String                    │              │                    │                                                                                         │ ZSTD(1)          │                │            1 │          0 │
+17. │ t.b            │ UInt64                    │              │                    │                                                                                         │ ZSTD(1)          │                │            1 │          0 │
     └────────────────┴───────────────────────────┴──────────────┴────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────┴──────────────────┴────────────────┴──────────────┴────────────┘
 SET describe_compact_output = 1, describe_include_virtual_columns = 0, describe_include_subcolumns = 0;
 DESCRIBE TABLE t_describe_options FORMAT PrettyCompactNoEscapes;
@@ -160,6 +163,8 @@ DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options) FOR
 10. │ _row_exists    │ UInt8                     │          1 │
 11. │ _block_number  │ UInt64                    │          1 │
 12. │ _shard_num     │ UInt32                    │          1 │
+13. │ _database      │ LowCardinality(String)    │          1 │
+14. │ _table         │ LowCardinality(String)    │          1 │
     └────────────────┴───────────────────────────┴────────────┘
 SET describe_compact_output = 1, describe_include_virtual_columns = 1, describe_include_subcolumns = 1;
 DESCRIBE TABLE t_describe_options FORMAT PrettyCompactNoEscapes;
@@ -193,7 +198,9 @@ DESCRIBE remote(test_shard_localhost, currentDatabase(), t_describe_options) FOR
 10. │ _row_exists    │ UInt8                     │            0 │          1 │
 11. │ _block_number  │ UInt64                    │            0 │          1 │
 12. │ _shard_num     │ UInt32                    │            0 │          1 │
-13. │ arr.size0      │ UInt64                    │            1 │          0 │
-14. │ t.a            │ String                    │            1 │          0 │
-15. │ t.b            │ UInt64                    │            1 │          0 │
+13. │ _database      │ LowCardinality(String)    │            0 │          1 │
+14. │ _table         │ LowCardinality(String)    │            0 │          1 │
+15. │ arr.size0      │ UInt64                    │            1 │          0 │
+16. │ t.a            │ String                    │            1 │          0 │
+17. │ t.b            │ UInt64                    │            1 │          0 │
     └────────────────┴───────────────────────────┴──────────────┴────────────┘
