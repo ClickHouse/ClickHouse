@@ -29,8 +29,8 @@ hostname:                                                        clickhouse.eu-c
 event_date:                                                      2020-09-05
 event_time:                                                      2020-09-05 16:22:33
 event_time_microseconds:                                         2020-09-05 16:22:33.196807
-CurrentMetric_MemoryTracking:                                    480794407
-CurrentMetric_MergesMutationsMemoryTracking:                     0
+MemoryTracking:                                                  480794407
+MergesMutationsMemoryTracking:                                   0
 ProfileEvent_Query:                                              0
 ProfileEvent_SelectQuery:                                        0
 ProfileEvent_InsertQuery:                                        0

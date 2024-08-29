@@ -61,9 +61,9 @@ ColumnsDescription QueryMetricLogElement::getColumnsDescription()
 
     for (const auto & metric : memory_metrics)
     {
-        auto name = fmt::format("CurrentMetric_{}", CurrentMetrics::getName(metric));
+        const auto * name = CurrentMetrics::getName(metric);
         const auto * comment = CurrentMetrics::getDocumentation(metric);
-        result.add({std::move(name), std::make_shared<DataTypeInt64>(), comment});
+        result.add({std::move(name), std::make_shared<DataTypeInt64>(), std::move(comment)});
     }
 
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
