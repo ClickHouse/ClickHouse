@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP TABLE IF EXISTS test_embedding;
 
 CREATE TABLE test_embedding
