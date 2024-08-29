@@ -6,7 +6,7 @@ SELECT
     mapFromString(_headers['X-ClickHouse-Summary'])['read_rows']
 FROM url('http://127.0.0.1:8123/?query=select+1&user=default', LineAsString, 's String');
 
--- The real_time_microseconds is not available in the `X-ClickHouse-Progress` header (it is available in the `X-ClickHouse-Summary` header).
+-- The real_time_microseconds is not available in the `X-ClickHouse-Progress` header (it is only available in the `X-ClickHouse-Summary` header).
 -- We need to wait until the query is finished to get the real_time_microseconds.
 SELECT
     *,
