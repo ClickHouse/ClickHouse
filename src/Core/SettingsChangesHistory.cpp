@@ -75,6 +75,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"join_output_by_rowlist_perkey_rows_threshold", 0, 5, "The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join."},
             {"create_if_not_exists", false, false, "New setting."},
             {"allow_materialized_view_with_bad_select", true, true, "Support (but not enable yet) stricter validation in CREATE MATERIALIZED VIEW"},
+            {"query_metric_log_interval", 0, -1, "New setting."},
         }
     },
     {"24.8",
@@ -84,7 +85,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"restore_replace_external_engines_to_null", false, false, "New setting."},
             {"input_format_json_max_depth", 1000000, 1000, "It was unlimited in previous versions, but that was unsafe."},
             {"merge_tree_min_bytes_per_task_for_remote_reading", 4194304, 2097152, "Value is unified with `filesystem_prefetch_min_bytes_for_single_read_task`"},
-            {"query_metric_log_interval", 0, 0, "New setting."},
             {"use_hive_partitioning", false, false, "Allows to use hive partitioning for File, URL, S3, AzureBlobStorage and HDFS engines."},
             {"allow_experimental_kafka_offsets_storage_in_keeper", false, false, "Allow the usage of experimental Kafka storage engine that stores the committed offsets in ClickHouse Keeper"},
             {"allow_archive_path_syntax", true, true, "Added new setting to allow disabling archive path syntax."},

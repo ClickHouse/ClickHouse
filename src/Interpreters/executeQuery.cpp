@@ -302,6 +302,14 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     addPrivilegesInfoToQueryLogElement(element, context_ptr);
 }
 
+static Int64 getQueryMetricLogInterval(ContextPtr context)
+{
+    auto interval_milliseconds = context->getSettingsRef().query_metric_log_interval;
+    if (interval_milliseconds < 0)
+        interval_milliseconds = context->getConfigRef().getUInt64("query_metric_log.collect_interval_milliseconds", 1000);
+
+    return interval_milliseconds;
+}
 
 QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
@@ -376,10 +384,9 @@ QueryLogElement logQueryStart(
 
     if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
     {
-        auto interval_milliseconds = context->getSettingsRef().query_metric_log_interval;
-        if (interval_milliseconds == 0)
-            interval_milliseconds = context->getConfigRef().getUInt64("query_metric_log.collect_interval_milliseconds", 1000);
-        query_metric_log->startQuery(elem.client_info.current_query_id, query_start_time, interval_milliseconds);
+        auto interval_milliseconds = getQueryMetricLogInterval(context);
+        if (interval_milliseconds > 0)
+            query_metric_log->startQuery(elem.client_info.current_query_id, query_start_time, interval_milliseconds);
     }
 
     return elem;
@@ -515,7 +522,11 @@ void logQueryFinish(
     }
 
     if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
-        query_metric_log->finishQuery(elem.client_info.current_query_id);
+    {
+        auto interval_milliseconds = getQueryMetricLogInterval(context);
+        if (interval_milliseconds > 0)
+            query_metric_log->finishQuery(elem.client_info.current_query_id);
+    }
 }
 
 void logQueryException(
