@@ -2335,7 +2335,6 @@ bool MutateTask::prepare()
         else
             task = std::make_unique<MutateAllPartColumnsTask>(ctx);
 
-        task = std::make_unique<MutateAllPartColumnsTask>(ctx);
         ProfileEvents::increment(ProfileEvents::MutationAllPartColumns);
     }
     else /// TODO: check that we modify only non-key columns in this case.
@@ -2401,7 +2400,6 @@ bool MutateTask::prepare()
         else
             task = std::make_unique<MutateSomePartColumnsTask>(ctx);
 
-        task = std::make_unique<MutateSomePartColumnsTask>(ctx);
         ProfileEvents::increment(ProfileEvents::MutationSomePartColumns);
     }
 
