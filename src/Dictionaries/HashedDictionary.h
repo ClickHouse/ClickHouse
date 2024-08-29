@@ -636,7 +636,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getHierarchy(C
         std::optional<UInt64> null_value;
 
         if (!dictionary_attribute.null_value.isNull())
-            null_value = dictionary_attribute.null_value.get<UInt64>();
+            null_value = dictionary_attribute.null_value.safeGet<UInt64>();
 
         const CollectionsHolder<UInt64> & child_key_to_parent_key_maps = std::get<CollectionsHolder<UInt64>>(hierarchical_attribute.containers);
 
@@ -710,7 +710,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse, sharded>::isInHie
         std::optional<UInt64> null_value;
 
         if (!dictionary_attribute.null_value.isNull())
-            null_value = dictionary_attribute.null_value.get<UInt64>();
+            null_value = dictionary_attribute.null_value.safeGet<UInt64>();
 
         const CollectionsHolder<UInt64> & child_key_to_parent_key_maps = std::get<CollectionsHolder<UInt64>>(hierarchical_attribute.containers);
 
@@ -1005,13 +1005,13 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(c
 
                 if constexpr (std::is_same_v<AttributeValueType, StringRef>)
                 {
-                    String & value_to_insert = column_value_to_insert.get<String>();
+                    String & value_to_insert = column_value_to_insert.safeGet<String>();
                     StringRef arena_value = copyStringInArena(*string_arenas[shard], value_to_insert);
                     container.insert({key, arena_value});
                 }
                 else
                 {
-                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.get<AttributeValueType>());
+                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.safeGet<AttributeValueType>());
                     container.insert({key, value_to_insert});
                 }
 

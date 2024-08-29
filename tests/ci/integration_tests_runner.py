@@ -9,6 +9,7 @@ import random
 import re
 import shlex
 import shutil
+import signal
 import string
 import subprocess
 import sys
@@ -16,10 +17,13 @@ import time
 import zlib  # for crc32
 from collections import defaultdict
 from itertools import chain
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from env_helper import IS_CI
 from integration_test_images import IMAGES
+from tee_popen import TeePopen
+from report import JOB_TIMEOUT_TEST_NAME
+from stopwatch import Stopwatch
 
 MAX_RETRY = 1
 NUM_WORKERS = 5
@@ -68,9 +72,9 @@ def get_changed_tests_to_run(pr_info, repo_path):
         return []
 
     for fpath in changed_files:
-        if "tests/integration/test_" in fpath:
+        if re.search(r"tests/integration/test_.*/test.*\.py", fpath) is not None:
             logging.info("File %s changed and seems like integration test", fpath)
-            result.add(fpath.split("/")[2])
+            result.add("/".join(fpath.split("/")[2:]))
     return filter_existing_tests(result, repo_path)
 
 
@@ -356,20 +360,13 @@ class ClickhouseIntegrationTestsRunner:
                     logging.info("Package found in %s", full_path)
                     log_name = "install_" + f + ".log"
                     log_path = os.path.join(str(self.path()), log_name)
-                    with open(log_path, "w", encoding="utf-8") as log:
-                        cmd = f"dpkg -x {full_path} ."
-                        logging.info("Executing installation cmd %s", cmd)
-                        with subprocess.Popen(
-                            cmd, shell=True, stderr=log, stdout=log
-                        ) as proc:
-                            if proc.wait() == 0:
-                                logging.info(
-                                    "Installation of %s successfull", full_path
-                                )
-                            else:
-                                raise RuntimeError(
-                                    f"Installation of {full_path} failed"
-                                )
+                    cmd = f"dpkg -x {full_path} ."
+                    logging.info("Executing installation cmd %s", cmd)
+                    with TeePopen(cmd, log_file=log_path) as proc:
+                        if proc.wait() == 0:
+                            logging.info("Installation of %s successfull", full_path)
+                        else:
+                            raise RuntimeError(f"Installation of {full_path} failed")
                     break
             else:
                 raise FileNotFoundError(f"Package with {package} not found")
@@ -627,6 +624,9 @@ class ClickhouseIntegrationTestsRunner:
         test_data_dirs = {}
 
         for i in range(num_tries):
+            if timeout_expired:
+                print("Timeout expired - break test group execution")
+                break
             logging.info("Running test group %s for the %s retry", test_group, i)
             clear_ip_tables_and_restart_daemons()
 
@@ -663,6 +663,8 @@ class ClickhouseIntegrationTestsRunner:
                 logging.info("Executing cmd: %s", cmd)
                 # ignore retcode, since it meaningful due to pipe to tee
                 with subprocess.Popen(cmd, shell=True, stderr=log, stdout=log) as proc:
+                    global runner_subprocess
+                    runner_subprocess = proc
                     proc.wait()
 
             extra_logs_names = [log_basename]
@@ -784,8 +786,11 @@ class ClickhouseIntegrationTestsRunner:
         logging.info("Starting check with retries")
         final_retry = 0
         logs = []
-        tires_num = 1 if should_fail else FLAKY_TRIES_COUNT
-        for i in range(tires_num):
+        tries_num = 1 if should_fail else FLAKY_TRIES_COUNT
+        for i in range(tries_num):
+            if timeout_expired:
+                print("Timeout expired - break flaky check execution")
+                break
             final_retry += 1
             logging.info("Running tests for the %s time", i)
             counters, tests_times, log_paths = self.try_run_test_group(
@@ -845,6 +850,7 @@ class ClickhouseIntegrationTestsRunner:
         return result_state, status_text, test_result, logs
 
     def run_impl(self, repo_path, build_path):
+        stopwatch = Stopwatch()
         if self.flaky_check or self.bugfix_validate_check:
             return self.run_flaky_check(
                 repo_path, build_path, should_fail=self.bugfix_validate_check
@@ -927,6 +933,9 @@ class ClickhouseIntegrationTestsRunner:
             random.shuffle(items_to_run)
 
         for group, tests in items_to_run:
+            if timeout_expired:
+                print("Timeout expired - break tests execution")
+                break
             logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(
                 repo_path, group, tests, MAX_RETRY, NUM_WORKERS, 0
@@ -987,6 +996,17 @@ class ClickhouseIntegrationTestsRunner:
             status_text = "Timeout, " + status_text
             result_state = "failure"
 
+        if timeout_expired:
+            logging.error(
+                "Job killed by external timeout signal - setting status to failure!"
+            )
+            status_text = "Job timeout expired, " + status_text
+            result_state = "failure"
+            # add mock test case to make timeout visible in job report and in ci db
+            test_result.insert(
+                0, (JOB_TIMEOUT_TEST_NAME, "FAIL", f"{stopwatch.duration_seconds}", "")
+            )
+
         if not counters or sum(len(counter) for counter in counters.values()) == 0:
             status_text = "No tests found for some reason! It's a bug"
             result_state = "failure"
@@ -1007,6 +1027,7 @@ def write_results(results_file, status_file, results, status):
 
 
 def run():
+    signal.signal(signal.SIGTERM, handle_sigterm)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
     repo_path = os.environ.get("CLICKHOUSE_TESTS_REPO_PATH")
@@ -1039,6 +1060,18 @@ def run():
     out_status_file = os.path.join(str(runner.path()), "check_status.tsv")
     write_results(out_results_file, out_status_file, test_results, status)
     logging.info("Result written")
+
+
+timeout_expired = False
+runner_subprocess = None  # type:Optional[subprocess.Popen]
+
+
+def handle_sigterm(signum, _frame):
+    print(f"WARNING: Received signal {signum}")
+    global timeout_expired
+    timeout_expired = True
+    if runner_subprocess:
+        runner_subprocess.send_signal(signal.SIGTERM)
 
 
 if __name__ == "__main__":

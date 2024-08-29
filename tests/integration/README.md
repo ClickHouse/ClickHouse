@@ -188,6 +188,14 @@ docker build -t clickhouse/integration-test .
 ```
 
 The helper container used by the `runner` script is in `docker/test/integration/runner/Dockerfile`.
+It can be rebuild with 
+
+```
+cd docker/test/integration/runner
+docker build -t clickhouse/integration-test-runner .
+```
+
+If your docker configuration doesn't allow access to public internet with docker build command you may also need to add option --network=host if you rebuild image for a local integration testsing.
 
 ### Adding new tests
 

@@ -4,6 +4,8 @@
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Common/Exception.h>
+#include <Common/Logger.h>
 
 namespace DB
 {
@@ -35,16 +37,23 @@ RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation
         progress(value.read_rows, value.read_bytes);
     });
 
-    query_executor->setProfileInfoCallback([this](const ProfileInfo & info)
-    {
-        if (rows_before_limit)
+    query_executor->setProfileInfoCallback(
+        [this](const ProfileInfo & info)
         {
-            if (info.hasAppliedLimit())
-                rows_before_limit->add(info.getRowsBeforeLimit());
-            else
-                manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
-        }
-    });
+            if (rows_before_limit)
+            {
+                if (info.hasAppliedLimit())
+                    rows_before_limit->add(info.getRowsBeforeLimit());
+                else
+                    manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
+            }
+
+            if (rows_before_aggregation)
+            {
+                if (info.hasAppliedAggregation())
+                    rows_before_aggregation->add(info.getRowsBeforeAggregation());
+            }
+        });
 }
 
 RemoteSource::~RemoteSource() = default;
@@ -182,7 +191,6 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     {
         if (manually_add_rows_before_limit_counter)
             rows_before_limit->add(rows);
-
         query_executor->finish();
         return {};
     }
@@ -202,9 +210,16 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     return chunk;
 }
 
-void RemoteSource::onCancel()
+void RemoteSource::onCancel() noexcept
 {
-    query_executor->cancel();
+    try
+    {
+        query_executor->cancel();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("RemoteSource"), "Error occurs on cancellation.");
+    }
 }
 
 void RemoteSource::onUpdatePorts()

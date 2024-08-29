@@ -80,13 +80,15 @@ public:
         ExecutableFunctionPtr function;
         /// If function is a compiled statement.
         bool is_function_compiled = false;
-        /// It is deterministic (See IFunction::isDeterministic).
-        /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
-        bool is_deterministic = true;
 
+        /// It is a constant calculated from deterministic functions (See IFunction::isDeterministic).
+        /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
+        bool is_deterministic_constant = true;
         /// For COLUMN node and propagated constants.
         ColumnPtr column;
 
+        /// If result of this not is deterministic. Checks only this node, not a subtree.
+        bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
     };
 

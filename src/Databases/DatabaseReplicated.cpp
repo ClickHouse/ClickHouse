@@ -12,6 +12,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/PoolId.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -20,6 +21,7 @@
 #include <Databases/DatabaseReplicatedWorker.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/TablesDependencyGraph.h>
+#include <Databases/enableAllExperimentalSettings.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -338,9 +340,12 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
     return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params);
 }
 
-std::vector<UInt8> DatabaseReplicated::tryGetAreReplicasActive(const ClusterPtr & cluster_) const
+ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_) const
 {
     Strings paths;
+
+    paths.emplace_back(fs::path(zookeeper_path) / "max_log_ptr");
+
     const auto & addresses_with_failover = cluster_->getShardsAddresses();
     const auto & shards_info = cluster_->getShardsInfo();
     for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
@@ -349,22 +354,50 @@ std::vector<UInt8> DatabaseReplicated::tryGetAreReplicasActive(const ClusterPtr 
         {
             String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name);
             paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "active");
+            paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "log_ptr");
         }
     }
 
     try
     {
         auto current_zookeeper = getZooKeeper();
-        auto res = current_zookeeper->exists(paths);
+        auto zk_res = current_zookeeper->tryGet(paths);
 
-        std::vector<UInt8> statuses;
-        statuses.resize(paths.size());
+        auto max_log_ptr_zk = zk_res[0];
+        if (max_log_ptr_zk.error != Coordination::Error::ZOK)
+            throw Coordination::Exception(max_log_ptr_zk.error);
 
-        for (size_t i = 0; i < res.size(); ++i)
-            if (res[i].error == Coordination::Error::ZOK)
-                statuses[i] = 1;
+        UInt32 max_log_ptr = parse<UInt32>(max_log_ptr_zk.data);
 
-        return statuses;
+        ReplicasInfo replicas_info;
+        replicas_info.resize((zk_res.size() - 1) / 2);
+
+        size_t global_replica_index = 0;
+        for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
+        {
+            for (const auto & replica : addresses_with_failover[shard_index])
+            {
+                auto replica_active = zk_res[2 * global_replica_index + 1];
+                auto replica_log_ptr = zk_res[2 * global_replica_index + 2];
+
+                UInt64 recovery_time = 0;
+                {
+                    std::lock_guard lock(ddl_worker_mutex);
+                    if (replica.is_local && ddl_worker)
+                        recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+                }
+
+                replicas_info[global_replica_index] = ReplicaInfo{
+                    .is_active = replica_active.error == Coordination::Error::ZOK,
+                    .replication_lag = replica_log_ptr.error != Coordination::Error::ZNONODE ? std::optional(max_log_ptr - parse<UInt32>(replica_log_ptr.data)) : std::nullopt,
+                    .recovery_time = recovery_time,
+                };
+
+                ++global_replica_index;
+            }
+        }
+
+        return replicas_info;
     }
     catch (...)
     {
@@ -372,7 +405,6 @@ std::vector<UInt8> DatabaseReplicated::tryGetAreReplicasActive(const ClusterPtr 
         return {};
     }
 }
-
 
 void DatabaseReplicated::fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config_ref)
 {
@@ -802,8 +834,8 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
     if (!arg1 || !arg2 || arg1->value.getType() != Field::Types::String || arg2->value.getType() != Field::Types::String)
         return;
 
-    String maybe_path = arg1->value.get<String>();
-    String maybe_replica = arg2->value.get<String>();
+    String maybe_path = arg1->value.safeGet<String>();
+    String maybe_replica = arg2->value.safeGet<String>();
 
     /// Looks like it's ReplicatedMergeTree with explicit zookeeper_path and replica_name arguments.
     /// Let's ensure that some macros are used.
@@ -1111,39 +1143,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
-        query_context->setSetting("allow_experimental_inverted_index", 1);
-        query_context->setSetting("allow_experimental_full_text_index", 1);
-        query_context->setSetting("allow_experimental_codecs", 1);
-        query_context->setSetting("allow_experimental_live_view", 1);
-        query_context->setSetting("allow_experimental_window_view", 1);
-        query_context->setSetting("allow_experimental_funnel_functions", 1);
-        query_context->setSetting("allow_experimental_nlp_functions", 1);
-        query_context->setSetting("allow_experimental_hash_functions", 1);
-        query_context->setSetting("allow_experimental_object_type", 1);
-        query_context->setSetting("allow_experimental_variant_type", 1);
-        query_context->setSetting("allow_experimental_dynamic_type", 1);
-        query_context->setSetting("allow_experimental_annoy_index", 1);
-        query_context->setSetting("allow_experimental_usearch_index", 1);
-        query_context->setSetting("allow_experimental_bigint_types", 1);
-        query_context->setSetting("allow_experimental_window_functions", 1);
-        query_context->setSetting("allow_experimental_geo_types", 1);
-        query_context->setSetting("allow_experimental_map_type", 1);
-        query_context->setSetting("allow_deprecated_error_prone_window_functions", 1);
-
-        query_context->setSetting("allow_suspicious_low_cardinality_types", 1);
-        query_context->setSetting("allow_suspicious_fixed_string_types", 1);
-        query_context->setSetting("allow_suspicious_indices", 1);
-        query_context->setSetting("allow_suspicious_codecs", 1);
-        query_context->setSetting("allow_hyperscan", 1);
-        query_context->setSetting("allow_simdjson", 1);
-        query_context->setSetting("allow_deprecated_syntax_for_merge_tree", 1);
-        query_context->setSetting("allow_suspicious_primary_key", 1);
-        query_context->setSetting("allow_suspicious_ttl_expressions", 1);
-        query_context->setSetting("allow_suspicious_variant_types", 1);
-        query_context->setSetting("enable_deflate_qpl_codec", 1);
-        query_context->setSetting("enable_zstd_qat_codec", 1);
-        query_context->setSetting("allow_create_index_without_type", 1);
-        query_context->setSetting("allow_experimental_s3queue", 1);
+        enableAllExperimentalSettings(query_context);
 
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);
@@ -1553,6 +1553,8 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     }
 
     auto table = tryGetTable(table_name, getContext());
+    if (!table)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't exist", table_name);
     if (table->getName() == "MaterializedView" || table->getName() == "WindowView")
     {
         /// Avoid recursive locking of metadata_mutex

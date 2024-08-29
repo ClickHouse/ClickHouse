@@ -29,4 +29,4 @@ HAVING sum(log(2) * number) > 346.57353 ORDER BY k;
 SELECT round(sum(log(2) * number), 6) AS k FROM numbers(10000)
 GROUP BY (number % 2) * (number % 3), number % 3, number % 2
 HAVING sum(log(2) * number) > 346.57353 ORDER BY k
-SETTINGS allow_experimental_analyzer=1;
+SETTINGS enable_analyzer=1;

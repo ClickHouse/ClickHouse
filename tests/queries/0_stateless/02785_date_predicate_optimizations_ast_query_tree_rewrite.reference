@@ -39,7 +39,7 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE ((date1 < \'1993-01-01\') OR (date1 >= \'1994-01-01\')) AND ((id >= 1) AND (id <= 3))
@@ -81,7 +81,7 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 < \'1993-01-01\') AND ((id >= 1) AND (id <= 3))
@@ -115,7 +115,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 >= \'1994-01-01\') AND ((id >= 1) AND (id <= 3))
@@ -149,7 +149,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 < \'1994-01-01\') AND ((id >= 1) AND (id <= 3))
@@ -183,7 +183,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 >= \'1993-01-01\') AND ((id >= 1) AND (id <= 3))
@@ -217,7 +217,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE ((date1 >= \'1993-01-01\') AND (date1 < \'1998-01-01\')) AND ((id >= 1) AND (id <= 3))
@@ -259,7 +259,7 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (((date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\')) OR ((date1 >= \'1994-01-01\') AND (date1 < \'1995-01-01\'))) AND ((id >= 1) AND (id <= 3))
@@ -317,7 +317,7 @@ QUERY id: 0
                     LIST id: 32, nodes: 2
                       COLUMN id: 29, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 33, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT
     value1,
     toYear(date1) AS year1
@@ -366,7 +366,7 @@ QUERY id: 0
                     LIST id: 24, nodes: 2
                       COLUMN id: 21, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 25, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 < \'1993-01-01\') AND ((id >= 1) AND (id <= 3))
@@ -400,7 +400,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 PREWHERE (date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\')
@@ -441,7 +441,7 @@ QUERY id: 0
               LIST id: 20, nodes: 2
                 COLUMN id: 17, column_name: id, result_type: UInt32, source_id: 3
                 CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE ((id >= 1) AND (id <= 3)) AND ((date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\'))
@@ -481,7 +481,7 @@ QUERY id: 0
               LIST id: 20, nodes: 2
                 COLUMN id: 17, column_name: date1, result_type: Date, source_id: 3
                 CONSTANT id: 21, constant_value: \'1994-01-01\', constant_value_type: String
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (toYYYYMM(date1) = 199300) AND ((id >= 1) AND (id <= 3))
@@ -518,7 +518,7 @@ QUERY id: 0
                     LIST id: 19, nodes: 2
                       COLUMN id: 16, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 20, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (toYYYYMM(date1) = 199313) AND ((id >= 1) AND (id <= 3))
@@ -555,7 +555,7 @@ QUERY id: 0
                     LIST id: 19, nodes: 2
                       COLUMN id: 16, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 20, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE ((date1 >= \'1993-12-01\') AND (date1 < \'1994-01-01\')) AND ((id >= 1) AND (id <= 3))
@@ -597,7 +597,7 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE ((date1 >= \'1992-03-01\') AND (date1 < \'1992-04-01\')) AND ((id >= 1) AND (id <= 3))
@@ -639,7 +639,7 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE ((date1 < \'1992-03-01\') OR (date1 >= \'1992-04-01\')) AND ((id >= 1) AND (id <= 3))
@@ -681,7 +681,7 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 < \'1992-03-01\') AND ((id >= 1) AND (id <= 3))
@@ -715,7 +715,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 >= \'1992-04-01\') AND ((id >= 1) AND (id <= 3))
@@ -749,7 +749,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 < \'1992-04-01\') AND ((id >= 1) AND (id <= 3))
@@ -783,7 +783,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE (date1 >= \'1992-03-01\') AND ((id >= 1) AND (id <= 3))
@@ -817,7 +817,7 @@ QUERY id: 0
                     LIST id: 17, nodes: 2
                       COLUMN id: 14, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 18, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date_t
 WHERE ((date1 >= \'1992-03-01\') OR ((date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\'))) AND ((id >= 1) AND (id <= 3))
@@ -867,7 +867,7 @@ QUERY id: 0
                     LIST id: 27, nodes: 2
                       COLUMN id: 24, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 28, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM datetime_t
 WHERE ((date1 >= \'1993-01-01 00:00:00\') AND (date1 < \'1994-01-01 00:00:00\')) AND ((id >= 1) AND (id <= 3))
@@ -909,7 +909,7 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM datetime_t
 WHERE ((date1 >= \'1993-12-01 00:00:00\') AND (date1 < \'1994-01-01 00:00:00\')) AND ((id >= 1) AND (id <= 3))
@@ -951,7 +951,7 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date32_t
 WHERE ((date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\')) AND ((id >= 1) AND (id <= 3))
@@ -993,7 +993,7 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM date32_t
 WHERE ((date1 >= \'1993-12-01\') AND (date1 < \'1994-01-01\')) AND ((id >= 1) AND (id <= 3))
@@ -1035,7 +1035,7 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM datetime64_t
 WHERE ((date1 >= \'1993-01-01 00:00:00\') AND (date1 < \'1994-01-01 00:00:00\')) AND ((id >= 1) AND (id <= 3))
@@ -1077,7 +1077,7 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT value1
 FROM datetime64_t
 WHERE ((date1 >= \'1993-12-01 00:00:00\') AND (date1 < \'1994-01-01 00:00:00\')) AND ((id >= 1) AND (id <= 3))
@@ -1119,4 +1119,4 @@ QUERY id: 0
                     LIST id: 22, nodes: 2
                       COLUMN id: 19, column_name: id, result_type: UInt32, source_id: 3
                       CONSTANT id: 23, constant_value: UInt64_3, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # no-parallel: This test is not parallel because when we execute system-wide SYSTEM DROP REPLICA,
 #  other tests might shut down the storage in parallel and the test will fail.
+# no-fasttest: It has several tests with timeouts for inactive replicas
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

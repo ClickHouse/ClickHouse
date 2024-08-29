@@ -333,7 +333,7 @@ namespace
         {
             const DataTypeTuple & type_tuple = static_cast<const DataTypeTuple &>(data_type);
 
-            Tuple & tuple_value = value.get<Tuple>();
+            Tuple & tuple_value = value.safeGet<Tuple>();
 
             size_t src_tuple_size = tuple_value.size();
             size_t dst_tuple_size = type_tuple.getElements().size();
@@ -360,7 +360,7 @@ namespace
             if (element_type.isNullable())
                 return;
 
-            Array & array_value = value.get<Array>();
+            Array & array_value = value.safeGet<Array>();
             size_t array_value_size = array_value.size();
 
             for (size_t i = 0; i < array_value_size; ++i)
@@ -378,12 +378,12 @@ namespace
             const auto & key_type = *type_map.getKeyType();
             const auto & value_type = *type_map.getValueType();
 
-            auto & map = value.get<Map>();
+            auto & map = value.safeGet<Map>();
             size_t map_size = map.size();
 
             for (size_t i = 0; i < map_size; ++i)
             {
-                auto & map_entry = map[i].get<Tuple>();
+                auto & map_entry = map[i].safeGet<Tuple>();
 
                 auto & entry_key = map_entry[0];
                 auto & entry_value = map_entry[1];
@@ -661,6 +661,16 @@ void ValuesBlockInputFormat::resetReadBuffer()
 {
     buf.reset();
     IInputFormat::resetReadBuffer();
+}
+
+void ValuesBlockInputFormat::setQueryParameters(const NameToNameMap & parameters)
+{
+    if (parameters == context->getQueryParameters())
+        return;
+
+    auto context_copy = Context::createCopy(context);
+    context_copy->setQueryParameters(parameters);
+    context = std::move(context_copy);
 }
 
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

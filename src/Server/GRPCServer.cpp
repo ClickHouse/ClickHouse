@@ -1578,6 +1578,8 @@ namespace
         stats.set_allocated_bytes(info.bytes);
         stats.set_applied_limit(info.hasAppliedLimit());
         stats.set_rows_before_limit(info.getRowsBeforeLimit());
+        stats.set_applied_aggregation(info.hasAppliedAggregation());
+        stats.set_rows_before_aggregation(info.getRowsBeforeAggregation());
     }
 
     void Call::addLogsToResult()

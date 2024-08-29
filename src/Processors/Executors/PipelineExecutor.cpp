@@ -78,9 +78,13 @@ const Processors & PipelineExecutor::getProcessors() const
     return graph->getProcessors();
 }
 
-void PipelineExecutor::cancel()
+void PipelineExecutor::cancel(ExecutionStatus reason)
 {
-    cancelled = true;
+    /// It is allowed to cancel not started query by user.
+    if (reason == ExecutionStatus::CancelledByUser)
+        tryUpdateExecutionStatus(ExecutionStatus::NotStarted, reason);
+
+    tryUpdateExecutionStatus(ExecutionStatus::Executing, reason);
     finish();
     graph->cancel();
 }
@@ -97,6 +101,11 @@ void PipelineExecutor::cancelReading()
 void PipelineExecutor::finish()
 {
     tasks.finish();
+}
+
+bool PipelineExecutor::tryUpdateExecutionStatus(ExecutionStatus expected, ExecutionStatus desired)
+{
+    return execution_status.compare_exchange_strong(expected, desired);
 }
 
 void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
@@ -121,7 +130,7 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
     }
     catch (...)
     {
-        span.addAttribute(ExecutionStatus::fromCurrentException());
+        span.addAttribute(DB::ExecutionStatus::fromCurrentException());
 
 #ifndef NDEBUG
         LOG_TRACE(log, "Exception while executing query. Current state:\n{}", dumpPipeline());
@@ -170,7 +179,7 @@ bool PipelineExecutor::checkTimeLimitSoft()
         // We call cancel here so that all processors are notified and tasks waken up
         // so that the "break" is faster and doesn't wait for long events
         if (!continuing)
-            cancel();
+            cancel(ExecutionStatus::CancelledByTimeout);
 
         return continuing;
     }
@@ -196,7 +205,8 @@ void PipelineExecutor::finalizeExecution()
 {
     checkTimeLimit();
 
-    if (cancelled)
+    auto status = execution_status.load();
+    if (status == ExecutionStatus::CancelledByTimeout || status == ExecutionStatus::CancelledByUser)
         return;
 
     bool all_processors_finished = true;
@@ -272,7 +282,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
                 break;
 
             if (!context.executeTask())
-                cancel();
+                cancel(ExecutionStatus::Exception);
 
             if (tasks.isFinished())
                 break;
@@ -290,11 +300,13 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
                 Queue async_queue;
 
                 /// Prepare processor after execution.
-                if (!graph->updateNode(context.getProcessorID(), queue, async_queue))
-                    cancel();
+                auto status = graph->updateNode(context.getProcessorID(), queue, async_queue);
+                if (status == ExecutingGraph::UpdateNodeStatus::Exception)
+                    cancel(ExecutionStatus::Exception);
 
                 /// Push other tasks to global queue.
-                tasks.pushTasks(queue, async_queue, context);
+                if (status == ExecutingGraph::UpdateNodeStatus::Done)
+                    tasks.pushTasks(queue, async_queue, context);
             }
 
 #ifndef NDEBUG
@@ -310,7 +322,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
             {
                 /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
                 /// We should cancel execution properly before rethrow.
-                cancel();
+                cancel(ExecutionStatus::Exception);
                 throw;
             }
 
@@ -329,6 +341,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_control)
 {
     is_execution_initialized = true;
+    tryUpdateExecutionStatus(ExecutionStatus::NotStarted, ExecutionStatus::Executing);
 
     if (concurrency_control)
     {
@@ -404,7 +417,7 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
         {
             /// If finished_flag is not set, there was an exception.
             /// Cancel execution in this case.
-            cancel();
+            cancel(ExecutionStatus::Exception);
             if (pool)
                 pool->wait();
         }
@@ -443,7 +456,7 @@ String PipelineExecutor::dumpPipeline() const
         }
     }
 
-    std::vector<IProcessor::Status> statuses;
+    std::vector<std::optional<IProcessor::Status>> statuses;
     std::vector<IProcessor *> proc_list;
     statuses.reserve(graph->nodes.size());
     proc_list.reserve(graph->nodes.size());

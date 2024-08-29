@@ -84,6 +84,7 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
+    bool isRemote() const override;
 
     bool supportsParallelInsert() const override { return true; }
 
