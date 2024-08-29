@@ -209,8 +209,35 @@
     \
     M(Merge, "Number of launched background merges.") \
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.") \
+    M(MergedColumns, "Number of columns merged during the horizontal stage of merges.") \
+    M(GatheredColumns, "Number of columns gathered during the vertical stage of merges.") \
     M(MergedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for background merges. This is the number before merge.") \
-    M(MergesTimeMilliseconds, "Total time spent for background merges.")\
+    M(MergeTotalMilliseconds, "Total time spent for background merges") \
+    M(MergeExecuteMilliseconds, "Total busy time spent for execution of background merges") \
+    M(MergeHorizontalStageTotalMilliseconds, "Total time spent for horizontal stage of background merges") \
+    M(MergeHorizontalStageExecuteMilliseconds, "Total busy time spent for execution of horizontal stage of background merges") \
+    M(MergeVerticalStageTotalMilliseconds, "Total time spent for vertical stage of background merges") \
+    M(MergeVerticalStageExecuteMilliseconds, "Total busy time spent for execution of vertical stage of background merges") \
+    M(MergeProjectionStageTotalMilliseconds, "Total time spent for projection stage of background merges") \
+    M(MergeProjectionStageExecuteMilliseconds, "Total busy time spent for execution of projection stage of background merges") \
+    \
+    M(MergingSortedMilliseconds, "Total time spent while merging sorted columns") \
+    M(AggregatingSortedMilliseconds, "Total time spent while aggregating sorted columns") \
+    M(CollapsingSortedMilliseconds, "Total time spent while collapsing sorted columns") \
+    M(ReplacingSortedMilliseconds, "Total time spent while replacing sorted columns") \
+    M(SummingSortedMilliseconds, "Total time spent while summing sorted columns") \
+    M(VersionedCollapsingSortedMilliseconds, "Total time spent while version collapsing sorted columns") \
+    M(GatheringColumnMilliseconds, "Total time spent while gathering columns for vertical merge") \
+    \
+    M(MutationTotalParts, "Number of total parts for which mutations tried to be applied") \
+    M(MutationUntouchedParts, "Number of total parts for which mutations tried to be applied but which was completely skipped according to predicate") \
+    M(MutatedRows, "Rows read for mutations. This is the number of rows before mutation") \
+    M(MutatedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for mutations. This is the number before mutation.") \
+    M(MutationTotalMilliseconds, "Total time spent for mutations.") \
+    M(MutationExecuteMilliseconds, "Total busy time spent for execution of mutations.") \
+    M(MutationAllPartColumns, "Number of times when task to mutate all columns in part was created") \
+    M(MutationSomePartColumns, "Number of times when task to mutate some columns in part was created") \
+    M(MutateTaskProjectionsCalculationMicroseconds, "Time spent calculating projections in mutations.") \
     \
     M(MergeTreeDataWriterRows, "Number of rows INSERTed to MergeTree tables.") \
     M(MergeTreeDataWriterUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) INSERTed to MergeTree tables.") \
@@ -225,7 +252,6 @@
     M(MergeTreeDataWriterProjectionsCalculationMicroseconds, "Time spent calculating projections") \
     M(MergeTreeDataProjectionWriterSortingBlocksMicroseconds, "Time spent sorting blocks (for projection it might be a key different from table's sorting key)") \
     M(MergeTreeDataProjectionWriterMergingBlocksMicroseconds, "Time spent merging blocks") \
-    M(MutateTaskProjectionsCalculationMicroseconds, "Time spent calculating projections") \
     \
     M(InsertedWideParts, "Number of parts inserted in Wide format.") \
     M(InsertedCompactParts, "Number of parts inserted in Compact format.") \

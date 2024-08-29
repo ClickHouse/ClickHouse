@@ -71,6 +71,10 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     },
     {"24.9",
         {
+            {"input_format_try_infer_variants", false, false, "Try to infer Variant type in text formats when there is more than one possible type for column/array elements"},
+            {"join_output_by_rowlist_perkey_rows_threshold", 0, 5, "The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join."},
+            {"create_if_not_exists", false, false, "New setting."},
+            {"allow_materialized_view_with_bad_select", true, true, "Support (but not enable yet) stricter validation in CREATE MATERIALIZED VIEW"},
         }
     },
     {"24.8",
@@ -87,6 +91,11 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"allow_experimental_time_series_table", false, false, "Added new setting to allow the TimeSeries table engine"},
             {"enable_analyzer", 1, 1, "Added an alias to a setting `allow_experimental_analyzer`."},
             {"optimize_functions_to_subcolumns", false, true, "Enabled settings by default"},
+            {"allow_experimental_json_type", false, false, "Add new experimental JSON type"},
+            {"use_json_alias_for_old_object_type", true, false, "Use JSON type alias to create new JSON type"},
+            {"type_json_skip_duplicated_paths", false, false, "Allow to skip duplicated paths during JSON parsing"},
+            {"allow_experimental_vector_similarity_index", false, false, "Added new setting to allow experimental vector similarity indexes"},
+            {"input_format_try_infer_datetimes_only_datetime64", true, false, "Allow to infer DateTime instead of DateTime64 in data formats"}
         }
     },
     {"24.7",
@@ -102,7 +111,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"dictionary_validate_primary_key_type", false, false, "Validate primary key type for dictionaries. By default id type for simple layouts will be implicitly converted to UInt64."},
             {"collect_hash_table_stats_during_joins", false, true, "New setting."},
             {"max_size_to_preallocate_for_joins", 0, 100'000'000, "New setting."},
-            {"input_format_orc_reader_time_zone_name", "GMT", "GMT", "The time zone name for ORC row reader, the default ORC row reader's time zone is GMT."},            {"lightweight_mutation_projection_mode", "throw", "throw", "When lightweight delete happens on a table with projection(s), the possible operations include throw the exception as projection exists, or drop all projection related to this table then do lightweight delete."},
+            {"input_format_orc_reader_time_zone_name", "GMT", "GMT", "The time zone name for ORC row reader, the default ORC row reader's time zone is GMT."},
             {"database_replicated_allow_heavy_create", true, false, "Long-running DDL queries (CREATE AS SELECT and POPULATE) for Replicated database engine was forbidden"},
             {"query_plan_merge_filters", false, false, "Allow to merge filters in the query plan"},
             {"azure_sdk_max_retries", 10, 10, "Maximum number of retries in azure sdk"},

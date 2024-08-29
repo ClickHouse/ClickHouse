@@ -1,8 +1,12 @@
-Array(UInt8)
-None
-UInt64
-None
-String
-UInt64
-String
-UInt64
+1
+Array(UInt8)	true
+None	false
+UInt64	false
+2
+Array(UInt8)	true
+None	false
+UInt64	false
+3
+Array(UInt8)	true
+String	false
+UInt64	true

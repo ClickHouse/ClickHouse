@@ -1004,6 +1004,10 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
 
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)
 {
+    if (request.min_number_of_marks == 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
+
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleRequestMicroseconds);
 
     std::lock_guard lock(mutex);

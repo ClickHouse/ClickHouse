@@ -97,7 +97,12 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
     }
 
     MutableColumnPtr column = ColumnString::create();
-    column->insert(format({.ctx = getContext(), .query = *create_query, .one_line = false}));
+    column->insert(format(
+    {
+        .ctx = getContext(),
+        .query = *create_query,
+        .one_line = false
+    }));
 
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{
         std::move(column),
