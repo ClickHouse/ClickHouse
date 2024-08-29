@@ -4,10 +4,11 @@ set allow_experimental_dynamic_type = 1;
 set allow_experimental_json_type = 1;
 set allow_experimental_variant_type = 1;
 set use_variant_as_common_type = 1;
+set max_block_size = 10000;
 
 drop table if exists test_json_dynamic_aggregate_functions;
 create table test_json_dynamic_aggregate_functions (json JSON(a1 String, max_dynamic_paths=2, max_dynamic_types=2)) engine=Memory;
-insert into test_json_dynamic_aggregate_functions select toJSONString(map('a' || number % 13, multiIf(number % 5 == 0, NULL, number % 5 == 1, number::UInt32, number % 5 == 2, 'str_' || number, number % 5 == 3, range(number % 5), toBool(number % 2)))) from numbers(200000);
+insert into test_json_dynamic_aggregate_functions select toJSONString(map('a' || number % 13, multiIf(number % 5 == 0, NULL, number % 5 == 1, number::UInt32, number % 5 == 2, 'str_' || number, number % 5 == 3, range(number % 5), toBool(number % 2)))) from numbers(100000);
 select arrayJoin(distinctJSONPaths(json)) from test_json_dynamic_aggregate_functions;
 select arrayJoin(distinctJSONPathsAndTypes(json)) from test_json_dynamic_aggregate_functions;
 select arrayJoin(distinctDynamicTypes(json.a2)) from test_json_dynamic_aggregate_functions;
