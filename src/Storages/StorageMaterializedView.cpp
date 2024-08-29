@@ -415,7 +415,7 @@ void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_co
     if (!fixed_uuid)
         to_drop.push_back(StorageID(to_drop[0].getDatabaseName(), ".tmp" + to_drop[0].getTableName()));
 
-    for (StorageID inner_table_id : to_drop)
+    for (const StorageID & inner_table_id : to_drop)
     {
         /// We will use `sync` argument wneh this function is called from a DROP query
         /// and will ignore database_atomic_wait_for_drop_and_detach_synchronously when it's called from drop task.
@@ -524,7 +524,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     return {std::move(insert_query), std::move(query_scope)};
 }
 
-std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context)
+std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context) const
 {
     /// Known problem: if the target table was ALTERed during refresh, this will effectively revert
     /// the ALTER.

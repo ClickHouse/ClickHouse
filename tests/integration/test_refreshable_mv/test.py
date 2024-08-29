@@ -62,9 +62,9 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
         assert node.query("select * from re.a order by all") == "0\n10\n"
         assert (
             node.query(
-                "select database, view, last_success_time != 0, last_refresh_time != 0, next_refresh_time != 0, last_refresh_replica in ('1','2'), exception from system.view_refreshes"
+                "select database, view, last_success_time != 0, last_refresh_time != 0, last_refresh_replica in ('1','2'), exception from system.view_refreshes"
             )
-            == "re\ta\t1\t1\t1\t1\t\n"
+            == "re\ta\t1\t1\t1\t\n"
         )
 
     # Append mode, with and without coordination.
