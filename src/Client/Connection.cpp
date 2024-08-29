@@ -31,6 +31,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <pcg_random.hpp>
 #include <base/scope_guard.h>
 #include <Common/FailPoint.h>
@@ -748,7 +749,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 
 void Connection::sendQuery(
     const ConnectionTimeouts & timeouts,
-    const String & query,
+    const QueryTextOrPlan & query,
     const NameToNameMap & query_parameters,
     const String & query_id_,
     UInt64 stage,
@@ -759,7 +760,8 @@ void Connection::sendQuery(
 {
     OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::SpanKind::CLIENT);
     span.addAttribute("clickhouse.query_id", query_id_);
-    span.addAttribute("clickhouse.query", query);
+    if (const auto * query_text = std::get_if<String>(&query))
+        span.addAttribute("clickhouse.query", *query_text);
     span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });
 
     ClientInfo new_client_info;
@@ -845,7 +847,8 @@ void Connection::sendQuery(
             if (nonce.has_value())
                 data += std::to_string(nonce.value());
             data += cluster_secret;
-            data += query;
+            if (const auto * query_text = std::get_if<String>(&query))
+                data += *query_text;
             data += query_id;
             data += client_info->initial_user;
             /// TODO: add source/target host/ip-address
@@ -864,7 +867,13 @@ void Connection::sendQuery(
     writeVarUInt(stage, *out);
     writeVarUInt(static_cast<bool>(compression), *out);
 
-    writeStringBinary(query, *out);
+    if (const auto * query_text = std::get_if<String>(&query))
+        writeStringBinary(*query_text, *out);
+    else
+    {
+        const auto & plan = std::get<std::shared_ptr<const QueryPlan>>(query);
+        plan->serialize(*out);
+    }
 
     if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {

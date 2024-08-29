@@ -107,7 +107,7 @@ public:
 
     void sendQuery(
         const ConnectionTimeouts & timeouts,
-        const String & query,
+        const QueryTextOrPlan & query,
         const NameToNameMap & query_parameters,
         const String & query_id/* = "" */,
         UInt64 stage/* = QueryProcessingStage::Complete */,

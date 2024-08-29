@@ -116,7 +116,7 @@ void UnionStep::serialize(WriteBuffer & out) const
     (void)out;
 }
 
-std::unique_ptr<IQueryPlanStep> UnionStep::deserialize(ReadBuffer & in, const DataStreams & input_streams_, QueryPlanSerializationSettings &)
+std::unique_ptr<IQueryPlanStep> UnionStep::deserialize(ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings &)
 {
     (void)in;
     return std::make_unique<UnionStep>(input_streams_);

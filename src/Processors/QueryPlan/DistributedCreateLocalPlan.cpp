@@ -46,7 +46,8 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     QueryProcessingStage::Enum processed_stage,
     size_t shard_num,
     size_t shard_count,
-    bool has_missing_objects)
+    bool has_missing_objects,
+    bool build_logical_plan)
 {
     checkStackSize();
 
@@ -64,6 +65,8 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     auto select_query_options = SelectQueryOptions(processed_stage)
         .setShardInfo(static_cast<UInt32>(shard_num), static_cast<UInt32>(shard_count))
         .ignoreASTOptimizations();
+
+    select_query_options.build_logical_plan = build_logical_plan;
 
     if (context->getSettingsRef().allow_experimental_analyzer)
     {

@@ -46,7 +46,7 @@ namespace ErrorCodes
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
-    const String & query_,
+    const QueryTextOrPlan & query_,
     const Block & header_,
     ContextPtr context_,
     const Scalars & scalars_,
@@ -67,7 +67,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     ConnectionPoolPtr pool,
-    const String & query_,
+    const QueryTextOrPlan & query_,
     const Block & header_,
     ContextPtr context_,
     ThrottlerPtr throttler,
@@ -124,7 +124,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
-    const String & query_,
+    const QueryTextOrPlan & query_,
     const Block & header_,
     ContextPtr context_,
     ThrottlerPtr throttler,
@@ -145,7 +145,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     std::shared_ptr<Connection> connection_ptr,
-    const String & query_,
+    const QueryTextOrPlan & query_,
     const Block & header_,
     ContextPtr context_,
     ThrottlerPtr throttler,
@@ -166,7 +166,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     std::vector<IConnectionPool::Entry> && connections_,
-    const String & query_,
+    const QueryTextOrPlan & query_,
     const Block & header_,
     ContextPtr context_,
     const ThrottlerPtr & throttler,
@@ -187,7 +187,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     const ConnectionPoolWithFailoverPtr & pool,
-    const String & query_,
+    const QueryTextOrPlan & query_,
     const Block & header_,
     ContextPtr context_,
     const ThrottlerPtr & throttler,

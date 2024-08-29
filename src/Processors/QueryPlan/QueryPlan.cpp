@@ -630,16 +630,16 @@ void QueryPlan::serialize(WriteBuffer & out) const
         writeStringBinary(node->step->getSerializationName(), out);
         writeStringBinary(node->step->getStepDescription(), out);
 
+        if (node->step->hasOutputStream())
+            serializeHeader(node->step->getOutputStream().header, out);
+        else
+            serializeHeader({}, out);
+
         QueryPlanSerializationSettings settings;
         node->step->serializeSettings(settings);
 
         settings.writeChangedBinary(out);
         node->step->serialize(out);
-
-        if (node->step->hasOutputStream())
-            serializeHeader(node->step->getOutputStream().header, out);
-        else
-            serializeHeader({}, out);
     }
 }
 
@@ -682,6 +682,9 @@ QueryPlan QueryPlan::deserialize(ReadBuffer & in)
         readStringBinary(step_name, in);
         readStringBinary(step_description, in);
 
+        DataStream output_stream;
+        output_stream.header = deserializeHeader(in);
+
         QueryPlanSerializationSettings settings;
         settings.readBinary(in);
 
@@ -690,18 +693,17 @@ QueryPlan QueryPlan::deserialize(ReadBuffer & in)
         for (const auto & child : frame.children)
             input_streams.push_back(child->step->getOutputStream());
 
-        auto step = step_registry.createStep(in, step_name, input_streams, settings);
+        auto step = step_registry.createStep(in, step_name, input_streams, &output_stream, settings);
 
-        auto header = deserializeHeader(in);
         if (step->hasOutputStream())
         {
-            assertCompatibleHeader(step->getOutputStream().header, header,
+            assertCompatibleHeader(step->getOutputStream().header, output_stream.header,
                  fmt::format("deserialization of query plan step {}", step_name));
         }
-        else if (header.columns())
+        else if (output_stream.header.columns())
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Deserialized step {} has no output stream, but deserialized header is not empty : {}",
-                step_name, header.dumpStructure());
+                step_name, output_stream.header.dumpStructure());
 
         auto & node = plan.nodes.emplace_back(std::move(step), std::move(frame.children));
         frame.to_fill = &node;

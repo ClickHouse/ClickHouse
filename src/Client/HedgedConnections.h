@@ -86,7 +86,7 @@ public:
 
     void sendQuery(
         const ConnectionTimeouts & timeouts,
-        const String & query,
+        const QueryTextOrPlan & query,
         const String & query_id,
         UInt64 stage,
         ClientInfo & client_info,

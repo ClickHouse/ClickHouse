@@ -27,7 +27,7 @@ public:
 
     void serialize(WriteBuffer & out) const override;
 
-    static std::unique_ptr<IQueryPlanStep> deserialize(ReadBuffer & in, const DataStreams & input_streams_, QueryPlanSerializationSettings &);
+    static std::unique_ptr<IQueryPlanStep> deserialize(ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings &);
 
 private:
     void updateOutputStream() override;

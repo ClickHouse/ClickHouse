@@ -142,7 +142,7 @@ void HedgedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 
 void HedgedConnections::sendQuery(
     const ConnectionTimeouts & timeouts,
-    const String & query,
+    const QueryTextOrPlan & query,
     const String & query_id,
     UInt64 stage,
     ClientInfo & client_info,

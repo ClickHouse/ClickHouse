@@ -26,6 +26,7 @@ QueryPlanStepPtr QueryPlanStepRegistry::createStep(
     ReadBuffer & buf,
     const std::string & name,
     const DataStreams & input_streams,
+    const DataStream * output_stream,
     QueryPlanSerializationSettings & settings) const
 {
     StepCreateFunction create_function;
@@ -35,7 +36,7 @@ QueryPlanStepPtr QueryPlanStepRegistry::createStep(
             throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown query plan step: {}", name);
         create_function = it->second;
     }
-    return create_function(buf, input_streams, settings);
+    return create_function(buf, input_streams, output_stream, settings);
 }
 
 void registerExpressionStep(QueryPlanStepRegistry & registry);

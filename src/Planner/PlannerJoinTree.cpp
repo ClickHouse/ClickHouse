@@ -48,6 +48,7 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <Storages/StorageDummy.h>
@@ -754,7 +755,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         }
 
         /// Apply trivial_count optimization if possible
-        bool is_trivial_count_applied = !select_query_options.only_analyze && is_single_table_expression
+        bool is_trivial_count_applied = !select_query_options.only_analyze && !select_query_options.build_logical_plan && is_single_table_expression
             && (table_node || table_function_node) && select_query_info.has_aggregates && settings.additional_table_filters.value.empty()
             && applyTrivialCountIfPossible(
                 query_plan,
@@ -798,7 +799,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         = settings.optimize_move_to_prewhere && (!is_final || settings.optimize_move_to_prewhere_if_final);
 
                     auto supported_prewhere_columns = storage->supportedPrewhereColumns();
-                    if (storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name)))
+                    if (!select_query_options.build_logical_plan && storage->canMoveConditionsToPrewhere() && optimize_move_to_prewhere && (!supported_prewhere_columns || supported_prewhere_columns->contains(filter_info.column_name)))
                     {
                         if (!prewhere_info)
                         {
@@ -857,8 +858,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context))
                     add_filter(*additional_filters_info, "additional filter");
 
-                from_stage = storage->getQueryProcessingStage(
-                    query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
+                if (!select_query_options.build_logical_plan)
+                    from_stage = storage->getQueryProcessingStage(
+                        query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
 
                 /// It is just a safety check needed until we have a proper sending plan to replicas.
                 /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
@@ -869,15 +871,26 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (other_table_already_chosen_for_reading_with_parallel_replicas)
                     planner_context->getMutableQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
 
-                storage->read(
-                    query_plan,
-                    columns_names,
-                    storage_snapshot,
-                    table_expression_query_info,
-                    query_context,
-                    from_stage,
-                    max_block_size,
-                    max_streams);
+                if (select_query_options.build_logical_plan)
+                {
+                    auto sample_block = storage_snapshot->getSampleBlockForColumns(columns_names);
+                    auto table_name = queryToString(table_expression->toAST());
+                    auto reading_from_table = std::make_unique<ReadFromTableStep>(
+                        sample_block,
+                        table_name,
+                        table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}));
+                    query_plan.addStep(std::move(reading_from_table));
+                }
+                else
+                    storage->read(
+                        query_plan,
+                        columns_names,
+                        storage_snapshot,
+                        table_expression_query_info,
+                        query_context,
+                        from_stage,
+                        max_block_size,
+                        max_streams);
 
                 auto parallel_replicas_enabled_for_storage = [](const StoragePtr & table, const Settings & query_settings)
                 {
@@ -891,7 +904,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 };
 
                 /// query_plan can be empty if there is nothing to read
-                if (query_plan.isInitialized() && parallel_replicas_enabled_for_storage(storage, settings))
+                if (query_plan.isInitialized() && !select_query_options.build_logical_plan && parallel_replicas_enabled_for_storage(storage, settings))
                 {
                     // (1) find read step
                     QueryPlan::Node * node = query_plan.getRootNode();

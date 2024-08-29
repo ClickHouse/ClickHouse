@@ -62,6 +62,8 @@ struct ExternalTableData
 using ExternalTableDataPtr = std::unique_ptr<ExternalTableData>;
 using ExternalTablesData = std::vector<ExternalTableDataPtr>;
 
+class QueryPlan;
+using QueryTextOrPlan = std::variant<String, std::shared_ptr<const QueryPlan>>;
 
 class IServerConnection : boost::noncopyable
 {
@@ -95,7 +97,7 @@ public:
     /// If last flag is true, you need to call sendExternalTablesData after.
     virtual void sendQuery(
         const ConnectionTimeouts & timeouts,
-        const String & query,
+        const QueryTextOrPlan & query,
         const NameToNameMap & query_parameters,
         const String & query_id_,
         UInt64 stage,

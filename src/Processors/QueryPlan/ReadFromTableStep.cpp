@@ -1,0 +1,88 @@
+#include <Processors/QueryPlan/ReadFromTableStep.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
+namespace DB
+{
+
+ReadFromTableStep::ReadFromTableStep(
+    Block output_header,
+    String table_name_,
+    TableExpressionModifiers table_expression_modifiers_)
+    : ISourceStep(DataStream{.header = std::move(output_header)})
+    , table_name(std::move(table_name_))
+    , table_expression_modifiers(std::move(table_expression_modifiers_))
+{
+}
+
+void ReadFromTableStep::initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "initializePipeline is not implementad for ReadFromTableStep");
+}
+
+static void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out)
+{
+    writeIntBinary(val.numerator, out);
+    writeIntBinary(val.denominator, out);
+}
+
+static TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in)
+{
+    TableExpressionModifiers::Rational val;
+    readIntBinary(val.numerator, in);
+    readIntBinary(val.denominator, in);
+    return val;
+}
+
+void ReadFromTableStep::serialize(WriteBuffer & out) const
+{
+    writeStringBinary(table_name, out);
+
+    UInt8 flags = 0;
+    if (table_expression_modifiers.hasFinal())
+        flags |= 1;
+    if (table_expression_modifiers.hasSampleSizeRatio())
+        flags |= 2;
+    if (table_expression_modifiers.hasSampleOffsetRatio())
+        flags |= 4;
+
+    writeIntBinary(flags, out);
+    if (table_expression_modifiers.hasSampleSizeRatio())
+        serializeRational(*table_expression_modifiers.getSampleSizeRatio(), out);
+
+    if (table_expression_modifiers.hasSampleOffsetRatio())
+        serializeRational(*table_expression_modifiers.getSampleOffsetRatio(), out);
+}
+
+std::unique_ptr<IQueryPlanStep> ReadFromTableStep::deserialize(ReadBuffer & in, const DataStreams &, const DataStream * output, QueryPlanSerializationSettings &)
+{
+    String table_name;
+    readStringBinary(table_name, in);
+
+    UInt8 flags = 0;
+    readIntBinary(flags, in);
+
+    bool has_final = false;
+    std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
+    std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
+
+    if (flags & 1)
+        has_final = true;
+
+    if (flags & 2)
+        sample_size_ratio = deserializeRational(in);
+
+    if (flags & 4)
+        sample_offset_ratio = deserializeRational(in);
+
+    TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
+    return std::make_unique<ReadFromTableStep>(output->header, table_name, table_expression_modifiers);
+}
+
+void registerReadFromTableStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("ReadFromTable", &ReadFromTableStep::deserialize);
+}
+
+}

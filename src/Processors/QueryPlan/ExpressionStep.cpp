@@ -96,7 +96,7 @@ void ExpressionStep::serialize(WriteBuffer & out) const
     actions_dag.serialize(out);
 }
 
-std::unique_ptr<IQueryPlanStep> ExpressionStep::deserialize(ReadBuffer & in, const DataStreams & input_streams_, QueryPlanSerializationSettings &)
+std::unique_ptr<IQueryPlanStep> ExpressionStep::deserialize(ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings &)
 {
     ActionsDAG actions_dag = ActionsDAG::deserialize(in);
     if (input_streams_.size() != 1)

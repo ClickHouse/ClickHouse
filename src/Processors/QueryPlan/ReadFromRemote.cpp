@@ -208,12 +208,20 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             for (auto & try_result : try_results)
                 connections.emplace_back(std::move(try_result.entry));
 
-            String query_string = formattedAST(query);
+            QueryTextOrPlan text_or_plan;
+            auto used_stage = my_stage;
+            if (my_shard.query_plan)
+            {
+                text_or_plan = my_shard.query_plan;
+                used_stage = QueryProcessingStage::QueryPlan;
+            }
+            else
+                text_or_plan = formattedAST(query);
 
             my_scalars["_shard_num"]
                 = Block{{DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, my_stage);
+                std::move(connections), text_or_plan, header, my_context, my_throttler, my_scalars, my_external_tables, used_stage);
 
             auto pipe = createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending);
             QueryPipelineBuilder builder;
@@ -277,23 +285,31 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
                 select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(shard_filter));
             }
 
-            const String query_string = formattedAST(query);
-
             if (!priority_func_factory.has_value())
                 priority_func_factory = GetPriorityForLoadBalancing(LoadBalancing::ROUND_ROBIN, randomSeed());
 
             GetPriorityForLoadBalancing::Func priority_func
                 = priority_func_factory->getPriorityFunc(LoadBalancing::ROUND_ROBIN, 0, shard.shard_info.pool->getPoolSize());
 
+            QueryTextOrPlan text_or_plan;
+            auto used_stage = stage;
+            if (shard.query_plan)
+            {
+                text_or_plan = shard.query_plan;
+                used_stage = QueryProcessingStage::QueryPlan;
+            }
+            else
+                text_or_plan = formattedAST(query);
+
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 shard.shard_info.pool,
-                query_string,
+                text_or_plan,
                 shard.header,
                 context,
                 throttler,
                 scalars,
                 external_tables,
-                stage,
+                used_stage,
                 std::nullopt,
                 priority_func);
             remote_query_executor->setLogger(log);

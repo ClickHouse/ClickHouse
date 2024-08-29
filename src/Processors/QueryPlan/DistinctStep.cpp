@@ -232,12 +232,12 @@ std::unique_ptr<IQueryPlanStep> DistinctStep::deserialize(
 }
 
 std::unique_ptr<IQueryPlanStep> DistinctStep::deserializeNormal(
-    ReadBuffer & in, const DataStreams & input_streams_, QueryPlanSerializationSettings & settings)
+    ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings & settings)
 {
     return DistinctStep::deserialize(in, input_streams_, settings, false);
 }
 std::unique_ptr<IQueryPlanStep> DistinctStep::deserializePre(
-    ReadBuffer & in, const DataStreams & input_streams_, QueryPlanSerializationSettings & settings)
+    ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings & settings)
 {
     return DistinctStep::deserialize(in, input_streams_, settings, true);
 }

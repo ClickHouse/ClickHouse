@@ -54,7 +54,7 @@ public:
     /// Takes a connection pool for a node (not cluster)
     RemoteQueryExecutor(
         ConnectionPoolPtr pool,
-        const String & query_,
+        const QueryTextOrPlan & query_,
         const Block & header_,
         ContextPtr context_,
         ThrottlerPtr throttler = nullptr,
@@ -66,7 +66,7 @@ public:
     /// Takes already set connection.
     RemoteQueryExecutor(
         Connection & connection,
-        const String & query_,
+        const QueryTextOrPlan & query_,
         const Block & header_,
         ContextPtr context_,
         ThrottlerPtr throttler_ = nullptr,
@@ -78,7 +78,7 @@ public:
     /// Takes already set connection.
     RemoteQueryExecutor(
         std::shared_ptr<Connection> connection,
-        const String & query_,
+        const QueryTextOrPlan & query_,
         const Block & header_,
         ContextPtr context_,
         ThrottlerPtr throttler_ = nullptr,
@@ -90,7 +90,7 @@ public:
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
         std::vector<IConnectionPool::Entry> && connections_,
-        const String & query_,
+        const QueryTextOrPlan & query_,
         const Block & header_,
         ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr,
@@ -102,7 +102,7 @@ public:
     /// Takes a pool and gets one or several connections from it.
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
-        const String & query_,
+        const QueryTextOrPlan & query_,
         const Block & header_,
         ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr,
@@ -226,7 +226,7 @@ public:
 
 private:
     RemoteQueryExecutor(
-        const String & query_,
+        const QueryTextOrPlan & query_,
         const Block & header_,
         ContextPtr context_,
         const Scalars & scalars_,
@@ -243,7 +243,7 @@ private:
     std::unique_ptr<IConnections> connections;
     std::unique_ptr<ReadContext> read_context;
 
-    const String query;
+    const QueryTextOrPlan query;
     String query_id;
     ContextPtr context;
 
