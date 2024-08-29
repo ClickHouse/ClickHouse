@@ -232,7 +232,7 @@ std::unordered_set<std::size_t> ParquetBloomFilterCondition::getFilteringColumnK
 std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParquetBloomFilterCondition(
     const std::vector<KeyCondition::RPNElement> & rpn,
     const Block & header,
-    const std::vector<std::pair<std::size_t, int>> & clickhouse_column_index_to_parquet_index,
+    const std::vector<ArrowFieldIndexUtil::ClickHouseIndexToParquetIndex> & clickhouse_column_index_to_parquet_index,
     const std::unique_ptr<parquet::RowGroupMetaData> & parquet_rg_metadata)
 {
     std::vector<ParquetBloomFilterCondition::ConditionElement> condition_elements;
@@ -254,7 +254,22 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
                 continue;
             }
 
-            auto parquet_column_index = clickhouse_column_index_to_parquet_index[rpn_element.key_column].second;
+            const auto & parquet_indexes = clickhouse_column_index_to_parquet_index[rpn_element.key_column].parquet_indexes;
+
+            // complex types like structs, tuples and maps will have more than one index.
+            // we don't support those for now
+            if (parquet_indexes.size() > 1)
+            {
+                condition_elements.emplace_back(Function::FUNCTION_UNKNOWN);
+                continue;
+            }
+
+            if (parquet_indexes.empty())
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Abcde");
+            }
+
+            auto parquet_column_index = parquet_indexes[0];
 
             bool column_has_bloom_filter = parquet_rg_metadata->ColumnChunk(parquet_column_index)->bloom_filter_offset().has_value();
             if (!column_has_bloom_filter)
@@ -299,7 +314,22 @@ std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParq
             {
                 const auto & set_column = ordered_set[i];
 
-                auto parquet_column_index = clickhouse_column_index_to_parquet_index[indexes_mapping[i].key_index].second;
+                const auto & parquet_indexes = clickhouse_column_index_to_parquet_index[indexes_mapping[i].key_index].parquet_indexes;
+
+                // complex types like structs, tuples and maps will have more than one index.
+                // we don't support those for now
+                if (parquet_indexes.size() > 1)
+                {
+                    continue;
+                }
+
+                if (parquet_indexes.empty())
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Abcde");
+                }
+
+                auto parquet_column_index = parquet_indexes[0];
+
                 bool column_has_bloom_filter = parquet_rg_metadata->ColumnChunk(parquet_column_index)->bloom_filter_offset().has_value();
                 if (!column_has_bloom_filter)
                 {
