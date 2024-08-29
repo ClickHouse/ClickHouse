@@ -8240,7 +8240,6 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             part_checksums.emplace_back(hash_hex);
         }
 
-        //ReplicatedMergeTreeLogEntryData entry;
         auto entry = std::make_unique<ReplicatedMergeTreeLogEntryData>();
         {
             auto src_table_id = src_data.getStorageID();
