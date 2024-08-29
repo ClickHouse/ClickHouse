@@ -61,7 +61,9 @@ def generate_data(q, total_number, use_token):
                 idx = 0
             q.put(old_data[idx])
         if simulate_flag == 1:
-            empty_insert_stmt = "insert into t_async_insert_dedup values format JSONEachRow"
+            empty_insert_stmt = (
+                "insert into t_async_insert_dedup values format JSONEachRow"
+            )
             q.put((empty_insert_stmt, token))
         else:
             # insert new data.
