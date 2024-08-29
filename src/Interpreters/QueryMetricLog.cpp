@@ -117,7 +117,7 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
 
     auto context = getContext();
     const auto & process_list = context->getProcessList();
-    status.task = context->getSchedulePool().createTask("QueryLog", [this, &process_list, query_id] {
+    status.task = context->getSchedulePool().createTask("QueryMetricLog", [this, &process_list, query_id] {
         auto current_time = std::chrono::system_clock::now();
         const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
 
