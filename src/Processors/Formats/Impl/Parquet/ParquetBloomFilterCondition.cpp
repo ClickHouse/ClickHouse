@@ -208,19 +208,7 @@ std::unordered_set<std::size_t> ParquetBloomFilterCondition::getFilteringColumnK
 
     for (const auto & element : condition)
     {
-        auto function = element.function;
-        bool has_column =
-            function == F::FUNCTION_EQUALS
-            || function == F::FUNCTION_NOT_EQUALS
-            || function == F::FUNCTION_IN
-            || function == F::FUNCTION_NOT_IN;
-
-        if (!has_column)
-        {
-            continue;
-        }
-
-        for (const auto & index : element.key_columns)
+        for (const auto index : element.key_columns)
         {
             column_keys.insert(index);
         }
