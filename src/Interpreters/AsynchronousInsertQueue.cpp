@@ -389,6 +389,10 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
     if (data_kind == DataKind::Preprocessed)
         insert_query.format = "Native";
 
+    /// Query parameters make sense only for format Values.
+    if (insert_query.format == "Values")
+        entry->query_parameters = query_context->getQueryParameters();
+
     InsertQuery key{query, query_context->getUserID(), query_context->getCurrentRoles(), settings, data_kind};
     InsertDataPtr data_to_process;
     std::future<void> insert_future;
@@ -999,6 +1003,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
                 "Expected entry with data kind Parsed. Got: {}", entry->chunk.getDataKind());
 
         auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
+        executor.setQueryParameters(entry->query_parameters);
 
         size_t num_bytes = bytes->size();
         size_t num_rows = executor.execute(*buffer);
