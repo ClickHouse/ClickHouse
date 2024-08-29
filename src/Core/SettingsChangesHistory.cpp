@@ -80,6 +80,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"database_replicated_allow_replicated_engine_arguments", 1, 0, "Don't allow explicit arguments by default"},
             {"database_replicated_allow_explicit_uuid", 0, 0, "Added a new setting to disallow explicitly specifying table UUID"},
             {"parallel_replicas_local_plan", false, false, "Use local plan for local replica in a query with parallel replicas"},
+            {"output_format_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
+            {"async_insert", false, true, "Enable asynchronous inserts by default."},
         }
     },
     {"24.8",
