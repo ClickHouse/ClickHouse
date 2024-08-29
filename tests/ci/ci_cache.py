@@ -731,7 +731,8 @@ class CiCache:
                     job_config=reference_config,
                 ):
                     remove_from_workflow.append(job_name)
-                    has_test_jobs_to_skip = True
+                    if job_name != CI.JobNames.DOCS_CHECK:
+                        has_test_jobs_to_skip = True
                 else:
                     required_builds += (
                         job_config.required_builds if job_config.required_builds else []

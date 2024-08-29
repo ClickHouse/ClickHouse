@@ -132,7 +132,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         return;
     }
 
-    WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+    WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD);
 
     try
     {

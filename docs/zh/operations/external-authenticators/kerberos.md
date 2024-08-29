@@ -23,30 +23,30 @@ slug: /zh/operations/external-authenticators/kerberos
 
 示例 (进入 `config.xml`):
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <kerberos />
-</yandex>
+</clickhouse>
 ```
 
 主体规范:
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <kerberos>
         <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>
     </kerberos>
-</yandex>
+</clickhouse>
 ```
 
 按领域过滤:
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <kerberos>
         <realm>EXAMPLE.COM</realm>
     </kerberos>
-</yandex>
+</clickhouse>
 ```
 
 !!! warning "注意"
@@ -74,7 +74,7 @@ Kerberos主体名称格式通常遵循以下模式:
 
 示例 (进入 `users.xml`):
 ```
-<yandex>
+<clickhouse>
     <!- ... -->
     <users>
         <!- ... -->
@@ -85,7 +85,7 @@ Kerberos主体名称格式通常遵循以下模式:
             </kerberos>
         </my_user>
     </users>
-</yandex>
+</clickhouse>
 ```
 
 !!! warning "警告"

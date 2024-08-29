@@ -174,10 +174,13 @@ def main():
     test_output = temp_path / "test_output"
     test_output.mkdir(parents=True, exist_ok=True)
 
+    # Don't run ASAN under gdb since that breaks leak detection
+    gdb_enabled = "NO_GDB" if "asan" in check_name else "GDB"
+
     run_command = (
         f"docker run --cap-add=SYS_PTRACE --volume={tests_binary}:/unit_tests_dbms "
         "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
-        f"--volume={test_output}:/test_output {docker_image}"
+        f"--volume={test_output}:/test_output {docker_image} {gdb_enabled}"
     )
 
     run_log_path = test_output / "run.log"
@@ -194,6 +197,11 @@ def main():
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {TEMP_PATH}", shell=True)
 
     state, description, test_results = process_results(test_output)
+    if retcode != 0 and state == SUCCESS:
+        # The process might have failed without reporting it in the test_output (e.g. LeakSanitizer)
+        state = FAILURE
+        description = "Invalid return code. Check run.log"
+
     additional_files = [run_log_path] + [
         p for p in test_output.iterdir() if not p.is_dir()
     ]
