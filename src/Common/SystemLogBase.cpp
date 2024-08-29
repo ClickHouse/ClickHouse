@@ -276,6 +276,25 @@ void SystemLogBase<LogElement>::startup()
 }
 
 template <typename LogElement>
+void SystemLogBase<LogElement>::stopFlushThread()
+{
+    {
+        std::lock_guard lock(thread_mutex);
+
+        if (!saving_thread || !saving_thread->joinable())
+            return;
+
+        if (is_shutdown)
+            return;
+
+        is_shutdown = true;
+        queue->shutdown();
+    }
+
+    saving_thread->join();
+}
+
+template <typename LogElement>
 void SystemLogBase<LogElement>::add(LogElement element)
 {
     queue->push(std::move(element));
