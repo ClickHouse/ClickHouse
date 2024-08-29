@@ -21,7 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -93,10 +92,7 @@ struct ChiSquaredDistribution
 
     static void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container)
     {
-        if(container.empty())
-            return;
-
-        if (degree_of_freedom <= 0)
+        if (!container.empty() && degree_of_freedom <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
 
         auto distribution = std::chi_squared_distribution<>(degree_of_freedom);
@@ -113,10 +109,7 @@ struct StudentTDistribution
 
     static void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container)
     {
-        if(container.empty())
-            return;
-
-        if (degree_of_freedom <= 0)
+        if (!container.empty() && degree_of_freedom <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
 
         auto distribution = std::student_t_distribution<>(degree_of_freedom);
@@ -133,10 +126,7 @@ struct FisherFDistribution
 
     static void generate(Float64 d1, Float64 d2, ColumnFloat64::Container & container)
     {
-        if(container.empty())
-            return;
-
-        if (d1 <= 0 || d2 <= 0)
+        if (!container.empty() && (d1 <= 0 || d2 <= 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
 
         auto distribution = std::fisher_f_distribution<>(d1, d2);
@@ -247,9 +237,9 @@ private:
         else
         {
             std::string expectedType;
-            if(std::is_same_v<UInt64, ResultType>)
+            if (std::is_same_v<UInt64, ResultType>)
                 expectedType = "UInt64";
-            else if(std::is_same_v<Float64, ResultType>)
+            else if (std::is_same_v<Float64, ResultType>)
                 expectedType = "Float64";
 
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter number {} of function {} is expected to be {} but is {}",
