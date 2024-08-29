@@ -278,9 +278,10 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part.part->getDataPartStorage().getFullPath());
 
+    cloned_part.part->is_temp = false;
     if (data->allowRemoveStaleMovingParts())
     {
-        cloned_part.part->is_temp = data->allowRemoveStaleMovingParts();
+        cloned_part.part->is_temp = true;
         /// Setting it in case connection to zookeeper is lost while moving
         /// Otherwise part might be stuck in the moving directory due to the KEEPER_EXCEPTION in part's destructor
         cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
