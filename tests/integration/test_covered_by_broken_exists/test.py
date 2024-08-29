@@ -40,7 +40,7 @@ def wait_merged_part(table, part_name, retries=100):
 
 
 def test_make_clone_covered_by_broken_detached_dir_exists(started_cluster):
-    q("DROP TABLE IF EXISTS test_make_clone_cvbdde")
+    q("DROP TABLE IF EXISTS test_make_clone_cvbdde SYNC")
 
     q(
         "CREATE TABLE test_make_clone_cvbdde(n int, m String) ENGINE=ReplicatedMergeTree('/test_make_clone_cvbdde', '1') ORDER BY n SETTINGS old_parts_lifetime=3600, min_age_to_force_merge_seconds=1, min_age_to_force_merge_on_partition_only=0"
