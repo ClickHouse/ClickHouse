@@ -92,13 +92,14 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     /// We will find out how many rows we would have read without sampling.
     LOG_DEBUG(log, "Preliminary index scan with condition: {}", key_condition.toString());
 
+    MarkRanges exact_ranges;
     for (const auto & part : parts)
     {
-        MarkRanges exact_ranges;
-        markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, &exact_ranges, settings, log);
-        for (const auto & range : exact_ranges)
+        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, &exact_ranges, settings, log);
+        for (const auto & range : part_ranges)
             rows_count += part->index_granularity.getRowsCountInRange(range);
     }
+    UNUSED(exact_ranges);
 
     return rows_count;
 }

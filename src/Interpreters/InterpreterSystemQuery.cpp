@@ -369,9 +369,12 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->clearMMappedFileCache();
             break;
         case Type::DROP_QUERY_CACHE:
+        {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            getContext()->clearQueryCache();
+            getContext()->clearQueryCache(query.query_cache_tag);
             break;
+        }
+
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
 #if USE_EMBEDDED_COMPILER
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
