@@ -37,10 +37,10 @@ send -- "INSERT INTO test_01179 values ('foo'); \r"
 expect "Ok."
 
 send -- "INSERT INTO test_01179 values ('foo'); ('bar') \r"
-expect "Cannot read data after semicolon"
+expect "Syntax error"
 
 send -- "SELECT val, count() FROM test_01179 GROUP BY val FORMAT TSV\r"
-expect "foo\t2"
+expect "foo\t3"
 
 send -- "DROP TABLE test_01179\r"
 expect "Ok."

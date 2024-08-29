@@ -75,6 +75,44 @@ unsigned long NO_SANITIZE_THREAD __getauxval_procfs(unsigned long type)
 }
 static unsigned long NO_SANITIZE_THREAD __auxv_init_procfs(unsigned long type)
 {
+#if defined(__x86_64__) && defined(__has_feature)
+#    if __has_feature(memory_sanitizer) || __has_feature(thread_sanitizer)
+    /// Sanitizers are not compatible with high ASLR entropy, which is the default on modern Linux distributions, and
+    /// to workaround this limitation, TSAN and MSAN (couldn't see other sanitizers doing the same), re-exec the binary
+    /// without ASLR (see https://github.com/llvm/llvm-project/commit/0784b1eefa36d4acbb0dacd2d18796e26313b6c5)
+
+    /// The problem we face is that, in order to re-exec, the sanitizer wants to use the original pathname in the call
+    /// and to get its value it uses getauxval (https://github.com/llvm/llvm-project/blob/20eff684203287828d6722fc860b9d3621429542/compiler-rt/lib/sanitizer_common/sanitizer_linux_libcdep.cpp#L985-L988).
+    /// Since we provide getauxval ourselves (to minimize the version dependency on runtime glibc), we are the ones
+    // being called and we fail horribly:
+    ///
+    ///    ==301455==ERROR: MemorySanitizer: SEGV on unknown address 0x2ffc6d721550 (pc 0x5622c1cc0073 bp 0x000000000003 sp 0x7ffc6d721530 T301455)
+    ///    ==301455==The signal is caused by a WRITE memory access.
+    /// #0 0x5622c1cc0073 in __auxv_init_procfs ./ClickHouse/base/glibc-compatibility/musl/getauxval.c:129:5
+    /// #1 0x5622c1cbffe9 in getauxval ./ClickHouse/base/glibc-compatibility/musl/getauxval.c:240:12
+    /// #2 0x5622c0d7bfb4 in __sanitizer::ReExec() crtstuff.c
+    /// #3 0x5622c0df7bfc in __msan::InitShadowWithReExec(bool) crtstuff.c
+    /// #4 0x5622c0d95356 in __msan_init (./ClickHouse/build_msan/contrib/google-protobuf-cmake/protoc+0x256356) (BuildId: 6411d3c88b898ba3f7d49760555977d3e61f0741)
+    /// #5 0x5622c0dfe878 in msan.module_ctor main.cc
+    /// #6 0x5622c1cc156c in __libc_csu_init (./ClickHouse/build_msan/contrib/google-protobuf-cmake/protoc+0x118256c) (BuildId: 6411d3c88b898ba3f7d49760555977d3e61f0741)
+    /// #7 0x73dc05dd7ea3 in __libc_start_main /usr/src/debug/glibc/glibc/csu/../csu/libc-start.c:343:6
+    /// #8 0x5622c0d6b7cd in _start (./ClickHouse/build_msan/contrib/google-protobuf-cmake/protoc+0x22c7cd) (BuildId: 6411d3c88b898ba3f7d49760555977d3e61f0741)
+
+    /// The source of the issue above is that, at this point in time during __msan_init, we can't really do much as
+    /// most global variables aren't initialized or available yet, so we can't initiate the auxiliary vector.
+    /// Normal glibc / musl getauxval doesn't have this problem since they initiate their auxval vector at the very
+    /// start of __libc_start_main (just keeping track of argv+argc+1), but we don't have such option (otherwise
+    /// this complexity of reading "/proc/self/auxv" or using __environ would not be necessary).
+
+    /// To avoid this crashes on the re-exec call (see above how it would fail when creating `aux`, and if we used
+    /// __auxv_init_environ then it would SIGSEV on READing `__environ`) we capture this call for `AT_EXECFN` and
+    /// unconditionally return "/proc/self/exe" without any preparation. Theoretically this should be fine in
+    /// our case, as we don't load any libraries. That's the theory at least.
+    if (type == AT_EXECFN)
+        return (unsigned long)"/proc/self/exe";
+#    endif
+#endif
+
     // For debugging:
     // - od -t dL /proc/self/auxv
     // - LD_SHOW_AUX= ls
@@ -199,7 +237,7 @@ static unsigned long NO_SANITIZE_THREAD __auxv_init_environ(unsigned long type)
 // - __auxv_init_procfs -> __auxv_init_environ -> __getauxval_environ
 static void * volatile getauxval_func = (void *)__auxv_init_procfs;
 
-unsigned long getauxval(unsigned long type)
+unsigned long NO_SANITIZE_THREAD getauxval(unsigned long type)
 {
     return ((unsigned long (*)(unsigned long))getauxval_func)(type);
 }

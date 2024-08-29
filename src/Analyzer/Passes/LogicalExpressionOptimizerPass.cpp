@@ -68,10 +68,13 @@ QueryTreeNodePtr findEqualsFunction(const QueryTreeNodes & nodes)
     return nullptr;
 }
 
-/// Checks if the node is combination of isNull and notEquals functions of two the same arguments
+/// Checks if the node is combination of isNull and notEquals functions of two the same arguments:
+/// [ (a <> b AND) ] (a IS NULL) AND (b IS NULL)
 bool matchIsNullOfTwoArgs(const QueryTreeNodes & nodes, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs)
 {
     QueryTreeNodePtrWithHashSet all_arguments;
+    QueryTreeNodePtrWithHashSet is_null_arguments;
+
     for (const auto & node : nodes)
     {
         const auto * func_node = node->as<FunctionNode>();
@@ -80,7 +83,11 @@ bool matchIsNullOfTwoArgs(const QueryTreeNodes & nodes, QueryTreeNodePtr & lhs, 
 
         const auto & arguments = func_node->getArguments().getNodes();
         if (func_node->getFunctionName() == "isNull" && arguments.size() == 1)
+        {
             all_arguments.insert(QueryTreeNodePtrWithHash(arguments[0]));
+            is_null_arguments.insert(QueryTreeNodePtrWithHash(arguments[0]));
+        }
+
         else if (func_node->getFunctionName() == "notEquals" && arguments.size() == 2)
         {
             if (arguments[0]->isEqual(*arguments[1]))
@@ -95,7 +102,7 @@ bool matchIsNullOfTwoArgs(const QueryTreeNodes & nodes, QueryTreeNodePtr & lhs, 
             return false;
     }
 
-    if (all_arguments.size() != 2)
+    if (all_arguments.size() != 2 || is_null_arguments.size() != 2)
         return false;
 
     lhs = all_arguments.begin()->node;

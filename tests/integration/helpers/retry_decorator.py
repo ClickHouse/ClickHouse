@@ -8,7 +8,7 @@ def retry(
     delay: float = 1,
     backoff: float = 1.5,
     jitter: float = 2,
-    log_function=lambda *args, **kwargs: None,
+    log_function=None,  # should take **kwargs or arguments: `retry_number`, `exception` and `sleep_time`
     retriable_expections_list: List[Type[BaseException]] = [Exception],
 ):
     def inner(func):
@@ -26,8 +26,11 @@ def retry(
                             break
                     if not should_retry or (retry == retries - 1):
                         raise e
-                    log_function(retry=retry, exception=e)
                     sleep_time = current_delay + random.uniform(0, jitter)
+                    if log_function is not None:
+                        log_function(
+                            retry_number=retry, exception=e, sleep_time=sleep_time
+                        )
                     time.sleep(sleep_time)
                     current_delay *= backoff
 

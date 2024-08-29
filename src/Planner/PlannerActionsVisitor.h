@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
@@ -8,6 +9,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/WindowDescription.h>
 
 namespace DB
 {
@@ -27,17 +29,11 @@ using PlannerContextPtr = std::shared_ptr<PlannerContext>;
   * During actions build, there is special handling for following functions:
   * 1. Aggregate functions are added in actions dag as INPUT nodes. Aggregate functions arguments are not added.
   * 2. For function `in` and its variants, already collected sets from planner context are used.
-  * 3. When building actions that use CONSTANT nodes, by default we ignore pre-existing INPUTs if those don't have
-  * a column (a const column always has a column). This is for compatibility with previous headers. We disable this
-  * behaviour when we explicitly want to override CONSTANT nodes with the input (resolving InterpolateNode for example)
   */
 class PlannerActionsVisitor
 {
 public:
-    explicit PlannerActionsVisitor(
-        const PlannerContextPtr & planner_context_,
-        bool use_column_identifier_as_action_node_name_ = true,
-        bool always_use_const_column_for_constant_nodes_ = true);
+    explicit PlannerActionsVisitor(const PlannerContextPtr & planner_context_, bool use_column_identifier_as_action_node_name_ = true);
 
     /** Add actions necessary to calculate expression node into expression dag.
       * Necessary actions are not added in actions dag output.
@@ -48,7 +44,6 @@ public:
 private:
     const PlannerContextPtr planner_context;
     bool use_column_identifier_as_action_node_name = true;
-    bool always_use_const_column_for_constant_nodes = true;
 };
 
 /** Calculate query tree expression node action dag name and add them into node to name map.
@@ -80,16 +75,8 @@ String calculateConstantActionNodeName(const Field & constant_literal);
   * Window node action name can only be part of window function action name.
   * For column node column node identifier from planner context is used, if use_column_identifier_as_action_node_name = true.
   */
-String calculateWindowNodeActionName(const QueryTreeNodePtr & node,
-    const PlannerContext & planner_context,
-    QueryTreeNodeToName & node_to_name,
-    bool use_column_identifier_as_action_node_name = true);
-
-/** Calculate action node name for window node.
-  * Window node action name can only be part of window function action name.
-  * For column node column node identifier from planner context is used, if use_column_identifier_as_action_node_name = true.
-  */
-String calculateWindowNodeActionName(const QueryTreeNodePtr & node,
+String calculateWindowNodeActionName(const QueryTreeNodePtr & function_node,
+    const QueryTreeNodePtr & window_node,
     const PlannerContext & planner_context,
     bool use_column_identifier_as_action_node_name = true);
 

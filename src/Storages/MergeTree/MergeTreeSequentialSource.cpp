@@ -348,7 +348,7 @@ public:
         MergeTreeData::DataPartPtr data_part_,
         Names columns_to_read_,
         bool apply_deleted_mask_,
-        ActionsDAGPtr filter_,
+        std::optional<ActionsDAG> filter_,
         ContextPtr context_,
         LoggerPtr log_)
         : ISourceStep(DataStream{.header = storage_snapshot_->getSampleBlockForColumns(columns_to_read_)})
@@ -375,7 +375,7 @@ public:
         {
             const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
             const Names & primary_key_column_names = primary_key.column_names;
-            KeyCondition key_condition(filter, context, primary_key_column_names, primary_key.expression);
+            KeyCondition key_condition(&*filter, context, primary_key_column_names, primary_key.expression);
             LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
             if (!key_condition.alwaysFalse())
@@ -416,7 +416,7 @@ private:
     MergeTreeData::DataPartPtr data_part;
     Names columns_to_read;
     bool apply_deleted_mask;
-    ActionsDAGPtr filter;
+    std::optional<ActionsDAG> filter;
     ContextPtr context;
     LoggerPtr log;
 };
@@ -429,14 +429,14 @@ void createReadFromPartStep(
     MergeTreeData::DataPartPtr data_part,
     Names columns_to_read,
     bool apply_deleted_mask,
-    ActionsDAGPtr filter,
+    std::optional<ActionsDAG> filter,
     ContextPtr context,
     LoggerPtr log)
 {
     auto reading = std::make_unique<ReadFromPart>(type,
         storage, storage_snapshot, std::move(data_part),
         std::move(columns_to_read), apply_deleted_mask,
-        filter, std::move(context), log);
+        std::move(filter), std::move(context), log);
 
     plan.addStep(std::move(reading));
 }

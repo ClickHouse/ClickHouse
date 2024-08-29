@@ -1148,31 +1148,28 @@ def test_url_reconnect_in_the_middle(started_cluster):
         assert result == "1000000\t3914219105369203805\n"
 
 
-def test_seekable_formats(started_cluster):
-    bucket = started_cluster.minio_bucket
+# At the time of writing the actual read bytes are respectively 148 and 169, so -10% to not be flaky
+@pytest.mark.parametrize(
+    "format_name,expected_bytes_read", [("Parquet", 133), ("ORC", 150)]
+)
+def test_seekable_formats(started_cluster, format_name, expected_bytes_read):
+    expected_lines = 1500000
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
 
-    table_function = f"s3(s3_parquet, structure='a Int32, b String', format='Parquet')"
+    table_function = f"s3(s3_{format_name.lower()}, structure='a Int32, b String', format='{format_name}')"
     exec_query_with_retry(
         instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
-        timeout=100,
+        f"INSERT INTO TABLE FUNCTION {table_function} SELECT number, randomString(100) FROM numbers({expected_lines}) settings s3_truncate_on_insert=1",
+        timeout=300,
     )
 
     result = instance.query(f"SELECT count() FROM {table_function}")
-    assert int(result) == 1000000
-
-    table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
-    exec_query_with_retry(
-        instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
-        timeout=100,
-    )
+    assert int(result) == expected_lines
 
     result = instance.query(
         f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='60M', max_download_threads=1"
     )
-    assert int(result) == 1500000
+    assert int(result) == expected_lines
 
     instance.query(f"SELECT * FROM {table_function} FORMAT Null")
 
@@ -1183,35 +1180,31 @@ def test_seekable_formats(started_cluster):
     result = result.strip()
     assert result.endswith("MiB")
     result = result[: result.index(".")]
-    assert int(result) > 150
+    assert int(result) > 140
 
 
-def test_seekable_formats_url(started_cluster):
+@pytest.mark.parametrize("format_name", ["Parquet", "ORC"])
+def test_seekable_formats_url(started_cluster, format_name):
     bucket = started_cluster.minio_bucket
+    expected_lines = 1500000
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
 
-    table_function = f"s3(s3_parquet, structure='a Int32, b String', format='Parquet')"
+    format_name_lower = format_name.lower()
+    table_function = f"s3(s3_{format_name_lower}, structure='a Int32, b String', format='{format_name}')"
     exec_query_with_retry(
         instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
-        timeout=100,
+        f"INSERT INTO TABLE FUNCTION {table_function} SELECT number, randomString(100) FROM numbers({expected_lines}) settings s3_truncate_on_insert=1",
+        timeout=300,
     )
 
     result = instance.query(f"SELECT count() FROM {table_function}")
-    assert int(result) == 1500000
+    assert int(result) == expected_lines
 
-    table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
-    exec_query_with_retry(
-        instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
-        timeout=100,
-    )
-
-    table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_parquet', 'Parquet', 'a Int32, b String')"
+    url_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_{format_name_lower}', '{format_name}', 'a Int32, b String')"
     result = instance.query(
-        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='60M'"
+        f"SELECT count() FROM {url_function} SETTINGS max_memory_usage='60M'"
     )
-    assert int(result) == 1500000
+    assert int(result) == expected_lines
 
 
 def test_empty_file(started_cluster):

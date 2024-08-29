@@ -12,8 +12,6 @@ endif()
 set(ICU_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/icu/icu4c/source")
 set(ICUDATA_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/icudata/")
 
-set (CMAKE_CXX_STANDARD 17)
-
 # These lists of sources were generated from build log of the original ICU build system (configure + make).
 
 set(ICUUC_SOURCES
@@ -462,9 +460,9 @@ file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp" CONTENT " ")
 enable_language(ASM)
 
 if (ARCH_S390X)
-    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt70b_dat.S" )
+    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt75b_dat.S" )
 else()
-    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt70l_dat.S" )
+    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt75l_dat.S" )
 endif()
 
 set(ICUDATA_SOURCES

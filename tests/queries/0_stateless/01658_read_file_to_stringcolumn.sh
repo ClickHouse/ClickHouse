@@ -24,7 +24,7 @@ ${CLICKHOUSE_CLIENT} --query "select file('a.txt'), file('b.txt');";echo ":"$?
 ${CLICKHOUSE_CLIENT} --query "insert into data select file('a.txt'), file('b.txt');";echo ":"$?
 ${CLICKHOUSE_CLIENT} --query "insert into data select file('a.txt'), file('b.txt');";echo ":"$?
 ${CLICKHOUSE_CLIENT} --query "select file('c.txt'), * from data";echo ":"$?
-${CLICKHOUSE_CLIENT} --multiquery --query "
+${CLICKHOUSE_CLIENT} --query "
     create table filenames(name String) engine=MergeTree() order by tuple();
     insert into filenames values ('a.txt'), ('b.txt'), ('c.txt');
     select file(name) from filenames format TSV;
@@ -56,7 +56,7 @@ echo $c_count
 
 # Valid cases:
 # The default dir is the CWD path in LOCAL mode
-${CLICKHOUSE_LOCAL} --multiquery --query "
+${CLICKHOUSE_LOCAL} --query "
     drop table if exists data;
     create table data (A String, B String) engine=MergeTree() order by A;
     select file('a.txt'), file('b.txt');
