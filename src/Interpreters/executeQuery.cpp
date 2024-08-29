@@ -399,9 +399,14 @@ void logQueryFinish(
         /// Update performance counters before logging to query_log
         CurrentThread::finalizePerformanceCounters();
 
-        QueryStatusInfo info = process_list_elem->getInfo(true, context->getSettingsRef().log_profile_events);
-        elem.type = QueryLogElementType::QUERY_FINISH;
+        std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+        QueryStatusInfo info = process_list_elem->getInfo(true, true);
+        if (context->getSettingsRef().log_profile_events)
+            profile_counters = info.profile_counters;
+        else
+            profile_counters.swap(info.profile_counters);
 
+        elem.type = QueryLogElementType::QUERY_FINISH;
         addStatusInfoToQueryLogElement(elem, info, query_ast, context);
 
         if (pulling_pipeline)
@@ -420,13 +425,7 @@ void logQueryFinish(
         {
             Progress p;
             p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
-
-
-            if (info.profile_counters)
-            {
-                UInt64 real_time_microseconds = (*info.profile_counters)[ProfileEvents::RealTimeMicroseconds];
-                p.incrementRealTimeMicroseconds(real_time_microseconds);
-            }
+            p.incrementRealTimeMicroseconds((*profile_counters)[ProfileEvents::RealTimeMicroseconds]);
             progress_callback(p);
         }
 
