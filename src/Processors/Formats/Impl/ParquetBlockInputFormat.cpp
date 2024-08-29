@@ -270,8 +270,7 @@ static Field decodePlainParquetValueSlow(const std::string & data, parquet::Type
 static ParquetBloomFilterCondition::ColumnIndexToBF buildColumnIndexToBF(
     parquet::BloomFilterReader & bf_reader,
     int row_group,
-    const parquet::SchemaDescriptor * parquet_schema_descriptor,
-    const std::vector<std::pair<std::size_t, int>> & clickhouse_column_index_to_parquet_index,
+    const std::vector<ArrowFieldIndexUtil::ClickHouseIndexToParquetIndex> & clickhouse_column_index_to_parquet_index,
     const std::unordered_set<std::size_t> & filtering_columns
 )
 {
@@ -284,18 +283,20 @@ static ParquetBloomFilterCondition::ColumnIndexToBF buildColumnIndexToBF(
 
     ParquetBloomFilterCondition::ColumnIndexToBF index_to_column_bf;
 
-    for (const auto & [clickhouse_index, parquet_index] : clickhouse_column_index_to_parquet_index)
+    for (const auto & [clickhouse_index, parquet_indexes] : clickhouse_column_index_to_parquet_index)
     {
         if (!filtering_columns.contains(clickhouse_index))
         {
             continue;
         }
 
-        // Complex / nested types are named with dots in parquet. We don't support those.
-        if (parquet_schema_descriptor->Column(parquet_index)->path()->ToDotVector().size() != 1)
+        // Complex / nested types contain more than one index. We don't support those.
+        if (parquet_indexes.size() > 1)
         {
             continue;
         }
+
+        auto parquet_index = parquet_indexes[0];
 
         auto bf = rg_bf->GetColumnBloomFilter(parquet_index);
 
@@ -521,11 +522,14 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         format_settings.parquet.case_insensitive_column_matching,
         format_settings.parquet.allow_missing_columns);
 
-    auto clickhouse_column_index_to_parquet_index = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata);
+    auto index_mapping = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata);
 
-    for (auto & [clickhouse_index, parquet_index] : clickhouse_column_index_to_parquet_index)
+    for (const auto & [clickhouse_header_index, parquet_indexes] : index_mapping)
     {
-        column_indices.push_back(parquet_index);
+        for (auto parquet_index : parquet_indexes)
+        {
+            column_indices.push_back(parquet_index);
+        }
     }
 
     int num_row_groups = metadata->num_row_groups();
@@ -569,7 +573,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         const auto parquet_conditions = keyConditionRPNToParquetBloomFilterCondition(
             key_condition->getRPN(),
             getPort().getHeader(),
-            clickhouse_column_index_to_parquet_index,
+            index_mapping,
             metadata->RowGroup(0));
         parquet_bloom_filter_condition = std::make_unique<ParquetBloomFilterCondition>(parquet_conditions, getPort().getHeader());
 
@@ -583,7 +587,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
         if (parquet_bloom_filter_condition)
         {
-            const auto column_index_to_bf = buildColumnIndexToBF(*bf_reader, row_group, metadata->schema(), clickhouse_column_index_to_parquet_index, filtering_columns);
+            const auto column_index_to_bf = buildColumnIndexToBF(*bf_reader, row_group, index_mapping, filtering_columns);
 
             if (!parquet_bloom_filter_condition->mayBeTrueOnRowGroup(column_index_to_bf))
             {
