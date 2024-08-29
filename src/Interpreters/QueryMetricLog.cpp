@@ -39,6 +39,10 @@ ColumnsDescription QueryMetricLogElement::getColumnsDescription()
     ColumnsDescription result;
     ParserCodec codec_parser;
 
+    result.add({"query_id",
+                std::make_shared<DataTypeString>(),
+                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+                "Query ID."});
     result.add({"hostname",
                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
@@ -54,10 +58,6 @@ ColumnsDescription QueryMetricLogElement::getColumnsDescription()
     result.add({"event_time_microseconds",
                 std::make_shared<DataTypeDateTime64>(6),
                 "Event time with microseconds resolution."});
-    result.add({"query_id",
-                std::make_shared<DataTypeString>(),
-                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-                "Query ID."});
 
     for (const auto & metric : memory_metrics)
     {
@@ -80,11 +80,11 @@ void QueryMetricLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t column_idx = 0;
 
+    columns[column_idx++]->insert(query_id);
     columns[column_idx++]->insert(getFQDNOrHostName());
     columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(event_time_microseconds);
-    columns[column_idx++]->insert(query_id);
     columns[column_idx++]->insert(memory);
     columns[column_idx++]->insert(background_memory);
 
