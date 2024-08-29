@@ -426,7 +426,7 @@ if [ $failed_to_save_logs -ne 0 ]; then
     #   directly
     # - even though ci auto-compress some files (but not *.tsv) it does this only
     #   for files >64MB, we want this files to be compressed explicitly
-    for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log
+    for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log
     do
         clickhouse-local "$data_path_config" --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
 
