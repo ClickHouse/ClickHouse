@@ -4143,12 +4143,15 @@ private:
             /// requires quite a lot of work. By now let's simply use try/catch.
             /// First, check that we can create a wrapper.
             WrapperType wrapper = prepareUnpackDictionaries(from, to);
-            /// Second, check if we can perform a conversion on empty columns.
-            ColumnsWithTypeAndName column_from = {{from->createColumn(), from, "" }};
-            wrapper(column_from, to, nullptr, 0);
+            /// Second, check if we can perform a conversion on column with default value.
+            /// (we cannot just check empty column as we do some checks only during iteration over rows).
+            auto test_col = from->createColumn();
+            test_col->insertDefault();
+            ColumnsWithTypeAndName column_from = {{test_col->getPtr(), from, "" }};
+            wrapper(column_from, to, nullptr, 1);
             return wrapper;
         }
-        catch (...)
+        catch (const Exception &)
         {
             return {};
         }
@@ -4393,10 +4396,27 @@ private:
             casted_variant_columns.reserve(variant_types.size());
             for (size_t i = 0; i != variant_types.size(); ++i)
             {
+                /// Skip shared variant, it will be processed later.
+                if (i == column_dynamic.getSharedVariantDiscriminator())
+                {
+                    casted_variant_columns.push_back(nullptr);
+                    continue;
+                }
+
                 const auto & variant_col = variant_column.getVariantPtrByGlobalDiscriminator(i);
                 ColumnsWithTypeAndName variant = {{variant_col, variant_types[i], ""}};
-                auto variant_wrapper = prepareUnpackDictionaries(variant_types[i], result_type);
-                casted_variant_columns.push_back(variant_wrapper(variant, result_type, nullptr, variant_col->size()));
+                WrapperType variant_wrapper;
+                if (cast_type == CastType::accurateOrNull)
+                    /// Create wrapper only if we support conversion from variant to the resulting type.
+                    variant_wrapper = createWrapperIfCanConvert(variant_types[i], result_type);
+                else
+                    variant_wrapper = prepareUnpackDictionaries(variant_types[i], result_type);
+
+                ColumnPtr casted_variant;
+                /// Check if we have wrapper for this variant.
+                if (variant_wrapper)
+                    casted_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
+                casted_variant_columns.push_back(casted_variant);
             }
 
             /// Second, collect all variants stored in shared variant and cast them to result type.
@@ -4452,8 +4472,18 @@ private:
             for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
             {
                 ColumnsWithTypeAndName variant = {{variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""}};
-                auto variant_wrapper = prepareUnpackDictionaries(variant_types_from_shared_variant[i], result_type);
-                casted_shared_variant_columns.push_back(variant_wrapper(variant, result_type, nullptr, variant_columns_from_shared_variant[i]->size()));
+                WrapperType variant_wrapper;
+                if (cast_type == CastType::accurateOrNull)
+                    /// Create wrapper only if we support conversion from variant to the resulting type.
+                    variant_wrapper = createWrapperIfCanConvert(variant_types_from_shared_variant[i], result_type);
+                else
+                    variant_wrapper = prepareUnpackDictionaries(variant_types_from_shared_variant[i], result_type);
+
+                ColumnPtr casted_variant;
+                /// Check if we have wrapper for this variant.
+                if (variant_wrapper)
+                    casted_variant = variant_wrapper(variant, result_type, nullptr, variant_columns_from_shared_variant[i]->size());
+                casted_shared_variant_columns.push_back(casted_variant);
             }
 
             /// Construct result column from all casted variants.
@@ -4463,11 +4493,23 @@ private:
             {
                 auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
                 if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                {
                     res->insertDefault();
+                }
                 else if (global_discr == shared_variant_discr)
-                    res->insertFrom(*casted_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
+                {
+                    if (casted_shared_variant_columns[shared_variant_indexes[i]])
+                        res->insertFrom(*casted_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
+                    else
+                        res->insertDefault();
+                }
                 else
-                    res->insertFrom(*casted_variant_columns[global_discr], offsets[i]);
+                {
+                    if (casted_variant_columns[global_discr])
+                        res->insertFrom(*casted_variant_columns[global_discr], offsets[i]);
+                    else
+                        res->insertDefault();
+                }
             }
 
             return res;
