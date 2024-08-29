@@ -6,6 +6,7 @@
 
 #include <Storages/MergeTree/KeyCondition.h>
 #include <parquet/metadata.h>
+#include <Processors/Formats/Impl/ArrowFieldIndexUtil.h>
 
 namespace parquet
 {
@@ -64,7 +65,7 @@ private:
 std::vector<ParquetBloomFilterCondition::ConditionElement> keyConditionRPNToParquetBloomFilterCondition(
     const std::vector<KeyCondition::RPNElement> & rpn,
     const Block & header,
-    const std::vector<std::pair<std::size_t, int>> & clickhouse_column_index_to_parquet_index,
+    const std::vector<ArrowFieldIndexUtil::ClickHouseIndexToParquetIndex> & clickhouse_column_index_to_parquet_index,
     const std::unique_ptr<parquet::RowGroupMetaData> & parquet_rg_metadata);
 
 }
