@@ -180,7 +180,7 @@ MODIFY REFRESH
 
 @pytest.fixture(scope="module")
 def module_setup_tables():
-    node.query(f"CREATE DATABASE IF NOT EXISTS test_db ENGINE = Atomic")
+    node.query(f"CREATE DATABASE IF NOT EXISTS test_db ON CLUSTER test_cluster ENGINE = Atomic")
 
     node.query(
         f"CREATE TABLE src1 ON CLUSTER test_cluster (a DateTime, b UInt64) ENGINE = Memory"
@@ -204,15 +204,17 @@ def module_setup_tables():
     node.query("DROP TABLE IF EXISTS src2 ON CLUSTER test_cluster")
     node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER test_cluster")
     node.query("DROP TABLE IF EXISTS tgt2 ON CLUSTER test_cluster")
+    node.query("DROP DATABASE IF EXISTS test_db ON CLUSTER test_cluster")
 
 
 @pytest.fixture(scope="function")
 def fn_setup_tables():
     node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER test_cluster")
+    node.query("DROP TABLE IF EXISTS test_db.test_rmv ON CLUSTER test_cluster")
     yield
 
 
-def test_simple_append(fn_setup_tables):
+def test_simple_append(module_setup_tables, fn_setup_tables):
     create_sql = CREATE_RMV_TEMPLATE.render(
         table_name="test_rmv",
         refresh_interval="EVERY 1 HOUR",
@@ -291,7 +293,7 @@ def test_alters(
     create_sql = CREATE_RMV_TEMPLATE.render(
         table_name="test_rmv",
         if_not_exists=if_not_exists,
-        db_name=database_name,
+        db=database_name,
         refresh_interval="EVERY 1 HOUR",
         depends_on=depends_on,
         to_clause="tgt1",
@@ -313,17 +315,18 @@ def test_alters(
 
     compare_DDL_on_all_nodes()
 
-    node.query(f"DROP TABLE test_rmv {'ON CLUSTER test_cluster' if on_cluster else ''}")
+    maybe_db = f"{database_name}." if database_name else ""
+    node.query(f"DROP TABLE {maybe_db}test_rmv {'ON CLUSTER test_cluster' if on_cluster else ''}")
     node.query(create_sql)
     compare_DDL_on_all_nodes()
 
-    show_create = node.query("SHOW CREATE test_rmv")
+    show_create = node.query(f"SHOW CREATE {maybe_db}test_rmv")
 
     # Alter of RMV replaces all non-specified
     alter_sql = ALTER_RMV_TEMPLATE.render(
         table_name="test_rmv",
         if_not_exists=if_not_exists,
-        db_name=database_name,
+        db=database_name,
         refresh_interval="EVERY 1 HOUR",
         depends_on=depends_on,
         # can't change select with alter
@@ -334,7 +337,7 @@ def test_alters(
     )
 
     node.query(alter_sql)
-    show_create_after_alter = node.query("SHOW CREATE test_rmv")
+    show_create_after_alter = node.query(f"SHOW CREATE {maybe_db}test_rmv")
     assert show_create == show_create_after_alter
     compare_DDL_on_all_nodes()
 
