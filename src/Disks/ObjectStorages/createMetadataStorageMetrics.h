@@ -3,13 +3,13 @@
 #include "config.h"
 
 #if USE_AWS_S3
-#    include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
+#   include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #endif
 #if USE_AZURE_BLOB_STORAGE
-#    include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#   include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #endif
 #if USE_CEPH
-#include <Disks/ObjectStorages/Ceph/RadosObjectStorage.h>
+#   include <Disks/ObjectStorages/Ceph/RadosObjectStorage.h>
 #endif
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageMetrics.h>
@@ -31,6 +31,7 @@ namespace CurrentMetrics
 extern const Metric DiskPlainRewritableAzureDirectoryMapSize;
 extern const Metric DiskPlainRewritableLocalDirectoryMapSize;
 extern const Metric DiskPlainRewritableS3DirectoryMapSize;
+extern const Metric DiskPlainRewritableRadosDirectoryMapSize;
 }
 
 namespace DB
@@ -63,9 +64,9 @@ template <>
 inline MetadataStorageMetrics MetadataStorageMetrics::create<RadosObjectStorage, MetadataStorageType::PlainRewritable>()
 {
     return MetadataStorageMetrics{
-        .directory_created = ProfileEvents::DiskPlainRewritableS3DirectoryCreated,
-        .directory_removed = ProfileEvents::DiskPlainRewritableS3DirectoryRemoved,
-        .directory_map_size = CurrentMetrics::DiskPlainRewritableS3DirectoryMapSize};
+        .directory_created = ProfileEvents::DiskPlainRewritableRadosDirectoryCreated,
+        .directory_removed = ProfileEvents::DiskPlainRewritableRadosDirectoryRemoved,
+        .directory_map_size = CurrentMetrics::DiskPlainRewritableRadosDirectoryMapSize};
 }
 #endif
 

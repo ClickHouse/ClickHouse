@@ -108,7 +108,7 @@ size_t RadosIOContext::writeFull(const String & oid, const char * data, size_t l
     assertConnected();
     ceph::bufferlist bl;
     bl.append(data, safe_cast<int>(length));
-    if(auto ec = io_ctx.write_full(oid, bl); ec < 0)
+    if (auto ec = io_ctx.write_full(oid, bl); ec < 0)
         throw Exception(ErrorCodes::CEPH_ERROR, "Cannot write to object `{}:{}`. Error: {}", pool, oid, strerror(-ec));
     return length;
 }

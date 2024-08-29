@@ -26,13 +26,6 @@ extern const Event RemoteWriteThrottlerSleepMicroseconds;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int CEPH_ERROR;
-extern const int INVALID_CONFIG_PARAMETER;
-extern const int LOGICAL_ERROR;
-}
-
 WriteBufferFromRados::WriteBufferFromRados(
     std::shared_ptr<RadosIOContext> io_ctx_,
     const String & object_id_,
@@ -186,7 +179,7 @@ void WriteBufferFromRados::tryAbortWrittenChunks()
     }
     catch (...)
     {
-        LOG_ERROR(log, "Multipart upload hasn't aborted. {}", getFileName());
+        LOG_ERROR(log, "Written chunks hasn't aborted. {}", getFileName());
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }

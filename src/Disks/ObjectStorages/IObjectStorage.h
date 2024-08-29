@@ -5,7 +5,6 @@
 #include <mutex>
 #include <optional>
 #include <filesystem>
-#include <librados.hpp>
 
 #include <Poco/Timestamp.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -35,6 +34,10 @@
 
 #if USE_AWS_S3
 #include <IO/S3/Client.h>
+#endif
+
+#if USE_CEPH
+#include <librados.hpp>
 #endif
 
 namespace DB

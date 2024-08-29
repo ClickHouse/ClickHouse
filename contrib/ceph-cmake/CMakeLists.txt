@@ -5,12 +5,12 @@ if (NOT ENABLE_CEPH)
     return()
 endif()
 
-set(Ceph_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/ceph")
-set(Ceph_CMAKE_DIR "${ClickHouse_SOURCE_DIR}/contrib/ceph-cmake")
-set(Ceph_BUILD_DIR "${ClickHouse_BINARY_DIR}/contrib/ceph-cmake")
+set (Ceph_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/ceph")
+set (Ceph_CMAKE_DIR "${ClickHouse_SOURCE_DIR}/contrib/ceph-cmake")
 set (CMAKE_CXX_STANDARD 20)
 
-### common ceph infrastructure
+### common ceph infrastructure - but we pregenrated the files so don't need this
+### keep as reference
 
 # the src/ceph_release file is 3 lines,
 #   <release number, e.g. '12' for luminous>
@@ -18,35 +18,36 @@ set (CMAKE_CXX_STANDARD 20)
 #   <release type: 'dev' for x.0.z, 'rc' or x.1.z, or 'stable' or x.2.z>
 # note that the release name is semi-redundant and must match CEPH_RELEASE_*
 # definitions in include/rados.h and common/ceph_strings.c.
-file(STRINGS ${Ceph_LIBRARY_DIR}/src/ceph_release CEPH_RELEASE_FILE)
-list(GET CEPH_RELEASE_FILE 0 CEPH_RELEASE)
-list(GET CEPH_RELEASE_FILE 1 CEPH_RELEASE_NAME)
-list(GET CEPH_RELEASE_FILE 2 CEPH_RELEASE_TYPE)
 
-configure_file(
-  ${Ceph_LIBRARY_DIR}/src/include/config-h.in.cmake
-  ${Ceph_BUILD_DIR}/acconfig.h
-)
+# file(STRINGS ${Ceph_LIBRARY_DIR}/src/ceph_release CEPH_RELEASE_FILE)
+# list(GET CEPH_RELEASE_FILE 0 CEPH_RELEASE)
+# list(GET CEPH_RELEASE_FILE 1 CEPH_RELEASE_NAME)
+# list(GET CEPH_RELEASE_FILE 2 CEPH_RELEASE_TYPE)
 
-configure_file(
-  ${Ceph_LIBRARY_DIR}/src/ceph_ver.h.in.cmake
-  ${Ceph_BUILD_DIR}/ceph_ver.h
-  @ONLY)
+# configure_file(
+#   ${Ceph_LIBRARY_DIR}/src/include/config-h.in.cmake
+#   ${Ceph_BUILD_DIR}/acconfig.h
+# )
+
+# configure_file(
+#   ${Ceph_LIBRARY_DIR}/src/ceph_ver.h.in.cmake
+#   ${Ceph_BUILD_DIR}/ceph_ver.h
+#   @ONLY)
 
 
 # Below code is for generating options from yaml files. In ClickHouse build we
-# pre-generated these files in ${Ceph_CMAKE_DIR}/Options/ and ${Ceph_BUILD_DIR}
+# pre-generated these files in ${Ceph_CMAKE_DIR}/Options/ and ${Ceph_CMAKE_DIR}
 # Even only librados required all options to build.
 # Must have python3 and pyyaml installed
 
 # set(OPTIONS_DIR "${Ceph_LIBRARY_DIR}/src/common/options")
 # function(add_options name)
 #   set(yaml_in_file ${OPTIONS_DIR}/${name}.yaml.in)
-#   set(yaml_file ${Ceph_BUILD_DIR}/${name}.yaml)
+#   set(yaml_file ${Ceph_CMAKE_DIR}/Options/${name}.yaml)
 #   configure_file("${yaml_in_file}"
 #     "${yaml_file}" @ONLY)
-#   set(cc_file "${Ceph_BUILD_DIR}/${name}_options.cc")
-#   set(h_file "${Ceph_BUILD_DIR}/${name}_legacy_options.h")
+#   set(cc_file "${Ceph_CMAKE_DIR}/${name}_options.cc")
+#   set(h_file "${Ceph_CMAKE_DIR}/Options/${name}_legacy_options.h")
 #   execute_process(
 #     COMMAND python3 ${OPTIONS_DIR}/y2c.py
 #       --input ${yaml_file}
@@ -209,8 +210,9 @@ set(SRCS
     "${Ceph_LIBRARY_DIR}/src/erasure-code/ErasureCodePlugin.cc"
     "${Ceph_LIBRARY_DIR}/src/compressor/Compressor.cc"
     "${Ceph_LIBRARY_DIR}/src/arch/intel.c"
+    "${Ceph_LIBRARY_DIR}/src/arch/arm.c"
+    "${Ceph_LIBRARY_DIR}/src/arch/ppc.c"
     "${Ceph_LIBRARY_DIR}/src/arch/probe.cc"
-    "${Ceph_LIBRARY_DIR}/src/xxHash/xxhash.c"
     "${Ceph_LIBRARY_DIR}/src/ceph_ver.c"
     "${Ceph_LIBRARY_DIR}/src/log/Log.cc"
     "${Ceph_LIBRARY_DIR}/src/global/global_context.cc"
@@ -317,10 +319,11 @@ set(SRCS
 add_library(_librados ${SRCS})
 add_library(ch_contrib::ceph ALIAS _librados)
 
-### ceph origin
-target_include_directories(_librados PRIVATE "${Ceph_LIBRARY_DIR}/src/" "${Ceph_BUILD_DIR}" "${Ceph_CMAKE_DIR}/Options")
+target_include_directories(_librados PRIVATE "${Ceph_LIBRARY_DIR}/src/" "${Ceph_CMAKE_DIR}/Options")
 target_include_directories(_librados SYSTEM BEFORE INTERFACE "${Ceph_LIBRARY_DIR}/src/include/rados")
-target_compile_definitions(_librados PRIVATE HAVE_CONFIG_H __CEPH__ CEPH_USE_RE2 LIBCXX_NO_STRING_SPACESHIP)
+
+### librados required definitions
+target_compile_definitions(_librados PRIVATE HAVE_CONFIG_H __CEPH__ CEPH_USE_RE2 LIBCXX_NO_STRING_SPACESHIP CMAKE_SHARED_LIBRARY_SUFFIX=".so")
 
 target_link_libraries(_librados
     PRIVATE
@@ -342,8 +345,6 @@ target_link_libraries(_librados
         absl::optional
         absl::span
         OpenSSL::Crypto
-        OpenSSL::SSL
-        isal_asm
         resolv
 )
 

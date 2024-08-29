@@ -217,12 +217,16 @@ target_include_directories(_boost_heap SYSTEM BEFORE INTERFACE ${LIBRARY_DIR})
 
 #thread
 set (SRCS_THREADS
+    "${LIBRARY_DIR}/libs/thread/src/future.cpp"
     "${LIBRARY_DIR}/libs/thread/src/pthread/thread.cpp"
     "${LIBRARY_DIR}/libs/thread/src/pthread/once.cpp"
-    "${LIBRARY_DIR}/libs/thread/src/pthread/once_atomic.cpp"
 )
 
 add_library (_boost_thread ${SRCS_THREADS})
 add_library (boost::thread ALIAS _boost_thread)
-target_include_directories (_boost_thread PRIVATE ${LIBRARY_DIR})
-target_link_libraries(_boost_thread PRIVATE _boost_regex)
+target_compile_definitions (_boost_thread
+  PUBLIC BOOST_THREAD_NO_LIB
+  PRIVATE BOOST_THREAD_SOURCE
+)
+target_include_directories (_boost_thread SYSTEM BEFORE INTERFACE ${LIBRARY_DIR})
+target_link_libraries(_boost_thread PRIVATE _boost_headers_only)

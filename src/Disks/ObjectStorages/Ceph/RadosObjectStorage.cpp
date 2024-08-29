@@ -47,7 +47,6 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-extern const int CEPH_ERROR;
 }
 
 namespace
@@ -321,7 +320,7 @@ std::unique_ptr<IObjectStorage> RadosObjectStorage::cloneObjectStorage(
     return std::make_unique<RadosObjectStorage>(rados, std::move(new_ceph_settings), new_endpoint, disk_name, for_disk_ceph);
 }
 
-ObjectStorageKey RadosObjectStorage::generateObjectKeyForPath(const std::string & /*path*/) const
+ObjectStorageKey RadosObjectStorage::generateObjectKeyForPath(const std::string & /*path*/, const std::optional<std::string> & /*key_prefix*/) const
 {
     constexpr size_t key_name_total_size = 32;
     return ObjectStorageKey::createAsRelative(getRandomASCIIString(key_name_total_size));

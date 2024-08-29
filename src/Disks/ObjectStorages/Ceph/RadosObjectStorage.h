@@ -213,7 +213,7 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
     bool isReadOnly() const override { return ceph_settings.get()->read_only; }
 

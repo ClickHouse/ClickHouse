@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <config.h>
 
 #if USE_CEPH
@@ -44,7 +45,7 @@ public:
 
     ~ReadBufferFromRados() override;
 
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
     String getFileName() const override;
 
     void setReadUntilPosition(size_t position) override;

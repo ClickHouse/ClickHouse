@@ -34,6 +34,7 @@ def get_objects_in_data_path():
         ceph_instance_id, ["rados", "--pool", "clickhouse", "--all", "ls"]
     )
 
+
 def test_simple(started_cluster):
     try:
         node = cluster.instances["node"]
@@ -84,7 +85,10 @@ def test_stripper(started_cluster):
         )
         node.query("OPTIMIZE TABLE ceph_big_table FINAL")
         # Adding WHERE ignore(*) to reproduce the bug when reading with async buffer from cache
-        assert node.query("SELECT count() FROM ceph_big_table WHERE NOT ignore(*)") == "8192\n"
+        assert (
+            node.query("SELECT count() FROM ceph_big_table WHERE NOT ignore(*)")
+            == "8192\n"
+        )
         assert (
             node.query("SELECT id, length(data) FROM ceph_big_table WHERE id = 1")
             == "1\t2048\n"

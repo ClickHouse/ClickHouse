@@ -161,14 +161,14 @@ off_t ReadBufferFromRados::seek(off_t offset_, int whence)
     return file_offset;
 }
 
-size_t ReadBufferFromRados::getFileSize()
+std::optional<size_t> ReadBufferFromRados::tryGetFileSize()
 {
     if (file_size)
-        return *file_size;
+        return file_size;
     size_t psize;
     io_ctx->stat(object_id, &psize, nullptr);
     file_size = psize;
-    return psize;
+    return file_size;
 }
 
 off_t ReadBufferFromRados::getPosition()

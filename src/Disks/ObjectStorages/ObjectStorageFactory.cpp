@@ -2,23 +2,28 @@
 #include <utility>
 #include <config.h>
 
-#if USE_CEPH
 #include <Disks/ObjectStorages/ObjectStorageFactory.h>
+
+#if USE_CEPH
 #include <Disks/ObjectStorages/Ceph/RadosObjectStorage.h>
 #endif
+
 #if USE_AWS_S3
 #include <Disks/ObjectStorages/S3/DiskS3Utils.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #endif
+
 #if USE_HDFS
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #endif
+
 #if USE_AZURE_BLOB_STORAGE
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #endif
+
 #include <Disks/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
