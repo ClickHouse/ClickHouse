@@ -2380,8 +2380,6 @@ bool MutateTask::prepare()
             task = std::make_unique<ExecutableTaskDropTTLExpiredPartsDecorator>(std::make_unique<MutateAllPartColumnsTask>(ctx), ctx);
         else
             task = std::make_unique<MutateAllPartColumnsTask>(ctx);
-
-        task = std::make_unique<MutateAllPartColumnsTask>(ctx);
     }
     else /// TODO: check that we modify only non-key columns in this case.
     {
@@ -2425,8 +2423,6 @@ bool MutateTask::prepare()
             task = std::make_unique<ExecutableTaskDropTTLExpiredPartsDecorator>(std::make_unique<MutateSomePartColumnsTask>(ctx), ctx);
         else
             task = std::make_unique<MutateSomePartColumnsTask>(ctx);
-
-        task = std::make_unique<MutateSomePartColumnsTask>(ctx);
     }
 
     return true;
