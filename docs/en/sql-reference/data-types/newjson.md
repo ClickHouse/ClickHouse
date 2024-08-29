@@ -70,7 +70,7 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON as json
 └────────────────────────────────────────────────┘
 ```
 
-CAST from named `Tuple`, `Map` and `Object('json')` to `JSON` type will be supported later.
+CAST from `JSON`, named `Tuple`, `Map` and `Object('json')` to `JSON` type will be supported later.
 
 ## Reading JSON paths as subcolumns
 

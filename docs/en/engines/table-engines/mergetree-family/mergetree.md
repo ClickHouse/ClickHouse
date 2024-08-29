@@ -80,7 +80,7 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 `PRIMARY KEY` — The primary key if it [differs from the sorting key](#choosing-a-primary-key-that-differs-from-the-sorting-key). Optional.
 
 Specifying a sorting key (using `ORDER BY` clause) implicitly specifies a primary key.
-It is usually not necessary to specify the primary key in addition to the primary key.
+It is usually not necessary to specify the primary key in addition to the sorting key.
 
 #### SAMPLE BY
 
