@@ -57,6 +57,7 @@ ColumnsDescription QueryMetricLogElement::getColumnsDescription()
                 "Event time."});
     result.add({"event_time_microseconds",
                 std::make_shared<DataTypeDateTime64>(6),
+                parseQuery(codec_parser, "(Delta(4), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Event time with microseconds resolution."});
 
     for (const auto & metric : memory_metrics)
