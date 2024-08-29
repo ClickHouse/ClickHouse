@@ -359,7 +359,9 @@ else ()
 
         execute_process(
             COMMAND mkdir -p ${PROTOC_BUILD_DIR}
-            COMMAND_ECHO STDOUT)
+            COMMAND_ECHO STDOUT
+            COMMAND_ERROR_IS_FATAL ANY
+        )
 
         execute_process(
             COMMAND ${CMAKE_COMMAND}
@@ -375,11 +377,15 @@ else ()
                 "-DABSL_ENABLE_INSTALL=0"
                 "${protobuf_source_dir}"
             WORKING_DIRECTORY "${PROTOC_BUILD_DIR}"
-            COMMAND_ECHO STDOUT)
+            COMMAND_ECHO STDOUT
+            COMMAND_ERROR_IS_FATAL ANY
+        )
 
         execute_process(
             COMMAND ${CMAKE_COMMAND} --build "${PROTOC_BUILD_DIR}"
-            COMMAND_ECHO STDOUT)
+            COMMAND_ECHO STDOUT
+            COMMAND_ERROR_IS_FATAL ANY
+        )
     endif ()
 
     add_executable(protoc IMPORTED GLOBAL)

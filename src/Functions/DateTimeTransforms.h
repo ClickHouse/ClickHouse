@@ -24,7 +24,7 @@ namespace DB
 
 static constexpr auto millisecond_multiplier = 1'000;
 static constexpr auto microsecond_multiplier = 1'000'000;
-static constexpr auto nanosecond_multiplier  = 1'000'000'000;
+static constexpr auto nanosecond_multiplier = 1'000'000'000;
 
 static constexpr FormatSettings::DateTimeOverflowBehavior default_date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
 
@@ -381,11 +381,13 @@ struct ToStartOfWeekImpl
 
     static UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+        const int res = time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+        return std::max(res, 0);
     }
     static UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+        const int res = time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+        return std::max(res, 0);
     }
     static UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
@@ -1196,7 +1198,7 @@ struct ToYearImpl
     {
         if (point.getType() != Field::Types::UInt64) return std::nullopt;
 
-        auto year = point.get<UInt64>();
+        auto year = point.safeGet<UInt64>();
         if (year < DATE_LUT_MIN_YEAR || year >= DATE_LUT_MAX_YEAR) return std::nullopt;
 
         const DateLUTImpl & date_lut = DateLUT::instance("UTC");
@@ -2001,7 +2003,7 @@ struct ToYYYYMMImpl
     {
         if (point.getType() != Field::Types::UInt64) return std::nullopt;
 
-        auto year_month = point.get<UInt64>();
+        auto year_month = point.safeGet<UInt64>();
         auto year = year_month / 100;
         auto month = year_month % 100;
 

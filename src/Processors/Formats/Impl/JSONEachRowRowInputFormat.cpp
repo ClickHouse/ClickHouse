@@ -46,15 +46,6 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
 {
     const auto & header = getPort().getHeader();
     name_map = header.getNamesToIndexesMap();
-    if (format_settings_.json.case_insensitive_column_matching)
-    {
-        for (auto & it : name_map)
-        {
-            StringRef key = it.first;
-            String lower_case_key = transformFieldNameToLowerCase(key);
-            lower_case_name_map[lower_case_key] = key;
-        }
-    }
     if (format_settings_.import_nested_json)
     {
         for (size_t i = 0; i != header.columns(); ++i)
@@ -180,15 +171,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             skipUnknownField(name_ref);
             continue;
         }
-        size_t column_index = 0;
-        if (format_settings.json.case_insensitive_column_matching)
-        {
-            String lower_case_name = transformFieldNameToLowerCase(name_ref);
-            StringRef field_name_ref = lower_case_name_map[lower_case_name];
-            column_index = columnIndex(field_name_ref, key_index);
-        }
-        else
-            column_index = columnIndex(name_ref, key_index);
+        const size_t column_index = columnIndex(name_ref, key_index);
 
         if (unlikely(ssize_t(column_index) < 0))
         {

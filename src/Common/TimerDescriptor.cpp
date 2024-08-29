@@ -2,6 +2,7 @@
 
 #include <Common/TimerDescriptor.h>
 #include <Common/Exception.h>
+#include <Common/Epoll.h>
 #include <Common/logger_useful.h>
 
 #include <sys/timerfd.h>
@@ -75,10 +76,22 @@ void TimerDescriptor::drain() const
     /// or since the last successful read(2), then the buffer given to read(2) returns an unsigned 8-byte integer (uint64_t)
     /// containing the number of expirations that have occurred.
     /// (The returned value is in host byte order—that is, the native byte order for integers on the host machine.)
+
+    /// Due to a bug in Linux Kernel, reading from timerfd in non-blocking mode can be still blocking.
+    /// Avoid it with polling.
+    Epoll epoll;
+    epoll.add(timer_fd);
+    epoll_event event;
+    event.data.fd = -1;
+    size_t ready_count = epoll.getManyReady(1, &event, 0);
+    if (!ready_count)
+        return;
+
     uint64_t buf;
     while (true)
     {
         ssize_t res = ::read(timer_fd, &buf, sizeof(buf));
+
         if (res < 0)
         {
             /// man timerfd_create:
@@ -110,6 +123,9 @@ void TimerDescriptor::drain() const
                     throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot readlink for a timer_fd {}", timer_fd);
 
                 LOG_TRACE(log, "Received EINTR while trying to drain a TimerDescriptor, fd {}: {}", timer_fd, std::string_view(link_path, link_path_length));
+
+                /// Check that it's actually a timerfd.
+                chassert(std::string_view(link_path, link_path_length).contains("timerfd"));
                 continue;
             }
 

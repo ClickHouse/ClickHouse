@@ -245,7 +245,7 @@ ColumnPtr FlatDictionary::getHierarchy(ColumnPtr key_column, const DataTypePtr &
     std::optional<UInt64> null_value;
 
     if (!dictionary_attribute.null_value.isNull())
-        null_value = dictionary_attribute.null_value.get<UInt64>();
+        null_value = dictionary_attribute.null_value.safeGet<UInt64>();
 
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
 
@@ -300,7 +300,7 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
     std::optional<UInt64> null_value;
 
     if (!dictionary_attribute.null_value.isNull())
-        null_value = dictionary_attribute.null_value.get<UInt64>();
+        null_value = dictionary_attribute.null_value.safeGet<UInt64>();
 
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
 
@@ -703,7 +703,7 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
             return;
         }
 
-        auto & attribute_value = value.get<AttributeType>();
+        auto & attribute_value = value.safeGet<AttributeType>();
 
         auto & container = std::get<ContainerType<ValueType>>(attribute.container);
         loaded_keys[key] = true;

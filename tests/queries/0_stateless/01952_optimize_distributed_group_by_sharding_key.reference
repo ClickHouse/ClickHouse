@@ -71,7 +71,7 @@ Expression (Projection)
             Expression ((Before ORDER BY + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Projection + Before ORDER BY)))))
               ReadFromSystemNumbers
       ReadFromRemote (Read from remote replica)
-set allow_experimental_analyzer = 1;
+set enable_analyzer = 1;
 explain select distinct k1 from remote('127.{1,2}', view(select 1 k1, 2 k2, 3 v from numbers(2)), cityHash64(k1, k2)); -- not optimized
 Expression (Project names)
   Distinct (DISTINCT)

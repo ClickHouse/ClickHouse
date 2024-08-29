@@ -7,6 +7,7 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
+#include <Common/FailPoint.h>
 #include <Core/Settings.h>
 #include <base/sleep.h>
 #include <IO/WriteHelpers.h>
@@ -30,6 +31,11 @@ namespace ErrorCodes
     extern const int TOO_SLOW;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace FailPoints
+{
+    extern const char infinite_sleep[];
 }
 
 /** sleep(seconds) - the specified number of seconds sleeps each columns.
@@ -107,6 +113,8 @@ public:
         {
             /// When sleeping, the query cannot be cancelled. For ability to cancel query, we limit sleep time.
             UInt64 microseconds = static_cast<UInt64>(seconds * 1e6);
+            FailPointInjection::pauseFailPoint(FailPoints::infinite_sleep);
+
             if (max_microseconds && microseconds > max_microseconds)
                 throw Exception(ErrorCodes::TOO_SLOW, "The maximum sleep time is {} microseconds. Requested: {} microseconds",
                     max_microseconds, microseconds);

@@ -607,7 +607,7 @@ void DistributedSink::onFinish()
     }
 }
 
-void DistributedSink::onCancel()
+void DistributedSink::onCancel() noexcept
 {
     std::lock_guard lock(execution_mutex);
     if (pool && !pool->finished())
@@ -618,14 +618,26 @@ void DistributedSink::onCancel()
         }
         catch (...)
         {
-            tryLogCurrentException(storage.log);
+            tryLogCurrentException(storage.log, "Error occurs on cancellation.");
         }
     }
 
     for (auto & shard_jobs : per_shard_jobs)
+    {
         for (JobReplica & job : shard_jobs.replicas_jobs)
-            if (job.executor)
-                job.executor->cancel();
+        {
+            try
+            {
+                if (job.executor)
+                    job.executor->cancel();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(storage.log, "Error occurs on cancellation.");
+            }
+        }
+    }
+
 }
 
 

@@ -158,6 +158,8 @@ void ClientApplicationBase::init(int argc, char ** argv)
 
         ("config-file,C", po::value<std::string>(), "config-file path")
 
+        ("proto_caps", po::value<std::string>(), "enable/disable chunked protocol: chunked_optional, notchunked, notchunked_optional, send_chunked, send_chunked_optional, send_notchunked, send_notchunked_optional, recv_chunked, recv_chunked_optional, recv_notchunked, recv_notchunked_optional")
+
         ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(Query. Can be specified multiple times (--query "SELECT 1" --query "SELECT 2") or once with multiple comma-separated queries (--query "SELECT 1; SELECT 2;"). In the latter case, INSERT queries with non-VALUE format must be separated by empty lines.)")
         ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
         ("multiquery,n", "Obsolete, does nothing")
@@ -199,8 +201,6 @@ void ClientApplicationBase::init(int argc, char ** argv)
         ("interactive", "Process queries-file or --query query and start interactive mode")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
         ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
-
-        ("fuzzer-args", po::value<std::string>(), "Command line arguments for the LLVM's libFuzzer driver. Only relevant if the application is compiled with libFuzzer.")
 
         ("client_logs_file", po::value<std::string>(), "Path to a file for writing client logs. Currently we only have fatal logs (when the client crashes)")
     ;
@@ -338,6 +338,41 @@ void ClientApplicationBase::init(int argc, char ** argv)
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.count("server_logs_file"))
         server_logs_file = options["server_logs_file"].as<std::string>();
+
+    if (options.count("proto_caps"))
+    {
+        std::string proto_caps_str = options["proto_caps"].as<std::string>();
+
+        std::vector<std::string_view> proto_caps;
+        splitInto<','>(proto_caps, proto_caps_str);
+
+        for (auto cap_str : proto_caps)
+        {
+            std::string direction;
+
+            if (cap_str.starts_with("send_"))
+            {
+                direction = "send";
+                cap_str = cap_str.substr(std::string_view("send_").size());
+            }
+            else if (cap_str.starts_with("recv_"))
+            {
+                direction = "recv";
+                cap_str = cap_str.substr(std::string_view("recv_").size());
+            }
+
+            if (cap_str != "chunked" && cap_str != "notchunked" && cap_str != "chunked_optional" && cap_str != "notchunked_optional")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "proto_caps option is incorrect ({})", proto_caps_str);
+
+            if (direction.empty())
+            {
+                config().setString("proto_caps.send", std::string(cap_str));
+                config().setString("proto_caps.recv", std::string(cap_str));
+            }
+            else
+                config().setString("proto_caps." + direction, std::string(cap_str));
+        }
+    }
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
     query_kind = parseQueryKind(options["query_kind"].as<std::string>());
