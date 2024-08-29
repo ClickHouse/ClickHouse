@@ -122,7 +122,8 @@ static inline auto createHandlersFactoryFromConfig(
             }
             else if (handler_type == "prometheus")
             {
-                main_handler_factory->addHandler(createPrometheusHandlerFactoryForHTTPRule(server, config, prefix + "." + key, async_metrics));
+                main_handler_factory->addHandler(
+                    createPrometheusHandlerFactoryForHTTPRule(server, config, prefix + "." + key, async_metrics));
             }
             else if (handler_type == "replicas_status")
             {

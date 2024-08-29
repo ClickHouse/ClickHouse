@@ -247,6 +247,7 @@ void DisksApp::runInteractiveReplxx()
         suggest,
         history_file,
         /* multiline= */ false,
+        /* ignore_shell_suspend= */ false,
         query_extenders,
         query_delimiters,
         word_break_characters.c_str(),

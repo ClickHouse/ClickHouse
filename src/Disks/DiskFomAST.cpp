@@ -132,7 +132,7 @@ std::string DiskFomAST::createCustomDisk(const ASTPtr & disk_function_ast, Conte
     FlattenDiskConfigurationVisitor::Data data{context, attach};
     FlattenDiskConfigurationVisitor{data}.visit(ast);
 
-    return assert_cast<const ASTLiteral &>(*ast).value.get<String>();
+    return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
 }
 
 void DiskFomAST::ensureDiskIsNotCustom(const std::string & disk_name, ContextPtr context)

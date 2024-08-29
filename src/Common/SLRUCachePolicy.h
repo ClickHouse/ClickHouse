@@ -95,6 +95,27 @@ public:
         cells.erase(it);
     }
 
+    void remove(std::function<bool(const Key &, const MappedPtr &)> predicate) override
+    {
+        for (auto it = cells.begin(); it != cells.end();)
+        {
+            if (predicate(it->first, it->second.value))
+            {
+                auto & cell = it->second;
+
+                current_size_in_bytes -= cell.size;
+                if (cell.is_protected)
+                    current_protected_size -= cell.size;
+
+                auto & queue = cell.is_protected ? protected_queue : probationary_queue;
+                queue.erase(cell.queue_iterator);
+                it = cells.erase(it);
+            }
+            else
+                ++it;
+        }
+    }
+
     MappedPtr get(const Key & key) override
     {
         auto it = cells.find(key);
