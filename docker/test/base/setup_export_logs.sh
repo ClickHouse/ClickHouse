@@ -198,7 +198,9 @@ function setup_logs_replication
         clickhouse-client --port "$PORT" --query "
             CREATE TABLE system.${table}_sender
             ENGINE = Distributed(${CLICKHOUSE_CI_LOGS_CLUSTER}, default, ${table}_${hash})
-            SETTINGS flush_on_detach=0
+            SETTINGS flush_on_detach=0,
+              background_insert_batch=1,
+              background_insert_sleep_time_ms=5000
             EMPTY AS
             SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, *
             FROM system.${table}
@@ -221,6 +223,6 @@ function stop_logs_replication
     clickhouse-client --port "$PORT" --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
         tee /dev/stderr
     } | {
-        timeout --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -r -i clickhouse-client --port "$PORT" --query "drop table {}"
+        timeout --preserve-status --signal TERM --kill-after 1m 10m xargs -n1 -P8 -r -i clickhouse-client --port "$PORT" --query "drop table {}"
     }
 }

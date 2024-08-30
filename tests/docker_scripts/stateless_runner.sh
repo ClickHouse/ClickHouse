@@ -467,7 +467,7 @@ do
     fi
 
     if [[ "$RUN_SEQUENTIAL_TESTS_IN_PARALLEL" -eq 1 ]]; then
-        if ! clickhouse-client --port 19000 -q "select * from system.$table into outfile '/test_output/$table.3.tsv.zst' format TSVWithNamesAndTypes"; then
+        if ! clickhouse-client --port 19000 -q "select * from system.$table into outfile '/test_output/$table.no-parallel.tsv.zst' format TSVWithNamesAndTypes"; then
             failed_to_save_logs=1
         fi
     fi
