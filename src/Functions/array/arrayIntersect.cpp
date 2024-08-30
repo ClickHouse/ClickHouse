@@ -163,7 +163,7 @@ DataTypePtr FunctionArrayIntersect<Mode>::getReturnTypeImpl(const DataTypes & ar
 
         if (typeid_cast<const DataTypeNothing *>(nested_type.get()))
         {
-            if (std::is_same_v<Mode, ArrayModeIntersect>)
+            if constexpr (std::is_same_v<Mode, ArrayModeIntersect>)
             {
                 has_nothing = true;
                 break;
@@ -178,13 +178,10 @@ DataTypePtr FunctionArrayIntersect<Mode>::getReturnTypeImpl(const DataTypes & ar
     // If any DataTypeNothing in ArrayModeIntersect or all arrays in ArrayModeUnion are DataTypeNothing
     if (has_nothing || nested_types.empty())
         result_type = std::make_shared<DataTypeNothing>();
+    else if constexpr (std::is_same_v<Mode, ArrayModeIntersect>)
+        result_type = getMostSubtype(nested_types, true);
     else
-    {
-        if (std::is_same_v<Mode, ArrayModeIntersect>)
-            result_type = getMostSubtype(nested_types, true);
-        else
-            result_type = getLeastSupertype(nested_types);
-    }
+        result_type = getLeastSupertype(nested_types);
 
     return std::make_shared<DataTypeArray>(result_type);
 }
@@ -433,7 +430,12 @@ ColumnPtr FunctionArrayIntersect<Mode>::executeImpl(const ColumnsWithTypeAndName
     for (size_t i = 0; i < num_args; ++i)
         data_types.push_back(arguments[i].type);
 
-    auto return_type_with_nulls = getReturnTypeImpl(data_types);
+    DataTypePtr return_type_with_nulls;
+    if constexpr (std::is_same_v<Mode, ArrayModeIntersect>)
+        return_type_with_nulls = getMostSubtype(data_types, true, true);
+    else
+        return_type_with_nulls = getReturnTypeImpl(data_types);
+
     auto casted_columns = castColumns(arguments, result_type, return_type_with_nulls);
 
     UnpackedArrays arrays = prepareArrays(casted_columns.casted, casted_columns.initial);
@@ -604,7 +606,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
         bool null_added = false;
         bool use_null_map;
 
-        if (std::is_same_v<Mode, ArrayModeUnion>)
+        if constexpr (std::is_same_v<Mode, ArrayModeUnion>)
         {
             use_null_map = has_a_null;
             for (auto & p : map)
@@ -623,7 +625,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                 null_added = true;
             }
         }
-        else if (std::is_same_v<Mode, ArrayModeIntersect>)
+        else if constexpr (std::is_same_v<Mode, ArrayModeIntersect>)
         {
             use_null_map = all_nullable;
             const auto & arg = arrays.args[0];
@@ -671,17 +673,14 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                     all_has_nullable = false;
 
                 // Add the value if all arrays have the value for intersect
-                // or if there was at least one occurrence in all of the arrays
+                // or if there was at least one occurrence in all of the arrays for union
                 if (pair && pair->getMapped() == args)
                 {
                     insertElement<Map, ColumnType, is_numeric_column>(pair, result_offset, result_data, null_map, use_null_map);
                 }
             }
         }
-        else
-        {
 
-        }
         result_offsets.getElement(row) = result_offset;
     }
     ColumnPtr result_column = std::move(result_data_ptr);
