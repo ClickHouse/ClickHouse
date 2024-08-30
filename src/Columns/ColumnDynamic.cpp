@@ -300,7 +300,7 @@ void ColumnDynamic::get(size_t n, Field & res) const
     auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
     ReadBufferFromMemory buf(value_data.data, value_data.size);
     auto type = decodeDataType(buf);
-    getVariantSerialization(type)->deserializeBinary(res, buf, getFormatSettings());
+    type->getDefaultSerialization()->deserializeBinary(res, buf, getFormatSettings());
 }
 
 
@@ -736,8 +736,7 @@ StringRef ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena, const 
     {
         const auto & variant_type = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariant(discr);
         encodeDataType(variant_type, buf);
-        getVariantSerialization(variant_type, variant_info.variant_names[discr])
-            ->serializeBinary(variant_col.getVariantByGlobalDiscriminator(discr), variant_col.offsetAt(n), buf, getFormatSettings());
+        variant_type->getDefaultSerialization()->serializeBinary(variant_col.getVariantByGlobalDiscriminator(discr), variant_col.offsetAt(n), buf, getFormatSettings());
         type_and_value = buf.str();
     }
 
@@ -870,7 +869,7 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
         /// We have both values serialized in binary format, so we need to
         /// create temporary column, insert both values into it and compare.
         auto tmp_column = left_data_type->createColumn();
-        const auto & serialization = getVariantSerialization(left_data_type, left_data_type_name);
+        const auto & serialization = left_data_type->getDefaultSerialization();
         serialization->deserializeBinary(*tmp_column, buf_left, getFormatSettings());
         serialization->deserializeBinary(*tmp_column, buf_right, getFormatSettings());
         return tmp_column->compareAt(0, 1, *tmp_column, nan_direction_hint);
@@ -892,7 +891,7 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
         /// We have left value serialized in binary format, we need to
         /// create temporary column, insert the value into it and compare.
         auto tmp_column = left_data_type->createColumn();
-        getVariantSerialization(left_data_type, left_data_type_name)->deserializeBinary(*tmp_column, buf_left, getFormatSettings());
+        left_data_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf_left, getFormatSettings());
         return tmp_column->compareAt(0, right_variant.offsetAt(m), right_variant.getVariantByGlobalDiscriminator(right_discr), nan_direction_hint);
     }
     /// Check if only right value is in shared data.
@@ -912,7 +911,7 @@ int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
         /// We have right value serialized in binary format, we need to
         /// create temporary column, insert the value into it and compare.
         auto tmp_column = right_data_type->createColumn();
-        getVariantSerialization(right_data_type, right_data_type_name)->deserializeBinary(*tmp_column, buf_right, getFormatSettings());
+        right_data_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf_right, getFormatSettings());
         return left_variant.getVariantByGlobalDiscriminator(left_discr).compareAt(left_variant.offsetAt(n), 0, *tmp_column, nan_direction_hint);
     }
     /// Otherwise both values are regular variants.
