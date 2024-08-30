@@ -1,0 +1,8 @@
+1
+1
+CREATE TABLE default.clone_as_foo_merge_tree\n(\n    `x` Int8\n)\nENGINE = MergeTree\nPRIMARY KEY x\nORDER BY x\nSETTINGS index_granularity = 8192
+1
+2
+CREATE TABLE default.clone_as_foo_replacing_merge_tree\n(\n    `x` Int8\n)\nENGINE = ReplacingMergeTree\nPRIMARY KEY x\nORDER BY x\nSETTINGS index_granularity = 8192
+1
+2

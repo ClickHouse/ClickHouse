@@ -830,7 +830,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             properties.columns.resetColumnTTLs();
             if (create.is_clone_as)
             {
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support 'CLONE AS' with tables of MergeTree family");
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support CLONE AS with tables of the MergeTree family");
             }
         }
 
@@ -1939,7 +1939,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
             /* async_isnert */ false).execute();
     }
 
-    /// If the query is a CREATE .. CLONE AS <table>, insert the data into the table.
+    /// If the query is a CREATE TABLE .. CLONE AS ..., attach all partitions of the source table to the newly created table.
     if (create.is_clone_as && !as_table_saved.empty() && !create.is_create_empty && !create.is_ordinary_view && !create.is_live_view
         && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
     {
