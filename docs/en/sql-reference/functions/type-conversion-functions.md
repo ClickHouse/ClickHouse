@@ -49,6 +49,55 @@ SETTINGS cast_keep_nullable = 1
 └──────────────────┴─────────────────────┴──────────────────┘
 ```
 
+## toBool
+
+Converts an input value to a value of type [`Bool`](../data-types/boolean.md). Throws an exception in case of an error.
+
+**Syntax**
+
+```sql
+toBool(expr)
+```
+
+**Arguments**
+
+- `expr` — Expression returning a number or a string. [Expression](../syntax.md/#syntax-expressions).
+
+Supported arguments:
+- Values of type (U)Int8/16/32/64/128/256.
+- Values of type Float32/64.
+- Strings `true` or `false` (case-insensitive).
+
+**Returned value**
+
+- Returns `true` or `false` based on evaluation of the argument. [Bool](../data-types/boolean.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    toBool(toUInt8(1)),
+    toBool(toInt8(-1)),
+    toBool(toFloat32(1.01)),
+    toBool('true'),
+    toBool('false'),
+    toBool('FALSE')
+FORMAT Vertical
+```
+
+Result:
+
+```response
+toBool(toUInt8(1)):      true
+toBool(toInt8(-1)):      true
+toBool(toFloat32(1.01)): true
+toBool('true'):          true
+toBool('false'):         false
+toBool('FALSE'):         false
+```
+
 ## toInt8
 
 Converts an input value to a value of type [`Int8`](../data-types/int-uint.md). Throws an exception in case of an error.
