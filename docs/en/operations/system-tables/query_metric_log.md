@@ -6,7 +6,7 @@ slug: /en/operations/system-tables/query_metric_log
 Contains history of memory and metric values from table `system.events` for individual queries, periodically flushed to disk.
 
 Once a query starts, data is collected at periodic intervals of `query_metric_log_interval` milliseconds (which is set to 1000
-by default).
+by default). The data is also collected when the query finishes if the query takes longer than `query_metric_log_interval`.
 
 Columns:
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the query.

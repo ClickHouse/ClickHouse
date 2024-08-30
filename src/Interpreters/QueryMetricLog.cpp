@@ -118,7 +118,7 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
         if (!query_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Query info not found: {}", query_id);
 
-        auto elem = createLogMetricElement(query_id, query_info, current_time);
+        auto elem = createLogMetricElement(query_id, *query_info, current_time);
         add(std::move(elem));
     });
 
@@ -128,7 +128,7 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
     queries.emplace(query_id, std::move(status));
 }
 
-void QueryMetricLog::finishQuery(const String & query_id)
+void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr query_info)
 {
     std::lock_guard lock(queries_mutex);
     auto it = queries.find(query_id);
@@ -139,25 +139,35 @@ void QueryMetricLog::finishQuery(const String & query_id)
         return;
 
     it->second.task->deactivate();
+
+    if (query_info)
+    {
+        auto elem = createLogMetricElement(query_id, *query_info, std::chrono::system_clock::now());
+        add(std::move(elem));
+    }
+
     queries.erase(it);
 }
 
-QueryMetricLogElement QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfoPtr query_info, TimePoint current_time)
+QueryMetricLogElement QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint current_time)
 {
     std::lock_guard lock(queries_mutex);
     auto query_status_it = queries.find(query_id);
+
+    if (query_status_it == queries.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query not found: {}", query_id);
 
     QueryMetricLogElement elem;
     elem.event_time = timeInSeconds(current_time);
     elem.event_time_microseconds = timeInMicroseconds(current_time);
     elem.query_id = query_status_it->first;
-    elem.memory_usage = query_info->memory_usage > 0 ? query_info->memory_usage : 0;
-    elem.peak_memory_usage = query_info->peak_memory_usage > 0 ? query_info->peak_memory_usage : 0;
+    elem.memory_usage = query_info.memory_usage > 0 ? query_info.memory_usage : 0;
+    elem.peak_memory_usage = query_info.peak_memory_usage > 0 ? query_info.peak_memory_usage : 0;
 
     auto & query_status = query_status_it->second;
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
     {
-        const auto & new_value = (*(query_info->profile_counters))[i];
+        const auto & new_value = (*(query_info.profile_counters))[i];
         elem.profile_events[i] = new_value - query_status.last_profile_events[i];
         query_status.last_profile_events[i] = new_value;
     }

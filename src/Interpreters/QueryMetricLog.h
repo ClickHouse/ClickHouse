@@ -55,12 +55,12 @@ public:
 
     // Both startQuery and finishQuery are called from the thread that executes the query
     void startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds);
-    void finishQuery(const String & query_id);
+    void finishQuery(const String & query_id, QueryStatusInfoPtr query_info = nullptr);
 
 private:
-    QueryMetricLogElement createLogMetricElement(const String & query_id, QueryStatusInfoPtr query_info, PeriodicLog<QueryMetricLogElement>::TimePoint current_time);
+    QueryMetricLogElement createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint current_time);
 
-    std::mutex queries_mutex;
+    std::recursive_mutex queries_mutex;
     std::unordered_map<String, QueryMetricLogStatus> queries;
 };
 
