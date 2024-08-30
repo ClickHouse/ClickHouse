@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Field.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
 #include <Common/NaNUtils.h>
@@ -236,14 +237,9 @@ private:
         }
         else
         {
-            std::string expectedType;
-            if (std::is_same_v<UInt64, ResultType>)
-                expectedType = "UInt64";
-            else if (std::is_same_v<Float64, ResultType>)
-                expectedType = "Float64";
-
+            auto expected_type = Field(Field::Types::Which(Field::TypeToEnum<std::decay_t<ResultType>>::value)).getTypeName();
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter number {} of function {} is expected to be {} but is {}",
-                parameter_number, getName(), expectedType, col->getName());
+                parameter_number, getName(), expected_type, col->getName());
         }
 
         if (isNaN(parameter) || !std::isfinite(parameter))
