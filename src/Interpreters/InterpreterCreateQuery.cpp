@@ -5,17 +5,19 @@
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 
-#include <Common/Exception.h>
-#include <Common/StringUtils.h>
-#include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
-#include <Common/Macros.h>
-#include <Common/randomSeed.h>
-#include <Common/atomicRename.h>
-#include <Common/PoolId.h>
-#include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Common/Exception.h>
+#include <Common/Macros.h>
+#include <Common/PoolId.h>
+#include <Common/StringUtils.h>
+#include <Common/atomicRename.h>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
+#include <Common/typeid_cast.h>
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
@@ -826,6 +828,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         {
             /// Only MergeTree support TTL
             properties.columns.resetColumnTTLs();
+            if (create.is_clone_as)
+            {
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support 'CLONE AS' with tables of MergeTree family");
+            }
         }
 
         properties.constraints = as_storage_metadata->getConstraints();
@@ -1931,6 +1937,57 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
             /* no_squash */ false,
             /* no_destination */ false,
             /* async_isnert */ false).execute();
+    }
+
+    /// If the query is a CREATE .. CLONE AS <table>, insert the data into the table.
+    if (create.is_clone_as && !as_table_saved.empty() && !create.is_create_empty && !create.is_ordinary_view && !create.is_live_view
+        && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
+    {
+        String as_database_name = getContext()->resolveDatabase(create.as_database);
+        StorageID as_table_id = {as_database_name, as_table_saved};
+        StoragePtr as_table = DatabaseCatalog::instance().tryGetTable(as_table_id, getContext());
+        if (!as_table)
+        {
+            return {};
+        }
+
+        auto merge_tree_table = std::dynamic_pointer_cast<MergeTreeData>(as_table);
+        if (!merge_tree_table)
+        {
+            return {};
+        }
+
+        auto command_list = std::make_shared<ASTExpressionList>();
+        for (const auto & partition_id : merge_tree_table->getAllPartitionIds())
+        {
+            auto partition = std::make_shared<ASTPartition>();
+            partition->all = false;
+            partition->setPartitionID(std::make_shared<ASTLiteral>(partition_id));
+
+            auto command = std::make_shared<ASTAlterCommand>();
+            command->replace = false;
+
+            command->type = ASTAlterCommand::REPLACE_PARTITION;
+            command->partition = command->children.emplace_back(std::move(partition)).get();
+
+            command->from_database = as_database_name;
+            command->from_table = as_table_saved;
+
+            command->to_database = create.getDatabase();
+            command->to_table = create.getTable();
+
+            command_list->children.push_back(command);
+        }
+
+        auto query = std::make_shared<ASTAlterQuery>();
+        query->database = create.database;
+        query->table = create.table;
+        query->uuid = create.uuid;
+        auto * alter = query->as<ASTAlterQuery>();
+
+        alter->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
+        alter->set(alter->command_list, command_list);
+        return InterpreterAlterQuery(query, getContext()).execute();
     }
 
     return {};
