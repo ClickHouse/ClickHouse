@@ -228,5 +228,4 @@ target_compile_definitions (_boost_thread
   PUBLIC BOOST_THREAD_NO_LIB
   PRIVATE BOOST_THREAD_SOURCE
 )
-target_include_directories (_boost_thread SYSTEM BEFORE INTERFACE ${LIBRARY_DIR})
-target_link_libraries(_boost_thread PRIVATE _boost_headers_only)
+target_include_directories (_boost_thread PRIVATE ${LIBRARY_DIR})
