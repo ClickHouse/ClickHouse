@@ -102,6 +102,7 @@
 #include <unordered_set>
 #include <filesystem>
 
+#include "Interpreters/Cache/MarkFilterCache.h"
 #include <fmt/format.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/NetException.h>
@@ -4108,6 +4109,9 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
 
     if (removed_active_part)
         resetObjectColumnsFromActiveParts(acquired_lock);
+
+    if (auto mark_filter_cache = getContext()->getMarkFilterCache(); mark_filter_cache)
+        mark_filter_cache->removeParts(remove);
 }
 
 void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove)

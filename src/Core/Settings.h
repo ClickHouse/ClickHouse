@@ -680,8 +680,9 @@ class IColumn;
     M(String, query_cache_tag, "", "A string which acts as a label for query cache entries. The same queries with different tags are considered different by the query cache.", 0) \
     M(Bool, enable_sharing_sets_for_mutations, true, "Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption", 0) \
     \
-    M(Bool, enable_writes_to_mark_filter_cache, false, "", 0) \
-    M(Bool, enable_reads_to_mark_filter_cache, false, "", 0) \
+    M(Bool, use_mark_filter_cache, false, "Enable the mark filter cache", 0) \
+    M(Bool, enable_writes_to_mark_filter_cache, true, "", 0) \
+    M(Bool, enable_reads_to_mark_filter_cache, true, "", 0) \
     \
     M(Bool, optimize_rewrite_sum_if_to_count_if, true, "Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent", 0) \
     M(Bool, optimize_rewrite_aggregate_function_with_if, true, "Rewrite aggregate functions with if expression as argument when logically equivalent. For example, avg(if(cond, col, null)) can be rewritten to avgIf(cond, col)", 0) \

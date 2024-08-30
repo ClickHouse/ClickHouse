@@ -10,6 +10,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Cache/MarkFilterCache.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Parsers/formatAST.h>
 #include <Storages/StorageMaterializedView.h>
@@ -174,6 +175,9 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
 
     if (table->storesDataOnDisk())
         tryRemoveSymlink(table_name);
+
+    if (auto mark_filter_cache = local_context->getMarkFilterCache(); mark_filter_cache)
+        mark_filter_cache->removeTable(table->getStorageID());
 
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.

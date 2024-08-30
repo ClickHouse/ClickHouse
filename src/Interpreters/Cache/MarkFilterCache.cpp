@@ -7,6 +7,9 @@ namespace DB
 
 std::vector<bool> MarkFilterCache::getByCondition(const MergeTreeDataPartPtr & data_part, const String & condition)
 {
+    if (!data_part)
+        return {};
+
     std::lock_guard lock(mutex);
 
     auto table = data_part->storage.getStorageID();
@@ -21,6 +24,9 @@ std::vector<bool> MarkFilterCache::getByCondition(const MergeTreeDataPartPtr & d
 
 void MarkFilterCache::update(const MergeTreeDataPartPtr & data_part, const String & condition, const MarkRanges & mark_ranges, bool exists)
 {
+    if (!data_part)
+        return;
+
     std::lock_guard lock(mutex);
 
     auto table = data_part->storage.getStorageID();
@@ -34,6 +40,54 @@ void MarkFilterCache::update(const MergeTreeDataPartPtr & data_part, const Strin
 
     for (const auto & mark_range : mark_ranges)
         std::fill(filter.begin() + mark_range.begin, filter.begin() + mark_range.end, exists);
+}
+
+
+void MarkFilterCache::removeTable(const StorageID & table_id)
+{
+    std::lock_guard lock(mutex);
+
+    const auto it = cache.find(table_id.uuid);
+    if (it == cache.end())
+        return;
+
+    for (const auto & [part_name, part_metadata] : *it->second)
+    {
+        for (const auto & [condition, entry] : *part_metadata)
+            queue.erase(entry->queue_iterator);
+    }
+
+    cache.erase(it);
+}
+
+void MarkFilterCache::removeParts(const MergeTreeData::DataPartsVector & remove)
+{
+    if (remove.empty())
+        return;
+
+    std::lock_guard lock(mutex);
+    auto table_id = remove.front()->storage.getStorageID();
+
+    const auto it = cache.find(table_id.uuid);
+    if (it == cache.end())
+        return;
+
+    auto & table_metadata = it->second;
+
+    for (const auto & part : remove)
+    {
+        auto part_metadata_it = table_metadata->find(part->name);
+        if (part_metadata_it == table_metadata->end())
+            return;
+
+        for (const auto & [condition, entry] : *part_metadata_it->second)
+            queue.erase(entry->queue_iterator);
+
+        table_metadata->erase(part_metadata_it);
+    }
+
+    if (table_metadata->empty())
+        cache.erase(it);
 }
 
 MarkFilterCache::EntryPtr MarkFilterCache::get(const Key & key)
@@ -83,22 +137,6 @@ MarkFilterCache::EntryPtr MarkFilterCache::getOrSet(const Key & key)
     return entry;
 }
 
-// void MarkFilterCache::set(const Key & key, const EntryPtr & entry)
-// {
-//     TableMetadataPtr table_metadata;
-//     if (const auto it = cache.find(key.table_id); it == cache.end())
-//         table_metadata = it->second;
-//     else
-//     {
-//         table_metadata = std::make_shared<TableMetadata>();
-//         cache.insert({key.table_id, table_metadata});
-//     }
-//
-//     table_metadata->setEntryAndUpdateQueue(key, entry, queue);
-//
-//     removeOverflow();
-// }
-
 void MarkFilterCache::removeOverflow()
 {
     size_t queue_size = queue.size();
@@ -130,69 +168,6 @@ bool MarkFilterCache::remove(const Key & key)
     return false;
 }
 
-void MarkFilterCache::removeTable(const UUID & table_id)
-{
-    std::lock_guard lock(mutex);
-
-    const auto it = cache.find(table_id);
-    if (it == cache.end())
-        return;
-
-    for (const auto & [part_name, part_metadata] : *it->second)
-    {
-        for (const auto & [condition, entry] : *part_metadata)
-        {
-            queue.erase(entry->queue_iterator);
-        }
-    }
-
-    cache.erase(it);
-}
-
-void MarkFilterCache::removePart(const UUID & table_id, const String & part_name)
-{
-    std::lock_guard lock(mutex);
-
-    const auto it = cache.find(table_id);
-    if (it == cache.end())
-        return;
-
-    auto & table_metadata = it->second;
-
-    auto part_metadata_it = table_metadata->find(part_name);
-    if (part_metadata_it == table_metadata->end())
-        return;
-
-    for (const auto & [condition, entry] : *part_metadata_it->second)
-    {
-        queue.erase(entry->queue_iterator);
-    }
-
-    table_metadata->erase(part_metadata_it);
-    if (table_metadata->size() == 0)
-        cache.erase(it);
-}
-
-// MarkFilterCache::TableMetadataPtr MarkFilterCache::getTableMetadata(const Key & key)
-// {
-//     // std::lock_guard lock(mutex);
-//     if (const auto it = cache.find(key.table_id); it != cache.end())
-//         return it->second;
-//
-//     return nullptr;
-// }
-//
-// MarkFilterCache::TableMetadataPtr MarkFilterCache::getOrSetTableMetadata(const Key & key)
-// {
-//     // std::lock_guard lock(mutex);
-//     if (const auto it = cache.find(key.table_id); it != cache.end())
-//         return it->second;
-//
-//     auto table_metadata = std::make_shared<TableMetadata>();
-//     cache.insert({key.table_id, table_metadata});
-//     return table_metadata;
-// }
-
 MarkFilterCache::PartMetadataPtr MarkFilterCache::TableMetadata::getPartMetadata(const String & part_name)
 {
     if (const auto it = find(part_name); it != end())
@@ -200,17 +175,6 @@ MarkFilterCache::PartMetadataPtr MarkFilterCache::TableMetadata::getPartMetadata
 
     return nullptr;
 }
-
-// MarkFilterCache::PartMetadataPtr MarkFilterCache::TableMetadata::getOrSetPartMetadata(const Key & key)
-// {
-//     // std::lock_guard lock(mutex);
-//     if (const auto it = find(key.part_name); it != end())
-//         return it->second;
-//
-//     auto part_metadata = std::make_shared<PartMetadata>();
-//     insert({key.part_name, part_metadata});
-//     return part_metadata;
-// }
 
 MarkFilterCache::EntryPtr MarkFilterCache::TableMetadata::tryGetEntry(const Key & key)
 {
@@ -234,21 +198,6 @@ std::tuple<bool, MarkFilterCache::EntryPtr> MarkFilterCache::TableMetadata::getO
 
     return part_metadata->getOrSet(key);
 }
-
-
-// void MarkFilterCache::TableMetadata::setEntryAndUpdateQueue(const Key & key, const EntryPtr & entry, LRUQueue & queue)
-// {
-//     PartMetadataPtr part_metadata;
-//     if (const auto it = find(key.part_name); it == end())
-//         part_metadata = it->second;
-//     else
-//     {
-//         part_metadata = std::make_shared<PartMetadata>();
-//         insert({key.part_name, part_metadata});
-//     }
-//
-//     part_metadata->setEntryAndUpdateQueue(key, entry, queue);
-// }
 
 bool MarkFilterCache::TableMetadata::remove(const Key & key)
 {
@@ -286,33 +235,5 @@ std::tuple<bool, MarkFilterCache::EntryPtr> MarkFilterCache::PartMetadata::getOr
     }
     return std::make_tuple(false, it->second);
 }
-
-
-// void MarkFilterCache::PartMetadata::setEntryAndUpdateQueue(const Key & key, const EntryPtr & entry, LRUQueue & queue)
-// {
-//     // std::lock_guard lock(mutext);
-//     auto [it, inserted] = insert({key.condition, entry});
-//     EntryPtr & mapped = it->second;
-//
-//     if (inserted)
-//     {
-//         try
-//         {
-//             mapped->queue_iterator = queue.insert(queue.end(), key);
-//         }
-//         catch (...)
-//         {
-//             erase(it);
-//             throw;
-//         }
-//     }
-//     else
-//     {
-//         mapped = entry;
-//         queue.splice(queue.end(), queue, mapped->queue_iterator);
-//     }
-// }
-
-
 
 }

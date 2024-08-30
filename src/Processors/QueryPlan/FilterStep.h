@@ -14,8 +14,7 @@ public:
         const DataStream & input_stream_,
         ActionsDAG actions_dag_,
         String filter_column_name_,
-        bool remove_filter_column_,
-        MarkFilterCachePtr mark_filter_cache_ = nullptr);
+        bool remove_filter_column_);
 
     String getName() const override { return "Filter"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
@@ -27,6 +26,7 @@ public:
     ActionsDAG & getExpression() { return actions_dag; }
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
+    void setMarkFilterCacheAndKey(MarkFilterCachePtr mark_filter_cache_, String & condition);
 
 private:
     void updateOutputStream() override;
@@ -36,6 +36,7 @@ private:
     bool remove_filter_column;
 
     MarkFilterCachePtr mark_filter_cache;
+    String condition;
 };
 
 }

@@ -871,7 +871,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
 void MergeTreeDataSelectExecutor::filterPartsByPreWhereAndWhere(const ContextPtr & context, RangesInDataParts & parts_with_ranges, const SelectQueryInfo & query_info_, LoggerPtr log)
 {
-    if (!context->getSettingsRef().enable_reads_to_mark_filter_cache || (!query_info_.prewhere_info && !query_info_.filter_actions_dag))
+    auto & settings = context->getSettingsRef();
+    if (!settings.use_mark_filter_cache || !settings.enable_reads_to_mark_filter_cache ||
+        (!query_info_.prewhere_info && !query_info_.filter_actions_dag))
         return;
 
     MarkFilterCachePtr mark_filter_cache = context->getMarkFilterCache();
@@ -946,8 +948,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPreWhereAndWhere(const ContextPtr
     /// filter where condition.
     if (query_info_.filter_actions_dag)
     {
-        auto query = query_info_.query->as<ASTSelectQuery &>();
-        String condition = query.where()->getColumnName();
+        String condition = query_info_.filter_actions_dag->getOutputs()[0]->result_name;
         auto stat = filterMarkRange(condition);
         LOG_DEBUG(log, "MarkFilterCache WHERE condition {} has dropped {}/{} granules.", condition, stat.granules_dropped, stat.total_granules);
     }

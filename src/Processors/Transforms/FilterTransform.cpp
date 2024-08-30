@@ -63,7 +63,8 @@ FilterTransform::FilterTransform(
     bool remove_filter_column_,
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
-    MarkFilterCachePtr mark_filter_cache_)
+    MarkFilterCachePtr mark_filter_cache_,
+    String condition_)
     : ISimpleTransform(
             header_,
             transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
@@ -74,6 +75,7 @@ FilterTransform::FilterTransform(
     , on_totals(on_totals_)
     , rows_filtered(rows_filtered_)
     , mark_filter_cache(mark_filter_cache_)
+    , condition(std::move(condition_))
 {
     transformed_header = getInputPort().getHeader();
     if (expression)
@@ -136,7 +138,7 @@ void FilterTransform::doTransform(Chunk & chunk)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Chunk should have MarkRangesInfo in FilterTransform.");
 
-        mark_filter_cache->update(mark_info->getDataPart(), filter_column_name, mark_info->getMarkRanges(), exists);
+        mark_filter_cache->update(mark_info->getDataPart(), condition, mark_info->getMarkRanges(), exists);
     };
 
     {

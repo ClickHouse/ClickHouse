@@ -353,7 +353,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
 
     /// We have a special logic for local replica. It has to read less data, because in some cases it should
     /// merge states of aggregate functions or do some other important stuff other than reading from Disk.
-    auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
+    auto & settings = context->getSettingsRef();
+    auto multiplier = settings.parallel_replicas_single_task_marks_count_multiplier;
     const auto min_marks_for_concurrent_read_limit = std::numeric_limits<Int64>::max() >> 1;
     if (pool_settings.min_marks_for_concurrent_read > min_marks_for_concurrent_read_limit)
     {
@@ -387,13 +388,13 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
 
     Pipes pipes;
 
+    MarkFilterCachePtr mark_filter_cache = nullptr;
+    if (settings.use_mark_filter_cache && settings.enable_writes_to_mark_filter_cache)
+        mark_filter_cache = context->getMarkFilterCache();
+
     for (size_t i = 0; i < pool_settings.threads; ++i)
     {
         auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
-
-        MarkFilterCachePtr mark_filter_cache = nullptr;
-        if (context->getSettingsRef().enable_writes_to_mark_filter_cache)
-            mark_filter_cache = context->getMarkFilterCache();
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool, std::move(algorithm), prewhere_info,
@@ -489,14 +490,14 @@ Pipe ReadFromMergeTree::readFromPool(
     auto block_size_copy = block_size;
     block_size_copy.min_marks_to_read = pool_settings.min_marks_for_concurrent_read;
 
+    MarkFilterCachePtr mark_filter_cache = nullptr;
+    if (settings.use_mark_filter_cache && settings.enable_writes_to_mark_filter_cache)
+        mark_filter_cache = context->getMarkFilterCache();
+
     Pipes pipes;
     for (size_t i = 0; i < pool_settings.threads; ++i)
     {
         auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
-
-        MarkFilterCachePtr mark_filter_cache = nullptr;
-        if (context->getSettingsRef().enable_writes_to_mark_filter_cache)
-            mark_filter_cache = context->getMarkFilterCache();
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool, std::move(algorithm), prewhere_info,
@@ -528,6 +529,8 @@ Pipe ReadFromMergeTree::readInOrder(
     bool has_limit_below_one_block = read_type != ReadType::Default && read_limit && read_limit < block_size.max_block_size_rows;
     MergeTreeReadPoolPtr pool;
 
+    auto & settings = context->getSettingsRef();
+
     if (is_parallel_reading_from_replicas)
     {
         const auto & client_info = context->getClientInfo();
@@ -538,7 +541,7 @@ Pipe ReadFromMergeTree::readInOrder(
             .number_of_current_replica = client_info.number_of_current_replica,
         };
 
-        auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
+        auto multiplier = settings.parallel_replicas_single_task_marks_count_multiplier;
         const auto min_marks_for_concurrent_read_limit = std::numeric_limits<Int64>::max() >> 1;
         if (pool_settings.min_marks_for_concurrent_read > min_marks_for_concurrent_read_limit)
         {
@@ -594,6 +597,10 @@ Pipe ReadFromMergeTree::readInOrder(
     const auto in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
     const bool set_total_rows_approx = !is_parallel_reading_from_replicas;
 
+    MarkFilterCachePtr mark_filter_cache = nullptr;
+    if (settings.use_mark_filter_cache && settings.enable_writes_to_mark_filter_cache)
+        mark_filter_cache = context->getMarkFilterCache();
+
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
     {
@@ -616,10 +623,6 @@ Pipe ReadFromMergeTree::readInOrder(
             algorithm = std::make_unique<MergeTreeInReverseOrderSelectAlgorithm>(i);
         else
             algorithm = std::make_unique<MergeTreeInOrderSelectAlgorithm>(i);
-
-        MarkFilterCachePtr mark_filter_cache = nullptr;
-        if (context->getSettingsRef().enable_writes_to_mark_filter_cache)
-            mark_filter_cache = context->getMarkFilterCache();
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool, std::move(algorithm), prewhere_info,

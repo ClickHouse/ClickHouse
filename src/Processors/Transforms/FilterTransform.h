@@ -21,7 +21,7 @@ class FilterTransform : public ISimpleTransform
 public:
     FilterTransform(
         const Block & header_, ExpressionActionsPtr expression_, String filter_column_name_,
-        bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr, std::shared_ptr<MarkFilterCache> mark_filter_cache_ = nullptr);
+        bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr, std::shared_ptr<MarkFilterCache> mark_filter_cache_ = nullptr, String condition_ = "");
 
     static Block
     transformHeader(const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column);
@@ -45,6 +45,7 @@ private:
     std::shared_ptr<std::atomic<size_t>> rows_filtered;
 
     std::shared_ptr<MarkFilterCache> mark_filter_cache;
+    String condition;
 
     /// Header after expression, but before removing filter column.
     Block transformed_header;
