@@ -324,7 +324,7 @@ std::unique_ptr<IObjectStorage> RadosObjectStorage::cloneObjectStorage(
 ObjectStorageKey RadosObjectStorage::generateObjectKeyForPath(const std::string & /*path*/, const std::optional<std::string> & /*key_prefix*/) const
 {
     constexpr size_t key_name_total_size = 32;
-    return ObjectStorageKey::createAsRelative(getRandomASCIIString(key_name_total_size));
+    return ObjectStorageKey::createAsRelative(endpoint.path, getRandomASCIIString(key_name_total_size));
 }
 
 std::unique_ptr<ReadBufferFromFileBase> RadosObjectStorage::readObjectsImpl( /// NOLINT

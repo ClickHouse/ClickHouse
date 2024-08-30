@@ -7,6 +7,7 @@
                 <user>admin</user>
                 <pool>clickhouse</pool>
                 <namespace>integration_test</namespace>
+                <path>integration_test</path>
                 <options>
                     <mon_host>ceph1:3300</mon_host>
                     <key>AQBbAI1miwfiCRAAySWvPQPgLjjA3EsRJEcBSw==</key>

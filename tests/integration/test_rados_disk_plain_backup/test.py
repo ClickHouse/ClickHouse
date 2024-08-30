@@ -31,7 +31,7 @@ rados_disk_def = """disk(
     user='admin',
     pool='clickhouse',
     namespace='integration_test',
-    path={},
+    path='integration_test/{}',
     options.mon_host='ceph1:3300',
     options.key='AQBbAI1miwfiCRAAySWvPQPgLjjA3EsRJEcBSw==',
     options.osd_max_object_size='6291456',
