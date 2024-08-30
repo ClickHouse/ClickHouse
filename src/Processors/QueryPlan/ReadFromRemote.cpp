@@ -325,10 +325,18 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     }
     else
     {
-        const String query_string = formattedAST(shard.query);
+        QueryTextOrPlan text_or_plan;
+        auto used_stage = stage;
+        if (shard.query_plan)
+        {
+            text_or_plan = shard.query_plan;
+            used_stage = QueryProcessingStage::QueryPlan;
+        }
+        else
+            text_or_plan = formattedAST(shard.query);
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            shard.shard_info.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage);
+            shard.shard_info.pool, text_or_plan, shard.header, context, throttler, scalars, external_tables, used_stage);
         remote_query_executor->setLogger(log);
 
         if (context->canUseTaskBasedParallelReplicas())

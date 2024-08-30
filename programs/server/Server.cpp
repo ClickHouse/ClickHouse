@@ -16,6 +16,7 @@
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
 #include <Common/ErrorHandlers.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <base/getMemoryAmount.h>
 #include <base/getAvailableMemoryAmount.h>
 #include <base/errnoToString.h>
@@ -774,6 +775,7 @@ try
     registerRemoteFileMetadatas();
     registerSchedulerNodes();
     registerResourceManagers();
+    QueryPlanStepRegistry::registerPlanSteps();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());

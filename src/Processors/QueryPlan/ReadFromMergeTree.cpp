@@ -1846,11 +1846,13 @@ bool ReadFromMergeTree::isQueryWithSampling() const
     if (context->getSettingsRef().parallel_replicas_count > 1 && data.supportsSampling())
         return true;
 
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
     if (query_info.table_expression_modifiers)
         return query_info.table_expression_modifiers->getSampleSizeRatio() != std::nullopt;
     else
+    {
+        const auto & select = query_info.query->as<ASTSelectQuery &>();
         return select.sampleSize() != nullptr;
+    }
 }
 
 Pipe ReadFromMergeTree::spreadMarkRanges(

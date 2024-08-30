@@ -602,6 +602,10 @@ static Block deserializeHeader(ReadBuffer & in)
         column.type = decodeDataType(in);
     }
 
+    /// Fill columns in header. Some steps expect them to be not empty.
+    for (auto & column : columns)
+        column.column = column.type->createColumn();
+
     return Block(std::move(columns));
 }
 
@@ -706,7 +710,7 @@ QueryPlan QueryPlan::deserialize(ReadBuffer & in)
         if (step->hasOutputStream())
         {
             assertCompatibleHeader(step->getOutputStream().header, output_stream.header,
-                 fmt::format("deserialization of query plan step {}", step_name));
+                 fmt::format("deserialization of query plan {} step", step_name));
         }
         else if (output_stream.header.columns())
             throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -730,6 +734,8 @@ static QueryPlanResourceHolder tryReplaceReadingFromTable(QueryPlan::Node & node
 
     Identifier identifier(reading_from_table->getTable());
     auto table_node_ptr = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, context);
+    if (!table_node_ptr)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Unknown table {}", identifier.getFullName());
     const auto * table_node = table_node_ptr->as<TableNode>();
 
     SelectQueryInfo select_query_info;

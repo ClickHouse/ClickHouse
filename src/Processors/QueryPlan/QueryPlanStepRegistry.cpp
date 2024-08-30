@@ -42,14 +42,17 @@ QueryPlanStepPtr QueryPlanStepRegistry::createStep(
 void registerExpressionStep(QueryPlanStepRegistry & registry);
 void registerUnionStep(QueryPlanStepRegistry & registry);
 void registerDistinctStep(QueryPlanStepRegistry & registry);
+void registerReadFromTableStep(QueryPlanStepRegistry & registry);
 
-void registerPlanSteps()
+void QueryPlanStepRegistry::registerPlanSteps()
 {
     QueryPlanStepRegistry & registry = QueryPlanStepRegistry::instance();
 
     registerExpressionStep(registry);
     registerUnionStep(registry);
     registerDistinctStep(registry);
+
+    registerReadFromTableStep(registry);
 }
 
 }
