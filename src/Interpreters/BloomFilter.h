@@ -8,6 +8,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/IDataType.h>
+#include <base/constexpr_helpers.h>
 
 
 namespace DB
@@ -56,7 +57,19 @@ public:
     UInt64 isEmpty() const;
 
     friend bool operator== (const BloomFilter & a, const BloomFilter & b);
+
 private:
+    template <size_t num_hashes>
+    ALWAYS_INLINE void addHashesImpl(size_t hash1, size_t hash2)
+    {
+        static_assert(num_hashes >= 1 && num_hashes <= 4);
+
+        for (size_t i = 0; i < num_hashes; ++i)
+        {
+            size_t pos = (hash1 + i * hash2 + i * i) % (8 * size);
+            filter[pos / (8 * sizeof(UnderType))] |= (1ULL << (pos % (8 * sizeof(UnderType))));
+        }
+    }
 
     size_t size;
     size_t hashes;

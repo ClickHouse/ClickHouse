@@ -1,0 +1,9 @@
+<test>
+    <create_query>DROP TABLE IF EXISTS test_ngram</create_query>
+    <create_query>CREATE TABLE test_ngram (s String, INDEX idx_s s TYPE ngrambf_v1(5, 10000, 3, 0) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>SYSTEM STOP MERGES test_ngram</create_query>
+
+    <query>INSERT INTO test_ngram SELECT randomPrintableASCII(128) FROM numbers(100000)</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_ngram</drop_query>
+</test>
