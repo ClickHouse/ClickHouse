@@ -195,7 +195,7 @@ void MergeTreeIndexGranuleVectorSimilarity::serializeBinary(WriteBuffer & ostr) 
     LOG_TRACE(logger, "Start writing vector similarity index");
 
     if (empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty minmax index {}", backQuote(index_name));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty vector similarity index {}", backQuote(index_name));
 
     writeIntBinary(FILE_FORMAT_VERSION, ostr);
 
