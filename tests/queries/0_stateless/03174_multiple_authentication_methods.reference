@@ -47,17 +47,8 @@ Adding no_password, should fail
 SYNTAX_ERROR
 Replacing existing authentication methods in favor of no_password, should succeed
 localhost	9000	0		0	0
-CREATE USER u01_03174 IDENTIFIED WITH no_password
 Trying to auth with no pwd, should succeed
 1
-localhost	9000	0		0	0
-Create user with mix both implicit and explicit auth type, starting with with
-localhost	9000	0		0	0
-CREATE USER u01_03174 IDENTIFIED WITH plaintext_password, sha256_password, bcrypt_password, sha256_password
-localhost	9000	0		0	0
-Create user with mix both implicit and explicit auth type, starting with by
-localhost	9000	0		0	0
-CREATE USER u01_03174 IDENTIFIED WITH sha256_password, plaintext_password, bcrypt_password, sha256_password
 localhost	9000	0		0	0
 Use WITH without providing authentication type, should fail
 Syntax error

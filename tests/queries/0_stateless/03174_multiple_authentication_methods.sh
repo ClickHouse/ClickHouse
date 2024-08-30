@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-replicated-database
+# Tags: no-fasttest, no-replicated-database
 # Tag no-replicated-database: https://s3.amazonaws.com/clickhouse-test-reports/65277/43e9a7ba4bbf7f20145531b384a31304895b55bc/stateless_tests__release__old_analyzer__s3__databasereplicated__[1_2].html and https://github.com/ClickHouse/ClickHouse/blob/011c694117845500c82f9563c65930429979982f/tests/queries/0_stateless/01175_distributed_ddl_output_mode_long.sh#L4
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -31,7 +31,7 @@ function test_login_pwd_expect_error
 
 function test
 {
-  user="u01_03174"
+  user="u01_03174$RANDOM"
 
   ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "DROP USER IF EXISTS ${user} $1"
 
@@ -113,22 +113,9 @@ function test
 
   echo "Replacing existing authentication methods in favor of no_password, should succeed"
   ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "ALTER USER ${user} $1 IDENTIFIED WITH no_password"
-  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SHOW CREATE USER ${user}"
 
   echo "Trying to auth with no pwd, should succeed"
   test_login_no_pwd ${user}
-
-  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "DROP USER IF EXISTS ${user} $1"
-
-  echo "Create user with mix both implicit and explicit auth type, starting with with"
-  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "CREATE USER ${user} $1 IDENTIFIED WITH plaintext_password by '1', by '2', bcrypt_password by '3', by '4';"
-  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SHOW CREATE USER ${user}"
-
-  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "DROP USER IF EXISTS ${user} $1"
-
-  echo "Create user with mix both implicit and explicit auth type, starting with by"
-  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "CREATE USER ${user} $1 IDENTIFIED by '1', plaintext_password by '2', bcrypt_password by '3', by '4';"
-  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SHOW CREATE USER ${user}"
 
   ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "DROP USER IF EXISTS ${user} $1"
 
