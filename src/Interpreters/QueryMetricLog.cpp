@@ -116,7 +116,12 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
         /// The query info should always be found because whenever a query ends, finishQuery is
         /// called and the query is removed from the list
         if (!query_info)
+        {
+            std::lock_guard lock(queries_mutex);
+            /// Removing the query info from the list automatically deactivates the task
+            queries.erase(query_id);
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Query info not found: {}", query_id);
+        }
 
         auto elem = createLogMetricElement(query_id, *query_info, current_time);
         add(std::move(elem));
