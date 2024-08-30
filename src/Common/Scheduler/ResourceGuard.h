@@ -107,8 +107,8 @@ public:
                 std::unique_lock lock(mutex);
                 chassert(state == Enqueued);
                 state = Dequeued;
+                dequeued_cv.notify_one();
             }
-            dequeued_cv.notify_one();
         }
 
         void wait()
