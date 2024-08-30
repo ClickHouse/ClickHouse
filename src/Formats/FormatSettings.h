@@ -77,7 +77,7 @@ struct FormatSettings
         Raw
     };
 
-    bool schema_inference_make_columns_nullable = true;
+    UInt64 schema_inference_make_columns_nullable = 1;
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 

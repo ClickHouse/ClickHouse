@@ -424,7 +424,7 @@ public:
     /// Insert value into shared variant. Also updates Variant discriminators and offsets.
     void insertValueIntoSharedVariant(const IColumn & src, const DataTypePtr & type, const String & type_name, size_t n);
 
-    const SerializationPtr & getVariantSerialization(const DataTypePtr & variant_type, const String & variant_name) const
+    const SerializationPtr & getVariantSerialization(const DataTypePtr & variant_type, const String & variant_name)
     {
         /// Get serialization for provided data type.
         /// To avoid calling type->getDefaultSerialization() every time we use simple cache with max size.
@@ -438,7 +438,7 @@ public:
         return serialization_cache.emplace(variant_name, variant_type->getDefaultSerialization()).first->second;
     }
 
-    const SerializationPtr & getVariantSerialization(const DataTypePtr & variant_type) const { return getVariantSerialization(variant_type, variant_type->getName()); }
+    const SerializationPtr & getVariantSerialization(const DataTypePtr & variant_type) { return getVariantSerialization(variant_type, variant_type->getName()); }
 
 private:
     void createVariantInfo(const DataTypePtr & variant_type);
@@ -483,7 +483,7 @@ private:
     /// We can use serializations of different data types to serialize values into shared variant.
     /// To avoid creating the same serialization multiple times, use simple cache.
     static const size_t SERIALIZATION_CACHE_MAX_SIZE = 256;
-    mutable std::unordered_map<String, SerializationPtr> serialization_cache;
+    std::unordered_map<String, SerializationPtr> serialization_cache;
 };
 
 void extendVariantColumn(
