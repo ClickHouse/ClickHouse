@@ -74,6 +74,9 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <base/EnumReflection.h>
 #include <base/demangle.h>
@@ -1383,8 +1386,283 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 }
 
 
+static std::pair<ASTPtr, BlockIO> executeQueryImpl(
+    ContextMutablePtr context,
+    QueryFlags flags,
+    QueryPlan & query_plan)
+{
+    const bool internal = flags.internal;
+    ASTPtr ast = std::make_shared<ASTIdentifier>("QueryPlan");
+    String query_for_logging = "QueryPlan";
+
+    /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
+    /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',
+    /// to make sure SpanHolders in current stack ends in correct order, we disable this span for these internal queries
+    ///
+    /// This does not have impact on the final span logs, because these internal queries are issued by external queries,
+    /// we still have enough span logs for the execution of external queries.
+    std::shared_ptr<OpenTelemetry::SpanHolder> query_span = internal ? nullptr : std::make_shared<OpenTelemetry::SpanHolder>("query");
+    if (query_span && query_span->trace_id != UUID{})
+        LOG_TRACE(getLogger("executeQuery"), "Query span trace_id for opentelemetry log: {}", query_span->trace_id);
+
+    /// Used for logging query start time in system.query_log
+    auto query_start_time = std::chrono::system_clock::now();
+
+    /// Used for:
+    /// * Setting the watch in QueryStatus (controls timeouts and progress) and the output formats
+    /// * Logging query duration (system.query_log)
+    Stopwatch start_watch{CLOCK_MONOTONIC};
+
+    const auto & client_info = context->getClientInfo();
+
+    if (!internal && client_info.initial_query_start_time == 0)
+    {
+        // If it's not an internal query and we don't see an initial_query_start_time yet, initialize it
+        // to current time. Internal queries are those executed without an independent client context,
+        // thus should not set initial_query_start_time, because it might introduce data race. It's also
+        // possible to have unset initial_query_start_time for non-internal and non-initial queries. For
+        // example, the query is from an initiator that is running an old version of clickhouse.
+        // On the other hand, if it's initialized then take it as the start of the query
+        context->setInitialQueryStartTime(query_start_time);
+    }
+
+    assert(internal || CurrentThread::get().getQueryContext());
+    assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
+
+    const Settings & settings = context->getSettingsRef();
+
+    /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
+    ProcessList::EntryPtr process_list_entry;
+    BlockIO res;
+    auto implicit_txn_control = std::make_shared<bool>(false);
+    String query_database;
+    String query_table;
+
+    auto execute_implicit_tcl_query = [implicit_txn_control](const ContextMutablePtr & query_context, ASTTransactionControl::QueryType tcl_type)
+    {
+        /// Unset the flag on COMMIT and ROLLBACK
+        SCOPE_EXIT({ if (tcl_type != ASTTransactionControl::BEGIN) *implicit_txn_control = false; });
+
+        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(tcl_type);
+        InterpreterTransactionControlQuery tc(tcl_ast, query_context);
+        tc.execute();
+
+        /// Set the flag after successful BIGIN
+        if (tcl_type == ASTTransactionControl::BEGIN)
+            *implicit_txn_control = true;
+    };
+
+    try
+    {
+        if (auto txn = context->getCurrentTransaction())
+        {
+            chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
+            chassert(txn->getState() != MergeTreeTransaction::COMMITTED);
+            if (txn->getState() == MergeTreeTransaction::ROLLED_BACK)
+                throw Exception(
+                    ErrorCodes::INVALID_TRANSACTION,
+                    "Cannot execute query because current transaction failed. Expecting ROLLBACK statement");
+        }
+
+        logQuery({}, context, internal, QueryProcessingStage::QueryPlan);
+
+        /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
+        if (!internal)
+        {
+            /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
+            process_list_entry = context->getProcessList().insert(query_for_logging, ast.get(), context, start_watch.getStart());
+            context->setProcessListElement(process_list_entry->getQueryStatus());
+        }
+
+        /// Load external tables if they were provided
+        context->initializeExternalTablesIfSet();
+
+
+        /// reset Input callbacks if query is not INSERT SELECT
+        context->resetInputCallbacks();
+
+        StreamLocalLimits limits;
+        std::shared_ptr<const EnabledQuota> quota;
+        //std::unique_ptr<IInterpreter> interpreter;
+
+        auto logger = getLogger("executeQuery");
+
+        bool quota_checked = false;
+        std::unique_ptr<ReadBuffer> insert_data_buffer_holder;
+
+        if (true)
+        {
+            if (true)
+            {
+                /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
+                if (!context->getCurrentTransaction() && settings.implicit_transaction)
+                {
+                    try
+                    {
+                        if (context->isGlobalContext())
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot create transactions");
+
+                        execute_implicit_tcl_query(context, ASTTransactionControl::BEGIN);
+                    }
+                    catch (Exception & e)
+                    {
+                        e.addMessage("while starting a transaction with 'implicit_transaction'");
+                        throw;
+                    }
+                }
+
+                const auto & query_settings = context->getSettingsRef();
+                if (context->getCurrentTransaction() && query_settings.throw_on_unsupported_query_inside_transaction)
+                {
+                    //if (!interpreter->supportsTransactions())
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query (QueryPlan)");
+
+                }
+
+                if (!quota_checked)
+                {
+                    quota = context->getQuota();
+                    if (quota)
+                    {
+                        // if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+                        {
+                            quota->used(QuotaType::QUERY_SELECTS, 1);
+                        }
+                        // else if (ast->as<ASTInsertQuery>())
+                        // {
+                        //     quota->used(QuotaType::QUERY_INSERTS, 1);
+                        // }
+                        quota->used(QuotaType::QUERIES, 1);
+                        quota->checkExceeded(QuotaType::ERRORS);
+                    }
+                }
+
+                if (true)
+                {
+                    limits.mode = LimitsMode::LIMITS_CURRENT;
+                    limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
+                }
+
+                {
+                    std::unique_ptr<OpenTelemetry::SpanHolder> span;
+                    if (OpenTelemetry::CurrentContext().isTraceEnabled())
+                    {
+                        // auto * raw_interpreter_ptr = interpreter.get();
+                        // String class_name(demangle(typeid(*raw_interpreter_ptr).name()));
+                        span = std::make_unique<OpenTelemetry::SpanHolder>("QueryPlan::execute()");
+                    }
+
+                    query_plan.replaceStorages(context);
+
+                    auto pipeline = query_plan.buildQueryPipeline(
+                            QueryPlanOptimizationSettings::fromContext(context),
+                            BuildQueryPipelineSettings::fromContext(context));
+
+                    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline));
+
+                }
+            }
+        }
+
+        if (process_list_entry)
+        {
+            /// Query was killed before execution
+            if (process_list_entry->getQueryStatus()->isKilled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                    "Query '{}' is killed in pending state", process_list_entry->getQueryStatus()->getInfo().client_info.current_query_id);
+        }
+
+        /// Hold element of process list till end of query execution.
+        res.process_list_entry = process_list_entry;
+
+        auto & pipeline = res.pipeline;
+
+        if (pipeline.pulling() || pipeline.completed())
+        {
+            /// Limits on the result, the quota on the result, and also callback for progress.
+            /// Limits apply only to the final result.
+            pipeline.setProgressCallback(context->getProgressCallback());
+            pipeline.setProcessListElement(context->getProcessListElement());
+            // if (stage == QueryProcessingStage::Complete && pipeline.pulling())
+            //     pipeline.setLimitsAndQuota(limits, quota);
+        }
+        else if (pipeline.pushing())
+        {
+            pipeline.setProcessListElement(context->getProcessListElement());
+        }
+
+        /// Everything related to query log.
+        {
+            QueryLogElement elem = logQueryStart(
+                query_start_time,
+                context,
+                query_for_logging,
+                ast,
+                pipeline,
+                nullptr,
+                internal,
+                query_database,
+                query_table,
+                false);
+            /// Also make possible for caller to log successful query finish and exception during execution.
+            auto finish_callback = [elem,
+                                    context,
+                                    ast,
+                                    //query_cache_usage,
+                                    internal,
+                                    implicit_txn_control,
+                                    execute_implicit_tcl_query,
+                                    pulling_pipeline = pipeline.pulling(),
+                                    query_span](QueryPipeline & query_pipeline) mutable
+            {
+                // if (query_cache_usage == QueryCache::Usage::Write)
+                //     /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
+                //     /// partial/garbage results in case of exceptions during query execution.
+                //     query_pipeline.finalizeWriteInQueryCache();
+
+                logQueryFinish(elem, context, ast, query_pipeline, pulling_pipeline, query_span, QueryCache::Usage::None, internal);
+
+                if (*implicit_txn_control)
+                    execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);
+            };
+
+            auto exception_callback =
+                [start_watch, elem, context, ast, internal, my_quota(quota), implicit_txn_control, execute_implicit_tcl_query, query_span](
+                    bool log_error) mutable
+            {
+                if (*implicit_txn_control)
+                    execute_implicit_tcl_query(context, ASTTransactionControl::ROLLBACK);
+                else if (auto txn = context->getCurrentTransaction())
+                    txn->onException();
+
+                if (my_quota)
+                    my_quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
+
+                logQueryException(elem, context, start_watch, ast, query_span, internal, log_error);
+            };
+
+            res.finish_callback = std::move(finish_callback);
+            res.exception_callback = std::move(exception_callback);
+        }
+    }
+    catch (...)
+    {
+        if (*implicit_txn_control)
+            execute_implicit_tcl_query(context, ASTTransactionControl::ROLLBACK);
+        else if (auto txn = context->getCurrentTransaction())
+            txn->onException();
+
+        if (!internal)
+            logExceptionBeforeStart(query_for_logging, context, ast, query_span, start_watch.elapsedMilliseconds());
+
+        throw;
+    }
+
+    return std::make_tuple(std::move(ast), std::move(res));
+}
+
 std::pair<ASTPtr, BlockIO> executeQuery(
-    const String & query,
+    const QueryTextOrPlan & query,
     ContextMutablePtr context,
     QueryFlags flags,
     QueryProcessingStage::Enum stage)
@@ -1392,7 +1670,10 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     ASTPtr ast;
     BlockIO res;
 
-    std::tie(ast, res) = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr);
+    if (const auto * query_text = std::get_if<String>(&query))
+        std::tie(ast, res) = executeQueryImpl(query_text->data(), query_text->data() + query_text->size(), context, flags, stage, nullptr);
+    else
+        std::tie(ast, res) = executeQueryImpl(context, flags, *std::get<std::shared_ptr<QueryPlan>>(query));
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {

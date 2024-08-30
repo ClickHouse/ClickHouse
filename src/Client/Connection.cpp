@@ -871,7 +871,7 @@ void Connection::sendQuery(
         writeStringBinary(*query_text, *out);
     else
     {
-        const auto & plan = std::get<std::shared_ptr<const QueryPlan>>(query);
+        const auto & plan = std::get<std::shared_ptr<QueryPlan>>(query);
         plan->serialize(*out);
     }
 

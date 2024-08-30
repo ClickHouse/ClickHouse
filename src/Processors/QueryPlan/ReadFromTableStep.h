@@ -18,6 +18,9 @@ public:
     void serialize(WriteBuffer & out) const override;
     static std::unique_ptr<IQueryPlanStep> deserialize(ReadBuffer & in, const DataStreams &, const DataStream * output, QueryPlanSerializationSettings &);
 
+    const String & getTable() const { return table_name; }
+    TableExpressionModifiers getTableExpressionModifiers() const { return table_expression_modifiers; }
+
 private:
     String table_name;
     TableExpressionModifiers table_expression_modifiers;

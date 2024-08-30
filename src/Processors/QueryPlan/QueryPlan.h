@@ -104,6 +104,8 @@ public:
     void setConcurrencyControl(bool concurrency_control_) { concurrency_control = concurrency_control_; }
     bool getConcurrencyControl() const { return concurrency_control; }
 
+    void replaceStorages(const ContextPtr & context);
+
     /// Tree node. Step and it's children.
     struct Node
     {

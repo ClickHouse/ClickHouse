@@ -49,6 +49,7 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -1887,7 +1888,16 @@ void TCPHandler::receiveQuery()
     state.compression = static_cast<Protocol::Compression>(compression);
     last_block_in.compression = state.compression;
 
-    readStringBinary(state.query, *in);
+    if (state.stage == QueryProcessingStage::QueryPlan)
+    {
+        state.query = std::make_shared<QueryPlan>(QueryPlan::deserialize(*in));
+    }
+    else
+    {
+        String query;
+        readStringBinary(query, *in);
+        state.query = std::move(query);
+    }
 
     Settings passed_params;
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
@@ -1929,7 +1939,8 @@ void TCPHandler::receiveQuery()
         if (nonce.has_value())
             data += std::to_string(nonce.value());
         data += cluster_secret;
-        data += state.query;
+        if (const auto * query_text = std::get_if<String>(&state.query))
+            data += *query_text;
         data += state.query_id;
         data += client_info.initial_user;
 

@@ -42,6 +42,8 @@ namespace QueryProcessingStage
 
     inline const char * toString(UInt64 stage)
     {
+        if (stage == QueryPlan)
+            return "QueryPlan";
         static const char * data[] =
         {
             "FetchColumns",

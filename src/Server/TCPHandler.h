@@ -21,6 +21,7 @@
 #include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <IO/WriteBufferFromPocoSocketChunked.h>
 
+#include "Client/IServerConnection.h"
 #include "Core/Types.h"
 #include "IServer.h"
 #include "Interpreters/AsynchronousInsertQueue.h"
@@ -75,7 +76,7 @@ struct QueryState
     Block block_for_insert;
 
     /// Query text.
-    String query;
+    QueryTextOrPlan query;
     /// Parsed query
     ASTPtr parsed_query;
     /// Streams of blocks, that are processing the query.

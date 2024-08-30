@@ -1,6 +1,7 @@
 #include <stack>
 
 #include <Common/JSONBuilder.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -19,6 +20,13 @@
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/ReadFromTableStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/Sources/NullSource.h>
+
+#include <Analyzer/Resolve/IdentifierResolver.h>
+#include <Analyzer/TableNode.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -713,5 +721,74 @@ QueryPlan QueryPlan::deserialize(ReadBuffer & in)
 
     return plan;
 }
+
+static QueryPlanResourceHolder tryReplaceReadingFromTable(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context)
+{
+    const auto * reading_from_table = typeid_cast<const ReadFromTableStep *>(node.step.get());
+    if (!reading_from_table)
+        return {};
+
+    Identifier identifier(reading_from_table->getTable());
+    auto table_node_ptr = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, context);
+    const auto * table_node = table_node_ptr->as<TableNode>();
+
+    SelectQueryInfo select_query_info;
+    select_query_info.table_expression_modifiers = reading_from_table->getTableExpressionModifiers();
+
+    auto column_names = reading_from_table->getOutputStream().header.getNames();
+
+    QueryPlan reading_plan;
+    table_node->getStorage()->read(
+        reading_plan,
+        column_names,
+        table_node->getStorageSnapshot(),
+        select_query_info,
+        context,
+        QueryProcessingStage::FetchColumns,
+        context->getSettingsRef().max_block_size,
+        context->getSettingsRef().max_threads
+    );
+
+    if (!reading_plan.isInitialized())
+    {
+        /// Create step which reads from empty source if storage has no data.
+        auto source_header = table_node->getStorageSnapshot()->getSampleBlockForColumns(column_names);
+        Pipe pipe(std::make_shared<NullSource>(source_header));
+        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        read_from_pipe->setStepDescription("Read from NullSource");
+        reading_plan.addStep(std::move(read_from_pipe));
+    }
+
+    auto converting_actions = ActionsDAG::makeConvertingActions(
+        reading_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+        reading_from_table->getOutputStream().header.getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name);
+
+    node.step = std::make_unique<ExpressionStep>(reading_plan.getCurrentDataStream(), std::move(converting_actions));
+    node.children = {reading_plan.getRootNode()};
+
+    auto nodes_and_resource = QueryPlan::detachNodesAndResources(std::move(reading_plan));
+
+    nodes.splice(nodes.end(), std::move(nodes_and_resource.first));
+    return std::move(nodes_and_resource.second);
+}
+
+void QueryPlan::replaceStorages(const ContextPtr & context)
+{
+    std::stack<QueryPlan::Node *> stack;
+    stack.push(getRootNode());
+    while (!stack.empty())
+    {
+        auto * node = stack.top();
+        stack.pop();
+
+        for (auto * child : node->children)
+            stack.push(child);
+
+        if (node->children.empty())
+            addResources(tryReplaceReadingFromTable(*node, nodes, context));
+    }
+}
+
 
 }

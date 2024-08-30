@@ -63,7 +63,7 @@ using ExternalTableDataPtr = std::unique_ptr<ExternalTableData>;
 using ExternalTablesData = std::vector<ExternalTableDataPtr>;
 
 class QueryPlan;
-using QueryTextOrPlan = std::variant<String, std::shared_ptr<const QueryPlan>>;
+using QueryTextOrPlan = std::variant<String, std::shared_ptr<QueryPlan>>;
 
 class IServerConnection : boost::noncopyable
 {
