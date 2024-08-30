@@ -44,6 +44,8 @@ VectorSimilarityCondition::Info::DistanceFunction stringToDistanceFunction(std::
 {
     if (distance_function == "L2Distance")
         return VectorSimilarityCondition::Info::DistanceFunction::L2;
+    else if (distance_function == "cosineDistance")
+        return VectorSimilarityCondition::Info::DistanceFunction::Cosine;
     else
         return VectorSimilarityCondition::Info::DistanceFunction::Unknown;
 }

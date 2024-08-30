@@ -57,7 +57,8 @@ public:
         enum class DistanceFunction : uint8_t
         {
             Unknown,
-            L2
+            L2,
+            Cosine
         };
 
         std::vector<Float64> reference_vector;
