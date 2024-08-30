@@ -78,15 +78,9 @@ BlockIO InterpreterDeleteQuery::execute()
         String alter_query =
             "ALTER TABLE " + table->getStorageID().getFullTableName()
             + (delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster))
-            + " UPDATE `_row_exists` = 0 WHERE " + serializeAST(*delete_query.predicate);
-        if (delete_query.partition)
-        {
-            alter_query =
-                "ALTER TABLE " + table->getStorageID().getFullTableName()
-                + (delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster))
-                + " UPDATE `_row_exists` = 0 IN PARTITION " + serializeAST(*delete_query.partition) + " WHERE "
-                + serializeAST(*delete_query.predicate);
-        }
+            + " UPDATE `_row_exists` = 0"
+            + (delete_query.partition ? " IN PARTITION " + serializeAST(*delete_query.partition) : "")
+            + " WHERE " + serializeAST(*delete_query.predicate);
 
         ParserAlterQuery parser;
         ASTPtr alter_ast = parseQuery(

@@ -19,7 +19,7 @@ public:
         return removeOnCluster<ASTDeleteQuery>(clone(), params.default_database);
     }
 
-    /** Used in DROP PARTITION, ATTACH PARTITION FROM, UPDATE, DELETE, DELETE FROM queries.
+    /** Used in DELETE FROM queries.
      *  The value or ID of the partition is stored here.
      */
     ASTPtr partition;
