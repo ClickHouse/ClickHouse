@@ -4,6 +4,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <Parsers/queryToString.h>
 #include <Common/typeid_cast.h>
+#include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Core/Settings.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -146,6 +150,35 @@ void InterpreterDescribeQuery::fillColumnsFromSubquery(const ASTTableExpression 
 void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpression & table_expression)
 {
     auto current_context = getContext();
+    if (current_context->getSettingsRef().allow_experimental_analyzer)
+    {
+        auto query_tree = buildQueryTreeForTableFunction(table_expression, current_context);
+
+        QueryAnalysisPass query_analysis_pass(true);
+        query_analysis_pass.run(query_tree, current_context);
+
+        StoragePtr storage;
+        if (auto * table_function_node = query_tree->as<TableFunctionNode>())
+            storage = table_function_node->getStorage();
+        else
+            storage = query_tree->as<TableNode &>().getStorage();
+
+        auto column_descriptions = storage->getInMemoryMetadata().getColumns();
+        for (const auto & column : column_descriptions)
+            columns.emplace_back(column);
+
+        if (settings.describe_include_virtual_columns)
+        {
+            auto virtuals = storage->getVirtualsPtr();
+            for (const auto & column : *virtuals)
+            {
+                if (!column_descriptions.has(column.name))
+                    virtual_columns.push_back(column);
+            }
+        }
+        return;
+    }
+
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression.table_function, current_context);
 
     auto column_descriptions = table_function_ptr->getActualTableStructure(getContext(), /*is_insert_query*/ true);

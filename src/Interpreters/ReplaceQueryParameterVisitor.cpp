@@ -156,33 +156,4 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
     ast_identifier->children.clear();
 }
 
-void replaceQueryParametersWithDefaults(ASTPtr & ast)
-{
-    std::vector<ASTPtr> nodes_to_process{ ast };
-
-    while (!nodes_to_process.empty())
-    {
-        auto node = nodes_to_process.back();
-        nodes_to_process.pop_back();
-        for (auto & child : node->children)
-        {
-            if (auto * query_param = child->as<ASTQueryParameter>())
-            {
-                const auto data_type = DataTypeFactory::instance().get(query_param->type);
-                auto * old_ptr = child.get();
-
-                Field literal = data_type->getDefault();
-                if (typeid_cast<const DataTypeString *>(data_type.get()))
-                    child = std::make_shared<ASTLiteral>(literal);
-                else
-                    child = addTypeConversionToAST(std::make_shared<ASTLiteral>(literal), query_param->type);
-
-                node->updatePointerToChild(old_ptr, child.get());
-            }
-            else
-                nodes_to_process.push_back(child);
-        }
-    }
-}
-
 }

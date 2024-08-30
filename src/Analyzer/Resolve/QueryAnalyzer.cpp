@@ -64,6 +64,8 @@
 #include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
 
+#include <Analyzer/createUniqueTableAliases.h>
+
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <Core/Settings.h>
@@ -515,7 +517,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
         options.only_analyze = only_analyze;
-        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node->toAST(), subquery_context, subquery_context->getViewSource(), options);
+        auto subquery = node->clone();
+        createUniqueTableAliases(subquery, {}, subquery_context);
+        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(subquery->toAST(), subquery_context, subquery_context->getViewSource(), options);
 
         if (only_analyze)
         {
@@ -4566,9 +4570,9 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
         if (parametrized_view_storage)
         {
-            auto fake_table_node = std::make_shared<TableNode>(parametrized_view_storage, scope_context);
-            fake_table_node->setAlias(table_function_node->getAlias());
-            table_function_node = fake_table_node;
+            std::vector<size_t> skip_analysis_arguments_indexes(table_function_node_typed.getArguments().getNodes().size());
+            std::iota(skip_analysis_arguments_indexes.begin(), skip_analysis_arguments_indexes.end(), 0);
+            table_function_node_typed.resolve({}, parametrized_view_storage, scope_context, std::move(skip_analysis_arguments_indexes));
             return;
         }
 

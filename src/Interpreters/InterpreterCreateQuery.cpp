@@ -845,22 +845,18 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (create.select)
     {
-        ASTPtr query = create.select->clone();
-
         if (create.isParameterizedView())
-        {
-            replaceQueryParametersWithDefaults(query);
-        }
+            return properties;
 
         Block as_select_sample;
 
         if (getContext()->getSettingsRef().allow_experimental_analyzer)
         {
-            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(query, getContext());
+            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
         }
         else
         {
-            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(query, getContext());
+            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
         }
 
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());

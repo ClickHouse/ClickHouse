@@ -32,6 +32,4 @@ private:
     void visitChildren(ASTPtr & ast);
 };
 
-void replaceQueryParametersWithDefaults(ASTPtr & ast);
-
 }
