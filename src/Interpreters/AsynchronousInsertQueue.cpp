@@ -977,8 +977,14 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         size_t num_rows = executor.execute(*buffer);
 
         total_rows += num_rows;
-        chunk_info->offsets.push_back(total_rows);
-        chunk_info->tokens.push_back(entry->async_dedup_token);
+        /// for some reason, client can pass zero rows and bytes to server.
+        /// We don't update offsets in this case, because we assume every insert has some rows during dedup
+        /// but we have nothing to deduplicate for this insert.
+        if (num_rows > 0)
+        {
+            chunk_info->offsets.push_back(total_rows);
+            chunk_info->tokens.push_back(entry->async_dedup_token);
+        }
 
         add_to_async_insert_log(entry, query_for_logging, current_exception, num_rows, num_bytes, data->timeout_ms);
 
@@ -1029,8 +1035,14 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
             result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
 
         total_rows += block->rows();
-        chunk_info->offsets.push_back(total_rows);
-        chunk_info->tokens.push_back(entry->async_dedup_token);
+        /// for some reason, client can pass zero rows and bytes to server.
+        /// We don't update offsets in this case, because we assume every insert has some rows during dedup,
+        /// but we have nothing to deduplicate for this insert.
+        if (block->rows())
+        {
+            chunk_info->offsets.push_back(total_rows);
+            chunk_info->tokens.push_back(entry->async_dedup_token);
+        }
 
         const auto & query_for_logging = get_query_by_format(entry->format);
         add_to_async_insert_log(entry, query_for_logging, "", block->rows(), block->bytes(), data->timeout_ms);
