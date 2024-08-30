@@ -978,6 +978,7 @@ try
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
+        global_context->resetSharedContext();
         global_context.reset();
         shared_context.reset();
         LOG_DEBUG(log, "Destroyed global context.");

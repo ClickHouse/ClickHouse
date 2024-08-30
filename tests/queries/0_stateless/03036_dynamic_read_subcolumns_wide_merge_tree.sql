@@ -5,6 +5,8 @@ set allow_experimental_variant_type = 1;
 set use_variant_as_common_type = 1;
 set allow_experimental_dynamic_type = 1;
 
+set min_bytes_to_use_direct_io = 0; -- min_bytes_to_use_direct_io > 0 is broken
+
 drop table if exists test;
 create table test (id UInt64, d Dynamic) engine=MergeTree order by id settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1;
 
