@@ -18,11 +18,16 @@ class FillingRow
 public:
     explicit FillingRow(const SortDescription & sort_description);
 
+    struct FillingNextRowOutcome
+    {
+        bool apply;
+        bool value_changed;
+    };
     /// Generates next row according to fill 'from', 'to' and 'step' values.
     /// Return pair of boolean
     /// apply - true if filling values should be inserted into result set
     /// value_changed - true if filling row value was changed
-    std::pair<bool, bool> next(const FillingRow & to_row);
+    FillingNextRowOutcome next(const FillingRow & to_row);
 
     void initFromDefaults(size_t from_pos = 0);
 

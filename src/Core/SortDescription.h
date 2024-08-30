@@ -36,6 +36,10 @@ struct FillColumnDescription
 
     using StepFunction = std::function<void(Field &)>;
     StepFunction step_func;
+
+    Field staleness;
+    std::optional<IntervalKind> staleness_kind;
+    std::optional<size_t> staleness_steps_allowed;
 };
 
 /// Description of the sorting rule by one column.

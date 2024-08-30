@@ -49,7 +49,7 @@ void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
-        if (stream_type == QueryPipelineBuilder::StreamType::Totals)
+        if (stream_type == QueryPipelineBuilder::StreamType::Totals || stream_type == QueryPipelineBuilder::StreamType::Extremes)
             return std::make_shared<FillingNoopTransform>(header, fill_description);
 
         return std::make_shared<FillingTransform>(

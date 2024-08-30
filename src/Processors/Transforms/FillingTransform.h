@@ -99,8 +99,10 @@ private:
     Columns last_range_sort_prefix;
     bool all_chunks_processed = false;    /// flag to determine if we have already processed all chunks
     const bool use_with_fill_by_sorting_prefix;
+    size_t accumulated_staleness;
 };
 
+/// Used for WITH TOTALS stream type since it at always return single value
 class FillingNoopTransform : public ISimpleTransform
 {
 public:

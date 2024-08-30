@@ -59,7 +59,7 @@ bool FillingRow::isNull() const
     return true;
 }
 
-std::pair<bool, bool> FillingRow::next(const FillingRow & to_row)
+FillingRow::FillingNextRowOutcome FillingRow::next(const FillingRow & to_row)
 {
     const size_t row_size = size();
     size_t pos = 0;

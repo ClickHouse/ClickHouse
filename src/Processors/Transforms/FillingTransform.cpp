@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Types.h>
+#include <IO/Operators.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Functions/FunctionDateOrDateTimeAddInterval.h>
 #include <Common/FieldVisitorSum.h>
@@ -15,7 +16,7 @@
 namespace DB
 {
 
-constexpr bool debug_logging_enabled = false;
+constexpr bool debug_logging_enabled = true;
 
 template <typename T>
 void logDebug(String key, const T & value, const char * separator = " : ")
@@ -69,7 +70,7 @@ static FillColumnDescription::StepFunction getStepFunction(
     }
 }
 
-static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & type)
+static bool tryConvertFieldsAndSetStepFunction(FillColumnDescription & descr, const DataTypePtr & type)
 {
     auto max_type = Field::Types::Null;
     WhichDataType which(type);
@@ -185,6 +186,46 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
         };
     }
 
+    if (!descr.staleness.isNull())
+    {
+        descr.staleness = convertFieldToTypeOrThrow(descr.staleness, *to_type);
+        if (!descr.fill_step.isNull() && descr.staleness.getType() != descr.fill_step.getType())
+        {
+            if (descr.staleness < descr.fill_step)
+                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "Staleness cannot be smaller than step");
+            return false;
+        }
+
+        size_t step_multiplier = 1;
+        if (descr.step_kind.has_value())
+            step_multiplier = descr.step_kind->toAvgNanoseconds();
+
+        size_t staleness_multiplier = 1;
+        if (descr.staleness_kind.has_value())
+            staleness_multiplier = descr.staleness_kind->toAvgNanoseconds();
+
+        else if (Field::isDecimal(descr.fill_step.getType()))
+        {
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "Decimal type is not supported yet with staleness");
+        }
+        else if (descr.fill_step.getType() == Field::Types::UInt128 || descr.fill_step.getType() == Field::Types::Int128)
+        {
+            descr.staleness_steps_allowed = descr.staleness.safeGet<Int128>() / descr.fill_step.safeGet<Int128>();
+        }
+        else if (descr.fill_step.getType() == Field::Types::UInt256 || descr.fill_step.getType() == Field::Types::Int256)
+        {
+            descr.staleness_steps_allowed = descr.staleness.safeGet<Int256>() / descr.fill_step.safeGet<Int256>();
+        }
+        else if (descr.fill_step.getType() == Field::Types::Float64)
+        {
+            descr.staleness_steps_allowed = descr.staleness.safeGet<Float64>() / descr.fill_step.safeGet<Float64>();
+        }
+        else
+        {
+            descr.staleness_steps_allowed = (descr.staleness.safeGet<Int64>() * staleness_multiplier) / (descr.fill_step.safeGet<Int64>() * step_multiplier);
+        }
+    }
+
     return true;
 }
 
@@ -206,6 +247,8 @@ FillingTransform::FillingTransform(
         interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions.clone());
 
     std::vector<bool> is_fill_column(header_.columns());
+    filling_row.getFillDescription(0).staleness = 3;
+    accumulated_staleness = 3;
     for (size_t i = 0, size = fill_description.size(); i < size; ++i)
     {
         if (interpolate_description && interpolate_description->result_columns_set.contains(fill_description[i].column_name))
@@ -222,7 +265,7 @@ FillingTransform::FillingTransform(
         const Block & output_header = getOutputPort().getHeader();
         const DataTypePtr & type = removeNullable(output_header.getByPosition(block_position).type);
 
-        if (!tryConvertFields(descr, type))
+        if (!tryConvertFieldsAndSetStepFunction(descr, type))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "Incompatible types of WITH FILL expression values with column type {}", type->getName());
 
@@ -516,10 +559,27 @@ bool FillingTransform::generateSuffixIfNeeded(
     bool filling_row_changed = false;
     while (true)
     {
-        const auto [apply, changed] = filling_row.next(next_row);
-        filling_row_changed = changed;
-        if (!apply)
+        auto next_outcome = filling_row.next(next_row);
+        filling_row_changed = next_outcome.value_changed;
+        if (!next_outcome.apply)
             break;
+
+        if (filling_row.getFillDescription(0).staleness_steps_allowed.has_value())
+            logDebug("staleness_steps_allowed_value", *filling_row.getFillDescription(0).staleness_steps_allowed);
+        if (filling_row.getFillDescription(0).staleness_steps_allowed.has_value() && accumulated_staleness >= filling_row.getFillDescription(0).staleness_steps_allowed.value())
+        {
+            while (next_outcome.apply)
+            {
+                next_outcome = filling_row.next(next_row);
+                logDebug("filling skipping", filling_row);
+                filling_row_changed = next_outcome.value_changed;
+            }
+
+            break;
+        }
+
+        logDebug("accumulated staleness", accumulated_staleness);
+        accumulated_staleness++;
 
         interpolate(result_columns, interpolate_block);
         insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
@@ -629,6 +689,7 @@ void FillingTransform::transformRange(
                 next_row[i] = fill_to;
         }
         logDebug("next_row updated", next_row);
+        accumulated_staleness = 0;
 
         /// The condition is true when filling row is initialized by value(s) in FILL FROM,
         /// and there are row(s) in current range with value(s) < then in the filling row.
@@ -643,10 +704,30 @@ void FillingTransform::transformRange(
         bool filling_row_changed = false;
         while (true)
         {
-            const auto [apply, changed] = filling_row.next(next_row);
-            filling_row_changed = changed;
-            if (!apply)
+            auto next_outcome = filling_row.next(next_row);
+
+            logDebug("filling inside", filling_row);
+            filling_row_changed = next_outcome.value_changed;
+            if (!next_outcome.apply)
                 break;
+
+            logDebug("has value", filling_row.getFillDescription(0).staleness_steps_allowed.has_value());
+            if (filling_row.getFillDescription(0).staleness_steps_allowed.has_value())
+                logDebug("staleness_steps_allowed_value", *filling_row.getFillDescription(0).staleness_steps_allowed);
+            if (filling_row.getFillDescription(0).staleness_steps_allowed.has_value() && accumulated_staleness >= filling_row.getFillDescription(0).staleness_steps_allowed.value())
+            {
+                while (next_outcome.apply)
+                {
+                    next_outcome = filling_row.next(next_row);
+                    logDebug("filling skipping", filling_row);
+                    filling_row_changed = next_outcome.value_changed;
+                }
+
+                break;
+            }
+
+            logDebug("accumulated staleness", accumulated_staleness);
+            accumulated_staleness++;
 
             interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
@@ -664,6 +745,7 @@ void FillingTransform::transformRange(
         copyRowFromColumns(res_other_columns, input_other_columns, row_ind);
     }
 
+    accumulated_staleness = 0;
     /// save sort prefix of last row in the range, it's used to generate suffix
     last_range_sort_prefix.clear();
     for (const auto & sort_prefix_column : input_sort_prefix_columns)
