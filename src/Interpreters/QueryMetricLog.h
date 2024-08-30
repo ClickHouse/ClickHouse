@@ -6,6 +6,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/PeriodicLog.h>
+#include <Interpreters/ProcessList.h>
 #include <Storages/ColumnsDescription.h>
 
 #include <chrono>
@@ -23,8 +24,8 @@ struct QueryMetricLogElement
     time_t event_time{};
     Decimal64 event_time_microseconds{};
     String query_id{};
-    Int64 memory{};
-    Int64 background_memory{};
+    UInt64 memory_usage{};
+    UInt64 peak_memory_usage{};
     std::vector<ProfileEvents::Count> profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
 
     static std::string name() { return "QueryMetricLog"; }
@@ -57,9 +58,8 @@ public:
     void finishQuery(const String & query_id);
 
 private:
-    QueryMetricLogElement createLogMetricElement(const String & query_id, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters, PeriodicLog<QueryMetricLogElement>::TimePoint current_time);
+    QueryMetricLogElement createLogMetricElement(const String & query_id, QueryStatusInfoPtr query_info, PeriodicLog<QueryMetricLogElement>::TimePoint current_time);
 
-    size_t collect_interval_milliseconds;
     std::mutex queries_mutex;
     std::unordered_map<String, QueryMetricLogStatus> queries;
 };

@@ -32,8 +32,6 @@ namespace ErrorCodes
 namespace DB
 {
 
-const auto memory_metrics = std::array{CurrentMetrics::MemoryTracking, CurrentMetrics::MergesMutationsMemoryTracking};
-
 ColumnsDescription QueryMetricLogElement::getColumnsDescription()
 {
     ColumnsDescription result;
@@ -59,13 +57,12 @@ ColumnsDescription QueryMetricLogElement::getColumnsDescription()
                 std::make_shared<DataTypeDateTime64>(6),
                 parseQuery(codec_parser, "(Delta(4), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Event time with microseconds resolution."});
-
-    for (const auto & metric : memory_metrics)
-    {
-        const auto * name = CurrentMetrics::getName(metric);
-        const auto * comment = CurrentMetrics::getDocumentation(metric);
-        result.add({std::move(name), std::make_shared<DataTypeInt64>(), std::move(comment)});
-    }
+    result.add({"memory_usage",
+                std::make_shared<DataTypeUInt64>(),
+                "Amount of RAM the query uses. It might not include some types of dedicated memory."});
+    result.add({"peak_memory_usage",
+                std::make_shared<DataTypeUInt64>(),
+                "Maximum amount of RAM the query used."});
 
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
     {
@@ -86,8 +83,8 @@ void QueryMetricLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(event_time_microseconds);
-    columns[column_idx++]->insert(memory);
-    columns[column_idx++]->insert(background_memory);
+    columns[column_idx++]->insert(memory_usage);
+    columns[column_idx++]->insert(peak_memory_usage);
 
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
         columns[column_idx++]->insert(profile_events[i]);
@@ -127,7 +124,7 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
         if (!query_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Query info not found: {}", query_id);
 
-        auto elem = createLogMetricElement(query_id, query_info->profile_counters, current_time);
+        auto elem = createLogMetricElement(query_id, query_info, current_time);
         add(std::move(elem));
     });
 
@@ -151,7 +148,7 @@ void QueryMetricLog::finishQuery(const String & query_id)
     queries.erase(it);
 }
 
-QueryMetricLogElement QueryMetricLog::createLogMetricElement(const String & query_id, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters, TimePoint current_time)
+QueryMetricLogElement QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfoPtr query_info, TimePoint current_time)
 {
     std::lock_guard lock(queries_mutex);
     auto query_status_it = queries.find(query_id);
@@ -160,13 +157,13 @@ QueryMetricLogElement QueryMetricLog::createLogMetricElement(const String & quer
     elem.event_time = timeInSeconds(current_time);
     elem.event_time_microseconds = timeInMicroseconds(current_time);
     elem.query_id = query_status_it->first;
-    elem.memory = CurrentMetrics::values[CurrentMetrics::MemoryTracking];
-    elem.background_memory = CurrentMetrics::values[CurrentMetrics::MergesMutationsMemoryTracking];
+    elem.memory_usage = query_info->memory_usage > 0 ? query_info->memory_usage : 0;
+    elem.peak_memory_usage = query_info->peak_memory_usage > 0 ? query_info->peak_memory_usage : 0;
 
     auto & query_status = query_status_it->second;
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
     {
-        const auto & new_value = (*profile_counters)[i];
+        const auto & new_value = (*(query_info->profile_counters))[i];
         elem.profile_events[i] = new_value - query_status.last_profile_events[i];
         query_status.last_profile_events[i] = new_value;
     }
