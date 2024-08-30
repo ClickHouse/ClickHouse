@@ -391,15 +391,11 @@ private:
         {
             auto idle = idleTime();
 
-            // Reset data hooks for IO scheduling
+            // Set data hooks for IO scheduling
             if (ResourceLink link = CurrentThread::getReadResourceLink())
                 Session::setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIORead(), log, request.getMethod(), request.getURI()));
-            else
-                Session::setReceiveDataHooks();
             if (ResourceLink link = CurrentThread::getWriteResourceLink())
                 Session::setSendDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIOWrite(), log, request.getMethod(), request.getURI()));
-            else
-                Session::setSendDataHooks();
 
             std::ostream & result = Session::sendRequest(request);
             result.exceptions(std::ios::badbit);
@@ -457,6 +453,8 @@ private:
                 }
             }
             response_stream = nullptr;
+            Session::setSendDataHooks();
+            Session::setReceiveDataHooks();
 
             group->atConnectionDestroy();
 
