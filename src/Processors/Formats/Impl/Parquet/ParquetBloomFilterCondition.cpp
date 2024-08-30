@@ -204,8 +204,6 @@ std::unordered_set<std::size_t> ParquetBloomFilterCondition::getFilteringColumnK
 {
     std::unordered_set<std::size_t> column_keys;
 
-    using F = ConditionElement::Function;
-
     for (const auto & element : condition)
     {
         for (const auto index : element.key_columns)
