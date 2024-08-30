@@ -18,9 +18,9 @@ KeystrokeInterceptor::~KeystrokeInterceptor()
     stopIntercept();
 }
 
-void KeystrokeInterceptor::registerCallback(char ch, KeystrokeInterceptor::Callback cb)
+void KeystrokeInterceptor::registerCallback(char key, KeystrokeInterceptor::Callback cb)
 {
-    callbacks.emplace(ch, cb);
+    callbacks.emplace(key, cb);
 }
 
 void KeystrokeInterceptor::startIntercept()
@@ -75,7 +75,7 @@ void KeystrokeInterceptor::run(KeystrokeInterceptor::CallbackMap map)
     }
 }
 
-void KeystrokeInterceptor::runImpl(const DB::KeystrokeInterceptor::CallbackMap & map)
+void KeystrokeInterceptor::runImpl(const DB::KeystrokeInterceptor::CallbackMap & map) const
 {
     char ch;
     if (read(fd, &ch, 1) > 0)

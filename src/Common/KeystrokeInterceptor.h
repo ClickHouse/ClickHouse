@@ -26,7 +26,7 @@ public:
 
 private:
     void run(CallbackMap);
-    void runImpl(const CallbackMap &);
+    void runImpl(const CallbackMap &) const;
 
     const int fd;
 

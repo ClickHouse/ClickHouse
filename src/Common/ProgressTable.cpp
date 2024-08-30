@@ -113,7 +113,7 @@ std::string_view setColorForBytesBasedMetricsProgress(double progress)
     };
 
     /// Bytes.
-    constexpr std::array<unsigned long long, 6> thresholds = {
+    constexpr std::array<uint64_t, 6> thresholds = {
         1LL << 20,
         100LL << 20,
         1'000LL << 20,
