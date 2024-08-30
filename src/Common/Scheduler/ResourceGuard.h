@@ -103,12 +103,10 @@ public:
         // That thread will continue execution and do real consumption of requested resource synchronously.
         void execute() override
         {
-            {
-                std::unique_lock lock(mutex);
-                chassert(state == Enqueued);
-                state = Dequeued;
-                dequeued_cv.notify_one();
-            }
+            std::unique_lock lock(mutex);
+            chassert(state == Enqueued);
+            state = Dequeued;
+            dequeued_cv.notify_one();
         }
 
         void wait()
