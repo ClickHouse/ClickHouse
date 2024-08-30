@@ -85,7 +85,7 @@ public:
 
             if (second_argument_is_date && ((datepart_kind == IntervalKind::Kind::Hour)
                 || (datepart_kind == IntervalKind::Kind::Minute) || (datepart_kind == IntervalKind::Kind::Second)))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type Date of argument for function {}", getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for function {}", arguments[1].type->getName(), getName());
         };
 
         auto check_timezone_argument = [&] {
