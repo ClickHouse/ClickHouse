@@ -18,12 +18,6 @@
 #include <chrono>
 #include <mutex>
 
-namespace CurrentMetrics
-{
-    extern const Metric MemoryTracking;
-    extern const Metric MergesMutationsMemoryTracking;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
