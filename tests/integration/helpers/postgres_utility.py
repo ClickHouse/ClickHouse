@@ -359,6 +359,7 @@ def check_tables_are_synchronized(
     postgres_database="postgres_database",
     materialized_database="test_database",
     schema_name="",
+    columns=["*"],
 ):
     assert_nested_table_is_created(
         instance, table_name, materialized_database, schema_name
@@ -374,7 +375,7 @@ def check_tables_are_synchronized(
     result_query = f"select * from {table_path} order by {order_by};"
 
     expected = instance.query(
-        f"select * from `{postgres_database}`.`{table_name}` order by {order_by};"
+        f"select {','.join(columns)} from `{postgres_database}`.`{table_name}` order by {order_by};"
     )
     result = instance.query(result_query)
 
