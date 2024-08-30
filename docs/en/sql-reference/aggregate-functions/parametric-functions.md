@@ -104,7 +104,7 @@ Events that occur at the same second may lay in the sequence in an undefined ord
 
 **Parameters**
 
-- `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
+- `pattern` — Pattern string. See [Pattern syntax](#pattern-syntax).
 
 **Returned values**
 
