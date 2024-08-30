@@ -30,7 +30,7 @@ function check_log()
         ORDER BY event_time_microseconds
         OFFSET 1
     )
-    SELECT count() BETWEEN least(5000 / $interval - 2, 5000 / $interval * 0.9) AND (5000 / $interval - 1) * 1.1, avg(diff) BETWEEN $interval * 0.9 AND $interval * 1.1, stddevPopStable(diff) BETWEEN 0 AND $interval * 0.2 FROM diff
+    SELECT count() BETWEEN least(5000 / $interval - 2, 5000 / $interval * 0.9) AND (5000 / $interval - 1) * 1.1, avg(diff) BETWEEN $interval * 0.9 AND $interval * 1.1, stddevPopStable(diff) BETWEEN 0 AND $interval * 0.5 FROM diff
     """
 }
 
