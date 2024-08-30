@@ -2860,7 +2860,9 @@ def do_run_tests(
         manager = multiprocessing.Manager()
         parallel_tests = manager.list()
         parallel_tests.extend(test_suite.parallel_tests)
-        is_concurrent = (jobs > 1) or (args.run_parallel_only or args.run_no_parallel_only)
+        # is_concurrent = (jobs > 1) or (
+        #     args.run_parallel_only or args.run_no_parallel_only
+        # )
 
         processes = []
         for _ in range(jobs):
