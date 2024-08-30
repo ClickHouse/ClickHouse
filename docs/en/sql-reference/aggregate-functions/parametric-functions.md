@@ -113,9 +113,7 @@ Events that occur at the same second may lay in the sequence in an undefined ord
 
 Type: `UInt8`.
 
-<a name="sequence-function-pattern-syntax"></a>
-
-**Pattern syntax**
+#### Pattern syntax
 
 - `(?N)` — Matches the condition argument at position `N`. Conditions are numbered in the `[1, 32]` range. For example, `(?1)` matches the argument passed to the `cond1` parameter.
 
