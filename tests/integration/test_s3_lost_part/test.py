@@ -6,6 +6,8 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
+logging.getLogger().setLevel(logging.INFO)
+
 replica1 = cluster.add_instance(
     "replica1",
     main_configs=["configs/config.xml"],
@@ -49,24 +51,30 @@ def create_replicated_table(node, table_name):
         ORDER BY id
         SETTINGS
             storage_policy='s3',
-            allow_remote_fs_zero_copy_replication=1
+            allow_remote_fs_zero_copy_replication=1,
+            cleanup_delay_period=0
         """
     )
 
 
-def test_s3_lost_part(start_cluster):
-    create_replicated_table(replica1, "no_key_found_disk_repl")
-    create_replicated_table(replica2, "no_key_found_disk_repl")
+def check_active_part(data):
+    logging.info(f"lambda has data={data}")
+    return data.strip() == "0"
 
-    replica1.query("INSERT INTO no_key_found_disk_repl VALUES (1)")
-    data = replica1.query("SELECT * FROM no_key_found_disk_repl").strip()
+
+def test_s3_lost_part(start_cluster):
+    table_name = "no_key_found_disk_repl"
+    create_replicated_table(replica1, table_name)
+    create_replicated_table(replica2, table_name)
+
+    replica1.query(f"INSERT INTO {table_name} VALUES (1)")
+    data = replica1.query(f"SELECT * FROM {table_name}").strip()
     assert data == "1"
 
-    uuid = replica1.query(
-        """
+    uuid = replica1.query(f"""
         SELECT uuid
         FROM system.tables
-        WHERE name = 'no_key_found_disk_repl'
+        WHERE name = '{table_name}'
         """
     ).strip()
     assert uuid
@@ -87,16 +95,45 @@ def test_s3_lost_part(start_cluster):
     )
     assert len(remote_pathes) > 0
 
+    active_parts_before_drop = replica2.query(f"SELECT count(*) FROM system.parts WHERE table='{table_name}'").strip()
+    assert active_parts_before_drop == "1"
+
+    detached_parts_before_drop = replica2.query(f"SELECT count(*) FROM system.detached_parts WHERE table='{table_name}'").strip()
+    assert detached_parts_before_drop == "0"
+
     for path in remote_pathes:
         assert cluster.minio_client.stat_object(cluster.minio_bucket, path).size > 0
         cluster.minio_client.remove_object(cluster.minio_bucket, path)
 
-    error = replica2.query_and_get_error("SELECT * FROM no_key_found_disk_repl").strip()
+    error = replica2.query_and_get_error(f"SELECT * FROM {table_name}").strip()
     assert (
         "DB::Exception: The specified key does not exist. This error happened for S3 disk."
         in error
     )
 
-    data = replica2.query("SELECT * FROM no_key_found_disk_repl").strip()
-    assert data == ""
+    detached_parts_after_drop = replica2.query(f"SELECT count(*) FROM system.detached_parts WHERE table='{table_name}'").strip()
+    assert detached_parts_after_drop == "1"
+
+    active_parts_after_drop = replica2.query_with_retry(
+        f"SELECT count(*) FROM system.parts WHERE table='{table_name}'",
+        retry_count=12,
+        sleep_time=5,
+        check_callback=lambda data: check_active_part(data)
+        ).strip()
+    
+    assert active_parts_after_drop == "0"
+
+    # assert replica2.wait_for_log_line(
+    #     regexp="Detached 1 parts covered by broken part",
+    # )
+
+    # replica1.query("INSERT INTO no_key_found_disk_repl VALUES (2)")
+
+    # replica1.query("SYSTEM DROP FILESYSTEM CACHE")
+    # replica2.query("SYSTEM DROP FILESYSTEM CACHE")
+    # replica2.query("SYSTEM DROP QUERY CACHE")
+    # replica2.query("SYSTEM DROP QUERY CACHE")
+    
+    # data = replica2.query("SELECT * FROM no_key_found_disk_repl").strip()
+    # assert data == "2"
 
