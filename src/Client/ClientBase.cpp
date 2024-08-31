@@ -2116,7 +2116,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     if (!insert_ast)
     {
         auto * explain_ast = parsed_query->as<ASTExplainQuery>();
-        if (explain_ast)
+        if (explain_ast && explain_ast->getExplainedQuery())
         {
             insert_ast = explain_ast->getExplainedQuery()->as<ASTInsertQuery>();
         }
