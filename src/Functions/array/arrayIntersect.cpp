@@ -514,6 +514,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
     auto rows = arrays.base_rows;
 
     bool all_nullable = true;
+    bool has_nullable = false;
 
     std::vector<const ColumnType *> columns;
     columns.reserve(args);
@@ -529,6 +530,8 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
 
         if (!arg.null_map)
             all_nullable = false;
+        else
+            has_nullable = true;
     }
 
     auto & result_data = static_cast<ColumnType &>(*result_data_ptr);
@@ -608,7 +611,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
 
         if constexpr (std::is_same_v<Mode, ArrayModeUnion>)
         {
-            use_null_map = has_a_null;
+            use_null_map = has_nullable;
             for (auto & p : map)
             {
                 typename Map::LookupResult pair = map.find(p.getKey());
