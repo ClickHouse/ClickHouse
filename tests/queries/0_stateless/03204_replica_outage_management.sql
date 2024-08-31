@@ -23,10 +23,15 @@ INSERT INTO t2_shard VALUES (1, 'a'), (2, 'b'), (3, 'c');
 -- Set the distributed product mode to allow global subqueries
 SET distributed_product_mode = 'global';
 
+-- Set retry settings for distributed queries
+SET distributed_query_retries = 3;
+SET distributed_query_retry_interval_ms = 1000;
+SET distributed_query_timeout_ms = 5000;
+
 -- Simulate replica failure by detaching a partition
 ALTER TABLE t1_shard DETACH PARTITION 1;
 
--- Execute a distributed query that should reflect missing data
+-- Execute a distributed query that should reflect missing data and trigger retries
 SELECT DISTINCT d0.id, d0.value
 FROM t1_distr d0
 WHERE d0.id IN

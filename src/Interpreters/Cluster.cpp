@@ -933,7 +933,7 @@ ConnectionPoolWithFailover::Entry Cluster::getConnectionWithRetries(
     const auto & addresses = getShardsAddresses();
     size_t retries = 0;
 
-    // Begins a loop that will execute until the maximum number of retries is reached
+    // Begin a loop that will execute until the maximum number of retries is reached
     while (retries < max_retries)
     {
         try

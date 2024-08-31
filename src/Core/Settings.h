@@ -1297,6 +1297,8 @@ class IColumn;
     M(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", "Overflow mode for Date, Date32, DateTime, DateTime64 types. Possible values: 'ignore', 'throw', 'saturate'.", 0) \
     M(Bool, validate_experimental_and_suspicious_types_inside_nested_types, true, "Validate usage of experimental and suspicious types inside nested types like Array/Map/Tuple", 0) \
     M(UInt64, distributed_query_retries, 3, "Maximum number of retries for distributed queries.", 0) \
+    M(UInt64, distributed_query_retry_interval_ms, 1000, "Interval between retries for distributed queries in milliseconds.", 0) \
+    M(UInt64, distributed_query_timeout_ms, 30000, "Timeout for each retry attempt in distributed queries in milliseconds.", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
 // Please add settings non-related to formats into the COMMON_SETTINGS above.
