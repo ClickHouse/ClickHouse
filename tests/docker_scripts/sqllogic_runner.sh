@@ -15,10 +15,10 @@ echo "Files in current directory"
 ls -la ./
 echo "Files in root directory"
 ls -la /
-echo "Files in /clickhouse-tests directory"
-ls -la /clickhouse-tests
-echo "Files in /clickhouse-tests/sqllogic directory"
-ls -la /clickhouse-tests/sqllogic
+echo "Files in /repo/tests directory"
+ls -la /repo/tests
+echo "Files in /repo/tests/sqllogic directory"
+ls -la /repo/tests/sqllogic
 echo "Files in /package_folder directory"
 ls -la /package_folder
 echo "Files in /test_output"
@@ -45,13 +45,13 @@ function run_tests()
 
     cd /test_output
 
-    /clickhouse-tests/sqllogic/runner.py --help 2>&1 \
+    /repo/tests/sqllogic/runner.py --help 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S'
 
     mkdir -p /test_output/self-test
-    /clickhouse-tests/sqllogic/runner.py --log-file /test_output/runner-self-test.log \
+    /repo/tests/sqllogic/runner.py --log-file /test_output/runner-self-test.log \
         self-test \
-        --self-test-dir /clickhouse-tests/sqllogic/self-test \
+        --self-test-dir /repo/tests/sqllogic/self-test \
         --out-dir /test_output/self-test \
         2>&1 \
         | ts '%Y-%m-%d %H:%M:%S'
@@ -63,7 +63,7 @@ function run_tests()
     if [ -d /sqllogictest ]
     then
         mkdir -p /test_output/statements-test
-        /clickhouse-tests/sqllogic/runner.py \
+        /repo/tests/sqllogic/runner.py \
         --log-file /test_output/runner-statements-test.log \
         --log-level info \
             statements-test \
@@ -77,7 +77,7 @@ function run_tests()
         tar -zcvf statements-check.tar.gz statements-test 1>/dev/null
 
         mkdir -p /test_output/complete-test
-        /clickhouse-tests/sqllogic/runner.py \
+        /repo/tests/sqllogic/runner.py \
         --log-file /test_output/runner-complete-test.log \
         --log-level info \
             complete-test \
