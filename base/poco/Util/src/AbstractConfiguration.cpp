@@ -263,6 +263,41 @@ bool AbstractConfiguration::getBool(const std::string& key, bool defaultValue) c
 }
 
 
+std::string AbstractConfiguration::getHost(const std::string& key) const
+{
+	Mutex::ScopedLock lock(_mutex);
+
+	std::string value;
+	if (getRaw(key, value))
+	{
+		std::string expandedValue = internalExpand(value);
+		checkHostValidity(expandedValue);
+		return expandedValue;
+	}
+	else
+		throw NotFoundException(key);
+}
+
+
+std::string AbstractConfiguration::getHost(const std::string& key, const std::string& defaultValue) const
+{
+	Mutex::ScopedLock lock(_mutex);
+
+	std::string value;
+	if (getRaw(key, value))
+	{
+		std::string expandedValue = internalExpand(value);
+		checkHostValidity(expandedValue);
+		return expandedValue;
+	}
+	else
+	{
+		checkHostValidity(defaultValue);
+		return defaultValue;
+	}
+}
+
+
 void AbstractConfiguration::setString(const std::string& key, const std::string& value)
 {
 	setRawWithEvent(key, value);
@@ -526,6 +561,124 @@ void AbstractConfiguration::setRawWithEvent(const std::string& key, std::string 
 	{
 		propertyChanged(this, kv);
 	}
+}
+
+
+void AbstractConfiguration::checkHostValidity(const std::string& value)
+{
+	if (!isValidIPv4Address(value) && !isValidIPv6Address(value) && !isValidDomainName(value))
+	{
+		throw SyntaxException("Property is not a valid host name", value);
+	}
+}
+
+
+bool AbstractConfiguration::isValidIPv4Address(const std::string& value)
+{
+	int octet = 0;
+	int periodsCount = 0;
+	int octetLength = 0;
+
+	for (char ch : value)
+	{
+		if (ch == '.')
+		{
+			if (octetLength == 0 || octet > 255 || octet < 0)
+				return false;
+			++periodsCount;
+			octet = 0;
+			octetLength = 0;
+		}
+		else if (isdigit(ch))
+		{
+			octet = octet * 10 + (ch - '0');
+			if (octet > 255)
+				return false;
+			++octetLength;
+		}
+		else
+		{
+			return false;
+		}
+	}
+	return periodsCount == 3 && octetLength > 0 && octet >= 0 && octet <= 255;
+}
+
+
+bool AbstractConfiguration::isValidIPv6Address(const std::string& value)
+{
+	char oldChar = 0;
+	char oldChar2 = 0;
+	int hextetLength = 0;
+	int colonsCount = 0;
+	bool doubleColon = false;
+	if (value.length() > 1 && value[0] == ':' && value[1] != ':')
+		return false;
+
+	for (char ch : value)
+	{
+		if (ch == ':')
+		{
+			if (oldChar == ':')
+			{
+				if (doubleColon)
+					return false;
+				doubleColon = true;
+			}
+			else
+			{
+				++colonsCount;
+				hextetLength = 0;
+			}
+		}
+		else if (isdigit(ch) || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F'))
+		{
+			++hextetLength;
+			if (hextetLength > 4)
+				return false;
+		}
+		else
+		{
+			return false;
+		}
+		oldChar2 = oldChar;
+		oldChar = ch;
+	}
+	if (oldChar == ':' && oldChar2 == ':')
+		return colonsCount <= 7;
+	else
+		return hextetLength > 0 && ((doubleColon && colonsCount <= 7) || colonsCount == 7);
+}
+
+
+bool AbstractConfiguration::isValidDomainName(const std::string& value)
+{
+	if (value.empty() || value == "." || value.length() > 253)
+		return false;
+	int labelLength = 0;
+	char oldChar = 0;
+
+	for (char ch : value)
+	{
+		if (ch == '.')
+		{
+			if (labelLength == 0 || labelLength > 63 || oldChar == '-')
+				return false;
+			labelLength = 0;
+		}
+		else if (isalnum(ch) || ch == '-')
+		{
+			if (labelLength == 0 && (ch == '-' || isdigit(ch)))
+				return false;
+			++labelLength;
+		}
+		else
+		{
+			return false;
+		}
+		oldChar = ch;
+	}
+	return oldChar == '.' || (labelLength > 0 && labelLength <= 63 && oldChar != '-');
 }
 
 
