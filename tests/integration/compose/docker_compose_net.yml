@@ -6,6 +6,6 @@ networks:
     ipam:
       config:
       - subnet: 10.0.0.0/12
-        gateway: 10.5.1.1
+        gateway: 10.0.0.1
       - subnet: 2001:3984:3989::/64
         gateway: 2001:3984:3989::1
