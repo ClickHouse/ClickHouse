@@ -1,3 +1,7 @@
+#include <Storages/StorageBuffer.h>
+
+#include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -23,7 +27,6 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageValues.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -232,6 +235,12 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
     return QueryProcessingStage::FetchColumns;
 }
 
+bool StorageBuffer::isRemote() const
+{
+    auto destination = getDestinationTable();
+    return destination && destination->isRemote();
+}
+
 void StorageBuffer::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -242,6 +251,29 @@ void StorageBuffer::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    bool allow_experimental_analyzer = local_context->getSettingsRef().allow_experimental_analyzer;
+
+    if (allow_experimental_analyzer && processed_stage > QueryProcessingStage::FetchColumns)
+    {
+        /** For query processing stages after FetchColumns, we do not allow using the same table more than once in the query.
+          * For example: SELECT * FROM buffer t1 JOIN buffer t2 USING (column)
+          * In that case, we will execute this query separately for the destination table and for the buffer, resulting in incorrect results.
+          */
+        const auto & current_storage_id = getStorageID();
+        auto table_nodes = extractAllTableReferences(query_info.query_tree);
+        size_t count_of_current_storage = 0;
+        for (const auto & node : table_nodes)
+        {
+            const auto & table_node = node->as<TableNode &>();
+            if (table_node.getStorageID().getFullNameNotQuoted() == current_storage_id.getFullNameNotQuoted())
+            {
+                count_of_current_storage++;
+                if (count_of_current_storage > 1)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageBuffer over Distributed does not support using the same table more than once in the query");
+            }
+        }
+    }
+
     const auto & metadata_snapshot = storage_snapshot->metadata;
 
     if (auto destination = getDestinationTable())
@@ -328,13 +360,17 @@ void StorageBuffer::read(
                     }
                 }
 
+                src_table_query_info.merge_storage_snapshot = storage_snapshot;
                 destination->read(
                         query_plan, columns_intersection, destination_snapshot, src_table_query_info,
                         local_context, processed_stage, max_block_size, num_streams);
 
-                if (query_plan.isInitialized())
+                if (query_plan.isInitialized() && processed_stage <= QueryProcessingStage::FetchColumns)
                 {
-
+                    /** The code below converts columns from metadata_snapshot to columns from destination_metadata_snapshot.
+                      * This conversion is not applicable for processed_stage > FetchColumns.
+                      * Instead, we rely on the converting actions at the end of this function.
+                      */
                     auto actions = addMissingDefaults(
                             query_plan.getCurrentDataStream().header,
                             header_after_adding_defaults.getNamesAndTypesList(),
@@ -397,7 +433,7 @@ void StorageBuffer::read(
     /// TODO: Find a way to support projections for StorageBuffer
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
-        if (local_context->getSettingsRef().allow_experimental_analyzer)
+        if (allow_experimental_analyzer)
         {
             auto storage = std::make_shared<StorageValues>(
                     getStorageID(),

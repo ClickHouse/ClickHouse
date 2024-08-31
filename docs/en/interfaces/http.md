@@ -379,7 +379,7 @@ You can mitigate this problem by enabling `wait_end_of_query=1` ([Response Buffe
 However, this does not completely solve the problem because the result must still fit within the `http_response_buffer_size`, and other settings like `send_progress_in_http_headers` can interfere with the delay of the header.
 The only way to catch all errors is to analyze the HTTP body before parsing it using the required format.
 
-### Queries with Parameters {#cli-queries-with-parameters}
+## Queries with Parameters {#cli-queries-with-parameters}
 
 You can create a query with parameters and pass values for them from the corresponding HTTP request parameters. For more information, see [Queries with Parameters for CLI](../interfaces/cli.md#cli-queries-with-parameters).
 

@@ -690,6 +690,12 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
                 if (top_level != value->safeGet<bool>())
                     throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'allow_experimental_analyzer' is changed in the subquery. Top level value: {}", top_level);
             }
+
+            if (auto * value = set_query->changes.tryGet("enable_analyzer"))
+            {
+                if (top_level != value->safeGet<bool>())
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'enable_analyzer' is changed in the subquery. Top level value: {}", top_level);
+            }
         }
 
         for (auto child : node->children)
@@ -780,7 +786,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Verify that AST formatting is consistent:
             /// If you format AST, parse it back, and format it again, you get the same string.
 
-            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true);
+            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true, false);
 
             /// The query can become more verbose after formatting, so:
             size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
@@ -796,17 +802,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             catch (const Exception & e)
             {
                 if (e.code() == ErrorCodes::SYNTAX_ERROR)
-                    /// Don't print the original query text because it may contain sensitive data.
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting: the query:\n{}\ncannot parse.",
-                        formatted1);
+                        "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
+                        formatted1, std::string_view(begin, end-begin));
                 else
                     throw;
             }
 
             chassert(ast2);
 
-            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true);
+            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true, false);
 
             if (formatted1 != formatted2)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,

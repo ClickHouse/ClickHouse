@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -63,6 +63,8 @@
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
+
+#include <Planner/PlannerActionsVisitor.h>
 
 #include <Core/Settings.h>
 
@@ -746,11 +748,11 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
         UInt64 pos;
         if (constant_node->getValue().getType() == Field::Types::UInt64)
         {
-            pos = constant_node->getValue().get<UInt64>();
+            pos = constant_node->getValue().safeGet<UInt64>();
         }
         else // Int64
         {
-            auto value = constant_node->getValue().get<Int64>();
+            auto value = constant_node->getValue().safeGet<Int64>();
             if (value > 0)
                 pos = value;
             else
@@ -4122,11 +4124,7 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
     {
         auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
-        auto * column_to_interpolate = interpolate_node_typed.getExpression()->as<IdentifierNode>();
-        if (!column_to_interpolate)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "INTERPOLATE can work only for indentifiers, but {} is found",
-                interpolate_node_typed.getExpression()->formatASTForErrorMessage());
-        auto column_to_interpolate_name = column_to_interpolate->getIdentifier().getFullName();
+        auto column_to_interpolate_name = interpolate_node_typed.getExpressionName();
 
         resolveExpressionNode(interpolate_node_typed.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -4135,14 +4133,11 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
         auto & interpolation_to_resolve = interpolate_node_typed.getInterpolateExpression();
         IdentifierResolveScope interpolate_scope(interpolation_to_resolve, &scope /*parent_scope*/);
 
-        auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(column_to_interpolate_name, interpolate_node_typed.getExpression()->getResultType()), interpolate_node_typed.getExpression());
+        auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(column_to_interpolate_name, interpolate_node_typed.getExpression()->getResultType()), interpolate_node);
         if (is_column_constant)
             interpolate_scope.expression_argument_name_to_node.emplace(column_to_interpolate_name, fake_column_node);
 
         resolveExpressionNode(interpolation_to_resolve, interpolate_scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-        if (is_column_constant)
-            interpolation_to_resolve = interpolation_to_resolve->cloneAndReplace(fake_column_node, interpolate_node_typed.getExpression());
     }
 }
 
@@ -4384,7 +4379,10 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
 
         auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
         if (storage_snapshot->storage.supportsSubcolumns())
+        {
             get_column_options.withSubcolumns();
+            table_expression_data.supports_subcolumns = true;
+        }
 
         auto column_names_and_types = storage_snapshot->getColumns(get_column_options);
         table_expression_data.column_names_and_types = NamesAndTypes(column_names_and_types.begin(), column_names_and_types.end());
@@ -4546,7 +4544,15 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     resolveExpressionNode(nodes[1], scope, /* allow_lambda_expression */false, /* allow_table_function */false);
                     if (auto * constant = nodes[1]->as<ConstantNode>())
                     {
-                        view_params[identifier_node->getIdentifier().getFullName()] = convertFieldToString(constant->getValue());
+                        /// Serialize the constant value using datatype specific
+                        /// interfaces to match the deserialization in ReplaceQueryParametersVistor.
+                        WriteBufferFromOwnString buf;
+                        const auto & value = constant->getValue();
+                        auto real_type = constant->getResultType();
+                        auto temporary_column  = real_type->createColumn();
+                        temporary_column->insert(value);
+                        real_type->getDefaultSerialization()->serializeTextEscaped(*temporary_column, 0, buf, {});
+                        view_params[identifier_node->getIdentifier().getFullName()] = buf.str();
                     }
                 }
             }

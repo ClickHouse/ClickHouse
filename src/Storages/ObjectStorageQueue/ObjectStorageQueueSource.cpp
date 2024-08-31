@@ -524,7 +524,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     {
                         .path = path,
                         .size = reader.getObjectInfo()->metadata->size_bytes
-                    });
+                    }, getContext());
 
                 return chunk;
             }

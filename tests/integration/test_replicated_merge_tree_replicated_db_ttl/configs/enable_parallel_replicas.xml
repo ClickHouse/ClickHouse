@@ -1,7 +1,7 @@
 <clickhouse>
     <profiles>
         <default>
-            <allow_experimental_analyzer>1</allow_experimental_analyzer>
+            <enable_analyzer>1</enable_analyzer>
             <allow_experimental_parallel_reading_from_replicas>1</allow_experimental_parallel_reading_from_replicas>
             <cluster_for_parallel_replicas>default</cluster_for_parallel_replicas>
             <max_parallel_replicas>100</max_parallel_replicas>

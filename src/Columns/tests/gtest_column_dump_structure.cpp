@@ -10,7 +10,7 @@ TEST(IColumn, dumpStructure)
 {
     auto type_lc = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     ColumnPtr column_lc = type_lc->createColumn();
-    String expected_structure = "ColumnLowCardinality(size = 0, UInt8(size = 0), ColumnUnique(size = 1, String(size = 1)))";
+    String expected_structure = "LowCardinality(size = 0, UInt8(size = 0), Unique(size = 1, String(size = 1)))";
 
     std::vector<std::thread> threads;
     for (size_t i = 0; i < 6; ++i)

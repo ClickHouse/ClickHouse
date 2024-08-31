@@ -504,8 +504,6 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
       */
 
     auto keys = aggregation_analysis_result.aggregation_keys;
-    if (!aggregation_analysis_result.grouping_sets_parameters_list.empty())
-        keys.insert(keys.begin(), "__grouping_set");
 
     Aggregator::Params params(keys,
         aggregation_analysis_result.aggregate_descriptions,
@@ -530,6 +528,7 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
         query_plan.getCurrentDataStream(),
         params,
+        aggregation_analysis_result.grouping_sets_parameters_list,
         query_analysis_result.aggregate_final,
         /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
         settings.distributed_aggregation_memory_efficient && (is_remote_storage || parallel_replicas_from_merge_tree) && !query_analysis_result.aggregation_with_rollup_or_cube_or_grouping_sets,
@@ -744,6 +743,8 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         }
         else
         {
+            ActionsDAG rename_dag;
+
             for (auto & interpolate_node : interpolate_list_nodes)
             {
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
@@ -772,7 +773,27 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 
                 const auto * alias_node = &interpolate_actions_dag.addAlias(*interpolate_expression, expression_to_interpolate_name);
                 interpolate_actions_dag.getOutputs().push_back(alias_node);
+
+                /// Here we fix INTERPOLATE by constant expression.
+                /// Example from 02336_sort_optimization_with_fill:
+                ///
+                /// SELECT 5 AS x, 'Hello' AS s ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (s AS s||'A')
+                ///
+                /// For this query, INTERPOLATE_EXPRESSION would be : s AS concat(s, 'A'),
+                /// so that interpolate_actions_dag would have INPUT `s`.
+                ///
+                /// However, INPUT `s` does not exist. Instead, we have a constant with execution name 'Hello'_String.
+                /// To fix this, we prepend a rename : 'Hello'_String -> s
+                if (const auto * constant_node = interpolate_node_typed.getExpression()->as<const ConstantNode>())
+                {
+                    const auto * node = &rename_dag.addInput(alias_node->result_name, alias_node->result_type);
+                    node = &rename_dag.addAlias(*node, interpolate_node_typed.getExpressionName());
+                    rename_dag.getOutputs().push_back(node);
+                }
             }
+
+            if (!rename_dag.getOutputs().empty())
+                interpolate_actions_dag = ActionsDAG::merge(std::move(rename_dag), std::move(interpolate_actions_dag));
 
             interpolate_actions_dag.removeUnusedActions();
         }
@@ -1077,7 +1098,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         auto query_tree = subquery->detachQueryTree();
         auto subquery_options = select_query_options.subquery();
         /// I don't know if this is a good decision,
-        /// But for now it is done in the same way as in old analyzer.
+        /// but for now it is done in the same way as in old analyzer.
         /// This would not ignore limits for subqueries (affects mutations only).
         /// See test_build_sets_from_multiple_threads-analyzer.
         subquery_options.ignore_limits = false;

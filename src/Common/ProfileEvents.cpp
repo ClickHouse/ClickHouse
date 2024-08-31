@@ -200,8 +200,10 @@
     M(ReplicaPartialShutdown, "How many times Replicated table has to deinitialize its state due to session expiration in ZooKeeper. The state is reinitialized every time when ZooKeeper is available again.") \
     \
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.") \
+    M(SelectedPartsTotal, "Number of total data parts before selecting which ones to read from a MergeTree table.") \
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.") \
     M(SelectedMarks, "Number of marks (index granules) selected to read from a MergeTree table.") \
+    M(SelectedMarksTotal, "Number of total marks (index granules) before selecting which ones to read from a MergeTree table.") \
     M(SelectedRows, "Number of rows SELECTed from all tables.") \
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.") \
     M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).") \
@@ -214,8 +216,35 @@
     \
     M(Merge, "Number of launched background merges.") \
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.") \
+    M(MergedColumns, "Number of columns merged during the horizontal stage of merges.") \
+    M(GatheredColumns, "Number of columns gathered during the vertical stage of merges.") \
     M(MergedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for background merges. This is the number before merge.") \
-    M(MergesTimeMilliseconds, "Total time spent for background merges.")\
+    M(MergeTotalMilliseconds, "Total time spent for background merges") \
+    M(MergeExecuteMilliseconds, "Total busy time spent for execution of background merges") \
+    M(MergeHorizontalStageTotalMilliseconds, "Total time spent for horizontal stage of background merges") \
+    M(MergeHorizontalStageExecuteMilliseconds, "Total busy time spent for execution of horizontal stage of background merges") \
+    M(MergeVerticalStageTotalMilliseconds, "Total time spent for vertical stage of background merges") \
+    M(MergeVerticalStageExecuteMilliseconds, "Total busy time spent for execution of vertical stage of background merges") \
+    M(MergeProjectionStageTotalMilliseconds, "Total time spent for projection stage of background merges") \
+    M(MergeProjectionStageExecuteMilliseconds, "Total busy time spent for execution of projection stage of background merges") \
+    \
+    M(MergingSortedMilliseconds, "Total time spent while merging sorted columns") \
+    M(AggregatingSortedMilliseconds, "Total time spent while aggregating sorted columns") \
+    M(CollapsingSortedMilliseconds, "Total time spent while collapsing sorted columns") \
+    M(ReplacingSortedMilliseconds, "Total time spent while replacing sorted columns") \
+    M(SummingSortedMilliseconds, "Total time spent while summing sorted columns") \
+    M(VersionedCollapsingSortedMilliseconds, "Total time spent while version collapsing sorted columns") \
+    M(GatheringColumnMilliseconds, "Total time spent while gathering columns for vertical merge") \
+    \
+    M(MutationTotalParts, "Number of total parts for which mutations tried to be applied") \
+    M(MutationUntouchedParts, "Number of total parts for which mutations tried to be applied but which was completely skipped according to predicate") \
+    M(MutatedRows, "Rows read for mutations. This is the number of rows before mutation") \
+    M(MutatedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for mutations. This is the number before mutation.") \
+    M(MutationTotalMilliseconds, "Total time spent for mutations.") \
+    M(MutationExecuteMilliseconds, "Total busy time spent for execution of mutations.") \
+    M(MutationAllPartColumns, "Number of times when task to mutate all columns in part was created") \
+    M(MutationSomePartColumns, "Number of times when task to mutate some columns in part was created") \
+    M(MutateTaskProjectionsCalculationMicroseconds, "Time spent calculating projections in mutations.") \
     \
     M(MergeTreeDataWriterRows, "Number of rows INSERTed to MergeTree tables.") \
     M(MergeTreeDataWriterUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) INSERTed to MergeTree tables.") \
@@ -230,7 +259,6 @@
     M(MergeTreeDataWriterProjectionsCalculationMicroseconds, "Time spent calculating projections") \
     M(MergeTreeDataProjectionWriterSortingBlocksMicroseconds, "Time spent sorting blocks (for projection it might be a key different from table's sorting key)") \
     M(MergeTreeDataProjectionWriterMergingBlocksMicroseconds, "Time spent merging blocks") \
-    M(MutateTaskProjectionsCalculationMicroseconds, "Time spent calculating projections") \
     \
     M(InsertedWideParts, "Number of parts inserted in Wide format.") \
     M(InsertedCompactParts, "Number of parts inserted in Compact format.") \
@@ -464,6 +492,7 @@ The server successfully detected this situation and will download merged part fr
     M(AzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
     M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.") \
     M(AzureGetProperties, "Number of Azure blob storage API GetProperties calls.") \
+    M(AzureCreateContainer, "Number of Azure blob storage API CreateContainer calls.") \
     \
     M(DiskAzureGetObject, "Number of Disk Azure API GetObject calls.") \
     M(DiskAzureUpload, "Number of Disk Azure blob storage API Upload calls") \
@@ -471,8 +500,9 @@ The server successfully detected this situation and will download merged part fr
     M(DiskAzureCommitBlockList, "Number of Disk Azure blob storage API CommitBlockList calls") \
     M(DiskAzureCopyObject, "Number of Disk Azure blob storage API CopyObject calls") \
     M(DiskAzureListObjects, "Number of Disk Azure blob storage API ListObjects calls.") \
-    M(DiskAzureDeleteObjects, "Number of Azure blob storage API DeleteObject(s) calls.") \
+    M(DiskAzureDeleteObjects, "Number of Disk Azure blob storage API DeleteObject(s) calls.") \
     M(DiskAzureGetProperties, "Number of Disk Azure blob storage API GetProperties calls.") \
+    M(DiskAzureCreateContainer, "Number of Disk Azure blob storage API CreateContainer calls.") \
     \
     M(ReadBufferFromAzureMicroseconds, "Time spent on reading from Azure.") \
     M(ReadBufferFromAzureInitMicroseconds, "Time spent initializing connection to Azure.") \

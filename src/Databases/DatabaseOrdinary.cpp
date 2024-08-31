@@ -16,6 +16,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -54,7 +55,7 @@ static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 static constexpr const char * const CONVERT_TO_REPLICATED_FLAG_NAME = "convert_to_replicated";
 
 DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context_)
-    : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
+    : DatabaseOrdinary(name_, metadata_path_, std::filesystem::path("data") / escapeForFileName(name_) / "", "DatabaseOrdinary (" + name_ + ")", context_)
 {
 }
 
@@ -250,6 +251,8 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
                 convertMergeTreeToReplicatedIfNeeded(ast, qualified_name, file_name);
 
+                NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef().union_default_mode};
+                NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
                 metadata.total_dictionaries += create_query->is_dictionary;
@@ -262,7 +265,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
         }
     };
 
-    iterateMetadataFiles(local_context, process_metadata);
+    iterateMetadataFiles(process_metadata);
 
     size_t objects_in_database = metadata.parsed_tables.size() - prev_tables_count;
     size_t dictionaries_in_database = metadata.total_dictionaries - prev_total_dictionaries;

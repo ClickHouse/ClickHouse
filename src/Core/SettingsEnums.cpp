@@ -175,7 +175,13 @@ IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGU
 
 IMPLEMENT_SETTING_ENUM(LightweightMutationProjectionMode, ErrorCodes::BAD_ARGUMENTS,
     {{"throw", LightweightMutationProjectionMode::THROW},
-     {"drop", LightweightMutationProjectionMode::DROP}})
+     {"drop", LightweightMutationProjectionMode::DROP},
+     {"rebuild", LightweightMutationProjectionMode::REBUILD}})
+
+IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", DeduplicateMergeProjectionMode::THROW},
+     {"drop", DeduplicateMergeProjectionMode::DROP},
+     {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
 
 IMPLEMENT_SETTING_AUTO_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS)
 
