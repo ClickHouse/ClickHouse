@@ -34,6 +34,7 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -2111,6 +2112,15 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // - Other formats (e.g. FORMAT CSV) are arbitrarily more complex and tricky to parse. For example, we may be unable to distinguish if the semicolon
     //   is part of the data or ends the statement. In this case, we simply assume that the end of the INSERT statement is determined by \n\n (two newlines).
     auto * insert_ast = parsed_query->as<ASTInsertQuery>();
+    // We also consider the INSERT query in EXPLAIN queries (same as normal INSERT queries)
+    if (!insert_ast)
+    {
+        auto * explain_ast = parsed_query->as<ASTExplainQuery>();
+        if (explain_ast)
+        {
+            insert_ast = explain_ast->getExplainedQuery()->as<ASTInsertQuery>();
+        }
+    }
     const char * query_to_execute_end = this_query_end;
     if (insert_ast && insert_ast->data)
     {
