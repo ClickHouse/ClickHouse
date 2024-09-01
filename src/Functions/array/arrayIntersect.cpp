@@ -434,7 +434,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::executeImpl(const ColumnsWithTypeAndName
     if constexpr (std::is_same_v<Mode, ArrayModeIntersect>)
         return_type_with_nulls = getMostSubtype(data_types, true, true);
     else
-        return_type_with_nulls = getReturnTypeImpl(data_types);
+        return_type_with_nulls = getLeastSupertype(data_types);
 
     auto casted_columns = castColumns(arguments, result_type, return_type_with_nulls);
 
