@@ -86,6 +86,7 @@
 #include <Disks/registerDisks.h>
 #include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
 #include <Common/Scheduler/Nodes/registerResourceManagers.h>
+#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
@@ -2089,7 +2090,7 @@ try
         /// Load user-defined SQL functions.
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
         /// Load WORKLOADs and RESOURCEs.
-        global_context->getWorkloadEntityStorage().loadObjects();
+        global_context->getWorkloadEntityStorage().loadEntities();
     }
     catch (...)
     {
