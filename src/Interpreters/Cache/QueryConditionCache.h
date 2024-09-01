@@ -5,17 +5,23 @@
 namespace DB
 {
 
-/// table_id(uuid)->data_part->condition
-class MarkFilterCache
+/// Cache the mark filter corresponding to the query condition,
+/// which helps to quickly filter out useless Marks and speed up the query when the index is not hit.
+
+class QueryConditionCache
 {
 public:
-    MarkFilterCache(size_t max_count_)
+    QueryConditionCache(size_t max_count_)
         : max_count(max_count_)
     {}
 
-    std::vector<bool> read(const MergeTreeDataPartPtr & data_part, const String & condition);
+    using MarkFilter = std::vector<bool>;
 
-    void write(const MergeTreeDataPartPtr & data_part, const String & condition, const MarkRanges & mark_ranges, bool is_all_true);
+    /// Read the filter and return empty if it does not exist.
+    std::optional<MarkFilter> read(const MergeTreeDataPartPtr & data_part, const String & condition);
+
+    /// Take out the mark filter corresponding to the query condition and set it to false on the corresponding mark.
+    void write(const MergeTreeDataPartPtr & data_part, const String & condition, const MarkRanges & mark_ranges);
 
     void removeTable(const StorageID & table_id);
 
@@ -35,7 +41,7 @@ private:
 
     struct Entry
     {
-        std::vector<bool> filter;
+        MarkFilter filter;
         LRUQueueIterator queue_iterator;
     };
     using EntryPtr = std::shared_ptr<Entry>;
@@ -82,7 +88,7 @@ private:
     std::mutex mutex;
 };
 
-using MarkFilterCachePtr = std::shared_ptr<MarkFilterCache>;
+using QueryConditionCachePtr = std::shared_ptr<QueryConditionCache>;
 
 }
 

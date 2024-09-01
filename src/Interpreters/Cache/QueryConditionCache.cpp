@@ -1,14 +1,14 @@
-#include <Interpreters/Cache/MarkFilterCache.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
 {
 
 
-std::vector<bool> MarkFilterCache::read(const MergeTreeDataPartPtr & data_part, const String & condition)
+std::optional<QueryConditionCache::MarkFilter> QueryConditionCache::read(const MergeTreeDataPartPtr & data_part, const String & condition)
 {
     if (!data_part)
-        return {};
+        return std::nullopt;
 
     std::lock_guard lock(mutex);
 
@@ -17,33 +17,36 @@ std::vector<bool> MarkFilterCache::read(const MergeTreeDataPartPtr & data_part, 
 
     auto entry = get(key);
     if (!entry)
-        return {};
+        return std::nullopt;
 
     return entry->filter;
 }
 
-void MarkFilterCache::write(const MergeTreeDataPartPtr & data_part, const String & condition, const MarkRanges & mark_ranges, bool is_all_true)
+void QueryConditionCache::write(const MergeTreeDataPartPtr & data_part, const String & condition, const MarkRanges & mark_ranges)
 {
     if (!data_part)
         return;
 
     std::lock_guard lock(mutex);
 
-    auto table = data_part->storage.getStorageID();
-    Key key {table.uuid, data_part->name, condition};
+    auto table_id = data_part->storage.getStorageID();
+    Key key {table_id.uuid, data_part->name, condition};
+
     auto entry = getOrSet(key);
     auto & filter = entry->filter;
 
+    /// By default, filters are all true.
     size_t count = data_part->index_granularity.getMarksCount();
     if (filter.size() != count)
         filter.resize(count, true);
 
+    /// Set MarkRanges to false, so there is no need to read these marks again later.
     for (const auto & mark_range : mark_ranges)
-        std::fill(filter.begin() + mark_range.begin, filter.begin() + mark_range.end, is_all_true);
+        std::fill(filter.begin() + mark_range.begin, filter.begin() + mark_range.end, false);
 }
 
 
-void MarkFilterCache::removeTable(const StorageID & table_id)
+void QueryConditionCache::removeTable(const StorageID & table_id)
 {
     std::lock_guard lock(mutex);
 
@@ -60,7 +63,7 @@ void MarkFilterCache::removeTable(const StorageID & table_id)
     cache.erase(it);
 }
 
-void MarkFilterCache::removeParts(const MergeTreeData::DataPartsVector & remove)
+void QueryConditionCache::removeParts(const MergeTreeData::DataPartsVector & remove)
 {
     if (remove.empty())
         return;
@@ -90,7 +93,7 @@ void MarkFilterCache::removeParts(const MergeTreeData::DataPartsVector & remove)
         cache.erase(it);
 }
 
-MarkFilterCache::EntryPtr MarkFilterCache::get(const Key & key)
+QueryConditionCache::EntryPtr QueryConditionCache::get(const Key & key)
 {
     const auto it = cache.find(key.table_id);
     if (it == cache.end())
@@ -106,7 +109,7 @@ MarkFilterCache::EntryPtr MarkFilterCache::get(const Key & key)
     return entry;
 }
 
-MarkFilterCache::EntryPtr MarkFilterCache::getOrSet(const Key & key)
+QueryConditionCache::EntryPtr QueryConditionCache::getOrSet(const Key & key)
 {
     TableMetadataPtr table_metadata;
     if (const auto it = cache.find(key.table_id); it != cache.end())
@@ -137,7 +140,7 @@ MarkFilterCache::EntryPtr MarkFilterCache::getOrSet(const Key & key)
     return entry;
 }
 
-void MarkFilterCache::removeOverflow()
+void QueryConditionCache::removeOverflow()
 {
     size_t queue_size = queue.size();
     while ((max_count != 0 && queue_size > max_count) && queue_size > 0)
@@ -150,7 +153,7 @@ void MarkFilterCache::removeOverflow()
     }
 }
 
-bool MarkFilterCache::remove(const Key & key)
+bool QueryConditionCache::remove(const Key & key)
 {
     const auto it = cache.find(key.table_id);
     if (it == cache.end())
@@ -168,7 +171,7 @@ bool MarkFilterCache::remove(const Key & key)
     return false;
 }
 
-MarkFilterCache::PartMetadataPtr MarkFilterCache::TableMetadata::getPartMetadata(const String & part_name)
+QueryConditionCache::PartMetadataPtr QueryConditionCache::TableMetadata::getPartMetadata(const String & part_name)
 {
     if (const auto it = find(part_name); it != end())
         return it->second;
@@ -176,7 +179,7 @@ MarkFilterCache::PartMetadataPtr MarkFilterCache::TableMetadata::getPartMetadata
     return nullptr;
 }
 
-MarkFilterCache::EntryPtr MarkFilterCache::TableMetadata::tryGetEntry(const Key & key)
+QueryConditionCache::EntryPtr QueryConditionCache::TableMetadata::tryGetEntry(const Key & key)
 {
     const auto it = find(key.part_name);
     if (it == end())
@@ -185,7 +188,7 @@ MarkFilterCache::EntryPtr MarkFilterCache::TableMetadata::tryGetEntry(const Key 
     return it->second->tryGetEntry(key);
 }
 
-std::tuple<bool, MarkFilterCache::EntryPtr> MarkFilterCache::TableMetadata::getOrSet(const Key & key)
+std::tuple<bool, QueryConditionCache::EntryPtr> QueryConditionCache::TableMetadata::getOrSet(const Key & key)
 {
     PartMetadataPtr part_metadata;
     if (const auto it = find(key.part_name); it != end())
@@ -199,7 +202,7 @@ std::tuple<bool, MarkFilterCache::EntryPtr> MarkFilterCache::TableMetadata::getO
     return part_metadata->getOrSet(key);
 }
 
-bool MarkFilterCache::TableMetadata::remove(const Key & key)
+bool QueryConditionCache::TableMetadata::remove(const Key & key)
 {
     auto it = find(key.part_name);
     if (it == end())
@@ -208,7 +211,7 @@ bool MarkFilterCache::TableMetadata::remove(const Key & key)
     auto part_metadata = it->second;
     if (part_metadata->remove(key))
     {
-        if (part_metadata->size() == 0)
+        if (part_metadata->empty())
             erase(it);
 
         return true;
@@ -217,7 +220,7 @@ bool MarkFilterCache::TableMetadata::remove(const Key & key)
     return false;
 }
 
-MarkFilterCache::EntryPtr MarkFilterCache::PartMetadata::tryGetEntry(const Key & key)
+QueryConditionCache::EntryPtr QueryConditionCache::PartMetadata::tryGetEntry(const Key & key)
 {
     if (const auto it = find(key.condition); it != end())
         return it->second;
@@ -225,7 +228,7 @@ MarkFilterCache::EntryPtr MarkFilterCache::PartMetadata::tryGetEntry(const Key &
     return nullptr;
 }
 
-std::tuple<bool, MarkFilterCache::EntryPtr> MarkFilterCache::PartMetadata::getOrSet(const Key & key)
+std::tuple<bool, QueryConditionCache::EntryPtr> QueryConditionCache::PartMetadata::getOrSet(const Key & key)
 {
     auto it = find(key.condition);
     if (it == end())

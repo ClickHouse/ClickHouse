@@ -205,7 +205,7 @@ public:
         bool use_skip_indexes,
         bool find_exact_ranges);
 
-    static void filterPartsByMarkFilterCache(const ContextPtr & context, RangesInDataParts & parts_with_ranges, const SelectQueryInfo & query_info_, LoggerPtr log);
+    static void filterPartsByQueryConditionCache(const ContextPtr & context, RangesInDataParts & parts_with_ranges, const SelectQueryInfo & query_info_, LoggerPtr log);
 
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.

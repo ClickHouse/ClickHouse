@@ -85,7 +85,7 @@ class MarkCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
-class MarkFilterCache;
+class QueryConditionCache;
 class ProcessList;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -1071,8 +1071,8 @@ public:
     std::shared_ptr<QueryCache> getQueryCache() const;
     void clearQueryCache(const std::optional<String> & tag) const;
 
-    void setMarkFilterCache(size_t max_entries);
-    std::shared_ptr<MarkFilterCache> getMarkFilterCache() const;
+    void setQueryConditionCache(size_t max_entries);
+    std::shared_ptr<QueryConditionCache> getQueryConditionCache() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.

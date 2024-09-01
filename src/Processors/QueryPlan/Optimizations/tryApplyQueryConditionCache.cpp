@@ -5,9 +5,9 @@
 namespace DB::QueryPlanOptimizations
 {
 
-void writeMarkFilterCache(const QueryPlanOptimizationSettings & optimization_settings, const Stack & stack)
+void tryApplyQueryConditionCache(const QueryPlanOptimizationSettings & optimization_settings, const Stack & stack)
 {
-    if (!optimization_settings.enable_writes_to_mark_filter_cache)
+    if (!optimization_settings.enable_writes_to_query_condition_cache)
         return;
 
     const auto & frame = stack.back();
@@ -27,7 +27,7 @@ void writeMarkFilterCache(const QueryPlanOptimizationSettings & optimization_set
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
             String condition = query_info.filter_actions_dag->getOutputs()[0]->result_name;
-            filter_step->setMarkFilterCacheAndKey(context->getMarkFilterCache(), condition);
+            filter_step->setQueryConditionCacheAndKey(context->getQueryConditionCache(), condition);
             break;
         }
     }

@@ -13,7 +13,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Interpreters/Cache/MarkFilterCache.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <city.h>
 
 namespace DB
@@ -152,13 +152,6 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
             chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(task->getInfo().data_part, res.read_mark_ranges));
 
-            if (reader_settings.enable_writes_to_mark_filter_cache && prewhere_info)
-            {
-                auto data_part = task->getInfo().data_part;
-                auto mark_filter_cache = data_part->storage.getContext()->getMarkFilterCache();
-                mark_filter_cache->write(data_part, prewhere_info->prewhere_column_name, res.read_mark_ranges, true);
-            }
-
             return ChunkAndProgress{
                 .chunk = std::move(chunk),
                 .num_read_rows = res.num_read_rows,
@@ -167,11 +160,11 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         }
         else
         {
-            if (reader_settings.enable_writes_to_mark_filter_cache && prewhere_info)
+            if (reader_settings.enable_writes_to_query_condition_cache && prewhere_info)
             {
                 auto data_part = task->getInfo().data_part;
-                auto mark_filter_cache = data_part->storage.getContext()->getMarkFilterCache();
-                mark_filter_cache->write(data_part, prewhere_info->prewhere_column_name, res.read_mark_ranges, false);
+                auto query_condition_cache = data_part->storage.getContext()->getQueryConditionCache();
+                query_condition_cache->write(data_part, prewhere_info->prewhere_column_name, res.read_mark_ranges);
             }
 
             return {Chunk(), res.num_read_rows, res.num_read_bytes, false};

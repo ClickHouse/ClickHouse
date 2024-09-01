@@ -1,4 +1,4 @@
-SET use_mark_filter_cache = true;
+SET use_query_condition_cache = true;
 
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (`a` Int64, `b` Int64) ENGINE = MergeTree ORDER BY a;

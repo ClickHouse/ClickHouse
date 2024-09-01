@@ -117,7 +117,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
     {
         optimizePrimaryKeyConditionAndLimit(stack);
 
-        writeMarkFilterCache(optimization_settings, stack);
+        tryApplyQueryConditionCache(optimization_settings, stack);
 
         /// NOTE: optimizePrewhere can modify the stack.
         /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)

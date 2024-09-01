@@ -1453,8 +1453,8 @@ try
     }
     global_context->setQueryCache(query_cache_max_size_in_bytes, query_cache_max_entries, query_cache_query_cache_max_entry_size_in_bytes, query_cache_max_entry_size_in_rows);
 
-    size_t mark_filter_cache_max_entries = config().getUInt64("mark_filter_cache_max_entries", DEFAULT_MARK_FILTER_CACHE_MAX_ENTRIES);
-    global_context->setMarkFilterCache(mark_filter_cache_max_entries);
+    size_t query_condition_cache_max_entries = config().getUInt64("query_condition_cache_max_entries", DEFAULT_QUERY_CONDITION_CACHE_MAX_ENTRIES);
+    global_context->setQueryConditionCache(query_condition_cache_max_entries);
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = server_settings.compiled_expression_cache_size;

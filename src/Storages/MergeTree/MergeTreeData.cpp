@@ -53,7 +53,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/Cache/MarkFilterCache.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTHelpers.h>
@@ -4110,8 +4110,8 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
     if (removed_active_part)
         resetObjectColumnsFromActiveParts(acquired_lock);
 
-    if (auto mark_filter_cache = getContext()->getMarkFilterCache())
-        mark_filter_cache->removeParts(remove);
+    if (auto query_condition_cache = getContext()->getQueryConditionCache())
+        query_condition_cache->removeParts(remove);
 }
 
 void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove)

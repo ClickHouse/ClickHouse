@@ -5,7 +5,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/Cache/MarkFilterCache.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -155,7 +155,7 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .use_asynchronous_read_from_pool = settings.allow_asynchronous_read_from_io_pool_for_merge_tree
             && (settings.max_streams_to_max_threads_ratio > 1 || settings.max_streams_for_merge_tree_reading > 1),
         .enable_multiple_prewhere_read_steps = settings.enable_multiple_prewhere_read_steps,
-        .enable_writes_to_mark_filter_cache = settings.use_mark_filter_cache && settings.enable_writes_to_mark_filter_cache,
+        .enable_writes_to_query_condition_cache = settings.use_query_condition_cache && settings.enable_writes_to_query_condition_cache,
     };
 }
 
@@ -1667,7 +1667,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->use_skip_indexes,
             find_exact_ranges);
 
-        MergeTreeDataSelectExecutor::filterPartsByMarkFilterCache(context_, result.parts_with_ranges, query_info_, log);
+        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(context_, result.parts_with_ranges, query_info_, log);
     }
 
     size_t sum_marks_pk = total_marks_pk;

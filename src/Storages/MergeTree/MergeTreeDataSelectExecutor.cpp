@@ -869,14 +869,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     return parts_with_ranges;
 }
 
-void MergeTreeDataSelectExecutor::filterPartsByMarkFilterCache(const ContextPtr & context, RangesInDataParts & parts_with_ranges, const SelectQueryInfo & query_info_, LoggerPtr log)
+void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(const ContextPtr & context, RangesInDataParts & parts_with_ranges, const SelectQueryInfo & query_info_, LoggerPtr log)
 {
     auto & settings = context->getSettingsRef();
-    if (!settings.use_mark_filter_cache || !settings.enable_reads_to_mark_filter_cache ||
+    if (!settings.use_query_condition_cache || !settings.enable_reads_to_query_condition_cache ||
         (!query_info_.prewhere_info && !query_info_.filter_actions_dag))
         return;
 
-    MarkFilterCachePtr mark_filter_cache = context->getMarkFilterCache();
+    QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
 
     struct Stat
     {
@@ -892,20 +892,21 @@ void MergeTreeDataSelectExecutor::filterPartsByMarkFilterCache(const ContextPtr 
             auto & part_with_ranges = *it;
             stat.total_granules += part_with_ranges.getMarksCount();
 
-            auto filter = mark_filter_cache->read(part_with_ranges.data_part, condition);
-            if (filter.empty())
+            auto filter = query_condition_cache->read(part_with_ranges.data_part, condition);
+            if (!filter)
             {
                 ++it;
                 continue;
             }
 
+            auto & mark_filter = *filter;
             MarkRanges ranges;
             for (auto & mark_range : part_with_ranges.ranges)
             {
                 size_t begin = mark_range.begin;
                 for (size_t mark_it = begin; mark_it < mark_range.end; ++mark_it)
                 {
-                    if (!filter[mark_it])
+                    if (!mark_filter[mark_it])
                     {
                         ++stat.granules_dropped;
                         if (mark_it == begin)

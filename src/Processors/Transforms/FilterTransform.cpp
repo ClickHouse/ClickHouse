@@ -2,7 +2,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters//Cache/MarkFilterCache.h>
+#include <Interpreters//Cache/QueryConditionCache.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -63,7 +63,7 @@ FilterTransform::FilterTransform(
     bool remove_filter_column_,
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
-    MarkFilterCachePtr mark_filter_cache_,
+    QueryConditionCachePtr query_condition_cache_,
     String condition_)
     : ISimpleTransform(
             header_,
@@ -74,7 +74,7 @@ FilterTransform::FilterTransform(
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
     , rows_filtered(rows_filtered_)
-    , mark_filter_cache(mark_filter_cache_)
+    , query_condition_cache(query_condition_cache_)
     , condition(std::move(condition_))
 {
     transformed_header = getInputPort().getHeader();
@@ -131,14 +131,14 @@ void FilterTransform::doTransform(Chunk & chunk)
     auto columns = chunk.detachColumns();
     DataTypes types;
 
-    auto updateMarkFilterCache = [&](bool exists)
+    auto updateQueryConditionCache = [&]()
     {
         auto mark_info = chunk.getChunkInfos().get<MarkRangesInfo>();
         if (!mark_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Chunk should have MarkRangesInfo in FilterTransform.");
 
-        mark_filter_cache->write(mark_info->getDataPart(), condition, mark_info->getMarkRanges(), exists);
+        query_condition_cache->write(mark_info->getDataPart(), condition, mark_info->getMarkRanges());
     };
 
     {
@@ -154,10 +154,6 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_true || on_totals)
     {
-        if (mark_filter_cache)
-            updateMarkFilterCache(true);
-
-        chunk.getChunkInfos();
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         removeFilterIfNeed(chunk);
         return;
@@ -175,17 +171,14 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_false)
     {
-        if (mark_filter_cache)
-            updateMarkFilterCache(false);
+        if (query_condition_cache)
+            updateQueryConditionCache();
 
         return; /// Will finish at next prepare call
     }
 
     if (constant_filter_description.always_true)
     {
-        if (mark_filter_cache)
-            updateMarkFilterCache(true);
-
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         removeFilterIfNeed(chunk);
         return;
@@ -230,8 +223,9 @@ void FilterTransform::doTransform(Chunk & chunk)
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
     {
-        if (mark_filter_cache)
-            updateMarkFilterCache(false);
+        if (query_condition_cache)
+            updateQueryConditionCache();
+
         /// SimpleTransform will skip it.
         return;
     }
@@ -245,9 +239,6 @@ void FilterTransform::doTransform(Chunk & chunk)
             auto & type = transformed_header.getByPosition(filter_column_position).type;
             columns[filter_column_position] = type->createColumnConst(num_filtered_rows, 1u);
         }
-
-        if (mark_filter_cache)
-            updateMarkFilterCache(true);
 
         /// No need to touch the rest of the columns.
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
@@ -280,9 +271,6 @@ void FilterTransform::doTransform(Chunk & chunk)
         else
             current_column = filter_description->filter(*current_column, num_filtered_rows);
     }
-
-    if (mark_filter_cache)
-        updateMarkFilterCache(true);
 
     chunk.setColumns(std::move(columns), num_filtered_rows);
     removeFilterIfNeed(chunk);
