@@ -70,6 +70,7 @@ class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
 class IUserDefinedSQLObjectsStorage;
+class IWorkloadEntityStorage;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
@@ -878,6 +879,10 @@ public:
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
     void setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+
+    const IWorkloadEntityStorage & getWorkloadEntityStorage() const;
+    IWorkloadEntityStorage & getWorkloadEntityStorage();
+    void setWorkloadEntityStorage(std::unique_ptr<IWorkloadEntityStorage> storage);
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
