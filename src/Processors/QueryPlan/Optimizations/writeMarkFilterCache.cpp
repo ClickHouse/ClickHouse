@@ -7,7 +7,7 @@ namespace DB::QueryPlanOptimizations
 
 void writeMarkFilterCache(const QueryPlanOptimizationSettings & optimization_settings, const Stack & stack)
 {
-    if (!optimization_settings.use_mark_filter_cache || !optimization_settings.enable_writes_to_mark_filter_cache)
+    if (!optimization_settings.enable_writes_to_mark_filter_cache)
         return;
 
     const auto & frame = stack.back();

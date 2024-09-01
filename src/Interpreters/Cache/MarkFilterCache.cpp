@@ -5,7 +5,7 @@ namespace DB
 {
 
 
-std::vector<bool> MarkFilterCache::getByCondition(const MergeTreeDataPartPtr & data_part, const String & condition)
+std::vector<bool> MarkFilterCache::read(const MergeTreeDataPartPtr & data_part, const String & condition)
 {
     if (!data_part)
         return {};
@@ -22,7 +22,7 @@ std::vector<bool> MarkFilterCache::getByCondition(const MergeTreeDataPartPtr & d
     return entry->filter;
 }
 
-void MarkFilterCache::update(const MergeTreeDataPartPtr & data_part, const String & condition, const MarkRanges & mark_ranges, bool exists)
+void MarkFilterCache::write(const MergeTreeDataPartPtr & data_part, const String & condition, const MarkRanges & mark_ranges, bool is_all_true)
 {
     if (!data_part)
         return;
@@ -39,7 +39,7 @@ void MarkFilterCache::update(const MergeTreeDataPartPtr & data_part, const Strin
         filter.resize(count, true);
 
     for (const auto & mark_range : mark_ranges)
-        std::fill(filter.begin() + mark_range.begin, filter.begin() + mark_range.end, exists);
+        std::fill(filter.begin() + mark_range.begin, filter.begin() + mark_range.end, is_all_true);
 }
 
 

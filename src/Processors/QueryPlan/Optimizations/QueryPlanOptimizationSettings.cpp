@@ -51,8 +51,7 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.force_projection_name = settings.optimize_projection ? from.force_optimize_projection_name.value : "";
     settings.optimize_use_implicit_projections = settings.optimize_projection && from.optimize_use_implicit_projections;
 
-    settings.use_mark_filter_cache = from.use_mark_filter_cache;
-    settings.enable_writes_to_mark_filter_cache = from.enable_writes_to_mark_filter_cache;
+    settings.enable_writes_to_mark_filter_cache = from.use_mark_filter_cache && from.enable_writes_to_mark_filter_cache;
 
     return settings;
 }

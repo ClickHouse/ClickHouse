@@ -30,8 +30,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReadTask::BlockSizeParams & block_size_params_,
-    const MergeTreeReaderSettings & reader_settings_,
-    const std::shared_ptr<MarkFilterCache> & mark_filter_cache_)
+    const MergeTreeReaderSettings & reader_settings_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
     , prewhere_info(prewhere_info_)
@@ -40,7 +39,6 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , reader_settings(reader_settings_)
     , block_size_params(block_size_params_)
     , result_header(transformHeader(pool->getHeader(), prewhere_info))
-    , mark_filter_cache(mark_filter_cache_)
 {
     if (reader_settings.apply_deleted_mask)
     {
@@ -154,9 +152,12 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
             chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(task->getInfo().data_part, res.read_mark_ranges));
 
-            /// update prewhere mark filter cache.
-            if (mark_filter_cache && prewhere_info)
-                mark_filter_cache->update(task->getInfo().data_part, prewhere_info->prewhere_column_name, res.read_mark_ranges, true);
+            if (reader_settings.enable_writes_to_mark_filter_cache && prewhere_info)
+            {
+                auto data_part = task->getInfo().data_part;
+                auto mark_filter_cache = data_part->storage.getContext()->getMarkFilterCache();
+                mark_filter_cache->write(data_part, prewhere_info->prewhere_column_name, res.read_mark_ranges, true);
+            }
 
             return ChunkAndProgress{
                 .chunk = std::move(chunk),
@@ -166,8 +167,12 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         }
         else
         {
-            if (mark_filter_cache && prewhere_info)
-                mark_filter_cache->update(task->getInfo().data_part, prewhere_info->prewhere_column_name, res.read_mark_ranges, false);
+            if (reader_settings.enable_writes_to_mark_filter_cache && prewhere_info)
+            {
+                auto data_part = task->getInfo().data_part;
+                auto mark_filter_cache = data_part->storage.getContext()->getMarkFilterCache();
+                mark_filter_cache->write(data_part, prewhere_info->prewhere_column_name, res.read_mark_ranges, false);
+            }
 
             return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
         }

@@ -13,9 +13,9 @@ public:
         : max_count(max_count_)
     {}
 
-    std::vector<bool> getByCondition(const MergeTreeDataPartPtr & data_part, const String & condition);
+    std::vector<bool> read(const MergeTreeDataPartPtr & data_part, const String & condition);
 
-    void update(const MergeTreeDataPartPtr & data_part, const String & condition, const MarkRanges & mark_ranges, bool exists);
+    void write(const MergeTreeDataPartPtr & data_part, const String & condition, const MarkRanges & mark_ranges, bool is_all_true);
 
     void removeTable(const StorageID & table_id);
 
@@ -66,6 +66,7 @@ private:
     };
     using TableMetadataPtr = std::shared_ptr<TableMetadata>;
 
+    using Cache = std::unordered_map<UUID, TableMetadataPtr>;
 
     EntryPtr get(const Key & key);
     EntryPtr getOrSet(const Key & key);
@@ -76,7 +77,6 @@ private:
 
     size_t max_count;
 
-    using Cache = std::unordered_map<UUID, TableMetadataPtr>;
     Cache cache;
     LRUQueue queue;
     std::mutex mutex;

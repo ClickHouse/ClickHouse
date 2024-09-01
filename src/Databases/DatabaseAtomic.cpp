@@ -176,7 +176,7 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
     if (table->storesDataOnDisk())
         tryRemoveSymlink(table_name);
 
-    if (auto mark_filter_cache = local_context->getMarkFilterCache(); mark_filter_cache)
+    if (auto mark_filter_cache = local_context->getMarkFilterCache())
         mark_filter_cache->removeTable(table->getStorageID());
 
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.

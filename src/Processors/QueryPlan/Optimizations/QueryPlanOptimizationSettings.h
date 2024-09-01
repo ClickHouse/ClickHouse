@@ -75,8 +75,6 @@ struct QueryPlanOptimizationSettings
     String force_projection_name;
     bool optimize_use_implicit_projections = false;
 
-    /// Mark filter cache.
-    bool use_mark_filter_cache = false;
     bool enable_writes_to_mark_filter_cache = true;
 
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);

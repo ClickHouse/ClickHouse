@@ -274,7 +274,6 @@ public:
         Block additional_columns;
 
         RangesInfo started_ranges;
-
         /// The number of rows read from each granule.
         /// Granule here is not number of rows between two marks
         /// It's amount of rows per single reading act

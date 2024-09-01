@@ -138,7 +138,7 @@ void FilterTransform::doTransform(Chunk & chunk)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Chunk should have MarkRangesInfo in FilterTransform.");
 
-        mark_filter_cache->update(mark_info->getDataPart(), condition, mark_info->getMarkRanges(), exists);
+        mark_filter_cache->write(mark_info->getDataPart(), condition, mark_info->getMarkRanges(), exists);
     };
 
     {

@@ -155,6 +155,7 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .use_asynchronous_read_from_pool = settings.allow_asynchronous_read_from_io_pool_for_merge_tree
             && (settings.max_streams_to_max_threads_ratio > 1 || settings.max_streams_for_merge_tree_reading > 1),
         .enable_multiple_prewhere_read_steps = settings.enable_multiple_prewhere_read_steps,
+        .enable_writes_to_mark_filter_cache = settings.use_mark_filter_cache && settings.enable_writes_to_mark_filter_cache,
     };
 }
 
@@ -388,17 +389,13 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
 
     Pipes pipes;
 
-    MarkFilterCachePtr mark_filter_cache = nullptr;
-    if (settings.use_mark_filter_cache && settings.enable_writes_to_mark_filter_cache)
-        mark_filter_cache = context->getMarkFilterCache();
-
     for (size_t i = 0; i < pool_settings.threads; ++i)
     {
         auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool, std::move(algorithm), prewhere_info,
-            actions_settings, block_size_copy, reader_settings, mark_filter_cache);
+            actions_settings, block_size_copy, reader_settings);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
@@ -490,10 +487,6 @@ Pipe ReadFromMergeTree::readFromPool(
     auto block_size_copy = block_size;
     block_size_copy.min_marks_to_read = pool_settings.min_marks_for_concurrent_read;
 
-    MarkFilterCachePtr mark_filter_cache = nullptr;
-    if (settings.use_mark_filter_cache && settings.enable_writes_to_mark_filter_cache)
-        mark_filter_cache = context->getMarkFilterCache();
-
     Pipes pipes;
     for (size_t i = 0; i < pool_settings.threads; ++i)
     {
@@ -501,7 +494,7 @@ Pipe ReadFromMergeTree::readFromPool(
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool, std::move(algorithm), prewhere_info,
-            actions_settings, block_size_copy, reader_settings, mark_filter_cache);
+            actions_settings, block_size_copy, reader_settings);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
@@ -597,10 +590,6 @@ Pipe ReadFromMergeTree::readInOrder(
     const auto in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
     const bool set_total_rows_approx = !is_parallel_reading_from_replicas;
 
-    MarkFilterCachePtr mark_filter_cache = nullptr;
-    if (settings.use_mark_filter_cache && settings.enable_writes_to_mark_filter_cache)
-        mark_filter_cache = context->getMarkFilterCache();
-
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
     {
@@ -626,7 +615,7 @@ Pipe ReadFromMergeTree::readInOrder(
 
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool, std::move(algorithm), prewhere_info,
-            actions_settings, block_size, reader_settings, mark_filter_cache);
+            actions_settings, block_size, reader_settings);
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
@@ -1678,7 +1667,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->use_skip_indexes,
             find_exact_ranges);
 
-        MergeTreeDataSelectExecutor::filterPartsByPreWhereAndWhere(context_, result.parts_with_ranges, query_info_, log);
+        MergeTreeDataSelectExecutor::filterPartsByMarkFilterCache(context_, result.parts_with_ranges, query_info_, log);
     }
 
     size_t sum_marks_pk = total_marks_pk;

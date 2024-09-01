@@ -869,7 +869,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     return parts_with_ranges;
 }
 
-void MergeTreeDataSelectExecutor::filterPartsByPreWhereAndWhere(const ContextPtr & context, RangesInDataParts & parts_with_ranges, const SelectQueryInfo & query_info_, LoggerPtr log)
+void MergeTreeDataSelectExecutor::filterPartsByMarkFilterCache(const ContextPtr & context, RangesInDataParts & parts_with_ranges, const SelectQueryInfo & query_info_, LoggerPtr log)
 {
     auto & settings = context->getSettingsRef();
     if (!settings.use_mark_filter_cache || !settings.enable_reads_to_mark_filter_cache ||
@@ -884,7 +884,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPreWhereAndWhere(const ContextPtr
         size_t granules_dropped{0};
     };
 
-    auto filterMarkRange =[&](const String & condition) -> Stat
+    auto dropMarkRanges =[&](const String & condition) -> Stat
     {
         Stat stat;
         for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
@@ -892,7 +892,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPreWhereAndWhere(const ContextPtr
             auto & part_with_ranges = *it;
             stat.total_granules += part_with_ranges.getMarksCount();
 
-            auto filter = mark_filter_cache->getByCondition(part_with_ranges.data_part, condition);
+            auto filter = mark_filter_cache->read(part_with_ranges.data_part, condition);
             if (filter.empty())
             {
                 ++it;
@@ -937,20 +937,18 @@ void MergeTreeDataSelectExecutor::filterPartsByPreWhereAndWhere(const ContextPtr
         return stat;
     };
 
-    /// filter prewhere condition.
     if (query_info_.prewhere_info)
     {
         String & condition = query_info_.prewhere_info->prewhere_column_name;
-        auto stat = filterMarkRange(query_info_.prewhere_info->prewhere_column_name);
-        LOG_DEBUG(log, "MarkFilterCache PREWHERE contition {} has dropped {}/{} granules.", condition, stat.granules_dropped, stat.total_granules);
+        auto stat = dropMarkRanges(query_info_.prewhere_info->prewhere_column_name);
+        LOG_DEBUG(log, "PREWHERE contition {} by mark filter cache has dropped {}/{} granules.", condition, stat.granules_dropped, stat.total_granules);
     }
 
-    /// filter where condition.
     if (query_info_.filter_actions_dag)
     {
         String condition = query_info_.filter_actions_dag->getOutputs()[0]->result_name;
-        auto stat = filterMarkRange(condition);
-        LOG_DEBUG(log, "MarkFilterCache WHERE condition {} has dropped {}/{} granules.", condition, stat.granules_dropped, stat.total_granules);
+        auto stat = dropMarkRanges(condition);
+        LOG_DEBUG(log, "WHERE condition {} by mark filter cache has dropped {}/{} granules.", condition, stat.granules_dropped, stat.total_granules);
     }
 }
 

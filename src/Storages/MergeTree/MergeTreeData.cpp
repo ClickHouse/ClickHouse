@@ -53,6 +53,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/Cache/MarkFilterCache.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTHelpers.h>
@@ -102,7 +103,6 @@
 #include <unordered_set>
 #include <filesystem>
 
-#include "Interpreters/Cache/MarkFilterCache.h"
 #include <fmt/format.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/NetException.h>
@@ -4110,7 +4110,7 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
     if (removed_active_part)
         resetObjectColumnsFromActiveParts(acquired_lock);
 
-    if (auto mark_filter_cache = getContext()->getMarkFilterCache(); mark_filter_cache)
+    if (auto mark_filter_cache = getContext()->getMarkFilterCache())
         mark_filter_cache->removeParts(remove);
 }
 

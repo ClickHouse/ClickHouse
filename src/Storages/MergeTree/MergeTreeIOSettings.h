@@ -48,6 +48,8 @@ struct MergeTreeReaderSettings
     bool adjust_read_buffer_size = true;
     /// If true, it's allowed to read the whole part without reading marks.
     bool can_read_part_without_marks = false;
+    /// Prewhere condition filtered marks is written to the mark filter cache.
+    bool enable_writes_to_mark_filter_cache = false;
 };
 
 struct MergeTreeWriterSettings
