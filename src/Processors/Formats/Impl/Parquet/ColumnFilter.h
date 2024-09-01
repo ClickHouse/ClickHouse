@@ -150,6 +150,22 @@ public:
         }
     }
 
+    virtual void testFloat32Values(RowSet & row_set, size_t offset, size_t len, const Float32 * data) const
+    {
+        for (size_t i = offset; i < offset + len; ++i)
+        {
+            row_set.set(i, testFloat32(data[i]));
+        }
+    }
+
+    virtual void testFloat64Values(RowSet & row_set, size_t offset, size_t len, const Float64 * data) const
+    {
+        for (size_t i = offset; i < offset + len; ++i)
+        {
+            row_set.set(i, testFloat64(data[i]));
+        }
+    }
+
 
     virtual ColumnFilterPtr merge(const ColumnFilter * /*filter*/) const
     {
@@ -226,45 +242,45 @@ class BigIntRangeFilter : public ColumnFilter
     friend class NegatedBigIntRangeFilter;
 public:
     static OptionalFilter create(const ActionsDAG::Node & node);
-    explicit BigIntRangeFilter(const Int64 min_, const Int64 max_, bool null_allowed_)
+    explicit BigIntRangeFilter(const Int64 lower_, const Int64 max_, bool null_allowed_)
         : ColumnFilter(BigIntRange, null_allowed_)
         , upper(max_)
-        , min(min_)
-        , lower32(static_cast<Int32>(std::max<Int64>(min, std::numeric_limits<int32_t>::min())))
+        , lower(lower_)
+        , lower32(static_cast<Int32>(std::max<Int64>(lower, std::numeric_limits<int32_t>::min())))
         , upper32(static_cast<Int32>(std::min<Int64>(upper, std::numeric_limits<int32_t>::max())))
-        , lower16(static_cast<Int16>(std::max<Int64>(min, std::numeric_limits<int16_t>::min())))
+        , lower16(static_cast<Int16>(std::max<Int64>(lower, std::numeric_limits<int16_t>::min())))
         , upper16(static_cast<Int16>(std::min<Int64>(upper, std::numeric_limits<int16_t>::max())))
-        , is_single_value(upper == min)
+        , is_single_value(upper == lower)
     {
     }
     ~BigIntRangeFilter() override = default;
-    bool testInt64(Int64 int64) const override { return int64 >= min && int64 <= upper; }
-    bool testInt32(Int32 int32) const override { return int32 >= min && int32 <= upper; }
-    bool testInt16(Int16 int16) const override { return int16 >= min && int16 <= upper; }
-    bool testInt64Range(Int64 lower, Int64 upper_) const override { return min >= lower && upper_ <= upper; }
+    bool testInt64(Int64 int64) const override { return int64 >= lower && int64 <= upper; }
+    bool testInt32(Int32 int32) const override { return int32 >= lower && int32 <= upper; }
+    bool testInt16(Int16 int16) const override { return int16 >= lower && int16 <= upper; }
+    bool testInt64Range(Int64 lower_, Int64 upper_) const override { return lower >= lower_ && upper_ <= upper; }
     void testInt64Values(RowSet & row_set, size_t offset, size_t len, const Int64 * data) const override;
     void testInt32Values(RowSet & row_set, size_t offset, size_t len, const Int32 * data) const override;
     void testInt16Values(RowSet & row_set, size_t offset, size_t len, const Int16 * data) const override;
     ColumnFilterPtr merge(const ColumnFilter * filter) const override;
     ColumnFilterPtr clone(std::optional<bool> null_allowed_) const override
     {
-        return std::make_shared<BigIntRangeFilter>(min, upper, null_allowed_.value_or(null_allowed));
+        return std::make_shared<BigIntRangeFilter>(lower, upper, null_allowed_.value_or(null_allowed));
     }
     
     String toString() const override
     {
-        return fmt::format("BigIntRangeFilter: [{}, {}] {}", min, upper, null_allowed ? "with nulls" : "no nulls");
+        return fmt::format("BigIntRangeFilter: [{}, {}] {}", lower, upper, null_allowed ? "with nulls" : "no nulls");
     }
 
     Int64 getUpper() const { return upper; }
-    Int64 getMin() const { return min; }
+    Int64 getLower() const { return lower; }
 
 private:
     template <class T, bool negated = false>
     void testIntValues(RowSet & row_set, size_t offset, size_t len, const T * data) const;
 
     const Int64 upper;
-    const Int64 min;
+    const Int64 lower;
     const int32_t lower32;
     const int32_t upper32;
     const int16_t lower16;
@@ -299,7 +315,10 @@ public:
 
     ColumnFilterPtr merge(const ColumnFilter * filter) const override;
     ColumnFilterPtr clone(std::optional<bool> null_allowed_) const override;
-
+    String toString() const override
+    {
+        return fmt::format("NegatedBigIntRangeFilter: [{}, {}] {}", non_negated->lower, non_negated->upper, null_allowed ? "with nulls" : "no nulls");
+    }
 private:
     std::unique_ptr<BigIntRangeFilter> non_negated;
 };

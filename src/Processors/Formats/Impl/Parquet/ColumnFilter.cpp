@@ -3,6 +3,7 @@
 #include <Columns/ColumnSet.h>
 #include <Interpreters/Set.h>
 #include <Processors/Formats/Impl/Parquet/xsimd_wrapper.h>
+#include <format>
 
 namespace DB
 {
@@ -60,29 +61,33 @@ void FilterHelper::filterPlainFixedData(const S* src, PaddedPODArray<T> & dst, c
     {
         auto rows = i * increment;
         bool_type mask = bool_type::load_aligned(row_set.maskReference().data() + rows);
+        auto old_size = dst.size();
         if (xsimd::none(mask))
             continue;
         else if (xsimd::all(mask))
         {
-            auto old_size = dst.size();
             dst.resize( old_size + increment);
-            auto * start = dst.data() + old_size;
-            batch_type data = batch_type::load_unaligned(src + rows);
             if constexpr (std::is_same_v<T, S>)
-                data.store_unaligned(start);
+            {
+                auto * start = dst.data() + old_size;
+                memcpySmallAllowReadWriteOverflow15(start, src + rows, increment * sizeof(S));
+            }
             else
             {
-                alignas(xsimd::default_arch::alignment()) S buffer[increment];
-                data.store_aligned(buffer);
                 for (size_t j = 0; j < increment; ++j)
-                    dst.push_back(static_cast<T>(buffer[j]));
+                {
+                    dst[old_size + j] = static_cast<T>(src[rows + j]);
+                }
             }
         }
         else
         {
             for (size_t j = 0; j < increment; ++j)
-                if (row_set.get(rows + j))
-                    dst.push_back(static_cast<T>(src[rows + j]));
+            {
+                size_t idx = rows + j;
+                if (row_set.get(idx))
+                    dst.push_back(static_cast<T>(src[idx]));
+            }
         }
     }
     for (size_t i = num_batched * increment; i < rows_to_read; ++i)
@@ -178,7 +183,7 @@ void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t le
     using bool_type = xsimd::batch_bool<T>;
     auto increment = batch_type::size;
     auto num_batched = len / increment;
-    batch_type min_batch = batch_type::broadcast(min);
+    batch_type min_batch = batch_type::broadcast(lower);
     batch_type max_batch;
     if (!is_single_value)
         max_batch = batch_type::broadcast(upper);
@@ -196,14 +201,14 @@ void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t le
         {
             if constexpr (std::is_same_v<T, Int32>)
             {
-                if unlikely(lower32 != min)
+                if unlikely(lower32 != lower)
                     mask = bool_type(false);
                 else
                     mask = value == min_batch;
             }
             else if constexpr (std::is_same_v<T, Int16>)
             {
-                if unlikely(lower16 != min)
+                if unlikely(lower16 != lower)
                     mask = bool_type(false);
                 else
                     mask = value == min_batch;
@@ -224,7 +229,10 @@ void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t offset, size_t le
     }
     for (size_t i = offset + (num_batched * increment); i < offset + len ; ++i)
     {
-        row_set.maskReference()[i] = data[i] >= min & data[i] <= upper;
+        bool value = data[i] >= lower & data[i] <= upper;
+        if (negated)
+            value = !value;
+        row_set.maskReference()[i] = value;
     }
 }
 
@@ -357,16 +365,16 @@ ColumnFilterPtr BigIntRangeFilter::merge(const ColumnFilter * other) const
         case IsNull:
             return other->merge(this);
         case IsNotNull:
-            return std::make_shared<BigIntRangeFilter>(min, upper, false);
+            return std::make_shared<BigIntRangeFilter>(lower, upper, false);
         case BigIntRange: {
             bool both_null_allowed = null_allowed && other->testNull();
             const auto * other_range = dynamic_cast<const BigIntRangeFilter *>(other);
-            if (other_range->min > upper || other_range->upper < min)
+            if (other_range->lower > upper || other_range->upper < lower)
             {
                 return nullOrFalse(both_null_allowed);
             }
             return std::make_shared<BigIntRangeFilter>(
-                std::max(min, other_range->min), std::min(upper, other_range->upper), both_null_allowed);
+                std::max(lower, other_range->lower), std::min(upper, other_range->upper), both_null_allowed);
         }
         default:
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Can't merge filter of kind {}", magic_enum::enum_name(other->kind()));
@@ -527,7 +535,7 @@ ColumnFilterPtr NegatedByteValuesFilter::merge(const ColumnFilter * other) const
 
 ColumnFilterPtr NegatedBigIntRangeFilter::clone(std::optional<bool> null_allowed_) const
 {
-    return std::make_shared<NegatedBigIntRangeFilter>(non_negated->min, non_negated->upper, null_allowed_.value_or(null_allowed));
+    return std::make_shared<NegatedBigIntRangeFilter>(non_negated->lower, non_negated->upper, null_allowed_.value_or(null_allowed));
 }
 OptionalFilter NegatedBigIntRangeFilter::create(const ActionsDAG::Node & node)
 {

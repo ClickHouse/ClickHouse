@@ -21,63 +21,42 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
 {
     if (!remain_rows) return {};
     rows = std::min(rows, remain_rows);
+
+    OptionalRowSet row_set = std::nullopt;
+    if (!filter_columns.empty())
+        row_set = RowSet(rows);
+    if (row_set.has_value())
+        for (auto & column : filter_columns)
+        {
+            reader_columns_mapping[column]->computeRowSet(row_set, rows);
+            if (row_set.value().none())
+                break;
+        }
+    bool skip_all = false;
+    if (row_set.has_value())  skip_all = row_set.value().none();
+    if (skip_all)
+    {
+        metrics.skipped_rows += rows;
+    }
+
+    if (row_set.has_value() && row_set.value().all()) row_set = std::nullopt;
+    size_t rows_read = 0;
+    if (!skip_all) rows_read = row_set.has_value() ? row_set.value().count() : rows;
     MutableColumns columns;
     for (auto & reader : column_readers)
     {
         columns.push_back(reader->createColumn());
-        columns.back()->reserve(rows);
+        columns.back()->reserve(rows_read);
     }
-
-    size_t rows_read = 0;
-    while (rows_read < rows)
+    for (size_t i = 0; i < column_readers.size(); i++)
     {
-        size_t rows_to_read = std::min(rows - rows_read, remain_rows);
-        if (!rows_to_read)
-            break;
-        for (auto & reader : column_readers)
-        {
-            if (!reader->availableRows())
-            {
-                reader->readPageIfNeeded();
-            }
-            rows_to_read = std::min(reader->availableRows(), rows_to_read);
-        }
-        if (!rows_to_read)
-            break;
-
-        OptionalRowSet row_set = std::nullopt;
-        if (!filter_columns.empty())
-            row_set = std::optional(RowSet(rows_to_read));
-        if (row_set.has_value())
-            for (auto & column : filter_columns)
-            {
-                reader_columns_mapping[column]->computeRowSet(row_set, rows_to_read);
-                if (row_set.value().none())
-                    break;
-            }
-        bool skip_all = false;
-        if (row_set.has_value())  skip_all = row_set.value().none();
         if (skip_all)
-        {
-            metrics.skipped_rows += rows_to_read;
-        }
-
-        bool all = true;
-        if (row_set.has_value())  all = row_set.value().all();
-        if (all) row_set = std::nullopt;
-
-        for (size_t i = 0; i < column_readers.size(); i++)
-        {
-            if (skip_all)
-                column_readers[i]->skip(rows_to_read);
-            else
-                column_readers[i]->read(columns[i], row_set, rows_to_read);
-        }
-        remain_rows -= rows_to_read;
-        metrics.filtered_rows += (rows_to_read - (columns[0]->size() - rows_read));
-        rows_read = columns[0]->size();
+            column_readers[i]->skip(rows);
+        else
+            column_readers[i]->read(columns[i], row_set, rows);
     }
-
+    remain_rows -= rows;
+    metrics.filtered_rows += (rows - columns[0]->size() );
 //    if (parquet_reader->remain_filter.has_value())
 //    {
 //        std::cerr<<"has filter\n"<<std::endl;
@@ -537,11 +516,16 @@ void NumberDictionaryReader<DataType, SerializedType>::read(MutableColumnPtr & c
         {
             auto old_size = data.size();
             data.resize(old_size + rows_to_read);
-            idx_decoder.GetBatchWithDict(dict.data() , static_cast<Int32>(dict.size()), data.data() + old_size, static_cast<int>(rows_to_read));
+            size_t count = idx_decoder.GetBatchWithDict(dict.data() , static_cast<Int32>(dict.size()), data.data() + old_size, static_cast<int>(rows_to_read));
+            if (count != rows_to_read)
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "read full idx batch failed. read {} rows, expect {}", count, rows_to_read);
         }
         batch_buffer.resize(0);
         state.remain_rows -= rows_to_read;
     }
+    for (size_t i = 0; i < data.size(); i++)
+        if (data[i] < 0)
+            std::cerr << fmt::format("data value {}\n", data[i]);
 }
 
 template <typename DataType, typename SerializedType>
@@ -585,16 +569,18 @@ size_t NumberDictionaryReader<DataType, SerializedType>::skipValuesInCurrentPage
     }
     else
     {
-        if (!state.idx_buffer.empty())
+        if (!batch_buffer.empty())
         {
             // only support skip all
-            chassert(state.idx_buffer.size() == skipped);
-            state.idx_buffer.resize(0);
+            chassert(batch_buffer.size() == skipped);
+            batch_buffer.resize(0);
         }
         else
         {
             state.idx_buffer.resize(skipped);
-            idx_decoder.GetBatch(state.idx_buffer.data(), static_cast<int>(skipped));
+            size_t count = idx_decoder.GetBatch(state.idx_buffer.data(), static_cast<int>(skipped));
+            if (count != skipped)
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "skip rows failed. read {} rows, expect {}", count, skipped);
             state.idx_buffer.resize(0);
         }
     }

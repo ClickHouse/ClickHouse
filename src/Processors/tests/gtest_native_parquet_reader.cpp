@@ -461,6 +461,62 @@ TEST(Processors, BenchmarkReadNullableString)
     benchmark("native", 21, new_test);
 }
 
+template<class T, class S>
+static void testFilterPlainFixedData(int size, double positive_rate)
+{
+    PaddedPODArray<T> data;
+    PaddedPODArray<S> src;
+    PaddedPODArray<T> expected;
+    RowSet set(size);
+    data.reserve(size);
+    for (size_t i = 0; i < size; ++i)
+    {
+        auto value = std::rand() % 100000;
+        src.push_back(value);
+        (std::rand() % 100 + 1) < positive_rate * 100 ? set.set(i, true) : set.set(i, false);
+        if (set.get(i))
+        {
+            expected.push_back(value);
+        }
+    }
+    FilterHelper::filterPlainFixedData(src.data(), data, set, src.size());
+    ASSERT_EQ(expected.size(), data.size());
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        ASSERT_EQ(expected[i], data[i]);
+    }
+}
+
+TEST(TestColumnFilterHepler, TestFilterPlainFixedData)
+{
+    testFilterPlainFixedData<Int16, Int32>(100000, 1.0);
+    testFilterPlainFixedData<Int16, Int16>(100000, 1.0);
+    testFilterPlainFixedData<Int32, Int32>(100000, 1.0);
+    testFilterPlainFixedData<Int64, Int64>(100000, 1.0);
+    testFilterPlainFixedData<Float32, Float32>(100000, 1.0);
+    testFilterPlainFixedData<Float64, Float64>(100000, 1.0);
+    testFilterPlainFixedData<DateTime64, Int64>(100000, 1.0);
+    testFilterPlainFixedData<DateTime64, DateTime64>(100000, 1.0);
+
+    testFilterPlainFixedData<Int16, Int32>(100000, 0);
+    testFilterPlainFixedData<Int16, Int16>(100000, 0);
+    testFilterPlainFixedData<Int32, Int32>(100000, 0);
+    testFilterPlainFixedData<Int64, Int64>(100000, 0);
+    testFilterPlainFixedData<Float32, Float32>(100000, 0);
+    testFilterPlainFixedData<Float64, Float64>(100000, 0);
+    testFilterPlainFixedData<DateTime64, Int64>(100000, 0);
+    testFilterPlainFixedData<DateTime64, DateTime64>(100000, 0);
+
+    testFilterPlainFixedData<Int16, Int32>(100000, 0.9);
+    testFilterPlainFixedData<Int16, Int16>(100000, 0.9);
+    testFilterPlainFixedData<Int32, Int32>(100000, 0.9);
+    testFilterPlainFixedData<Int64, Int64>(100000, 0.9);
+    testFilterPlainFixedData<Float32, Float32>(100000, 0.9);
+    testFilterPlainFixedData<Float64, Float64>(100000, 0.9);
+    testFilterPlainFixedData<DateTime64, Int64>(100000, 0.9);
+    testFilterPlainFixedData<DateTime64, DateTime64>(100000, 0.9);
+}
+
 template<class T>
 static void testGatherDictInt()
 {
@@ -567,4 +623,19 @@ TEST(TestColumnFilter, TestColumnIntFilter)
     set3.setAllTrue();
     filter2.testInt64Values(set3, 0, int64_values.size(), int64_values.data());
     ASSERT_EQ(set3.count(), 2);
+
+
+    NegatedBigIntRangeFilter negated_filter(200, 200, false);
+    ASSERT_FALSE(negated_filter.testInt16(200));
+    ASSERT_FALSE(negated_filter.testInt32(200));
+    ASSERT_FALSE(negated_filter.testInt64(200));
+    RowSet row_set4 = RowSet(int16_values.size());
+    negated_filter.testInt16Values(row_set4, 0, int16_values.size(), int16_values.data());
+    ASSERT_EQ(38, row_set4.count());
+    RowSet row_set5 = RowSet(int32_values.size());
+    negated_filter.testInt32Values(row_set5, 0, int32_values.size(), int32_values.data());
+    ASSERT_EQ(38, row_set5.count());
+    RowSet row_set6 = RowSet(int64_values.size());
+    negated_filter.testInt64Values(row_set6, 0, int64_values.size(), int64_values.data());
+    ASSERT_EQ(38, row_set6.count());
 }
