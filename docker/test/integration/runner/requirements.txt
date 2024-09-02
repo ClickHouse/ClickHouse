@@ -112,3 +112,5 @@ wadllib==1.3.6
 websocket-client==0.59.0
 wheel==0.37.1
 zipp==1.0.0
+deltalake==0.16.0
+

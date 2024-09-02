@@ -90,6 +90,7 @@ namespace ProfileEvents
     extern const Event SelectQueryTimeMicroseconds;
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
+    extern const Event RealTimeMicroseconds;
 }
 
 namespace DB
@@ -398,9 +399,14 @@ void logQueryFinish(
         /// Update performance counters before logging to query_log
         CurrentThread::finalizePerformanceCounters();
 
-        QueryStatusInfo info = process_list_elem->getInfo(true, context->getSettingsRef().log_profile_events);
-        elem.type = QueryLogElementType::QUERY_FINISH;
+        std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+        QueryStatusInfo info = process_list_elem->getInfo(true, true);
+        if (context->getSettingsRef().log_profile_events)
+            profile_counters = info.profile_counters;
+        else
+            profile_counters.swap(info.profile_counters);
 
+        elem.type = QueryLogElementType::QUERY_FINISH;
         addStatusInfoToQueryLogElement(elem, info, query_ast, context);
 
         if (pulling_pipeline)
@@ -419,6 +425,7 @@ void logQueryFinish(
         {
             Progress p;
             p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
+            p.incrementRealTimeMicroseconds((*profile_counters)[ProfileEvents::RealTimeMicroseconds]);
             progress_callback(p);
         }
 
