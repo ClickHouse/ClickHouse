@@ -8058,13 +8058,11 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     const bool zero_copy_enabled = storage_settings_ptr->allow_remote_fs_zero_copy_replication
                 || dynamic_cast<const MergeTreeData *>(source_table.get())->getSettings()->allow_remote_fs_zero_copy_replication;
 
-    try
+    std::unique_ptr<ReplicatedMergeTreeLogEntryData> entries[partitions.size()];
+    size_t idx = 0;
+    for (const auto & partition_id : partitions)
     {
-        std::unique_ptr<ReplicatedMergeTreeLogEntryData> entries[partitions.size()];
-        size_t idx = 0;
-        for (const auto & partition_id : partitions)
-        {
-            entries[idx] = replacePartitionFromImpl(watch,
+        entries[idx] = replacePartitionFromImpl(watch,
                 profile_events_scope,
                 metadata_snapshot,
                 src_data,
@@ -8074,22 +8072,11 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 zero_copy_enabled,
                 storage_settings_ptr->always_use_copy_instead_of_hardlinks,
                 query_context);
-            ++idx;
-        }
-
-        for (const auto & entry : entries)
-            waitForLogEntryToBeProcessedIfNecessary(*entry, query_context);
-
-        lock2.reset();
-        lock1.reset();
+        ++idx;
     }
-    catch (...)
-    {
-        lock2.reset();
-        lock1.reset();
 
-        throw;
-    }
+    for (const auto & entry : entries)
+        waitForLogEntryToBeProcessedIfNecessary(*entry, query_context);
 }
 
 std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::replacePartitionFromImpl(
