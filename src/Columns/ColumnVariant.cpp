@@ -476,7 +476,7 @@ void ColumnVariant::insertFromImpl(const DB::IColumn & src_, size_t n, const std
     }
 }
 
-void ColumnVariant::insertRangeFromImpl(const DB::IColumn & src_, size_t start, size_t length, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping)
+void ColumnVariant::insertRangeFromImpl(const DB::IColumn & src_, size_t start, size_t length, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping, const Discriminator * skip_discriminator)
 {
     const size_t num_variants = variants.size();
     const auto & src = assert_cast<const ColumnVariant &>(src_);
@@ -557,9 +557,12 @@ void ColumnVariant::insertRangeFromImpl(const DB::IColumn & src_, size_t start, 
         Discriminator global_discr = src_global_discr;
         if (global_discriminators_mapping && src_global_discr != NULL_DISCRIMINATOR)
             global_discr = (*global_discriminators_mapping)[src_global_discr];
-        Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
-        if (nested_length)
-            variants[local_discr]->insertRangeFrom(*src.variants[src_local_discr], nested_start, nested_length);
+        if (!skip_discriminator || global_discr != *skip_discriminator)
+        {
+            Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
+            if (nested_length)
+                variants[local_discr]->insertRangeFrom(*src.variants[src_local_discr], nested_start, nested_length);
+        }
     }
 }
 
@@ -610,7 +613,7 @@ void ColumnVariant::insertRangeFrom(const IColumn & src_, size_t start, size_t l
 void ColumnVariant::doInsertRangeFrom(const IColumn & src_, size_t start, size_t length)
 #endif
 {
-    insertRangeFromImpl(src_, start, length, nullptr);
+    insertRangeFromImpl(src_, start, length, nullptr, nullptr);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -627,9 +630,9 @@ void ColumnVariant::insertFrom(const DB::IColumn & src_, size_t n, const std::ve
     insertFromImpl(src_, n, &global_discriminators_mapping);
 }
 
-void ColumnVariant::insertRangeFrom(const IColumn & src_, size_t start, size_t length, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping)
+void ColumnVariant::insertRangeFrom(const IColumn & src_, size_t start, size_t length, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping, Discriminator skip_discriminator)
 {
-    insertRangeFromImpl(src_, start, length, &global_discriminators_mapping);
+    insertRangeFromImpl(src_, start, length, &global_discriminators_mapping, &skip_discriminator);
 }
 
 void ColumnVariant::insertManyFrom(const DB::IColumn & src_, size_t position, size_t length, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping)
@@ -671,6 +674,14 @@ void ColumnVariant::insertManyIntoVariantFrom(DB::ColumnVariant::Discriminator g
         offsets_data.push_back(offset + i);
 
     variants[local_discr]->insertManyFrom(src_, position, length);
+}
+
+void ColumnVariant::deserializeBinaryIntoVariant(ColumnVariant::Discriminator global_discr, const SerializationPtr & serialization, ReadBuffer & buf, const FormatSettings & format_settings)
+{
+    auto local_discr = localDiscriminatorByGlobal(global_discr);
+    serialization->deserializeBinary(*variants[local_discr], buf, format_settings);
+    getLocalDiscriminators().push_back(local_discr);
+    getOffsets().push_back(variants[local_discr]->size() - 1);
 }
 
 void ColumnVariant::insertDefault()
@@ -942,7 +953,7 @@ ColumnPtr ColumnVariant::index(const IColumn & indexes, size_t limit) const
 {
     /// If we have only NULLs, index will take no effect, just return resized column.
     if (hasOnlyNulls())
-        return cloneResized(limit);
+        return cloneResized(limit == 0 ? indexes.size(): limit);
 
     /// Optimization when we have only one non empty variant and no NULLs.
     /// In this case local_discriminators column is filled with identical values and offsets column
@@ -998,8 +1009,16 @@ ColumnPtr ColumnVariant::indexImpl(const PaddedPODArray<Type> & indexes, size_t 
     new_variants.reserve(num_variants);
     for (size_t i = 0; i != num_variants; ++i)
     {
-        size_t nested_limit = nested_perms[i].size() == variants[i]->size() ? 0 : nested_perms[i].size();
-        new_variants.emplace_back(variants[i]->permute(nested_perms[i], nested_limit));
+        /// Check if no values from this variant were selected.
+        if (nested_perms[i].empty())
+        {
+            new_variants.emplace_back(variants[i]->cloneEmpty());
+        }
+        else
+        {
+            size_t nested_limit = nested_perms[i].size() == variants[i]->size() ? 0 : nested_perms[i].size();
+            new_variants.emplace_back(variants[i]->permute(nested_perms[i], nested_limit));
+        }
     }
 
     /// We cannot use new_offsets column as an offset column, because it became invalid after variants permutation.
@@ -1213,9 +1232,7 @@ struct ColumnVariant::ComparatorBase
 
     ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
-        int res = parent.compareAt(lhs, rhs, parent, nan_direction_hint);
-
-        return res;
+        return parent.compareAt(lhs, rhs, parent, nan_direction_hint);
     }
 };
 
@@ -1266,6 +1283,11 @@ void ColumnVariant::prepareForSquashing(const Columns & source_columns)
             source_variant_columns.push_back(assert_cast<const ColumnVariant &>(*source_column).getVariantPtrByGlobalDiscriminator(i));
         getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns);
     }
+}
+
+size_t ColumnVariant::capacity() const
+{
+    return local_discriminators->capacity();
 }
 
 void ColumnVariant::ensureOwnership()

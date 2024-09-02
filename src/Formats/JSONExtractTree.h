@@ -17,6 +17,9 @@ struct JSONExtractInsertSettings
     /// For example, if we have [1, "hello", 2] and type Array(UInt32),
     /// we will insert [1, 0, 2] in the column. Used in all JSONExtract functions.
     bool insert_default_on_invalid_elements_in_complex_types = false;
+    /// If false, JSON value will be inserted into column only if type of the value is
+    /// the same as column type (no conversions like Integer -> String, Integer -> Float, etc).
+    bool allow_type_conversion = true;
 };
 
 template <typename JSONParser>
@@ -36,6 +39,6 @@ template <typename JSONParser>
 void jsonElementToString(const typename JSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 
 template <typename JSONParser, typename NumberType>
-bool tryGetNumericValueFromJSONElement(NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_integer, String & error);
+bool tryGetNumericValueFromJSONElement(NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error);
 
 }

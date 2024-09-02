@@ -95,7 +95,7 @@ public:
 class PrometheusRequestHandler::ImplWithContext : public Impl
 {
 public:
-    explicit ImplWithContext(PrometheusRequestHandler & parent) : Impl(parent), default_settings(parent.server.context()->getSettingsRef()) { }
+    explicit ImplWithContext(PrometheusRequestHandler & parent) : Impl(parent), default_settings(server().context()->getSettingsRef()) { }
 
     virtual void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
 
@@ -353,7 +353,7 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
 
-        setResponseDefaultHeaders(response, config.keep_alive_timeout);
+        setResponseDefaultHeaders(response);
 
         impl->beforeHandlingRequest(request);
         impl->handleRequest(request, response);
@@ -379,7 +379,7 @@ WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputStream(HT
     if (write_buffer_from_response)
         return *write_buffer_from_response;
     write_buffer_from_response = std::make_unique<WriteBufferFromHTTPServerResponse>(
-        response, http_method == HTTPRequest::HTTP_HEAD, config.keep_alive_timeout, write_event);
+        response, http_method == HTTPRequest::HTTP_HEAD, write_event);
     return *write_buffer_from_response;
 }
 
@@ -399,7 +399,7 @@ void PrometheusRequestHandler::finalizeResponse(HTTPServerResponse & response)
         if (write_buffer_from_response)
             std::exchange(write_buffer_from_response, {})->finalize();
         else
-            WriteBufferFromHTTPServerResponse{response, http_method == HTTPRequest::HTTP_HEAD, config.keep_alive_timeout, write_event}.finalize();
+            WriteBufferFromHTTPServerResponse{response, http_method == HTTPRequest::HTTP_HEAD, write_event}.finalize();
     }
     chassert(response_finalized && !write_buffer_from_response);
 }

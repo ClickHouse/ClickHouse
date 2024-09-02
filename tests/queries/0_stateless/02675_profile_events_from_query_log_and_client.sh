@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-random-merge-tree-settings
 # Tag no-fasttest: needs s3
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -17,7 +17,9 @@ WITH '(\\w+): (\\d+)' AS pattern,
    WHERE line LIKE '% S3%'
      AND line NOT LIKE '%Microseconds%'
      AND line NOT LIKE '%S3DiskConnections%'
-     AND line NOT LIKE '%S3DiskAddresses') AS pe_map
+     AND line NOT LIKE '%S3DiskAddresses%'
+     AND line NOT LIKE '%RequestThrottlerCount%'
+     ) AS pe_map
 SELECT * FROM (
     SELECT untuple(arrayJoin(pe_map) AS pe)
     WHERE tupleElement(pe, 1) not like '%WriteRequests%'

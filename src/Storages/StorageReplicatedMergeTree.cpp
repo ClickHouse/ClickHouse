@@ -800,7 +800,8 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     {
         auto res = future.get();
         if (res.error != Coordination::Error::ZOK && res.error != Coordination::Error::ZNODEEXISTS)
-            throw Coordination::Exception(res.error, "Failed to create new nodes {} at {}", res.path_created, zookeeper_path);
+            throw Coordination::Exception(res.error, "Failed to create new nodes {} at {} with error {}",
+                res.path_created, zookeeper_path, Coordination::errorMessage(res.error));
     }
 }
 
@@ -5195,17 +5196,16 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
 
         startBeingLeader();
 
-        /// Activate replica in a separate thread if we are not calling from attach thread
-        restarting_thread.start(/*schedule=*/!from_attach_thread);
-
         if (from_attach_thread)
         {
             LOG_TRACE(log, "Trying to startup table from right now");
-            /// Try activating replica in current thread.
+            /// Try activating replica in the current thread.
             restarting_thread.run();
+            restarting_thread.start(false);
         }
         else
         {
+            restarting_thread.start(true);
             /// Wait while restarting_thread finishing initialization.
             /// NOTE It does not mean that replication is actually started after receiving this event.
             /// It only means that an attempt to startup replication was made.
@@ -5226,7 +5226,7 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
         session_expired_callback_handler = EventNotifier::instance().subscribe(Coordination::Error::ZSESSIONEXPIRED, [this]()
         {
             LOG_TEST(log, "Received event for expired session. Waking up restarting thread");
-            restarting_thread.start();
+            restarting_thread.start(true);
         });
 
         startBackgroundMovesIfNeeded();
@@ -5294,7 +5294,6 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
             attach_thread->shutdown();
             LOG_TRACE(log, "The attach thread is shutdown");
         }
-
 
         restarting_thread.shutdown(/* part_of_full_shutdown */true);
         /// Explicitly set the event, because the restarting thread will not set it again
@@ -5706,7 +5705,8 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
         {
             auto connection = std::make_shared<Connection>(
                 node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, SSHKey(), /*jwt*/"", node.quota_key, node.cluster, node.cluster_secret,
+                node.user, node.password, node.proto_send_chunked, node.proto_recv_chunked,
+                SSHKey(), /*jwt*/"", node.quota_key, node.cluster, node.cluster_secret,
                 "ParallelInsertSelectInititiator",
                 node.compression,
                 node.secure
