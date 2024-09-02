@@ -146,8 +146,8 @@ if [[ "$RUN_SEQUENTIAL_TESTS_IN_PARALLEL" -eq 1 ]]; then
   replace "s|<tcp_port>10002</tcp_port>|<tcp_port>10005</tcp_port>|g"
   replace "s|<tcp_port>10003</tcp_port>|<tcp_port>10006</tcp_port>|g"
     # use half of available memory for each server
-  sudo find /etc/clickhouse-server/ -type f -name '*.xml' -exec sed -i "s|<max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>|<max_server_memory_usage_to_ram_ratio>0.6</max_server_memory_usage_to_ram_ratio>|g" {} \;
-  replace "s|<max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>|<max_server_memory_usage_to_ram_ratio>0.37</max_server_memory_usage_to_ram_ratio>|g"
+  sudo find /etc/clickhouse-server/ -type f -name '*.xml' -exec sed -i "s|<max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>|<max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>|g" {} \;
+  replace "s|<max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>|<max_server_memory_usage_to_ram_ratio>0.22</max_server_memory_usage_to_ram_ratio>|g"
 
   sudo -E -u clickhouse /usr/bin/clickhouse server --daemon --config /etc/clickhouse-server3/config.xml \
   --pid-file /var/run/clickhouse-server3/clickhouse-server.pid \
