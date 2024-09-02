@@ -26,6 +26,7 @@ void registerTableFunctions()
     registerTableFunctionMongoDB(factory);
     registerTableFunctionRedis(factory);
     registerTableFunctionMergeTreeIndex(factory);
+    registerTableFunctionFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerTableFunctionFuzzJSON(factory);
 #endif

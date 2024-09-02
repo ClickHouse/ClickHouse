@@ -24,6 +24,7 @@ namespace ErrorCodes
 {
 extern const int CANNOT_SCHEDULE_TASK;
 extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 }
 
 MergeTreeReadPool::MergeTreeReadPool(
@@ -236,6 +237,10 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
             size_t & marks_in_part = current_parts.back().sum_marks;
             const auto part_idx = current_parts.back().part_idx;
             const auto min_marks_per_task = per_part_infos[part_idx]->min_marks_per_task;
+
+            if (min_marks_per_task == 0)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
 
             /// Do not get too few rows from part.
             if (marks_in_part >= min_marks_per_task && need_marks < min_marks_per_task)

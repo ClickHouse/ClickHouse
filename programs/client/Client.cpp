@@ -223,7 +223,7 @@ std::vector<String> Client::loadWarningMessages()
 
                     size_t rows = packet.block.rows();
                     for (size_t i = 0; i < rows; ++i)
-                        messages.emplace_back(column[i].get<String>());
+                        messages.emplace_back(column[i].safeGet<String>());
                 }
                 continue;
 

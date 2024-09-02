@@ -24,8 +24,8 @@
 #include <Processors/Transforms/SelectByIndicesTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeIndexAnnoy.h>
-#include <Storages/MergeTree/MergeTreeIndexUSearch.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
+#include <Storages/MergeTree/MergeTreeIndexLegacyVectorSimilarity.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
@@ -51,6 +51,8 @@
 #include <iterator>
 #include <memory>
 #include <unordered_map>
+
+#include "config.h"
 
 using namespace DB;
 
@@ -350,7 +352,15 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
 
     /// We have a special logic for local replica. It has to read less data, because in some cases it should
     /// merge states of aggregate functions or do some other important stuff other than reading from Disk.
-    const auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
+    auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
+    const auto min_marks_for_concurrent_read_limit = std::numeric_limits<Int64>::max() >> 1;
+    if (pool_settings.min_marks_for_concurrent_read > min_marks_for_concurrent_read_limit)
+    {
+        /// limit min marks to read in case it's big, happened in test since due to settings randomzation
+        pool_settings.min_marks_for_concurrent_read = min_marks_for_concurrent_read_limit;
+        multiplier = 1.0f;
+    }
+
     if (auto result = pool_settings.min_marks_for_concurrent_read * multiplier; canConvertTo<size_t>(result))
         pool_settings.min_marks_for_concurrent_read = static_cast<size_t>(result);
     else
@@ -522,7 +532,15 @@ Pipe ReadFromMergeTree::readInOrder(
             .number_of_current_replica = client_info.number_of_current_replica,
         };
 
-        const auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
+        auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
+        const auto min_marks_for_concurrent_read_limit = std::numeric_limits<Int64>::max() >> 1;
+        if (pool_settings.min_marks_for_concurrent_read > min_marks_for_concurrent_read_limit)
+        {
+            /// limit min marks to read in case it's big, happened in test since due to settings randomzation
+            pool_settings.min_marks_for_concurrent_read = min_marks_for_concurrent_read_limit;
+            multiplier = 1.0f;
+        }
+
         if (auto result = pool_settings.min_marks_for_concurrent_read * multiplier; canConvertTo<size_t>(result))
             pool_settings.min_marks_for_concurrent_read = static_cast<size_t>(result);
         else
@@ -1501,16 +1519,16 @@ static void buildIndexes(
         }
 
         MergeTreeIndexConditionPtr condition;
-        if (index_helper->isVectorSearch())
+
+        if (index_helper->isVectorSimilarityIndex())
         {
-#ifdef ENABLE_ANNOY
-            if (const auto * annoy = typeid_cast<const MergeTreeIndexAnnoy *>(index_helper.get()))
-                condition = annoy->createIndexCondition(query_info, context);
+#if USE_USEARCH
+            if (const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get()))
+                condition = vector_similarity_index->createIndexCondition(query_info, context);
 #endif
-#ifdef ENABLE_USEARCH
-            if (const auto * usearch = typeid_cast<const MergeTreeIndexUSearch *>(index_helper.get()))
-                condition = usearch->createIndexCondition(query_info, context);
-#endif
+            if (const auto * legacy_vector_similarity_index = typeid_cast<const MergeTreeIndexLegacyVectorSimilarity *>(index_helper.get()))
+                condition = legacy_vector_similarity_index->createIndexCondition(query_info, context);
+
             if (!condition)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
         }

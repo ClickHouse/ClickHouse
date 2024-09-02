@@ -80,7 +80,7 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 `PRIMARY KEY` — The primary key if it [differs from the sorting key](#choosing-a-primary-key-that-differs-from-the-sorting-key). Optional.
 
 Specifying a sorting key (using `ORDER BY` clause) implicitly specifies a primary key.
-It is usually not necessary to specify the primary key in addition to the primary key.
+It is usually not necessary to specify the primary key in addition to the sorting key.
 
 #### SAMPLE BY
 
@@ -1005,7 +1005,7 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
 ## Column-level Settings {#column-level-settings}
 
-Certain MergeTree settings can be override at column level:
+Certain MergeTree settings can be overridden at column level:
 
 - `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table.
 - `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark.

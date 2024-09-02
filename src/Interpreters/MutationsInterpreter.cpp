@@ -146,7 +146,6 @@ ColumnDependencies getAllColumnDependencies(
 
 
 bool isStorageTouchedByMutations(
-    MergeTreeData & storage,
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
@@ -156,7 +155,9 @@ bool isStorageTouchedByMutations(
     if (commands.empty())
         return false;
 
+    auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part, mutations_snapshot);
     bool all_commands_can_be_skipped = true;
+
     for (const auto & command : commands)
     {
         if (command.type == MutationCommand::APPLY_DELETED_MASK)
@@ -171,7 +172,7 @@ bool isStorageTouchedByMutations(
 
             if (command.partition)
             {
-                const String partition_id = storage.getPartitionIDFromQuery(command.partition, context);
+                const String partition_id = storage_from_part->getPartitionIDFromQuery(command.partition, context);
                 if (partition_id == source_part->info.partition_id)
                     all_commands_can_be_skipped = false;
             }
@@ -185,20 +186,18 @@ bool isStorageTouchedByMutations(
     if (all_commands_can_be_skipped)
         return false;
 
-    auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part, mutations_snapshot);
-
     std::optional<InterpreterSelectQuery> interpreter_select_query;
     BlockIO io;
 
     if (context->getSettingsRef().allow_experimental_analyzer)
     {
-        auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage.shared_from_this(), context);
+        auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage_from_part, context);
         InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
         io = interpreter.execute();
     }
     else
     {
-        ASTPtr select_query = prepareQueryAffectedAST(commands, storage.shared_from_this(), context);
+        ASTPtr select_query = prepareQueryAffectedAST(commands, storage_from_part, context);
         /// Interpreter must be alive, when we use result of execute() method.
         /// For some reason it may copy context and give it into ExpressionTransform
         /// after that we will use context from destroyed stack frame in our stream.
@@ -221,7 +220,7 @@ bool isStorageTouchedByMutations(
     Block tmp_block;
     while (executor.pull(tmp_block));
 
-    auto count = (*block.getByName("count()").column)[0].get<UInt64>();
+    auto count = (*block.getByName("count()").column)[0].safeGet<UInt64>();
     return count != 0;
 }
 
@@ -507,6 +506,12 @@ static void validateUpdateColumns(
             {
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", backQuote(column_name));
             }
+        }
+        else if (storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->hasDynamicSubcolumns())
+        {
+            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                            "Cannot update column {} with type {}: updates of columns with dynamic subcolumns are not supported",
+                            backQuote(column_name), storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->getName());
         }
     }
 }
