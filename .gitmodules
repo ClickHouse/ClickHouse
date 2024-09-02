@@ -319,7 +319,7 @@
 	url = https://github.com/TartanLlama/expected
 [submodule "contrib/liburing"]
 	path = contrib/liburing
-	url = https://github.com/axboe/liburing
+	url = https://github.com/ClickHouse/liburing
 [submodule "contrib/libarchive"]
 	path = contrib/libarchive
 	url = https://github.com/libarchive/libarchive.git
