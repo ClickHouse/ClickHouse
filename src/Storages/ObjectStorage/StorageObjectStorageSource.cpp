@@ -417,10 +417,7 @@ std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource
 }
 
 std::unique_ptr<ReadBuffer> StorageObjectStorageSource::createReadBuffer(
-    const ObjectInfo & object_info,
-    const ObjectStoragePtr & object_storage,
-    const ContextPtr & context_,
-    const LoggerPtr & log)
+    const ObjectInfo & object_info, const ObjectStoragePtr & object_storage, const ContextPtr & context_, const LoggerPtr & log)
 {
     const auto & object_size = object_info.metadata->size_bytes;
 

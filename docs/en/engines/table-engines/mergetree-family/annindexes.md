@@ -54,7 +54,7 @@ Parameters:
 - `distance_function`: either `L2Distance` (the [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance) - the length of a
   line between two points in Euclidean space), or `cosineDistance` (the [cosine
   distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance)- the angle between two non-zero vectors).
-- `quantization`: either `f32`, `f16`, or `i8` for storing the vector with reduced precision (optional, default: `f32`)
+- `quantization`: either `f64`, `f32`, `f16`, `bf16`, or `i8` for storing the vector with reduced precision (optional, default: `bf16`)
 - `m`: the number of neighbors per graph node (optional, default: 16)
 - `ef_construction`: (optional, default: 128)
 - `ef_search`: (optional, default: 64)
