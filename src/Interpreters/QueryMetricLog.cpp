@@ -86,15 +86,7 @@ void QueryMetricLogElement::appendToBlock(MutableColumns & columns) const
 
 void QueryMetricLog::shutdown()
 {
-    stopCollect();
     Base::shutdown();
-}
-
-void QueryMetricLog::stopCollect()
-{
-    std::lock_guard lock(queries_mutex);
-    for (auto & [query_id, status] : queries)
-        status.task->deactivate();
 }
 
 void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds)
@@ -109,7 +101,7 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
 
     auto context = getContext();
     const auto & process_list = context->getProcessList();
-    status.task = context->getSchedulePool().createTask("QueryMetricLog", [this, &process_list, query_id] {
+    process_list.createQueryMetricLogTask(query_id, interval_milliseconds, [this, &process_list, query_id] {
         auto current_time = std::chrono::system_clock::now();
         const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
 
@@ -121,8 +113,6 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
         auto elem = createLogMetricElement(query_id, *query_info, current_time);
         add(std::move(elem));
     });
-
-    status.task->scheduleAfter(interval_milliseconds);
 
     std::lock_guard lock(queries_mutex);
     queries.emplace(query_id, std::move(status));
@@ -137,8 +127,6 @@ void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr que
     /// yet, so its corresponding startQuery is never called.
     if (it == queries.end())
         return;
-
-    it->second.task->deactivate();
 
     if (query_info)
     {
@@ -174,7 +162,7 @@ QueryMetricLogElement QueryMetricLog::createLogMetricElement(const String & quer
 
     query_status.next_collect_time += std::chrono::milliseconds(query_status.interval_milliseconds);
     const auto wait_time = std::chrono::duration_cast<std::chrono::milliseconds>(query_status.next_collect_time - std::chrono::system_clock::now()).count();
-    query_status.task->scheduleAfter(wait_time);
+    getContext()->getProcessList().scheduleQueryMetricLogTask(query_id, wait_time);
 
     return elem;
 }

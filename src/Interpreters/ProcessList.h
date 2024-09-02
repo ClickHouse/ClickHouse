@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Defines.h>
 #include <IO/Progress.h>
 #include <Interpreters/CancellationCode.h>
@@ -22,7 +23,6 @@
 
 #include <condition_variable>
 #include <list>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -167,6 +167,7 @@ protected:
     /// increments/decrements metric in constructor/destructor.
     CurrentMetrics::Increment num_queries_increment;
 
+    std::unique_ptr<BackgroundSchedulePool::TaskHolder> query_metric_log_task;
 public:
     QueryStatus(
         ContextPtr context_,
@@ -399,6 +400,8 @@ protected:
     /// Call under lock. Finds process with specified current_user and current_query_id.
     QueryStatusPtr tryGetProcessListElement(const String & current_query_id, const String & current_user);
 
+    QueryStatusPtr getProcessListElement(const String & query_id) const;
+
     /// limit for insert. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     size_t max_insert_queries_amount = 0;
 
@@ -501,6 +504,9 @@ public:
     CancellationCode sendCancelToQuery(QueryStatusPtr elem, bool kill = false);
 
     void killAllQueries();
+
+    void createQueryMetricLogTask(const String & query_id, UInt64 interval_milliseconds, const BackgroundSchedulePool::TaskFunc & function) const;
+    void scheduleQueryMetricLogTask(const String & query_id, UInt64 interval_milliseconds) const;
 };
 
 }

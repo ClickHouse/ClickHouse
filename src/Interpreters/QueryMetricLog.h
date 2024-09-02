@@ -39,7 +39,6 @@ struct QueryMetricLogStatus
     UInt64 interval_milliseconds;
     std::chrono::system_clock::time_point next_collect_time;
     std::vector<ProfileEvents::Count> last_profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
-    BackgroundSchedulePool::TaskHolder task;
 };
 
 class QueryMetricLog : public SystemLog<QueryMetricLogElement>
@@ -50,8 +49,6 @@ class QueryMetricLog : public SystemLog<QueryMetricLogElement>
 
 public:
     void shutdown() final;
-
-    void stopCollect();
 
     // Both startQuery and finishQuery are called from the thread that executes the query
     void startQuery(const String & query_id, TimePoint query_start_time, UInt64 interval_milliseconds);

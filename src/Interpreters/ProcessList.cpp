@@ -1,4 +1,5 @@
 #include <Interpreters/ProcessList.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
@@ -685,9 +686,9 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
     return per_query_infos;
 }
 
-QueryStatusInfoPtr ProcessList::getQueryInfo(const String & query_id, bool get_thread_list, bool get_profile_events, bool get_settings) const
+QueryStatusPtr ProcessList::getProcessListElement(const String & query_id) const
 {
-    std::optional<QueryStatusPtr> process_found;
+    QueryStatusPtr process_found;
     {
         auto lock = safeLock();
         for (const auto & process : processes)
@@ -700,10 +701,38 @@ QueryStatusInfoPtr ProcessList::getQueryInfo(const String & query_id, bool get_t
         }
     }
 
-    if (process_found)
-        return std::make_shared<QueryStatusInfo>(process_found.value()->getInfo(get_thread_list, get_profile_events, get_settings));
+    return process_found;
+}
+
+QueryStatusInfoPtr ProcessList::getQueryInfo(const String & query_id, bool get_thread_list, bool get_profile_events, bool get_settings) const
+{
+    auto process = getProcessListElement(query_id);
+    if (process)
+        return std::make_shared<QueryStatusInfo>(process->getInfo(get_thread_list, get_profile_events, get_settings));
 
     return nullptr;
+}
+
+void ProcessList::createQueryMetricLogTask(const String & query_id, UInt64 interval_milliseconds, const BackgroundSchedulePool::TaskFunc & function) const
+{
+    auto process = getProcessListElement(query_id);
+    if (!process)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query {} not found in process list", query_id);
+
+    process->query_metric_log_task = std::make_unique<BackgroundSchedulePool::TaskHolder>(process->getContext()->getSchedulePool().createTask("QueryMetricLog", function));
+    (*process->query_metric_log_task)->scheduleAfter(interval_milliseconds);
+}
+
+void ProcessList::scheduleQueryMetricLogTask(const String & query_id, UInt64 interval_milliseconds) const
+{
+    auto process = getProcessListElement(query_id);
+    if (!process)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query {} not found in process list", query_id);
+
+    if (!process->query_metric_log_task)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query {} doesn't have any query metric log task", query_id);
+
+    (*process->query_metric_log_task)->scheduleAfter(interval_milliseconds);
 }
 
 
