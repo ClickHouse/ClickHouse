@@ -91,6 +91,7 @@ namespace ProfileEvents
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
     extern const Event RealTimeMicroseconds;
+    extern const Event OSCPUVirtualTimeMicroseconds;
 }
 
 namespace DB
@@ -426,6 +427,7 @@ void logQueryFinish(
             Progress p;
             p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
             p.incrementRealTimeMicroseconds((*profile_counters)[ProfileEvents::RealTimeMicroseconds]);
+            p.incrementVirtualCPUTimeMicroseconds((*profile_counters)[ProfileEvents::OSCPUVirtualTimeMicroseconds]);
             progress_callback(p);
         }
 

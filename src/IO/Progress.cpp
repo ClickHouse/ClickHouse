@@ -93,6 +93,8 @@ void ProgressValues::writeJSON(WriteBuffer & out) const
     writeText(elapsed_ns, out);
     writeCString("\",\"real_time_microseconds\":\"", out);
     writeText(real_time_microseconds, out);
+    writeCString("\",\"virtual_cpu_time_microseconds\":\"", out);
+    writeText(virtual_cpu_time_microseconds, out);
     writeCString("\"", out);
     writeCString("}", out);
 }
@@ -113,6 +115,7 @@ bool Progress::incrementPiecewiseAtomically(const Progress & rhs)
 
     elapsed_ns += rhs.elapsed_ns;
     real_time_microseconds += rhs.real_time_microseconds;
+    virtual_cpu_time_microseconds += rhs.virtual_cpu_time_microseconds;
 
     return rhs.read_rows || rhs.written_rows;
 }
@@ -133,6 +136,7 @@ void Progress::reset()
 
     elapsed_ns = 0;
     real_time_microseconds = 0;
+    virtual_cpu_time_microseconds = 0;
 }
 
 ProgressValues Progress::getValues() const
@@ -153,6 +157,7 @@ ProgressValues Progress::getValues() const
 
     res.elapsed_ns = elapsed_ns.load(std::memory_order_relaxed);
     res.real_time_microseconds = real_time_microseconds.load(std::memory_order_relaxed);
+    res.virtual_cpu_time_microseconds = virtual_cpu_time_microseconds.load(std::memory_order_relaxed);
 
     return res;
 }
@@ -175,6 +180,7 @@ ProgressValues Progress::fetchValuesAndResetPiecewiseAtomically()
 
     res.elapsed_ns = elapsed_ns.fetch_and(0);
     res.real_time_microseconds = real_time_microseconds.fetch_and(0);
+    res.virtual_cpu_time_microseconds = virtual_cpu_time_microseconds.fetch_and(0);
 
     return res;
 }
@@ -197,6 +203,7 @@ Progress Progress::fetchAndResetPiecewiseAtomically()
 
     res.elapsed_ns = elapsed_ns.fetch_and(0);
     res.real_time_microseconds = real_time_microseconds.fetch_and(0);
+    res.virtual_cpu_time_microseconds = virtual_cpu_time_microseconds.fetch_and(0);
 
     return res;
 }
@@ -217,6 +224,7 @@ Progress & Progress::operator=(Progress && other) noexcept
 
     elapsed_ns = other.elapsed_ns.load(std::memory_order_relaxed);
     real_time_microseconds = other.real_time_microseconds.load(std::memory_order_relaxed);
+    virtual_cpu_time_microseconds = other.virtual_cpu_time_microseconds.load(std::memory_order_relaxed);
 
     return *this;
 }
@@ -255,6 +263,11 @@ void Progress::incrementElapsedNs(UInt64 elapsed_ns_)
 void Progress::incrementRealTimeMicroseconds(UInt64 microseconds)
 {
     real_time_microseconds.fetch_add(microseconds, std::memory_order_relaxed);
+}
+
+void Progress::incrementVirtualCPUTimeMicroseconds(UInt64 microseconds)
+{
+    virtual_cpu_time_microseconds.fetch_add(microseconds, std::memory_order_relaxed);
 }
 
 }
