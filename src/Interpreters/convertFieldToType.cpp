@@ -164,7 +164,7 @@ Field convertDecimalType(const Field & from, const To & type)
 }
 
 
-Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint)
+Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings)
 {
     if (from_type_hint && from_type_hint->equals(type))
     {
@@ -359,7 +359,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], element_type);
+                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
@@ -387,7 +387,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
-                res[i] = convertFieldToType(src_tuple[i], element_type);
+                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     /*
@@ -435,12 +435,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type);
+                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings);
 
                 if (updated_entry[0].isNull() && !canContainNull(key_type))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type);
+                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings);
                 if (updated_entry[1].isNull() && !canContainNull(value_type))
                     have_unconvertible_element = true;
 
@@ -551,7 +551,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         ReadBufferFromString in_buffer(src.safeGet<String>());
         try
         {
-            type_to_parse->getDefaultSerialization()->deserializeWholeText(*col, in_buffer, FormatSettings{});
+            type_to_parse->getDefaultSerialization()->deserializeWholeText(*col, in_buffer, format_settings);
         }
         catch (Exception & e)
         {
@@ -563,7 +563,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         Field parsed = (*col)[0];
-        return convertFieldToType(parsed, type, from_type_hint);
+        return convertFieldToType(parsed, type, from_type_hint, format_settings);
     }
 
     throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
@@ -573,7 +573,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 }
 
 
-Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint)
+Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings)
 {
     if (from_value.isNull())
         return from_value;
@@ -582,7 +582,7 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
         return from_value;
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&to_type))
-        return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint);
+        return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint, format_settings);
     else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
     {
         const IDataType & nested_type = *nullable_type->getNestedType();
@@ -593,20 +593,20 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
 
         if (from_type_hint && from_type_hint->equals(nested_type))
             return from_value;
-        return convertFieldToTypeImpl(from_value, nested_type, from_type_hint);
+        return convertFieldToTypeImpl(from_value, nested_type, from_type_hint, format_settings);
     }
     else
-        return convertFieldToTypeImpl(from_value, to_type, from_type_hint);
+        return convertFieldToTypeImpl(from_value, to_type, from_type_hint, format_settings);
 }
 
 
-Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint)
+Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings)
 {
     bool is_null = from_value.isNull();
     if (is_null && !canContainNull(to_type))
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert NULL to {}", to_type.getName());
 
-    Field converted = convertFieldToType(from_value, to_type, from_type_hint);
+    Field converted = convertFieldToType(from_value, to_type, from_type_hint, format_settings);
 
     if (!is_null && converted.isNull())
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
@@ -626,9 +626,9 @@ static bool decimalEqualsFloat(Field field, Float64 float_value)
     return decimal_to_float == float_value;
 }
 
-std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & from_type, const IDataType & to_type)
+std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & from_type, const IDataType & to_type, const FormatSettings & format_settings)
 {
-    Field result_value = convertFieldToType(from_value, to_type, &from_type);
+    Field result_value = convertFieldToType(from_value, to_type, &from_type, format_settings);
 
     if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
     {
