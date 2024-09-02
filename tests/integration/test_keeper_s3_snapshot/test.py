@@ -126,5 +126,5 @@ def test_s3_upload(started_cluster):
     )
 
     destroy_zk_client(node2_zk)
-    node1.start_clickhouse() # for next iteration
+    node1.start_clickhouse()  # for next iteration
     keeper_utils.wait_until_connected(cluster, node1)
