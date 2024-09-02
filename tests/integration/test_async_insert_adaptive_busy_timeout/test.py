@@ -109,7 +109,7 @@ def test_with_merge_tree():
         array_size_range=[10, 50],
     )
 
-    node.query("DROP TABLE IF EXISTS {}".format(table_name))
+    node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
 
 def test_with_merge_tree_multithread():
@@ -130,7 +130,7 @@ def test_with_merge_tree_multithread():
         array_size_range=[10, 15],
     )
 
-    node.query("DROP TABLE IF EXISTS {}".format(table_name))
+    node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
 
 def test_with_replicated_merge_tree():
@@ -157,7 +157,7 @@ def test_with_replicated_merge_tree():
         array_size_range=[10, 50],
     )
 
-    node.query("DROP TABLE IF EXISTS {}".format(table_name))
+    node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
 
 def test_with_replicated_merge_tree_multithread():
@@ -185,7 +185,7 @@ def test_with_replicated_merge_tree_multithread():
         array_size_range=[10, 15],
     )
 
-    node.query("DROP TABLE IF EXISTS {}".format(table_name))
+    node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
 
 # Ensure that the combined duration of inserts with adaptive timeouts is less than
@@ -214,7 +214,7 @@ def test_compare_sequential_inserts_durations_for_adaptive_and_fixed_async_timeo
         number=3,
     )
 
-    node.query("DROP TABLE IF EXISTS {}".format(fixed_tm_table_name))
+    node.query(f"DROP TABLE IF EXISTS {fixed_tm_table_name} SYNC")
 
     logging.debug(
         "Run duration with fixed asynchronous timeout is {} seconds".format(
@@ -251,7 +251,7 @@ def test_compare_sequential_inserts_durations_for_adaptive_and_fixed_async_timeo
         )
     )
 
-    node.query("DROP TABLE IF EXISTS {}".format(adaptive_tm_table_name))
+    node.query(f"DROP TABLE IF EXISTS {adaptive_tm_table_name} SYNC")
 
     assert adaptive_tm_run_duration <= fixed_tm_run_duration
 
@@ -283,7 +283,7 @@ def test_compare_parallel_inserts_durations_for_adaptive_and_fixed_async_timeout
         number=3,
     )
 
-    node.query("DROP TABLE IF EXISTS {}".format(fixed_tm_table_name))
+    node.query(f"DROP TABLE IF EXISTS {fixed_tm_table_name} SYNC")
 
     logging.debug(
         "Run duration with fixed asynchronous timeout is {} seconds".format(
@@ -321,7 +321,7 @@ def test_compare_parallel_inserts_durations_for_adaptive_and_fixed_async_timeout
         )
     )
 
-    node.query("DROP TABLE IF EXISTS {}".format(adaptive_tm_table_name))
+    node.query(f"DROP TABLE IF EXISTS {adaptive_tm_table_name} SYNC")
 
     assert adaptive_tm_run_duration <= fixed_tm_run_duration
 
@@ -369,4 +369,4 @@ def test_change_queries_frequency():
     for line in res.splitlines():
         assert int(line) == min_ms
 
-    node.query("DROP TABLE IF EXISTS {}".format(table_name))
+    node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
