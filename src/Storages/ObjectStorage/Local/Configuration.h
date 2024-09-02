@@ -40,7 +40,7 @@ public:
 
     ObjectStoragePtr createObjectStorage(ContextPtr, bool) override { return std::make_shared<LocalObjectStorage>("/"); }
 
-    void addStructureAndFormatToArgs(ASTs &, const String &, const String &, ContextPtr) override { }
+    void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr) override { }
 
 private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;

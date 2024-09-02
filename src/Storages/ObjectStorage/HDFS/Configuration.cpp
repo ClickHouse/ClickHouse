@@ -158,19 +158,28 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
     LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using URL: {}, path: {}", url, path);
 }
 
-void StorageHDFSConfiguration::addStructureAndFormatToArgs(
+void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args,
     const String & structure_,
     const String & format_,
     ContextPtr context)
 {
-    if (tryGetNamedCollectionWithOverrides(args, context))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
-        /// In case of named collection, just add key-value pair "structure='...'"
-        /// at the end of arguments to override existed structure.
-        ASTs equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
-        auto equal_func = makeASTFunction("equals", std::move(equal_func_args));
-        args.push_back(equal_func);
+        /// In case of named collection, just add key-value pairs "format='...', structure='...'"
+        /// at the end of arguments to override existed format and structure with "auto" values.
+        if (collection->getOrDefault<String>("format", "auto") == "auto")
+        {
+            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
+            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
+            args.push_back(format_equal_func);
+        }
+        if (collection->getOrDefault<String>("structure", "auto") == "auto")
+        {
+            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
+            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
+            args.push_back(structure_equal_func);
+        }
     }
     else
     {

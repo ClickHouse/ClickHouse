@@ -365,16 +365,25 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     keys = {url.key};
 }
 
-void StorageS3Configuration::addStructureAndFormatToArgs(
+void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context)
 {
-    if (tryGetNamedCollectionWithOverrides(args, context))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
-        /// In case of named collection, just add key-value pair "structure='...'"
-        /// at the end of arguments to override existed structure.
-        ASTs equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
-        auto equal_func = makeASTFunction("equals", std::move(equal_func_args));
-        args.push_back(equal_func);
+        /// In case of named collection, just add key-value pairs "format='...', structure='...'"
+        /// at the end of arguments to override existed format and structure with "auto" values.
+        if (collection->getOrDefault<String>("format", "auto") == "auto")
+        {
+            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
+            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
+            args.push_back(format_equal_func);
+        }
+        if (collection->getOrDefault<String>("structure", "auto") == "auto")
+        {
+            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
+            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
+            args.push_back(structure_equal_func);
+        }
     }
     else
     {
@@ -401,7 +410,10 @@ void StorageS3Configuration::addStructureAndFormatToArgs(
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             /// If there is NOSIGN, add format=auto before structure.
             if (boost::iequals(second_arg, "NOSIGN"))
-                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                args.push_back(format_literal);
+            else if (checkAndGetLiteralArgument<String>(args[1], "format") == "auto")
+                args[1] = format_literal;
+
             args.push_back(structure_literal);
         }
         /// s3(source, format, structure) or
@@ -413,16 +425,21 @@ void StorageS3Configuration::addStructureAndFormatToArgs(
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
             {
+                if (checkAndGetLiteralArgument<String>(args[2], "format") == "auto")
+                    args[2] = format_literal;
                 args.push_back(structure_literal);
             }
             else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
             {
-                args[count - 1] = structure_literal;
+                if (second_arg == "auto")
+                    args[1] = format_literal;
+                if (checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
+                    args[2] = structure_literal;
             }
             else
             {
-                /// Add format=auto before structure argument.
-                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                /// Add format and structure arguments.
+                args.push_back(format_literal);
                 args.push_back(structure_literal);
             }
         }
@@ -435,14 +452,22 @@ void StorageS3Configuration::addStructureAndFormatToArgs(
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
             {
-                args[count - 1] = structure_literal;
+                if (checkAndGetLiteralArgument<String>(args[2], "format") == "auto")
+                    args[2] = format_literal;
+                if (checkAndGetLiteralArgument<String>(args[3], "structure") == "auto")
+                    args[3] = structure_literal;
             }
             else if (second_arg == "auto" || FormatFactory::instance().exists(second_arg))
             {
-                args[count - 2] = structure_literal;
+                if (second_arg == "auto")
+                    args[1] = format_literal;
+                if (checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
+                    args[2] = structure_literal;
             }
             else
             {
+                if (checkAndGetLiteralArgument<String>(args[3], "format") == "auto")
+                    args[3] = format_literal;
                 args.push_back(structure_literal);
             }
         }
@@ -454,17 +479,26 @@ void StorageS3Configuration::addStructureAndFormatToArgs(
             auto sedond_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             if (boost::iequals(sedond_arg, "NOSIGN"))
             {
-                args[count - 2] = structure_literal;
+                if (checkAndGetLiteralArgument<String>(args[2], "format") == "auto")
+                    args[2] = format_literal;
+                if (checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
+                    args[3] = structure_literal;
             }
             else
             {
-                args[count - 1] = structure_literal;
+                if (checkAndGetLiteralArgument<String>(args[3], "format") == "auto")
+                    args[3] = format_literal;
+                if (checkAndGetLiteralArgument<String>(args[4], "structure") == "auto")
+                    args[4] = structure_literal;
             }
         }
         /// s3(source, access_key_id, secret_access_key, format, structure, compression)
         else if (count == 6)
         {
-            args[count - 2] = structure_literal;
+            if (checkAndGetLiteralArgument<String>(args[3], "format") == "auto")
+                args[3] = format_literal;
+            if (checkAndGetLiteralArgument<String>(args[4], "structure") == "auto")
+                args[4] = structure_literal;
         }
     }
 }

@@ -44,7 +44,7 @@ public:
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
 
-    void addStructureAndFormatToArgs(
+    void addStructureAndFormatToArgsIfNeeded(
         ASTs & args,
         const String & structure_,
         const String & format_,
