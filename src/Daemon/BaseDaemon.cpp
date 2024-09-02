@@ -22,7 +22,6 @@
 #include <cstring>
 #include <unistd.h>
 #include <algorithm>
-#include <typeinfo>
 #include <iostream>
 #include <memory>
 

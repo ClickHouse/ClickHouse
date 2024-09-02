@@ -34,6 +34,7 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -58,7 +59,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Interpreters/InterpreterSetQuery.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
@@ -1609,14 +1609,14 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             auto metadata = storage->getInMemoryMetadataPtr();
             QueryPlan plan;
             storage->read(
-                plan,
-                sample.getNames(),
-                storage->getStorageSnapshot(metadata, client_context),
-                query_info,
-                client_context,
-                {},
-                client_context->getSettingsRef().max_block_size,
-                getNumberOfPhysicalCPUCores());
+                    plan,
+                    sample.getNames(),
+                    storage->getStorageSnapshot(metadata, client_context),
+                    query_info,
+                    client_context,
+                    {},
+                    client_context->getSettingsRef().max_block_size,
+                    getNumberOfPhysicalCPUCores());
 
             auto builder = plan.buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(client_context),
@@ -1893,19 +1893,48 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     profile_events.watch.restart();
 
     {
-        /// Temporarily apply query settings to the context.
-        Settings old_settings = client_context->getSettingsCopy();
-        SCOPE_EXIT_SAFE(
-        {
-            client_context->setSettings(old_settings);
+        /// Temporarily apply query settings to context.
+        std::optional<Settings> old_settings;
+        SCOPE_EXIT_SAFE({
+            if (old_settings)
+                client_context->setSettings(*old_settings);
         });
-        InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
+
+        auto apply_query_settings = [&](const IAST & settings_ast)
+        {
+            if (!old_settings)
+                old_settings.emplace(client_context->getSettingsRef());
+            client_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
+            client_context->resetSettingsToDefaultValue(settings_ast.as<ASTSetQuery>()->default_settings);
+        };
+
+        const auto * insert = parsed_query->as<ASTInsertQuery>();
+        if (const auto * select = parsed_query->as<ASTSelectQuery>(); select && select->settings())
+            apply_query_settings(*select->settings());
+        else if (const auto * select_with_union = parsed_query->as<ASTSelectWithUnionQuery>())
+        {
+            const ASTs & children = select_with_union->list_of_selects->children;
+            if (!children.empty())
+            {
+                // On the client it is enough to apply settings only for the
+                // last SELECT, since the only thing that is important to apply
+                // on the client is format settings.
+                const auto * last_select = children.back()->as<ASTSelectQuery>();
+                if (last_select && last_select->settings())
+                {
+                    apply_query_settings(*last_select->settings());
+                }
+            }
+        }
+        else if (const auto * query_with_output = parsed_query->as<ASTQueryWithOutput>(); query_with_output && query_with_output->settings_ast)
+            apply_query_settings(*query_with_output->settings_ast);
+        else if (insert && insert->settings_ast)
+            apply_query_settings(*insert->settings_ast);
 
         if (!connection->checkConnected(connection_parameters.timeouts))
             connect();
 
         ASTPtr input_function;
-        const auto * insert = parsed_query->as<ASTInsertQuery>();
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
@@ -2083,6 +2112,15 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // - Other formats (e.g. FORMAT CSV) are arbitrarily more complex and tricky to parse. For example, we may be unable to distinguish if the semicolon
     //   is part of the data or ends the statement. In this case, we simply assume that the end of the INSERT statement is determined by \n\n (two newlines).
     auto * insert_ast = parsed_query->as<ASTInsertQuery>();
+    // We also consider the INSERT query in EXPLAIN queries (same as normal INSERT queries)
+    if (!insert_ast)
+    {
+        auto * explain_ast = parsed_query->as<ASTExplainQuery>();
+        if (explain_ast && explain_ast->getExplainedQuery())
+        {
+            insert_ast = explain_ast->getExplainedQuery()->as<ASTInsertQuery>();
+        }
+    }
     const char * query_to_execute_end = this_query_end;
     if (insert_ast && insert_ast->data)
     {
@@ -2526,6 +2564,7 @@ void ClientBase::runInteractive()
         *suggest,
         history_file,
         getClientConfiguration().has("multiline"),
+        getClientConfiguration().getBool("ignore_shell_suspend", true),
         query_extenders,
         query_delimiters,
         word_break_characters,

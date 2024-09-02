@@ -280,7 +280,7 @@ void AccessControl::shutdown()
 }
 
 
-void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
+void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
                                         const zkutil::GetZooKeeper & get_zookeeper_function_)
 {
     if (config_.has("custom_settings_prefixes"))
@@ -866,12 +866,6 @@ std::shared_ptr<const SettingsProfilesInfo> AccessControl::getSettingsProfileInf
 const ExternalAuthenticators & AccessControl::getExternalAuthenticators() const
 {
     return *external_authenticators;
-}
-
-
-void AccessControl::allowAllSettings()
-{
-    custom_settings_prefixes->registerPrefixes({""});
 }
 
 }
