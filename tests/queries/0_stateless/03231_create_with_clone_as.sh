@@ -38,7 +38,9 @@ ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SELECT * FROM foo_merge_tree
 
 ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "CREATE TABLE clone_as_foo_merge_tree CLONE AS foo_merge_tree"
 ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SHOW CREATE TABLE clone_as_foo_merge_tree"
+echo "from foo_merge_tree"
 ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SELECT * FROM foo_merge_tree"
+echo "from clone_as_foo_merge_tree"
 ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SELECT * FROM clone_as_foo_merge_tree"
 
 # CLONE AS with a table of ReplacingMergeTree engine
@@ -49,11 +51,9 @@ ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SELECT * FROM foo_replacing_
 
 ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "CREATE TABLE clone_as_foo_replacing_merge_tree CLONE AS foo_replacing_merge_tree"
 ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SHOW CREATE TABLE clone_as_foo_replacing_merge_tree"
-${CLICKHOUSE_CLIENT} -q "SELECT mutation_id, command, block_numbers.partition_id, block_numbers.number, parts_to_do, is_done \
-    FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and table = 'foo_replacing_merge_tree' ORDER BY mutation_id"
-${CLICKHOUSE_CLIENT} -q "SELECT mutation_id, command, block_numbers.partition_id, block_numbers.number, parts_to_do, is_done \
-    FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and table = 'clone_as_foo_replacing_merge_tree' ORDER BY mutation_id"
+echo "from foo_replacing_merge_tree"
 ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SELECT * FROM foo_replacing_merge_tree"
+echo "from clone_as_foo_replacing_merge_tree"
 ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SELECT * FROM clone_as_foo_replacing_merge_tree"
 
 

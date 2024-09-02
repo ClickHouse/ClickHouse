@@ -6,15 +6,19 @@ CREATE TABLE default.foo_merge_tree\n(\n    `x` Int8,\n    `y` String\n)\nENGINE
 1	a
 2	b
 CREATE TABLE default.clone_as_foo_merge_tree\n(\n    `x` Int8,\n    `y` String\n)\nENGINE = MergeTree\nPRIMARY KEY x\nORDER BY x\nSETTINGS index_granularity = 8192
+from foo_merge_tree
 1	a
 2	b
+from clone_as_foo_merge_tree
 1	a
 2	b
 CREATE TABLE default.foo_replacing_merge_tree\n(\n    `x` Int8,\n    `y` String\n)\nENGINE = ReplacingMergeTree\nPRIMARY KEY x\nORDER BY x\nSETTINGS index_granularity = 8192
 1	a
 2	b
 CREATE TABLE default.clone_as_foo_replacing_merge_tree\n(\n    `x` Int8,\n    `y` String\n)\nENGINE = ReplacingMergeTree\nPRIMARY KEY x\nORDER BY x\nSETTINGS index_granularity = 8192
+from foo_replacing_merge_tree
 1	a
 2	b
+from clone_as_foo_replacing_merge_tree
 1	a
 2	b
