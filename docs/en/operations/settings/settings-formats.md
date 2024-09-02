@@ -171,8 +171,8 @@ If the `schema_inference_hints` is not formated properly, or if there is a typo 
 
 ## schema_inference_make_columns_nullable {#schema_inference_make_columns_nullable}
 
-Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
-If the setting is enabled, the inferred type will be `Nullable` only if column contains `NULL` in a sample that is parsed during schema inference.
+Controls making inferred types `Nullable` in schema inference.
+If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will never be `Nullable`, if set to `auto`, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability.
 
 Default value: `true`.
 
@@ -193,6 +193,17 @@ Enabled by default.
 If enabled, ClickHouse will try to infer type `DateTime64` from string fields in schema inference for text formats. If all fields from a column in input data were successfully parsed as datetimes, the result type will be `DateTime64`, if at least one field was not parsed as datetime, the result type will be `String`.
 
 Enabled by default.
+
+## input_format_try_infer_variants {#input_format_try_infer_variants}
+
+If enabled, ClickHouse will try to infer type [`Variant`](../../sql-reference/data-types/variant.md) in schema inference for text formats when there is more than one possible type for column/array elements.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: `0`.
 
 ## date_time_input_format {#date_time_input_format}
 

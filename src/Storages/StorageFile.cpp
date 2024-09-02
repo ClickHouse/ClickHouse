@@ -53,6 +53,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include "base/defines.h"
 
 #include <Core/Settings.h>
@@ -516,7 +517,7 @@ namespace
             StorageFile::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
         }
 
-        String getLastFileName() const override
+        String getLastFilePath() const override
         {
             if (current_index != 0)
                 return paths[current_index - 1];
@@ -793,7 +794,7 @@ namespace
             format = format_name;
         }
 
-        String getLastFileName() const override
+        String getLastFilePath() const override
         {
             return last_read_file_path;
         }
@@ -1111,8 +1112,9 @@ void StorageFile::setStorageMetadata(CommonArguments args)
 
     storage_metadata.setConstraints(args.constraints);
     storage_metadata.setComment(args.comment);
+
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), paths.empty() ? "" : paths[0], format_settings));
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 
@@ -1466,7 +1468,7 @@ Chunk StorageFileSource::generate()
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
                     .last_modified = current_file_last_modified
-                });
+                }, getContext());
 
             return chunk;
         }

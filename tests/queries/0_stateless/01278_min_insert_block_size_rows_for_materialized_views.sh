@@ -10,7 +10,7 @@ set -o pipefail
 # shellcheck disable=SC2120
 function execute()
 {
-    ${CLICKHOUSE_CLIENT} -n "$@"
+    ${CLICKHOUSE_CLIENT} "$@"
 }
 
 #

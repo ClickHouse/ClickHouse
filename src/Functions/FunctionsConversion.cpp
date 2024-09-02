@@ -9,6 +9,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObjectDeprecated.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
@@ -35,6 +36,7 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -43,8 +45,10 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/CastOverloadResolver.h>
@@ -1573,6 +1577,35 @@ struct ConvertImpl
                         arguments, result_type, input_rows_count, additions);
             }
         }
+        else if constexpr (std::is_same_v<FromDataType, DataTypeInterval> && std::is_same_v<ToDataType, DataTypeInterval>)
+        {
+            IntervalKind to = typeid_cast<const DataTypeInterval *>(result_type.get())->getKind();
+            IntervalKind from = typeid_cast<const DataTypeInterval *>(arguments[0].type.get())->getKind();
+
+            if (from == to || arguments[0].column->empty())
+                return arguments[0].column;
+
+            Int64 conversion_factor = 1;
+            Int64 result_value;
+
+            int from_position = static_cast<int>(from.kind);
+            int to_position = static_cast<int>(to.kind); /// Positions of each interval according to granularity map
+
+            if (from_position < to_position)
+            {
+                for (int i = from_position; i < to_position; ++i)
+                    conversion_factor *= interval_conversions[i];
+                result_value = arguments[0].column->getInt(0) / conversion_factor;
+            }
+            else
+            {
+                for (int i = from_position; i > to_position; --i)
+                    conversion_factor *= interval_conversions[i];
+                result_value = arguments[0].column->getInt(0) * conversion_factor;
+            }
+
+            return ColumnConst::create(ColumnInt64::create(1, result_value), input_rows_count);
+        }
         else
         {
             using FromFieldType = typename FromDataType::FieldType;
@@ -2181,7 +2214,7 @@ private:
         const DataTypePtr from_type = removeNullable(arguments[0].type);
         ColumnPtr result_column;
 
-        [[maybe_unused]] FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
+        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
 
         if (context)
             date_time_overflow_behavior = context->getSettingsRef().date_time_overflow_behavior.value;
@@ -2277,7 +2310,7 @@ private:
                 }
             }
             else
-                  result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, from_string_tag);
+                result_column = ConvertImpl<LeftDataType, RightDataType, Name>::execute(arguments, result_type, input_rows_count, from_string_tag);
 
             return true;
         };
@@ -2334,6 +2367,10 @@ private:
                 else
                     done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag);
             }
+
+            if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
+                if (WhichDataType(from_type).isInterval())
+                    done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag);
         }
 
         if (!done)
@@ -3879,7 +3916,7 @@ private:
                     "Expected tuple with {} subcolumn, but got {} subcolumns",
                     tuple_size, column_tuple.getColumns().size());
 
-            auto res = ColumnObject::create(has_nullable_subcolumns);
+            auto res = ColumnObjectDeprecated::create(has_nullable_subcolumns);
             for (size_t i = 0; i < tuple_size; ++i)
             {
                 ColumnsWithTypeAndName element = {{column_tuple.getColumns()[i], from_types[i], "" }};
@@ -3956,7 +3993,7 @@ private:
                         subcolumn->insertDefault();
             }
 
-            auto column_object = ColumnObject::create(has_nullable_subcolumns);
+            auto column_object = ColumnObjectDeprecated::create(has_nullable_subcolumns);
             for (auto && [key, subcolumn] : subcolumns)
             {
                 PathInData path(key.toView());
@@ -3967,7 +4004,7 @@ private:
         };
     }
 
-    WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_type) const
+    WrapperType createObjectDeprecatedWrapper(const DataTypePtr & from_type, const DataTypeObjectDeprecated * to_type) const
     {
         if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type.get()))
         {
@@ -3986,12 +4023,12 @@ private:
                 return res;
             };
         }
-        else if (checkAndGetDataType<DataTypeObject>(from_type.get()))
+        else if (checkAndGetDataType<DataTypeObjectDeprecated>(from_type.get()))
         {
             return [is_nullable = to_type->hasNullableSubcolumns()] (ColumnsWithTypeAndName & arguments, const DataTypePtr & , const ColumnNullable * , size_t) -> ColumnPtr
             {
-                const auto & column_object = assert_cast<const ColumnObject &>(*arguments.front().column);
-                auto res = ColumnObject::create(is_nullable);
+                const auto & column_object = assert_cast<const ColumnObjectDeprecated &>(*arguments.front().column);
+                auto res = ColumnObjectDeprecated::create(is_nullable);
                 for (size_t i = 0; i < column_object.size(); i++)
                     res->insert(column_object[i]);
 
@@ -4002,6 +4039,25 @@ private:
 
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "Cast to Object can be performed only from flatten named Tuple, Map or String. Got: {}", from_type->getName());
+    }
+
+    WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object) const
+    {
+        if (checkAndGetDataType<DataTypeString>(from_type.get()))
+        {
+            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+            {
+                auto res = ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, context)->assumeMutable();
+                res->finalize();
+                return res;
+            };
+        }
+
+        /// TODO: support CAST between JSON types with different parameters
+        ///       support CAST from Map to JSON
+        ///       support CAST from Tuple to JSON
+        ///       support CAST from Object('json') to JSON
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Cast to {} can be performed only from String. Got: {}", magic_enum::enum_name(to_object->getSchemaFormat()), from_type->getName());
     }
 
     WrapperType createVariantToVariantWrapper(const DataTypeVariant & from_variant, const DataTypeVariant & to_variant) const
@@ -4287,13 +4343,98 @@ private:
     WrapperType createDynamicToColumnWrapper(const DataTypePtr &) const
     {
         return [this]
-               (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
+               (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
         {
+            /// When casting Dynamic to regular column we should cast all variants from current Dynamic column
+            /// and construct the result based on discriminators.
             const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments.front().column.get());
+            const auto & variant_column = column_dynamic.getVariantColumn();
             const auto & variant_info = column_dynamic.getVariantInfo();
-            auto variant_wrapper = createVariantToColumnWrapper(assert_cast<const DataTypeVariant &>(*variant_info.variant_type), result_type);
-            ColumnsWithTypeAndName args = {ColumnWithTypeAndName(column_dynamic.getVariantColumnPtr(), variant_info.variant_type, "")};
-            return variant_wrapper(args, result_type, col_nullable, input_rows_count);
+
+            /// First, cast usual variants to result type.
+            const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+            std::vector<ColumnPtr> casted_variant_columns;
+            casted_variant_columns.reserve(variant_types.size());
+            for (size_t i = 0; i != variant_types.size(); ++i)
+            {
+                const auto & variant_col = variant_column.getVariantPtrByGlobalDiscriminator(i);
+                ColumnsWithTypeAndName variant = {{variant_col, variant_types[i], ""}};
+                auto variant_wrapper = prepareUnpackDictionaries(variant_types[i], result_type);
+                casted_variant_columns.push_back(variant_wrapper(variant, result_type, nullptr, variant_col->size()));
+            }
+
+            /// Second, collect all variants stored in shared variant and cast them to result type.
+            std::vector<MutableColumnPtr> variant_columns_from_shared_variant;
+            DataTypes variant_types_from_shared_variant;
+            /// We will need to know what variant to use when we see discriminator of a shared variant.
+            /// To do it, we remember what variant was extracted from each row and what was it's offset.
+            PaddedPODArray<UInt64> shared_variant_indexes;
+            PaddedPODArray<UInt64> shared_variant_offsets;
+            std::unordered_map<String, UInt64> shared_variant_to_index;
+            const auto & shared_variant = column_dynamic.getSharedVariant();
+            const auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
+            const auto & local_discriminators = variant_column.getLocalDiscriminators();
+            const auto & offsets = variant_column.getOffsets();
+            if (!shared_variant.empty())
+            {
+                shared_variant_indexes.reserve(input_rows_count);
+                shared_variant_offsets.reserve(input_rows_count);
+                FormatSettings format_settings;
+                const auto shared_variant_local_discr = variant_column.localDiscriminatorByGlobal(shared_variant_discr);
+                for (size_t i = 0; i != input_rows_count; ++i)
+                {
+                    if (local_discriminators[i] == shared_variant_local_discr)
+                    {
+                        auto value = shared_variant.getDataAt(offsets[i]);
+                        ReadBufferFromMemory buf(value.data, value.size);
+                        auto type = decodeDataType(buf);
+                        auto type_name = type->getName();
+                        auto it = shared_variant_to_index.find(type_name);
+                        /// Check if we didn't create column for this variant yet.
+                        if (it == shared_variant_to_index.end())
+                        {
+                            it = shared_variant_to_index.emplace(type_name, variant_columns_from_shared_variant.size()).first;
+                            variant_columns_from_shared_variant.push_back(type->createColumn());
+                            variant_types_from_shared_variant.push_back(type);
+                        }
+
+                        shared_variant_indexes.push_back(it->second);
+                        shared_variant_offsets.push_back(variant_columns_from_shared_variant[it->second]->size());
+                        type->getDefaultSerialization()->deserializeBinary(*variant_columns_from_shared_variant[it->second], buf, format_settings);
+                    }
+                    else
+                    {
+                        shared_variant_indexes.emplace_back();
+                        shared_variant_offsets.emplace_back();
+                    }
+                }
+            }
+
+            /// Cast all extracted variants into result type.
+            std::vector<ColumnPtr> casted_shared_variant_columns;
+            casted_shared_variant_columns.reserve(variant_types_from_shared_variant.size());
+            for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
+            {
+                ColumnsWithTypeAndName variant = {{variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""}};
+                auto variant_wrapper = prepareUnpackDictionaries(variant_types_from_shared_variant[i], result_type);
+                casted_shared_variant_columns.push_back(variant_wrapper(variant, result_type, nullptr, variant_columns_from_shared_variant[i]->size()));
+            }
+
+            /// Construct result column from all casted variants.
+            auto res = result_type->createColumn();
+            res->reserve(input_rows_count);
+            for (size_t i = 0; i != input_rows_count; ++i)
+            {
+                auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
+                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                    res->insertDefault();
+                else if (global_discr == shared_variant_discr)
+                    res->insertFrom(*casted_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
+                else
+                    res->insertFrom(*casted_variant_columns[global_discr], offsets[i]);
+            }
+
+            return res;
         };
     }
 
@@ -4320,200 +4461,51 @@ private:
         };
     }
 
-    std::pair<ColumnPtr, DataTypePtr> getReducedVariant(
-        const ColumnVariant & variant_column,
-        const DataTypePtr & variant_type,
-        const std::unordered_map<String, ColumnVariant::Discriminator> & variant_name_to_discriminator,
-        size_t max_result_num_variants,
-        const ColumnDynamic::Statistics & statistics = {}) const
+    WrapperType createVariantToDynamicWrapper(const DataTypeVariant & from_variant_type, const DataTypeDynamic & dynamic_type) const
     {
-        const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_type).getVariants();
-        /// First check if we don't exceed the limit in current Variant column.
-        if (variant_types.size() < max_result_num_variants || (variant_types.size() == max_result_num_variants && variant_name_to_discriminator.contains("String")))
-            return {variant_column.getPtr(), variant_type};
-
-        /// We want to keep the most frequent variants and convert to string the rarest.
-        std::vector<std::pair<size_t, ColumnVariant::Discriminator>> variant_sizes;
-        variant_sizes.reserve(variant_types.size());
-        std::optional<ColumnVariant::Discriminator> old_string_discriminator;
-        /// List of variants that should be converted to a single String variant.
-        std::vector<ColumnVariant::Discriminator> variants_to_convert_to_string;
-        for (size_t i = 0; i != variant_types.size(); ++i)
+        /// First create extended Variant with shared variant type and cast this Variant to it.
+        auto variants_for_dynamic = from_variant_type.getVariants();
+        size_t number_of_variants = variants_for_dynamic.size();
+        variants_for_dynamic.push_back(ColumnDynamic::getSharedVariantDataType());
+        const auto & variant_type_for_dynamic = std::make_shared<DataTypeVariant>(variants_for_dynamic);
+        auto old_to_new_variant_wrapper = createVariantToVariantWrapper(from_variant_type, *variant_type_for_dynamic);
+        auto max_dynamic_types = dynamic_type.getMaxDynamicTypes();
+        return [old_to_new_variant_wrapper, variant_type_for_dynamic, number_of_variants, max_dynamic_types]
+               (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
         {
-            /// String variant won't be removed.
-            String variant_name = variant_types[i]->getName();
+            auto variant_column_for_dynamic = old_to_new_variant_wrapper(arguments, result_type, col_nullable, input_rows_count);
+            /// If resulting Dynamic column can contain all variants from this Variant column, just create Dynamic column from it.
+            if (max_dynamic_types >= number_of_variants)
+                return ColumnDynamic::create(variant_column_for_dynamic, variant_type_for_dynamic, max_dynamic_types, max_dynamic_types);
 
-            if (variant_name == "String")
-            {
-                old_string_discriminator = i;
-                /// For simplicity, add this variant to the list that will be converted to string,
-                /// so we will process it with other variants when constructing the new String variant.
-                variants_to_convert_to_string.push_back(i);
-            }
-            else
-            {
-                size_t size = 0;
-                if (statistics.data.empty())
-                    size = variant_column.getVariantByGlobalDiscriminator(i).size();
-                else
-                    size = statistics.data.at(variant_name);
-                variant_sizes.emplace_back(size, i);
-            }
-        }
-
-        /// Sort variants by sizes, so we will keep the most frequent.
-        std::sort(variant_sizes.begin(), variant_sizes.end(), std::greater());
-
-        DataTypes remaining_variants;
-        remaining_variants.reserve(max_result_num_variants);
-        /// Add String variant in advance.
-        remaining_variants.push_back(std::make_shared<DataTypeString>());
-        for (auto [_, discr] : variant_sizes)
-        {
-            if (remaining_variants.size() != max_result_num_variants)
-                remaining_variants.push_back(variant_types[discr]);
-            else
-                variants_to_convert_to_string.push_back(discr);
-        }
-
-        auto reduced_variant = std::make_shared<DataTypeVariant>(remaining_variants);
-        const auto & new_variants = reduced_variant->getVariants();
-        /// To construct reduced variant column we will need mapping from old to new discriminators.
-        std::vector<ColumnVariant::Discriminator> old_to_new_discriminators_mapping;
-        old_to_new_discriminators_mapping.resize(variant_types.size());
-        ColumnVariant::Discriminator string_variant_discriminator = 0;
-        for (size_t i = 0; i != new_variants.size(); ++i)
-        {
-            String variant_name = new_variants[i]->getName();
-            if (variant_name == "String")
-            {
-                string_variant_discriminator = i;
-                for (auto discr : variants_to_convert_to_string)
-                    old_to_new_discriminators_mapping[discr] = i;
-            }
-            else
-            {
-                auto old_discr = variant_name_to_discriminator.at(variant_name);
-                old_to_new_discriminators_mapping[old_discr] = i;
-            }
-        }
-
-        /// Convert all reduced variants to String.
-        std::unordered_map<ColumnVariant::Discriminator, ColumnPtr> variants_converted_to_string;
-        variants_converted_to_string.reserve(variants_to_convert_to_string.size());
-        size_t string_variant_size = 0;
-        for (auto discr : variants_to_convert_to_string)
-        {
-            auto string_type = std::make_shared<DataTypeString>();
-            auto string_wrapper = prepareUnpackDictionaries(variant_types[discr], string_type);
-            auto column_to_convert = ColumnWithTypeAndName(variant_column.getVariantPtrByGlobalDiscriminator(discr), variant_types[discr], "");
-            ColumnsWithTypeAndName args = {column_to_convert};
-            auto variant_string_column = string_wrapper(args, string_type, nullptr, column_to_convert.column->size());
-            string_variant_size += variant_string_column->size();
-            variants_converted_to_string[discr] = variant_string_column;
-        }
-
-        /// Create new discriminators and offsets and fill new String variant according to old discriminators.
-        auto string_variant = ColumnString::create();
-        string_variant->reserve(string_variant_size);
-        auto new_discriminators_column = variant_column.getLocalDiscriminatorsPtr()->cloneEmpty();
-        auto & new_discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(*new_discriminators_column).getData();
-        new_discriminators_data.reserve(variant_column.size());
-        auto new_offsets = variant_column.getOffsetsPtr()->cloneEmpty();
-        auto & new_offsets_data = assert_cast<ColumnVariant::ColumnOffsets &>(*new_offsets).getData();
-        new_offsets_data.reserve(variant_column.size());
-        const auto & old_local_discriminators = variant_column.getLocalDiscriminators();
-        const auto & old_offsets = variant_column.getOffsets();
-        for (size_t i = 0; i != old_local_discriminators.size(); ++i)
-        {
-            auto old_discr = variant_column.globalDiscriminatorByLocal(old_local_discriminators[i]);
-
-            if (old_discr == ColumnVariant::NULL_DISCRIMINATOR)
-            {
-                new_discriminators_data.push_back(ColumnVariant::NULL_DISCRIMINATOR);
-                new_offsets_data.push_back(0);
-                continue;
-            }
-
-            auto new_discr = old_to_new_discriminators_mapping[old_discr];
-            new_discriminators_data.push_back(new_discr);
-            if (new_discr != string_variant_discriminator)
-            {
-                new_offsets_data.push_back(old_offsets[i]);
-            }
-            else
-            {
-                new_offsets_data.push_back(string_variant->size());
-                string_variant->insertFrom(*variants_converted_to_string[old_discr], old_offsets[i]);
-            }
-        }
-
-        /// Create new list of variant columns.
-        Columns new_variant_columns;
-        new_variant_columns.resize(new_variants.size());
-        for (size_t i = 0; i != variant_types.size(); ++i)
-        {
-            auto new_discr = old_to_new_discriminators_mapping[i];
-            if (new_discr != string_variant_discriminator)
-                new_variant_columns[new_discr] = variant_column.getVariantPtrByGlobalDiscriminator(i);
-        }
-        new_variant_columns[string_variant_discriminator] = std::move(string_variant);
-        return {ColumnVariant::create(std::move(new_discriminators_column), std::move(new_offsets), new_variant_columns), reduced_variant};
-    }
-
-    WrapperType createVariantToDynamicWrapper(const DataTypePtr & from_type, const DataTypeDynamic & dynamic_type) const
-    {
-        const auto & from_variant_type = assert_cast<const DataTypeVariant &>(*from_type);
-        size_t max_dynamic_types = dynamic_type.getMaxDynamicTypes();
-        const auto & variants = from_variant_type.getVariants();
-        std::unordered_map<String, ColumnVariant::Discriminator> variant_name_to_discriminator;
-        variant_name_to_discriminator.reserve(variants.size());
-        for (size_t i = 0; i != variants.size(); ++i)
-            variant_name_to_discriminator[variants[i]->getName()] = i;
-
-        return [from_type, max_dynamic_types, variant_name_to_discriminator, this]
-               (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
-        {
-            const auto & variant_column = assert_cast<const ColumnVariant &>(*arguments.front().column);
-            auto [reduced_variant_column, reduced_variant_type] = getReducedVariant(variant_column, from_type, variant_name_to_discriminator, max_dynamic_types);
-            return ColumnDynamic::create(reduced_variant_column, reduced_variant_type, max_dynamic_types);
+            /// Otherwise some variants should go to the shared variant. Create temporary Dynamic column from this Variant and insert
+            /// all data to the resulting Dynamic column, this insertion will do all the logic with shared variant.
+            auto tmp_dynamic_column = ColumnDynamic::create(variant_column_for_dynamic, variant_type_for_dynamic, number_of_variants, number_of_variants);
+            auto result_dynamic_column = ColumnDynamic::create(max_dynamic_types);
+            result_dynamic_column->insertRangeFrom(*tmp_dynamic_column, 0, tmp_dynamic_column->size());
+            return result_dynamic_column;
         };
     }
 
     WrapperType createColumnToDynamicWrapper(const DataTypePtr & from_type, const DataTypeDynamic & dynamic_type) const
     {
         if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(from_type.get()))
-            return createVariantToDynamicWrapper(from_type, dynamic_type);
-
-        if (dynamic_type.getMaxDynamicTypes() == 1)
-        {
-            DataTypePtr string_type = std::make_shared<DataTypeString>();
-            if (from_type->isNullable())
-                string_type = makeNullable(string_type);
-            auto string_wrapper = prepareUnpackDictionaries(from_type, string_type);
-            auto variant_type = std::make_shared<DataTypeVariant>(DataTypes{removeNullable(string_type)});
-            auto variant_wrapper = createColumnToVariantWrapper(string_type, *variant_type);
-            return [string_wrapper, variant_wrapper, string_type, variant_type, max_dynamic_types=dynamic_type.getMaxDynamicTypes()]
-                   (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
-            {
-                auto string_column = string_wrapper(arguments, string_type, col_nullable, input_rows_count);
-                auto column = ColumnWithTypeAndName(string_column, string_type, "");
-                ColumnsWithTypeAndName args = {column};
-                auto variant_column = variant_wrapper(args, variant_type, nullptr, string_column->size());
-                return ColumnDynamic::create(variant_column, variant_type, max_dynamic_types);
-            };
-        }
+            return createVariantToDynamicWrapper(*variant_type, dynamic_type);
 
         if (context && context->getSettingsRef().cast_string_to_dynamic_use_inference && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))))
             return createStringToDynamicThroughParsingWrapper();
 
+        /// First, cast column to Variant with 2 variants - the type of the column we cast and shared variant type.
         auto variant_type = std::make_shared<DataTypeVariant>(DataTypes{removeNullableOrLowCardinalityNullable(from_type)});
-        auto variant_wrapper = createColumnToVariantWrapper(from_type, *variant_type);
-        return [variant_wrapper, variant_type, max_dynamic_types=dynamic_type.getMaxDynamicTypes()]
-               (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
+        auto column_to_variant_wrapper = createColumnToVariantWrapper(from_type, *variant_type);
+        /// Second, cast this Variant to Dynamic.
+        auto variant_to_dynamic_wrapper = createVariantToDynamicWrapper(*variant_type, dynamic_type);
+        return [column_to_variant_wrapper, variant_to_dynamic_wrapper, variant_type]
+               (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
         {
-            auto variant_res = variant_wrapper(arguments, variant_type, col_nullable, input_rows_count);
-            return ColumnDynamic::create(variant_res, variant_type, max_dynamic_types);
+            auto variant_res = column_to_variant_wrapper(arguments, variant_type, col_nullable, input_rows_count);
+            ColumnsWithTypeAndName args = {{variant_res, variant_type, ""}};
+            return variant_to_dynamic_wrapper(args, result_type, nullptr, input_rows_count);
         };
     }
 
@@ -4530,21 +4522,26 @@ private:
                    (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
             {
                 const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments[0].column);
-                return ColumnDynamic::create(column_dynamic.getVariantColumnPtr(), column_dynamic.getVariantInfo(), to_max_types);
+                /// We should use the same limit as already used in column and change only global limit.
+                /// It's needed because shared variant should contain values only when limit is exceeded,
+                /// so if there are already some data, we cannot increase the limit.
+                return ColumnDynamic::create(column_dynamic.getVariantColumnPtr(), column_dynamic.getVariantInfo(), column_dynamic.getMaxDynamicTypes(), to_max_types);
             };
         }
 
-        return [to_max_types, this]
+        return [to_max_types]
                (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
         {
             const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments[0].column);
-            auto [reduced_variant_column, reduced_variant_type] = getReducedVariant(
-                column_dynamic.getVariantColumn(),
-                column_dynamic.getVariantInfo().variant_type,
-                column_dynamic.getVariantInfo().variant_name_to_discriminator,
-                to_max_types,
-                column_dynamic.getStatistics());
-            return ColumnDynamic::create(reduced_variant_column, reduced_variant_type, to_max_types);
+            /// If real limit in the column is not greater than desired, just use the same variant column.
+            if (column_dynamic.getMaxDynamicTypes() <= to_max_types)
+                return ColumnDynamic::create(column_dynamic.getVariantColumnPtr(), column_dynamic.getVariantInfo(), column_dynamic.getMaxDynamicTypes(), to_max_types);
+
+            /// Otherwise some variants should go to the shared variant. In this case we can just insert all
+            /// the data into resulting column and it will do all the logic with shared variant.
+            auto result_dynamic_column = ColumnDynamic::create(to_max_types);
+            result_dynamic_column->insertRangeFrom(column_dynamic, 0, column_dynamic.size());
+            return result_dynamic_column;
         };
     }
 
@@ -5137,6 +5134,8 @@ private:
                 return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()));
             case TypeIndex::Map:
                 return createMapWrapper(from_type, checkAndGetDataType<DataTypeMap>(to_type.get()));
+            case TypeIndex::ObjectDeprecated:
+                return createObjectDeprecatedWrapper(from_type, checkAndGetDataType<DataTypeObjectDeprecated>(to_type.get()));
             case TypeIndex::Object:
                 return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()));
             case TypeIndex::AggregateFunction:
