@@ -209,9 +209,9 @@ function setup_logs_replication
             CREATE TABLE system.${table}_buffer AS system.${table}_sender
             ENGINE=Buffer(system, ${table}_sender,
             /*num_layers*/ 1,
-            /*min_time*/   30,    /*max_time*/  300,
-            /*min_rows*/   10000, /*max_rows*/  100000,
-            /*min_bytes*/  10240, /*max_bytes*/ 70000
+            /*min_time*/   60,    /*max_time*/  300,
+            /*min_rows*/   10000, /*max_rows*/  20000,
+            /*min_bytes*/  50240, /*max_bytes*/ 2000000
             )
         " || continue
 
