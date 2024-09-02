@@ -585,6 +585,8 @@ class TestCIConfig(unittest.TestCase):
         _test_await_for_batch(ci_cache, CiCache.RecordType.SUCCESSFUL, 4)
         self.assertTrue(ci_cache.jobs_to_do)
         _test_await_for_batch(ci_cache, CiCache.RecordType.SUCCESSFUL, 5)
+        self.assertTrue(ci_cache.jobs_to_do)
+        _test_await_for_batch(ci_cache, CiCache.RecordType.SUCCESSFUL, 6)
         self.assertTrue(
             not ci_cache.jobs_to_do
         )  # by this moment there must be no jobs left as batch 5 is currently the maximum
