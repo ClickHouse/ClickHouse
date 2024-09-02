@@ -1092,13 +1092,10 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
 
         total_rows += block_to_insert.rows();
 
-        chunk_info->offsets.push_back(total_rows);
-        chunk_info->tokens.push_back(entry->async_dedup_token);
-
         /// For some reason, client can pass zero rows and bytes to server.
         /// We don't update offsets in this case, because we assume every insert has some rows during dedup,
         /// but we have nothing to deduplicate for this insert.
-        if (block->rows())
+        if (block_to_insert.rows() > 0)
         {
             chunk_info->offsets.push_back(total_rows);
             chunk_info->tokens.push_back(entry->async_dedup_token);
