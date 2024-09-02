@@ -5,8 +5,10 @@
 #include <cassert>
 #include <cstring>
 
+#include "Common/StackTrace.h"
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include "Disks/IStoragePolicy.h"
 #include <IO/BufferBase.h>
 
 
@@ -141,6 +143,8 @@ public:
         }
     }
 
+    bool isFinalized() const { return finalized; }
+
     void cancel() noexcept;
 
     /// Wait for data to be reliably written. Mainly, call fsync for fd.
@@ -178,6 +182,8 @@ private:
     {
         throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "Cannot write after end of buffer.");
     }
+
+    //String create_stack = StackTrace().toString();
 };
 
 

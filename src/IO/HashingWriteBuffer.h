@@ -3,6 +3,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
+#include "Common/logger_useful.h"
 #include <city.h>
 
 #define DBMS_DEFAULT_HASHING_BLOCK_SIZE 2048ULL
@@ -75,6 +76,11 @@ public:
         working_buffer = out.buffer();
         pos = working_buffer.begin();
         state = uint128(0, 0);
+    }
+
+    ~HashingWriteBuffer() override
+    {
+        LOG_DEBUG(getLogger("HashingWriteBuffer"), "dtor");
     }
 
     void sync() override

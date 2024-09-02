@@ -3,6 +3,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include "Common/Logger.h"
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/logger_useful.h>
@@ -104,6 +105,11 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
         auto compression = getCodecDescOrDefault(column.name, default_codec);
         addStreams(column, nullptr, compression);
     }
+}
+
+MergeTreeDataPartWriterWide::~MergeTreeDataPartWriterWide()
+{
+    LOG_DEBUG(getLogger("MergeTreeDataPartWriterWide"), "dtor");
 }
 
 void MergeTreeDataPartWriterWide::initDynamicStreamsIfNeeded(const DB::Block & block)
@@ -698,12 +704,16 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
 {
     for (auto & stream : column_streams)
     {
+        LOG_DEBUG(getLogger("MergeTreeDataPartWriterWide"), "finalize {}", stream.first);
         stream.second->finalize();
         if (sync)
             stream.second->sync();
+        stream.second.reset();
     }
 
+    LOG_DEBUG(getLogger("MergeTreeDataPartWriterWide"), "clear column_streams");
     column_streams.clear();
+    LOG_DEBUG(getLogger("MergeTreeDataPartWriterWide"), "clear serialization_states");
     serialization_states.clear();
 
 #ifndef NDEBUG

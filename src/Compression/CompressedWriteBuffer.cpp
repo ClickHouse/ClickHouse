@@ -10,6 +10,8 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedWriteBuffer.h>
 
+#include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -64,6 +66,7 @@ CompressedWriteBuffer::CompressedWriteBuffer(WriteBuffer & out_, CompressionCode
 
 CompressedWriteBuffer::~CompressedWriteBuffer()
 {
+    LOG_DEBUG(getLogger("CompressedWriteBuffer"), "dtor");
     if (!canceled)
         finalize();
 }

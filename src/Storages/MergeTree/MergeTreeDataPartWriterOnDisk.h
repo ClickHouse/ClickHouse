@@ -69,6 +69,19 @@ public:
             size_t max_compress_block_size_,
             const WriteSettings & query_write_settings);
 
+        ~Stream()
+        {
+            LOG_DEBUG(getLogger("Stream"), "reset plain_file");
+            plain_file.reset();
+            LOG_DEBUG(getLogger("Stream"), "reset plain_file");
+            marks_file.reset();
+
+            LOG_DEBUG(getLogger("Stream"), "plain_hashing {}", plain_hashing.isFinalized());
+            LOG_DEBUG(getLogger("Stream"), "compressed_hashing {}", compressed_hashing.isFinalized());
+
+            LOG_DEBUG(getLogger("Stream"), "dtor ok");
+        }
+
         String escaped_column_name;
         std::string data_file_extension;
         std::string marks_file_extension;
@@ -116,6 +129,8 @@ public:
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity);
+
+    ~MergeTreeDataPartWriterOnDisk() override;
 
     void setWrittenOffsetColumns(WrittenOffsetColumns * written_offset_columns_)
     {

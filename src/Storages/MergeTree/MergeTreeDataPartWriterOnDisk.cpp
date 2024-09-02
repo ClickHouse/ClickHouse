@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include "Common/Logger.h"
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
@@ -26,18 +27,18 @@ void MergeTreeDataPartWriterOnDisk::Stream<only_plain_file>::preFinalize()
     /// Otherwise some data might stuck in the buffers above plain_file and marks_file
     /// Also the order is important
 
+    LOG_DEBUG(getLogger("Stream"), "finalize compressed_hashing  compressor plain_hashing");
     compressed_hashing.finalize();
     compressor.finalize();
     plain_hashing.finalize();
 
     if constexpr (!only_plain_file)
     {
-        if (compress_marks)
-        {
-            marks_compressed_hashing.finalize();
-            marks_compressor.finalize();
-        }
+        LOG_DEBUG(getLogger("Stream"), "finalize marks_compressed_hashing  marks_compressor");
+        marks_compressed_hashing.finalize();
+        marks_compressor.finalize();
 
+        LOG_DEBUG(getLogger("Stream"), "finalize marks_hashing");
         marks_hashing.finalize();
     }
 
@@ -54,9 +55,14 @@ void MergeTreeDataPartWriterOnDisk::Stream<only_plain_file>::finalize()
     if (!is_prefinalized)
         preFinalize();
 
+    LOG_DEBUG(getLogger("Stream"), "finalize plain_file");
+
     plain_file->finalize();
     if constexpr (!only_plain_file)
+    {
+        LOG_DEBUG(getLogger("Stream"), "finalize marks_file");
         marks_file->finalize();
+    }
 }
 
 template<bool only_plain_file>
@@ -180,6 +186,12 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
 
     initSkipIndices();
     initStatistics();
+}
+
+MergeTreeDataPartWriterOnDisk::~MergeTreeDataPartWriterOnDisk()
+{
+    LOG_DEBUG(getLogger("MergeTreeDataPartWriterOnDisk"), "dtor");
+
 }
 
 // Implementation is split into static functions for ability
