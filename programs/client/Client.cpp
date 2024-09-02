@@ -352,7 +352,6 @@ try
         // All that just to set DB::CurrentThread::get().getGlobalContext()
         // which is required for client timezone (pushed from server) to work.
         auto thread_group = std::make_shared<ThreadGroup>();
-        const_cast<ContextWeakPtr&>(thread_group->global_context) = global_context;
         const_cast<ContextWeakPtr&>(thread_group->query_context) = client_context;
         thread_status.attachToGroup(thread_group, false);
     }
