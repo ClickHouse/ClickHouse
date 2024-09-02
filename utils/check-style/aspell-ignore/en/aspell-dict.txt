@@ -2730,6 +2730,7 @@ timeZoneOffset
 timezones
 tinylog
 tmp
+toBool
 toColumnTypeName
 toDate
 toDateOrDefault
