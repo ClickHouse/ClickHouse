@@ -36,8 +36,8 @@ def cleanup_after_test():
         yield
     finally:
         instance.query("DROP USER IF EXISTS A, B, C")
-        instance.query("DROP TABLE IF EXISTS test.view_1")
 
+        instance.query("DROP TABLE IF EXISTS test.view_1, test.view_2, default.table")
 
 def test_smoke():
     instance.query("CREATE USER A")

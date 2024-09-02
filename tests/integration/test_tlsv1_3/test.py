@@ -186,6 +186,8 @@ def test_https_non_ssl_auth():
 
 
 def test_create_user():
+    instance.query("DROP USER IF EXISTS emma")
+
     instance.query("CREATE USER emma IDENTIFIED WITH ssl_certificate CN 'client3'")
     assert (
         execute_query_https("SELECT currentUser()", user="emma", cert_name="client3")
@@ -222,3 +224,5 @@ def test_create_user():
         == "emma\t['ssl_certificate']\t['{\"common_names\":[\"client2\"]}']\n"
         'lucy\t[\'ssl_certificate\']\t[\'{"common_names":["client2","client3"]}\']\n'
     )
+
+    instance.query("DROP USER IF EXISTS emma")

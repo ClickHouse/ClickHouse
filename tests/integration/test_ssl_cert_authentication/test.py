@@ -297,6 +297,8 @@ def test_https_non_ssl_auth():
 
 
 def test_create_user():
+    instance.query("DROP USER IF EXISTS emma")
+
     instance.query("CREATE USER emma IDENTIFIED WITH ssl_certificate CN 'client3'")
     assert (
         execute_query_https("SELECT currentUser()", user="emma", cert_name="client3")
@@ -334,8 +336,12 @@ def test_create_user():
         'lucy\t[\'ssl_certificate\']\t[\'{"common_names":["client2","client3"]}\']\n'
     )
 
+    instance.query("DROP USER IF EXISTS emma")
+
 
 def test_x509_san_support():
+    instance.query("DROP USER IF EXISTS jemma")
+
     assert (
         execute_query_native(
             instance, "SELECT currentUser()", user="jerome", cert_name="client4"
@@ -369,3 +375,5 @@ def test_x509_san_support():
         instance.query("SHOW CREATE USER jemma")
         == "CREATE USER jemma IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://foo.com/bar\\', \\'URI:spiffe://foo.com/baz\\'\n"
     )
+
+    instance.query("DROP USER IF EXISTS jemma")

@@ -19,6 +19,8 @@ def started_cluster():
 
 
 def test_basic(started_cluster):
+    node.query("DROP USER IF EXISTS user_basic")
+
     # 1. Without VALID UNTIL
     node.query("CREATE USER user_basic")
 
@@ -71,8 +73,12 @@ def test_basic(started_cluster):
     error = "Authentication failed"
     assert error in node.query_and_get_error("SELECT 1", user="user_basic")
 
+    node.query("DROP USER IF EXISTS user_basic")
+
 
 def test_details(started_cluster):
+    node.query("DROP USER IF EXISTS user_details_infinity, user_details_time_only")
+
     # 1. Does not do anything
     node.query("CREATE USER user_details_infinity VALID UNTIL 'infinity'")
 
@@ -93,8 +99,12 @@ def test_details(started_cluster):
         == f"CREATE USER user_details_time_only IDENTIFIED WITH no_password VALID UNTIL \\'{until_year}-01-01 22:03:40\\'\n"
     )
 
+    node.query("DROP USER IF EXISTS user_details_infinity, user_details_time_only")
+
 
 def test_restart(started_cluster):
+    node.query("DROP USER IF EXISTS user_restart")
+
     node.query("CREATE USER user_restart VALID UNTIL '06/11/2010 08:03:20 Z+3'")
 
     assert (
@@ -111,3 +121,5 @@ def test_restart(started_cluster):
 
     error = "Authentication failed"
     assert error in node.query_and_get_error("SELECT 1", user="user_restart")
+
+    node.query("DROP USER IF EXISTS user_restart")
