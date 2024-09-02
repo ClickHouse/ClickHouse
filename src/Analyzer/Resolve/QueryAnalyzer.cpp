@@ -64,8 +64,6 @@
 #include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
 
-#include <Analyzer/createUniqueTableAliases.h>
-
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <Core/Settings.h>
@@ -517,9 +515,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
         options.only_analyze = only_analyze;
-        auto subquery = node->clone();
-        createUniqueTableAliases(subquery, {}, subquery_context);
-        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(subquery->toAST(), subquery_context, subquery_context->getViewSource(), options);
+        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node->toAST(), subquery_context, subquery_context->getViewSource(), options);
 
         if (only_analyze)
         {
