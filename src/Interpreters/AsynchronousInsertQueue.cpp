@@ -396,6 +396,10 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
     if (data_kind == DataKind::Preprocessed)
         insert_query.format = "Native";
 
+    /// Query parameters make sense only for format Values.
+    if (insert_query.format == "Values")
+        entry->query_parameters = query_context->getQueryParameters();
+
     InsertQuery key{query, query_context->getUserID(), query_context->getCurrentRoles(), settings, data_kind};
     InsertDataPtr data_to_process;
     std::future<void> insert_future;
@@ -1035,14 +1039,21 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
                 "Expected entry with data kind Parsed. Got: {}", entry->chunk.getDataKind());
 
         auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
+        executor.setQueryParameters(entry->query_parameters);
 
         size_t num_bytes = bytes->size();
         size_t num_rows = executor.execute(*buffer);
 
         total_rows += num_rows;
 
-        chunk_info->offsets.push_back(total_rows);
-        chunk_info->tokens.push_back(entry->async_dedup_token);
+        /// For some reason, client can pass zero rows and bytes to server.
+        /// We don't update offsets in this case, because we assume every insert has some rows during dedup
+        /// but we have nothing to deduplicate for this insert.
+        if (num_rows > 0)
+        {
+            chunk_info->offsets.push_back(total_rows);
+            chunk_info->tokens.push_back(entry->async_dedup_token);
+        }
 
         add_to_async_insert_log(entry, current_exception, num_rows, num_bytes);
         current_exception.clear();
@@ -1083,6 +1094,15 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
 
         chunk_info->offsets.push_back(total_rows);
         chunk_info->tokens.push_back(entry->async_dedup_token);
+
+        /// For some reason, client can pass zero rows and bytes to server.
+        /// We don't update offsets in this case, because we assume every insert has some rows during dedup,
+        /// but we have nothing to deduplicate for this insert.
+        if (block->rows())
+        {
+            chunk_info->offsets.push_back(total_rows);
+            chunk_info->tokens.push_back(entry->async_dedup_token);
+        }
 
         add_to_async_insert_log(entry, /*parsing_exception=*/ "", block_to_insert.rows(), block_to_insert.bytes());
         entry->resetChunk();

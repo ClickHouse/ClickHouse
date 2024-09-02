@@ -70,7 +70,7 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON as json
 └────────────────────────────────────────────────┘
 ```
 
-CAST from named `Tuple`, `Map` and `Object('json')` to `JSON` type will be supported later.
+CAST from `JSON`, named `Tuple`, `Map` and `Object('json')` to `JSON` type will be supported later.
 
 ## Reading JSON paths as subcolumns
 
@@ -453,8 +453,8 @@ As we can see, after inserting paths `e` and `f.g` the limit was reached and we 
 
 ### During merges of data parts in MergeTree table engines
 
-During merge of several data parts in MergeTree table the `JSON` column in the resulting data part can reach the limit of dynamic paths won't be able to store all paths from source parts as subcolumns.
-In this case ClickHouse chooses what paths will remain as subcolumns after merge and what types will be stored in the shared data structure. In most cases ClickHouse tries to keep paths that contains
+During merge of several data parts in MergeTree table the `JSON` column in the resulting data part can reach the limit of dynamic paths and won't be able to store all paths from source parts as subcolumns.
+In this case ClickHouse chooses what paths will remain as subcolumns after merge and what paths will be stored in the shared data structure. In most cases ClickHouse tries to keep paths that contain
 the largest number of non-null values and move the rarest paths to the shared data structure, but it depends on the implementation.
 
 Let's see an example of such merge. First, let's create a table with `JSON` column, set the limit of dynamic paths to `3` and insert values with `5` different paths:
