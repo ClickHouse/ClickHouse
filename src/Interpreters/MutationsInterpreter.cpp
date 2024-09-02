@@ -1217,9 +1217,16 @@ void MutationsInterpreter::Source::read(
 
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Mutation,
-            plan, *data, storage_snapshot,
-            part, required_columns,
-            apply_deleted_mask_, std::move(filter), context_,
+            plan,
+            *data, storage_snapshot,
+            part,
+            required_columns,
+            nullptr,
+            apply_deleted_mask_,
+            std::move(filter),
+            false,
+            false,
+            context_,
             getLogger("MutationsInterpreter"));
     }
     else

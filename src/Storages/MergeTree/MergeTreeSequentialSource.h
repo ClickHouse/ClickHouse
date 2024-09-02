@@ -37,8 +37,11 @@ void createReadFromPartStep(
     const StorageSnapshotPtr & storage_snapshot,
     MergeTreeData::DataPartPtr data_part,
     Names columns_to_read,
+    std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
     std::optional<ActionsDAG> filter,
+    bool read_with_direct_io,
+    bool prefetch,
     ContextPtr context,
     LoggerPtr log);
 
