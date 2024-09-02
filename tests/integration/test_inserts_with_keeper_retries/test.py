@@ -11,8 +11,12 @@ from helpers.client import QueryRuntimeException
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
-
-node1 = cluster.add_instance("node1", with_zookeeper=True)
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=["configs/storage_conf.xml"],
+    with_zookeeper=True,
+    with_minio=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -26,10 +30,16 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_replica_inserts_with_keeper_restart(started_cluster):
+@pytest.mark.parametrize(
+    "engine,storage_policy",
+    [
+        ("ReplicatedMergeTree", "default"),
+    ],
+)
+def test_replica_inserts_with_keeper_restart(started_cluster, engine, storage_policy):
     try:
         node1.query(
-            "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '0') ORDER BY tuple()"
+            f"CREATE TABLE r (a UInt64, b String) ENGINE={engine}('/test/r', '0') ORDER BY tuple() SETTINGS storage_policy='{storage_policy}'"
         )
 
         p = Pool(1)
@@ -61,10 +71,18 @@ def test_replica_inserts_with_keeper_restart(started_cluster):
         node1.query("DROP TABLE IF EXISTS r SYNC")
 
 
-def test_replica_inserts_with_keeper_disconnect(started_cluster):
+@pytest.mark.parametrize(
+    "engine,storage_policy",
+    [
+        ("ReplicatedMergeTree", "default"),
+    ],
+)
+def test_replica_inserts_with_keeper_disconnect(
+    started_cluster, engine, storage_policy
+):
     try:
         node1.query(
-            "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '0') ORDER BY tuple()"
+            f"CREATE TABLE r2 (a UInt64, b String) ENGINE={engine}('/test/r2', '0') ORDER BY tuple() SETTINGS storage_policy='{storage_policy}'"
         )
 
         p = Pool(1)
@@ -85,26 +103,32 @@ def test_replica_inserts_with_keeper_disconnect(started_cluster):
         disconnect_event.wait(90)
 
         node1.query(
-            "INSERT INTO r SELECT number, toString(number) FROM numbers(10) SETTINGS insert_keeper_max_retries=20"
+            "INSERT INTO r2 SELECT number, toString(number) FROM numbers(10) SETTINGS insert_keeper_max_retries=20"
         )
         node1.query(
-            "INSERT INTO r SELECT number, toString(number) FROM numbers(10, 10) SETTINGS insert_keeper_max_retries=20"
+            "INSERT INTO r2 SELECT number, toString(number) FROM numbers(10, 10) SETTINGS insert_keeper_max_retries=20"
         )
 
         job.wait()
         p.close()
         p.join()
 
-        assert node1.query("SELECT COUNT() FROM r") == "20\n"
+        assert node1.query("SELECT COUNT() FROM r2") == "20\n"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS r SYNC")
+        node1.query("DROP TABLE IF EXISTS r2 SYNC")
 
 
-def test_query_timeout_with_zk_down(started_cluster):
+@pytest.mark.parametrize(
+    "engine,storage_policy",
+    [
+        ("ReplicatedMergeTree", "default"),
+    ],
+)
+def test_query_timeout_with_zk_down(started_cluster, engine, storage_policy):
     try:
         node1.query(
-            "CREATE TABLE zk_down (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/zk_down', '0') ORDER BY tuple()"
+            f"CREATE TABLE zk_down (a UInt64, b String) ENGINE={engine}('/test/zk_down', '0') ORDER BY tuple() SETTINGS storage_policy='{storage_policy}'"
         )
 
         cluster.stop_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
@@ -121,11 +145,19 @@ def test_query_timeout_with_zk_down(started_cluster):
         node1.query("DROP TABLE IF EXISTS zk_down SYNC")
 
 
-def test_retries_should_not_wait_for_global_connection(started_cluster):
+@pytest.mark.parametrize(
+    "engine,storage_policy",
+    [
+        ("ReplicatedMergeTree", "default"),
+    ],
+)
+def test_retries_should_not_wait_for_global_connection(
+    started_cluster, engine, storage_policy
+):
     pm = PartitionManager()
     try:
         node1.query(
-            "CREATE TABLE zk_down_retries (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/zk_down', '0') ORDER BY tuple()"
+            f"CREATE TABLE zk_down_retries (a UInt64, b String) ENGINE={engine}('/test/zk_down', '0') ORDER BY tuple() SETTINGS storage_policy='{storage_policy}'"
         )
 
         cluster.stop_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
@@ -152,4 +184,4 @@ def test_retries_should_not_wait_for_global_connection(started_cluster):
     finally:
         pm.heal_all()
         cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
-        node1.query("DROP TABLE IF EXISTS zk_down SYNC")
+        node1.query("DROP TABLE IF EXISTS zk_down_retries SYNC")
