@@ -343,9 +343,9 @@ def test_change_queries_frequency():
     node.query(create_query)
 
     settings = copy.copy(_query_settings)
-    min_ms = 50
+    min_ms = 5
     settings["async_insert_busy_timeout_min_ms"] = min_ms
-    settings["async_insert_busy_timeout_max_ms"] = 2000
+    settings["async_insert_busy_timeout_max_ms"] = 500
 
     _insert_queries_in_parallel(
         table_name,
