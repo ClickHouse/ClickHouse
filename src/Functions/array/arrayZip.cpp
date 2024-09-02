@@ -71,14 +71,17 @@ public:
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         size_t num_arguments = arguments.size();
-
-        ColumnPtr first_array_column;
+        Columns holders(num_arguments);
         Columns tuple_columns(num_arguments);
 
+        bool has_unaligned = false;
+        size_t unaligned_index = 0;
         for (size_t i = 0; i < num_arguments; ++i)
         {
             /// Constant columns cannot be inside tuple. It's only possible to have constant tuple as a whole.
             ColumnPtr holder = arguments[i].column->convertToFullColumnIfConst();
+            holders[i] = holder;
+
             const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(holder.get());
             if (!column_array)
                 throw Exception(
@@ -87,18 +90,11 @@ public:
                     i + 1,
                     getName(),
                     holder->getName());
-
             tuple_columns[i] = column_array->getDataPtr();
 
-            if constexpr (allow_unaligned)
-                tuple_columns[i] = makeNullable(tuple_columns[i]);
-
-            if (i == 0)
+            if (i && !column_array->hasEqualOffsets(static_cast<const ColumnArray &>(*holders[0])))
             {
-                first_array_column = holder;
-            }
-            else if (!column_array->hasEqualOffsets(static_cast<const ColumnArray &>(*first_array_column)))
-            {
+                /*
                 if constexpr (allow_unaligned)
                     return executeUnaligned(static_cast<const ColumnArray &>(*first_array_column), *column_array, input_rows_count);
                 else
@@ -107,46 +103,72 @@ public:
                         "The argument 1 and argument {} of function {} have different array sizes",
                         i + 1,
                         getName());
+                */
+                has_unaligned = true;
+                unaligned_index = i;
             }
         }
 
-        return ColumnArray::create(
-            ColumnTuple::create(std::move(tuple_columns)), static_cast<const ColumnArray &>(*first_array_column).getOffsetsPtr());
+        if constexpr (!allow_unaligned)
+        {
+            if (has_unaligned)
+                throw Exception(
+                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                    "The argument 1 and argument {} of function {} have different array sizes",
+                    unaligned_index + 1,
+                    getName());
+            else
+                return ColumnArray::create(
+                    ColumnTuple::create(std::move(tuple_columns)), static_cast<const ColumnArray &>(*holders[0]).getOffsetsPtr());
+        }
+        else
+            return executeUnaligned(holders, tuple_columns, input_rows_count);
     }
 
 private:
-    ColumnPtr
-    executeUnaligned(const ColumnArray & first_array_colmn, const ColumnArray & second_array_column, size_t input_rows_count) const
+    ColumnPtr executeUnaligned(const Columns & holders, Columns & tuple_columns, size_t input_rows_count) const
     {
-        const auto & first_data = first_array_colmn.getDataPtr();
-        const auto & second_data = second_array_column.getDataPtr();
-        const auto & nullable_first_data = makeNullable(first_data);
-        const auto & nullable_second_data = makeNullable(second_data);
-        auto res_first_data = nullable_first_data->cloneEmpty();
-        auto res_second_data = nullable_second_data->cloneEmpty();
-        auto res_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
-        auto & res_offsets = assert_cast<ColumnArray::ColumnOffsets &>(*res_offsets_column).getData();
+        std::vector<const ColumnArray *> array_columns(holders.size());
+        for (size_t i = 0; i < holders.size(); ++i)
+            array_columns[i] = checkAndGetColumn<ColumnArray>(holders[i].get());
 
-        const auto & first_offsets = first_array_colmn.getOffsets();
-        const auto & second_offsets = second_array_column.getOffsets();
-        for (size_t i = 0; i < input_rows_count; ++i)
+        MutableColumns res_tuple_columns(tuple_columns.size());
+        for (size_t i = 0; i < tuple_columns.size(); ++i)
         {
-            size_t first_size = first_offsets[i] - first_offsets[i - 1];
-            size_t second_size = second_offsets[i] - second_offsets[i - 1];
-
-            res_first_data->insertRangeFrom(*nullable_first_data, first_offsets[i - 1], first_size);
-            res_second_data->insertRangeFrom(*nullable_second_data, second_offsets[i - 1], second_size);
-
-            if (first_size < second_size)
-                res_first_data->insertManyDefaults(second_size - first_size);
-            else if (first_size > second_size)
-                res_second_data->insertManyDefaults(first_size - second_size);
-
-            res_offsets[i] = std::max(first_size, second_size);
+            tuple_columns[i] = makeNullable(tuple_columns[i]);
+            res_tuple_columns[i] = tuple_columns[i]->cloneEmpty();
+            res_tuple_columns[i]->reserve(tuple_columns[i]->size());
         }
 
-        Columns tuple_columns{std::move(res_first_data), std::move(res_second_data)};
-        return ColumnArray::create(ColumnTuple::create(std::move(tuple_columns)), std::move(res_offsets_column));
+        auto res_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
+        auto & res_offsets = assert_cast<ColumnArray::ColumnOffsets &>(*res_offsets_column).getData();
+        for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
+        {
+            size_t max_size = 0;
+            for (size_t arg_i = 0; arg_i < holders.size(); ++arg_i)
+            {
+                const auto * array_column = array_columns[arg_i];
+                const auto & offsets = array_column->getOffsets();
+                size_t array_offset = offsets[row_i - 1];
+                size_t array_size = offsets[row_i] - array_offset;
+
+                res_tuple_columns[arg_i]->insertRangeFrom(*tuple_columns[arg_i], array_offset, array_size);
+                max_size = std::max(max_size, array_size);
+            }
+
+            for (size_t arg_i = 0; arg_i < holders.size(); ++arg_i)
+            {
+                const auto * array_column = array_columns[arg_i];
+                const auto & offsets = array_column->getOffsets();
+                size_t array_offset = offsets[row_i - 1];
+                size_t array_size = offsets[row_i] - array_offset;
+
+                res_tuple_columns[arg_i]->insertManyDefaults(max_size - array_size);
+                res_offsets[row_i] = max_size;
+            }
+        }
+
+        return ColumnArray::create(ColumnTuple::create(std::move(res_tuple_columns)), std::move(res_offsets_column));
     }
 };
 
