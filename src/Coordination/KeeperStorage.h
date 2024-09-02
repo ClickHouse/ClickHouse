@@ -357,8 +357,6 @@ public:
 
         NodeStats old_stats;
         NodeStats new_stats;
-        int32_t old_seq_num;
-        int32_t new_seq_num;
         int32_t version{-1};
     };
 

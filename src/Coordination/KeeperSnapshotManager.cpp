@@ -471,12 +471,21 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                 {
 #ifdef NDEBUG
                     /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
-                    LOG_ERROR(getLogger("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
-                                " is different from actual children size {} for node {}", itr.value.stats.numChildren(), itr.value.getChildren().size(), itr.key);
+                    LOG_ERROR(
+                        getLogger("KeeperSnapshotManager"),
+                        "Children counter in stat.numChildren {}"
+                        " is different from actual children size {} for node {}",
+                        itr.value.stats.numChildren(),
+                        itr.value.getChildren().size(),
+                        itr.key);
 #else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
-                                    " is different from actual children size {} for node {}",
-                                    itr.value.numChildren(), itr.value.getChildren().size(), itr.key);
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Children counter in stat.numChildren {}"
+                        " is different from actual children size {} for node {}",
+                        itr.value.stats.numChildren(),
+                        itr.value.getChildren().size(),
+                        itr.key);
 #endif
                 }
             }
