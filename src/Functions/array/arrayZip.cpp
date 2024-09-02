@@ -174,8 +174,21 @@ private:
 
 REGISTER_FUNCTION(ArrayZip)
 {
-    factory.registerFunction<FunctionArrayZip<false>>();
-    factory.registerFunction<FunctionArrayZip<true>>();
+    factory.registerFunction<FunctionArrayZip<false>>(
+        {.description = R"(
+Combines multiple arrays into a single array. The resulting array contains the corresponding elements of the source arrays grouped into tuples in the listed order of arguments.
+)",
+         .categories{"String"}});
+
+    factory.registerFunction<FunctionArrayZip<true>>(
+        {.description = R"(
+Combines multiple arrays into a single array, allowing for unaligned arrays. The resulting array contains the corresponding elements of the source arrays grouped into tuples in the listed order of arguments.
+
+If the arrays have different sizes, the shorter arrays will be padded with `null` values.
+)",
+         .categories{"String"}}
+
+    );
 }
 
 }
