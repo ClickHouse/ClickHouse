@@ -7,6 +7,7 @@
 #include <Coordination/FourLetterCommand.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <IO/HTTPCommon.h>
+#include <IO/Operators.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>

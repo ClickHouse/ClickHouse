@@ -11,6 +11,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <IO/HTTPCommon.h>
+#include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
