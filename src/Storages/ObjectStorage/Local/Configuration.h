@@ -19,12 +19,29 @@ public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
     static constexpr auto type_name = "local";
+    /// All possible signatures for Local engine with structure argument (for example for local table function).
+    static constexpr auto max_number_of_arguments_with_structure = 4;
+    static constexpr auto signatures_with_structure =
+        " - path\n"
+        " - path, format\n"
+        " - path, format, structure\n"
+        " - path, format, structure, compression_method\n";
+
+    /// All possible signatures for S3 engine without structure argument (for example for Local table engine).
+    static constexpr auto max_number_of_arguments_without_structure = 3;
+    static constexpr auto signatures_without_structure =
+        " - path\n"
+        " - path, format\n"
+        " - path, format, compression_method\n";
 
     StorageLocalConfiguration() = default;
     StorageLocalConfiguration(const StorageLocalConfiguration & other) = default;
 
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return "Local"; }
+
+    std::string getSignatures(bool with_structure = true) const override { return with_structure ? signatures_with_structure : signatures_without_structure; }
+    size_t getMaxNumberOfArguments(bool with_structure = true) const override { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
     Path getPath() const override { return path; }
     void setPath(const Path & path_) override { path = path_; }

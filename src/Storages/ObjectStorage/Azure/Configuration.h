@@ -22,12 +22,38 @@ public:
 
     static constexpr auto type_name = "azure";
     static constexpr auto engine_name = "Azure";
+    /// All possible signatures for Azure engine with structure argument (for example for azureBlobStorage table function).
+    static constexpr auto max_number_of_arguments_with_structure = 4;
+    static constexpr auto signatures_with_structure =
+        " - connection_string, container_name, blobpath\n"
+        " - connection_string, container_name, blobpath, structure \n"
+        " - connection_string, container_name, blobpath, format \n"
+        " - connection_string, container_name, blobpath, format, compression \n"
+        " - connection_string, container_name, blobpath, format, compression, structure \n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key\n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key, structure\n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key, format\n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression\n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure\n";
+
+    /// All possible signatures for Azure engine without structure argument (for example for AzureBlobStorage table engine).
+    static constexpr auto max_number_of_arguments_without_structure = 3;
+    static constexpr auto signatures_without_structure =
+        " - connection_string, container_name, blobpath\n"
+        " - connection_string, container_name, blobpath, format \n"
+        " - connection_string, container_name, blobpath, format, compression \n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key\n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key, format\n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression\n";
 
     StorageAzureConfiguration() = default;
     StorageAzureConfiguration(const StorageAzureConfiguration & other);
 
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return engine_name; }
+
+    std::string getSignatures(bool with_structure = true) const override { return with_structure ? signatures_with_structure : signatures_without_structure; }
+    size_t getMaxNumberOfArguments(bool with_structure = true) const override { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
     Path getPath() const override { return blob_path; }
     void setPath(const Path & path) override { blob_path = path; }

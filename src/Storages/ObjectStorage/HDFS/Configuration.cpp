@@ -24,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 StorageHDFSConfiguration::StorageHDFSConfiguration(const StorageHDFSConfiguration & other)
@@ -83,12 +84,13 @@ StorageObjectStorage::QuerySettings StorageHDFSConfiguration::getQuerySettings(c
 
 void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    const size_t max_args_num = with_structure ? 4 : 3;
-    if (args.empty() || args.size() > max_args_num)
-    {
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Expected not more than {} arguments", max_args_num);
-    }
+    if (args.empty() || args.size() > getMaxNumberOfArguments(with_structure))
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Storage HDFS requires 1 to {} arguments. All supported signatures:\n{}",
+            getMaxNumberOfArguments(with_structure),
+            getSignatures(with_structure));
+
 
     std::string url_str;
     url_str = checkAndGetLiteralArgument<String>(args[0], "url");
@@ -184,11 +186,8 @@ void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
     else
     {
         size_t count = args.size();
-        if (count == 0 || count > 4)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Expected 1 to 4 arguments in table function, got {}", count);
-        }
+        if (count == 0 || count > getMaxNumberOfArguments())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function hdfs, got {}", getMaxNumberOfArguments(), count);
 
         auto format_literal = std::make_shared<ASTLiteral>(format_);
         auto structure_literal = std::make_shared<ASTLiteral>(structure_);

@@ -24,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 const std::unordered_set<std::string_view> required_configuration_keys = {
@@ -146,14 +147,13 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
 
 void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
-    if (engine_args.size() < 3 || engine_args.size() > (with_structure ? 8 : 7))
+    if (engine_args.size() < 3 || engine_args.size() > getMaxNumberOfArguments(with_structure))
     {
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Storage AzureBlobStorage requires 3 to {} arguments: "
-            "AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, "
-            "[account_name, account_key, format, compression, structure)])",
-            (with_structure ? 8 : 7));
+            "Storage AzureBlobStorage requires 1 to {} arguments. All supported signatures:\n{}",
+            getMaxNumberOfArguments(with_structure),
+            getSignatures(with_structure));
     }
 
     for (auto & engine_arg : engine_args)
@@ -294,13 +294,8 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     }
     else
     {
-        if (args.size() < 3 || args.size() > 8)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage Azure requires 3 to 7 arguments: "
-                            "StorageObjectStorage(connection_string|storage_account_url, container_name, "
-                            "blobpath, [account_name, account_key, format, compression, structure])");
-        }
+        if (args.size() < 3 || args.size() > getMaxNumberOfArguments())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 3 to {} arguments in table function azureBlobStorage, got {}", getMaxNumberOfArguments(), args.size());
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
