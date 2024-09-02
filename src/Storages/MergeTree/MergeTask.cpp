@@ -1021,7 +1021,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
         // TODO (ab): path in future_part is only for merge process introspection, which is not available for merges of projection parts.
         // Let's comment this out to avoid code inconsistency and add it back after we implement projection merge introspection.
         // projection_future_part->path = global_ctx->future_part->path + "/" + projection.name + ".proj/";
-        projection_future_part->part_info = {"all", 0, 0, 0};
+        projection_future_part->part_info = MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION;
 
         MergeTreeData::MergingParams projection_merging_params;
         projection_merging_params.mode = MergeTreeData::MergingParams::Ordinary;
