@@ -207,19 +207,19 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
 
     # temporary prevent CH - KDC communications
     with PartitionManager() as pm:
-        for other_node in ["kafka_kerberos"]:
-            for node in kafka_cluster.instances.values():
-                source = node.ip_address
-                destination = kafka_cluster.get_instance_ip(other_node)
-                logging.debug(f"partitioning source {source}, destination {destination}")
-                pm._add_rule(
-                    {
-                        "source": source,
-                        "destination": destination,
-                        "action": "REJECT",
-                        "protocol": "all"
-                    }
-                )
+        other_node = "kafka_kerberos"
+        for node in kafka_cluster.instances.values():
+            source = node.ip_address
+            destination = kafka_cluster.get_instance_ip(other_node)
+            logging.debug(f"partitioning source {source}, destination {destination}")
+            pm._add_rule(
+                {
+                    "source": source,
+                    "destination": destination,
+                    "action": "REJECT",
+                    "protocol": "all"
+                }
+            )
 
         time.sleep(45)  # wait for ticket expiration
 
