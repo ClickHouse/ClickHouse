@@ -366,16 +366,30 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             read_buf = createReadBuffer(*object_info, object_storage, context_, log);
         }
 
+        /*Temporary desicion. Need better anstraction here.*/
+        Block initial_header = read_from_format_info.format_header;
+
+        if (object_info->schema_transformer)
+        {
+            Block sample_header;
+            for (const auto & [name, type] : *object_info->initial_schema)
+            {
+                sample_header.insert({type->createColumn(), type, name});
+            }
+            initial_header = sample_header;
+        }
+
+
         auto input_format = FormatFactory::instance().getInput(
             configuration->format,
             *read_buf,
-            read_from_format_info.format_header,
+            initial_header,
             context_,
             max_block_size,
             format_settings,
             need_only_count ? 1 : max_parsing_threads,
             std::nullopt,
-            true/* is_remote_fs */,
+            true /* is_remote_fs */,
             compression_method,
             need_only_count);
 
@@ -387,6 +401,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
+        LOG_DEBUG(
+            &Poco::Logger::get("Transformer exists"),
+            "File name: {}, Exists: {}",
+            object_info->relative_path,
+            object_info->schema_transformer != nullptr);
         if (object_info->schema_transformer) {
             auto schema_modifying_actions = std::make_shared<ExpressionActions>(object_info->schema_transformer->clone());
             builder.addSimpleTransform([&](const Block & header)
@@ -650,12 +669,26 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     , keys(configuration->getPaths())
     , ignore_non_existent_files(ignore_non_existent_files_)
 {
+    for (const auto & key : keys)
+    {
+        LOG_DEBUG(
+            &Poco::Logger::get("Copying data_info to object_info"),
+            "Key data path: {}, Key schema_transform exists: {}",
+            key.data_path,
+            key.schema_transform != nullptr);
+    }
+
     if (read_keys_)
     {
         /// TODO: should we add metadata if we anyway fetch it if file_progress_callback is passed?
         for (auto && key : keys)
         {
             auto object_info = std::make_shared<ObjectInfo>(key.data_path, std::nullopt, key.initial_schema, key.schema_transform);
+            LOG_DEBUG(
+                &Poco::Logger::get("Copying data_info to object_info"),
+                "Key data path: {}, Key schema_transform exists: {}",
+                key.data_path,
+                key.schema_transform != nullptr);
             read_keys_->emplace_back(object_info);
         }
     }
@@ -684,7 +717,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::KeysIterator::ne
         if (file_progress_callback)
             file_progress_callback(FileProgress(0, object_metadata.size_bytes));
 
-        return std::make_shared<ObjectInfo>(key.data_path, object_metadata);
+        return std::make_shared<ObjectInfo>(key.data_path, object_metadata, key.initial_schema, key.schema_transform);
     }
 }
 

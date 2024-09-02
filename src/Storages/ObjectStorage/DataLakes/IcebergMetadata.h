@@ -62,6 +62,59 @@ namespace DB
  *     "metadata-log" : [ ]
  * }
  */
+
+class IcebergSchemaProcessor
+{
+public:
+    void addIcebergTableSchema(const Poco::JSON::Object::Ptr & ptr);
+    NamesAndTypesList getClickhouseTableSchemaById(Int32 id);
+    std::shared_ptr<const ActionsDAG> getTransformationDagByIds(Int32 old_id, Int32 new_id);
+
+private:
+    std::map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids;
+    std::map<Int32, NamesAndTypesList> clickhouse_table_schemas_by_ids;
+    std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids;
+    ActionsDag * current_actions_dag;
+
+
+    NamesAndTypeList getSchemaType(const Poco::JSON::Object::Ptr & schema);
+    DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type);
+    DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool required);
+    DataTypePtr getSimpleType(const String & type_name);
+
+    // DataTypePtr getStructType(const Poco::JSON::Object::Ptr & node);
+    // DataTypePtr getListType(const Poco::JSON::Object::Ptr & node);
+    // DataTypePtr getMapType(const Poco::JSON::Object::Ptr & node);
+    // DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & node);
+    // DataTypePtr getSimpleType(const String & type);
+    // DataTypePtr getElementType(const Poco::JSON::Object::Ptr & node);
+    // DataTypePtr getKeyType(const)
+
+    const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);
+    const Node * getDefaultNodeForList(const Poco::JSON::Object::Ptr & field);
+    const Node * getDefaultNodeForMap(const Poco::JSON::Object::Ptr & field);
+    const Node * getDefaultNodeForStruct(const Poco::JSON::Object::Ptr & field);
+
+    std::pair<const Node *, const Node *>
+    getRemappingForList(const Poco::JSON::Object::Ptr & old_node, const Poco::JSON::Object::Ptr & new_node);
+
+    std::pair<const Node *, const Node *>
+    getRemappingForMap(const Poco::JSON::Object::Ptr & old_node, const Poco::JSON::Object::Ptr & new_node);
+
+    std::pair<const Node *, const Node *>
+    getRemappingForStruct(const Poco::JSON::Object::Ptr & old_node, const Poco::JSON::Object::Ptr & new_node);
+
+    std::pair<const Node *, const Node *>
+    getRemappingForStructField(const Poco::JSON::Array::Ptr & old_node, const Poco::JSON::Array::Ptr & new_node, const Node * input_node);
+
+    NodeRawConstPtrs getRemappingForFields(
+        const Poco::JSON::Array::Ptr & old_fields,
+        const Poco::JSON::Array::Ptr & new_fields,
+        const NodeRawConstPtrs & input_action_dag_nodes);
+
+    DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type_field);
+};
+
 class IcebergMetadata : public IDataLakeMetadata, private WithContext
 {
 public:

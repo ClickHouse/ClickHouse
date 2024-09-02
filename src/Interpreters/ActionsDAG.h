@@ -63,7 +63,7 @@ public:
 
     struct Node;
     using NodeRawPtrs = std::vector<Node *>;
-    using NodeRawConstPtrs = std::vector<const Node *>;
+    using NodeRawConstPtrs = std::vector<`>;
 
     struct Node
     {

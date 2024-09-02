@@ -136,7 +136,20 @@ enum class DataFileContent : uint8_t
  * }
  */
 
-DataTypePtr getSimpleTypeByName(const String & type_name)
+std::pair<size_t, size_t> parse_decimal(const String & type_name)
+{
+    ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
+    size_t precision;
+    size_t scale;
+    readIntText(precision, buf);
+    skipWhitespaceIfAny(buf);
+    assertChar(',', buf);
+    skipWhitespaceIfAny(buf);
+    tryReadIntText(scale, buf);
+    return {precision, scale};
+}
+
+DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
 {
     if (type_name == "boolean")
         return DataTypeFactory::instance().get("Bool");
@@ -174,22 +187,19 @@ DataTypePtr getSimpleTypeByName(const String & type_name)
     if (type_name.starts_with("decimal(") && type_name.ends_with(')'))
     {
         ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
-        size_t precision;
-        size_t scale;
-        readIntText(precision, buf);
-        skipWhitespaceIfAny(buf);
-        assertChar(',', buf);
-        skipWhitespaceIfAny(buf);
-        tryReadIntText(scale, buf);
+        auto [precision, scale] = parse_decimal(type_name);
         return createDecimal<DataTypeDecimal>(precision, scale);
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Iceberg type: {}", type_name);
 }
 
-DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool required);
+bool allowedDecimalConversion(const string & old_type, const string & new_type)
+{
+    if (!(old_type.starts_with("decimal(") && old_type.ends_with(')') && new_type.starts_with("decimal("))
+}
 
-DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type)
+DataTypePtr IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type)
 {
     String type_name = type->getValue<String>("type");
     if (type_name == "list")
@@ -228,7 +238,7 @@ DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Iceberg type: {}", type_name);
 }
 
-DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool required)
+DataTypePtr IcebergSchemaProcessor::getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool required)
 {
     if (field->isObject(type_key))
         return getComplexTypeFromObject(field->getObject(type_key));
@@ -245,42 +255,91 @@ DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & t
 
 }
 
-std::map<Int32, Poco::JSON::Object::Ptr> getRelevantSchemasByIds(const Poco::JSON::Object::Ptr & metadata_object, int format_version)
+bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_type, const String & new_type)
 {
-    std::map<Int32, Poco::JSON::Object::Ptr> schemas_by_id;
-    if (format_version == 2)
+    bool allowed_type_conversion = (old_type == new_type);
+    allowed |= (old_type == "int") && (new_type == "long");
+    allowed |= (old_type == "float") && (new_type == "double");
+    if (old_type.starts_with("decimal(") && old_type.ends_with(')') && new_type.starts_with("decimal(") && new_type.ends_with(")"))
     {
-        auto schemas = metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>();
-        if (schemas->size() == 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: schemas field is empty");
+        auto [old_precision, old_scale] = parse_decimal(old_type);
+        auto [new_precision, new_scale] = parse_decimal(new_type);
+        allowed |= (old_precision <= new_precision) && (old_scale == new_scale);
+    }
+    return allowed;
+}
 
-        for (uint32_t i = 0; i != schemas->size(); ++i)
+const Node * output getRemappingForStructField(
+    const Poco::JSON::Array::Ptr & old_node,
+    const Poco::JSON::Array::Ptr & new_node,
+    const Node * input_node,
+    const String & type_name,
+    const String & required_name,
+    const std::optional<String> & name_name)
+{
+    bool old_required = old_node->getValue<String>(required_name);
+    bool new_required = new_node->getValue<String>(required_name);
+    if (old_node->isObject("type"))
+    {
+        auto remapped = getRemappingForComplexType(old_node, new_node);
+        if (remapped == true)
         {
-            auto current_schema = schemas->getObject(i);
-            schemas_by_id[current_schema->getValue<int>("schema-id")] = current_schema;
         }
     }
-    else
+    chassert(!new_node->isObject("type"));
+    assert(new_node->get("type").isString());
+    String old_type = old_node->getValue<String>("type");
+    String new_type = new_node->getValue<String>("type");
+    if (!allowPrimitiveTypeConversion(old_type, new_type))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported format");
-    }
-    return schemas_by_id;
-}
-
-NamesAndTypesList getClickhouseSchemaFromIcebergSchema(const Poco::JSON::Object::Ptr & schema)
-{
-    NamesAndTypesList names_and_types;
-    auto fields = schema->get("fields").extract<Poco::JSON::Array::Ptr>();
-    for (size_t i = 0; i != fields->size(); ++i)
-    {
-        auto field = fields->getObject(static_cast<UInt32>(i));
-        auto name = field->getValue<String>("name");
-        bool required = field->getValue<bool>("required");
-        names_and_types.push_back({name, getFieldType(field, "type", required)});
+        throw undefined;
     }
 
-    return names_and_types;
+    auto old_clickhouse_type = old_required ? getSimpleType(old_type) : makeNullable(getSimpleType(old_type));
+    auto new_clickhouse_type = old_required ? getSimpleType(old_type) : makeNullable(getSimpleType(old_type));
+
+    auto new_name = name_name.has_value() ? new_node->getValue<String>(name_name.value()) : input_node.name;
+    return current_actions_dag->addCast(input_node, new_clickhouse_type, new_name);
+    return getPrimitiveTypeConversed(input_node, old_type, new_type, old_required, new_required);
 }
+
+
+// std::map<Int32, Poco::JSON::Object::Ptr> getRelevantSchemasByIds(const Poco::JSON::Object::Ptr & metadata_object, int format_version)
+// {
+//     std::map<Int32, Poco::JSON::Object::Ptr> schemas_by_id;
+//     if (format_version == 2)
+//     {
+//         auto schemas = metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>();
+//         if (schemas->size() == 0)
+//             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: schemas field is empty");
+
+//         for (uint32_t i = 0; i != schemas->size(); ++i)
+//         {
+//             auto current_schema = schemas->getObject(i);
+//             schemas_by_id[current_schema->getValue<int>("schema-id")] = current_schema;
+//         }
+//     }
+//     else
+//     {
+//         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported format");
+//     }
+//     return schemas_by_id;
+// }
+
+// NamesAndTypesList getClickhouseSchemaFromIcebergSchema(const Poco::JSON::Object::Ptr & schema)
+// {
+//     NamesAndTypesList names_and_types;
+//     auto fields = schema->get("fields").extract<Poco::JSON::Array::Ptr>();
+//     for (size_t i = 0; i != fields->size(); ++i)
+//     {
+//         auto field = fields->getObject(static_cast<UInt32>(i));
+//         auto name = field->getValue<String>("name");
+//         bool required = field->getValue<bool>("required");
+//         names_and_types.push_back({name, getFieldType(field, "type", required)});
+//     }
+
+//     return names_and_types;
+// }
 
 std::pair<NamesAndTypesList, Int32> parseTableSchema(
     const Poco::JSON::Object::Ptr & metadata_object,
@@ -314,6 +373,61 @@ std::pair<NamesAndTypesList, Int32> parseTableSchema(
 
     return {getClickhouseSchemaFromIcebergSchema(schema), current_schema_id};
 }
+/*
+bool isPrimitiveType(const Poco::JSON::Object::Ptr & type_key) {
+    return !field->isObject(type_key);
+}
+
+bool isStructType(constPoco::JSON::Object::Ptr & type_key) {
+    return (!isPrimitiveType(type_key)) && type->getValue<String>("type") == "struct";
+}
+
+*/
+
+pair<vector<>, vector<>> getStructRemapping(const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema)
+{
+    Int32 old_id = old_schema->getValue<Int32>("id");
+    Int32 new_id = new_schema->getValue<Int32>("id");
+    chassert(old_id == new_id);
+    auto name = old_schema->getValue<String>("name");
+    bool required = old_schema->getValue<bool>("required");
+    auto old_type = {name, getFieldType(old_schema, "type", required)};
+
+    auto old_fields = old_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
+    auto new_fiels = new_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
+    std::vector<const ActionsDAG::Node *> old_schema_elements;
+    std::vector<contt ActionsDAG::Node *> const ActionsDAG::Node & input_node = dag->addInput(name_and_type.name, name_and_type.type);
+
+
+    ColumnPtr default_type_column = name_and_type.type->createColumnConstWithDefaultValue(0);
+    const auto & constant = dag->addColumn({default_type_column, name_and_type.type, name_and_type.name});
+}
+
+const Node * IcebergSchemaProcessor::getDefaultNodeForField(const Poco::JSON::Object::Ptr & field)
+{
+}
+
+
+NodeRawConstPtrs reconstructStruct(
+    ActionDAG & action_dag,
+    const Poco::JSON::Object::Ptr & old_schema,
+    const Poco::JSON::Object::Ptr & new_schema,
+    const NodeRawConstPtrs & input_struct_nodes)
+{
+    auto name = old_schema->getValue<String>("name");
+    bool required = old_schema->getValue<bool>("required");
+    auto old_type = {name, getFieldType(old_schema, "type", required)};
+
+    auto old_fields = old_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
+    auto new_fiels = new_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
+    std::vector<const ActionsDAG::Node *> old_schema_elements;
+    std::vector<contt ActionsDAG::Node *> const ActionsDAG::Node & input_node = dag->addInput(name_and_type.name, name_and_type.type);
+
+
+    ColumnPtr default_type_column = name_and_type.type->createColumnConstWithDefaultValue(0);
+    const auto & constant = dag->addColumn({default_type_column, name_and_type.type, name_and_type.name});
+}
+
 
 std::shared_ptr<ActionsDAG> getSchemaTransformDag(
     [[maybe_unused]] const Poco::JSON::Object::Ptr & old_schema, [[maybe_unused]] const Poco::JSON::Object::Ptr & new_schema)
@@ -328,6 +442,8 @@ std::shared_ptr<ActionsDAG> getSchemaTransformDag(
         bool required = field->getValue<bool>("required");
         size_t id = field->getValue<size_t>("id");
         old_schema_entries[id] = {name, getFieldType(field, "type", required)};
+        LOG_DEBUG(
+            &Poco::Logger::get("Old schema"), "Id: {}, Name: {}, type: {}", id, name, getFieldType(field, "type", required)->getName());
     }
     fields = new_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
     for (size_t i = 0; i != fields->size(); ++i)
@@ -337,27 +453,45 @@ std::shared_ptr<ActionsDAG> getSchemaTransformDag(
         bool required = field->getValue<bool>("required");
         size_t id = field->getValue<size_t>("id");
         new_schema_entries[id] = {name, getFieldType(field, "type", required)};
+        LOG_DEBUG(
+            &Poco::Logger::get("New schema"), "Id: {}, Name: {}, type: {}", id, name, getFieldType(field, "type", required)->getName());
     }
-    std::shared_ptr<ActionsDAG> dag;
+    std::shared_ptr<ActionsDAG> dag = std::make_shared<ActionsDAG>();
     auto& outputs = dag->getOutputs();
     for (const auto& [id, name_and_type] : old_schema_entries) {
+        LOG_DEBUG(&Poco::Logger::get("Adding Input"), "Name: {}, type: {}", name_and_type.name, name_and_type.type->getName());
         const ActionsDAG::Node & input_node = dag->addInput(name_and_type.name, name_and_type.type);
         if (new_schema_entries.count(id)) {
-            if (new_schema_entries[id].type != name_and_type.type) {
+            if (new_schema_entries[id].type->getTypeId()
+                != name_and_type.type->getTypeId()) // If this exists it should be written in another manner
+            {
                 throw Exception(
-                ErrorCodes::UNSUPPORTED_METHOD,
-                "Type promotion for schema evolution is not implemeted yet");
+                    ErrorCodes::UNSUPPORTED_METHOD,
+                    "Type promotion for schema evolution is not implemeted yet: old_type: {}, new_type: {}",
+                    name_and_type.type->getName(),
+                    new_schema_entries[id].type->getName());
             }
             if (name_and_type.name != new_schema_entries[id].name) {
                 const ActionsDAG::Node & alias_node = dag->addAlias(input_node, new_schema_entries[id].name);
+                LOG_DEBUG(
+                    &Poco::Logger::get("Adding Alias as Output"),
+                    "Name: {}, type: {}",
+                    alias_node.result_name,
+                    alias_node.result_type->getName());
                 outputs.push_back(&alias_node);
             } else {
+                LOG_DEBUG(
+                    &Poco::Logger::get("Adding Input as Ouput"),
+                    "Name: {}, type: {}",
+                    input_node.result_name,
+                    input_node.result_type->getName());
                 outputs.push_back(&input_node);
             }
             new_schema_entries.erase(id);
         }
     }
     for (const auto& [_id, name_and_type] : new_schema_entries) {
+        LOG_DEBUG(&Poco::Logger::get("Adding default"), "Name: {}, type: {}", name_and_type.name, name_and_type.type->getName());
         if (!name_and_type.type->isNullable()) {
             throw Exception(
                 ErrorCodes::UNSUPPORTED_METHOD,
@@ -700,6 +834,17 @@ DataFileInfos IcebergMetadata::getDataFileInfos() const
         }
         else
         {
+            LOG_DEBUG(
+                &Poco::Logger::get("Adding not empty stuff"),
+                "File path: {}, Old schema: {}, New schema: {}",
+                file_path,
+                schema_object_id,
+                current_schema_id);
+            if (!transform_dags_by_ids.count(schema_object_id))
+            {
+                transform_dags_by_ids[schema_object_id]
+                    = getSchemaTransformDag(relevant_schemas_by_ids[schema_object_id], relevant_schemas_by_ids[current_schema_id]);
+            }
             data_file_infos.emplace_back(
                 file_path,
                 std::make_shared<NamesAndTypesList>(getClickhouseSchemaFromIcebergSchema(relevant_schemas_by_ids[schema_object_id])),
