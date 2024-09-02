@@ -139,8 +139,6 @@ class PartitionManager:
                 _NetworkManager.get().delete_ip6tables_rule(**rule)
             else:
                 _NetworkManager.get().delete_iptables_rule(**rule)
-            # _NetworkManager.get().delete_iptables_rule(**rule)
-            # _NetworkManager.get().delete_ip6tables_rule(**rule)
 
         while self._netem_delayed_instances:
             instance = self._netem_delayed_instances.pop()
@@ -267,33 +265,20 @@ class _NetworkManager:
 
     @staticmethod
     def clean_all_user_iptables_rules():
-        for i in range(1000):
-            iptables_iter = i
-            # when rules will be empty, it will return error
-            res = subprocess.run("iptables --wait -D DOCKER-USER 1", shell=True)
+        for iptables in ("iptables", "ip6tables"):
+            for i in range(1000):
+                iptables_iter = i
+                # when rules will be empty, it will return error
+                res = subprocess.run(f"{iptables}--wait -D DOCKER-USER 1", shell=True)
 
-            if res.returncode != 0:
-                logging.info(
-                    "All iptables rules cleared, "
-                    + str(iptables_iter)
-                    + " iterations, last error: "
-                    + str(res.stderr)
-                )
-                break
-
-        for i in range(1000):
-            iptables_iter = i
-            # when rules will be empty, it will return error
-            res = subprocess.run("ip6tables --wait -D DOCKER-USER 1", shell=True)
-
-            if res.returncode != 0:
-                logging.info(
-                    "All ip6tables rules cleared, "
-                    + str(iptables_iter)
-                    + " iterations, last error: "
-                    + str(res.stderr)
-                )
-                return
+                if res.returncode != 0:
+                    logging.info(
+                        f"All {iptables} rules cleared, "
+                        + str(iptables_iter)
+                        + " iterations, last error: "
+                        + str(res.stderr)
+                    )
+                    break
 
     @staticmethod
     def _iptables_cmd_suffix(
