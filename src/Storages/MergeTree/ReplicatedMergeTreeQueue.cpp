@@ -1963,7 +1963,7 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getAlterMutationCo
 
 NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getAllUpdatedColumns() const
 {
-    if (!params.need_data_mutations)
+    if (!hasDataMutations())
         return {};
 
     NameSet res;

@@ -2468,7 +2468,7 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getAlterMutationCommandsFo
 
 NameSet StorageMergeTree::MutationsSnapshot::getAllUpdatedColumns() const
 {
-    if (!params.need_data_mutations)
+    if (!hasDataMutations())
         return {};
 
     NameSet res;
@@ -2492,7 +2492,7 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
 
     auto res = std::make_shared<MutationsSnapshot>(params, std::move(info));
 
-    bool need_data_mutations = res->params.need_data_mutations && num_data_mutations_to_apply > 0;
+    bool need_data_mutations = res->hasDataMutations();
     bool need_metadata_mutations = num_metadata_mutations_to_apply > 0;
 
     if (!need_data_mutations && !need_metadata_mutations)
