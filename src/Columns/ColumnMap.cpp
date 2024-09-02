@@ -317,6 +317,11 @@ ColumnCheckpointPtr ColumnMap::getCheckpoint() const
     return nested->getCheckpoint();
 }
 
+void ColumnMap::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    nested->updateCheckpoint(checkpoint);
+}
+
 void ColumnMap::rollback(const ColumnCheckpoint & checkpoint)
 {
     nested->rollback(checkpoint);

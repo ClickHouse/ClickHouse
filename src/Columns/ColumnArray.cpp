@@ -374,6 +374,12 @@ ColumnCheckpointPtr ColumnArray::getCheckpoint() const
     return std::make_shared<ColumnCheckpointWithNested>(size(), getData().getCheckpoint());
 }
 
+void ColumnArray::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    checkpoint.size = size();
+    getData().updateCheckpoint(*assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested);
+}
+
 void ColumnArray::rollback(const ColumnCheckpoint & checkpoint)
 {
     getOffsets().resize_assume_reserved(checkpoint.size);

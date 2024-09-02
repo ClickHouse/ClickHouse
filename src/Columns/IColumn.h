@@ -60,7 +60,7 @@ struct ColumnCheckpoint
     virtual ~ColumnCheckpoint() = default;
 };
 
-using ColumnCheckpointPtr = std::shared_ptr<const ColumnCheckpoint>;
+using ColumnCheckpointPtr = std::shared_ptr<ColumnCheckpoint>;
 using ColumnCheckpoints = std::vector<ColumnCheckpointPtr>;
 
 struct ColumnCheckpointWithNested : public ColumnCheckpoint
@@ -546,9 +546,12 @@ public:
     /// Returns checkpoint of current state of column.
     virtual ColumnCheckpointPtr getCheckpoint() const { return std::make_shared<ColumnCheckpoint>(size()); }
 
+    /// Updates the checkpoint with current state. It is used to avoid extra allocations in 'getCheckpoint'.
+    virtual void updateCheckpoint(ColumnCheckpoint & checkpoint) const { checkpoint.size = size(); }
+
     /// Rollbacks column to the checkpoint.
     /// Unlike 'popBack' this method should work correctly even if column has invalid state.
-    /// Sizes of columns in checkpoint must be less or equal than current.
+    /// Sizes of columns in checkpoint must be less or equal than current size.
     virtual void rollback(const ColumnCheckpoint & checkpoint) { popBack(size() - checkpoint.size); }
 
     /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.

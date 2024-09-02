@@ -160,6 +160,7 @@ public:
     size_t allocatedBytes() const override;
     void protect() override;
     ColumnCheckpointPtr getCheckpoint() const override;
+    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
     void forEachSubcolumn(MutableColumnCallback callback) override;

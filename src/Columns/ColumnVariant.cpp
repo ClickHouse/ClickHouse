@@ -750,6 +750,16 @@ ColumnCheckpointPtr ColumnVariant::getCheckpoint() const
     return std::make_shared<ColumnCheckpointWithMultipleNested>(size(), std::move(checkpoints));
 }
 
+void ColumnVariant::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    auto & checkpoints = assert_cast<ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
+    chassert(checkpoints.size() == variants.size());
+
+    checkpoint.size = size();
+    for (size_t i = 0; i < variants.size(); ++i)
+        variants[i]->updateCheckpoint(*checkpoints[i]);
+}
+
 void ColumnVariant::rollback(const ColumnCheckpoint & checkpoint)
 {
     getOffsets().resize_assume_reserved(checkpoint.size);

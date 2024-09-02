@@ -310,6 +310,12 @@ ColumnCheckpointPtr ColumnNullable::getCheckpoint() const
     return std::make_shared<ColumnCheckpointWithNested>(size(), nested_column->getCheckpoint());
 }
 
+void ColumnNullable::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    checkpoint.size = size();
+    nested_column->updateCheckpoint(*assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested);
+}
+
 void ColumnNullable::rollback(const ColumnCheckpoint & checkpoint)
 {
     getNullMapData().resize_assume_reserved(checkpoint.size);

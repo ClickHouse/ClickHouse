@@ -25,6 +25,9 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     , checkpoints(result_columns.size())
 {
     connect(format->getPort(), port);
+
+    for (size_t i = 0; i < result_columns.size(); ++i)
+        checkpoints[i] = result_columns[i]->getCheckpoint();
 }
 
 MutableColumns StreamingFormatExecutor::getResultColumns()
@@ -54,7 +57,8 @@ size_t StreamingFormatExecutor::execute(ReadBuffer & buffer)
 
 size_t StreamingFormatExecutor::execute()
 {
-    setCheckpoints();
+    for (size_t i = 0; i < result_columns.size(); ++i)
+        result_columns[i]->updateCheckpoint(*checkpoints[i]);
 
     try
     {
@@ -116,12 +120,5 @@ size_t StreamingFormatExecutor::insertChunk(Chunk chunk)
 
     return chunk_rows;
 }
-
-void StreamingFormatExecutor::setCheckpoints()
-{
-    for (size_t i = 0; i < result_columns.size(); ++i)
-        checkpoints[i] = result_columns[i]->getCheckpoint();
-}
-
 
 }

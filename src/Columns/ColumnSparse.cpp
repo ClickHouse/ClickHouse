@@ -313,6 +313,12 @@ ColumnCheckpointPtr ColumnSparse::getCheckpoint() const
     return std::make_shared<ColumnCheckpointWithNested>(size(), values->getCheckpoint());
 }
 
+void ColumnSparse::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    checkpoint.size = size();
+    values->updateCheckpoint(*assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested);
+}
+
 void ColumnSparse::rollback(const ColumnCheckpoint & checkpoint)
 {
     _size = checkpoint.size;

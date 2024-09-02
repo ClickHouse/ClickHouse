@@ -104,7 +104,10 @@ Chunk IRowInputFormat::read()
 
     size_t num_columns = header.columns();
     MutableColumns columns = header.cloneEmptyColumns();
+
     ColumnCheckpoints checkpoints(columns.size());
+    for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
+        checkpoints[column_idx] = columns[column_idx]->getCheckpoint();
 
     block_missing_values.clear();
 
@@ -132,7 +135,7 @@ Chunk IRowInputFormat::read()
             try
             {
                 for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
-                    checkpoints[column_idx] = columns[column_idx]->getCheckpoint();
+                    columns[column_idx]->updateCheckpoint(*checkpoints[column_idx]);
 
                 info.read_columns.clear();
                 continue_reading = readRow(columns, info);

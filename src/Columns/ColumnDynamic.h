@@ -309,6 +309,11 @@ public:
         return variant_column_ptr->getCheckpoint();
     }
 
+    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override
+    {
+        variant_column_ptr->updateCheckpoint(checkpoint);
+    }
+
     void rollback(const ColumnCheckpoint & checkpoint) override
     {
         variant_column_ptr->rollback(checkpoint);

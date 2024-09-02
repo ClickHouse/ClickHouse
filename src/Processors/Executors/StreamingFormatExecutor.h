@@ -43,8 +43,6 @@ public:
     void setQueryParameters(const NameToNameMap & parameters);
 
 private:
-    void setCheckpoints();
-
     const Block header;
     const InputFormatPtr format;
     const ErrorCallback on_error;

@@ -686,22 +686,44 @@ ColumnCheckpointPtr ColumnObject::getCheckpoint() const
     return std::make_shared<ColumnObjectCheckpoint>(size(), get_checkpoints(typed_paths), get_checkpoints(dynamic_paths_ptrs), shared_data->getCheckpoint());
 }
 
+void ColumnObject::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    auto & object_checkpoint = assert_cast<ColumnObjectCheckpoint &>(checkpoint);
+
+    auto update_checkpoints = [&](const auto & columns_map, auto & checkpoints_map)
+    {
+        for (const auto & [name, column] : columns_map)
+        {
+            auto & nested = checkpoints_map[name];
+            if (!nested)
+                nested = column->getCheckpoint();
+            else
+                column->updateCheckpoint(*nested);
+        }
+    };
+
+    checkpoint.size = size();
+    update_checkpoints(typed_paths, object_checkpoint.typed_paths);
+    update_checkpoints(dynamic_paths, object_checkpoint.dynamic_paths);
+    shared_data->updateCheckpoint(*object_checkpoint.shared_data);
+}
+
 void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
 {
     const auto & object_checkpoint = assert_cast<const ColumnObjectCheckpoint &>(checkpoint);
 
     for (auto & [name, column] : typed_paths)
     {
-        const auto & nested_checkpoint = object_checkpoint.typed_paths.at(name);
-        chassert(nested_checkpoint);
-        column->rollback(*nested_checkpoint);
+        const auto & nested = object_checkpoint.typed_paths.at(name);
+        chassert(nested);
+        column->rollback(*nested);
     }
 
     for (auto & [name, column] : dynamic_paths_ptrs)
     {
-        const auto & nested_checkpoint = object_checkpoint.dynamic_paths.at(name);
-        chassert(nested_checkpoint);
-        column->rollback(*nested_checkpoint);
+        const auto & nested = object_checkpoint.dynamic_paths.at(name);
+        chassert(nested);
+        column->rollback(*nested);
     }
 
     shared_data->rollback(*object_checkpoint.shared_data);

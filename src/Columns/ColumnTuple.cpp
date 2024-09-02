@@ -265,6 +265,16 @@ ColumnCheckpointPtr ColumnTuple::getCheckpoint() const
     return std::make_shared<ColumnCheckpointWithMultipleNested>(size(), std::move(checkpoints));
 }
 
+void ColumnTuple::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    auto & checkpoints = assert_cast<ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
+    chassert(checkpoints.size() == columns.size());
+
+    checkpoint.size = size();
+    for (size_t i = 0; i < columns.size(); ++i)
+        columns[i]->updateCheckpoint(*checkpoints[i]);
+}
+
 void ColumnTuple::rollback(const ColumnCheckpoint & checkpoint)
 {
     column_length = checkpoint.size;
