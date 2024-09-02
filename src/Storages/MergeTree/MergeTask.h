@@ -291,7 +291,7 @@ private:
         bool executeMergeProjections();
 
         MergeAlgorithm chooseMergeAlgorithm() const;
-        void createMergedStream();
+        void createMergedStream() const;
         void extractMergingAndGatheringColumns() const;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
