@@ -938,4 +938,23 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNo
     return buildSubqueryToReadColumnsFromTableExpression(columns_to_select, table_node, context);
 }
 
+std::pair<String, String> extractDatabaseAndTableNameForParametrizedView(const String & table_function_name, const ContextPtr & context)
+{
+    String database_name = context->getCurrentDatabase();
+    String table_name;
+
+    Identifier table_identifier{table_function_name};
+    if (table_identifier.getPartsSize() == 1)
+    {
+        table_name = table_identifier[0];
+    }
+    else if (table_identifier.getPartsSize() == 2)
+    {
+        database_name = table_identifier[0];
+        table_name = table_identifier[1];
+    }
+
+    return { database_name, table_name };
+}
+
 }

@@ -3,12 +3,15 @@
 #include <QueryPipeline/BlockIO.h>
 #include <DataTypes/DataTypeString.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Common/typeid_cast.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Core/Settings.h>
+#include <Storages/StorageView.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -27,6 +30,14 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+
+extern const int UNSUPPORTED_METHOD;
+extern const int UNKNOWN_FUNCTION;
+
+}
 
 InterpreterDescribeQuery::InterpreterDescribeQuery(const ASTPtr & query_ptr_, ContextPtr context_)
     : WithContext(context_)
@@ -129,10 +140,14 @@ BlockIO InterpreterDescribeQuery::execute()
 
 void InterpreterDescribeQuery::fillColumnsFromSubquery(const ASTTableExpression & table_expression)
 {
-    Block sample_block;
     auto select_query = table_expression.subquery->children.at(0);
     auto current_context = getContext();
+    fillColumnsFromSubqueryImpl(select_query, current_context);
+}
 
+void InterpreterDescribeQuery::fillColumnsFromSubqueryImpl(const ASTPtr & select_query, const ContextPtr & current_context)
+{
+    Block sample_block;
     if (settings.allow_experimental_analyzer)
     {
         SelectQueryOptions select_query_options;
@@ -150,36 +165,38 @@ void InterpreterDescribeQuery::fillColumnsFromSubquery(const ASTTableExpression 
 void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpression & table_expression)
 {
     auto current_context = getContext();
-    if (current_context->getSettingsRef().allow_experimental_analyzer)
+
+    auto table_function_name = table_expression.table_function->as<ASTFunction>()->name;
+    TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, current_context);
+
+    if (!table_function_ptr)
     {
-        auto query_tree = buildQueryTreeForTableFunction(table_expression, current_context);
+        auto [database_name, table_name] = extractDatabaseAndTableNameForParametrizedView(table_function_name, current_context);
+        auto table_id = getContext()->resolveStorageID({database_name, table_name});
+        getContext()->checkAccess(AccessType::SHOW_COLUMNS, table_id);
+        auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
-        QueryAnalysisPass query_analysis_pass(true);
-        query_analysis_pass.run(query_tree, current_context);
-
-        StoragePtr storage;
-        if (auto * table_function_node = query_tree->as<TableFunctionNode>())
-            storage = table_function_node->getStorage();
-        else
-            storage = query_tree->as<TableNode &>().getStorage();
-
-        auto column_descriptions = storage->getInMemoryMetadata().getColumns();
-        for (const auto & column : column_descriptions)
-            columns.emplace_back(column);
-
-        if (settings.describe_include_virtual_columns)
+        if (auto * storage_view = table->as<StorageView>())
         {
-            auto virtuals = storage->getVirtualsPtr();
-            for (const auto & column : *virtuals)
+            if (storage_view->isParameterizedView())
             {
-                if (!column_descriptions.has(column.name))
-                    virtual_columns.push_back(column);
+                auto query = storage_view->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
+                NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression.table_function, current_context);
+                StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
+                return fillColumnsFromSubqueryImpl(query, current_context);
             }
         }
-        return;
-    }
 
-    TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression.table_function, current_context);
+        auto hints = TableFunctionFactory::instance().getHints(table_function_name);
+        if (!hints.empty())
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}. Maybe you meant: {}", table_function_name, toString(hints));
+        else
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function_name);
+    }
+    else
+    {
+        table_function_ptr->parseArguments(table_expression.table_function, current_context);
+    }
 
     auto column_descriptions = table_function_ptr->getActualTableStructure(getContext(), /*is_insert_query*/ true);
     for (const auto & column : column_descriptions)
@@ -205,6 +222,14 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
     auto table_id = getContext()->resolveStorageID(table_expression.database_and_table_name);
     getContext()->checkAccess(AccessType::SHOW_COLUMNS, table_id);
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
+
+    if (auto * storage_view = table->as<StorageView>())
+    {
+        if (storage_view->isParameterizedView())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Cannot infer table schema for the parametrized view when no query parameters are provided");
+    }
+
     auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings.lock_acquire_timeout);
 
     auto metadata_snapshot = table->getInMemoryMetadataPtr();

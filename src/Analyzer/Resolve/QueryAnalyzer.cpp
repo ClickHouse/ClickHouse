@@ -4518,7 +4518,6 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         String database_name = scope_context->getCurrentDatabase();
         String table_name;
 
-        auto function_ast = table_function_node->toAST();
         Identifier table_identifier{table_function_name};
         if (table_identifier.getPartsSize() == 1)
         {
