@@ -522,7 +522,7 @@ static DataTypePtr createJSON(const ASTPtr & arguments)
     if (context->getSettingsRef().allow_experimental_object_type && context->getSettingsRef().use_json_alias_for_old_object_type)
     {
         if (arguments && !arguments->children.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Experimental Object type doesn't support any arguments. If you want to use new JSON type, set setting allow_experimental_json_type = 1");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Experimental Object type doesn't support any arguments. If you want to use new JSON type, set settings allow_experimental_json_type = 1 and use_json_alias_for_old_object_type = 0");
 
         return std::make_shared<DataTypeObjectDeprecated>("JSON", false);
     }
