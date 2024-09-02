@@ -1208,6 +1208,7 @@ arraySum
 arrayUniq
 arrayWithConstant
 arrayZip
+arrayZipUnaligned
 ascii
 asin
 asinh
