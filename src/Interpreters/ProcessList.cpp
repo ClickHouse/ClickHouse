@@ -716,8 +716,10 @@ QueryStatusInfoPtr ProcessList::getQueryInfo(const String & query_id, bool get_t
 void ProcessList::createQueryMetricLogTask(const String & query_id, UInt64 interval_milliseconds, const BackgroundSchedulePool::TaskFunc & function) const
 {
     auto process = getProcessListElement(query_id);
+    /// Some extra quick queries might have already finished
+    /// e.g. SHOW PROCESSLIST FORMAT Null
     if (!process)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query {} not found in process list", query_id);
+        return;
 
     process->query_metric_log_task = std::make_unique<BackgroundSchedulePool::TaskHolder>(process->getContext()->getSchedulePool().createTask("QueryMetricLog", function));
     (*process->query_metric_log_task)->scheduleAfter(interval_milliseconds);
@@ -726,11 +728,8 @@ void ProcessList::createQueryMetricLogTask(const String & query_id, UInt64 inter
 void ProcessList::scheduleQueryMetricLogTask(const String & query_id, UInt64 interval_milliseconds) const
 {
     auto process = getProcessListElement(query_id);
-    if (!process)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query {} not found in process list", query_id);
-
-    if (!process->query_metric_log_task)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query {} doesn't have any query metric log task", query_id);
+    if (!process || !process->query_metric_log_task)
+        return;
 
     (*process->query_metric_log_task)->scheduleAfter(interval_milliseconds);
 }

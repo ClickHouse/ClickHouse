@@ -105,8 +105,9 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
         auto current_time = std::chrono::system_clock::now();
         const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
 
-        /// The query info should always be found because whenever a query ends, finishQuery is
-        /// called and the query is removed from the list
+        /// The query info should always be found because this task is owned by the QueryStatus,
+        /// so whenever a query actually finishes the task is destroyed, deactivated and thus this
+        /// lambda should never run anymore.
         if (!query_info)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Query info not found: {}", query_id);
 
