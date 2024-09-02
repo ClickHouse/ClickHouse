@@ -39,6 +39,7 @@ def cleanup_after_test():
 
         instance.query("DROP TABLE IF EXISTS test.view_1, test.view_2, default.table")
 
+
 def test_smoke():
     instance.query("CREATE USER A")
     assert "Not enough privileges" in instance.query_and_get_error(
