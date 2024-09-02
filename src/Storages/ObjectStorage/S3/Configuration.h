@@ -14,9 +14,6 @@ class StorageS3Configuration : public StorageObjectStorage::Configuration
 public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
-    static constexpr auto xx =
-        42;
-
     static constexpr auto type_name = "s3";
     static constexpr auto namespace_name = "bucket";
     /// All possible signatures for S3 storage with structure argument (for example for s3 table function).
