@@ -198,18 +198,26 @@ function setup_logs_replication
         clickhouse-client --port "$PORT" --query "
             CREATE TABLE system.${table}_sender
             ENGINE = Distributed(${CLICKHOUSE_CI_LOGS_CLUSTER}, default, ${table}_${hash})
-            SETTINGS flush_on_detach=0,
-              background_insert_batch=1,
-              background_insert_sleep_time_ms=5000
+            SETTINGS flush_on_detach=0
             EMPTY AS
             SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, *
             FROM system.${table}
         " || continue
 
-        echo "Creating materialized view system.${table}_watcher" >&2
-
+        echo "Creating buffer table system.${table}_buffer" >&2
         clickhouse-client --port "$PORT" --query "
-            CREATE MATERIALIZED VIEW system.${table}_watcher TO system.${table}_sender AS
+            CREATE TABLE system.${table}_buffer AS system.${table}_sender
+            ENGINE=Buffer(system, ${table}_sender,
+            /*num_layers*/ 1,
+            /*min_time*/   30,    /*max_time*/  300,
+            /*min_rows*/   10000, /*max_rows*/  100000,
+            /*min_bytes*/  10240, /*max_bytes*/ 70000
+            )
+        " || continue
+
+        echo "Creating materialized view system.${table}_watcher" >&2
+        clickhouse-client --port "$PORT" --query "
+            CREATE MATERIALIZED VIEW system.${table}_watcher TO system.${table}_buffer AS
             SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, *
             FROM system.${table}
         " || continue
