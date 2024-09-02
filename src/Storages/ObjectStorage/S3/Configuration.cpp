@@ -476,7 +476,7 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
         /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN keyword name or not.
         else if (count == 5)
         {
-            auto sedond_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
+            auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/NOSIGN");
             if (boost::iequals(sedond_arg, "NOSIGN"))
             {
                 if (checkAndGetLiteralArgument<String>(args[2], "format") == "auto")
