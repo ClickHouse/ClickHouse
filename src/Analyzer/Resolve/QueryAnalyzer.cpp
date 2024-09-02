@@ -4515,19 +4515,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
     if (!table_function_ptr)
     {
-        String database_name = scope_context->getCurrentDatabase();
-        String table_name;
-
-        Identifier table_identifier{table_function_name};
-        if (table_identifier.getPartsSize() == 1)
-        {
-            table_name = table_identifier[0];
-        }
-        else if (table_identifier.getPartsSize() == 2)
-        {
-            database_name = table_identifier[0];
-            table_name = table_identifier[1];
-        }
+        auto [database_name, table_name] = extractDatabaseAndTableNameForParametrizedView(table_function_name, scope_context);
 
         /// Collect parametrized view arguments
         NameToNameMap view_params;
