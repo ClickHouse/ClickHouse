@@ -138,12 +138,14 @@ def test_retries_should_not_wait_for_global_connection(started_cluster):
         with pytest.raises(QueryRuntimeException):
             node1.query(
                 "INSERT INTO zk_down_retries SELECT number, toString(number) FROM numbers(10) SETTINGS insert_keeper_max_retries=10, insert_keeper_retry_max_backoff_ms=100",
-                query_id=str(query_id)
+                query_id=str(query_id),
             )
         pm.heal_all()
         # Use query_log for execution time since we want to ignore the network delay introduced (also in client)
         node1.query("SYSTEM FLUSH LOGS")
-        res = node1.query(f"SELECT query_duration_ms FROM system.query_log WHERE type != 'QueryStart' AND query_id = '{query_id}'")
+        res = node1.query(
+            f"SELECT query_duration_ms FROM system.query_log WHERE type != 'QueryStart' AND query_id = '{query_id}'"
+        )
         query_duration = int(res)
         # It should be around 1 second. 5 seconds is being generous (debug and so on). Used to take 35 seconds without the fix
         assert query_duration < 5000
