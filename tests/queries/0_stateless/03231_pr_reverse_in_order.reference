@@ -1,3 +1,4 @@
+ReadType: InReverseOrder
 2024-06-11 02:00:01	asan	02221_parallel_replicas_bug	FAIL	fail
 2024-06-11 00:00:01	asan	02221_parallel_replicas_bug	FAIL	fail
 2024-06-10 22:00:01	asan	02221_parallel_replicas_bug	FAIL	fail
