@@ -38,7 +38,7 @@ select name, active from system.parts where database='shard_0' and table='to' an
 -- If moved parts are not merged by OPTIMIZE or background merge restart
 -- can log Warning about metadata version on disk. It's normal situation
 -- and test shouldn't rarely fail because of it.
-set send_logs_level = 'Error';
+set send_logs_level = 'error';
 
 system restart replica shard_0.to;
 
