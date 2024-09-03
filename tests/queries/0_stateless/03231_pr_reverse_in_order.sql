@@ -28,4 +28,4 @@ WHERE 1
     AND test_name ilike '%parallel_replicas%'
 ORDER BY check_start_time desc, check_name, test_name;
 
-
+DROP TABLE checks SYNC;
