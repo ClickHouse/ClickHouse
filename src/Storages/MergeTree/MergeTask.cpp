@@ -480,6 +480,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
+    time_t min_insert_time_res = global_ctx->future_part->parts.front()->getMinTimeOfDataInsertion();
+    time_t max_insert_time_res = global_ctx->future_part->parts.front()->getMaxTimeOfDataInsertion();
 
     for (const auto & part : global_ctx->future_part->parts)
     {
@@ -505,9 +507,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
             infos.add(part_infos);
         }
-
         global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->metadata_snapshot, global_ctx->context));
+
+        min_insert_time_res = std::min(min_insert_time_res, part->getMinTimeOfDataInsertion());
+        max_insert_time_res = std::max(max_insert_time_res, part->getMaxTimeOfDataInsertion());
     }
+
+    global_ctx->new_data_part->max_time_of_data_insert = max_insert_time_res;
+    global_ctx->new_data_part->min_time_of_data_insert = min_insert_time_res;
 
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
     if (local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)

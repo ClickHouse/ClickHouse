@@ -218,6 +218,12 @@ public:
     /// otherwise, if the partition key includes dateTime column (also a common case), this function will return min and max values for that column.
     std::pair<time_t, time_t> getMinMaxTime() const;
 
+    /// Returns two timespamps with min/max time of when data was added in this part.
+    /// These values doesn't require the special partition key in part schema.
+    /// Just keeping for each part two variable and update them with inserts, merges and mutations.
+    time_t getMinTimeOfDataInsertion() const;
+    time_t getMaxTimeOfDataInsertion() const;
+
     bool isEmpty() const { return rows_count == 0; }
 
     /// Compute part block id for zero level part. Otherwise throws an exception.
@@ -245,6 +251,10 @@ public:
     std::optional<size_t> existing_rows_count;
 
     time_t modification_time = 0;
+
+    std::optional<time_t> min_time_of_data_insert;
+    std::optional<time_t> max_time_of_data_insert;
+
     /// When the part is removed from the working set. Changes once.
     mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
 
@@ -518,6 +528,9 @@ public:
     /// reference counter locally.
     static constexpr auto FILE_FOR_REFERENCES_CHECK = "checksums.txt";
 
+    /// File with info about min/max time when data was added in the part.
+    static constexpr auto MIN_MAX_TIME_OF_DATA_INSERT_FILE = "min_max_time_of_data_insert.txt";
+
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after
     /// part creation (using alter query with materialize_ttl setting).
@@ -730,6 +743,8 @@ private:
     /// if it not exists tries to deduce codec from compressed column without
     /// any specifial compression.
     void loadDefaultCompressionCodec();
+
+    void loadInsertTimeInfo();
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
     void writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const;
