@@ -248,7 +248,7 @@ bool Authentication::areCredentialsValid(
                             return true;
 
                         // Wildcard support (1 only)
-                        if (subject.contains('*')) 
+                        if (subject.contains('*'))
                         {
                             auto prefix = std::string_view(subject).substr(0, subject.find('*'));
                             auto suffix = std::string_view(subject).substr(subject.find('*') + 1);

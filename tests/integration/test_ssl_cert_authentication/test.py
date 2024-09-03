@@ -370,14 +370,19 @@ def test_x509_san_support():
         == "CREATE USER jemma IDENTIFIED WITH ssl_certificate SAN \\'URI:spiffe://foo.com/bar\\', \\'URI:spiffe://foo.com/baz\\'\n"
     )
 
+
 def test_x509_san_wildcard_support():
     assert (
-        execute_query_native(instance, "SELECT currentUser()", user="stewie", cert_name="client5")
+        execute_query_native(
+            instance, "SELECT currentUser()", user="stewie", cert_name="client5"
+        )
         == "stewie\n"
     )
 
     assert (
-        instance.query("SELECT name, auth_type, auth_params FROM system.users WHERE name='stewie'")
+        instance.query(
+            "SELECT name, auth_type, auth_params FROM system.users WHERE name='stewie'"
+        )
         == 'stewie\tssl_certificate\t{"subject_alt_names":["URI:spiffe:\\\\/\\\\/bar.com\\\\/foo\\\\/*\\\\/far"]}\n'
     )
 
