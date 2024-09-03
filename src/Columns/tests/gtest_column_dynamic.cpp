@@ -920,3 +920,72 @@ TEST(ColumnDynamic, compare)
     ASSERT_EQ(column_from->compareAt(3, 2, *column_from, -1), -1);
     ASSERT_EQ(column_from->compareAt(3, 4, *column_from, -1), -1);
 }
+
+TEST(ColumnDynamic, rollback)
+{
+    auto check_variant = [](const ColumnVariant & column_variant, std::vector<size_t> sizes)
+    {
+        ASSERT_EQ(column_variant.getNumVariants(), sizes.size());
+        size_t num_rows = 0;
+
+        for (size_t i = 0; i < sizes.size(); ++i)
+        {
+            ASSERT_EQ(column_variant.getVariants()[i]->size(), sizes[i]);
+            num_rows += sizes[i];
+        }
+
+        ASSERT_EQ(num_rows, column_variant.size());
+    };
+
+    auto check_checkpoint = [&](const ColumnCheckpoint & cp, std::vector<size_t> sizes)
+    {
+        const auto & nested = assert_cast<const ColumnCheckpointWithMultipleNested &>(cp).nested;
+        ASSERT_EQ(nested.size(), sizes.size());
+        size_t num_rows = 0;
+
+        for (size_t i = 0; i < sizes.size(); ++i)
+        {
+            ASSERT_EQ(nested[i]->size, sizes[i]);
+            num_rows += sizes[i];
+        }
+
+        ASSERT_EQ(num_rows, cp.size);
+    };
+
+    std::vector<std::pair<ColumnCheckpointPtr, std::vector<size_t>>> checkpoints;
+
+    auto column = ColumnDynamic::create(2);
+    auto checkpoint = column->getCheckpoint();
+
+    column->insert(Field(42));
+
+    column->updateCheckpoint(*checkpoint);
+    checkpoints.emplace_back(checkpoint, std::vector<size_t>{0, 1});
+
+    column->insert(Field("str1"));
+    column->rollback(*checkpoint);
+
+    check_checkpoint(*checkpoint, checkpoints.back().second);
+    check_variant(column->getVariantColumn(), checkpoints.back().second);
+
+    column->insert("str1");
+    checkpoints.emplace_back(column->getCheckpoint(), std::vector<size_t>{0, 1, 1});
+
+    column->insert("str2");
+    checkpoints.emplace_back(column->getCheckpoint(), std::vector<size_t>{0, 1, 2});
+
+    column->insert(Array({1, 2}));
+    checkpoints.emplace_back(column->getCheckpoint(), std::vector<size_t>{1, 1, 2});
+
+    column->insert(Field(42.42));
+    checkpoints.emplace_back(column->getCheckpoint(), std::vector<size_t>{2, 1, 2});
+
+    for (const auto & [cp, sizes] : checkpoints)
+    {
+        auto column_copy = column->clone();
+        column_copy->rollback(*cp);
+
+        check_checkpoint(*cp, sizes);
+        check_variant(assert_cast<const ColumnDynamic &>(*column_copy).getVariantColumn(), sizes);
+    }
+}

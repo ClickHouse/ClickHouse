@@ -712,20 +712,26 @@ void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
 {
     const auto & object_checkpoint = assert_cast<const ColumnObjectCheckpoint &>(checkpoint);
 
-    for (auto & [name, column] : typed_paths)
+    auto rollback_columns = [&](auto & columns_map, const auto & checkpoints_map)
     {
-        const auto & nested = object_checkpoint.typed_paths.at(name);
-        chassert(nested);
-        column->rollback(*nested);
-    }
+        NameSet names_to_remove;
 
-    for (auto & [name, column] : dynamic_paths_ptrs)
-    {
-        const auto & nested = object_checkpoint.dynamic_paths.at(name);
-        chassert(nested);
-        column->rollback(*nested);
-    }
+        /// Rollback subcolumns and remove paths that were not in checkpoint.
+        for (auto & [name, column] : columns_map)
+        {
+            auto it = checkpoints_map.find(name);
+            if (it == checkpoints_map.end())
+                names_to_remove.insert(name);
+            else
+                column->rollback(*it->second);
+        }
 
+        for (const auto & name : names_to_remove)
+            columns_map.erase(name);
+    };
+
+    rollback_columns(typed_paths, object_checkpoint.typed_paths);
+    rollback_columns(dynamic_paths, object_checkpoint.dynamic_paths);
     shared_data->rollback(*object_checkpoint.shared_data);
 }
 

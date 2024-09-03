@@ -309,15 +309,9 @@ public:
         return variant_column_ptr->getCheckpoint();
     }
 
-    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override
-    {
-        variant_column_ptr->updateCheckpoint(checkpoint);
-    }
+    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
 
-    void rollback(const ColumnCheckpoint & checkpoint) override
-    {
-        variant_column_ptr->rollback(checkpoint);
-    }
+    void rollback(const ColumnCheckpoint & checkpoint) override;
 
     void forEachSubcolumn(MutableColumnCallback callback) override
     {
@@ -455,6 +449,8 @@ private:
     std::vector<UInt8> * combineVariants(const VariantInfo & other_variant_info);
 
     void updateVariantInfoAndExpandVariantColumn(const DataTypePtr & new_variant_type);
+
+    static DataTypePtr popBackVariants(const VariantInfo & info, const std::vector<ColumnVariant::Discriminator> & local_to_global_discriminators, size_t n);
 
     WrappedPtr variant_column;
     /// Store and use pointer to ColumnVariant to avoid virtual calls.
