@@ -7,7 +7,7 @@ ALTER TABLE a MODIFY COLUMN y Int64 REMOVE MATERIALIZED; -- { clientError SYNTAX
 ALTER TABLE a MODIFY COLUMN y DEFAULT 2 REMOVE MATERIALIZED; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y MATERIALIZED 3 REMOVE MATERIALIZED; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y EPHEMERAL 4 REMOVE MATERIALIZED; -- { clientError SYNTAX_ERROR }
-ALTER TABLE a MODIFY COLUMN y COMMENT 5 REMOVE MATERIALIZED; -- { clientError SYNTAX_ERROR }
+ALTER TABLE a MODIFY COLUMN y COMMENT '5' REMOVE MATERIALIZED; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y CODEC(ZSTD) REMOVE MATERIALIZED; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y STATISTICS(tdigest) REMOVE MATERIALIZED; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y TTL toDate('2025-01-01') + toIntervalDay(x) REMOVE MATERIALIZED; -- { clientError SYNTAX_ERROR }
@@ -19,7 +19,7 @@ SELECT 'The same, but with type';
 ALTER TABLE a MODIFY COLUMN y Int64 DEFAULT 2 REMOVE MATERIALIZED; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y Int64 MATERIALIZED 3 REMOVE MATERIALIZED; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y Int64 EPHEMERAL 4 REMOVE MATERIALIZED; -- { clientError SYNTAX_ERROR }
-ALTER TABLE a MODIFY COLUMN y Int64 COMMENT 5 REMOVE MATERIALIZED; -- { clientError SYNTAX_ERROR }
+ALTER TABLE a MODIFY COLUMN y Int64 COMMENT '5' REMOVE MATERIALIZED; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y Int64 CODEC(ZSTD) REMOVE MATERIALIZED; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y Int64 STATISTICS(tdigest) REMOVE MATERIALIZED; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y Int64 TTL toDate('2025-01-01') + toIntervalDay(x) REMOVE MATERIALIZED; -- { clientError SYNTAX_ERROR }
@@ -32,7 +32,7 @@ ALTER TABLE a MODIFY COLUMN y Int64 MODIFY SETTING max_compress_block_size = 200
 ALTER TABLE a MODIFY COLUMN y DEFAULT 2 MODIFY SETTING max_compress_block_size = 20000; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y MATERIALIZED 3 MODIFY SETTING max_compress_block_size = 20000; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y EPHEMERAL 4 MODIFY SETTING max_compress_block_size = 20000; -- { clientError SYNTAX_ERROR }
-ALTER TABLE a MODIFY COLUMN y COMMENT 5 MODIFY SETTING max_compress_block_size = 20000; -- { clientError SYNTAX_ERROR }
+ALTER TABLE a MODIFY COLUMN y COMMENT '5' MODIFY SETTING max_compress_block_size = 20000; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y CODEC(ZSTD) MODIFY SETTING max_compress_block_size = 20000; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y STATISTICS(tdigest) MODIFY SETTING max_compress_block_size = 20000; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y TTL toDate('2025-01-01') + toIntervalDay(x) MODIFY SETTING max_compress_block_size = 20000; -- { clientError SYNTAX_ERROR }
@@ -44,7 +44,7 @@ SELECT 'The same, but with type';
 ALTER TABLE a MODIFY COLUMN y Int64 DEFAULT 2 MODIFY SETTING max_compress_block_size = 20000; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y Int64 MATERIALIZED 3 MODIFY SETTING max_compress_block_size = 20000; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y Int64 EPHEMERAL 4 MODIFY SETTING max_compress_block_size = 20000; -- { clientError SYNTAX_ERROR }
-ALTER TABLE a MODIFY COLUMN y Int64 COMMENT 5 MODIFY SETTING max_compress_block_size = 20000; -- { clientError SYNTAX_ERROR }
+ALTER TABLE a MODIFY COLUMN y Int64 COMMENT '5' MODIFY SETTING max_compress_block_size = 20000; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y Int64 CODEC(ZSTD) MODIFY SETTING max_compress_block_size = 20000; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y Int64 STATISTICS(tdigest) MODIFY SETTING max_compress_block_size = 20000; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y Int64 TTL toDate('2025-01-01') + toIntervalDay(x) MODIFY SETTING max_compress_block_size = 20000; -- { clientError SYNTAX_ERROR }
@@ -57,7 +57,7 @@ ALTER TABLE a MODIFY COLUMN y Int64 RESET SETTING max_compress_block_size; -- { 
 ALTER TABLE a MODIFY COLUMN y DEFAULT 2 RESET SETTING max_compress_block_size; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y MATERIALIZED 3 RESET SETTING max_compress_block_size; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y EPHEMERAL 4 RESET SETTING max_compress_block_size; -- { clientError SYNTAX_ERROR }
-ALTER TABLE a MODIFY COLUMN y COMMENT 5 RESET SETTING max_compress_block_size; -- { clientError SYNTAX_ERROR }
+ALTER TABLE a MODIFY COLUMN y COMMENT '5' RESET SETTING max_compress_block_size; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y CODEC(ZSTD) RESET SETTING max_compress_block_size; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y STATISTICS(tdigest) RESET SETTING max_compress_block_size; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y TTL toDate('2025-01-01') + toIntervalDay(x) RESET SETTING max_compress_block_size; -- { clientError SYNTAX_ERROR }
@@ -69,7 +69,7 @@ SELECT 'The same, but with type';
 ALTER TABLE a MODIFY COLUMN y Int64 DEFAULT 2 RESET SETTING max_compress_block_size; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y Int64 MATERIALIZED 3 RESET SETTING max_compress_block_size; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y Int64 EPHEMERAL 4 RESET SETTING max_compress_block_size; -- { clientError SYNTAX_ERROR }
-ALTER TABLE a MODIFY COLUMN y Int64 COMMENT 5 RESET SETTING max_compress_block_size; -- { clientError SYNTAX_ERROR }
+ALTER TABLE a MODIFY COLUMN y Int64 COMMENT '5' RESET SETTING max_compress_block_size; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y Int64 CODEC(ZSTD) RESET SETTING max_compress_block_size; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y Int64 STATISTICS(tdigest) RESET SETTING max_compress_block_size; -- { clientError SYNTAX_ERROR }
 ALTER TABLE a MODIFY COLUMN y Int64 TTL toDate('2025-01-01') + toIntervalDay(x) RESET SETTING max_compress_block_size; -- { clientError SYNTAX_ERROR }
@@ -86,7 +86,7 @@ SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 REMOVE MATERIALIZED'); -
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y DEFAULT 2 REMOVE MATERIALIZED'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y MATERIALIZED 3 REMOVE MATERIALIZED'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y EPHEMERAL 4 REMOVE MATERIALIZED'); -- { serverError SYNTAX_ERROR }
-SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y COMMENT 5 REMOVE MATERIALIZED'); -- { serverError SYNTAX_ERROR }
+SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y COMMENT \'5\' REMOVE MATERIALIZED'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y CODEC(ZSTD) REMOVE MATERIALIZED'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y STATISTICS(tdigest) REMOVE MATERIALIZED'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y TTL toDate(\'2025-01-01\') + toIntervalDay(x) REMOVE MATERIALIZED'); -- { serverError SYNTAX_ERROR }
@@ -98,7 +98,7 @@ SELECT 'The same, but with type';
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 DEFAULT 2 REMOVE MATERIALIZED'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 MATERIALIZED 3 REMOVE MATERIALIZED'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 EPHEMERAL 4 REMOVE MATERIALIZED'); -- { serverError SYNTAX_ERROR }
-SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 COMMENT 5 REMOVE MATERIALIZED'); -- { serverError SYNTAX_ERROR }
+SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 COMMENT \'5\' REMOVE MATERIALIZED'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 CODEC(ZSTD) REMOVE MATERIALIZED'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 STATISTICS(tdigest) REMOVE MATERIALIZED'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 TTL toDate(\'2025-01-01\') + toIntervalDay(x) REMOVE MATERIALIZED'); -- { serverError SYNTAX_ERROR }
@@ -111,7 +111,7 @@ SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 MODIFY SETTING max_compr
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y DEFAULT 2 MODIFY SETTING max_compress_block_size = 20000'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y MATERIALIZED 3 MODIFY SETTING max_compress_block_size = 20000'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y EPHEMERAL 4 MODIFY SETTING max_compress_block_size = 20000'); -- { serverError SYNTAX_ERROR }
-SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y COMMENT 5 MODIFY SETTING max_compress_block_size = 20000'); -- { serverError SYNTAX_ERROR }
+SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y COMMENT \'5\' MODIFY SETTING max_compress_block_size = 20000'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y CODEC(ZSTD) MODIFY SETTING max_compress_block_size = 20000'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y STATISTICS(tdigest) MODIFY SETTING max_compress_block_size = 20000'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y TTL toDate(\'2025-01-01\') + toIntervalDay(x) MODIFY SETTING max_compress_block_size = 20000'); -- { serverError SYNTAX_ERROR }
@@ -123,7 +123,7 @@ SELECT 'The same, but with type';
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 DEFAULT 2 MODIFY SETTING max_compress_block_size = 20000'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 MATERIALIZED 3 MODIFY SETTING max_compress_block_size = 20000'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 EPHEMERAL 4 MODIFY SETTING max_compress_block_size = 20000'); -- { serverError SYNTAX_ERROR }
-SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 COMMENT 5 MODIFY SETTING max_compress_block_size = 20000'); -- { serverError SYNTAX_ERROR }
+SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 COMMENT \'5\' MODIFY SETTING max_compress_block_size = 20000'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 CODEC(ZSTD) MODIFY SETTING max_compress_block_size = 20000'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 STATISTICS(tdigest) MODIFY SETTING max_compress_block_size = 20000'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 TTL toDate(\'2025-01-01\') + toIntervalDay(x) MODIFY SETTING max_compress_block_size = 20000'); -- { serverError SYNTAX_ERROR }
@@ -136,7 +136,7 @@ SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 RESET SETTING max_compre
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y DEFAULT 2 RESET SETTING max_compress_block_size'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y MATERIALIZED 3 RESET SETTING max_compress_block_size'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y EPHEMERAL 4 RESET SETTING max_compress_block_size'); -- { serverError SYNTAX_ERROR }
-SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y COMMENT 5 RESET SETTING max_compress_block_size'); -- { serverError SYNTAX_ERROR }
+SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y COMMENT \'5\' RESET SETTING max_compress_block_size'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y CODEC(ZSTD) RESET SETTING max_compress_block_size'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y STATISTICS(tdigest) RESET SETTING max_compress_block_size'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y TTL toDate(\'2025-01-01\') + toIntervalDay(x) RESET SETTING max_compress_block_size'); -- { serverError SYNTAX_ERROR }
@@ -148,7 +148,7 @@ SELECT 'The same, but with type';
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 DEFAULT 2 RESET SETTING max_compress_block_size'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 MATERIALIZED 3 RESET SETTING max_compress_block_size'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 EPHEMERAL 4 RESET SETTING max_compress_block_size'); -- { serverError SYNTAX_ERROR }
-SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 COMMENT 5 RESET SETTING max_compress_block_size'); -- { serverError SYNTAX_ERROR }
+SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 COMMENT \'5\' RESET SETTING max_compress_block_size'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 CODEC(ZSTD) RESET SETTING max_compress_block_size'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 STATISTICS(tdigest) RESET SETTING max_compress_block_size'); -- { serverError SYNTAX_ERROR }
 SELECT formatQuery('ALTER TABLE a MODIFY COLUMN y Int64 TTL toDate(\'2025-01-01\') + toIntervalDay(x) RESET SETTING max_compress_block_size'); -- { serverError SYNTAX_ERROR }
