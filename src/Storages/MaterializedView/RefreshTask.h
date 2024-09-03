@@ -234,7 +234,7 @@ private:
     RefreshState state = RefreshState::Scheduling;
     /// Notified when `state` changes away from Running/Scheduling.
     std::condition_variable refresh_cv;
-    std::chrono::system_clock::time_point next_refresh_time; // just for observability
+    std::chrono::system_clock::time_point next_refresh_time {}; // just for observability
 
     /// The main loop of the refresh task. It examines the state, sees what needs to be
     /// done and does it. If there's nothing to do at the moment, returns; it's then scheduled again,

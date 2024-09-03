@@ -367,6 +367,7 @@ void RefreshTask::refreshTask()
             auto start_time = std::chrono::floor<std::chrono::seconds>(now);
             auto start_time_steady = std::chrono::steady_clock::now();
             auto [when, timeslot, start_znode] = determineNextRefreshTime(start_time);
+            next_refresh_time = when;
             bool out_of_schedule = scheduling.out_of_schedule_refresh_requested;
             if (out_of_schedule)
             {
@@ -381,7 +382,6 @@ void RefreshTask::refreshTask()
                     delay_ms = 100;
                 refresh_task->scheduleAfter(delay_ms);
                 setState(RefreshState::Scheduled, lock);
-                next_refresh_time = when;
                 break;
             }
             else if (timeslot >= scheduling.dependencies_satisfied_until)
@@ -606,8 +606,13 @@ void RefreshTask::updateDependenciesIfNeeded(std::unique_lock<std::mutex> & lock
         chassert(lock.owns_lock());
         if (scheduling.dependencies_satisfied_until.time_since_epoch().count() >= 0)
             return;
-        scheduling.dependencies_satisfied_until = std::chrono::sys_seconds(std::chrono::seconds(-2));
         auto deps = set_handle.getDependencies();
+        if (deps.empty())
+        {
+            scheduling.dependencies_satisfied_until = std::chrono::sys_seconds::max();
+            return;
+        }
+        scheduling.dependencies_satisfied_until = std::chrono::sys_seconds(std::chrono::seconds(-2));
         lock.unlock();
 
         /// Consider a dependency satisfied if its next scheduled refresh time is greater than ours.

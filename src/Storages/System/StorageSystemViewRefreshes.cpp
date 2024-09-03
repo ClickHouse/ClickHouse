@@ -80,10 +80,7 @@ void StorageSystemViewRefreshes::fillData(
             res_columns[i++]->insert(refresh.znode.last_attempt_time.time_since_epoch().count());
         res_columns[i++]->insert(refresh.znode.last_attempt_replica);
 
-        if (refresh.state == RefreshState::Scheduled)
-            res_columns[i++]->insert(std::chrono::duration_cast<std::chrono::seconds>(refresh.next_refresh_time.time_since_epoch()).count());
-        else
-            res_columns[i++]->insertDefault();
+        res_columns[i++]->insert(std::chrono::duration_cast<std::chrono::seconds>(refresh.next_refresh_time.time_since_epoch()).count());
 
         if (refresh.znode.last_attempt_succeeded || refresh.znode.last_attempt_time.time_since_epoch().count() == 0)
             res_columns[i++]->insertDefault();

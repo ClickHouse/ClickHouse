@@ -25,7 +25,7 @@ $CLICKHOUSE_CLIENT -nq "
 # Wait for any refresh. (xargs trims the string and turns \t and \n into spaces)
 while [ "`$CLICKHOUSE_CLIENT -nq "select last_success_time is null from refreshes -- $LINENO" | xargs`" != '0' ]
 do
-    sleep 0.1
+    sleep 0.5
 done
 start_time="`$CLICKHOUSE_CLIENT -nq "select reinterpret(now64(), 'Int64')"`"
 # Check table contents.
@@ -36,21 +36,28 @@ while :
 do
     res2="`$CLICKHOUSE_CLIENT -nq 'select * from a order by x format Values -- $LINENO'`"
     [ "$res2" == "$res1" ] || break
-    sleep 0.1
+    sleep 0.5
 done
 # Wait for another change.
 while :
 do
     res3="`$CLICKHOUSE_CLIENT -nq 'select * from a order by x format Values -- $LINENO'`"
     [ "$res3" == "$res2" ] || break
-    sleep 0.1
+    sleep 0.5
 done
 # Check that the two changes were at least 1 second apart, in particular that we're not refreshing
 # like crazy. This is potentially flaky, but we need at least one test that uses non-mocked timer
 # to make sure the clock+timer code works at all. If it turns out flaky, increase refresh period above.
 $CLICKHOUSE_CLIENT -nq "
-    select '<3: time difference at least>', min2(reinterpret(now64(), 'Int64') - $start_time, 1000);
-    select '<4: next refresh in>', next_refresh_time-last_success_time from refreshes;"
+    select '<3: time difference at least>', min2(reinterpret(now64(), 'Int64') - $start_time, 1000);"
+while :
+do
+    # Wait for status to change to Scheduled. If status = Scheduling, next_refresh_time is stale.
+    res="`$CLICKHOUSE_CLIENT -nq "select '<4: next refresh in>', next_refresh_time-last_success_time, status from refreshes -- $LINENO"`"
+    echo "$res" | grep -q 'Scheduled' && break
+    sleep 0.5
+done
+echo "$res"
 
 # Create a source table from which views will read.
 $CLICKHOUSE_CLIENT -nq "
@@ -74,7 +81,7 @@ $CLICKHOUSE_CLIENT -nq "
     system test view a set fake time '2052-02-03 04:05:06';"
 while [ "`$CLICKHOUSE_CLIENT -nq "select last_success_time, status from refreshes -- $LINENO" | xargs`" != '2052-02-03 04:05:06 Scheduled' ]
 do
-    sleep 0.1
+    sleep 0.5
 done
 $CLICKHOUSE_CLIENT -nq "
     select '<6: refreshed>', * from a;
@@ -95,7 +102,7 @@ $CLICKHOUSE_CLIENT -nq "
     system test view b set fake time '2054-01-24 23:22:21';"
 while [ "`$CLICKHOUSE_CLIENT -nq "select status from refreshes where view = 'b' -- $LINENO" | xargs`" != 'WaitingForDependencies' ]
 do
-    sleep 0.1
+    sleep 0.5
 done
 
 # Drop the source table, check that refresh fails and doesn't leave a temp table behind.
@@ -115,7 +122,7 @@ $CLICKHOUSE_CLIENT -nq "
     system test view a set fake time '2054-01-01 00:00:01';"
 while [ "`$CLICKHOUSE_CLIENT -nq "select status from refreshes where view = 'b' -- $LINENO" | xargs`" != 'Scheduled' ]
 do
-    sleep 0.1
+    sleep 0.5
 done
 # Both tables should've refreshed.
 $CLICKHOUSE_CLIENT -nq "
@@ -130,7 +137,7 @@ $CLICKHOUSE_CLIENT -nq "
     system test view a set fake time '2060-02-02 02:02:02';"
 while [ "`$CLICKHOUSE_CLIENT -nq "select next_refresh_time from refreshes where view = 'b' -- $LINENO" | xargs`" != '2062-01-01 00:00:00' ]
 do
-    sleep 0.1
+    sleep 0.5
 done
 $CLICKHOUSE_CLIENT -nq "
     select '<15: chain-refreshed a>', * from a;
@@ -142,13 +149,13 @@ $CLICKHOUSE_CLIENT -nq "
     system test view b set fake time '2062-03-03 03:03:03'"
 while [ "`$CLICKHOUSE_CLIENT -nq "select status from refreshes where view = 'b' -- $LINENO" | xargs`" != 'WaitingForDependencies' ]
 do
-    sleep 0.1
+    sleep 0.5
 done
 $CLICKHOUSE_CLIENT -nq "
     alter table b modify refresh every 2 year"
 while [ "`$CLICKHOUSE_CLIENT -nq "select status, last_refresh_time from refreshes where view = 'b' -- $LINENO" | xargs`" != 'Scheduled 2062-03-03 03:03:03' ]
 do
-    sleep 0.1
+    sleep 0.5
 done
 $CLICKHOUSE_CLIENT -nq "
     select '<18: removed dependency>', view, status, last_success_time, last_refresh_time, next_refresh_time from refreshes where view = 'b';
