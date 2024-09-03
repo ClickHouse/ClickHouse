@@ -101,6 +101,9 @@ bool WorkloadEntityStorageBase::storeEntity(
     const Settings & settings)
 {
     std::lock_guard lock{mutex};
+
+    create_entity_query = normalizeCreateWorkloadEntityQuery(*create_entity_query, global_context);
+
     auto it = entities.find(entity_name);
     if (it != entities.end())
     {

@@ -41,10 +41,17 @@ BlockIO InterpreterCreateWorkloadQuery::execute()
     current_context->checkAccess(access_rights_elements);
 
     auto workload_name = create_workload_query.getWorkloadName();
-    //bool throw_if_exists = !create_workload_query.if_not_exists && !create_workload_query.or_replace;
-    //bool replace_if_exists = create_workload_query.or_replace;
+    bool throw_if_exists = !create_workload_query.if_not_exists && !create_workload_query.or_replace;
+    bool replace_if_exists = create_workload_query.or_replace;
 
-    // TODO(serxa): validate and register entity
+    current_context->getWorkloadEntityStorage().storeEntity(
+        current_context,
+        WorkloadEntityType::Workload,
+        workload_name,
+        query_ptr,
+        throw_if_exists,
+        replace_if_exists,
+        current_context->getSettingsRef());
 
     return {};
 }

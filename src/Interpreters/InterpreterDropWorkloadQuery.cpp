@@ -37,9 +37,13 @@ BlockIO InterpreterDropWorkloadQuery::execute()
 
     current_context->checkAccess(access_rights_elements);
 
-    //bool throw_if_not_exists = !drop_workload_query.if_exists;
+    bool throw_if_not_exists = !drop_workload_query.if_exists;
 
-    // TODO(serxa): validate and unregister entity
+    current_context->getWorkloadEntityStorage().removeEntity(
+        current_context,
+        WorkloadEntityType::Workload,
+        drop_workload_query.workload_name,
+        throw_if_not_exists);
 
     return {};
 }
