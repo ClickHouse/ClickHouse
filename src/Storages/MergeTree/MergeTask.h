@@ -333,8 +333,16 @@ private:
 
         Float64 progress_before = 0;
         std::unique_ptr<MergedColumnOnlyOutputStream> column_to{nullptr};
-// TODO: is this really needed for prefetch?
-//       std::optional<Pipe> prepared_pipe;
+
+        /// Used for prefetching. Right before starting merge of a column we create a pipeline for the next column
+        /// and it initiates prefetching of the first range of that column.
+        struct PreparedColumnPipeline
+        {
+            QueryPipeline pipeline;
+            MergeTreeIndices indexes_to_recalc;
+        };
+
+        std::optional<PreparedColumnPipeline> prepared_pipeline;
         size_t max_delayed_streams = 0;
         bool use_prefetch = false;
         std::list<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
@@ -379,7 +387,7 @@ private:
         bool executeVerticalMergeForOneColumn() const;
         void finalizeVerticalMergeForOneColumn() const;
 
-        QueryPlan createPlanForReadingOneColumn(const String & column_name) const;
+        VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
 
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
