@@ -76,7 +76,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"create_if_not_exists", false, false, "New setting."},
             {"allow_materialized_view_with_bad_select", true, true, "Support (but not enable yet) stricter validation in CREATE MATERIALIZED VIEW"},
             {"output_format_always_quote_identifiers", false, false, "New setting."},
-            {"output_format_identifier_quoting_style", "Backticks", "Backticks", "New setting."}
+            {"output_format_identifier_quoting_style", "Backticks", "Backticks", "New setting."},
+            {"parallel_replicas_local_plan", false, false, "Use local plan for local replica in a query with parallel replicas"},
         }
     },
     {"24.8",
@@ -93,7 +94,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"allow_experimental_time_series_table", false, false, "Added new setting to allow the TimeSeries table engine"},
             {"enable_analyzer", 1, 1, "Added an alias to a setting `allow_experimental_analyzer`."},
             {"optimize_functions_to_subcolumns", false, true, "Enabled settings by default"},
-            {"parallel_replicas_local_plan", false, false, "Use local plan for local replica in a query with parallel replicas"},
             {"allow_experimental_json_type", false, false, "Add new experimental JSON type"},
             {"use_json_alias_for_old_object_type", true, false, "Use JSON type alias to create new JSON type"},
             {"type_json_skip_duplicated_paths", false, false, "Allow to skip duplicated paths during JSON parsing"},
