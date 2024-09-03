@@ -43,13 +43,30 @@ public:
         ContextPtr & context;
     };
 
-    DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context);
+    struct EngineFeatures
+    {
+        bool supports_arguments = false;
+        bool supports_settings = false;
+        bool supports_table_overrides = false;
+    };
 
     using CreatorFn = std::function<DatabasePtr(const Arguments & arguments)>;
 
-    using DatabaseEngines = std::unordered_map<std::string, CreatorFn>;
+    struct Creator
+    {
+        CreatorFn creator_fn;
+        EngineFeatures features;
+    };
 
-    void registerDatabase(const std::string & name, CreatorFn creator_fn);
+    DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context);
+
+    using DatabaseEngines = std::unordered_map<std::string, Creator>;
+
+    void registerDatabase(const std::string & name, CreatorFn creator_fn, EngineFeatures features = EngineFeatures{
+        supports_arguments = false,
+        supports_parameters = false,
+        supports_table_overrides = false,
+    });
 
     const DatabaseEngines & getDatabaseEngines() const { return database_engines; }
 

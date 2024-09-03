@@ -253,7 +253,7 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.context);
     };
-    factory.registerDatabase("HDFS", create_fn);
+    factory.registerDatabase("HDFS", create_fn, {.supports_arguments = true});
 }
 } // DB
 
