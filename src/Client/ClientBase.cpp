@@ -1896,6 +1896,25 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         /// Temporarily apply query settings to context.
         std::optional<Settings> old_settings;
         SCOPE_EXIT_SAFE({
+            try
+            {
+                /// We need to park ParallelFormating threads,
+                /// because they can use settings from global context
+                /// and it can lead to data race with `setSettings`
+                if (output_format)
+                {
+                    output_format->finalize();
+                    output_format.reset();
+                }
+            }
+            catch (...)
+            {
+                if (!have_error)
+                {
+                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+                    have_error = true;
+                }
+            }
             if (old_settings)
                 client_context->setSettings(*old_settings);
         });
