@@ -5,6 +5,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
 #include <Core/Protocol.h>
+#include <Core/Settings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -88,12 +89,12 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             auto table_name = main_table.getQualifiedName();
 
             ConnectionEstablisher connection_establisher(pool, &timeouts, current_settings, log, &table_name);
-            connection_establisher.run(result, fail_message);
+            connection_establisher.run(result, fail_message, /*force_connected=*/ true);
         }
         else
         {
             ConnectionEstablisher connection_establisher(pool, &timeouts, current_settings, log, nullptr);
-            connection_establisher.run(result, fail_message);
+            connection_establisher.run(result, fail_message, /*force_connected=*/ true);
         }
 
         std::vector<IConnectionPool::Entry> connection_entries;
@@ -487,6 +488,17 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         if (was_cancelled)
             return ReadResult(Block());
 
+        if (has_postponed_packet)
+        {
+            has_postponed_packet = false;
+            auto read_result = processPacket(read_context->getPacket());
+            if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
+                return read_result;
+
+            if (got_duplicated_part_uuids)
+                break;
+        }
+
         read_context->resume();
 
         if (isReplicaUnavailable() || needToSkipUnavailableShard())
@@ -507,10 +519,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         if (read_context->isInProgress())
             return ReadResult(read_context->getFileDescriptor());
 
-        auto anything = processPacket(read_context->getPacket());
-
-        if (anything.getType() == ReadResult::Type::Data || anything.getType() == ReadResult::Type::ParallelReplicasToken)
-            return anything;
+        auto read_result = processPacket(read_context->getPacket());
+        if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
+            return read_result;
 
         if (got_duplicated_part_uuids)
             break;
@@ -906,5 +917,44 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
 {
     std::lock_guard guard(was_cancelled_mutex);
     profile_info_callback = std::move(callback);
+}
+
+bool RemoteQueryExecutor::needToSkipUnavailableShard() const
+{
+    return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size());
+}
+
+bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
+{
+#if defined(OS_LINUX)
+
+    std::lock_guard lock(was_cancelled_mutex);
+    if (was_cancelled)
+        return false;
+
+    if (!read_context || (resent_query && recreate_read_context))
+    {
+        read_context = std::make_unique<ReadContext>(*this);
+        recreate_read_context = false;
+    }
+
+    chassert(!has_postponed_packet);
+
+    read_context->resume();
+    if (read_context->isInProgress()) // <- nothing to process
+        return false;
+
+    const auto packet_type = read_context->getPacketType();
+    if (packet_type == Protocol::Server::MergeTreeReadTaskRequest || packet_type == Protocol::Server::MergeTreeAllRangesAnnouncement)
+    {
+        processPacket(read_context->getPacket());
+        return true;
+    }
+
+    has_postponed_packet = true;
+
+#endif
+
+    return false;
 }
 }

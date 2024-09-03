@@ -23,6 +23,7 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
+#include <Core/Settings.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/queryToString.h>
@@ -348,7 +349,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>(), /*requires_perfect_prefix*/ false);
+            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<const String &>(), /*requires_perfect_prefix*/ false);
             if (prefix.empty())
                 return false;
 
@@ -369,7 +370,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>(), /*requires_perfect_prefix*/ true);
+            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<const String &>(), /*requires_perfect_prefix*/ true);
             if (prefix.empty())
                 return false;
 
@@ -390,7 +391,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = value.get<const String &>();
+            String prefix = value.safeGet<const String &>();
             if (prefix.empty())
                 return false;
 
@@ -411,7 +412,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            const String & expression = value.get<const String &>();
+            const String & expression = value.safeGet<const String &>();
 
             /// This optimization can't process alternation - this would require
             /// a comprehensive parsing of regular expression.
@@ -565,6 +566,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
     }
 
     const ActionsDAG::Node * res = nullptr;
+    bool handled_inversion = false;
 
     switch (node.type)
     {
@@ -581,7 +583,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                 /// Re-generate column name for constant.
                 /// DAG form query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
                 /// DAG from PK does not use it. This breaks matching by column name sometimes.
-                /// Ideally, we should not compare manes, but DAG subtrees instead.
+                /// Ideally, we should not compare names, but DAG subtrees instead.
                 name = ASTLiteral(column_const->getDataColumn()[0]).getColumnName();
             else
                 name = node.result_name;
@@ -592,9 +594,9 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
         case (ActionsDAG::ActionType::ALIAS):
         {
             /// Ignore aliases
-            const auto & alias = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, need_inversion);
-            to_inverted[&node] = &alias;
-            return alias;
+            res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, need_inversion);
+            handled_inversion = true;
+            break;
         }
         case (ActionsDAG::ActionType::ARRAY_JOIN):
         {
@@ -607,20 +609,10 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
             auto name = node.function_base->getName();
             if (name == "not")
             {
-                const auto & arg = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, !need_inversion);
-                to_inverted[&node] = &arg;
-                return arg;
+                res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, !need_inversion);
+                handled_inversion = true;
             }
-
-            if (name == "materialize")
-            {
-                /// Ignore materialize
-                const auto & arg = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, need_inversion);
-                to_inverted[&node] = &arg;
-                return arg;
-            }
-
-            if (name == "indexHint")
+            else if (name == "indexHint")
             {
                 ActionsDAG::NodeRawConstPtrs children;
                 if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
@@ -628,19 +620,17 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                     if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
                     {
                         const auto & index_hint_dag = index_hint->getActions();
-                        children = index_hint_dag->getOutputs();
+                        children = index_hint_dag.getOutputs();
 
                         for (auto & arg : children)
                             arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, need_inversion);
                     }
                 }
 
-                const auto & func = inverted_dag.addFunction(node.function_base, children, "");
-                to_inverted[&node] = &func;
-                return func;
+                res = &inverted_dag.addFunction(node.function_base, children, "");
+                handled_inversion = true;
             }
-
-            if (need_inversion && (name == "and" || name == "or"))
+            else if (need_inversion && (name == "and" || name == "or"))
             {
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
@@ -658,32 +648,56 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
 
                 /// We match columns by name, so it is important to fill name correctly.
                 /// So, use empty string to make it automatically.
-                const auto & func = inverted_dag.addFunction(function_builder, children, "");
-                to_inverted[&node] = &func;
-                return func;
+                res = &inverted_dag.addFunction(function_builder, children, "");
+                handled_inversion = true;
             }
-
-            ActionsDAG::NodeRawConstPtrs children(node.children);
-
-            for (auto & arg : children)
-                arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, false);
-
-            auto it = inverse_relations.find(name);
-            if (it != inverse_relations.end())
+            else
             {
-                const auto & func_name = need_inversion ? it->second : it->first;
-                auto function_builder = FunctionFactory::instance().get(func_name, context);
-                const auto & func = inverted_dag.addFunction(function_builder, children, "");
-                to_inverted[&node] = &func;
-                return func;
-            }
+                ActionsDAG::NodeRawConstPtrs children(node.children);
 
-            res = &inverted_dag.addFunction(node.function_base, children, "");
-            chassert(res->result_type == node.result_type);
+                for (auto & arg : children)
+                    arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, false);
+
+                auto it = inverse_relations.find(name);
+                if (it != inverse_relations.end())
+                {
+                    const auto & func_name = need_inversion ? it->second : it->first;
+                    auto function_builder = FunctionFactory::instance().get(func_name, context);
+                    res = &inverted_dag.addFunction(function_builder, children, "");
+                    handled_inversion = true;
+                }
+                else
+                {
+                    /// Argument types could change slightly because of our transformations, e.g.
+                    /// LowCardinality can be added because some subexpressions became constant
+                    /// (in particular, sets). If that happens, re-run function overload resolver.
+                    /// Otherwise don't re-run it because some functions may not be available
+                    /// through FunctionFactory::get(), e.g. FunctionCapture.
+                    bool types_changed = false;
+                    for (size_t i = 0; i < children.size(); ++i)
+                    {
+                        if (!node.children[i]->result_type->equals(*children[i]->result_type))
+                        {
+                            types_changed = true;
+                            break;
+                        }
+                    }
+
+                    if (types_changed)
+                    {
+                        auto function_builder = FunctionFactory::instance().get(name, context);
+                        res = &inverted_dag.addFunction(function_builder, children, "");
+                    }
+                    else
+                    {
+                        res = &inverted_dag.addFunction(node.function_base, children, "");
+                    }
+                }
+            }
         }
     }
 
-    if (need_inversion)
+    if (!handled_inversion && need_inversion)
         res = &inverted_dag.addFunction(FunctionFactory::instance().get("not", context), {res}, "");
 
     to_inverted[&node] = res;
@@ -695,22 +709,22 @@ const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyConditi
     {"hilbertEncode", SpaceFillingCurveType::Hilbert}
 };
 
-ActionsDAGPtr KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
+ActionsDAG KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
 {
-    auto res = std::make_shared<ActionsDAG>();
+    ActionsDAG res;
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted;
 
     for (auto & node : nodes)
-        node = &DB::cloneASTWithInversionPushDown(*node, *res, to_inverted, context, false);
+        node = &DB::cloneASTWithInversionPushDown(*node, res, to_inverted, context, false);
 
     if (nodes.size() > 1)
     {
         auto function_builder = FunctionFactory::instance().get("and", context);
-        nodes = {&res->addFunction(function_builder, std::move(nodes), "")};
+        nodes = {&res.addFunction(function_builder, std::move(nodes), "")};
     }
 
-    res->getOutputs().swap(nodes);
+    res.getOutputs().swap(nodes);
 
     return res;
 }
@@ -729,7 +743,7 @@ Block KeyCondition::getBlockWithConstants(
     if (syntax_analyzer_result)
     {
         auto actions = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActionsDAG();
-        for (const auto & action_node : actions->getOutputs())
+        for (const auto & action_node : actions.getOutputs())
         {
             if (action_node->column)
                 result.insert(ColumnWithTypeAndName{action_node->column, action_node->result_type, action_node->result_name});
@@ -784,7 +798,7 @@ void KeyCondition::getAllSpaceFillingCurves()
 }
 
 KeyCondition::KeyCondition(
-    ActionsDAGPtr filter_dag,
+    const ActionsDAG * filter_dag,
     ContextPtr context,
     const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_,
@@ -825,9 +839,9 @@ KeyCondition::KeyCondition(
       * are pushed down and applied (when possible) to leaf nodes.
       */
     auto inverted_dag = cloneASTWithInversionPushDown({filter_dag->getOutputs().at(0)}, context);
-    assert(inverted_dag->getOutputs().size() == 1);
+    assert(inverted_dag.getOutputs().size() == 1);
 
-    const auto * inverted_dag_filter_node = inverted_dag->getOutputs()[0];
+    const auto * inverted_dag_filter_node = inverted_dag.getOutputs()[0];
 
     RPNBuilder<RPNElement> builder(inverted_dag_filter_node, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {
@@ -874,13 +888,22 @@ static Field applyFunctionForField(
     return (*col)[0];
 }
 
+/// applyFunction will execute the function with one `field` or the column which `field` refers to.
 static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
 {
+    chassert(func != nullptr);
     /// Fallback for fields without block reference.
     if (field.isExplicit())
         return applyFunctionForField(func, current_type, field);
 
-    String result_name = "_" + func->getName() + "_" + toString(field.column_idx);
+    /// We will cache the function result inside `field.columns`, because this function will call many times
+    /// from many fields from same column. When the column is huge, for example there are thousands of marks, we need a cache.
+    /// The cache key is like `_[function_pointer]_[param_column_id]` to identify a unique <function, param> pair.
+    WriteBufferFromOwnString buf;
+    writeText("_", buf);
+    writePointerHex(func.get(), buf);
+    writeText("_" + toString(field.column_idx), buf);
+    String result_name = buf.str();
     const auto & columns = field.columns;
     size_t result_idx = columns->size();
 
@@ -892,6 +915,7 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
 
     if (result_idx == columns->size())
     {
+        /// When cache is missed, we calculate the whole column where the field comes from. This will avoid repeated calculation.
         ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
         field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
         (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
@@ -1942,11 +1966,8 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                         auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
                             ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
                             : common_type;
-                        ColumnsWithTypeAndName arguments{
-                            {nullptr, key_expr_type, ""},
-                            {DataTypeString().createColumnConst(1, common_type_maybe_nullable->getName()), common_type_maybe_nullable, ""}};
-                        FunctionOverloadResolverPtr func_builder_cast = createInternalCastOverloadResolver(CastType::nonAccurate, {});
-                        auto func_cast = func_builder_cast->build(arguments);
+
+                        auto func_cast = createInternalCast({key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {});
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
                         if (!single_point && !func_cast->hasInformationAboutMonotonicity())
@@ -2917,8 +2938,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 /// Let's support only the case of 2d, because I'm not confident in other cases.
                 if (num_dimensions == 2)
                 {
-                    UInt64 left = key_range.left.get<UInt64>();
-                    UInt64 right = key_range.right.get<UInt64>();
+                    UInt64 left = key_range.left.safeGet<UInt64>();
+                    UInt64 right = key_range.right.safeGet<UInt64>();
 
                     BoolMask mask(false, true);
                     auto hyperrectangle_intersection_callback = [&](std::array<std::pair<UInt64, UInt64>, 2> curve_hyperrectangle)

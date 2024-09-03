@@ -227,9 +227,9 @@ public:
 
     String getName() const override { return "PostgreSQLSink"; }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
-        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+        auto block = getHeader().cloneWithColumns(chunk.getColumns());
         if (!inserter)
         {
             if (on_conflict.empty())
@@ -294,7 +294,7 @@ public:
     {
         const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get());
         const auto & nested = array_type->getNestedType();
-        const auto & array = array_field.get<Array>();
+        const auto & array = array_field.safeGet<Array>();
 
         if (!isArray(nested))
         {
@@ -312,7 +312,7 @@ public:
 
             if (!isArray(nested_array_type->getNestedType()))
             {
-                parseArrayContent(iter->get<Array>(), nested, ostr);
+                parseArrayContent(iter->safeGet<Array>(), nested, ostr);
             }
             else
             {

@@ -7,12 +7,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Note that this is a broad check. A per version check is done in the upgrade test
-# Baseline generated with 23.12.1
-# clickhouse local --query "select name, default from system.settings order by name format TSV" > 02995_baseline_23_12_1.tsv
+# Baseline generated with 24.7.2
+# clickhouse local --query "select name, default from system.settings order by name format TSV" > 02995_baseline_24_7_2.tsv
 $CLICKHOUSE_LOCAL --query "
     WITH old_settings AS
     (
-        SELECT * FROM file('${CUR_DIR}/02995_baseline_23_12_1.tsv', 'TSV', 'name String, default String')
+        SELECT * FROM file('${CUR_DIR}/02995_baseline_24_7_2.tsv', 'TSV', 'name String, default String')
     ),
     new_settings AS
     (
@@ -21,7 +21,7 @@ $CLICKHOUSE_LOCAL --query "
     )
     SELECT * FROM
     (
-        SELECT 'PLEASE ADD THE NEW SETTING TO SettingsChangesHistory.h: ' || name || ' WAS ADDED',
+        SELECT 'PLEASE ADD THE NEW SETTING TO SettingsChangesHistory.cpp: ' || name || ' WAS ADDED',
         FROM new_settings
         WHERE (name NOT IN (
             SELECT name
@@ -29,17 +29,17 @@ $CLICKHOUSE_LOCAL --query "
         )) AND (name NOT IN (
             SELECT arrayJoin(tupleElement(changes, 'name'))
             FROM system.settings_changes
-            WHERE splitByChar('.', version())[1] >= '24'
+            WHERE splitByChar('.', version)[1]::UInt64 >= 24 AND splitByChar('.', version)[2]::UInt64 > 7
         ))
         UNION ALL
         (
-            SELECT 'PLEASE ADD THE SETTING VALUE CHANGE TO SettingsChangesHistory.h: ' || name || ' WAS CHANGED FROM ' || old_settings.default || ' TO ' || new_settings.default,
+            SELECT 'PLEASE ADD THE SETTING VALUE CHANGE TO SettingsChangesHistory.cpp: ' || name || ' WAS CHANGED FROM ' || old_settings.default || ' TO ' || new_settings.default,
             FROM new_settings
             LEFT JOIN old_settings ON new_settings.name = old_settings.name
             WHERE (new_settings.default != old_settings.default) AND (name NOT IN (
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
-                WHERE splitByChar('.', version())[1] >= '24'
+                WHERE splitByChar('.', version)[1]::UInt64 >= 24 AND splitByChar('.', version)[2]::UInt64 > 7
             ))
         )
     )

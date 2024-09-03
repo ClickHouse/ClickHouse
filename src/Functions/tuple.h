@@ -21,11 +21,7 @@ class FunctionTuple : public IFunction
 public:
     static constexpr auto name = "tuple";
 
-    /// maybe_unused: false-positive
-    [[maybe_unused]] static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionTuple>(context->getSettingsRef().enable_named_columns_in_function_tuple);
-    }
+    static FunctionPtr create(ContextPtr context);
 
     explicit FunctionTuple(bool enable_named_columns_ = false) : enable_named_columns(enable_named_columns_) { }
 

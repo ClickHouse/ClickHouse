@@ -31,7 +31,7 @@ INSERT INTO without_deduplication VALUES (43);
 SELECT count() FROM with_deduplication;
 SELECT count() FROM without_deduplication;
 
--- Implicit insert isn't deduplicated
+-- Implicit insert isn't deduplicated, because deduplicate_blocks_in_dependent_materialized_views = 0 by default
 SELECT '';
 SELECT countMerge(cnt) FROM with_deduplication_mv;
 SELECT countMerge(cnt) FROM without_deduplication_mv;

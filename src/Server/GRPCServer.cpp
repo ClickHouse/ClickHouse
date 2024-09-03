@@ -11,6 +11,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <Interpreters/Context.h>
@@ -1082,8 +1083,8 @@ namespace
         read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), input_compression_method);
 
         assert(!pipeline);
-        auto source = query_context->getInputFormat(
-            input_format, *read_buffer, header, query_context->getSettings().max_insert_block_size);
+        auto source
+            = query_context->getInputFormat(input_format, *read_buffer, header, query_context->getSettingsRef().max_insert_block_size);
 
         pipeline = std::make_unique<QueryPipeline>(std::move(source));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -1151,8 +1152,7 @@ namespace
                         external_table_context->applySettingsChanges(settings_changes);
                     }
                     auto in = external_table_context->getInputFormat(
-                        format, *buf, metadata_snapshot->getSampleBlock(),
-                        external_table_context->getSettings().max_insert_block_size);
+                        format, *buf, metadata_snapshot->getSampleBlock(), external_table_context->getSettingsRef().max_insert_block_size);
 
                     QueryPipelineBuilder cur_pipeline;
                     cur_pipeline.init(Pipe(std::move(in)));
@@ -1577,6 +1577,8 @@ namespace
         stats.set_allocated_bytes(info.bytes);
         stats.set_applied_limit(info.hasAppliedLimit());
         stats.set_rows_before_limit(info.getRowsBeforeLimit());
+        stats.set_applied_aggregation(info.hasAppliedAggregation());
+        stats.set_rows_before_aggregation(info.getRowsBeforeAggregation());
     }
 
     void Call::addLogsToResult()

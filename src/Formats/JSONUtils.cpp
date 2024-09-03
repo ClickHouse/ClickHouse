@@ -6,7 +6,7 @@
 #include <IO/WriteBufferValidUTF8.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeFactory.h>
 
 #include <base/find_symbols.h>
@@ -487,6 +487,8 @@ namespace JSONUtils
         size_t rows,
         size_t rows_before_limit,
         bool applied_limit,
+        size_t rows_before_aggregation,
+        bool applied_aggregation,
         const Stopwatch & watch,
         const Progress & progress,
         bool write_statistics,
@@ -502,7 +504,12 @@ namespace JSONUtils
             writeTitle("rows_before_limit_at_least", out, 1, " ");
             writeIntText(rows_before_limit, out);
         }
-
+        if (applied_aggregation)
+        {
+            writeFieldDelimiter(out, 2);
+            writeTitle("rows_before_aggregation", out, 1, " ");
+            writeIntText(rows_before_aggregation, out);
+        }
         if (write_statistics)
         {
             writeFieldDelimiter(out, 2);

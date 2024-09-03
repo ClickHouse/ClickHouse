@@ -1,5 +1,6 @@
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPServerRequest.h>
 

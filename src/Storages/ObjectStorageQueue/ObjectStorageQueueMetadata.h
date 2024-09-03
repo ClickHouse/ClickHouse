@@ -2,21 +2,19 @@
 #include "config.h"
 
 #include <filesystem>
-#include <Core/Types.h>
-#include <Core/SettingsEnums.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Core/Types.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace fs = std::filesystem;
 namespace Poco { class Logger; }
 
 namespace DB
 {
-struct ObjectStorageQueueSettings;
 class StorageObjectStorageQueue;
 struct ObjectStorageQueueTableMetadata;
 struct StorageInMemoryMetadata;

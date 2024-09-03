@@ -1,14 +1,14 @@
 #include <Disks/ObjectStorages/S3/diskSettings.h>
-#include <IO/S3/Client.h>
-#include <Common/Exception.h>
 
 #if USE_AWS_S3
 
+#include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/Throttler.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
+#include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -17,6 +17,7 @@
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <base/getFQDNOrHostName.h>
 #include <IO/S3Common.h>
+#include <IO/S3/Client.h>
 #include <IO/S3/Credentials.h>
 
 #include <IO/S3Settings.h>

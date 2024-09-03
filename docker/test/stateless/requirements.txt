@@ -8,6 +8,7 @@ cryptography==3.4.8
 dbus-python==1.2.18
 distro==1.7.0
 docutils==0.17.1
+grpcio==1.47.0
 gyp==0.1
 httplib2==0.20.2
 idna==3.3
@@ -28,6 +29,7 @@ packaging==24.1
 pandas==1.5.3
 pip==24.1.1
 pipdeptree==2.23.0
+protobuf==4.25.3
 pyarrow==15.0.0
 pyasn1==0.4.8
 PyJWT==2.3.0

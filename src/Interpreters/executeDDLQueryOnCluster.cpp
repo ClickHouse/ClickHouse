@@ -11,6 +11,7 @@
 #include <Parsers/queryToString.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
+#include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Databases/DatabaseReplicated.h>
@@ -537,7 +538,7 @@ Chunk DDLQueryStatusSource::generate()
             ExecutionStatus status(-1, "Cannot obtain error message");
 
             /// Replicated database retries in case of error, it should not write error status.
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
             bool need_check_status = true;
 #else
             bool need_check_status = !is_replicated_database;

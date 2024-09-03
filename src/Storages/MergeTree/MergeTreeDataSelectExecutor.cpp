@@ -6,10 +6,12 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
+#include <Storages/MergeTree/VectorSimilarityCondition.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTIdentifier.h>
@@ -36,6 +38,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Core/UUID.h>
+#include <Core/Settings.h>
 #include <Common/CurrentMetrics.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -46,7 +49,6 @@
 #include <Functions/IFunction.h>
 
 #include <IO/WriteBufferFromOStream.h>
-#include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
 namespace CurrentMetrics
 {
@@ -90,13 +92,14 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     /// We will find out how many rows we would have read without sampling.
     LOG_DEBUG(log, "Preliminary index scan with condition: {}", key_condition.toString());
 
+    MarkRanges exact_ranges;
     for (const auto & part : parts)
     {
-        MarkRanges exact_ranges;
-        markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, &exact_ranges, settings, log);
-        for (const auto & range : exact_ranges)
+        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, &exact_ranges, settings, log);
+        for (const auto & range : part_ranges)
             rows_count += part->index_granularity.getRowsCountInRange(range);
     }
+    UNUSED(exact_ranges);
 
     return rows_count;
 }
@@ -367,7 +370,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             /// If sample and final are used together no need to calculate sampling expression twice.
             /// The first time it was calculated for final, because sample key is a part of the PK.
             /// So, assume that we already have calculated column.
-            ASTPtr sampling_key_ast = metadata_snapshot->getSamplingKeyAST();
+            ASTPtr sampling_key_ast;
 
             if (final)
             {
@@ -375,6 +378,12 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
                 /// We do spoil available_real_columns here, but it is not used later.
                 available_real_columns.emplace_back(sampling_key.column_names[0], std::move(sampling_column_type));
             }
+            else
+            {
+                sampling_key_ast = metadata_snapshot->getSamplingKeyAST()->clone();
+            }
+
+            chassert(sampling_key_ast != nullptr);
 
             if (has_lower_limit)
             {
@@ -428,7 +437,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
             ASTPtr query = sampling.filter_function;
             auto syntax_result = TreeRewriter(context).analyze(query, available_real_columns);
-            sampling.filter_expression = ExpressionAnalyzer(sampling.filter_function, syntax_result, context).getActionsDAG(false);
+            sampling.filter_expression = std::make_shared<const ActionsDAG>(ExpressionAnalyzer(sampling.filter_function, syntax_result, context).getActionsDAG(false));
         }
     }
 
@@ -442,7 +451,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 }
 
 void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
-    std::optional<KeyCondition> & part_offset_condition, const ActionsDAGPtr & filter_dag, ContextPtr context)
+    std::optional<KeyCondition> & part_offset_condition, const ActionsDAG * filter_dag, ContextPtr context)
 {
     if (!filter_dag)
         return;
@@ -463,10 +472,10 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
         return;
 
     part_offset_condition.emplace(KeyCondition{
-        dag,
+        &*dag,
         context,
         sample.getNames(),
-        std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
+        std::make_shared<ExpressionActions>(ActionsDAG(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
         {}});
 }
 
@@ -474,7 +483,7 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
     const MergeTreeData::DataPartsVector & parts,
-    const ActionsDAGPtr & filter_dag,
+    const ActionsDAG * filter_dag,
     ContextPtr context)
 {
     if (!filter_dag)
@@ -486,7 +495,7 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
         return {};
 
     auto virtual_columns_block = data.getBlockWithVirtualsForFilter(metadata_snapshot, parts);
-    VirtualColumnUtils::filterBlockWithDAG(dag, virtual_columns_block, context);
+    VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), virtual_columns_block);
     return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 }
 
@@ -1404,11 +1413,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 reader.read(granule);
 
-            auto ann_condition = std::dynamic_pointer_cast<IMergeTreeIndexConditionApproximateNearestNeighbor>(condition);
-            if (ann_condition != nullptr)
+            if (index_helper->isVectorSimilarityIndex())
             {
                 /// An array of indices of useful ranges.
-                auto result = ann_condition->getUsefulRanges(granule);
+                auto result = condition->getUsefulRanges(granule);
 
                 for (auto range : result)
                 {

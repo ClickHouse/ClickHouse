@@ -9,6 +9,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -142,13 +143,13 @@ private:
         const auto & column_type = column_node_typed.getColumnType().get();
         if (isDateOrDate32(column_type))
         {
-            start_date_or_date_time = date_lut.dateToString(range.first.get<DateLUTImpl::Time>());
-            end_date_or_date_time = date_lut.dateToString(range.second.get<DateLUTImpl::Time>());
+            start_date_or_date_time = date_lut.dateToString(range.first.safeGet<DateLUTImpl::Time>());
+            end_date_or_date_time = date_lut.dateToString(range.second.safeGet<DateLUTImpl::Time>());
         }
         else if (isDateTime(column_type) || isDateTime64(column_type))
         {
-            start_date_or_date_time = date_lut.timeToString(range.first.get<DateLUTImpl::Time>());
-            end_date_or_date_time = date_lut.timeToString(range.second.get<DateLUTImpl::Time>());
+            start_date_or_date_time = date_lut.timeToString(range.first.safeGet<DateLUTImpl::Time>());
+            end_date_or_date_time = date_lut.timeToString(range.second.safeGet<DateLUTImpl::Time>());
         }
         else [[unlikely]]
             return {};

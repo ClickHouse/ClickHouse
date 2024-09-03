@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
@@ -330,9 +331,6 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
     if (!metadata_snapshot->hasPrimaryKey())
         return;
 
-    if (index_columns.empty())
-        index_columns = primary_index_block.cloneEmptyColumns();
-
     {
         /** While filling index (index_columns), disable memory tracker.
          * Because memory is allocated here (maybe in context of INSERT query),
@@ -341,6 +339,9 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
          *  (observed in long INSERT SELECTs)
          */
         MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
+        if (index_columns.empty())
+            index_columns = primary_index_block.cloneEmptyColumns();
 
         /// Write index. The index contains Primary Key value for each `index_granularity` row.
         for (const auto & granule : granules_to_write)
@@ -433,8 +434,9 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
         {
             MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
             calculateAndSerializePrimaryIndexRow(last_index_block, last_index_block.rows() - 1);
-            last_index_block.clear();
         }
+
+        last_index_block.clear();
 
         if (compress_primary_key)
         {

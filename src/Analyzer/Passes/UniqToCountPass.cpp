@@ -9,6 +9,8 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Core/Settings.h>
+
 namespace DB
 {
 

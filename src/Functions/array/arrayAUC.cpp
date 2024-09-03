@@ -143,13 +143,13 @@ private:
         const IColumn & scores,
         const IColumn & labels,
         const ColumnArray::Offsets & offsets,
-        PaddedPODArray<Float64> & result)
+        PaddedPODArray<Float64> & result,
+        size_t input_rows_count)
     {
-        size_t size = offsets.size();
-        result.resize(size);
+        result.resize(input_rows_count);
 
         ColumnArray::Offset current_offset = 0;
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             auto next_offset = offsets[i];
             result[i] = apply(scores, labels, current_offset, next_offset);
@@ -179,7 +179,7 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr col1 = arguments[0].column->convertToFullColumnIfConst();
         ColumnPtr col2 = arguments[1].column->convertToFullColumnIfConst();
@@ -203,7 +203,8 @@ public:
             col_array1->getData(),
             col_array2->getData(),
             col_array1->getOffsets(),
-            col_res->getData());
+            col_res->getData(),
+            input_rows_count);
 
         return col_res;
     }

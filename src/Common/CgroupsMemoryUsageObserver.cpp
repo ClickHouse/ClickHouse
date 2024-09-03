@@ -11,6 +11,7 @@
 #include <base/cgroupsv2.h>
 #include <base/getMemoryAmount.h>
 #include <base/sleep.h>
+#include <fmt/ranges.h>
 
 #include <cstdint>
 #include <filesystem>
@@ -25,6 +26,7 @@
 #endif
 
 using namespace DB;
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -44,38 +46,52 @@ namespace
 ///   kernel 5
 ///   rss 15
 ///   [...]
-uint64_t readMetricFromStatFile(ReadBufferFromFile & buf, const std::string & key)
+using Metrics = std::map<std::string, uint64_t>;
+
+Metrics readAllMetricsFromStatFile(ReadBufferFromFile & buf)
 {
+    Metrics metrics;
     while (!buf.eof())
     {
         std::string current_key;
         readStringUntilWhitespace(current_key, buf);
-        if (current_key != key)
-        {
-            std::string dummy;
-            readStringUntilNewlineInto(dummy, buf);
-            buf.ignore();
-            continue;
-        }
 
         assertChar(' ', buf);
+
         uint64_t value = 0;
         readIntText(value, buf);
-        return value;
-    }
+        assertChar('\n', buf);
 
+        auto [_, inserted] = metrics.emplace(std::move(current_key), value);
+        chassert(inserted, "Duplicate keys in stat file");
+    }
+    return metrics;
+}
+
+uint64_t readMetricFromStatFile(ReadBufferFromFile & buf, const std::string & key)
+{
+    const auto all_metrics = readAllMetricsFromStatFile(buf);
+    if (const auto it = all_metrics.find(key); it != all_metrics.end())
+        return it->second;
     throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot find '{}' in '{}'", key, buf.getFileName());
 }
 
 struct CgroupsV1Reader : ICgroupsReader
 {
-    explicit CgroupsV1Reader(const std::filesystem::path & stat_file_dir) : buf(stat_file_dir / "memory.stat") { }
+    explicit CgroupsV1Reader(const fs::path & stat_file_dir) : buf(stat_file_dir / "memory.stat") { }
 
     uint64_t readMemoryUsage() override
     {
         std::lock_guard lock(mutex);
         buf.rewind();
         return readMetricFromStatFile(buf, "rss");
+    }
+
+    std::string dumpAllStats() override
+    {
+        std::lock_guard lock(mutex);
+        buf.rewind();
+        return fmt::format("{}", readAllMetricsFromStatFile(buf));
     }
 
 private:
@@ -85,7 +101,7 @@ private:
 
 struct CgroupsV2Reader : ICgroupsReader
 {
-    explicit CgroupsV2Reader(const std::filesystem::path & stat_file_dir)
+    explicit CgroupsV2Reader(const fs::path & stat_file_dir)
         : current_buf(stat_file_dir / "memory.current"), stat_buf(stat_file_dir / "memory.stat")
     {
     }
@@ -105,6 +121,13 @@ struct CgroupsV2Reader : ICgroupsReader
         return mem_usage;
     }
 
+    std::string dumpAllStats() override
+    {
+        std::lock_guard lock(mutex);
+        stat_buf.rewind();
+        return fmt::format("{}", readAllMetricsFromStatFile(stat_buf));
+    }
+
 private:
     std::mutex mutex;
     ReadBufferFromFile current_buf TSA_GUARDED_BY(mutex);
@@ -121,41 +144,17 @@ private:
 /// - I did not test what happens if a host has v1 and v2 simultaneously enabled. I believe such
 ///   systems existed only for a short transition period.
 
-std::optional<std::string> getCgroupsV2Path()
-{
-    if (!cgroupsV2Enabled())
-        return {};
-
-    if (!cgroupsV2MemoryControllerEnabled())
-        return {};
-
-    String cgroup = cgroupV2OfProcess();
-    auto current_cgroup = cgroup.empty() ? default_cgroups_mount : (default_cgroups_mount / cgroup);
-
-    /// Return the bottom-most nested current memory file. If there is no such file at the current
-    /// level, try again at the parent level as memory settings are inherited.
-    while (current_cgroup != default_cgroups_mount.parent_path())
-    {
-        const auto current_path = current_cgroup / "memory.current";
-        const auto stat_path = current_cgroup / "memory.stat";
-        if (std::filesystem::exists(current_path) && std::filesystem::exists(stat_path))
-            return {current_cgroup};
-        current_cgroup = current_cgroup.parent_path();
-    }
-    return {};
-}
-
 std::optional<std::string> getCgroupsV1Path()
 {
     auto path = default_cgroups_mount / "memory/memory.stat";
-    if (!std::filesystem::exists(path))
+    if (!fs::exists(path))
         return {};
     return {default_cgroups_mount / "memory"};
 }
 
 std::pair<std::string, CgroupsMemoryUsageObserver::CgroupsVersion> getCgroupsPath()
 {
-    auto v2_path = getCgroupsV2Path();
+    auto v2_path = getCgroupsV2PathContainingFile("memory.current");
     if (v2_path.has_value())
         return {*v2_path, CgroupsMemoryUsageObserver::CgroupsVersion::V2};
 
@@ -176,10 +175,7 @@ CgroupsMemoryUsageObserver::CgroupsMemoryUsageObserver(std::chrono::seconds wait
 {
     const auto [cgroup_path, version] = getCgroupsPath();
 
-    if (version == CgroupsVersion::V2)
-        cgroup_reader = std::make_unique<CgroupsV2Reader>(cgroup_path);
-    else
-        cgroup_reader = std::make_unique<CgroupsV1Reader>(cgroup_path);
+    cgroup_reader = createCgroupsReader(version, cgroup_path);
 
     LOG_INFO(
         log,
@@ -232,7 +228,12 @@ void CgroupsMemoryUsageObserver::setMemoryUsageLimits(uint64_t hard_limit_, uint
 #    endif
             /// Reset current usage in memory tracker. Expect zero for free_memory_in_allocator_arenas as we just purged them.
             uint64_t memory_usage = cgroup_reader->readMemoryUsage();
-            LOG_TRACE(log, "Read current memory usage {} bytes ({}) from cgroups", memory_usage, ReadableSize(memory_usage));
+            LOG_TRACE(
+                log,
+                "Read current memory usage {} bytes ({}) from cgroups, full available stats: {}",
+                memory_usage,
+                ReadableSize(memory_usage),
+                cgroup_reader->dumpAllStats());
             MemoryTracker::setRSS(memory_usage, 0);
 
             LOG_INFO(log, "Purged jemalloc arenas. Current memory usage is {}", ReadableSize(memory_usage));
@@ -336,6 +337,13 @@ void CgroupsMemoryUsageObserver::runThread()
     }
 }
 
+std::unique_ptr<ICgroupsReader> createCgroupsReader(CgroupsMemoryUsageObserver::CgroupsVersion version, const fs::path & cgroup_path)
+{
+    if (version == CgroupsMemoryUsageObserver::CgroupsVersion::V2)
+        return std::make_unique<CgroupsV2Reader>(cgroup_path);
+    else
+        return std::make_unique<CgroupsV1Reader>(cgroup_path);
+}
 }
 
 #endif

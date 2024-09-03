@@ -4,6 +4,7 @@
 
 #include <TableFunctions/ITableFunction.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
+#include <Core/Settings.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>

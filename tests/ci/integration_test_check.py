@@ -23,10 +23,13 @@ from report import (
     TestResult,
     TestResults,
     read_test_results,
+    FAILURE,
 )
 from stopwatch import Stopwatch
 
 import integration_tests_runner as runner
+from ci_config import CI
+from ci_utils import Utils
 
 
 def get_json_params_dict(
@@ -233,7 +236,23 @@ def main():
         additional_files=additional_logs,
     ).dump(to_file=args.report_to_file if args.report_to_file else None)
 
+    should_block_ci = False
     if state != SUCCESS:
+        should_block_ci = True
+
+    if state == FAILURE and CI.is_required(check_name):
+        failed_cnt = Utils.get_failed_tests_number(description)
+        print(
+            f"Job status is [{state}] with [{failed_cnt}] failed test cases. status description [{description}]"
+        )
+        if (
+            failed_cnt
+            and failed_cnt <= CI.MAX_TOTAL_FAILURES_PER_JOB_BEFORE_BLOCKING_CI
+        ):
+            print(f"Won't block the CI workflow")
+            should_block_ci = False
+
+    if should_block_ci:
         sys.exit(1)
 
 

@@ -90,6 +90,7 @@ namespace ProfileEvents
     extern const Event SelectQueryTimeMicroseconds;
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
+    extern const Event RealTimeMicroseconds;
 }
 
 namespace DB
@@ -398,9 +399,14 @@ void logQueryFinish(
         /// Update performance counters before logging to query_log
         CurrentThread::finalizePerformanceCounters();
 
-        QueryStatusInfo info = process_list_elem->getInfo(true, context->getSettingsRef().log_profile_events);
-        elem.type = QueryLogElementType::QUERY_FINISH;
+        std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+        QueryStatusInfo info = process_list_elem->getInfo(true, true);
+        if (context->getSettingsRef().log_profile_events)
+            profile_counters = info.profile_counters;
+        else
+            profile_counters.swap(info.profile_counters);
 
+        elem.type = QueryLogElementType::QUERY_FINISH;
         addStatusInfoToQueryLogElement(elem, info, query_ast, context);
 
         if (pulling_pipeline)
@@ -419,6 +425,7 @@ void logQueryFinish(
         {
             Progress p;
             p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
+            p.incrementRealTimeMicroseconds((*profile_counters)[ProfileEvents::RealTimeMicroseconds]);
             progress_callback(p);
         }
 
@@ -471,6 +478,8 @@ void logQueryFinish(
                     processor_elem.parent_ids = std::move(parents);
 
                     processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
+                    processor_elem.plan_step_name = processor->getPlanStepName();
+                    processor_elem.plan_step_description = processor->getPlanStepDescription();
                     processor_elem.plan_group = processor->getQueryPlanStepGroup();
 
                     processor_elem.processor_name = processor->getName();
@@ -690,6 +699,12 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
                 if (top_level != value->safeGet<bool>())
                     throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'allow_experimental_analyzer' is changed in the subquery. Top level value: {}", top_level);
             }
+
+            if (auto * value = set_query->changes.tryGet("enable_analyzer"))
+            {
+                if (top_level != value->safeGet<bool>())
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'enable_analyzer' is changed in the subquery. Top level value: {}", top_level);
+            }
         }
 
         for (auto child : node->children)
@@ -780,7 +795,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Verify that AST formatting is consistent:
             /// If you format AST, parse it back, and format it again, you get the same string.
 
-            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true);
+            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(0, true, true, false, false, IdentifierQuotingStyle::Backticks);
 
             /// The query can become more verbose after formatting, so:
             size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
@@ -796,17 +811,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             catch (const Exception & e)
             {
                 if (e.code() == ErrorCodes::SYNTAX_ERROR)
-                    /// Don't print the original query text because it may contain sensitive data.
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting: the query:\n{}\ncannot parse.",
-                        formatted1);
+                        "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
+                        formatted1, std::string_view(begin, end-begin));
                 else
                     throw;
             }
 
             chassert(ast2);
 
-            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true);
+            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(0, true, true, false, false, IdentifierQuotingStyle::Backticks);
 
             if (formatted1 != formatted2)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -1048,14 +1062,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// In case when the client had to retry some mini-INSERTs then they will be properly deduplicated
             /// by the source tables. This functionality is controlled by a setting `async_insert_deduplicate`.
             /// But then they will be glued together into a block and pushed through a chain of Materialized Views if any.
-            /// The process of forming such blocks is not deteministic so each time we retry mini-INSERTs the resulting
+            /// The process of forming such blocks is not deterministic so each time we retry mini-INSERTs the resulting
             /// block may be concatenated differently.
             /// That's why deduplication in dependent Materialized Views doesn't make sense in presence of async INSERTs.
             if (settings.throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert &&
                 settings.deduplicate_blocks_in_dependent_materialized_views)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Deduplication is dependent materialized view cannot work together with async inserts. "\
-                        "Please disable eiher `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
+                        "Deduplication in dependent materialized view cannot work together with async inserts. "\
+                        "Please disable either `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
 
             quota = context->getQuota();
             if (quota)

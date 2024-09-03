@@ -5,47 +5,39 @@
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/Settings.h>
 #include <Databases/IDatabase.h>
 #include <IO/copyData.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/queryToString.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <QueryPipeline/Pipe.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
-#include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
-#include <base/sort.h>
 #include <fmt/core.h>
-#include <Poco/Timestamp.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
-#include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -271,7 +263,7 @@ std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
     return getTotalActiveSizeInRows();
 }
 
-std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr local_context) const
+std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
 {
     auto parts = getVisibleDataPartsVector(local_context);
     return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, parts);
@@ -513,18 +505,18 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
         additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
     }
 
-    Int64 version;
+    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+    Int64 version = increment.get();
+    entry.commit(version);
+    String mutation_id = entry.file_name;
+    if (txn)
+        txn->addMutation(shared_from_this(), mutation_id);
+
+    bool alter_conversions_mutations_updated = updateAlterConversionsMutations(entry.commands, alter_conversions_mutations, /* remove= */ false);
+
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
-        version = increment.get();
-        entry.commit(version);
-        String mutation_id = entry.file_name;
-        if (txn)
-            txn->addMutation(shared_from_this(), mutation_id);
-
-        bool alter_conversions_mutations_updated = updateAlterConversionsMutations(entry.commands, alter_conversions_mutations, /* remove= */ false);
         bool inserted = current_mutations_by_version.try_emplace(version, std::move(entry)).second;
         if (!inserted)
         {
@@ -535,9 +527,9 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
             }
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
         }
-
-        LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
     }
+
+    LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
     background_operations_assignee.trigger();
     return version;
 }
@@ -656,12 +648,13 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
     {
         /// It's important to serialize order of mutations with alter queries because
         /// they can depend on each other.
-        if (auto alter_lock = tryLockForAlter(query_context->getSettings().lock_acquire_timeout); alter_lock == std::nullopt)
+        if (auto alter_lock = tryLockForAlter(query_context->getSettingsRef().lock_acquire_timeout); alter_lock == std::nullopt)
         {
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                            "Cannot start mutation in {}ms because some metadata-changing ALTER (MODIFY|RENAME|ADD|DROP) is currently executing. "
-                            "You can change this timeout with `lock_acquire_timeout` setting",
-                            query_context->getSettings().lock_acquire_timeout.totalMilliseconds());
+            throw Exception(
+                ErrorCodes::TIMEOUT_EXCEEDED,
+                "Cannot start mutation in {}ms because some metadata-changing ALTER (MODIFY|RENAME|ADD|DROP) is currently executing. "
+                "You can change this timeout with `lock_acquire_timeout` setting",
+                query_context->getSettingsRef().lock_acquire_timeout.totalMilliseconds());
         }
         version = startMutation(commands, query_context);
     }
@@ -902,7 +895,7 @@ void StorageMergeTree::loadDeduplicationLog()
     std::string path = fs::path(relative_data_path) / "deduplication_logs";
 
     /// If either there is already a deduplication log, or we will be able to use it.
-    if (disk->exists(path) || !disk->isReadOnly())
+    if (!disk->isReadOnly() || disk->exists(path))
     {
         deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, settings->non_replicated_deduplication_window, format_version, disk);
         deduplication_log->load();
@@ -1194,7 +1187,6 @@ bool StorageMergeTree::merge(
     task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
 
     executeHere(task);
-
     return true;
 }
 
@@ -1490,7 +1482,6 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         scheduled = true;
     }
 
-
     return scheduled;
 }
 
@@ -1577,10 +1568,12 @@ bool StorageMergeTree::optimize(
 {
     assertNotReadonly();
 
-    if (deduplicate && getInMemoryMetadataPtr()->hasProjections())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+    if (deduplicate && getInMemoryMetadataPtr()->hasProjections()
+        && getSettings()->deduplicate_merge_projection_mode == DeduplicateMergeProjectionMode::THROW)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
-                    "User should drop all the projections manually before running the query",
+                    "User should drop all the projections manually before running the query, "
+                    "or consider drop or rebuild option of deduplicate_merge_projection_mode",
                     getStorageID().getTableName());
 
     if (deduplicate)
@@ -1597,9 +1590,7 @@ bool StorageMergeTree::optimize(
     if (!partition && final)
     {
         if (cleanup && this->merging_params.mode != MergingParams::Mode::Replacing)
-        {
             throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, "Cannot OPTIMIZE with CLEANUP table: only ReplacingMergeTree can be CLEANUP");
-        }
 
         if (cleanup && !getSettings()->allow_experimental_replacing_merge_with_cleanup)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
@@ -1613,15 +1604,15 @@ bool StorageMergeTree::optimize(
         for (const String & partition_id : partition_ids)
         {
             if (!merge(
-                    true,
-                    partition_id,
-                    true,
-                    deduplicate,
-                    deduplicate_by_columns,
-                    cleanup,
-                    txn,
-                    disable_reason,
-                    local_context->getSettingsRef().optimize_skip_merged_partitions))
+                true,
+                partition_id,
+                true,
+                deduplicate,
+                deduplicate_by_columns,
+                cleanup,
+                txn,
+                disable_reason,
+                local_context->getSettingsRef().optimize_skip_merged_partitions))
             {
                 constexpr auto message = "Cannot OPTIMIZE table: {}";
                 if (disable_reason.text.empty())
@@ -1641,15 +1632,15 @@ bool StorageMergeTree::optimize(
             partition_id = getPartitionIDFromQuery(partition, local_context);
 
         if (!merge(
-                true,
-                partition_id,
-                final,
-                deduplicate,
-                deduplicate_by_columns,
-                cleanup,
-                txn,
-                disable_reason,
-                local_context->getSettingsRef().optimize_skip_merged_partitions))
+            true,
+            partition_id,
+            final,
+            deduplicate,
+            deduplicate_by_columns,
+            cleanup,
+            txn,
+            disable_reason,
+            local_context->getSettingsRef().optimize_skip_merged_partitions))
         {
             constexpr auto message = "Cannot OPTIMIZE table: {}";
             if (disable_reason.text.empty())

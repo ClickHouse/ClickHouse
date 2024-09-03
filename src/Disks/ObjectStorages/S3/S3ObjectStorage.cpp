@@ -15,6 +15,7 @@
 #include <IO/S3/copyS3File.h>
 #include <Interpreters/Context.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Core/Settings.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
 #include <Disks/ObjectStorages/S3/diskSettings.h>
@@ -62,7 +63,7 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
     {
         const auto & err = response.GetError();
         throw S3Exception(
-            fmt::format("{} (Code: {}, s3 exception: {})",
+            fmt::format("{} (Code: {}, S3 exception: '{}')",
                         err.GetMessage(), static_cast<size_t>(err.GetErrorType()), err.GetExceptionName()),
             err.GetErrorType());
     }
@@ -145,7 +146,7 @@ private:
             auto objects = outcome.GetResult().GetContents();
             for (const auto & object : objects)
             {
-                ObjectMetadata metadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), {}};
+                ObjectMetadata metadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), object.GetETag(), {}};
                 batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
             }
 
@@ -304,7 +305,8 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
 
     S3::ListObjectsV2Request request;
     request.SetBucket(uri.bucket);
-    request.SetPrefix(path);
+    if (path != "/")
+        request.SetPrefix(path);
     if (max_keys)
         request.SetMaxKeys(static_cast<int>(max_keys));
     else
@@ -331,6 +333,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
                 ObjectMetadata{
                     static_cast<uint64_t>(object.GetSize()),
                     Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
+                    object.GetETag(),
                     {}}));
 
         if (max_keys)
@@ -478,6 +481,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) cons
     ObjectMetadata result;
     result.size_bytes = object_info.size;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
+    result.etag = object_info.etag;
     result.attributes = object_info.metadata;
 
     return result;
@@ -623,12 +627,12 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
         std::move(new_client), std::move(new_s3_settings), new_uri, s3_capabilities, key_generator, disk_name);
 }
 
-ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path) const
+ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const
 {
     if (!key_generator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
 
-    return key_generator->generate(path, /* is_directory */ false);
+    return key_generator->generate(path, /* is_directory */ false, key_prefix);
 }
 
 std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()

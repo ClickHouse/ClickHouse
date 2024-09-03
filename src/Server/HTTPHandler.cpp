@@ -4,6 +4,8 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ExternalTable.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Disks/StoragePolicy.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
@@ -264,7 +266,6 @@ void HTTPHandler::processQuery(
         std::make_shared<WriteBufferFromHTTPServerResponse>(
             response,
             request.getMethod() == HTTPRequest::HTTP_HEAD,
-            context->getServerSettings().keep_alive_timeout.totalSeconds(),
             write_event);
     used_output.out = used_output.out_holder;
     used_output.out_maybe_compressed = used_output.out_holder;
@@ -556,7 +557,7 @@ try
     if (!used_output.out_holder && !used_output.exception_is_written)
     {
         /// If nothing was sent yet and we don't even know if we must compress the response.
-        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT).writeln(s);
+        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD).writeln(s);
     }
     else if (used_output.out_maybe_compressed)
     {

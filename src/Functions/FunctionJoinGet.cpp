@@ -1,5 +1,6 @@
 #include <Columns/ColumnString.h>
 #include <Core/Block.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>

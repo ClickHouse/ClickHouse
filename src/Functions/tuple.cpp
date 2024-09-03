@@ -1,7 +1,14 @@
 #include <Functions/tuple.h>
 
+#include <Core/Settings.h>
+
 namespace DB
 {
+
+FunctionPtr FunctionTuple::create(DB::ContextPtr context)
+{
+    return std::make_shared<FunctionTuple>(context->getSettingsRef().enable_named_columns_in_function_tuple);
+}
 
 REGISTER_FUNCTION(Tuple)
 {

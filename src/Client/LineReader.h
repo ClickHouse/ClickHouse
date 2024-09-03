@@ -46,8 +46,7 @@ public:
         Patterns delimiters,
         std::istream & input_stream_ = std::cin,
         std::ostream & output_stream_ = std::cout,
-        int in_fd_ = STDIN_FILENO
-    );
+        int in_fd_ = STDIN_FILENO);
 
     virtual ~LineReader() = default;
 

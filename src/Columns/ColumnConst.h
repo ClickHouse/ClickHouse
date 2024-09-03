@@ -123,7 +123,7 @@ public:
         return data->isNullAt(0);
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
 #else
     void doInsertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
@@ -151,7 +151,7 @@ public:
         ++s;
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn &, size_t) override
 #else
     void doInsertFrom(const IColumn &, size_t) override
@@ -160,7 +160,7 @@ public:
         ++s;
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertManyFrom(const IColumn & /*src*/, size_t /* position */, size_t length) override { s += length; }
 #else
     void doInsertManyFrom(const IColumn & /*src*/, size_t /* position */, size_t length) override { s += length; }
@@ -204,7 +204,7 @@ public:
         data->updateHashWithValue(0, hash);
     }
 
-    void updateWeakHash32(WeakHash32 & hash) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override
     {
@@ -237,7 +237,7 @@ public:
         return data->allocatedBytes() + sizeof(s);
     }
 
-#if !defined(ABORT_ON_LOGICAL_ERROR)
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
 #else
     int doCompareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override

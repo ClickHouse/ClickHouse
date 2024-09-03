@@ -17,6 +17,8 @@ src_paths = ["src", "tests/ci", "tests/sqllogic"]
 [tool.pylint.'MESSAGES CONTROL']
           # pytest.mark.parametrize is not callable (not-callable)
 disable = '''
+          pointless-string-statement,
+          line-too-long,
           missing-docstring,
           too-few-public-methods,
           invalid-name,
@@ -36,6 +38,9 @@ disable = '''
           bare-except,
           no-else-return,
           global-statement,
+          f-string-without-interpolation,
+          consider-using-with,
+          use-maxsplit-arg,
           '''
 
 [tool.pylint.SIMILARITIES]

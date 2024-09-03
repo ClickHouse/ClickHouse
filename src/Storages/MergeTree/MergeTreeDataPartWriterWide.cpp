@@ -7,6 +7,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Common/logger_useful.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace DB
 {
@@ -131,6 +132,10 @@ void MergeTreeDataPartWriterWide::addStreams(
     {
         assert(!substream_path.empty());
 
+        /// Don't create streams for ephemeral subcolumns that don't store any real data.
+        if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+            return;
+
         auto full_stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
         String stream_name;
@@ -204,6 +209,10 @@ ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGett
 {
     return [&, this] (const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
     {
+        /// Skip ephemeral subcolumns that don't store any real data.
+        if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+            return nullptr;
+
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
         auto stream_name = getStreamName(column, substream_path);
 
@@ -366,6 +375,10 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
         min_compress_block_size = settings.min_compress_block_size;
     getSerialization(name_and_type.name)->enumerateStreams([&] (const ISerialization::SubstreamPath & substream_path)
     {
+       /// Skip ephemeral subcolumns that don't store any real data.
+       if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+           return;
+
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
         auto stream_name = getStreamName(name_and_type, substream_path);
 
@@ -404,6 +417,10 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
     /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
     serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & substream_path)
     {
+        /// Skip ephemeral subcolumns that don't store any real data.
+        if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+            return;
+
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
         auto stream_name = getStreamName(name_and_type, substream_path);
 
@@ -560,10 +577,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 
         if (index_granularity_rows != index_granularity.getMarkRows(mark_num))
         {
-            /// With fixed granularity we can have last mark with less rows than granularity
-            const bool is_last_mark = (mark_num + 1 == index_granularity.getMarksCount());
-            if (!index_granularity_info.fixed_index_granularity || !is_last_mark)
-                throw Exception(
+            throw Exception(
                             ErrorCodes::LOGICAL_ERROR,
                             "Incorrect mark rows for part {} for mark #{}"
                             " (compressed offset {}, decompressed offset {}), in-memory {}, on disk {}, total marks {}",
@@ -655,7 +669,7 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
             if (!serialization_states.empty())
             {
                 serialize_settings.getter = createStreamGetter(*it, written_offset_columns ? *written_offset_columns : offset_columns);
-                serialize_settings.dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::DynamicStatisticsMode::SUFFIX;
+                serialize_settings.object_and_dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::SUFFIX;
                 getSerialization(it->name)->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[it->name]);
             }
 
@@ -827,14 +841,7 @@ void MergeTreeDataPartWriterWide::adjustLastMarkIfNeedAndFlushToDisk(size_t new_
             /// Without offset
             rows_written_in_last_mark = 0;
         }
-
-        if (compute_granularity)
-        {
-            index_granularity.popMark();
-            index_granularity.appendMark(new_rows_in_last_mark);
-        }
     }
-
 }
 
 }

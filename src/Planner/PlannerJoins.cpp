@@ -43,6 +43,7 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 
+#include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 
 namespace DB
@@ -179,13 +180,13 @@ std::set<JoinTableSide> extractJoinTableSidesFromExpression(//const ActionsDAG::
 }
 
 const ActionsDAG::Node * appendExpression(
-    ActionsDAGPtr & dag,
+    ActionsDAG & dag,
     const QueryTreeNodePtr & expression,
     const PlannerContextPtr & planner_context,
     const JoinNode & join_node)
 {
     PlannerActionsVisitor join_expression_visitor(planner_context);
-    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(*dag, expression);
+    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(dag, expression);
     if (join_expression_dag_node_raw_pointers.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "JOIN {} ON clause contains multiple expressions",
@@ -195,9 +196,9 @@ const ActionsDAG::Node * appendExpression(
 }
 
 void buildJoinClause(
-    ActionsDAGPtr & left_dag,
-    ActionsDAGPtr & right_dag,
-    ActionsDAGPtr & mixed_dag,
+    ActionsDAG & left_dag,
+    ActionsDAG & right_dag,
+    ActionsDAG & mixed_dag,
     const PlannerContextPtr & planner_context,
     const QueryTreeNodePtr & join_expression,
     const TableExpressionSet & left_table_expressions,
@@ -378,8 +379,8 @@ JoinClausesAndActions buildJoinClausesAndActions(
     const JoinNode & join_node,
     const PlannerContextPtr & planner_context)
 {
-    ActionsDAGPtr left_join_actions = std::make_shared<ActionsDAG>(left_table_expression_columns);
-    ActionsDAGPtr right_join_actions = std::make_shared<ActionsDAG>(right_table_expression_columns);
+    ActionsDAG left_join_actions(left_table_expression_columns);
+    ActionsDAG right_join_actions(right_table_expression_columns);
     ColumnsWithTypeAndName mixed_table_expression_columns;
     for (const auto & left_column : left_table_expression_columns)
     {
@@ -389,7 +390,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
     {
         mixed_table_expression_columns.push_back(right_column);
     }
-    ActionsDAGPtr mixed_join_actions = std::make_shared<ActionsDAG>(mixed_table_expression_columns);
+    ActionsDAG mixed_join_actions(mixed_table_expression_columns);
 
     /** It is possible to have constant value in JOIN ON section, that we need to ignore during DAG construction.
       * If we do not ignore it, this function will be replaced by underlying constant.
@@ -493,6 +494,12 @@ JoinClausesAndActions buildJoinClausesAndActions(
             necessary_names.push_back(name);
     };
 
+    bool is_join_with_special_storage = false;
+    if (const auto * right_table_node = join_node.getRightTableExpression()->as<TableNode>())
+    {
+        is_join_with_special_storage = dynamic_cast<const StorageJoin *>(right_table_node->getStorage().get());
+    }
+
     for (auto & join_clause : result.join_clauses)
     {
         const auto & left_filter_condition_nodes = join_clause.getLeftFilterConditionNodes();
@@ -500,12 +507,12 @@ JoinClausesAndActions buildJoinClausesAndActions(
         {
             const ActionsDAG::Node * dag_filter_condition_node = nullptr;
             if (left_filter_condition_nodes.size() > 1)
-                dag_filter_condition_node = &left_join_actions->addFunction(and_function, left_filter_condition_nodes, {});
+                dag_filter_condition_node = &left_join_actions.addFunction(and_function, left_filter_condition_nodes, {});
             else
                 dag_filter_condition_node = left_filter_condition_nodes[0];
 
             join_clause.getLeftFilterConditionNodes() = {dag_filter_condition_node};
-            left_join_actions->addOrReplaceInOutputs(*dag_filter_condition_node);
+            left_join_actions.addOrReplaceInOutputs(*dag_filter_condition_node);
 
             add_necessary_name_if_needed(JoinTableSide::Left, dag_filter_condition_node->result_name);
         }
@@ -516,12 +523,12 @@ JoinClausesAndActions buildJoinClausesAndActions(
             const ActionsDAG::Node * dag_filter_condition_node = nullptr;
 
             if (right_filter_condition_nodes.size() > 1)
-                dag_filter_condition_node = &right_join_actions->addFunction(and_function, right_filter_condition_nodes, {});
+                dag_filter_condition_node = &right_join_actions.addFunction(and_function, right_filter_condition_nodes, {});
             else
                 dag_filter_condition_node = right_filter_condition_nodes[0];
 
             join_clause.getRightFilterConditionNodes() = {dag_filter_condition_node};
-            right_join_actions->addOrReplaceInOutputs(*dag_filter_condition_node);
+            right_join_actions.addOrReplaceInOutputs(*dag_filter_condition_node);
 
             add_necessary_name_if_needed(JoinTableSide::Right, dag_filter_condition_node->result_name);
         }
@@ -558,10 +565,10 @@ JoinClausesAndActions buildJoinClausesAndActions(
                 }
 
                 if (!left_key_node->result_type->equals(*common_type))
-                    left_key_node = &left_join_actions->addCast(*left_key_node, common_type, {});
+                    left_key_node = &left_join_actions.addCast(*left_key_node, common_type, {});
 
-                if (!right_key_node->result_type->equals(*common_type))
-                    right_key_node = &right_join_actions->addCast(*right_key_node, common_type, {});
+                if (!is_join_with_special_storage && !right_key_node->result_type->equals(*common_type))
+                    right_key_node = &right_join_actions.addCast(*right_key_node, common_type, {});
             }
 
             if (join_clause.isNullsafeCompareKey(i) && left_key_node->result_type->isNullable() && right_key_node->result_type->isNullable())
@@ -578,24 +585,24 @@ JoinClausesAndActions buildJoinClausesAndActions(
                   *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
                   */
                 auto wrap_nullsafe_function = FunctionFactory::instance().get("tuple", planner_context->getQueryContext());
-                left_key_node = &left_join_actions->addFunction(wrap_nullsafe_function, {left_key_node}, {});
-                right_key_node = &right_join_actions->addFunction(wrap_nullsafe_function, {right_key_node}, {});
+                left_key_node = &left_join_actions.addFunction(wrap_nullsafe_function, {left_key_node}, {});
+                right_key_node = &right_join_actions.addFunction(wrap_nullsafe_function, {right_key_node}, {});
             }
 
-            left_join_actions->addOrReplaceInOutputs(*left_key_node);
-            right_join_actions->addOrReplaceInOutputs(*right_key_node);
+            left_join_actions.addOrReplaceInOutputs(*left_key_node);
+            right_join_actions.addOrReplaceInOutputs(*right_key_node);
 
             add_necessary_name_if_needed(JoinTableSide::Left, left_key_node->result_name);
             add_necessary_name_if_needed(JoinTableSide::Right, right_key_node->result_name);
         }
     }
 
-    result.left_join_expressions_actions = left_join_actions->clone();
+    result.left_join_expressions_actions = left_join_actions.clone();
     result.left_join_tmp_expression_actions = std::move(left_join_actions);
-    result.left_join_expressions_actions->removeUnusedActions(join_left_actions_names);
-    result.right_join_expressions_actions = right_join_actions->clone();
+    result.left_join_expressions_actions.removeUnusedActions(join_left_actions_names);
+    result.right_join_expressions_actions = right_join_actions.clone();
     result.right_join_tmp_expression_actions = std::move(right_join_actions);
-    result.right_join_expressions_actions->removeUnusedActions(join_right_actions_names);
+    result.right_join_expressions_actions.removeUnusedActions(join_right_actions_names);
 
     if (is_inequal_join)
     {
@@ -603,24 +610,24 @@ JoinClausesAndActions buildJoinClausesAndActions(
         /// So, for each column, we recalculate the value of the whole expression from JOIN ON to check if rows should be joined.
         if (result.join_clauses.size() > 1)
         {
-            auto mixed_join_expressions_actions = std::make_shared<ActionsDAG>(mixed_table_expression_columns);
+            ActionsDAG mixed_join_expressions_actions(mixed_table_expression_columns);
             PlannerActionsVisitor join_expression_visitor(planner_context);
-            auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(*mixed_join_expressions_actions, join_expression);
+            auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(mixed_join_expressions_actions, join_expression);
             if (join_expression_dag_node_raw_pointers.size() != 1)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "JOIN {} ON clause contains multiple expressions", join_node.formatASTForErrorMessage());
 
-            mixed_join_expressions_actions->addOrReplaceInOutputs(*join_expression_dag_node_raw_pointers[0]);
+            mixed_join_expressions_actions.addOrReplaceInOutputs(*join_expression_dag_node_raw_pointers[0]);
             Names required_names{join_expression_dag_node_raw_pointers[0]->result_name};
-            mixed_join_expressions_actions->removeUnusedActions(required_names);
-            result.mixed_join_expressions_actions = mixed_join_expressions_actions;
+            mixed_join_expressions_actions.removeUnusedActions(required_names);
+            result.mixed_join_expressions_actions = std::move(mixed_join_expressions_actions);
         }
         else
         {
             const auto & join_clause = result.join_clauses.front();
             const auto & mixed_filter_condition_nodes = join_clause.getMixedFilterConditionNodes();
             auto mixed_join_expressions_actions = ActionsDAG::buildFilterActionsDAG(mixed_filter_condition_nodes, {}, true);
-            result.mixed_join_expressions_actions = mixed_join_expressions_actions;
+            result.mixed_join_expressions_actions = std::move(mixed_join_expressions_actions);
         }
         auto outputs = result.mixed_join_expressions_actions->getOutputs();
         if (outputs.size() != 1)
@@ -812,7 +819,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
                 query_context->getServerSettings().max_entries_for_hash_table_stats,
                 settings.max_size_to_preallocate_for_joins};
             return std::make_shared<ConcurrentHashJoin>(
-                query_context, table_join, query_context->getSettings().max_threads, right_table_expression_header, params);
+                query_context, table_join, query_context->getSettingsRef().max_threads, right_table_expression_header, params);
         }
 
         return std::make_shared<HashJoin>(table_join, right_table_expression_header, query_context->getSettingsRef().join_any_take_last_row);

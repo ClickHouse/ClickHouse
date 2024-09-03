@@ -10,6 +10,7 @@
 #include <Common/assert_cast.h>
 
 #include <Core/AccurateComparison.h>
+#include <Core/Settings.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -124,7 +125,7 @@ public:
             }
 
             String error;
-            for (const auto i : collections::range(0, input_rows_count))
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (!col_json_const)
                 {
@@ -242,7 +243,7 @@ private:
                 }
                 case MoveType::Index:
                 {
-                    Int64 index = (*arguments[j + 1].column)[row].get<Int64>();
+                    Int64 index = (*arguments[j + 1].column)[row].safeGet<Int64>();
                     if (!moveToElementByIndex<JSONParser>(res_element, static_cast<int>(index), key))
                         return false;
                     break;
@@ -313,7 +314,7 @@ private:
     static size_t calculateMaxSize(const ColumnString::Offsets & offsets)
     {
         size_t max_size = 0;
-        for (const auto i : collections::range(0, offsets.size()))
+        for (size_t i = 0; i < offsets.size(); ++i)
         {
             size_t size = offsets[i] - offsets[i - 1];
             max_size = std::max(max_size, size);
@@ -738,7 +739,8 @@ public:
     {
         NumberType value;
 
-        tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, convert_bool_to_integer, error);
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, convert_bool_to_integer, /*allow_type_conversion=*/true, error))
+            return false;
         auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
         col_vec.insertValue(value);
         return true;

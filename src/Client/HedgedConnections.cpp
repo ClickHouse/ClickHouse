@@ -3,6 +3,7 @@
 
 #include <Client/HedgedConnections.h>
 #include <Common/ProfileEvents.h>
+#include <Core/Settings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 

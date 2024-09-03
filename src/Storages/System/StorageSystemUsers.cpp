@@ -18,8 +18,12 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/JSONString.h>
-#include "base/types.h"
+
 #include <Access/Common/SSLCertificateSubjects.h>
+
+#include <base/types.h>
+#include <base/range.h>
+
 #include <sstream>
 
 
