@@ -28,14 +28,14 @@ class PartitionManager:
 
         self._add_rule(
             {
-                "source": instance.ipv4_address,
+                "source": instance.ip_address,
                 "destination_port": 2181,
                 "action": action,
             }
         )
         self._add_rule(
             {
-                "destination": instance.ipv4_address,
+                "destination": instance.ip_address,
                 "source_port": 2181,
                 "action": action,
             }
@@ -68,14 +68,14 @@ class PartitionManager:
 
         self._delete_rule(
             {
-                "source": instance.ipv4_address,
+                "source": instance.ip_address,
                 "destination_port": 2181,
                 "action": action,
             }
         )
         self._delete_rule(
             {
-                "destination": instance.ipv4_address,
+                "destination": instance.ip_address,
                 "source_port": 2181,
                 "action": action,
             }
