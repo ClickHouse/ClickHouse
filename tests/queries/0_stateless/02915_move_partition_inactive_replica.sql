@@ -10,11 +10,11 @@ drop table if exists shard_1.from_1;
 drop table if exists shard_0.to;
 drop table if exists shard_1.to;
 
-create table shard_0.from_0 (x UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/from_0_' || currentDatabase(), '0') order by x settings old_parts_lifetime=1, max_cleanup_delay_period=1, cleanup_delay_period=1, min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization=0, vertical_merge_algorithm_min_rows_to_activate=612278, vertical_merge_algorithm_min_columns_to_activate=1, allow_vertical_merges_from_compact_to_wide_parts=1;
-create table shard_1.from_0 (x UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/from_0_' || currentDatabase(), '1') order by x settings old_parts_lifetime=1, max_cleanup_delay_period=1, cleanup_delay_period=1, min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization=0, vertical_merge_algorithm_min_rows_to_activate=612278, vertical_merge_algorithm_min_columns_to_activate=1, allow_vertical_merges_from_compact_to_wide_parts=1;
+create table shard_0.from_0 (x UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/from_0_' || currentDatabase(), '0') order by x settings old_parts_lifetime=1, max_cleanup_delay_period=1, cleanup_delay_period=1;
+create table shard_1.from_0 (x UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/from_0_' || currentDatabase(), '1') order by x settings old_parts_lifetime=1, max_cleanup_delay_period=1, cleanup_delay_period=1;
 
-create table shard_0.from_1 (x UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/from_1_' || currentDatabase(), '0') order by x settings old_parts_lifetime=1, max_cleanup_delay_period=1, cleanup_delay_period=1, min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization=0, vertical_merge_algorithm_min_rows_to_activate=612278, vertical_merge_algorithm_min_columns_to_activate=1, allow_vertical_merges_from_compact_to_wide_parts=1;
-create table shard_1.from_1 (x UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/from_1_' || currentDatabase(), '1') order by x settings old_parts_lifetime=1, max_cleanup_delay_period=1, cleanup_delay_period=1, min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization=0, vertical_merge_algorithm_min_rows_to_activate=612278, vertical_merge_algorithm_min_columns_to_activate=1, allow_vertical_merges_from_compact_to_wide_parts=1;
+create table shard_0.from_1 (x UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/from_1_' || currentDatabase(), '0') order by x settings old_parts_lifetime=1, max_cleanup_delay_period=1, cleanup_delay_period=1;
+create table shard_1.from_1 (x UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/from_1_' || currentDatabase(), '1') order by x settings old_parts_lifetime=1, max_cleanup_delay_period=1, cleanup_delay_period=1;
 
 insert into shard_0.from_0 select number from numbers(10);
 insert into shard_0.from_0 select number + 10 from numbers(10);
