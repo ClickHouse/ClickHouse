@@ -18,6 +18,7 @@
 #include "Poco/NumberParser.h"
 #include "Poco/NumberFormatter.h"
 #include "Poco/String.h"
+#include "Poco/Net/IPAddressImpl.h"
 
 
 using Poco::Mutex;
@@ -575,79 +576,25 @@ void AbstractConfiguration::checkHostValidity(const std::string& value)
 
 bool AbstractConfiguration::isValidIPv4Address(const std::string& value)
 {
-	int octet = 0;
-	int periodsCount = 0;
-	int octetLength = 0;
+	using Poco::Net::Impl::IPv4AddressImpl;
+	IPv4AddressImpl empty4 = IPv4AddressImpl();
 
-	for (char ch : value)
-	{
-		if (ch == '.')
-		{
-			if (octetLength == 0 || octet > 255 || octet < 0)
-				return false;
-			++periodsCount;
-			octet = 0;
-			octetLength = 0;
-		}
-		else if (isdigit(ch))
-		{
-			octet = octet * 10 + (ch - '0');
-			if (octet > 255)
-				return false;
-			++octetLength;
-		}
-		else
-		{
-			return false;
-		}
-	}
-	return periodsCount == 3 && octetLength > 0 && octet >= 0 && octet <= 255;
+	IPv4AddressImpl ipAddress = IPv4AddressImpl::parse(value);
+	return ipAddress != empty4 || value == "0.0.0.0";
 }
 
 
 bool AbstractConfiguration::isValidIPv6Address(const std::string& value)
 {
-	char oldChar = 0;
-	char oldChar2 = 0;
-	int hextetLength = 0;
-	int colonsCount = 0;
-	bool doubleColon = false;
-	if (value.length() > 1 && value[0] == ':' && value[1] != ':')
-		return false;
+#if defined(POCO_HAVE_IPv6)
+	using Poco::Net::Impl::IPv6AddressImpl;
+	IPv6AddressImpl empty6 = IPv6AddressImpl();
 
-	for (char ch : value)
-	{
-		if (ch == ':')
-		{
-			if (oldChar == ':')
-			{
-				if (doubleColon)
-					return false;
-				doubleColon = true;
-			}
-			else
-			{
-				++colonsCount;
-				hextetLength = 0;
-			}
-		}
-		else if (isdigit(ch) || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F'))
-		{
-			++hextetLength;
-			if (hextetLength > 4)
-				return false;
-		}
-		else
-		{
-			return false;
-		}
-		oldChar2 = oldChar;
-		oldChar = ch;
-	}
-	if (oldChar == ':' && oldChar2 == ':')
-		return colonsCount <= 7;
-	else
-		return hextetLength > 0 && ((doubleColon && colonsCount <= 7) || colonsCount == 7);
+	IPv6AddressImpl ipAddress = IPv6AddressImpl::parse(value);
+	return ipAddress != empty6 || value == "::";
+#else
+	return false;
+#endif
 }
 
 

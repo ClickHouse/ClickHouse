@@ -363,16 +363,13 @@ namespace Util
         std::string uncheckedExpand(const std::string & value) const;
 
         static bool isValidIPv4Address(const std::string & value);
-        /// A string value is considered to be a valid IPv4 address if it matches
-        /// "x1.x2.x3.x4", where xi - integer in range 0..255 and may have leading zeroes
+        /// IPv4 address considered valid if it is "0.0.0.0" or one of those,
+        /// defined by inet_aton() or inet_addr()
 
         static bool isValidIPv6Address(const std::string & value);
-        /// A string value is considered to be a valid IPv6 address if it matches
-        /// "x1:x2:x3:x4:x5:x6:x7:x8", where xi is hexadecimal integer and consist of 4
-        /// characters or less (but at least 1), xi may have leading zeroes. 
-        /// Letters in hexadecimal representation can be in upper case or lower case.
-        /// One or more consecutive hextets of zeroes can be replaced with "::", but
-        /// "::" can appear only once in a valid IPv6 address.
+        /// IPv6 address considered valid if it is "::" or one of those,
+        /// defined by inet_pton() with AF_INET6 flag
+        /// (in this case it may have scope id and may be surrounded by '[', ']')
 
         static bool isValidDomainName(const std::string & value);
         /// <domain> ::= <subdomain> [ "." ]
