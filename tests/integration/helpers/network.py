@@ -269,7 +269,7 @@ class _NetworkManager:
             for i in range(1000):
                 iptables_iter = i
                 # when rules will be empty, it will return error
-                res = subprocess.run(f"{iptables}--wait -D DOCKER-USER 1", shell=True)
+                res = subprocess.run(f"{iptables} --wait -D DOCKER-USER 1", shell=True)
 
                 if res.returncode != 0:
                     logging.info(
