@@ -59,10 +59,7 @@ void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & me
 
 }
 
-/// validate validates the database engine that's specified in the create query for
-/// engine arguments, settings and table overrides.
-void validate(const ASTCreateQuery & create_query)
-
+void DatabaseFactory::validate(const ASTCreateQuery & create_query) const
 {
     auto * storage = create_query.storage;
 
