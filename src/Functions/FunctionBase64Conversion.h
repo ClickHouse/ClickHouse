@@ -128,28 +128,80 @@ struct Base64Decode
         return ((string_length - string_count) / 4 + string_count) * 3 + string_count;
     }
 
+    static inline size_t find_garbage (const char *p, const size_t avail)
+    {
+        // Use a lookup table to distinguish garbage from non-garbage.
+        static constexpr std::array<char, 256> lut = [] {
+            std::array<char, 256> temp{};
+            const char indices[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            for (char c : indices) {
+                temp[static_cast<std::size_t>(c)] = 1;
+            }
+            temp[static_cast<std::size_t>('"')] = 1;
+            return temp;
+        }();
+
+        for (size_t len = 0; len < avail; len++) {
+            if (lut[static_cast<unsigned char>(p[len])] == 0)
+                return len;
+        }
+
+        return avail;
+    }
+
     static size_t perform(std::string_view src, UInt8 * dst)
     {
-        int rc;
-        size_t outlen = 0;
         if constexpr (variant == Base64Variant::URL)
         {
+            size_t outlen = 0;
             std::string src_padded = preprocessBase64URL(src);
-            rc = base64_decode(src_padded.data(), src_padded.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+            base64_decode(src_padded.data(), src_padded.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+
+            return outlen;
         }
         else
         {
-            rc = base64_decode(src.data(), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+	        size_t ototal = 0;
+            size_t outlen =0;
+
+            const char * start = src.data();
+            size_t avail = src.size();
+            char * outbuf = reinterpret_cast<char *>(dst);
+
+	        struct base64_state state;
+            base64_stream_decode_init(&state, 0);
+            while (avail > 0)
+            {
+                size_t len = find_garbage(start, avail);
+                // Ignore empty chunks.
+                if (len == 0)
+                {
+                    start++;
+                    avail--;
+                    continue;
+                }
+                // Feed the whole string to the stream reader:
+                if (0 == base64_stream_decode(&state, start, len, outbuf, &outlen))
+                {
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Failed to {} input '{}'",
+                        name,
+                        String(reinterpret_cast<const char *>(src.data()), src.size()));
+                }
+                // Update the output buffer pointer and total size.
+                outbuf += outlen;
+                ototal += outlen;
+                // Bail out if the whole string has been consumed.
+                if (len == avail)
+                    break;
+                // Move the start pointer past the newline.
+                start += len + 1;
+                avail -= len + 1;
+            }
+
+            return ototal;
         }
-
-        if (rc != 1)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Failed to {} input '{}'",
-                name,
-                String(reinterpret_cast<const char *>(src.data()), src.size()));
-
-        return outlen;
     }
 };
 
