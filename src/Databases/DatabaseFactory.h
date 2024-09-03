@@ -64,7 +64,7 @@ public:
 
     void registerDatabase(const std::string & name, CreatorFn creator_fn, EngineFeatures features = EngineFeatures{
         supports_arguments = false,
-        supports_parameters = false,
+        supports_settings = false,
         supports_table_overrides = false,
     });
 
