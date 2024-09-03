@@ -65,7 +65,7 @@ public:
     /// Argument input_stream would be the second input (from projection).
     std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const DataStream & input_stream) const;
 
-    static ActionsDAG makeCreatingMissingKeysForGroupingSetDAG(
+    static ActionsDAGPtr makeCreatingMissingKeysForGroupingSetDAG(
         const Block & in_header,
         const Block & out_header,
         const GroupingSetsParamsList & grouping_sets_params,
