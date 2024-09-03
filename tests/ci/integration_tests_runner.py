@@ -833,11 +833,11 @@ class ClickhouseIntegrationTestsRunner:
                     )
                     break
 
-        if group_counters["FAILED"]:
+        if counters["FAILED"]:
             logging.info("Found failed tests: %s", " ".join(counters["FAILED"]))
             description_prefix = "Failed tests found: "
             result_state = "failure"
-        if group_counters["ERROR"]:
+        if counters["ERROR"]:
             description_prefix = "Failed tests found: "
             logging.info("Found error tests: %s", " ".join(counters["ERROR"]))
             # NOTE "error" result state will restart the whole test task,
