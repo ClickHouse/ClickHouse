@@ -108,6 +108,7 @@ ORDER BY x ASC
 LIMIT 4
 SETTINGS max_block_size = 8192,
 read_in_order_two_level_merge_threshold = 5, --avoid preliminary merge
+read_in_order_use_buffering = false, --avoid buffer
 max_threads = 1,
 optimize_read_in_order = 1,
 log_comment = 'no preliminary merge, with filter';
