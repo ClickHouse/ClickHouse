@@ -6,6 +6,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
+#include <Parsers/ASTCreateResourceQuery.h>
 
 namespace DB
 {
@@ -23,9 +24,16 @@ ASTPtr normalizeCreateWorkloadEntityQuery(const IAST & create_query, const Conte
 {
     UNUSED(context);
     auto ptr = create_query.clone();
-    auto & res = typeid_cast<ASTCreateWorkloadQuery &>(*ptr); // TODO(serxa): we should also check for ASTCreateResourceQuery
-    res.if_not_exists = false;
-    res.or_replace = false;
+    if (auto * res = typeid_cast<ASTCreateWorkloadQuery *>(ptr.get()))
+    {
+        res->if_not_exists = false;
+        res->or_replace = false;
+    }
+    if (auto * res = typeid_cast<ASTCreateResourceQuery *>(ptr.get()))
+    {
+        res->if_not_exists = false;
+        res->or_replace = false;
+    }
     return ptr;
 }
 
