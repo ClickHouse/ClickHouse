@@ -54,7 +54,7 @@ private:
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
 
 public:
-    KeeperHTTPCommandsHandler(std::shared_ptr<KeeperDispatcher> keeper_dispatcher_);
+    explicit KeeperHTTPCommandsHandler(std::shared_ptr<KeeperDispatcher> keeper_dispatcher_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };

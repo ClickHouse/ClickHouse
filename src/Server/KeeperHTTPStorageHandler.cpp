@@ -107,22 +107,28 @@ KeeperHTTPStorageHandler::KeeperHTTPStorageHandler(const IServer & server_, std:
 }
 
 void KeeperHTTPStorageHandler::performZooKeeperRequest(
-    const Coordination::OpNum opnum, const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response)
+    Coordination::OpNum opnum, const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response)
 {
     switch (opnum)
     {
         case Coordination::OpNum::Exists:
-            return performZooKeeperExistsRequest(storage_path, response);
+            performZooKeeperExistsRequest(storage_path, response);
+            return;
         case Coordination::OpNum::List:
-            return performZooKeeperListRequest(storage_path, response);
+            performZooKeeperListRequest(storage_path, response);
+            return;
         case Coordination::OpNum::Get:
-            return performZooKeeperGetRequest(storage_path, response);
+            performZooKeeperGetRequest(storage_path, response);
+            return;
         case Coordination::OpNum::Set:
-            return performZooKeeperSetRequest(storage_path, request, response);
+            performZooKeeperSetRequest(storage_path, request, response);
+            return;
         case Coordination::OpNum::Create:
-            return performZooKeeperCreateRequest(storage_path, request, response);
+            performZooKeeperCreateRequest(storage_path, request, response);
+            return;
         case Coordination::OpNum::Remove:
-            return performZooKeeperRemoveRequest(storage_path, request, response);
+            performZooKeeperRemoveRequest(storage_path, request, response);
+            return;
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to perform ZK request for unsupported OpNum. It's a bug.");
     }

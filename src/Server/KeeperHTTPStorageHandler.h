@@ -32,7 +32,7 @@ private:
     Coordination::ZooKeeperResponsePtr awaitKeeperResponse(std::shared_ptr<Coordination::ZooKeeperRequest> request);
 
     void performZooKeeperRequest(
-        const Coordination::OpNum opnum, const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response);
+        Coordination::OpNum opnum, const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response);
 
     void performZooKeeperExistsRequest(const std::string & storage_path, HTTPServerResponse & response);
     void performZooKeeperListRequest(const std::string & storage_path, HTTPServerResponse & response);
