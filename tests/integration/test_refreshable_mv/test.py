@@ -155,7 +155,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
     ).split("\n")[:-1]:
         name, uuid = row.split("\t")
         print(f"found table {name} {uuid}")
-        if name.startswith("."):
+        if name.startswith(".") or name.startswith("_tmp_replace_"):
             continue
         coordinated = not name.endswith("uncoordinated")
         tables.append((name, uuid, coordinated))
