@@ -94,16 +94,6 @@ public:
 
             if (i && !column_array->hasEqualOffsets(static_cast<const ColumnArray &>(*holders[0])))
             {
-                /*
-                if constexpr (allow_unaligned)
-                    return executeUnaligned(static_cast<const ColumnArray &>(*first_array_column), *column_array, input_rows_count);
-                else
-                    throw Exception(
-                        ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                        "The argument 1 and argument {} of function {} have different array sizes",
-                        i + 1,
-                        getName());
-                */
                 has_unaligned = true;
                 unaligned_index = i;
             }
@@ -142,6 +132,7 @@ private:
 
         auto res_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
         auto & res_offsets = assert_cast<ColumnArray::ColumnOffsets &>(*res_offsets_column).getData();
+        size_t curr_offset = 0;
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
         {
             size_t max_size = 0;
@@ -164,8 +155,10 @@ private:
                 size_t array_size = offsets[row_i] - array_offset;
 
                 res_tuple_columns[arg_i]->insertManyDefaults(max_size - array_size);
-                res_offsets[row_i] = max_size;
             }
+
+            curr_offset += max_size;
+            res_offsets[row_i] = curr_offset;
         }
 
         return ColumnArray::create(ColumnTuple::create(std::move(res_tuple_columns)), std::move(res_offsets_column));
