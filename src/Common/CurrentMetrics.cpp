@@ -292,6 +292,9 @@
     M(DistrCacheWriteRequests, "Number of executed Write requests to Distributed Cache") \
     M(DistrCacheServerConnections, "Number of open connections to ClickHouse server from Distributed Cache") \
     \
+    M(SchedulerIOReadScheduled, "Number of IO reads are being scheduled currently") \
+    M(SchedulerIOWriteScheduled, "Number of IO writes are being scheduled currently") \
+    \
     M(StorageConnectionsStored, "Total count of sessions stored in the session pool for storages") \
     M(StorageConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for storages") \
     \
