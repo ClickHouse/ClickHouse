@@ -155,7 +155,7 @@ bool isPartitionKeySuitsGroupByKey(
         return false;
 
     /// We are interested only in calculations required to obtain group by keys (and not aggregate function arguments for example).
-    auto key_nodes = group_by_actions.findInOutpus(aggregating.getParams().keys);
+    auto key_nodes = group_by_actions.findInOutputs(aggregating.getParams().keys);
     auto group_by_key_actions = ActionsDAG::cloneSubDAG(key_nodes, /*remove_aliases=*/ true);
 
     const auto & gb_key_required_columns = group_by_key_actions.getRequiredColumnsNames();
