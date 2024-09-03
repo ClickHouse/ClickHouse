@@ -55,7 +55,7 @@ public:
     void finishQuery(const String & query_id, QueryStatusInfoPtr query_info = nullptr);
 
 private:
-    QueryMetricLogElement createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint current_time);
+    std::optional<QueryMetricLogElement> createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint current_time);
 
     std::recursive_mutex queries_mutex;
     std::unordered_map<String, QueryMetricLogStatus> queries;

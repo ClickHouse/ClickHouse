@@ -112,7 +112,8 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint query_start_t
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Query info not found: {}", query_id);
 
         auto elem = createLogMetricElement(query_id, *query_info, current_time);
-        add(std::move(elem));
+        if (elem)
+            add(std::move(elem.value()));
     });
 
     std::lock_guard lock(queries_mutex);
@@ -132,19 +133,21 @@ void QueryMetricLog::finishQuery(const String & query_id, QueryStatusInfoPtr que
     if (query_info)
     {
         auto elem = createLogMetricElement(query_id, *query_info, std::chrono::system_clock::now());
-        add(std::move(elem));
+        if (elem)
+            add(std::move(elem.value()));
     }
 
     queries.erase(it);
 }
 
-QueryMetricLogElement QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint current_time)
+std::optional<QueryMetricLogElement> QueryMetricLog::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint current_time)
 {
     std::lock_guard lock(queries_mutex);
     auto query_status_it = queries.find(query_id);
 
+    /// The query might have finished while the scheduled task is running.
     if (query_status_it == queries.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query not found: {}", query_id);
+        return {};
 
     QueryMetricLogElement elem;
     elem.event_time = timeInSeconds(current_time);
