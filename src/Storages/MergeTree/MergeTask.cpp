@@ -1674,7 +1674,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             SizeLimits(), 0 /*limit_hint*/,
             global_ctx->deduplicate_by_columns,
             false /*pre_distinct*/,
-            true /*optimize_distinct_in_order TODO: looks like it shoud be enabled*/);
+            true /*optimize_distinct_in_order TODO: looks like it should be enabled*/);
         deduplication_step->setStepDescription("Deduplication step");
         merge_parts_query_plan.addStep(std::move(deduplication_step));
     }
