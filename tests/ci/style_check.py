@@ -13,18 +13,10 @@ from typing import List, Tuple, Union
 import magic
 
 from docker_images_helper import get_docker_image, pull_image
-from env_helper import IS_CI, REPO_COPY, TEMP_PATH, GITHUB_EVENT_PATH
+from env_helper import IS_CI, REPO_COPY, TEMP_PATH
 from git_helper import GIT_PREFIX, git_runner
 from pr_info import PRInfo
-from report import (
-    ERROR,
-    FAILURE,
-    SUCCESS,
-    JobReport,
-    TestResults,
-    read_test_results,
-    FAIL,
-)
+from report import ERROR, FAILURE, SUCCESS, JobReport, TestResults, read_test_results
 from ssh import SSHKey
 from stopwatch import Stopwatch
 
@@ -200,6 +192,15 @@ def main():
             future = executor.submit(subprocess.run, cmd_shell, shell=True)
             _ = future.result()
 
+    autofix_description = ""
+    if args.push:
+        try:
+            commit_push_staged(pr_info)
+        except subprocess.SubprocessError:
+            # do not fail the whole script if the autofix didn't work out
+            logging.error("Unable to push the autofix. Continue.")
+            autofix_description = "Failed to push autofix to the PR. "
+
     subprocess.check_call(
         f"python3 ../../utils/check-style/process_style_check_result.py --in-results-dir {temp_path} "
         f"--out-results-file {temp_path}/test_results.tsv --out-status-file {temp_path}/check_status.tsv || "
@@ -209,29 +210,13 @@ def main():
 
     state, description, test_results, additional_files = process_result(temp_path)
 
-    autofix_description = ""
-    fail_cnt = 0
-    for result in test_results:
-        if result.status in (FAILURE, FAIL):
-            # do not autofix if not only black failed
-            fail_cnt += 1
-
-    if args.push and fail_cnt == 1:
-        try:
-            commit_push_staged(pr_info)
-        except subprocess.SubprocessError:
-            # do not fail the whole script if the autofix didn't work out
-            logging.error("Unable to push the autofix. Continue.")
-            autofix_description = "Failed to push autofix to the PR. "
-
     JobReport(
         description=f"{autofix_description}{description}",
         test_results=test_results,
         status=state,
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
-        # add GITHUB_EVENT_PATH json file to have it in style check report. sometimes it's needed for debugging.
-        additional_files=additional_files + [Path(GITHUB_EVENT_PATH)],
+        additional_files=additional_files,
     ).dump()
 
     if state in [ERROR, FAILURE]:

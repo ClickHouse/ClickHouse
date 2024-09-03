@@ -300,12 +300,12 @@ public:
                     /// Compatibility with previous versions.
                     if (value.getType() == Field::Types::Decimal32)
                     {
-                        auto source = value.safeGet<DecimalField<Decimal32>>();
+                        auto source = value.get<DecimalField<Decimal32>>();
                         value = DecimalField<Decimal128>(source.getValue(), source.getScale());
                     }
                     else if (value.getType() == Field::Types::Decimal64)
                     {
-                        auto source = value.safeGet<DecimalField<Decimal64>>();
+                        auto source = value.get<DecimalField<Decimal64>>();
                         value = DecimalField<Decimal128>(source.getValue(), source.getScale());
                     }
 
@@ -355,7 +355,7 @@ public:
                     /// Compatibility with previous versions.
                     if (value.getType() == Field::Types::Decimal128)
                     {
-                        auto source = value.safeGet<DecimalField<Decimal128>>();
+                        auto source = value.get<DecimalField<Decimal128>>();
                         WhichDataType value_type(values_types[col_idx]);
                         if (value_type.isDecimal32())
                         {
@@ -560,7 +560,7 @@ private:
     template <typename FieldType>
     bool compareImpl(FieldType & x) const
     {
-        auto val = rhs.safeGet<FieldType>();
+        auto val = rhs.get<FieldType>();
         if (val > x)
         {
             x = val;
@@ -600,7 +600,7 @@ private:
     template <typename FieldType>
     bool compareImpl(FieldType & x) const
     {
-        auto val = rhs.safeGet<FieldType>();
+        auto val = rhs.get<FieldType>();
         if (val < x)
         {
             x = val;

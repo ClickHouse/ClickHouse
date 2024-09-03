@@ -11,7 +11,6 @@
 #include <Common/PoolId.h>
 #include <Common/parseAddress.h>
 #include <Common/parseRemoteDescription.h>
-#include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -530,12 +529,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         }
 
         auto connection_info = postgres::formatConnectionString(
-            configuration.database,
-            configuration.host,
-            configuration.port,
-            configuration.username,
-            configuration.password,
-            args.context->getSettingsRef().postgresql_connection_attempt_timeout);
+            configuration.database, configuration.host, configuration.port, configuration.username, configuration.password);
 
         auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
         if (engine_define->settings)

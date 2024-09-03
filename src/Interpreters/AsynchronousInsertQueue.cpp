@@ -301,13 +301,7 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     auto & insert_query = query->as<ASTInsertQuery &>();
     insert_query.async_insert_flush = true;
 
-    InterpreterInsertQuery interpreter(
-        query,
-        query_context,
-        query_context->getSettingsRef().insert_allow_materialized_columns,
-        /* no_squash */ false,
-        /* no_destination */ false,
-        /* async_insert */ false);
+    InterpreterInsertQuery interpreter(query, query_context, query_context->getSettingsRef().insert_allow_materialized_columns);
     auto table = interpreter.getTable(insert_query);
     auto sample_block = InterpreterInsertQuery::getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr(), query_context);
 
@@ -388,10 +382,6 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
     /// in INSERT query. Replace it to put all such queries into one bucket in queue.
     if (data_kind == DataKind::Preprocessed)
         insert_query.format = "Native";
-
-    /// Query parameters make sense only for format Values.
-    if (insert_query.format == "Values")
-        entry->query_parameters = query_context->getQueryParameters();
 
     InsertQuery key{query, query_context->getUserID(), query_context->getCurrentRoles(), settings, data_kind};
     InsertDataPtr data_to_process;
@@ -736,10 +726,7 @@ try
 
     /// Access rights must be checked for the user who executed the initial INSERT query.
     if (key.user_id)
-    {
-        insert_context->setUser(*key.user_id);
-        insert_context->setCurrentRoles(key.current_roles);
-    }
+        insert_context->setUser(*key.user_id, key.current_roles);
 
     insert_context->setSettings(key.settings);
 
@@ -794,12 +781,7 @@ try
     try
     {
         interpreter = std::make_unique<InterpreterInsertQuery>(
-            key.query,
-            insert_context,
-            key.settings.insert_allow_materialized_columns,
-            false,
-            false,
-            true);
+            key.query, insert_context, key.settings.insert_allow_materialized_columns, false, false, true);
 
         pipeline = interpreter->execute().pipeline;
         chassert(pipeline.pushing());
@@ -1003,7 +985,6 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
                 "Expected entry with data kind Parsed. Got: {}", entry->chunk.getDataKind());
 
         auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
-        executor.setQueryParameters(entry->query_parameters);
 
         size_t num_bytes = bytes->size();
         size_t num_rows = executor.execute(*buffer);
@@ -1019,7 +1000,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     }
 
     Chunk chunk(executor.getResultColumns(), total_rows);
-    chunk.getChunkInfos().add(std::move(chunk_info));
+    chunk.setChunkInfo(std::move(chunk_info));
     return chunk;
 }
 
@@ -1071,7 +1052,7 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
     }
 
     Chunk chunk(std::move(result_columns), total_rows);
-    chunk.getChunkInfos().add(std::move(chunk_info));
+    chunk.setChunkInfo(std::move(chunk_info));
     return chunk;
 }
 

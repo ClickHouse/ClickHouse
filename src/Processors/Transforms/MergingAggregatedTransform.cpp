@@ -216,10 +216,11 @@ void MergingAggregatedTransform::consume(Chunk chunk)
     total_input_rows += input_rows;
     ++total_input_blocks;
 
-    if (chunk.getChunkInfos().empty())
+    const auto & info = chunk.getChunkInfo();
+    if (!info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in MergingAggregatedTransform.");
 
-    if (auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())
+    if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get()))
     {
         /** If the remote servers used a two-level aggregation method,
           * then blocks will contain information about the number of the bucket.
@@ -232,7 +233,7 @@ void MergingAggregatedTransform::consume(Chunk chunk)
 
         addBlock(std::move(block));
     }
-    else if (chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
+    else if (typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get()))
     {
         auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
         block.info.is_overflows = false;
@@ -286,8 +287,7 @@ Chunk MergingAggregatedTransform::generate()
 
     UInt64 num_rows = block.rows();
     Chunk chunk(block.getColumns(), num_rows);
-
-    chunk.getChunkInfos().add(std::move(info));
+    chunk.setChunkInfo(std::move(info));
 
     return chunk;
 }

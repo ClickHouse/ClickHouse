@@ -104,7 +104,7 @@ struct ColumnDescription
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
 
-    void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const;
+    void writeText(WriteBuffer & buf) const;
     void readText(ReadBuffer & buf);
 };
 
@@ -137,7 +137,7 @@ public:
     /// NOTE Must correspond with Nested::flatten function.
     void flattenNested(); /// TODO: remove, insert already flattened Nested columns.
 
-    bool operator==(const ColumnsDescription & other) const { return toString(false) == other.toString(false); }
+    bool operator==(const ColumnsDescription & other) const { return columns == other.columns; }
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }
 
     auto begin() const { return columns.begin(); }
@@ -221,7 +221,7 @@ public:
     /// Does column has non default specified compression codec
     bool hasCompressionCodec(const String & column_name) const;
 
-    String toString(bool include_comments = true) const;
+    String toString() const;
     static ColumnsDescription parse(const String & str);
 
     size_t size() const

@@ -1,16 +1,14 @@
 #pragma once
 #include <cstddef>
+#include <Core/Settings.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <IO/WriteSettings.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
-#include <IO/WriteSettings.h>
 
 
 namespace DB
 {
-
-struct MergeTreeSettings;
-using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
-struct Settings;
 
 class MMappedFileCache;
 using MMappedFileCachePtr = std::shared_ptr<MMappedFileCache>;
@@ -60,7 +58,26 @@ struct MergeTreeWriterSettings
         const MergeTreeSettingsPtr & storage_settings,
         bool can_use_adaptive_granularity_,
         bool rewrite_primary_key_,
-        bool blocks_are_granules_size_ = false);
+        bool blocks_are_granules_size_ = false)
+        : min_compress_block_size(
+            storage_settings->min_compress_block_size ? storage_settings->min_compress_block_size : global_settings.min_compress_block_size)
+        , max_compress_block_size(
+              storage_settings->max_compress_block_size ? storage_settings->max_compress_block_size
+                                                        : global_settings.max_compress_block_size)
+        , marks_compression_codec(storage_settings->marks_compression_codec)
+        , marks_compress_block_size(storage_settings->marks_compress_block_size)
+        , compress_primary_key(storage_settings->compress_primary_key)
+        , primary_key_compression_codec(storage_settings->primary_key_compression_codec)
+        , primary_key_compress_block_size(storage_settings->primary_key_compress_block_size)
+        , can_use_adaptive_granularity(can_use_adaptive_granularity_)
+        , rewrite_primary_key(rewrite_primary_key_)
+        , blocks_are_granules_size(blocks_are_granules_size_)
+        , query_write_settings(query_write_settings_)
+        , max_threads_for_annoy_index_creation(global_settings.max_threads_for_annoy_index_creation)
+        , low_cardinality_max_dictionary_size(global_settings.low_cardinality_max_dictionary_size)
+        , low_cardinality_use_single_dictionary_for_part(global_settings.low_cardinality_use_single_dictionary_for_part != 0)
+    {
+    }
 
     size_t min_compress_block_size;
     size_t max_compress_block_size;
@@ -77,9 +94,10 @@ struct MergeTreeWriterSettings
     bool blocks_are_granules_size;
     WriteSettings query_write_settings;
 
+    size_t max_threads_for_annoy_index_creation;
+
     size_t low_cardinality_max_dictionary_size;
     bool low_cardinality_use_single_dictionary_for_part;
-    bool use_compact_variant_discriminators_serialization;
 };
 
 }

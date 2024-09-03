@@ -224,11 +224,6 @@ void WriteBufferFromS3::finalizeImpl()
     }
 }
 
-void WriteBufferFromS3::cancelImpl() noexcept
-{
-    tryToAbortMultipartUpload();
-}
-
 String WriteBufferFromS3::getVerboseLogDetails() const
 {
     String multipart_upload_details;
@@ -251,7 +246,7 @@ String WriteBufferFromS3::getShortLogDetails() const
                        bucket, key, multipart_upload_details);
 }
 
-void WriteBufferFromS3::tryToAbortMultipartUpload() noexcept
+void WriteBufferFromS3::tryToAbortMultipartUpload()
 {
     try
     {
@@ -269,18 +264,9 @@ WriteBufferFromS3::~WriteBufferFromS3()
 {
     LOG_TRACE(limitedLog, "Close WriteBufferFromS3. {}.", getShortLogDetails());
 
-    if (canceled)
+    /// That destructor could be call with finalized=false in case of exceptions
+    if (!finalized)
     {
-        LOG_INFO(
-            log,
-            "WriteBufferFromS3 was canceled."
-            "The file might not be written to S3. "
-            "{}.",
-            getVerboseLogDetails());
-    }
-    else if (!finalized)
-    {
-        /// That destructor could be call with finalized=false in case of exceptions
         LOG_INFO(
             log,
             "WriteBufferFromS3 is not finalized in destructor. "
@@ -289,10 +275,9 @@ WriteBufferFromS3::~WriteBufferFromS3()
             getVerboseLogDetails());
     }
 
-    /// Wait for all tasks, because they contain reference to this write buffer.
     task_tracker->safeWaitAll();
 
-    if (!canceled && !multipart_upload_id.empty() && !multipart_upload_finished)
+    if (!multipart_upload_id.empty() && !multipart_upload_finished)
     {
         LOG_WARNING(log, "WriteBufferFromS3 was neither finished nor aborted, try to abort upload in destructor. {}.", getVerboseLogDetails());
         tryToAbortMultipartUpload();

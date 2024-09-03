@@ -194,17 +194,6 @@ If enabled, ClickHouse will try to infer type `DateTime64` from string fields in
 
 Enabled by default.
 
-## input_format_try_infer_variants {#input_format_try_infer_variants}
-
-If enabled, ClickHouse will try to infer type [`Variant`](../../sql-reference/data-types/variant.md) in schema inference for text formats when there is more than one possible type for column/array elements.
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-
-Default value: `0`.
-
 ## date_time_input_format {#date_time_input_format}
 
 Allows choosing a parser of the text representation of date and time.
@@ -1439,13 +1428,6 @@ Average block bytes output by parquet reader. Lowering the configuration in the 
 
 Default value: `65409 * 256 = 16744704`
 
-### output_format_parquet_write_page_index {#input_format_parquet_max_block_size}
-
-Could add page index into parquet files. To enable this, need set `output_format_parquet_use_custom_encoder`=`false` and
-`output_format_parquet_write_page_index`=`true`.
-
-Enable by default.
-
 ## Hive format settings {#hive-format-settings}
 
 ### input_format_hive_text_fields_delimiter {#input_format_hive_text_fields_delimiter}
@@ -1962,18 +1944,6 @@ The maximum allowed size for String in RowBinary format. It prevents allocating 
 
 Default value: `1GiB`.
 
-### output_format_binary_encode_types_in_binary_format {#output_format_binary_encode_types_in_binary_format}
-
-Write data types in [binary format](../../sql-reference/data-types/data-types-binary-encoding.md) instead of type names in RowBinaryWithNamesAndTypes output format.
-
-Disabled by default.
-
-### input_format_binary_decode_types_in_binary_format {#input_format_binary_decode_types_in_binary_format}
-
-Read data types in [binary format](../../sql-reference/data-types/data-types-binary-encoding.md) instead of type names in RowBinaryWithNamesAndTypes input format.
-
-Disabled by default.
-
 ## Native format settings {#native-format-settings}
 
 ### input_format_native_allow_types_conversion {#input_format_native_allow_types_conversion}
@@ -1981,15 +1951,3 @@ Disabled by default.
 Allow types conversion in Native input format between columns from input data and requested columns.
 
 Enabled by default.
-
-### output_format_native_encode_types_in_binary_format {#output_format_native_encode_types_in_binary_format}
-
-Write data types in [binary format](../../sql-reference/data-types/data-types-binary-encoding.md) instead of type names in Native output format.
-
-Disabled by default.
-
-### input_format_native_decode_types_in_binary_format {#input_format_native_decode_types_in_binary_format}
-
-Read data types in [binary format](../../sql-reference/data-types/data-types-binary-encoding.md) instead of type names in Native input format.
-
-Disabled by default.

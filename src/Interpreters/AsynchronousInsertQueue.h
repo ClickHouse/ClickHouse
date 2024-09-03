@@ -147,7 +147,6 @@ private:
             const String format;
             MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
-            NameToNameMap query_parameters;
 
             Entry(
                 DataChunk && chunk_,

@@ -14,7 +14,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-#include <Core/Settings.h>
+
 
 namespace DB
 {

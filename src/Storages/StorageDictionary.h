@@ -80,7 +80,7 @@ public:
 
     std::shared_ptr<const IDictionary> getDictionary() const;
 
-    static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure, bool validate_id_type);
+    static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
 
     bool isDictionary() const override { return true; }
     void shutdown(bool is_drop) override;

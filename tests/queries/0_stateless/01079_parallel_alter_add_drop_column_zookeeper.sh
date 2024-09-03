@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-fasttest, no-parallel
+# Tags: zookeeper, no-parallel, no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -63,7 +63,7 @@ export -f optimize_thread;
 export -f insert_thread;
 
 
-TIMEOUT=20
+TIMEOUT=30
 
 # Sometimes we detach and attach tables
 timeout $TIMEOUT bash -c alter_thread 2> /dev/null &
