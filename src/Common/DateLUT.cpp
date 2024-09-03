@@ -53,7 +53,7 @@ std::string determineDefaultTimeZone()
         if (*tz_env_var == ':')
             ++tz_env_var;
         else if (*tz_env_var == '\0')
-            tz_env_var = "UTC";
+            return "UTC";
 
         tz_file_path = tz_env_var;
         tz_name = tz_env_var;
