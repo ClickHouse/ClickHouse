@@ -69,7 +69,7 @@ $CLICKHOUSE_CLIENT -nq "
     system wait view a;
     system refresh view a;
     system wait view a;
-    select '<4.1: fake clock>', status, last_success_time, next_refresh_time from refreshes;
+    select '<4.1: fake clock>', status, last_success_time, next_refresh_time, progress, read_rows, total_rows, written_rows, retry from refreshes;
     alter table a modify refresh every 2 year;
     alter table a modify query select x*2 as x from src;
     system wait view a;

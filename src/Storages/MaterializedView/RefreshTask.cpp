@@ -528,6 +528,17 @@ UUID RefreshTask::executeRefreshUnlocked(bool append, int32_t root_znode_version
             auto [refresh_query, query_scope] = view->prepareRefresh(append, refresh_context, table_to_drop);
             new_table_id = refresh_query->table_id;
 
+            /// Add the query to system.processes and allow it to be killed with KILL QUERY.
+            String query_for_logging = refresh_query->formatForLogging(
+                refresh_context->getSettingsRef().log_queries_cut_to_length);
+            auto process_list_entry = refresh_context->getProcessList().insert(
+                query_for_logging, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
+            refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
+            refresh_context->setProgressCallback([this](const Progress & prog)
+            {
+                execution.progress.incrementPiecewiseAtomically(prog);
+            });
+
             /// Run the query.
 
             BlockIO block_io = InterpreterInsertQuery(
@@ -538,20 +549,6 @@ UUID RefreshTask::executeRefreshUnlocked(bool append, int32_t root_znode_version
                 /* no_destination */ false,
                 /* async_isnert */ false).execute();
             QueryPipeline & pipeline = block_io.pipeline;
-
-            pipeline.setProgressCallback([this](const Progress & prog)
-            {
-                /// TODO: Investigate why most fields are not populated. Change columns in system.view_refreshes as needed, update documentation (docs/en/operations/system-tables/view_refreshes.md).
-                execution.progress.incrementPiecewiseAtomically(prog);
-            });
-
-            /// Add the query to system.processes and allow it to be killed with KILL QUERY.
-            String query_for_logging = refresh_query->formatForLogging(
-                refresh_context->getSettingsRef().log_queries_cut_to_length);
-            block_io.process_list_entry = refresh_context->getProcessList().insert(
-                query_for_logging, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
-            pipeline.setProcessListElement(block_io.process_list_entry->getQueryStatus());
-            refresh_context->setProcessListElement(block_io.process_list_entry->getQueryStatus());
 
             if (!pipeline.completed())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for view refresh must be completed");

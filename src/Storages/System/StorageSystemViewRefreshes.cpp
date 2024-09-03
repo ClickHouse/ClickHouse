@@ -30,16 +30,13 @@ ColumnsDescription StorageSystemViewRefreshes::getColumnsDescription()
         {"last_refresh_replica", std::make_shared<DataTypeString>(), "If coordination is enabled, name of the replica that made the current (if running) or previous (if not running) refresh attempt."},
         {"next_refresh_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which the next refresh is scheduled to start, if status = Scheduled."},
         {"exception", std::make_shared<DataTypeString>(), "Error message from previous attempt if it failed."},
-        {"retry", std::make_shared<DataTypeUInt64>(), "How many failed attempts there were so far, for the current refresh."},
+        {"retry", std::make_shared<DataTypeUInt64>(), "How many failed attempts there were so far, for the current refresh. Not available if status is `RunningOnAnotherReplica`."},
         {"progress", std::make_shared<DataTypeFloat64>(), "Progress of the current refresh, between 0 and 1. Not available if status is RunningOnAnotherReplica."},
         {"read_rows", std::make_shared<DataTypeUInt64>(), "Number of rows read by the current refresh so far. Not available if status is RunningOnAnotherReplica."},
-        {"read_bytes", std::make_shared<DataTypeUInt64>(), "Number of bytes read during the current refresh."},
+        {"read_bytes", std::make_shared<DataTypeUInt64>(), "Number of bytes read during the current refresh. Not available if status is `RunningOnAnotherReplica`."},
         {"total_rows", std::make_shared<DataTypeUInt64>(), "Estimated total number of rows that need to be read by the current refresh. Not available if status is RunningOnAnotherReplica."},
-        {"total_bytes", std::make_shared<DataTypeUInt64>(), "Estimated total number of bytes that need to be read by the current refresh."},
-        {"written_rows", std::make_shared<DataTypeUInt64>(), "Number of rows written during the current refresh."},
-        {"written_bytes", std::make_shared<DataTypeUInt64>(), "Number rof bytes written during the current refresh."},
-        {"result_rows", std::make_shared<DataTypeUInt64>(), "Estimated total number of rows in the result set of the SELECT query."},
-        {"result_bytes", std::make_shared<DataTypeUInt64>(), "Estimated total number of bytes in the result set of the SELECT query."},
+        {"written_rows", std::make_shared<DataTypeUInt64>(), "Number of rows written during the current refresh. Not available if status is `RunningOnAnotherReplica`."},
+        {"written_bytes", std::make_shared<DataTypeUInt64>(), "Number rof bytes written during the current refresh. Not available if status is `RunningOnAnotherReplica`."},
     };
 }
 
@@ -100,11 +97,8 @@ void StorageSystemViewRefreshes::fillData(
         res_columns[i++]->insert(refresh.progress.read_rows);
         res_columns[i++]->insert(refresh.progress.read_bytes);
         res_columns[i++]->insert(refresh.progress.total_rows_to_read);
-        res_columns[i++]->insert(refresh.progress.total_bytes_to_read);
         res_columns[i++]->insert(refresh.progress.written_rows);
         res_columns[i++]->insert(refresh.progress.written_bytes);
-        res_columns[i++]->insert(refresh.progress.result_rows);
-        res_columns[i++]->insert(refresh.progress.result_bytes);
     }
 }
 
