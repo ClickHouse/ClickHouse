@@ -203,7 +203,7 @@ public:
     // This should be used only for tests or keeper-data-dumper because it violates
     // TSA -- we can't acquire the lock outside of this class or return a storage under lock
     // in a reasonable way.
-    Storage & getStorageUnsafe() TSA_NO_THREAD_SAFETY_ANALYSIS
+    Storage & getStorageUnsafe()
     {
         return *storage;
     }

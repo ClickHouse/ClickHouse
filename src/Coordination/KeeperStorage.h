@@ -474,9 +474,10 @@ public:
 
     int64_t session_id_counter{1};
 
+    mutable SharedMutex auth_mutex;
     SessionAndAuth session_and_auth;
-    mutable std::shared_mutex storage_mutex;
 
+    mutable SharedMutex storage_mutex;
     /// Main hashtable with nodes. Contain all information about data.
     /// All other structures expect session_and_timeout can be restored from
     /// container.
@@ -541,6 +542,8 @@ public:
         mutable std::unordered_map<std::string, UncommittedNode, Hash, Equal> nodes;
         mutable ZxidToNodes zxid_to_nodes;
 
+        Ephemerals ephemerals;
+
         mutable std::mutex deltas_mutex;
         std::list<Delta> deltas TSA_GUARDED_BY(deltas_mutex);
         KeeperStorage<Container> & storage;
@@ -570,11 +573,10 @@ public:
 
     bool checkACL(StringRef path, int32_t permissions, int64_t session_id, bool is_local);
 
-    void unregisterEphemeralPath(int64_t session_id, const std::string & path);
-
-    mutable std::mutex ephemerals_mutex;
+    std::mutex ephemeral_mutex;
     /// Mapping session_id -> set of ephemeral nodes paths
-    Ephemerals ephemerals;
+    Ephemerals committed_ephemerals;
+    size_t committed_ephemeral_nodes{0};
 
     /// Expiration queue for session, allows to get dead sessions at some point of time
     SessionExpiryQueue session_expiry_queue;
@@ -687,7 +689,6 @@ public:
     /// Get all dead sessions
     std::vector<int64_t> getDeadSessions() const;
 
-
     void updateStats();
     const Stats & getStorageStats() const;
 
@@ -713,8 +714,6 @@ public:
 
     void recalculateStats();
 private:
-    uint64_t getSessionWithEphemeralNodesCountLocked() const;
-
     void removeDigest(const Node & node, std::string_view path);
     void addDigest(const Node & node, std::string_view path);
 };

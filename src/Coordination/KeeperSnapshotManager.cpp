@@ -441,7 +441,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                 node.getChildren().reserve(node.stats.numChildren());
 
         if (ephemeral_owner != 0)
-            storage.ephemerals[node.stats.ephemeralOwner()].insert(std::string{path});
+            storage.committed_ephemerals[node.stats.ephemeralOwner()].insert(std::string{path});
 
         if (recalculate_digest)
             storage.nodes_digest += node.getDigest(path);
@@ -536,6 +536,8 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         buffer->pos(0);
         deserialization_result.cluster_config = ClusterConfig::deserialize(*buffer);
     }
+
+    storage.updateStats();
 }
 
 template<typename Storage>

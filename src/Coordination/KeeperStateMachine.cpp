@@ -182,11 +182,11 @@ void assertDigest(
 }
 
 template <bool shared = false>
-struct TSA_SCOPED_LOCKABLE LockGuardWithStats final
+struct LockGuardWithStats final
 {
     using LockType = std::conditional_t<shared, std::shared_lock<SharedMutex>, std::unique_lock<SharedMutex>>;
     LockType lock;
-    explicit LockGuardWithStats(SharedMutex & mutex) TSA_ACQUIRE(mutex)
+    explicit LockGuardWithStats(SharedMutex & mutex)
     {
         Stopwatch watch;
         LockType l(mutex);
@@ -194,7 +194,7 @@ struct TSA_SCOPED_LOCKABLE LockGuardWithStats final
         lock = std::move(l);
     }
 
-    ~LockGuardWithStats() TSA_RELEASE() = default;
+    ~LockGuardWithStats() = default;
 };
 
 }

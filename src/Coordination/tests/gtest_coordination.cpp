@@ -1572,8 +1572,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
     addNode(storage, "/hello2", "somedata", 3);
     storage.session_id_counter = 5;
     TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 2;
-    storage.ephemerals[3] = {"/hello2"};
-    storage.ephemerals[1] = {"/hello1"};
+    storage.committed_ephemerals[3] = {"/hello2"};
+    storage.committed_ephemerals[1] = {"/hello1"};
     storage.getSessionID(130);
     storage.getSessionID(130);
 
@@ -1603,9 +1603,9 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)
     EXPECT_EQ(restored_storage->container.getValue("/hello2").getData(), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
     EXPECT_EQ(restored_storage->getZXID(), 2);
-    EXPECT_EQ(restored_storage->ephemerals.size(), 2);
-    EXPECT_EQ(restored_storage->ephemerals[3].size(), 1);
-    EXPECT_EQ(restored_storage->ephemerals[1].size(), 1);
+    EXPECT_EQ(restored_storage->committed_ephemerals.size(), 2);
+    EXPECT_EQ(restored_storage->committed_ephemerals[3].size(), 1);
+    EXPECT_EQ(restored_storage->committed_ephemerals[1].size(), 1);
     EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
 }
 
@@ -2028,7 +2028,7 @@ TYPED_TEST(CoordinationTest, TestEphemeralNodeRemove)
     state_machine->commit(1, entry_c->get_buf());
     const auto & storage = state_machine->getStorageUnsafe();
 
-    EXPECT_EQ(storage.ephemerals.size(), 1);
+    EXPECT_EQ(storage.committed_ephemerals.size(), 1);
     std::shared_ptr<ZooKeeperRemoveRequest> request_d = std::make_shared<ZooKeeperRemoveRequest>();
     request_d->path = "/hello";
     /// Delete from other session
@@ -2036,7 +2036,7 @@ TYPED_TEST(CoordinationTest, TestEphemeralNodeRemove)
     state_machine->pre_commit(2, entry_d->get_buf());
     state_machine->commit(2, entry_d->get_buf());
 
-    EXPECT_EQ(storage.ephemerals.size(), 0);
+    EXPECT_EQ(storage.committed_ephemerals.size(), 0);
 }
 
 
@@ -2536,8 +2536,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     addNode(storage, "/hello2", "somedata", 3);
     storage.session_id_counter = 5;
     TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = 2;
-    storage.ephemerals[3] = {"/hello2"};
-    storage.ephemerals[1] = {"/hello1"};
+    storage.committed_ephemerals[3] = {"/hello2"};
+    storage.committed_ephemerals[1] = {"/hello1"};
     storage.getSessionID(130);
     storage.getSessionID(130);
 
@@ -2563,9 +2563,9 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     EXPECT_EQ(restored_storage->container.getValue("/hello2").getData(), "somedata");
     EXPECT_EQ(restored_storage->session_id_counter, 7);
     EXPECT_EQ(restored_storage->getZXID(), 2);
-    EXPECT_EQ(restored_storage->ephemerals.size(), 2);
-    EXPECT_EQ(restored_storage->ephemerals[3].size(), 1);
-    EXPECT_EQ(restored_storage->ephemerals[1].size(), 1);
+    EXPECT_EQ(restored_storage->committed_ephemerals.size(), 2);
+    EXPECT_EQ(restored_storage->committed_ephemerals[3].size(), 1);
+    EXPECT_EQ(restored_storage->committed_ephemerals[1].size(), 1);
     EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
 }
 
@@ -2750,8 +2750,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotEqual)
 
         storage.session_id_counter = 5;
 
-        storage.ephemerals[3] = {"/hello"};
-        storage.ephemerals[1] = {"/hello/somepath"};
+        storage.committed_ephemerals[3] = {"/hello"};
+        storage.committed_ephemerals[1] = {"/hello/somepath"};
 
         for (size_t j = 0; j < 3333; ++j)
             storage.getSessionID(130 * j);
