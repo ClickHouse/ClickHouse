@@ -23,7 +23,7 @@ public:
     static constexpr auto type_name = "azure";
     static constexpr auto engine_name = "Azure";
     /// All possible signatures for Azure engine with structure argument (for example for azureBlobStorage table function).
-    static constexpr auto max_number_of_arguments_with_structure = 4;
+    static constexpr auto max_number_of_arguments_with_structure = 8;
     static constexpr auto signatures_with_structure =
         " - connection_string, container_name, blobpath\n"
         " - connection_string, container_name, blobpath, structure \n"
@@ -37,7 +37,7 @@ public:
         " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure\n";
 
     /// All possible signatures for Azure engine without structure argument (for example for AzureBlobStorage table engine).
-    static constexpr auto max_number_of_arguments_without_structure = 3;
+    static constexpr auto max_number_of_arguments_without_structure = 7;
     static constexpr auto signatures_without_structure =
         " - connection_string, container_name, blobpath\n"
         " - connection_string, container_name, blobpath, format \n"
