@@ -37,6 +37,16 @@ ASTPtr normalizeCreateWorkloadEntityQuery(const IAST & create_query, const Conte
     return ptr;
 }
 
+WorkloadEntityType getEntityType(const ASTPtr & ptr)
+{
+    if (auto * res = typeid_cast<ASTCreateWorkloadQuery *>(ptr.get()))
+        return WorkloadEntityType::Workload;
+    if (auto * res = typeid_cast<ASTCreateResourceQuery *>(ptr.get()))
+        return WorkloadEntityType::Resource;
+    chassert(false);
+    return WorkloadEntityType::MAX;
+}
+
 }
 
 WorkloadEntityStorageBase::WorkloadEntityStorageBase(ContextPtr global_context_)
@@ -81,6 +91,20 @@ std::vector<std::string> WorkloadEntityStorageBase::getAllEntityNames() const
 
     for (const auto & [name, _] : entities)
         entity_names.emplace_back(name);
+
+    return entity_names;
+}
+
+std::vector<std::string> WorkloadEntityStorageBase::getAllEntityNames(WorkloadEntityType entity_type) const
+{
+    std::vector<std::string> entity_names;
+
+    std::lock_guard lock(mutex);
+    for (const auto & [name, entity] : entities)
+    {
+        if (getEntityType(entity) == entity_type)
+            entity_names.emplace_back(name);
+    }
 
     return entity_names;
 }

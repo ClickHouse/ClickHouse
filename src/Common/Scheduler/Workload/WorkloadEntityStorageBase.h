@@ -24,6 +24,7 @@ public:
     bool has(const String & entity_name) const override;
 
     std::vector<String> getAllEntityNames() const override;
+    std::vector<String> getAllEntityNames(WorkloadEntityType entity_type) const override;
 
     std::vector<std::pair<String, ASTPtr>> getAllEntities() const override;
 

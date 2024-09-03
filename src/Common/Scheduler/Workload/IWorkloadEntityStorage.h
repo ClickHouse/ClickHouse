@@ -47,6 +47,9 @@ public:
     /// Get all entity names.
     virtual std::vector<String> getAllEntityNames() const = 0;
 
+    /// Get all entity names of specified type.
+    virtual std::vector<String> getAllEntityNames(WorkloadEntityType entity_type) const = 0;
+
     /// Get all entities.
     virtual std::vector<std::pair<String, ASTPtr>> getAllEntities() const = 0;
 
