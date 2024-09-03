@@ -8,7 +8,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Core/Settings.h>
-#include <Common/ProfileEvents.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -21,8 +20,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -42,18 +39,6 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
-namespace ProfileEvents
-{
-    extern const Event Merge;
-    extern const Event MergedColumns;
-    extern const Event GatheredColumns;
-    extern const Event MergeTotalMilliseconds;
-    extern const Event MergeExecuteMilliseconds;
-    extern const Event MergeHorizontalStageExecuteMilliseconds;
-    extern const Event MergeVerticalStageExecuteMilliseconds;
-    extern const Event MergeProjectionStageExecuteMilliseconds;
-}
-
 namespace DB
 {
 
@@ -64,7 +49,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
-
 
 static ColumnsStatistics getStatisticsForColumns(
     const NamesAndTypesList & columns_to_read,
@@ -78,7 +62,7 @@ static ColumnsStatistics getStatisticsForColumns(
         const auto * desc = all_columns.tryGet(column.name);
         if (desc && !desc->statistics.empty())
         {
-            auto statistics = MergeTreeStatisticsFactory::instance().get(*desc);
+            auto statistics = MergeTreeStatisticsFactory::instance().get(desc->statistics);
             all_statistics.push_back(std::move(statistics));
         }
     }
@@ -158,13 +142,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         }
     }
 
-    for (const auto * projection : global_ctx->projections_to_rebuild)
-    {
-        Names projection_columns_vec = projection->getRequiredColumns();
-        std::copy(projection_columns_vec.cbegin(), projection_columns_vec.cend(),
-                  std::inserter(key_columns, key_columns.end()));
-    }
-
     /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
 
     for (const auto & column : global_ctx->storage_columns)
@@ -192,8 +169,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 {
-    ProfileEvents::increment(ProfileEvents::Merge);
-
     String local_tmp_prefix;
     if (global_ctx->need_prefix)
     {
@@ -263,8 +238,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     auto object_columns = MergeTreeData::getConcreteObjectColumns(global_ctx->future_part->parts, global_ctx->metadata_snapshot->getColumns());
     extendObjectColumns(global_ctx->storage_columns, object_columns, false);
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot, std::move(object_columns));
-
-    prepareProjectionsToMergeAndRebuild();
 
     extractMergingAndGatheringColumns();
 
@@ -473,13 +446,6 @@ void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const Str
 
 MergeTask::StageRuntimeContextPtr MergeTask::ExecuteAndFinalizeHorizontalPart::getContextForNextStage()
 {
-    /// Do not increment for projection stage because time is already accounted in main task.
-    if (global_ctx->parent_part == nullptr)
-    {
-        ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
-        ProfileEvents::increment(ProfileEvents::MergeHorizontalStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
-    }
-
     auto new_ctx = std::make_shared<VerticalMergeRuntimeContext>();
 
     new_ctx->rows_sources_write_buf = std::move(ctx->rows_sources_write_buf);
@@ -497,14 +463,8 @@ MergeTask::StageRuntimeContextPtr MergeTask::ExecuteAndFinalizeHorizontalPart::g
 
 MergeTask::StageRuntimeContextPtr MergeTask::VerticalMergeStage::getContextForNextStage()
 {
-    /// Do not increment for projection stage because time is already accounted in main task.
-    if (global_ctx->parent_part == nullptr)
-    {
-        ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
-        ProfileEvents::increment(ProfileEvents::MergeVerticalStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
-    }
-
     auto new_ctx = std::make_shared<MergeProjectionsRuntimeContext>();
+
     new_ctx->need_sync = std::move(ctx->need_sync);
 
     ctx.reset();
@@ -514,14 +474,9 @@ MergeTask::StageRuntimeContextPtr MergeTask::VerticalMergeStage::getContextForNe
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
 {
-    chassert(subtasks_iterator != subtasks.end());
-
-    Stopwatch watch;
-    bool res = (this->**subtasks_iterator)();
-    ctx->elapsed_execute_ns += watch.elapsedNanoseconds();
-
-    if (res)
-        return res;
+    assert(subtasks_iterator != subtasks.end());
+    if ((this->**subtasks_iterator)())
+        return true;
 
     /// Move to the next subtask in an array of subtasks
     ++subtasks_iterator;
@@ -529,167 +484,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
 }
 
 
-void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild() const
-{
-    const auto mode = global_ctx->data->getSettings()->deduplicate_merge_projection_mode;
-    /// Under throw mode, we still choose to drop projections due to backward compatibility since some
-    /// users might have projections before this change.
-    if (global_ctx->data->merging_params.mode != MergeTreeData::MergingParams::Ordinary
-        && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::DROP))
-        return;
-
-    /// These merging modes may or may not reduce number of rows. It's not known until the horizontal stage is finished.
-    const bool merge_may_reduce_rows =
-        global_ctx->cleanup ||
-        global_ctx->deduplicate ||
-        ctx->merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
-        ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing ||
-        ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
-
-    const auto & projections = global_ctx->metadata_snapshot->getProjections();
-
-    for (const auto & projection : projections)
-    {
-        if (merge_may_reduce_rows)
-        {
-            global_ctx->projections_to_rebuild.push_back(&projection);
-            continue;
-        }
-
-        MergeTreeData::DataPartsVector projection_parts;
-        for (const auto & part : global_ctx->future_part->parts)
-        {
-            auto it = part->getProjectionParts().find(projection.name);
-            if (it != part->getProjectionParts().end() && !it->second->is_broken)
-                projection_parts.push_back(it->second);
-        }
-        if (projection_parts.size() == global_ctx->future_part->parts.size())
-        {
-            global_ctx->projections_to_merge.push_back(&projection);
-            global_ctx->projections_to_merge_parts[projection.name].assign(projection_parts.begin(), projection_parts.end());
-        }
-        else
-        {
-            chassert(projection_parts.size() < global_ctx->future_part->parts.size());
-            LOG_DEBUG(ctx->log, "Projection {} is not merged because some parts don't have it", projection.name);
-            continue;
-        }
-    }
-
-    const auto & settings = global_ctx->context->getSettingsRef();
-
-    for (const auto * projection : global_ctx->projections_to_rebuild)
-        ctx->projection_squashes.emplace_back(projection->sample_block.cloneEmpty(),
-            settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
-}
-
-
-void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Block & block) const
-{
-    for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
-    {
-        const auto & projection = *global_ctx->projections_to_rebuild[i];
-        Block block_to_squash = projection.calculate(block, global_ctx->context);
-        auto & projection_squash_plan = ctx->projection_squashes[i];
-        projection_squash_plan.setHeader(block_to_squash.cloneEmpty());
-        Chunk squashed_chunk = Squashing::squash(projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()}));
-        if (squashed_chunk)
-        {
-            auto result = projection_squash_plan.getHeader().cloneWithColumns(squashed_chunk.detachColumns());
-            auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num);
-            tmp_part.finalize();
-            tmp_part.part->getDataPartStorage().commitTransaction();
-            ctx->projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
-        }
-    }
-}
-
-
-void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
-{
-    for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
-    {
-        const auto & projection = *global_ctx->projections_to_rebuild[i];
-        auto & projection_squash_plan = ctx->projection_squashes[i];
-        auto squashed_chunk = Squashing::squash(projection_squash_plan.flush());
-        if (squashed_chunk)
-        {
-            auto result = projection_squash_plan.getHeader().cloneWithColumns(squashed_chunk.detachColumns());
-            auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num);
-            temp_part.finalize();
-            temp_part.part->getDataPartStorage().commitTransaction();
-            ctx->projection_parts[projection.name].emplace_back(std::move(temp_part.part));
-        }
-    }
-
-    ctx->projection_parts_iterator = std::make_move_iterator(ctx->projection_parts.begin());
-    if (ctx->projection_parts_iterator != std::make_move_iterator(ctx->projection_parts.end()))
-        constructTaskForProjectionPartsMerge();
-}
-
-
-void MergeTask::ExecuteAndFinalizeHorizontalPart::constructTaskForProjectionPartsMerge() const
-{
-    auto && [name, parts] = *ctx->projection_parts_iterator;
-    const auto & projection = global_ctx->metadata_snapshot->projections.get(name);
-
-    ctx->merge_projection_parts_task_ptr = std::make_unique<MergeProjectionPartsTask>
-    (
-        name,
-        std::move(parts),
-        projection,
-        ctx->projection_block_num,
-        global_ctx->context,
-        global_ctx->holder,
-        global_ctx->mutator,
-        global_ctx->merge_entry,
-        global_ctx->time_of_merge,
-        global_ctx->new_data_part,
-        global_ctx->space_reservation
-    );
-}
-
-
-bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeMergeProjections() // NOLINT
-{
-    /// In case if there are no projections we didn't construct a task
-    if (!ctx->merge_projection_parts_task_ptr)
-        return false;
-
-    if (ctx->merge_projection_parts_task_ptr->executeStep())
-        return true;
-
-    ++ctx->projection_parts_iterator;
-
-    if (ctx->projection_parts_iterator == std::make_move_iterator(ctx->projection_parts.end()))
-        return false;
-
-    constructTaskForProjectionPartsMerge();
-
-    return true;
-}
-
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
 {
-    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
-    UInt64 step_time_ms = global_ctx->data->getSettings()->background_task_preferred_step_execution_time_ms.totalMilliseconds();
-
-    do
+    Block block;
+    if (!ctx->is_cancelled() && (global_ctx->merging_executor->pull(block)))
     {
-        Block block;
-
-        if (ctx->is_cancelled() || !global_ctx->merging_executor->pull(block))
-        {
-            finalize();
-            return false;
-        }
-
         global_ctx->rows_written += block.rows();
-        const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
-        calculateProjections(block);
+        const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
         UInt64 result_rows = 0;
         UInt64 result_bytes = 0;
@@ -708,16 +510,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
 
             global_ctx->space_reservation->update(static_cast<size_t>((1. - progress) * ctx->initial_reservation));
         }
-    } while (watch.elapsedMilliseconds() < step_time_ms);
 
-    /// Need execute again
-    return true;
-}
+        /// Need execute again
+        return true;
+    }
 
-
-void MergeTask::ExecuteAndFinalizeHorizontalPart::finalize() const
-{
-    finalizeProjections();
     global_ctx->merging_executor.reset();
     global_ctx->merged_pipeline.reset();
 
@@ -727,13 +524,17 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalize() const
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with expired TTL");
 
+    const auto data_settings = global_ctx->data->getSettings();
     const size_t sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
-    ctx->need_sync = needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound, *global_ctx->data->getSettings());
+    ctx->need_sync = needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound, *data_settings);
+
+    return false;
 }
+
 
 bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 {
-    /// No need to execute this part if it is horizontal merge.
+     /// No need to execute this part if it is horizontal merge.
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
         return false;
 
@@ -907,24 +708,17 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 
 bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
 {
-    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
-    UInt64 step_time_ms = global_ctx->data->getSettings()->background_task_preferred_step_execution_time_ms.totalMilliseconds();
-
-    do
+    Block block;
+    if (!global_ctx->merges_blocker->isCancelled() && !global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed)
+        && ctx->executor->pull(block))
     {
-        Block block;
-
-        if (global_ctx->merges_blocker->isCancelled()
-            || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed)
-            || !ctx->executor->pull(block))
-            return false;
-
         ctx->column_elems_written += block.rows();
         ctx->column_to->write(block);
-    } while (watch.elapsedMilliseconds() < step_time_ms);
 
-    /// Need execute again
-    return true;
+        /// Need execute again
+        return true;
+    }
+    return false;
 }
 
 
@@ -990,9 +784,6 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
 
     /// Print overall profiling info. NOTE: it may duplicates previous messages
     {
-        ProfileEvents::increment(ProfileEvents::MergedColumns, global_ctx->merging_columns.size());
-        ProfileEvents::increment(ProfileEvents::GatheredColumns, global_ctx->gathering_columns.size());
-
         double elapsed_seconds = global_ctx->merge_list_element_ptr->watch.elapsedSeconds();
         LOG_DEBUG(ctx->log,
             "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",
@@ -1005,9 +796,25 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             ReadableSize(global_ctx->merge_list_element_ptr->bytes_read_uncompressed / elapsed_seconds));
     }
 
-    for (const auto & projection : global_ctx->projections_to_merge)
+
+    const auto & projections = global_ctx->metadata_snapshot->getProjections();
+
+    for (const auto & projection : projections)
     {
-        MergeTreeData::DataPartsVector projection_parts = global_ctx->projections_to_merge_parts[projection->name];
+        MergeTreeData::DataPartsVector projection_parts;
+        for (const auto & part : global_ctx->future_part->parts)
+        {
+            auto actual_projection_parts = part->getProjectionParts();
+            auto it = actual_projection_parts.find(projection.name);
+            if (it != actual_projection_parts.end() && !it->second->is_broken)
+                projection_parts.push_back(it->second);
+        }
+        if (projection_parts.size() < global_ctx->future_part->parts.size())
+        {
+            LOG_DEBUG(ctx->log, "Projection {} is not merged because some parts don't have it", projection.name);
+            continue;
+        }
+
         LOG_DEBUG(
             ctx->log,
             "Selected {} projection_parts from {} to {}",
@@ -1017,25 +824,24 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
 
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
         projection_future_part->assign(std::move(projection_parts));
-        projection_future_part->name = projection->name;
+        projection_future_part->name = projection.name;
         // TODO (ab): path in future_part is only for merge process introspection, which is not available for merges of projection parts.
         // Let's comment this out to avoid code inconsistency and add it back after we implement projection merge introspection.
         // projection_future_part->path = global_ctx->future_part->path + "/" + projection.name + ".proj/";
-        projection_future_part->part_info = MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION;
+        projection_future_part->part_info = {"all", 0, 0, 0};
 
         MergeTreeData::MergingParams projection_merging_params;
         projection_merging_params.mode = MergeTreeData::MergingParams::Ordinary;
-        if (projection->type == ProjectionDescription::Type::Aggregate)
+        if (projection.type == ProjectionDescription::Type::Aggregate)
             projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
         ctx->tasks_for_projections.emplace_back(std::make_shared<MergeTask>(
             projection_future_part,
-            projection->metadata,
+            projection.metadata,
             global_ctx->merge_entry,
             std::make_unique<MergeListElement>((*global_ctx->merge_entry)->table_id, projection_future_part, global_ctx->context),
             global_ctx->time_of_merge,
             global_ctx->context,
-            *global_ctx->holder,
             global_ctx->space_reservation,
             global_ctx->deduplicate,
             global_ctx->deduplicate_by_columns,
@@ -1090,29 +896,12 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     return false;
 }
 
-MergeTask::StageRuntimeContextPtr MergeTask::MergeProjectionsStage::getContextForNextStage()
-{
-    /// Do not increment for projection stage because time is already accounted in main task.
-    /// The projection stage has its own empty projection stage which may add a drift of several milliseconds.
-    if (global_ctx->parent_part == nullptr)
-    {
-        ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
-        ProfileEvents::increment(ProfileEvents::MergeProjectionStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
-    }
-
-    return nullptr;
-}
 
 bool MergeTask::VerticalMergeStage::execute()
 {
-    chassert(subtasks_iterator != subtasks.end());
-
-    Stopwatch watch;
-    bool res = (this->**subtasks_iterator)();
-    ctx->elapsed_execute_ns += watch.elapsedNanoseconds();
-
-    if (res)
-        return res;
+    assert(subtasks_iterator != subtasks.end());
+    if ((this->**subtasks_iterator)())
+        return true;
 
     /// Move to the next subtask in an array of subtasks
     ++subtasks_iterator;
@@ -1121,14 +910,9 @@ bool MergeTask::VerticalMergeStage::execute()
 
 bool MergeTask::MergeProjectionsStage::execute()
 {
-    chassert(subtasks_iterator != subtasks.end());
-
-    Stopwatch watch;
-    bool res = (this->**subtasks_iterator)();
-    ctx->elapsed_execute_ns += watch.elapsedNanoseconds();
-
-    if (res)
-        return res;
+    assert(subtasks_iterator != subtasks.end());
+    if ((this->**subtasks_iterator)())
+        return true;
 
     /// Move to the next subtask in an array of subtasks
     ++subtasks_iterator;
@@ -1175,26 +959,12 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForAllColumns() const
 
 bool MergeTask::execute()
 {
-    chassert(stages_iterator != stages.end());
-    const auto & current_stage = *stages_iterator;
-
-    if (current_stage->execute())
+    assert(stages_iterator != stages.end());
+    if ((*stages_iterator)->execute())
         return true;
 
-    /// Stage is finished, need to initialize context for the next stage and update profile events.
-
-    UInt64 current_elapsed_ms = global_ctx->merge_list_element_ptr->watch.elapsedMilliseconds();
-    UInt64 stage_elapsed_ms = current_elapsed_ms - global_ctx->prev_elapsed_ms;
-    global_ctx->prev_elapsed_ms = current_elapsed_ms;
-
-    auto next_stage_context = current_stage->getContextForNextStage();
-
-    /// Do not increment for projection stage because time is already accounted in main task.
-    if (global_ctx->parent_part == nullptr)
-    {
-        ProfileEvents::increment(current_stage->getTotalTimeProfileEvent(), stage_elapsed_ms);
-        ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, stage_elapsed_ms);
-    }
+    /// Stage is finished, need initialize context for the next stage
+    auto next_stage_context = (*stages_iterator)->getContextForNextStage();
 
     /// Move to the next stage in an array of stages
     ++stages_iterator;
@@ -1319,6 +1089,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
                 /* limit_= */0,
                 /* always_read_till_end_= */false,
                 ctx->rows_sources_write_buf.get(),
+                true,
                 ctx->blocks_are_granules_size);
             break;
 

@@ -83,16 +83,16 @@ public:
         if (version == 1)
         {
             for (size_t i = 0; i < arr_size; ++i)
-                set.insert(static_cast<T>((*data_column)[offset + i].safeGet<T>()));
+                set.insert(static_cast<T>((*data_column)[offset + i].get<T>()));
         }
         else if (!set.empty())
         {
             typename State::Set new_set;
             for (size_t i = 0; i < arr_size; ++i)
             {
-                typename State::Set::LookupResult set_value = set.find(static_cast<T>((*data_column)[offset + i].safeGet<T>()));
+                typename State::Set::LookupResult set_value = set.find(static_cast<T>((*data_column)[offset + i].get<T>()));
                 if (set_value != nullptr)
-                    new_set.insert(static_cast<T>((*data_column)[offset + i].safeGet<T>()));
+                    new_set.insert(static_cast<T>((*data_column)[offset + i].get<T>()));
             }
             set = std::move(new_set);
         }

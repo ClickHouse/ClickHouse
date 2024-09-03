@@ -171,17 +171,17 @@ static void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filt
     }
 }
 
-static void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expression)
+static void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression)
 {
     if (dag)
-        dag->mergeInplace(expression.clone());
+        dag->mergeInplace(std::move(*expression->clone()));
     else
-        dag = expression.clone();
+        dag = expression->clone();
 }
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
-void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
+void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns & fixed_columns, size_t & limit)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
@@ -191,11 +191,13 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
             /// Should ignore limit if there is filtering.
             limit = 0;
 
-            //std::cerr << "====== Adding prewhere " << std::endl;
-            appendExpression(dag, prewhere_info->prewhere_actions);
-            if (const auto * filter_expression = dag->tryFindInOutputs(prewhere_info->prewhere_column_name))
-                appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
-
+            if (prewhere_info->prewhere_actions)
+            {
+                //std::cerr << "====== Adding prewhere " << std::endl;
+                appendExpression(dag, prewhere_info->prewhere_actions);
+                if (const auto * filter_expression = dag->tryFindInOutputs(prewhere_info->prewhere_column_name))
+                    appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
+            }
         }
         return;
     }
@@ -210,7 +212,7 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
         const auto & actions = expression->getExpression();
 
         /// Should ignore limit because arrayJoin() can reduce the number of rows in case of empty array.
-        if (actions.hasArrayJoin())
+        if (actions->hasArrayJoin())
             limit = 0;
 
         appendExpression(dag, actions);
@@ -255,7 +257,7 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
 
 /// Add more functions to fixed columns.
 /// Functions result is fixed if all arguments are fixed or constants.
-void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
+void enreachFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
 {
     struct Frame
     {
@@ -300,20 +302,20 @@ void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
                     {
                         if (frame.node->function_base->isDeterministicInScopeOfQuery())
                         {
-                            //std::cerr << "*** enrichFixedColumns check " << frame.node->result_name << std::endl;
+                            //std::cerr << "*** enreachFixedColumns check " << frame.node->result_name << std::endl;
                             bool all_args_fixed_or_const = true;
                             for (const auto * child : frame.node->children)
                             {
                                 if (!child->column && !fixed_columns.contains(child))
                                 {
-                                    //std::cerr << "*** enrichFixedColumns fail " << child->result_name <<  ' ' << static_cast<const void *>(child) << std::endl;
+                                    //std::cerr << "*** enreachFixedColumns fail " << child->result_name <<  ' ' << static_cast<const void *>(child) << std::endl;
                                     all_args_fixed_or_const = false;
                                 }
                             }
 
                             if (all_args_fixed_or_const)
                             {
-                                //std::cerr << "*** enrichFixedColumns add " << frame.node->result_name << ' ' << static_cast<const void *>(frame.node) << std::endl;
+                                //std::cerr << "*** enreachFixedColumns add " << frame.node->result_name << ' ' << static_cast<const void *>(frame.node) << std::endl;
                                 fixed_columns.insert(frame.node);
                             }
                         }
@@ -328,7 +330,7 @@ void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
 
 InputOrderInfoPtr buildInputOrderInfo(
     const FixedColumns & fixed_columns,
-    const std::optional<ActionsDAG> & dag,
+    const ActionsDAGPtr & dag,
     const SortDescription & description,
     const KeyDescription & sorting_key,
     size_t limit)
@@ -357,7 +359,7 @@ InputOrderInfoPtr buildInputOrderInfo(
             }
         }
 
-        enrichFixedColumns(sorting_key_dag, fixed_key_columns);
+        enreachFixedColumns(sorting_key_dag, fixed_key_columns);
     }
 
     /// This is a result direction we will read from MergeTree
@@ -505,7 +507,7 @@ struct AggregationInputOrder
 
 AggregationInputOrder buildInputOrderInfo(
     const FixedColumns & fixed_columns,
-    const std::optional<ActionsDAG> & dag,
+    const ActionsDAGPtr & dag,
     const Names & group_by_keys,
     const ActionsDAG & sorting_key_dag,
     const Names & sorting_key_columns)
@@ -530,7 +532,7 @@ AggregationInputOrder buildInputOrderInfo(
             }
         }
 
-        enrichFixedColumns(sorting_key_dag, fixed_key_columns);
+        enreachFixedColumns(sorting_key_dag, fixed_key_columns);
 
         for (const auto * output : dag->getOutputs())
         {
@@ -691,7 +693,7 @@ AggregationInputOrder buildInputOrderInfo(
 InputOrderInfoPtr buildInputOrderInfo(
     const ReadFromMergeTree * reading,
     const FixedColumns & fixed_columns,
-    const std::optional<ActionsDAG> & dag,
+    const ActionsDAGPtr & dag,
     const SortDescription & description,
     size_t limit)
 {
@@ -707,7 +709,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 InputOrderInfoPtr buildInputOrderInfo(
     ReadFromMerge * merge,
     const FixedColumns & fixed_columns,
-    const std::optional<ActionsDAG> & dag,
+    const ActionsDAGPtr & dag,
     const SortDescription & description,
     size_t limit)
 {
@@ -743,7 +745,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 AggregationInputOrder buildInputOrderInfo(
     ReadFromMergeTree * reading,
     const FixedColumns & fixed_columns,
-    const std::optional<ActionsDAG> & dag,
+    const ActionsDAGPtr & dag,
     const Names & group_by_keys)
 {
     const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
@@ -758,7 +760,7 @@ AggregationInputOrder buildInputOrderInfo(
 AggregationInputOrder buildInputOrderInfo(
     ReadFromMerge * merge,
     const FixedColumns & fixed_columns,
-    const std::optional<ActionsDAG> & dag,
+    const ActionsDAGPtr & dag,
     const Names & group_by_keys)
 {
     const auto & tables = merge->getSelectedTables();
@@ -799,12 +801,12 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
     const auto & description = sorting.getSortDescription();
     size_t limit = sorting.getLimit();
 
-    std::optional<ActionsDAG> dag;
+    ActionsDAGPtr dag;
     FixedColumns fixed_columns;
     buildSortingDAG(node, dag, fixed_columns, limit);
 
     if (dag && !fixed_columns.empty())
-        enrichFixedColumns(*dag, fixed_columns);
+        enreachFixedColumns(*dag, fixed_columns);
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
@@ -853,12 +855,12 @@ AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPl
     const auto & keys = aggregating.getParams().keys;
     size_t limit = 0;
 
-    std::optional<ActionsDAG> dag;
+    ActionsDAGPtr dag;
     FixedColumns fixed_columns;
     buildSortingDAG(node, dag, fixed_columns, limit);
 
     if (dag && !fixed_columns.empty())
-        enrichFixedColumns(*dag, fixed_columns);
+        enreachFixedColumns(*dag, fixed_columns);
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
@@ -1055,7 +1057,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     }
 
     auto context = read_from_merge_tree->getContext();
-    const auto & settings = context->getSettingsRef();
+    const auto & settings = context->getSettings();
     if (!settings.optimize_read_in_window_order || (settings.optimize_read_in_order && settings.query_plan_read_in_order) || context->getSettingsRef().allow_experimental_analyzer)
     {
         return 0;
@@ -1074,13 +1076,13 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     for (const auto & actions_dag : window_desc.partition_by_actions)
     {
         order_by_elements_actions.emplace_back(
-            std::make_shared<ExpressionActions>(actions_dag->clone(), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
+            std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
     }
 
     for (const auto & actions_dag : window_desc.order_by_actions)
     {
         order_by_elements_actions.emplace_back(
-            std::make_shared<ExpressionActions>(actions_dag->clone(), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
+            std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
     }
 
     auto order_optimizer = std::make_shared<ReadInOrderOptimizer>(

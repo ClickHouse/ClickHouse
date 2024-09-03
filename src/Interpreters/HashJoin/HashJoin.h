@@ -345,18 +345,6 @@ public:
 
         size_t blocks_allocated_size = 0;
         size_t blocks_nullmaps_allocated_size = 0;
-
-        /// Number of rows of right table to join
-        size_t rows_to_join = 0;
-        /// Number of keys of right table to join
-        size_t keys_to_join = 0;
-
-        size_t avgPerKeyRows() const
-        {
-            if (keys_to_join == 0)
-                return 0;
-            return rows_to_join / keys_to_join;
-        }
     };
 
     using RightTableDataPtr = std::shared_ptr<RightTableData>;
@@ -384,7 +372,7 @@ public:
 
     void debugKeys() const;
 
-    void shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize = false);
+    void shrinkStoredBlocksToFit(size_t & total_bytes_in_join);
 
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
 

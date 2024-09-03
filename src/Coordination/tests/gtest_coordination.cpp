@@ -111,13 +111,10 @@ public:
     }
 };
 
-using Implementation = testing::Types<TestParam<DB::KeeperMemoryStorage, true>
-                                      ,TestParam<DB::KeeperMemoryStorage, false>
-#if USE_ROCKSDB
-                                      ,TestParam<DB::KeeperRocksStorage, true>
-                                      ,TestParam<DB::KeeperRocksStorage, false>
-#endif
-                                      >;
+using Implementation = testing::Types<TestParam<DB::KeeperMemoryStorage, true>,
+                                      TestParam<DB::KeeperMemoryStorage, false>,
+                                      TestParam<DB::KeeperRocksStorage, true>,
+                                      TestParam<DB::KeeperRocksStorage, false>>;
 TYPED_TEST_SUITE(CoordinationTest, Implementation);
 
 TYPED_TEST(CoordinationTest, RaftServerConfigParse)

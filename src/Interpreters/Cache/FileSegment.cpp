@@ -502,11 +502,7 @@ LockedKeyPtr FileSegment::lockKeyMetadata(bool assert_exists) const
     return metadata->tryLock();
 }
 
-bool FileSegment::reserve(
-    size_t size_to_reserve,
-    size_t lock_wait_timeout_milliseconds,
-    std::string & failure_reason,
-    FileCacheReserveStat * reserve_stat)
+bool FileSegment::reserve(size_t size_to_reserve, size_t lock_wait_timeout_milliseconds, FileCacheReserveStat * reserve_stat)
 {
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
@@ -558,7 +554,7 @@ bool FileSegment::reserve(
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
 
-    bool reserved = cache->tryReserve(*this, size_to_reserve, *reserve_stat, getKeyMetadata()->user, lock_wait_timeout_milliseconds, failure_reason);
+    bool reserved = cache->tryReserve(*this, size_to_reserve, *reserve_stat, getKeyMetadata()->user, lock_wait_timeout_milliseconds);
 
     if (!reserved)
         setDownloadFailedUnlocked(lock());
@@ -1012,12 +1008,7 @@ FileSegment & FileSegmentsHolder::add(FileSegmentPtr && file_segment)
     return *file_segments.back();
 }
 
-String FileSegmentsHolder::toString(bool with_state)
-{
-    return DB::toString(file_segments, with_state);
-}
-
-String toString(const FileSegments & file_segments, bool with_state)
+String FileSegmentsHolder::toString()
 {
     String ranges;
     for (const auto & file_segment : file_segments)
@@ -1027,8 +1018,6 @@ String toString(const FileSegments & file_segments, bool with_state)
         ranges += file_segment->range().toString();
         if (file_segment->isUnbound())
             ranges += "(unbound)";
-        if (with_state)
-            ranges += "(" + FileSegment::stateToString(file_segment->state()) + ")";
     }
     return ranges;
 }

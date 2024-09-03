@@ -148,12 +148,10 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
 {
     if (engine_args.size() < 3 || engine_args.size() > (with_structure ? 8 : 7))
     {
-        throw Exception(
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Storage AzureBlobStorage requires 3 to {} arguments: "
-            "AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, "
-            "[account_name, account_key, format, compression, structure)])",
-            (with_structure ? 8 : 7));
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Storage AzureBlobStorage requires 3 to 7 arguments: "
+                        "AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, "
+                        "[account_name, account_key, format, compression, structure)])");
     }
 
     for (auto & engine_arg : engine_args)

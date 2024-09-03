@@ -247,7 +247,7 @@ AggregateFunctionPtr createAggregateFunctionGroupConcat(
         if (type != Field::Types::String)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First parameter for aggregate function {} should be string", name);
 
-        delimiter = parameters[0].safeGet<String>();
+        delimiter = parameters[0].get<String>();
     }
     if (parameters.size() == 2)
     {
@@ -256,12 +256,12 @@ AggregateFunctionPtr createAggregateFunctionGroupConcat(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter for aggregate function {} should be a positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[1].safeGet<Int64>() <= 0) ||
-            (type == Field::Types::UInt64 && parameters[1].safeGet<UInt64>() == 0))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter for aggregate function {} should be a positive number, got: {}", name, parameters[1].safeGet<Int64>());
+        if ((type == Field::Types::Int64 && parameters[1].get<Int64>() <= 0) ||
+            (type == Field::Types::UInt64 && parameters[1].get<UInt64>() == 0))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter for aggregate function {} should be a positive number, got: {}", name, parameters[1].get<Int64>());
 
         has_limit = true;
-        limit = parameters[1].safeGet<UInt64>();
+        limit = parameters[1].get<UInt64>();
     }
 
     if (has_limit)

@@ -1,5 +1,4 @@
-#include <Storages/Kafka/parseSyslogLevel.h>
-
+#include "parseSyslogLevel.h"
 #include <sys/syslog.h>
 
 /// Must be in a separate compilation unit due to macros overlaps:

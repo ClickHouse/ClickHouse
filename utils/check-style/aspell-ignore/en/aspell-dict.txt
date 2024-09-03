@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2983
+personal_ws-1.1 en 2942 
 AArch
 ACLs
 ALTERs
@@ -247,7 +247,6 @@ DoubleDelta
 Doxygen
 Durre
 ECMA
-ETag
 Ecto
 EdgeAngle
 EdgeLengthKm
@@ -385,26 +384,12 @@ IntelliJ
 IntelliSense
 InterserverConnection
 InterserverThreads
-IntervalDay
-IntervalHour
-IntervalMicrosecond
-IntervalMillisecond
-IntervalMilliseconds
-IntervalMinute
-IntervalMonth
-IntervalNanosecond
-IntervalQuarter
-IntervalSecond
-IntervalWeek
-IntervalYear
 IsPentagon
 IsResClassIII
 IsValid
 JBOD
 JOINed
 JOINs
-JSONAllPaths
-JSONAllPathsWithTypes
 JSONArrayLength
 JSONAsObject
 JSONAsString
@@ -419,8 +404,6 @@ JSONCompactStrings
 JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
-JSONDynamicPaths
-JSONDynamicPathsWithTypes
 JSONEachRow
 JSONEachRowWithProgress
 JSONExtract
@@ -440,8 +423,6 @@ JSONObjectEachRow
 JSONStrings
 JSONStringsEachRow
 JSONStringsEachRowWithProgress
-JSONSharedDataPaths
-JSONSharedDataPathsWithTypes
 JSONType
 JSONs
 Jaeger
@@ -580,7 +561,6 @@ MindsDB
 Mongodb
 Monotonicity
 MsgPack
-MultiLineString
 MultiPolygon
 Multiline
 Multiqueries
@@ -975,7 +955,6 @@ ThreadPoolRemoteFSReaderThreads
 ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
 ThreadsInOvercommitTracker
-TimeSeries
 Timeunit
 TinyLog
 Tkachenko
@@ -1117,12 +1096,12 @@ addressToLineWithInlines
 addressToSymbol
 adviced
 agg
-aggThrow
 aggregatefunction
 aggregatingmergetree
 aggregatio
 aggretate
 aggthrow
+aggThrow
 aiochclient
 allocator
 alphaTokens
@@ -1608,7 +1587,6 @@ enum's
 enums
 erfc
 errorCodeToName
-etag
 evalMLMethod
 exFAT
 expiryMsec
@@ -1644,7 +1622,6 @@ filesystem
 filesystemAvailable
 filesystemCapacity
 filesystemFree
-filesystemUnreserved
 filesystems
 finalizeAggregation
 fips
@@ -1694,7 +1671,6 @@ fuzzQuery
 fuzzer
 fuzzers
 gRPC
-gaugehistogram
 gccMurmurHash
 gcem
 generateRandom
@@ -1721,8 +1697,6 @@ getOSKernelVersion
 getServerPort
 getSetting
 getSizeOfEnumType
-getSubcolumn
-getTypeSerializationStreams
 getblockinfo
 getevents
 ghcnd
@@ -1758,7 +1732,6 @@ groupBitmap
 groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
-groupConcat
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1775,7 +1748,6 @@ groupbitmapor
 groupbitmapxor
 groupbitor
 groupbitxor
-groupconcat
 groupuniqarray
 grpc
 grpcio
@@ -1893,10 +1865,8 @@ jdbc
 jemalloc
 jeprof
 joinGet
-joinGetOrNull
 json
 jsonMergePatch
-jsonasobject
 jsonasstring
 jsoncolumns
 jsoncolumnsmonoblock
@@ -1938,8 +1908,8 @@ kurtSamp
 kurtosis
 kurtpop
 kurtsamp
-lagInFrame
 laion
+lagInFrame
 lang
 laravel
 largestTriangleThreeBuckets
@@ -2041,6 +2011,7 @@ maxMap
 maxintersections
 maxintersectionsposition
 maxmap
+minMappedArrays
 maxmind
 mdadm
 meanZTest
@@ -2111,7 +2082,6 @@ multiSearchFirstPositionUTF
 multibyte
 multidirectory
 multiline
-multilinestring
 multiplyDecimal
 multipolygon
 multisearchany
@@ -2135,14 +2105,11 @@ namenode
 namepassword
 nameprofile
 namequota
-namespace
 namespaces
 natively
 nats
-ness
 nestjs
 netloc
-newjson
 ngram
 ngramDistance
 ngramDistanceCaseInsensitive
@@ -2210,7 +2177,6 @@ outfile
 overcommit
 overcommitted
 overfitting
-overlayUTF
 overparallelization
 packetpool
 packetsize
@@ -2237,8 +2203,8 @@ parseReadableSizeOrZero
 parseTimeDelta
 parseable
 parsers
-partitionID
 partitionId
+partitionID
 pathFull
 pclmulqdq
 pcre
@@ -2311,7 +2277,6 @@ prettyspacemonoblock
 prettyspacenoescapes
 prettyspacenoescapesmonoblock
 prewhere
-printf
 privateKeyFile
 privateKeyPassphraseHandler
 prlimit
@@ -2393,7 +2358,6 @@ rankCorr
 rapidjson
 rawblob
 readWKTLineString
-readWKTMultiLineString
 readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
@@ -2467,7 +2431,6 @@ rewritable
 rightPad
 rightPadUTF
 rightUTF
-ripeMD
 risc
 riscv
 ro
@@ -2587,7 +2550,6 @@ startsWithUTF
 startswith
 statbox
 stateful
-stateset
 stddev
 stddevPop
 stddevPopStable
@@ -2719,9 +2681,6 @@ themself
 threadpool
 throwIf
 timeDiff
-timeSeriesData
-timeSeriesMetrics
-timeSeriesTags
 timeSlot
 timeSlots
 timeZone
@@ -2753,17 +2712,6 @@ toISOWeek
 toISOYear
 toInt
 toInterval
-toIntervalDay
-toIntervalHour
-toIntervalMicrosecond
-toIntervalMillisecond
-toIntervalMinute
-toIntervalMonth
-toIntervalNanosecond
-toIntervalQuarter
-toIntervalSecond
-toIntervalWeek
-toIntervalYear
 toJSONString
 toLastDayOfMonth
 toLastDayOfWeek
