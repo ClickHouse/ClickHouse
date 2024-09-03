@@ -54,9 +54,7 @@ ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SHOW CREATE TABLE clone_as_f
 echo "from foo_replacing_merge_tree"
 ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SELECT * FROM foo_replacing_merge_tree"
 echo "from clone_as_foo_replacing_merge_tree"
-${CLICKHOUSE_CLIENT} -q "SELECT mutation_id, command, block_numbers.partition_id, block_numbers.number, parts_to_do, is_done FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and table = 'clone_as_foo_replacing_merge_tree' ORDER BY mutation_id"
 ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 -q "SELECT * FROM clone_as_foo_replacing_merge_tree FINAL"
-${CLICKHOUSE_CLIENT} -q "SELECT mutation_id, command, block_numbers.partition_id, block_numbers.number, parts_to_do, is_done FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and table = 'clone_as_foo_replacing_merge_tree' ORDER BY mutation_id"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS foo_memory"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS clone_as_foo_memory"

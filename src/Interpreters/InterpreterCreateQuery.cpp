@@ -1957,27 +1957,20 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
             return {};
         }
 
+        auto partition = std::make_shared<ASTPartition>();
+        partition->all = true;
+
+        auto command = std::make_shared<ASTAlterCommand>();
+        command->replace = false;
+        command->type = ASTAlterCommand::REPLACE_PARTITION;
+        command->partition = command->children.emplace_back(std::move(partition)).get();
+        command->from_database = as_database_name;
+        command->from_table = as_table_saved;
+        command->to_database = create.getDatabase();
+        command->to_table = create.getTable();
+
         auto command_list = std::make_shared<ASTExpressionList>();
-        for (const auto & partition_id : merge_tree_table->getAllPartitionIds())
-        {
-            auto partition = std::make_shared<ASTPartition>();
-            partition->all = false;
-            partition->setPartitionID(std::make_shared<ASTLiteral>(partition_id));
-
-            auto command = std::make_shared<ASTAlterCommand>();
-            command->replace = false;
-
-            command->type = ASTAlterCommand::REPLACE_PARTITION;
-            command->partition = command->children.emplace_back(std::move(partition)).get();
-
-            command->from_database = as_database_name;
-            command->from_table = as_table_saved;
-
-            command->to_database = create.getDatabase();
-            command->to_table = create.getTable();
-
-            command_list->children.push_back(command);
-        }
+        command_list->children.push_back(command);
 
         auto query = std::make_shared<ASTAlterQuery>();
         query->database = create.database;
