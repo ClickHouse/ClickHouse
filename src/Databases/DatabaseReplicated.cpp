@@ -864,7 +864,8 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
         return;
     }
 
-    if (query_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments == 0)
+    /// We will replace it with default arguments if the setting is 2
+    if (query_context->getSettingsRef().database_replicated_allow_replicated_engine_arguments != 2)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
                     "Explicit zookeeper_path and replica_name are specified in ReplicatedMergeTree arguments. "
                     "If you really want to specify it explicitly, then you should use some macros "

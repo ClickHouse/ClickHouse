@@ -1239,7 +1239,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     bool from_path = create.attach_from_path.has_value();
     bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (database->getEngineName() == "Replicated" && create.uuid != UUIDHelpers::Nil && !is_replicated_database_internal && !create.attach)
+    if (database->getEngineName() == "Replicated" && create.uuid != UUIDHelpers::Nil && !is_replicated_database_internal && !is_on_cluster && !create.attach)
     {
         if (getContext()->getSettingsRef().database_replicated_allow_explicit_uuid == 0)
         {
@@ -1253,7 +1253,8 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
         else if (getContext()->getSettingsRef().database_replicated_allow_explicit_uuid == 2)
         {
             UUID old_uuid = create.uuid;
-            create.generateRandomUUID(/*always_generate_new_uuid*/ true);
+            create.uuid = UUIDHelpers::Nil;
+            create.generateRandomUUIDs();
             LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "Replaced a user-provided UUID ({}) with a random one ({}) "
                                                                    "to make sure it's unique", old_uuid, create.uuid);
         }
