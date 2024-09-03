@@ -29,7 +29,7 @@ static constexpr size_t MAX_ARRAYS_SIZE = 1ULL << 40;
 
 void SerializationArray::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const Array & a = field.get<const Array &>();
+    const Array & a = field.safeGet<const Array &>();
     writeVarUInt(a.size(), ostr);
     for (const auto & i : a)
     {
@@ -42,16 +42,16 @@ void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr, con
 {
     size_t size;
     readVarUInt(size, istr);
-    if (settings.max_binary_array_size && size > settings.max_binary_array_size)
+    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.max_binary_array_size);
+            settings.binary.max_binary_string_size);
 
     field = Array();
-    Array & arr = field.get<Array &>();
+    Array & arr = field.safeGet<Array &>();
     arr.reserve(size);
     for (size_t i = 0; i < size; ++i)
         nested->deserializeBinary(arr.emplace_back(), istr, settings);
@@ -82,13 +82,13 @@ void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 
     size_t size;
     readVarUInt(size, istr);
-    if (settings.max_binary_array_size && size > settings.max_binary_array_size)
+    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.max_binary_array_size);
+            settings.binary.max_binary_string_size);
 
     IColumn & nested_column = column_array.getData();
 

@@ -6,6 +6,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrder(
@@ -32,7 +33,15 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
         context_)
     , extension(std::move(extension_))
     , mode(mode_)
+    , min_marks_per_task(pool_settings.min_marks_for_concurrent_read)
 {
+    for (const auto & info : per_part_infos)
+        min_marks_per_task = std::max(min_marks_per_task, info->min_marks_per_task);
+
+    if (min_marks_per_task == 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
+
     for (const auto & part : parts_ranges)
         request.push_back({part.data_part->info, MarkRanges{}});
 
@@ -76,12 +85,8 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     if (no_more_tasks)
         return nullptr;
 
-    auto response = extension.callback(ParallelReadRequest(
-        mode,
-        extension.number_of_current_replica,
-        pool_settings.min_marks_for_concurrent_read * request.size(),
-        request
-    ));
+    auto response
+        = extension.callback(ParallelReadRequest(mode, extension.number_of_current_replica, min_marks_per_task * request.size(), request));
 
     if (!response || response->description.empty() || response->finish)
     {

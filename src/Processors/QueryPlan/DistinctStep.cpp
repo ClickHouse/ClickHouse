@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 static ITransformingStep::Traits getTraits(bool pre_distinct)
 {
     const bool preserves_number_of_streams = pre_distinct;
@@ -90,7 +95,8 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             /// final distinct for sorted stream (sorting inside and among chunks)
             if (input_stream.sort_scope == DataStream::SortScope::Global)
             {
-                assert(input_stream.has_single_port);
+                if (pipeline.getNumStreams() != 1)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "DistinctStep with in-order expects single input");
 
                 if (distinct_sort_desc.size() < columns.size())
                 {

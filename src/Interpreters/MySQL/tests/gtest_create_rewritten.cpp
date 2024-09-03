@@ -2,12 +2,10 @@
 
 #include <gtest/gtest.h>
 
-#include <Parsers/IAST.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTExternalDDLQuery.h>
 #include <Parsers/ParserExternalDDLQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/MySQL/InterpretersMySQLDDLQuery.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
@@ -26,8 +24,8 @@ static inline ASTPtr tryRewrittenCreateQuery(const String & query, ContextPtr co
         context, "test_database", "test_database")[0];
 }
 
-static const char MATERIALIZEDMYSQL_TABLE_COLUMNS[] = ", `_sign` Int8() MATERIALIZED 1"
-                                                     ", `_version` UInt64() MATERIALIZED 1"
+static const char MATERIALIZEDMYSQL_TABLE_COLUMNS[] = ", `_sign` Int8 MATERIALIZED 1"
+                                                     ", `_version` UInt64 MATERIALIZED 1"
                                                      ", INDEX _version _version TYPE minmax GRANULARITY 1";
 
 TEST(MySQLCreateRewritten, ColumnsDataType)

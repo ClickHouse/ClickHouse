@@ -212,6 +212,8 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         std::make_shared<FourLetterWordCommand>(),
         std::make_shared<GetDirectChildrenNumberCommand>(),
         std::make_shared<GetAllChildrenNumberCommand>(),
+        std::make_shared<CPCommand>(),
+        std::make_shared<MVCommand>(),
     });
 
     String home_path;
@@ -314,6 +316,7 @@ void KeeperClient::runInteractiveReplxx()
         suggest,
         history_file,
         /* multiline= */ false,
+        /* ignore_shell_suspend= */ false,
         query_extenders,
         query_delimiters,
         word_break_characters,
@@ -368,7 +371,7 @@ int KeeperClient::main(const std::vector<String> & /* args */)
         return 0;
     }
 
-    DB::ConfigProcessor config_processor(config().getString("config-file", "config.xml"));
+    ConfigProcessor config_processor(config().getString("config-file", "config.xml"));
 
     /// This will handle a situation when clickhouse is running on the embedded config, but config.d folder is also present.
     ConfigProcessor::registerEmbeddedConfig("config.xml", "<clickhouse/>");
@@ -383,6 +386,9 @@ int KeeperClient::main(const std::vector<String> & /* args */)
 
         for (const auto & key : keys)
         {
+            if (key != "node")
+                continue;
+
             String prefix = "zookeeper." + key;
             String host = clickhouse_config.configuration->getString(prefix + ".host");
             String port = clickhouse_config.configuration->getString(prefix + ".port");
@@ -401,6 +407,7 @@ int KeeperClient::main(const std::vector<String> & /* args */)
         zk_args.hosts.push_back(host + ":" + port);
     }
 
+    zk_args.availability_zones.resize(zk_args.hosts.size());
     zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
     zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;

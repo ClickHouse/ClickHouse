@@ -55,9 +55,9 @@ public:
         auto check_first_argument = [&]
         {
             const DataTypePtr & type_arg1 = arguments[0].type;
-            if (!isDate(type_arg1) && !isDateTime(type_arg1) && !isDateTime64(type_arg1))
+            if (!isDateOrDate32(type_arg1) && !isDateTime(type_arg1) && !isDateTime64(type_arg1))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of 1st argument of function {}, expected a Date, DateTime or DateTime64",
+                    "Illegal type {} of 1st argument of function {}, expected a Date, Date32, DateTime or DateTime64",
                     type_arg1->getName(), getName());
             value_is_date = isDate(type_arg1);
         };
@@ -67,6 +67,7 @@ public:
         enum class ResultType : uint8_t
         {
             Date,
+            Date32,
             DateTime,
             DateTime64
         };
@@ -183,6 +184,8 @@ public:
         {
             case ResultType::Date:
                 return std::make_shared<DataTypeDate>();
+            case ResultType::Date32:
+                return std::make_shared<DataTypeDate32>();
             case ResultType::DateTime:
             {
                 const size_t time_zone_arg_num = (overload == Overload::Default) ? 2 : 3;
@@ -212,7 +215,7 @@ public:
         std::unreachable();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /* input_rows_count */) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto & time_column = arguments[0];
         const auto & interval_column = arguments[1];
@@ -263,7 +266,13 @@ private:
             if (time_column_vec)
                 return dispatchForIntervalColumn<ReturnType>(assert_cast<const DataTypeDateTime64 &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone, scale);
         }
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for 1st argument of function {}, expected a Date, DateTime or DateTime64", getName());
+        else if (isDate32(time_column_type))
+        {
+            const auto * time_column_vec = checkAndGetColumn<ColumnDate32>(&time_column_col);
+            if (time_column_vec)
+                return dispatchForIntervalColumn(assert_cast<const DataTypeDate32 &>(time_column_type), *time_column_vec, interval_column, result_type, time_zone, input_rows_count);
+        }
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for 1st argument of function {}, expected a Date, Date32, DateTime or DateTime64", getName());
     }
 
     template <typename ReturnType, typename TimeColumnType, typename TimeDataType>
@@ -336,12 +345,11 @@ private:
         using ResultColumnType = typename ResultDataType::ColumnType;
 
         const auto & time_data = time_column_type.getData();
-        size_t size = time_data.size();
 
         auto result_col = result_type->createColumn();
         auto * col_to = assert_cast<ResultColumnType *>(result_col.get());
         auto & result_data = col_to->getData();
-        result_data.resize(size);
+        result_data.resize(input_rows_count);
 
         Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
 

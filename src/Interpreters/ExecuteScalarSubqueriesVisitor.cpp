@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteHelpers.h>
@@ -73,7 +74,7 @@ void ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
 static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqueriesMatcher::Data & data)
 {
     auto subquery_context = Context::createCopy(data.getContext());
-    Settings subquery_settings = data.getContext()->getSettings();
+    Settings subquery_settings = data.getContext()->getSettingsCopy();
     subquery_settings.max_result_rows = 1;
     subquery_settings.extremes = false;
     subquery_context->setSettings(subquery_settings);

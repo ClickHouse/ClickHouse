@@ -34,7 +34,7 @@ private:
     void initialize(CoordinationMode mode);
 
     std::mutex mutex;
-    size_t replicas_count{0};
+    const size_t replicas_count{0};
     size_t mark_segment_size{0};
     std::unique_ptr<ImplInterface> pimpl;
     ProgressCallback progress_callback; // store the callback only to bypass it to coordinator implementation

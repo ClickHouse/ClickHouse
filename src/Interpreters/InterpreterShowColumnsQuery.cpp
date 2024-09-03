@@ -3,6 +3,7 @@
 
 #include <Common/quoteString.h>
 #include <Common/escapeString.h>
+#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowColumnsQuery.h>
@@ -67,6 +68,7 @@ WITH map(
         'Map',         'JSON',
         'Tuple',       'JSON',
         'Object',      'JSON',
+        'JSON',        'JSON',
         'String',      '{}',
         'FixedString', '{}') AS native_to_mysql_mapping,
         )",

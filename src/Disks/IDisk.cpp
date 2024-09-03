@@ -186,7 +186,7 @@ void IDisk::checkAccess()
     DB::UUID server_uuid = DB::ServerUUID::get();
     if (server_uuid == DB::UUIDHelpers::Nil)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
-    const String path = fmt::format("clickhouse_access_check_{}", DB::toString(server_uuid));
+    const String path = fmt::format("clickhouse_access_check_{}", toString(server_uuid));
 
     checkAccessImpl(path);
 }

@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/kurtsamp
-sidebar_position: 154
+sidebar_position: 158
 ---
 
 # kurtSamp

@@ -16,7 +16,7 @@ namespace ErrorCodes
  * (lazy_sources contains not pointers themself, but their delayed constructors)
  *
  * Firtly, CascadeWriteBuffer redirects data to first buffer of the sequence
- * If current WriteBuffer cannot receive data anymore, it throws special exception MemoryWriteBuffer::CurrentBufferExhausted in nextImpl() body,
+ * If current WriteBuffer cannot receive data anymore, it throws special exception WriteBuffer::CurrentBufferExhausted in nextImpl() body,
  *  CascadeWriteBuffer prepare next buffer and continuously redirects data to it.
  * If there are no buffers anymore CascadeWriteBuffer throws an exception.
  *
@@ -48,6 +48,7 @@ public:
 private:
 
     void finalizeImpl() override;
+    void cancelImpl() noexcept override;
 
     WriteBuffer * setNextBuffer();
 

@@ -7,25 +7,24 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #endif
-#if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_HDFS
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #endif
-#if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_AZURE_BLOB_STORAGE
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #endif
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 #include <Disks/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
-#endif
 #include <Disks/ObjectStorages/MetadataStorageFactory.h>
 #include <Disks/ObjectStorages/PlainObjectStorage.h>
 #include <Disks/ObjectStorages/PlainRewritableObjectStorage.h>
 #include <Disks/ObjectStorages/createMetadataStorageMetrics.h>
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
+#include <Core/Settings.h>
 
 #include <filesystem>
 
@@ -284,7 +283,7 @@ void registerS3PlainRewritableObjectStorage(ObjectStorageFactory & factory)
 
 #endif
 
-#if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_HDFS
 void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType(
@@ -309,7 +308,7 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 }
 #endif
 
-#if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_AZURE_BLOB_STORAGE
 void registerAzureObjectStorage(ObjectStorageFactory & factory)
 {
     auto creator = [](
@@ -319,21 +318,27 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        AzureBlobStorageEndpoint endpoint = processAzureBlobStorageEndpoint(config, config_prefix);
+        auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context);
+
+        AzureBlobStorage::ConnectionParams params
+        {
+            .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
+            .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
+            .client_options = AzureBlobStorage::getClientOptions(*azure_settings, /*for_disk=*/ true),
+        };
 
         return createObjectStorage<AzureObjectStorage>(
             ObjectStorageType::Azure, config, config_prefix, name,
-            getAzureBlobContainerClient(config, config_prefix),
-            getAzureBlobStorageSettings(config, config_prefix, context),
-            endpoint.prefix.empty() ? endpoint.container_name : endpoint.container_name + "/" + endpoint.prefix,
-            endpoint.getEndpointWithoutContainer());
+            AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
+            params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
+            params.endpoint.getEndpointWithoutContainer());
     };
+
     factory.registerObjectStorageType("azure_blob_storage", creator);
     factory.registerObjectStorageType("azure", creator);
 }
 #endif
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 void registerWebObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType("web", [](
@@ -381,7 +386,6 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
     factory.registerObjectStorageType("local_blob_storage", creator);
     factory.registerObjectStorageType("local", creator);
 }
-#endif
 
 void registerObjectStorages()
 {
@@ -393,18 +397,16 @@ void registerObjectStorages()
     registerS3PlainRewritableObjectStorage(factory);
 #endif
 
-#if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_HDFS
     registerHDFSObjectStorage(factory);
 #endif
 
-#if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
+#if USE_AZURE_BLOB_STORAGE
     registerAzureObjectStorage(factory);
 #endif
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     registerWebObjectStorage(factory);
     registerLocalObjectStorage(factory);
-#endif
 }
 
 }

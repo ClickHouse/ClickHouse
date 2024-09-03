@@ -13,6 +13,7 @@
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
+#include <Core/Settings.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>

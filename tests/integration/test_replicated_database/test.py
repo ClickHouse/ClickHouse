@@ -337,8 +337,12 @@ def test_alter_attach(started_cluster, attachable_part, engine):
         main_node.query(f"SELECT CounterID FROM {database}.alter_attach_test")
         == "123\n"
     )
+
     # On the other node, data is replicated only if using a Replicated table engine
     if engine == "ReplicatedMergeTree":
+        dummy_node.query(
+            f"SYSTEM SYNC REPLICA {database}.alter_attach_test LIGHTWEIGHT"
+        )
         assert (
             dummy_node.query(f"SELECT CounterID FROM {database}.alter_attach_test")
             == "123\n"

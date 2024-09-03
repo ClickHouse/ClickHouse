@@ -59,9 +59,26 @@ struct GroupConcatDataBase
         data_size += str_size;
     }
 
+    void insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena)
+    {
+        WriteBufferFromOwnString buff;
+        serialization->serializeText(*column, row_num, buff, FormatSettings{});
+        auto string = buff.stringView();
+        insertChar(string.data(), string.size(), arena);
+    }
+
 };
 
-struct GroupConcatData : public GroupConcatDataBase
+template <bool has_limit>
+struct GroupConcatData;
+
+template<>
+struct GroupConcatData<false> final : public GroupConcatDataBase
+{
+};
+
+template<>
+struct GroupConcatData<true> final : public GroupConcatDataBase
 {
     using Offset = UInt64;
     using Allocator = MixedAlignedArenaAllocator<alignof(Offset), 4096>;
@@ -92,7 +109,7 @@ struct GroupConcatData : public GroupConcatDataBase
 
 template <bool has_limit>
 class GroupConcatImpl final
-    : public IAggregateFunctionDataHelper<GroupConcatData, GroupConcatImpl<has_limit>>
+    : public IAggregateFunctionDataHelper<GroupConcatData<has_limit>, GroupConcatImpl<has_limit>>
 {
     static constexpr auto name = "groupConcat";
 
@@ -102,7 +119,7 @@ class GroupConcatImpl final
 
 public:
     GroupConcatImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_)
-        : IAggregateFunctionDataHelper<GroupConcatData, GroupConcatImpl<has_limit>>(
+        : IAggregateFunctionDataHelper<GroupConcatData<has_limit>, GroupConcatImpl<has_limit>>(
             {data_type_}, parameters_, std::make_shared<DataTypeString>())
         , serialization(this->argument_types[0]->getDefaultSerialization())
         , limit(limit_)
@@ -162,7 +179,6 @@ public:
         auto & cur_data = this->data(place);
 
         writeVarUInt(cur_data.data_size, buf);
-        writeVarUInt(cur_data.allocated_size, buf);
 
         buf.write(cur_data.data, cur_data.data_size);
 
@@ -178,10 +194,13 @@ public:
     {
         auto & cur_data = this->data(place);
 
-        readVarUInt(cur_data.data_size, buf);
-        readVarUInt(cur_data.allocated_size, buf);
+        UInt64 temp_size = 0;
+        readVarUInt(temp_size, buf);
 
-        buf.readStrict(cur_data.data, cur_data.data_size);
+        cur_data.checkAndUpdateSize(temp_size, arena);
+
+        buf.readStrict(cur_data.data + cur_data.data_size, temp_size);
+        cur_data.data_size = temp_size;
 
         if constexpr (has_limit)
         {
@@ -198,8 +217,7 @@ public:
 
         if (cur_data.data_size == 0)
         {
-            auto column_nullable = IColumn::mutate(makeNullable(to.getPtr()));
-            column_nullable->insertDefault();
+            to.insertDefault();
             return;
         }
 
@@ -229,7 +247,7 @@ AggregateFunctionPtr createAggregateFunctionGroupConcat(
         if (type != Field::Types::String)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First parameter for aggregate function {} should be string", name);
 
-        delimiter = parameters[0].get<String>();
+        delimiter = parameters[0].safeGet<String>();
     }
     if (parameters.size() == 2)
     {
@@ -238,12 +256,12 @@ AggregateFunctionPtr createAggregateFunctionGroupConcat(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter for aggregate function {} should be a positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[1].get<Int64>() <= 0) ||
-            (type == Field::Types::UInt64 && parameters[1].get<UInt64>() == 0))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter for aggregate function {} should be a positive number, got: {}", name, parameters[1].get<Int64>());
+        if ((type == Field::Types::Int64 && parameters[1].safeGet<Int64>() <= 0) ||
+            (type == Field::Types::UInt64 && parameters[1].safeGet<UInt64>() == 0))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter for aggregate function {} should be a positive number, got: {}", name, parameters[1].safeGet<Int64>());
 
         has_limit = true;
-        limit = parameters[1].get<UInt64>();
+        limit = parameters[1].safeGet<UInt64>();
     }
 
     if (has_limit)
@@ -259,7 +277,7 @@ void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory)
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
     factory.registerFunction("groupConcat", { createAggregateFunctionGroupConcat, properties });
-    factory.registerAlias("group_concat", "groupConcat", AggregateFunctionFactory::CaseInsensitive);
+    factory.registerAlias("group_concat", "groupConcat", AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

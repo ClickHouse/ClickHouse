@@ -46,6 +46,20 @@ void checkJemallocProfilingEnabled()
             "set: MALLOC_CONF=background_thread:true,prof:true");
 }
 
+template <typename T>
+void setJemallocValue(const char * name, T value)
+{
+    T old_value;
+    size_t old_value_size = sizeof(T);
+    if (mallctl(name, &old_value, &old_value_size, reinterpret_cast<void*>(&value), sizeof(T)))
+    {
+        LOG_WARNING(getLogger("Jemalloc"), "mallctl for {} failed", name);
+        return;
+    }
+
+    LOG_INFO(getLogger("Jemalloc"), "Value for {} set to {} (from {})", name, value, old_value);
+}
+
 void setJemallocProfileActive(bool value)
 {
     checkJemallocProfilingEnabled();
@@ -58,7 +72,7 @@ void setJemallocProfileActive(bool value)
         return;
     }
 
-    mallctl("prof.active", nullptr, nullptr, &value, sizeof(bool));
+    setJemallocValue("prof.active", value);
     LOG_TRACE(getLogger("SystemJemalloc"), "Profiling is {}", value ? "enabled" : "disabled");
 }
 
@@ -82,6 +96,16 @@ std::string flushJemallocProfile(const std::string & file_prefix)
     LOG_TRACE(getLogger("SystemJemalloc"), "Flushing memory profile to {}", profile_dump_path_str);
     mallctl("prof.dump", nullptr, nullptr, &profile_dump_path_str, sizeof(profile_dump_path_str)); // NOLINT
     return profile_dump_path;
+}
+
+void setJemallocBackgroundThreads(bool enabled)
+{
+    setJemallocValue("background_thread", enabled);
+}
+
+void setJemallocMaxBackgroundThreads(size_t max_threads)
+{
+    setJemallocValue("max_background_threads", max_threads);
 }
 
 }

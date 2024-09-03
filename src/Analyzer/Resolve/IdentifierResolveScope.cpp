@@ -1,8 +1,9 @@
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
-#include <Interpreters/Context.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

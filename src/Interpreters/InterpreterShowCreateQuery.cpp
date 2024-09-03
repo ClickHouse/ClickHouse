@@ -1,9 +1,7 @@
 #include <Storages/IStorage.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
-#include <Parsers/formatAST.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/BlockIO.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
@@ -94,11 +92,17 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
     {
         auto & create = create_query->as<ASTCreateQuery &>();
         create.uuid = UUIDHelpers::Nil;
-        create.to_inner_uuid = UUIDHelpers::Nil;
+        if (create.targets)
+            create.targets->resetInnerUUIDs();
     }
 
     MutableColumnPtr column = ColumnString::create();
-    column->insert(format({.ctx = getContext(), .query = *create_query, .one_line = false}));
+    column->insert(format(
+    {
+        .ctx = getContext(),
+        .query = *create_query,
+        .one_line = false
+    }));
 
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{
         std::move(column),

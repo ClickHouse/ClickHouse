@@ -6,7 +6,7 @@ import sys
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, "helpers"))
 
-from pure_http_client import ClickHouseClient
+from pure_http_client import ClickHouseClient, requests_session_with_retries
 
 
 class Tester:
@@ -161,7 +161,7 @@ def main():
     default_index_granularity = 10
     total_rows = 8 * default_index_granularity
     step = default_index_granularity
-    session = requests.Session()
+    session = requests_session_with_retries()
     for index_granularity in [default_index_granularity - 1, default_index_granularity]:
         tester = Tester(session, url, index_granularity, total_rows)
         # Test combinations of ranges of columns c and d

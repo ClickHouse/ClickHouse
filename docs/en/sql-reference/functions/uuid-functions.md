@@ -567,12 +567,13 @@ While no standard or recommendation exists for the epoch of Snowflake IDs, imple
 **Syntax**
 
 ``` sql
-generateSnowflakeID([expr])
+generateSnowflakeID([expr, [machine_id]])
 ```
 
 **Arguments**
 
 - `expr` — An arbitrary [expression](../../sql-reference/syntax.md#syntax-expressions) used to bypass [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional.
+- `machine_id` — A machine ID, the lowest 10 bits are used. [Int64](../data-types/int-uint.md). Optional.
 
 **Returned value**
 
@@ -608,10 +609,20 @@ SELECT generateSnowflakeID(1), generateSnowflakeID(2);
 └────────────────────────┴────────────────────────┘
 ```
 
+**Example with expression and a machine ID**
+
+```
+SELECT generateSnowflakeID('expr', 1);
+
+┌─generateSnowflakeID('expr', 1)─┐
+│            7201148511606784002 │
+└────────────────────────────────┘
+```
+
 ## snowflakeToDateTime
 
 :::warning
-This function is deprecated and can only be used if setting [uniform_snowflake_conversion_functions](../../operations/settings/settings.md#uniform_snowflake_conversion_functions) is disabled.
+This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
 :::
 
@@ -652,7 +663,7 @@ Result:
 ## snowflakeToDateTime64
 
 :::warning
-This function is deprecated and can only be used if setting [uniform_snowflake_conversion_functions](../../operations/settings/settings.md#uniform_snowflake_conversion_functions) is disabled.
+This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
 :::
 
@@ -693,7 +704,7 @@ Result:
 ## dateTimeToSnowflake
 
 :::warning
-This function is deprecated and can only be used if setting [uniform_snowflake_conversion_functions](../../operations/settings/settings.md#uniform_snowflake_conversion_functions) is disabled.
+This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
 :::
 
@@ -732,7 +743,7 @@ Result:
 ## dateTime64ToSnowflake
 
 :::warning
-This function is deprecated and can only be used if setting [uniform_snowflake_conversion_functions](../../operations/settings/settings.md#uniform_snowflake_conversion_functions) is disabled.
+This function is deprecated and can only be used if setting [allow_deprecated_snowflake_conversion_functions](../../operations/settings/settings.md#allow_deprecated_snowflake_conversion_functions) is enabled.
 The function will be removed at some point in future.
 :::
 

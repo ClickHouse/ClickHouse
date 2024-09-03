@@ -47,6 +47,8 @@ def get_options(i: int, upgrade_check: bool) -> str:
 
     if i > 0 and random.random() < 1 / 3:
         client_options.append("use_query_cache=1")
+        client_options.append("query_cache_nondeterministic_function_handling='ignore'")
+        client_options.append("query_cache_system_table_handling='ignore'")
 
     if i % 5 == 1:
         client_options.append("memory_tracker_fault_probability=0.001")

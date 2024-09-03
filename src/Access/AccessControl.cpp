@@ -21,7 +21,6 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/defines.h>
 #include <IO/Operators.h>
 #include <Common/re2.h>
@@ -261,7 +260,24 @@ AccessControl::AccessControl()
 }
 
 
-AccessControl::~AccessControl() = default;
+AccessControl::~AccessControl()
+{
+    try
+    {
+        AccessControl::shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+
+void AccessControl::shutdown()
+{
+    MultipleAccessStorage::shutdown();
+    removeAllStorages();
+}
 
 
 void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,

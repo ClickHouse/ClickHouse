@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/avg
-sidebar_position: 5
+sidebar_position: 112
 ---
 
 # avg

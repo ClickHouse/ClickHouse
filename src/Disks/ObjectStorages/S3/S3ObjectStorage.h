@@ -67,7 +67,7 @@ private:
     }
 
 public:
-    template <class ...Args>
+    template <typename... Args>
     explicit S3ObjectStorage(std::unique_ptr<S3::Client> && client_, Args && ...args)
         : S3ObjectStorage("S3ObjectStorage", std::move(client_), std::forward<Args>(args)...)
     {
@@ -164,11 +164,12 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
     bool isReadOnly() const override { return s3_settings.get()->read_only; }
 
     std::shared_ptr<const S3::Client> getS3StorageClient() override;
+    std::shared_ptr<const S3::Client> tryGetS3StorageClient() override;
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 
