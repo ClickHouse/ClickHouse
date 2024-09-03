@@ -91,6 +91,8 @@ public:
 
     bool containsVolume(const String & volume_name) const override;
 
+    IStoragePolicy::MovePolicy getMovePolicy() const  override { return move_policy; }
+
 private:
     Volumes volumes;
     const String name;
@@ -101,6 +103,8 @@ private:
     /// We move something if disk from this policy
     /// filled more than total_size * move_factor
     double move_factor = 0.1; /// by default move factor is 10%
+
+    MovePolicy move_policy = MovePolicy::BY_PART_SIZE;
 
     void buildVolumeIndices();
 
