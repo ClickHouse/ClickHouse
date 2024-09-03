@@ -195,7 +195,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     }
 }
 
-bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
+bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 {
     ProfileEvents::increment(ProfileEvents::Merge);
 
@@ -657,7 +657,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::constructTaskForProjectionPart
 }
 
 
-bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeMergeProjections() // NOLINT
+bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeMergeProjections() const
 {
     /// In case if there are no projections we didn't construct a task
     if (!ctx->merge_projection_parts_task_ptr)
@@ -676,7 +676,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeMergeProjections() // N
     return true;
 }
 
-bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
+bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 {
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
     UInt64 step_time_ms = global_ctx->data->getSettings()->background_task_preferred_step_execution_time_ms.totalMilliseconds();

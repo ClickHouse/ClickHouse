@@ -268,12 +268,12 @@ private:
     {
         bool execute() override;
 
-        bool prepare();
-        bool executeImpl();
+        bool prepare() const;
+        bool executeImpl() const;
         void finalize() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
-        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)(), 3>;
+        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)()const, 3>;
 
         const ExecuteAndFinalizeHorizontalPartSubtasks subtasks
         {
@@ -288,7 +288,7 @@ private:
         void calculateProjections(const Block & block) const;
         void finalizeProjections() const;
         void constructTaskForProjectionPartsMerge() const;
-        bool executeMergeProjections();
+        bool executeMergeProjections() const;
 
         MergeAlgorithm chooseMergeAlgorithm() const;
         void createMergedStream() const;
