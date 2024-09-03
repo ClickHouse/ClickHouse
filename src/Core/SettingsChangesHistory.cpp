@@ -76,6 +76,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"create_if_not_exists", false, false, "New setting."},
             {"allow_materialized_view_with_bad_select", true, true, "Support (but not enable yet) stricter validation in CREATE MATERIALIZED VIEW"},
             {"query_metric_log_interval", 0, -1, "New setting."},
+            {"output_format_always_quote_identifiers", false, false, "New setting."},
+            {"output_format_identifier_quoting_style", "Backticks", "Backticks", "New setting."}
         }
     },
     {"24.8",
