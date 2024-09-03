@@ -53,6 +53,7 @@ ColumnObject::ColumnObject(
         auto it = typed_paths.emplace(path, std::move(column)).first;
         sorted_typed_paths.push_back(it->first);
     }
+    std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
 
     dynamic_paths.reserve(dynamic_paths_.size());
     dynamic_paths_ptrs.reserve(dynamic_paths_.size());
@@ -69,6 +70,7 @@ ColumnObject::ColumnObject(
     : max_dynamic_paths(max_dynamic_paths_), global_max_dynamic_paths(max_dynamic_paths_), max_dynamic_types(max_dynamic_types_)
 {
     typed_paths.reserve(typed_paths_.size());
+    sorted_typed_paths.reserve(typed_paths_.size());
     for (auto & [path, column] : typed_paths_)
     {
         if (!column->empty())
@@ -76,6 +78,8 @@ ColumnObject::ColumnObject(
         auto it = typed_paths.emplace(path, std::move(column)).first;
         sorted_typed_paths.push_back(it->first);
     }
+
+    std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
 
     MutableColumns paths_and_values;
     paths_and_values.emplace_back(ColumnString::create());
