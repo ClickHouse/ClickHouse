@@ -1466,7 +1466,7 @@ public:
         subqueries_for_sets = transform->getSubqueries();
     }
 
-    String getName() const override { return "Materializing"; }
+    String getName() const override { return "TTL"; }
 
     PreparedSets::Subqueries getSubqueries() { return std::move(subqueries_for_sets); }
 
@@ -1524,9 +1524,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     std::vector<QueryPlanPtr> plans;
     for (const auto & part : global_ctx->future_part->parts)
     {
-        /// TODO: this is just for debugging purposes, remove it later
         if (part->getMarksCount() == 0)
-            LOG_DEBUG(ctx->log, "Part {} is empty", part->name);
+            LOG_TRACE(ctx->log, "Part {} is empty", part->name);
 
         auto plan_for_part = std::make_unique<QueryPlan>();
         createReadFromPartStep(
@@ -1613,12 +1612,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         /// If deduplicate_by_columns is empty, add all columns except virtuals.
         if (global_ctx->deduplicate_by_columns.empty())
         {
-            for (const auto & column_name : global_ctx->merging_columns.getNames())
+            for (const auto & column : global_ctx->merging_columns)
             {
-                if (virtuals.tryGet(column_name, VirtualsKind::Persistent))
+                if (virtuals.tryGet(column.name, VirtualsKind::Persistent))
                     continue;
 
-                global_ctx->deduplicate_by_columns.emplace_back(column_name);
+                global_ctx->deduplicate_by_columns.emplace_back(column.name);
             }
         }
 
