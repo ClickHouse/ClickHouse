@@ -34,6 +34,7 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -2111,6 +2112,15 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // - Other formats (e.g. FORMAT CSV) are arbitrarily more complex and tricky to parse. For example, we may be unable to distinguish if the semicolon
     //   is part of the data or ends the statement. In this case, we simply assume that the end of the INSERT statement is determined by \n\n (two newlines).
     auto * insert_ast = parsed_query->as<ASTInsertQuery>();
+    // We also consider the INSERT query in EXPLAIN queries (same as normal INSERT queries)
+    if (!insert_ast)
+    {
+        auto * explain_ast = parsed_query->as<ASTExplainQuery>();
+        if (explain_ast && explain_ast->getExplainedQuery())
+        {
+            insert_ast = explain_ast->getExplainedQuery()->as<ASTInsertQuery>();
+        }
+    }
     const char * query_to_execute_end = this_query_end;
     if (insert_ast && insert_ast->data)
     {
@@ -2688,14 +2698,6 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
 
     ReadBufferFromFile in(file_name);
     readStringUntilEOF(queries_from_file, in);
-
-    if (!getClientConfiguration().has("log_comment"))
-    {
-        Settings settings = client_context->getSettingsCopy();
-        /// NOTE: cannot use even weakly_canonical() since it fails for /dev/stdin due to resolving of "pipe:[X]"
-        settings.log_comment = fs::absolute(fs::path(file_name));
-        client_context->setSettings(settings);
-    }
 
     return executeMultiQuery(queries_from_file);
 }
