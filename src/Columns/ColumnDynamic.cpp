@@ -983,7 +983,9 @@ void ColumnDynamic::updateCheckpoint(ColumnCheckpoint & checkpoint) const
 {
     auto & nested = assert_cast<ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
     const auto & variants = variant_column_ptr->getVariants();
+
     size_t old_size = nested.size();
+    chassert(old_size <= variants.size());
 
     for (size_t i = 0; i < old_size; ++i)
     {
@@ -1060,7 +1062,42 @@ void ColumnDynamic::rollback(const ColumnCheckpoint & checkpoint)
         new_subcolumns[i]->rollback(*nested[i]);
 
     variant_column = ColumnVariant::create(new_discriminators_column, new_offses_column, Columns(new_subcolumns.begin(), new_subcolumns.end()), new_discriminators_map);
-    variant_column_ptr = variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
+    variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
+}
+
+String ColumnDynamic::getTypeNameAt(size_t row_num) const
+{
+    const auto & variant_col = getVariantColumn();
+    const size_t discr = variant_col.globalDiscriminatorAt(row_num);
+    if (discr == ColumnVariant::NULL_DISCRIMINATOR)
+        return "";
+
+    if (discr == getSharedVariantDiscriminator())
+    {
+        const auto value = getSharedVariant().getDataAt(variant_col.offsetAt(row_num));
+        ReadBufferFromMemory buf(value.data, value.size);
+        return decodeDataType(buf)->getName();
+    }
+
+    return variant_info.variant_names[discr];
+}
+
+void ColumnDynamic::getAllTypeNamesInto(std::unordered_set<String> & names) const
+{
+    auto shared_variant_discr = getSharedVariantDiscriminator();
+    for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
+    {
+        if (i != shared_variant_discr && !variant_column_ptr->getVariantByGlobalDiscriminator(i).empty())
+            names.insert(variant_info.variant_names[i]);
+    }
+
+    const auto & shared_variant = getSharedVariant();
+    for (size_t i = 0; i != shared_variant.size(); ++i)
+    {
+        const auto value = shared_variant.getDataAt(i);
+        ReadBufferFromMemory buf(value.data, value.size);
+        names.insert(decodeDataType(buf)->getName());
+    }
 }
 
 void ColumnDynamic::prepareForSquashing(const Columns & source_columns)

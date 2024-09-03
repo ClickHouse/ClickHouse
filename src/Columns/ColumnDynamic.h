@@ -439,6 +439,9 @@ public:
 
     const SerializationPtr & getVariantSerialization(const DataTypePtr & variant_type) { return getVariantSerialization(variant_type, variant_type->getName()); }
 
+    String getTypeNameAt(size_t row_num) const;
+    void getAllTypeNamesInto(std::unordered_set<String> & names) const;
+
 private:
     void createVariantInfo(const DataTypePtr & variant_type);
 
