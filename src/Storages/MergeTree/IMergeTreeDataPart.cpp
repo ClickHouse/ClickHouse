@@ -465,6 +465,31 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
         return {};
 }
 
+time_t IMergeTreeDataPart::getMinTimeOfDataInsertion() const
+{
+    if (min_time_of_data_insert.has_value())
+    {
+        return *min_time_of_data_insert;
+    }
+    if (modification_time == static_cast<time_t>(0))
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent state of the part {}: min_time_of_data_insert doesn't contains value and modification_time is zero.", name);
+    }
+    return modification_time;
+}
+
+time_t IMergeTreeDataPart::getMaxTimeOfDataInsertion() const
+{
+    if (max_time_of_data_insert.has_value())
+    {
+        return *max_time_of_data_insert;
+    }
+    if (modification_time == static_cast<time_t>(0))
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent state of the part {}: max_time_of_data_insert doesn't contains value and modification_time is zero.", name);
+    }
+    return modification_time;
+}
 
 void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t metadata_version_)
 {
@@ -736,6 +761,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             checkConsistency(require_columns_checksums);
 
         loadDefaultCompressionCodec();
+        loadInsertTimeInfo();
     }
     catch (...)
     {
@@ -1030,6 +1056,38 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
             LOG_WARNING(storage.log, "Cannot parse default codec for part {} from file {}, content '{}', error '{}'. Default compression codec will be deduced automatically, from data on disk.", name, path, codec_line, ex.what());
             default_codec = detectDefaultCompressionCodec();
         }
+    }
+}
+
+void IMergeTreeDataPart::loadInsertTimeInfo()
+{
+    bool exists = metadata_manager->exists(MIN_MAX_TIME_OF_DATA_INSERT_FILE);
+    if (!exists)
+    {
+        min_time_of_data_insert = {};
+        max_time_of_data_insert = {};
+        return;
+    }
+    try
+    {
+        auto file_buf = metadata_manager->read(MIN_MAX_TIME_OF_DATA_INSERT_FILE);
+        /// Escape undefined behavior:
+        /// "The behavior is undefined if *this does not contain a value"
+        min_time_of_data_insert = static_cast<time_t>(0);
+        max_time_of_data_insert = static_cast<time_t>(0);
+
+        tryReadText(*min_time_of_data_insert, *file_buf);
+        checkString(" ", *file_buf);
+        tryReadText(*max_time_of_data_insert, *file_buf);
+    }
+    catch (const DB::Exception & ex)
+    {
+        String path = fs::path(getDataPartStorage().getRelativePath()) / MIN_MAX_TIME_OF_DATA_INSERT_FILE;
+        LOG_WARNING(storage.log, "Cannot parse min/max time of data insert for part {} from file {}, error '{}'."
+                                  , name, path, ex.what());
+
+        min_time_of_data_insert = {};
+        max_time_of_data_insert = {};
     }
 }
 

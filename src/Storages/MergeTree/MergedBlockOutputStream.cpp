@@ -195,11 +195,18 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     }
 
     auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
+    auto current_time = time(nullptr);
+    if (!new_part->min_time_of_data_insert.has_value() && !new_part->max_time_of_data_insert.has_value())
+    {
+        new_part->min_time_of_data_insert = current_time;
+        new_part->max_time_of_data_insert = current_time;
+    }
+    new_part->modification_time = current_time;
+
     if (new_part->isStoredOnDisk())
        finalizer->written_files = finalizePartOnDisk(new_part, checksums);
 
     new_part->rows_count = rows_count;
-    new_part->modification_time = time(nullptr);
     new_part->setIndex(writer->releaseIndexColumns());
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
@@ -304,6 +311,20 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         out_hashing.finalize();
         checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
+    }
+
+    {
+        auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::MIN_MAX_TIME_OF_DATA_INSERT_FILE, 4096, write_settings);
+        HashingWriteBuffer out_hashing(*out);
+        DB::writeIntText(*new_part->min_time_of_data_insert, out_hashing);
+        DB::writeText(" ", out_hashing);
+        DB::writeIntText(*new_part->max_time_of_data_insert, out_hashing);
+        out_hashing.finalize();
+        checksums.files[IMergeTreeDataPart::MIN_MAX_TIME_OF_DATA_INSERT_FILE].file_size = out_hashing.count();
+        checksums.files[IMergeTreeDataPart::MIN_MAX_TIME_OF_DATA_INSERT_FILE].file_hash = out_hashing.getHash();
+
         out->preFinalize();
         written_files.emplace_back(std::move(out));
     }

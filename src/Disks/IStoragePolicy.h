@@ -68,7 +68,14 @@ public:
     /// Check if we have any volume with stopped merges
     virtual bool hasAnyVolumeWithDisabledMerges() const = 0;
     virtual bool containsVolume(const String & volume_name) const = 0;
-    /// Returns disks by type ordered by volumes priority
+
+    enum class MovePolicy : uint8_t
+    {
+        BY_PART_SIZE,
+        BY_INSERT_DATA_TIME
+    };
+    /// Returns policy of how to choose parts for move to the next volume.
+    virtual IStoragePolicy::MovePolicy getMovePolicy() const = 0;
 };
 
 }

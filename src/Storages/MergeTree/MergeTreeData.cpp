@@ -7412,6 +7412,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
 
     dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
     dst_data_part->modification_time = dst_part_storage->getLastModified().epochTime();
+
+    // dst_data_part->min_time_of_data_insert = src_part->getMinTimeOfDataInsertion();
+    // dst_data_part->max_time_of_data_insert = src_part->getMaxTimeOfDataInsertion();
     return std::make_pair(dst_data_part, std::move(temporary_directory_lock));
 }
 
