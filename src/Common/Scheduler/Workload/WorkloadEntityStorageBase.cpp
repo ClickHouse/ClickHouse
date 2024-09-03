@@ -1,6 +1,7 @@
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 
 #include <boost/container/flat_set.hpp>
+#include <boost/range/algorithm/copy.hpp>
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -111,16 +112,19 @@ bool WorkloadEntityStorageBase::storeEntity(
         settings);
 
     if (stored)
+    {
         entities[entity_name] = create_entity_query;
+        onEntityAdded(entity_type, entity_name, create_entity_query);
+    }
 
     return stored;
 }
 
 bool WorkloadEntityStorageBase::removeEntity(
-        const ContextPtr & current_context,
-        WorkloadEntityType entity_type,
-        const String & entity_name,
-        bool throw_if_not_exists)
+    const ContextPtr & current_context,
+    WorkloadEntityType entity_type,
+    const String & entity_name,
+    bool throw_if_not_exists)
 {
     std::lock_guard lock(mutex);
     auto it = entities.find(entity_name);
@@ -139,9 +143,92 @@ bool WorkloadEntityStorageBase::removeEntity(
         throw_if_not_exists);
 
     if (removed)
+    {
         entities.erase(entity_name);
+        onEntityRemoved(entity_type, entity_name);
+    }
 
     return removed;
+}
+
+scope_guard WorkloadEntityStorageBase::subscribeForChanges(
+    WorkloadEntityType entity_type,
+    const OnChangedHandler & handler)
+{
+    std::lock_guard lock{handlers->mutex};
+    auto & list = handlers->by_type[static_cast<size_t>(entity_type)];
+    list.push_back(handler);
+    auto handler_it = std::prev(list.end());
+
+    return [my_handlers = handlers, entity_type, handler_it]
+    {
+        std::lock_guard lock2{my_handlers->mutex};
+        auto & list2 = my_handlers->by_type[static_cast<size_t>(entity_type)];
+        list2.erase(handler_it);
+    };
+}
+
+void WorkloadEntityStorageBase::onEntityAdded(WorkloadEntityType entity_type, const String & entity_name, const ASTPtr & new_entity)
+{
+    std::lock_guard lock{queue_mutex};
+    Event event;
+    event.name = entity_name;
+    event.type = entity_type;
+    event.entity = new_entity;
+    queue.push(std::move(event));
+}
+
+void WorkloadEntityStorageBase::onEntityUpdated(WorkloadEntityType entity_type, const String & entity_name, const ASTPtr & changed_entity)
+{
+    std::lock_guard lock{queue_mutex};
+    Event event;
+    event.name = entity_name;
+    event.type = entity_type;
+    event.entity = changed_entity;
+    queue.push(std::move(event));
+}
+
+void WorkloadEntityStorageBase::onEntityRemoved(WorkloadEntityType entity_type, const String & entity_name)
+{
+    std::lock_guard lock{queue_mutex};
+    Event event;
+    event.name = entity_name;
+    event.type = entity_type;
+    queue.push(std::move(event));
+}
+
+void WorkloadEntityStorageBase::sendNotifications()
+{
+    /// Only one thread can send notification at any time.
+    std::lock_guard sending_notifications_lock{sending_notifications};
+
+    std::unique_lock queue_lock{queue_mutex};
+    while (!queue.empty())
+    {
+        auto event = std::move(queue.front());
+        queue.pop();
+        queue_lock.unlock();
+
+        std::vector<OnChangedHandler> current_handlers;
+        {
+            std::lock_guard handlers_lock{handlers->mutex};
+            boost::range::copy(handlers->by_type[static_cast<size_t>(event.type)], std::back_inserter(current_handlers));
+        }
+
+        for (const auto & handler : current_handlers)
+        {
+            try
+            {
+                handler(event.type, event.name, event.entity);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
+        queue_lock.lock();
+    }
 }
 
 std::unique_lock<std::recursive_mutex> WorkloadEntityStorageBase::getLock() const
@@ -154,6 +241,11 @@ void WorkloadEntityStorageBase::setAllEntities(const std::vector<std::pair<Strin
     std::unordered_map<String, ASTPtr> normalized_entities;
     for (const auto & [entity_name, create_query] : new_entities)
         normalized_entities[entity_name] = normalizeCreateWorkloadEntityQuery(*create_query, global_context);
+
+    // TODO(serxa): do validation and throw LOGICAL_ERROR if failed
+
+    // Note that notifications are not sent, because it is hard to send notifications in right order to maintain invariants.
+    // Another code path using getAllEntities() should be used for initialization
 
     std::lock_guard lock(mutex);
     entities = std::move(normalized_entities);
@@ -168,18 +260,7 @@ std::vector<std::pair<String, ASTPtr>> WorkloadEntityStorageBase::getAllEntities
     return all_entities;
 }
 
-void WorkloadEntityStorageBase::setEntity(const String & entity_name, const IAST & create_entity_query)
-{
-    std::lock_guard lock(mutex);
-    entities[entity_name] = normalizeCreateWorkloadEntityQuery(create_entity_query, global_context);
-}
-
-void WorkloadEntityStorageBase::removeEntity(const String & entity_name)
-{
-    std::lock_guard lock(mutex);
-    entities.erase(entity_name);
-}
-
+// TODO(serxa): add notifications or remove this function
 void WorkloadEntityStorageBase::removeAllEntitiesExcept(const Strings & entity_names_to_keep)
 {
     boost::container::flat_set<std::string_view> names_set_to_keep{entity_names_to_keep.begin(), entity_names_to_keep.end()};

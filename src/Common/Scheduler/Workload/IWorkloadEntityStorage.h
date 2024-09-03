@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <base/scope_guard.h>
 
 #include <Interpreters/Context_fwd.h>
 
@@ -17,6 +18,8 @@ enum class WorkloadEntityType : uint8_t
 {
     Workload,
     Resource,
+
+    MAX
 };
 
 /// Interface for a storage of workload entities (WORKLOAD and RESOURCE).
@@ -72,6 +75,16 @@ public:
         WorkloadEntityType entity_type,
         const String & entity_name,
         bool throw_if_not_exists) = 0;
+
+    using OnChangedHandler = std::function<void(
+        WorkloadEntityType /* entity_type */,
+        const String & /* entity_name */,
+        const ASTPtr & /* new or changed entity, null if removed */)>;
+
+    /// Subscribes for all changes.
+    virtual scope_guard subscribeForChanges(
+        WorkloadEntityType entity_type,
+        const OnChangedHandler & handler) = 0;
 };
 
 }

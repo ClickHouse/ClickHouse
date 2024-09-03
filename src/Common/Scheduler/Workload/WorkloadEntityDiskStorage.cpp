@@ -108,6 +108,7 @@ ASTPtr WorkloadEntityDiskStorage::tryLoadEntity(WorkloadEntityType entity_type, 
                     global_context->getSettingsRef().max_parser_backtracks);
                 return ast;
             }
+            case WorkloadEntityType::MAX: return nullptr;
         }
     }
     catch (...)
@@ -289,6 +290,7 @@ String WorkloadEntityDiskStorage::getFilePath(WorkloadEntityType entity_type, co
             file_path = dir_path + "resource_" + escapeForFileName(entity_name) + ".sql";
             break;
         }
+        case WorkloadEntityType::MAX: break;
     }
     return file_path;
 }
