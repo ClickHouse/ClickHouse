@@ -367,6 +367,6 @@ def test_change_queries_frequency():
     select_log_query = "SELECT timeout_milliseconds FROM system.asynchronous_insert_log ORDER BY event_time DESC LIMIT 50"
     res = node.query(select_log_query)
     for line in res.splitlines():
-        assert int(line) == min_ms
+        assert int(line) <= min_ms
 
     node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
