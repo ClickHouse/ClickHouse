@@ -217,7 +217,7 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
                     "source": source,
                     "destination": destination,
                     "action": "REJECT",
-                    "protocol": "all"
+                    "protocol": "all",
                 }
             )
 
