@@ -4,11 +4,11 @@
 #include <optional>
 #include <string_view>
 #include <Poco/Logger.h>
-#include "Common/logger_useful.h"
-#include "IO/CompressionMethod.h"
-#include "IO/ReadBuffer.h"
-#include "Interpreters/Context_fwd.h"
-#include "Storages/MergeTree/ReplicatedMergeTreePartHeader.h"
+#include <Common/logger_useful.h>
+#include <IO/CompressionMethod.h>
+#include <IO/ReadBuffer.h>
+#include <Interpreters/Context_fwd.h>
+#include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 
 #if USE_AWS_S3
 
@@ -202,7 +202,7 @@ public:
     Impl(
         const S3::Client & client_,
         const S3::URI & globbed_uri_,
-        const ActionsDAG::Node * predicate_,
+        const ActionsDAG::Node * predicate,
         const NamesAndTypesList & virtual_columns_,
         ContextPtr context_,
         KeysWithInfo * read_keys_,
@@ -211,7 +211,6 @@ public:
         : WithContext(context_)
         , client(client_.clone())
         , globbed_uri(globbed_uri_)
-        , predicate(predicate_)
         , virtual_columns(virtual_columns_)
         , read_keys(read_keys_)
         , request_settings(request_settings_)
@@ -226,6 +225,7 @@ public:
         expanded_keys = expandSelectionGlob(globbed_uri.key);
         expanded_keys_iter = expanded_keys.begin();
 
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
         fillBufferForKey(*expanded_keys_iter);
         expanded_keys_iter++;
     }
@@ -288,7 +288,6 @@ private:
 
         recursive = globbed_uri.key == "/**";
 
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
         fillInternalBufferAssumeLocked();
     }
 
@@ -459,7 +458,6 @@ private:
 
     std::unique_ptr<S3::Client> client;
     S3::URI globbed_uri;
-    const ActionsDAG::Node * predicate;
     ASTPtr query;
     NamesAndTypesList virtual_columns;
     ActionsDAGPtr filter_dag;
