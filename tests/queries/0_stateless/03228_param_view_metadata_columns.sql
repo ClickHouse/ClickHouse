@@ -12,6 +12,8 @@ create view p3 as select CAST(dummy, {t:String});
 describe p3(t = 'Int');
 describe p3(t = 'String');
 
+describe (SELECT * FROM p3(t = 'Int64') union all SELECT * FROM p3(t = 'UInt64')); -- { serverError NO_COMMON_TYPE }
+
 SELECT * FROM p3(t = 'String');
 
 select arrayReduce('sum', (select groupArray(number) from paramview(top=10)));
