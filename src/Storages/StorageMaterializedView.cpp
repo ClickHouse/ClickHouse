@@ -417,16 +417,22 @@ void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_co
 
     for (const StorageID & inner_table_id : to_drop)
     {
-        /// We will use `sync` argument wneh this function is called from a DROP query
+        /// We will use `sync` argument when this function is called from a DROP query
         /// and will ignore database_atomic_wait_for_drop_and_detach_synchronously when it's called from drop task.
         /// See the comment in StorageMaterializedView::drop.
-        /// DDL queries with StorageMaterializedView are fundamentally broken.
-        /// Best-effort to make them work: the inner table name is almost always less than the MV name (so it's safe to lock DDLGuard)
-        bool may_lock_ddl_guard = getStorageID().getQualifiedName() < inner_table_id.getQualifiedName();
+        ///
+        /// DDL queries with StorageMaterializedView are fundamentally broken: we can't lock DDLGuard
+        /// here because DDLGuards must be locked in order of increasing table name (to avoid deadlocks),
+        /// while the inner table name is almost always less than the MV name.
+        /// So we just don't lock it. It's mostly ok because DatabaseReplicatedDDLWorker doesn't
+        /// execute queries concurrently, but presumably there are other race conditions
+        /// (I'm not the author of this code and don't know for sure, just commenting).
+        /// (Why not reverse DDLGuard locking order everywhere? Because in another place we lock
+        /// DDLGuard for table "<name><suffix>" while holding DDLGuard for table "<name>".)
         auto table_exists = DatabaseCatalog::instance().tryGetTable(inner_table_id, getContext()) != nullptr;
         if (table_exists)
             InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
-                                                   sync, /* ignore_sync_setting */ true, may_lock_ddl_guard);
+                                                   sync, /* ignore_sync_setting */ true, /*need_ddl_guard*/ false);
     }
 }
 

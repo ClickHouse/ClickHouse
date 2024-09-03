@@ -43,7 +43,7 @@ private:
     void initializeReplication();
     void initializeLogPointer(const String & processed_entry_name);
 
-    DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper) override;
+    DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run) override;
     bool canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat) override;
 
     bool checkParentTableExists(const UUID & uuid) const;

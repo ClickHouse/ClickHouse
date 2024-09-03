@@ -170,7 +170,7 @@ ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
 }
 
 
-DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper)
+DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool /*dry_run*/)
 {
     if (entries_to_skip.contains(entry_name))
         return {};
@@ -378,7 +378,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     {
         /// We should return true if some invariants are violated.
         String reason;
-        auto task = initAndCheckTask(entry_name, reason, zookeeper);
+        auto task = initAndCheckTask(entry_name, reason, zookeeper, /*dry_run*/ true);
         bool maybe_currently_processing = current_tasks.end() != std::find_if(current_tasks.begin(), current_tasks.end(), [&](const auto & t)
         {
             return t->entry_name == entry_name;
@@ -412,7 +412,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         LOG_TRACE(log, "Checking task {}", entry_name);
 
         String reason;
-        auto task = initAndCheckTask(entry_name, reason, zookeeper);
+        auto task = initAndCheckTask(entry_name, reason, zookeeper, /*dry_run*/ false);
         if (task)
         {
             queue_fully_loaded_after_initialization_debug_helper = true;

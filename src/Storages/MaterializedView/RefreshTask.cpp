@@ -778,10 +778,11 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         else
             ops.emplace_back(zkutil::makeRemoveRequest(coordination.path + "/running", -1));
 
-        lock.unlock();
-
         Coordination::Responses responses;
+
+        lock.unlock();
         auto code = zookeeper->tryMulti(ops, responses);
+        lock.lock();
 
         if (running && responses[0]->error == Coordination::Error::ZBADVERSION)
             /// Lost the race, this is normal, don't log a stack trace.
@@ -789,7 +790,6 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         zkutil::KeeperMultiException::check(code, ops, responses);
         version = dynamic_cast<Coordination::SetResponse &>(*responses[0]).stat.version;
 
-        lock.lock();
     }
     coordination.root_znode = root;
     coordination.root_znode.version = version;
