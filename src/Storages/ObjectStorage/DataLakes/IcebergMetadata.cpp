@@ -32,6 +32,8 @@
 #include <Poco/JSON/Parser.h>
 
 #include <filesystem>
+#    include <sstream>
+
 
 namespace DB
 {
@@ -147,6 +149,15 @@ std::pair<size_t, size_t> parse_decimal(const String & type_name)
     skipWhitespaceIfAny(buf);
     tryReadIntText(scale, buf);
     return {precision, scale};
+}
+
+bool operator==(const Poco::JSON::Object::Ptr & first, const Poco::JSON::Object::Ptr & second)
+{
+    std::stringstream ss_first;
+    std::stringstream ss_second;
+    first->stringify(ss_first);
+    second->stringify(ss_second);
+    return first.str() == second.str();
 }
 
 DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
@@ -428,12 +439,109 @@ NodeRawConstPtrs reconstructStruct(
     const auto & constant = dag->addColumn({default_type_column, name_and_type.type, name_and_type.name});
 }
 
-
-std::shared_ptr<ActionsDAG> getSchemaTransformDag(
-    [[maybe_unused]] const Poco::JSON::Object::Ptr & old_schema, [[maybe_unused]] const Poco::JSON::Object::Ptr & new_schema)
+std::shared_ptr<ActionsDAG>
+IcebergSchemaProcessor::getSchemaTransformDag(const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema)
 {
-    std::map<size_t, NameAndTypePair> old_schema_entries;
-    std::map<size_t, NameAndTypePair> new_schema_entries;
+    std::map<size_t, std::pair<Poco::JSON::Object::Ptr, const ActionsDAG::Node &>> old_schema_entries;
+    auto fields = old_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
+    auto & outputs = dag->getOutputs();
+    for (size_t i = 0; i != fields->size(); ++i)
+    {
+        auto field = fields->getObject(static_cast<UInt32>(i));
+        size_t id = field->getValue<size_t>("id");
+        auto name = field->getValue<String>("name");
+        bool required = field->getValue<bool>("required");
+        old_schema_entries[id] = {field, dag->addInput(name, getFieldType(field, "type", required))};
+    }
+    fields = new_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
+    for (size_t i = 0; i != fields->size(); ++i)
+    {
+        auto field = fields->getObject(static_cast<UInt32>(i));
+        size_t id = field->getValue<size_t>("id");
+        auto name = field->getValue<String>("name");
+        bool required = field->getValue<bool>("required");
+        auto type = getFieldType(field, "type", required);
+        if (old_schema_entries.count(id))
+        {
+        }
+        else
+        {
+            if (field->isObject(type_key))
+            {
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_METHOD, "Adding a default column with id {} and complex type is not supported yet", id);
+            }
+            if (!type->isNullable())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Can't add a column with id {} with required values to the table during schema evolution",
+                    id);
+            }
+            ColumnPtr default_type_column = name_and_type.type->createColumnConstWithDefaultValue(0);
+            const auto & constant = dag->addColumn({default_type_column, name_and_type.type, name_and_type.name});
+            outputs.push_back(&constant);
+        }
+        LOG_DEBUG(
+            &Poco::Logger::get("New schema"), "Id: {}, Name: {}, type: {}", id, name, getFieldType(field, "type", required)->getName());
+    }
+    std::shared_ptr<ActionsDAG> dag = std::make_shared<ActionsDAG>();
+    for (const auto & [id, name_and_type] : old_schema_entries)
+    {
+        LOG_DEBUG(&Poco::Logger::get("Adding Input"), "Name: {}, type: {}", name_and_type.name, name_and_type.type->getName());
+        if (new_schema_entries.count(id))
+        {
+            if (new_schema_entries[id].type->getTypeId()
+                != name_and_type.type->getTypeId()) // If this exists it should be written in another manner
+            {
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_METHOD,
+                    "Type promotion for schema evolution is not implemeted yet: old_type: {}, new_type: {}",
+                    name_and_type.type->getName(),
+                    new_schema_entries[id].type->getName());
+            }
+            if (name_and_type.name != new_schema_entries[id].name)
+            {
+                const ActionsDAG::Node & alias_node = dag->addAlias(input_node, new_schema_entries[id].name);
+                LOG_DEBUG(
+                    &Poco::Logger::get("Adding Alias as Output"),
+                    "Name: {}, type: {}",
+                    alias_node.result_name,
+                    alias_node.result_type->getName());
+                outputs.push_back(&alias_node);
+            }
+            else
+            {
+                LOG_DEBUG(
+                    &Poco::Logger::get("Adding Input as Ouput"),
+                    "Name: {}, type: {}",
+                    input_node.result_name,
+                    input_node.result_type->getName());
+                outputs.push_back(&input_node);
+            }
+            new_schema_entries.erase(id);
+        }
+    }
+    for (const auto & [_id, name_and_type] : new_schema_entries)
+    {
+        LOG_DEBUG(&Poco::Logger::get("Adding default"), "Name: {}, type: {}", name_and_type.name, name_and_type.type->getName());
+        if (!name_and_type.type->isNullable())
+        {
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Can't add a column with required values to the table");
+        }
+        ColumnPtr default_type_column = name_and_type.type->createColumnConstWithDefaultValue(0);
+        const auto & constant = dag->addColumn({default_type_column, name_and_type.type, name_and_type.name});
+        outputs.push_back(&constant);
+    }
+    return dag;
+}
+
+
+std::shared_ptr<ActionsDAG>
+IcebergSchemaProcessor::getSchemaTransformDag(const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema)
+{
+    std::map<size_t, Poco::JSON::Object::Ptr> old_schema_entries;
+    std::map<size_t, Poco::JSON::Object::Ptr> new_schema_entries;
     auto fields = old_schema->get("fields").extract<Poco::JSON::Array::Ptr>();
     for (size_t i = 0; i != fields->size(); ++i)
     {
@@ -442,6 +550,8 @@ std::shared_ptr<ActionsDAG> getSchemaTransformDag(
         bool required = field->getValue<bool>("required");
         size_t id = field->getValue<size_t>("id");
         old_schema_entries[id] = {name, getFieldType(field, "type", required)};
+        const ActionsDAG::Node & input_node = dag->addInput(name_and_type.name, name_and_type.type);
+
         LOG_DEBUG(
             &Poco::Logger::get("Old schema"), "Id: {}, Name: {}, type: {}", id, name, getFieldType(field, "type", required)->getName());
     }
@@ -460,7 +570,6 @@ std::shared_ptr<ActionsDAG> getSchemaTransformDag(
     auto& outputs = dag->getOutputs();
     for (const auto& [id, name_and_type] : old_schema_entries) {
         LOG_DEBUG(&Poco::Logger::get("Adding Input"), "Name: {}, type: {}", name_and_type.name, name_and_type.type->getName());
-        const ActionsDAG::Node & input_node = dag->addInput(name_and_type.name, name_and_type.type);
         if (new_schema_entries.count(id)) {
             if (new_schema_entries[id].type->getTypeId()
                 != name_and_type.type->getTypeId()) // If this exists it should be written in another manner

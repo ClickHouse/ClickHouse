@@ -63,6 +63,9 @@ namespace DB
  * }
  */
 
+bool operator==(const Poco::JSON::Object::Ptr & first, const Poco::JSON::Object::Ptr & second);
+
+
 class IcebergSchemaProcessor
 {
 public:
@@ -76,11 +79,12 @@ private:
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids;
     ActionsDag * current_actions_dag;
 
-
     NamesAndTypeList getSchemaType(const Poco::JSON::Object::Ptr & schema);
     DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type);
     DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool required);
     DataTypePtr getSimpleType(const String & type_name);
+    std::shared_ptr<ActionsDAG> getSchemaTransformationDag(
+        [[maybe_unused]] const Poco::JSON::Object::Ptr & old_schema, [[maybe_unused]] const Poco::JSON::Object::Ptr & new_schema);
 
     // DataTypePtr getStructType(const Poco::JSON::Object::Ptr & node);
     // DataTypePtr getListType(const Poco::JSON::Object::Ptr & node);
@@ -91,26 +95,14 @@ private:
     // DataTypePtr getKeyType(const)
 
     const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);
-    const Node * getDefaultNodeForList(const Poco::JSON::Object::Ptr & field);
-    const Node * getDefaultNodeForMap(const Poco::JSON::Object::Ptr & field);
-    const Node * getDefaultNodeForStruct(const Poco::JSON::Object::Ptr & field);
-
-    std::pair<const Node *, const Node *>
-    getRemappingForList(const Poco::JSON::Object::Ptr & old_node, const Poco::JSON::Object::Ptr & new_node);
-
-    std::pair<const Node *, const Node *>
-    getRemappingForMap(const Poco::JSON::Object::Ptr & old_node, const Poco::JSON::Object::Ptr & new_node);
-
-    std::pair<const Node *, const Node *>
-    getRemappingForStruct(const Poco::JSON::Object::Ptr & old_node, const Poco::JSON::Object::Ptr & new_node);
 
     std::pair<const Node *, const Node *>
     getRemappingForStructField(const Poco::JSON::Array::Ptr & old_node, const Poco::JSON::Array::Ptr & new_node, const Node * input_node);
 
-    NodeRawConstPtrs getRemappingForFields(
-        const Poco::JSON::Array::Ptr & old_fields,
-        const Poco::JSON::Array::Ptr & new_fields,
-        const NodeRawConstPtrs & input_action_dag_nodes);
+    // NodeRawConstPtrs getRemappingForFields(
+    //     const Poco::JSON::Array::Ptr & old_fields,
+    //     const Poco::JSON::Array::Ptr & new_fields,
+    //     const NodeRawConstPtrs & input_action_dag_nodes);
 
     DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type_field);
 };
