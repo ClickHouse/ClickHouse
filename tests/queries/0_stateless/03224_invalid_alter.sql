@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- no-replicated-database: It messes up the output and this test explicitly checks the replicated database
+
 CREATE TABLE test
 (
     str String,
