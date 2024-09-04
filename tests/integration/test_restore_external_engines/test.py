@@ -70,6 +70,12 @@ def get_mysql_conn(cluster):
 def fill_tables(cluster, dbname):
     fill_nodes(nodes, dbname)
 
+    node1.query(
+        f"""CREATE TABLE {dbname}.example_s3_engine_table (name String, value UInt32)
+ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/test-data.csv.gz', 'CSV', 'gzip')
+SETTINGS input_format_with_names_use_header = 0"""
+    )
+
     conn = get_mysql_conn(cluster)
 
     with conn.cursor() as cursor:
@@ -136,6 +142,7 @@ def test_restore_table(start_cluster):
 
     node2.query(f"BACKUP DATABASE replicated TO {backup_name}")
 
+    node2.query("DROP TABLE replicated.example_s3_engine_table")
     node2.query("DROP TABLE replicated.mysql_schema_inference_engine")
     node2.query("DROP TABLE replicated.mysql_schema_inference_function")
 
@@ -148,6 +155,13 @@ def test_restore_table(start_cluster):
         f"RESTORE DATABASE replicated FROM {backup_name} SETTINGS allow_different_database_def=true"
     )
     node1.query(f"SYSTEM SYNC DATABASE REPLICA replicated")
+
+    assert (
+        node1.query(
+            "SELECT engine FROM system.tables where database = 'replicated' and name = 'example_s3_engine_table'"
+        )
+        == "S3\n"
+    )
 
     assert (
         node1.query(
@@ -175,6 +189,7 @@ def test_restore_table_null(start_cluster):
 
     node2.query(f"BACKUP DATABASE replicated2 TO {backup_name}")
 
+    node2.query("DROP TABLE replicated2.example_s3_engine_table")
     node2.query("DROP TABLE replicated2.mysql_schema_inference_engine")
     node2.query("DROP TABLE replicated2.mysql_schema_inference_function")
 
@@ -187,6 +202,13 @@ def test_restore_table_null(start_cluster):
         f"RESTORE DATABASE replicated2 FROM {backup_name} SETTINGS allow_different_database_def=1, allow_different_table_def=1 SETTINGS restore_replace_external_engines_to_null=1, restore_replace_external_table_functions_to_null=1"
     )
     node1.query(f"SYSTEM SYNC DATABASE REPLICA replicated2")
+
+    assert (
+        node1.query(
+            "SELECT engine FROM system.tables where database = 'replicated2' and name = 'example_s3_engine_table'"
+        )
+        == "Null\n"
+    )
 
     assert (
         node1.query(
