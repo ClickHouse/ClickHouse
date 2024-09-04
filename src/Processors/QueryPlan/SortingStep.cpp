@@ -6,6 +6,7 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Transforms/VirtualRowTransform.h>
 #include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
@@ -259,7 +260,7 @@ void SortingStep::enableVirtualRow(const QueryPipelineBuilder & pipeline) const
         {
             merge_tree_sources.push_back(merge_tree_source);
         }
-        else if (!std::dynamic_pointer_cast<ExpressionTransform>(processor))
+        else if (!std::dynamic_pointer_cast<ExpressionTransform>(processor) && !std::dynamic_pointer_cast<VirtualRowTransform>(processor))
         {
             enable_virtual_row = false;
             break;

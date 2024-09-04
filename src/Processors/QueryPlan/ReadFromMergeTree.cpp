@@ -22,6 +22,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Processors/Transforms/SelectByIndicesTransform.h>
+#include <Processors/Transforms/VirtualRowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
@@ -634,6 +635,8 @@ Pipe ReadFromMergeTree::readInOrder(
             return std::make_shared<ReverseTransform>(header);
         });
     }
+
+    pipe.addSimpleTransform([](const Block & header){ return std::make_shared<VirtualRowTransform>(header); });
 
     return pipe;
 }
