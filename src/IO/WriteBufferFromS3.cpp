@@ -364,10 +364,16 @@ void WriteBufferFromS3::allocateBuffer()
 
 void WriteBufferFromS3::allocateFirstBuffer()
 {
+    /// First buffer was already allocated in BufferWithOwnMemory constructor with provided in constructor buffer size.
+    /// It will be reallocated in subsequent nextImpl calls up to the desired buffer size from buffer_allocation_policy.
+    /// But it may happen that buffer size provided in constructor is larger then desired buffer size from buffer_allocation_policy.
+    /// Resize memory in this case to the desired size.
     const auto max_first_buffer = buffer_allocation_policy->getBufferSize();
-    const auto size = std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), max_first_buffer);
-    memory = Memory(size);
-    WriteBuffer::set(memory.data(), memory.size());
+    if (memory.size() > max_first_buffer)
+    {
+        memory.resize(max_first_buffer);
+        WriteBuffer::set(memory.data(), memory.size());
+    }
 }
 
 void WriteBufferFromS3::setFakeBufferWhenPreFinalized()

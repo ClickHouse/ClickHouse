@@ -282,7 +282,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         client.get(),
         uri.bucket,
         object.remote_path,
-        buf_size,
+        write_settings.use_adaptive_write_buffer ? write_settings.adaptive_write_buffer_initial_size : buf_size,
         request_settings,
         std::move(blob_storage_log),
         attributes,

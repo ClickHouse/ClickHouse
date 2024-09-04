@@ -20,6 +20,9 @@ static constexpr auto DBMS_DEFAULT_POLL_INTERVAL = 10;
 /// The size of the I/O buffer by default.
 static constexpr auto DBMS_DEFAULT_BUFFER_SIZE = 1048576ULL;
 
+/// The initial size of adaptive I/O buffer by default.
+static constexpr auto DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE = 16384ULL;
+
 static constexpr auto PADDING_FOR_SIMD = 64;
 
 /** Which blocks by default read the data (by number of rows).

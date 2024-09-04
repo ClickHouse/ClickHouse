@@ -23,6 +23,8 @@
 #include <Common/randomSeed.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/AdaptiveWriteBufferFromFile.h>
+#include <IO/AdaptiveWriteBuffer.h>
 #include <Common/logger_useful.h>
 
 
@@ -339,7 +341,15 @@ DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
     return std::make_unique<WriteBufferFromFile>(
-        fs::path(disk_path) / path, buf_size, flags, settings.local_throttler);
+        fs::path(disk_path) / path,
+        buf_size,
+        flags,
+        settings.local_throttler,
+        0666,
+        nullptr,
+        0,
+        settings.use_adaptive_write_buffer,
+        settings.adaptive_write_buffer_initial_size);
 }
 
 std::vector<String> DiskLocal::getBlobPath(const String & path) const
