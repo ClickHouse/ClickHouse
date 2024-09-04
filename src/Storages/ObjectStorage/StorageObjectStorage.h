@@ -170,10 +170,6 @@ public:
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual std::string getNamespaceType() const { return "namespace"; }
 
-    /// Return the string containing all supported signatures for this storage arguments.
-    virtual std::string getSignatures(bool with_structure = true) const = 0;
-    virtual size_t getMaxNumberOfArguments(bool with_structure = true) const = 0;
-
     virtual Path getPath() const = 0;
     virtual void setPath(const Path & path) = 0;
 
