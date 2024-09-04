@@ -292,13 +292,13 @@ private:
             case IntervalKind::Kind::Nanosecond:
             case IntervalKind::Kind::Microsecond:
             case IntervalKind::Kind::Millisecond:
-                if (isDate(time_data_type) || isDateTime(time_data_type))
+                if (isDateOrDate32(time_data_type) || isDateTime(time_data_type))
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal interval kind for argument data type {}", isDate(time_data_type) ? "Date" : "DateTime");
                 break;
             case IntervalKind::Kind::Second:
             case IntervalKind::Kind::Minute:
             case IntervalKind::Kind::Hour:
-                if (isDate(time_data_type))
+                if (isDateOrDate32(time_data_type))
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal interval kind for argument data type Date");
                 break;
             default:
