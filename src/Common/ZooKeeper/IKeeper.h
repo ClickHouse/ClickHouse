@@ -238,10 +238,13 @@ struct RemoveRequest : virtual Request
     String path;
     int32_t version = -1;
 
+    /// strict limit for number of deleted nodes
+    uint32_t remove_nodes_limit = 1;
+
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size() + sizeof(version); }
+    size_t bytesSize() const override { return path.size() + sizeof(version) + sizeof(remove_nodes_limit); }
 };
 
 struct RemoveResponse : virtual Response
@@ -585,6 +588,7 @@ public:
     virtual void remove(
         const String & path,
         int32_t version,
+        uint32_t remove_nodes_limit,
         RemoveCallback callback) = 0;
 
     virtual void exists(

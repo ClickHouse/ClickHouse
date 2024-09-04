@@ -144,6 +144,7 @@ public:
     void remove(
         const String & path,
         int32_t version,
+        uint32_t remove_nodes_limit,
         RemoveCallback callback) override;
 
     void exists(

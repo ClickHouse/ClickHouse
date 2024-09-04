@@ -759,6 +759,7 @@ void TestKeeper::create(
 void TestKeeper::remove(
         const String & path,
         int32_t version,
+        [[maybe_unused]] uint32_t remove_nodes_limit, // TODO(michicosun): enable
         RemoveCallback callback)
 {
     TestKeeperRemoveRequest request;

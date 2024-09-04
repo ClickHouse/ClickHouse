@@ -487,7 +487,7 @@ public:
     /// this will not cause errors.
     /// For instance, you can call this method twice concurrently for the same node and the end
     /// result would be the same as for the single call.
-    void tryRemoveRecursive(const std::string & path);
+    Coordination::Error tryRemoveRecursive(const std::string & path);
 
     /// Similar to removeRecursive(...) and tryRemoveRecursive(...), but does not remove path itself.
     /// Node defined as RemoveException will not be deleted.

@@ -587,7 +587,7 @@ zkutil::ZooKeeper::FutureRemove ZooKeeperWithFaultInjection::asyncTryRemove(std:
             promise->set_value(response);
     };
 
-    keeper->impl->remove(path, version, std::move(callback));
+    keeper->impl->remove(path, version, /*remove_nodes_limit=*/ 1, std::move(callback));
     return future;
 }
 
@@ -630,7 +630,7 @@ zkutil::ZooKeeper::FutureRemove ZooKeeperWithFaultInjection::asyncTryRemoveNoThr
         }
     };
 
-    keeper->impl->remove(path, version, std::move(callback));
+    keeper->impl->remove(path, version, /*remove_nodes_limit=*/ 1, std::move(callback));
 
     return future;
 }
