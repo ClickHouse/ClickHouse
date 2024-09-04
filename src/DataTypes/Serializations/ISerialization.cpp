@@ -427,7 +427,8 @@ bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath 
 
     for (size_t i = 0; i != prefix_len; ++i)
     {
-        if (path[i].type == SubstreamType::DynamicData || path[i].type == SubstreamType::ObjectData)
+        if (path[i].type == SubstreamType::DynamicData || path[i].type == SubstreamType::DynamicStructure
+            || path[i].type == SubstreamType::ObjectData || path[i].type == SubstreamType::ObjectStructure)
             return true;
     }
 
