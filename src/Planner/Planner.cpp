@@ -1287,7 +1287,8 @@ void Planner::buildPlanForUnionNode()
 
     for (const auto & query_node : union_queries_nodes)
     {
-        Planner query_planner(query_node, select_query_options);
+        Planner query_planner(query_node, select_query_options, planner_context->getGlobalPlannerContext());
+
         query_planner.buildQueryPlanIfNeeded();
         for (const auto & row_policy : query_planner.getUsedRowPolicies())
             used_row_policies.insert(row_policy);

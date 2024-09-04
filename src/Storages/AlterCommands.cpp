@@ -1245,6 +1245,13 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 {
     auto columns = metadata.columns;
 
+    auto ast_to_str = [](const ASTPtr & query) -> String
+    {
+        if (!query)
+            return "";
+        return queryToString(query);
+    };
+
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
@@ -1275,6 +1282,11 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                 || command.type == AlterCommand::RENAME_COLUMN)
         {
             if (!has_column && command.if_exists)
+                command.ignore = true;
+        }
+        else if (command.type == AlterCommand::MODIFY_ORDER_BY)
+        {
+            if (ast_to_str(command.order_by) == ast_to_str(metadata.sorting_key.definition_ast))
                 command.ignore = true;
         }
     }

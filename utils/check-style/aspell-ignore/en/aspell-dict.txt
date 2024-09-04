@@ -1564,6 +1564,11 @@ disjunctions
 displayName
 displaySecretsInShowAndSelect
 distro
+distinctdynamictypes
+distinctDynamicTypes
+distinctjsonpaths
+distinctJSONPaths
+distinctJSONPathsAndTypes
 divideDecimal
 dmesg
 doesnt
@@ -2730,6 +2735,7 @@ timeZoneOffset
 timezones
 tinylog
 tmp
+toBool
 toColumnTypeName
 toDate
 toDateOrDefault
