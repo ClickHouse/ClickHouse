@@ -23,8 +23,6 @@
 #include <Common/randomSeed.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/AdaptiveWriteBufferFromFile.h>
-#include <IO/AdaptiveWriteBuffer.h>
 #include <Common/logger_useful.h>
 
 
