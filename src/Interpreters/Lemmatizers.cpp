@@ -36,9 +36,10 @@ public:
 Lemmatizers::Lemmatizers(const Poco::Util::AbstractConfiguration & config)
 {
     const String prefix = "lemmatizers";
+
     if (!config.has(prefix))
         return;
-    
+
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(prefix, keys);
 
