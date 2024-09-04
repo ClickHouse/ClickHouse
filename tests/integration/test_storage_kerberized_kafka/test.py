@@ -259,6 +259,7 @@ def test_kafka_config_from_sql_named_collection(kafka_cluster):
 
     instance.query(
         """
+        DROP NAMED COLLECTION IF EXISTS kafka_config
         CREATE NAMED COLLECTION kafka_config AS
             kafka.security_protocol = 'SASL_PLAINTEXT',
             kafka.sasl_mechanism = 'GSSAPI',
