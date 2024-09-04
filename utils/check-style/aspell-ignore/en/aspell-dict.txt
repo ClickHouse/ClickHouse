@@ -1564,6 +1564,11 @@ disjunctions
 displayName
 displaySecretsInShowAndSelect
 distro
+distinctdynamictypes
+distinctDynamicTypes
+distinctjsonpaths
+distinctJSONPaths
+distinctJSONPathsAndTypes
 divideDecimal
 dmesg
 doesnt

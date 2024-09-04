@@ -2699,14 +2699,6 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
     ReadBufferFromFile in(file_name);
     readStringUntilEOF(queries_from_file, in);
 
-    if (!getClientConfiguration().has("log_comment"))
-    {
-        Settings settings = client_context->getSettingsCopy();
-        /// NOTE: cannot use even weakly_canonical() since it fails for /dev/stdin due to resolving of "pipe:[X]"
-        settings.log_comment = fs::absolute(fs::path(file_name));
-        client_context->setSettings(settings);
-    }
-
     return executeMultiQuery(queries_from_file);
 }
 

@@ -494,6 +494,8 @@ void logQueryFinish(
                     processor_elem.parent_ids = std::move(parents);
 
                     processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
+                    processor_elem.plan_step_name = processor->getPlanStepName();
+                    processor_elem.plan_step_description = processor->getPlanStepDescription();
                     processor_elem.plan_group = processor->getQueryPlanStepGroup();
 
                     processor_elem.processor_name = processor->getName();
