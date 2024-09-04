@@ -9,7 +9,7 @@ set -xeuo pipefail
 
 echo "Running prepare script"
 export DEBIAN_FRONTEND=noninteractive
-export RUNNER_VERSION=2.316.1
+export RUNNER_VERSION=2.317.0
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
 deb_arch() {
@@ -54,7 +54,8 @@ apt-get install --yes --no-install-recommends \
     python3-dev \
     python3-pip \
     qemu-user-static \
-    unzip
+    unzip \
+    gh
 
 # Install docker
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
@@ -101,7 +102,7 @@ sudo -u ubuntu docker buildx version
 sudo -u ubuntu docker buildx rm default-builder || : # if it's the second attempt
 sudo -u ubuntu docker buildx create --use --name default-builder
 
-pip install boto3 pygithub requests urllib3 unidiff dohq-artifactory
+pip install boto3 pygithub requests urllib3 unidiff dohq-artifactory jwt
 
 rm -rf $RUNNER_HOME  # if it's the second attempt
 mkdir -p $RUNNER_HOME && cd $RUNNER_HOME
@@ -212,9 +213,9 @@ chmod +x /usr/local/share/scripts/init-network.sh
 touch /var/tmp/clickhouse-ci-ami.success
 # END OF THE SCRIPT
 
-# TOE description
+# TOE (Task Orchestrator and Executor) description
 # name: CIInfrastructurePrepare
-# description: instals the infrastructure for ClickHouse CI runners
+# description: installs the infrastructure for ClickHouse CI runners
 # schemaVersion: 1.0
 #
 # phases:

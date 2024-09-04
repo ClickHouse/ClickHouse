@@ -52,6 +52,8 @@ CREATE TABLE system.clusters
     `database_shard_name` String,
     `database_replica_name` String,
     `is_active` Nullable(UInt8),
+    `replication_lag` Nullable(UInt32),
+    `recovery_time` Nullable(UInt64),
     `name` String ALIAS cluster
 )
 ENGINE = SystemClusters
@@ -286,7 +288,6 @@ CREATE TABLE system.functions
 (
     `name` String,
     `is_aggregate` UInt8,
-    `is_deterministic` Nullable(UInt8),
     `case_insensitive` UInt8,
     `alias_to` String,
     `create_query` String,
@@ -509,9 +510,15 @@ CREATE TABLE system.parts
     `rows_where_ttl_info.max` Array(DateTime),
     `projections` Array(String),
     `visible` UInt8,
-    `creation_tid` Tuple(UInt64, UInt64, UUID),
+    `creation_tid` Tuple(
+        UInt64,
+        UInt64,
+        UUID),
     `removal_tid_lock` UInt64,
-    `removal_tid` Tuple(UInt64, UInt64, UUID),
+    `removal_tid` Tuple(
+        UInt64,
+        UInt64,
+        UUID),
     `creation_csn` UInt64,
     `removal_csn` UInt64,
     `has_lightweight_delete` UInt8,

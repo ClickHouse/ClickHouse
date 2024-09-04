@@ -12,13 +12,14 @@
 #include <base/sleep.h>
 
 #include <IO/ReadHelpers.h>
-#include <Common/logger_useful.h>
 
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadFuzzer.h>
+#include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
-#include <Common/ThreadFuzzer.h>
 #include "config.h" // USE_JEMALLOC
 
 

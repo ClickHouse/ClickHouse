@@ -59,7 +59,7 @@ public:
     const FramePointers & getFramePointers() const { return frame_pointers; }
     std::string toString() const;
 
-    static std::string toString(void ** frame_pointers, size_t offset, size_t size);
+    static std::string toString(void * const * frame_pointers, size_t offset, size_t size);
     static void dropCache();
 
     /// @param fatal - if true, will process inline frames (slower)

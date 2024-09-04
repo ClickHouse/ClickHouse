@@ -16,7 +16,10 @@
 #include <Storages/IStorage.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
-
+#include <Parsers/ParserQuery.h>
+#include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 
 namespace DB
 {
@@ -151,12 +154,26 @@ void LocalConnection::sendQuery(
         state->block = sample;
 
         String current_format = "Values";
+
+        const auto & settings = context->getSettingsRef();
         const char * begin = state->query.data();
-        auto parsed_query = ClientBase::parseQuery(begin, begin + state->query.size(),
-            context->getSettingsRef(),
-            /*allow_multi_statements=*/ false,
-            /*is_interactive=*/ false,
-            /*ignore_error=*/ false);
+        const char * end = begin + state->query.size();
+        const Dialect & dialect = settings.dialect;
+
+        std::unique_ptr<IParserBase> parser;
+        if (dialect == Dialect::kusto)
+            parser = std::make_unique<ParserKQLStatement>(end, settings.allow_settings_after_format_in_insert);
+        else if (dialect == Dialect::prql)
+            parser = std::make_unique<ParserPRQLQuery>(settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+        else
+            parser = std::make_unique<ParserQuery>(end, settings.allow_settings_after_format_in_insert);
+
+        ASTPtr parsed_query;
+        if (dialect == Dialect::kusto)
+            parsed_query = parseKQLQueryAndMovePosition(*parser, begin, end, "", /*allow_multi_statements*/false, settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+        else
+            parsed_query = parseQueryAndMovePosition(*parser, begin, end, "", /*allow_multi_statements*/false, settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+
         if (const auto * insert = parsed_query->as<ASTInsertQuery>())
         {
             if (!insert->format.empty())
@@ -341,22 +358,18 @@ bool LocalConnection::poll(size_t)
 
     if (!state->is_finished)
     {
-        if (send_progress && (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
-        {
-            state->after_send_progress.restart();
-            next_packet_type = Protocol::Server::Progress;
+        if (needSendProgressOrMetrics())
             return true;
-        }
-
-        if (send_profile_events && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
-        {
-            sendProfileEvents();
-            return true;
-        }
 
         try
         {
-            pollImpl();
+            while (pollImpl())
+            {
+                LOG_TEST(&Poco::Logger::get("LocalConnection"), "Executor timeout encountered, will retry");
+
+                if (needSendProgressOrMetrics())
+                    return true;
+            }
         }
         catch (const Exception & e)
         {
@@ -451,12 +464,34 @@ bool LocalConnection::poll(size_t)
     return false;
 }
 
+bool LocalConnection::needSendProgressOrMetrics()
+{
+    if (send_progress && (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
+    {
+        state->after_send_progress.restart();
+        next_packet_type = Protocol::Server::Progress;
+        return true;
+    }
+
+    if (send_profile_events && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
+    {
+        sendProfileEvents();
+        return true;
+    }
+
+    return false;
+}
+
 bool LocalConnection::pollImpl()
 {
     Block block;
     auto next_read = pullBlock(block);
 
-    if (block && !state->io.null_format)
+    if (!block && next_read)
+    {
+        return true;
+    }
+    else if (block && !state->io.null_format)
     {
         state->block.emplace(block);
     }
@@ -465,7 +500,7 @@ bool LocalConnection::pollImpl()
         state->is_finished = true;
     }
 
-    return true;
+    return false;
 }
 
 Packet LocalConnection::receivePacket()

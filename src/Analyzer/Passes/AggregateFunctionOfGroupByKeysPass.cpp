@@ -10,6 +10,8 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 
+#include <Core/Settings.h>
+
 namespace DB
 {
 

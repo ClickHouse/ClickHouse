@@ -54,7 +54,6 @@ set(SRCS
         "${LIBPQ_SOURCE_DIR}/port/pgstrcasecmp.c"
         "${LIBPQ_SOURCE_DIR}/port/thread.c"
         "${LIBPQ_SOURCE_DIR}/port/path.c"
-        "${LIBPQ_SOURCE_DIR}/port/explicit_bzero.c"
         )
 
 add_library(_libpq ${SRCS})

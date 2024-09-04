@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/NestedUtils.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -24,6 +25,8 @@
 #include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
+
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -449,10 +452,10 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
         if (auto * column = compound_expression->as<ColumnNode>())
         {
             const DataTypePtr & column_type = column->getColumn().getTypeInStorage();
-            if (column_type->getTypeId() == TypeIndex::Object)
+            if (column_type->getTypeId() == TypeIndex::ObjectDeprecated)
             {
-                const auto * object_type = checkAndGetDataType<DataTypeObject>(column_type.get());
-                if (object_type->getSchemaFormat() == "json" && object_type->hasNullableSubcolumns())
+                const auto & object_type = checkAndGetDataType<DataTypeObjectDeprecated>(*column_type);
+                if (object_type.getSchemaFormat() == "json" && object_type.hasNullableSubcolumns())
                 {
                     QueryTreeNodePtr constant_node_null = std::make_shared<ConstantNode>(Field());
                     return constant_node_null;
@@ -678,9 +681,33 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromStorage(
     bool match_full_identifier = false;
 
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
-    auto it = table_expression_data.column_name_to_column_node.find(identifier_full_name);
-    bool can_resolve_directly_from_storage = it != table_expression_data.column_name_to_column_node.end();
-    if (can_resolve_directly_from_storage && table_expression_data.subcolumn_names.contains(identifier_full_name))
+
+    ColumnNodePtr result_column_node;
+    bool can_resolve_directly_from_storage = false;
+    bool is_subcolumn = false;
+    if (auto it = table_expression_data.column_name_to_column_node.find(identifier_full_name); it != table_expression_data.column_name_to_column_node.end())
+    {
+        can_resolve_directly_from_storage = true;
+        is_subcolumn = table_expression_data.subcolumn_names.contains(identifier_full_name);
+        result_column_node = it->second;
+    }
+    /// Check if it's a dynamic subcolumn
+    else if (table_expression_data.supports_subcolumns)
+    {
+        auto [column_name, dynamic_subcolumn_name] = Nested::splitName(identifier_full_name);
+        auto jt = table_expression_data.column_name_to_column_node.find(column_name);
+        if (jt != table_expression_data.column_name_to_column_node.end() && jt->second->getColumnType()->hasDynamicSubcolumns())
+        {
+            if (auto dynamic_subcolumn_type = jt->second->getColumnType()->tryGetSubcolumnType(dynamic_subcolumn_name))
+            {
+                result_column_node = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, dynamic_subcolumn_type}, jt->second->getColumnSource());
+                can_resolve_directly_from_storage = true;
+                is_subcolumn = true;
+            }
+        }
+    }
+
+    if (can_resolve_directly_from_storage && is_subcolumn)
     {
         /** In the case when we have an ARRAY JOIN, we should not resolve subcolumns directly from storage.
           * For example, consider the following SQL query:
@@ -696,11 +723,11 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromStorage(
     if (can_resolve_directly_from_storage)
     {
         match_full_identifier = true;
-        result_expression = it->second;
+        result_expression = result_column_node;
     }
     else
     {
-        it = table_expression_data.column_name_to_column_node.find(identifier_without_column_qualifier.at(0));
+        auto it = table_expression_data.column_name_to_column_node.find(identifier_without_column_qualifier.at(0));
         if (it != table_expression_data.column_name_to_column_node.end())
             result_expression = it->second;
     }
@@ -973,7 +1000,6 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromJoin(const Identifi
     if (!join_node_in_resolve_process && from_join_node.isUsingJoinExpression())
     {
         auto & join_using_list = from_join_node.getJoinExpression()->as<ListNode &>();
-
         for (auto & join_using_node : join_using_list.getNodes())
         {
             auto & column_node = join_using_node->as<ColumnNode &>();
@@ -1246,7 +1272,7 @@ QueryTreeNodePtr IdentifierResolver::matchArrayJoinSubcolumns(
             const auto & constant_node_value = constant_node.getValue();
             if (constant_node_value.getType() == Field::Types::String)
             {
-                array_join_subcolumn_prefix = constant_node_value.get<String>() + ".";
+                array_join_subcolumn_prefix = constant_node_value.safeGet<String>() + ".";
                 array_join_parent_column = argument_nodes.at(0).get();
             }
         }
@@ -1260,7 +1286,7 @@ QueryTreeNodePtr IdentifierResolver::matchArrayJoinSubcolumns(
     if (!second_argument || second_argument->getValue().getType() != Field::Types::String)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected constant string as second argument of getSubcolumn function {}", resolved_function->dumpTree());
 
-    const auto & resolved_subcolumn_path = second_argument->getValue().get<String &>();
+    const auto & resolved_subcolumn_path = second_argument->getValue().safeGet<String &>();
     if (!startsWith(resolved_subcolumn_path, array_join_subcolumn_prefix))
         return {};
 
@@ -1304,7 +1330,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpression
             size_t nested_function_arguments_size = nested_function_arguments.size();
 
             const auto & nested_keys_names_constant_node = nested_function_arguments[0]->as<ConstantNode & >();
-            const auto & nested_keys_names = nested_keys_names_constant_node.getValue().get<Array &>();
+            const auto & nested_keys_names = nested_keys_names_constant_node.getValue().safeGet<Array &>();
             size_t nested_keys_names_size = nested_keys_names.size();
 
             if (nested_keys_names_size == nested_function_arguments_size - 1)
@@ -1317,7 +1343,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpression
                     auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
                         array_join_column_expression_typed.getColumnSource());
 
-                    const auto & nested_key_name = nested_keys_names[i - 1].get<String &>();
+                    const auto & nested_key_name = nested_keys_names[i - 1].safeGet<String &>();
                     Identifier nested_identifier = Identifier(nested_key_name);
                     array_join_resolved_expression = wrapExpressionNodeInTupleElement(array_join_column, nested_identifier, scope.context);
                     break;

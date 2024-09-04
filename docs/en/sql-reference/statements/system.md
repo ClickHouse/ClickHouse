@@ -18,10 +18,21 @@ Reloads all dictionaries that have been successfully loaded before.
 By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
 Always returns `Ok.` regardless of the result of the dictionary update.
 
+**Syntax**
+
+```sql
+SYSTEM RELOAD DICTIONARIES [ON CLUSTER cluster_name]
+```
+
 ## RELOAD DICTIONARY
 
 Completely reloads a dictionary `dictionary_name`, regardless of the state of the dictionary (LOADED / NOT_LOADED / FAILED).
 Always returns `Ok.` regardless of the result of updating the dictionary.
+
+``` sql
+SYSTEM RELOAD DICTIONARY [ON CLUSTER cluster_name] dictionary_name
+```
+
 The status of the dictionary can be checked by querying the `system.dictionaries` table.
 
 ``` sql
@@ -125,7 +136,13 @@ The compiled expression cache is enabled/disabled with the query/user/profile-le
 
 ## DROP QUERY CACHE
 
+```sql
+SYSTEM DROP QUERY CACHE;
+SYSTEM DROP QUERY CACHE TAG '<tag>'
+````
+
 Clears the [query cache](../../operations/query-cache.md).
+If a tag is specified, only query cache entries with the specified tag are deleted.
 
 ## DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
 
@@ -389,7 +406,7 @@ SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_
 After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands. The following modifiers are supported:
 
  - If a `STRICT` modifier was specified then the query waits for the replication queue to become empty. The `STRICT` version may never succeed if new entries constantly appear in the replication queue.
- - If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.  
+ - If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.
    Additionally, the LIGHTWEIGHT modifier supports an optional FROM 'srcReplicas' clause, where 'srcReplicas' is a comma-separated list of source replica names. This extension allows for more targeted synchronization by focusing only on replication tasks originating from the specified source replicas.
  - If a `PULL` modifier was specified then the query pulls new replication queue entries from ZooKeeper, but does not wait for anything to be processed.
 
@@ -514,6 +531,10 @@ Trigger an immediate out-of-schedule refresh of a given view.
 ```sql
 SYSTEM REFRESH VIEW [db.]name
 ```
+
+### REFRESH VIEW
+
+Wait for the currently running refresh to complete. If the refresh fails, throws an exception. If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
 
 ### STOP VIEW, STOP VIEWS
 

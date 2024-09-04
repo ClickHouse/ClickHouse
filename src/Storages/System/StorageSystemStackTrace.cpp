@@ -25,6 +25,7 @@
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -276,7 +277,7 @@ public:
     StackTraceSource(
         const Names & column_names,
         Block header_,
-        ActionsDAGPtr && filter_dag_,
+        std::optional<ActionsDAG> filter_dag_,
         ContextPtr context_,
         UInt64 max_block_size_,
         LoggerPtr log_)
@@ -422,7 +423,7 @@ protected:
 private:
     ContextPtr context;
     Block header;
-    const ActionsDAGPtr filter_dag;
+    const std::optional<ActionsDAG> filter_dag;
     const ActionsDAG::Node * predicate;
 
     const size_t max_block_size;

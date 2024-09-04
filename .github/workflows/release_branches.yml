@@ -33,10 +33,6 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           echo "Testing the main ci directory"
           python3 -m unittest discover -s . -p 'test_*.py'
-          for dir in *_lambda/; do
-            echo "Testing $dir"
-            python3 -m unittest discover -s "$dir" -p 'test_*.py'
-          done
       - name: PrepareRunConfig
         id: runconfig
         run: |
@@ -57,7 +53,7 @@ jobs:
   BuildDockers:
     needs: [RunConfig]
     if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_docker.yml
+    uses: ./.github/workflows/docker_test_images.yml
     with:
       data: ${{ needs.RunConfig.outputs.data }}
   CompatibilityCheckX86:
@@ -134,6 +130,7 @@ jobs:
     with:
       build_name: package_debug
       data: ${{ needs.RunConfig.outputs.data }}
+      force: true
   BuilderBinDarwin:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -184,10 +181,16 @@ jobs:
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
+      - name: Download reports
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(needs.RunConfig.outputs.data) }} --pre --job-name Builds
       - name: Builds report
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 ./build_report_check.py --reports package_release package_aarch64 package_asan package_msan package_ubsan package_tsan package_debug binary_darwin binary_darwin_aarch64
+      - name: Set status
+        run: |
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(needs.RunConfig.outputs.data) }} --post --job-name Builds
   MarkReleaseReady:
     if: ${{ !failure() && !cancelled() }}
     needs:
@@ -439,8 +442,9 @@ jobs:
       runner_type: stress-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FinishCheck:
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ !cancelled() }}
     needs:
+      - RunConfig
       - DockerServerImage
       - DockerKeeperImage
       - Builds_Report
@@ -476,9 +480,15 @@ jobs:
         with:
           clear-repository: true
       - name: Finish label
+        if: ${{ !failure() }}
         run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          # update mergeable check
-          python3 merge_pr.py --set-ci-status --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
           # update overall ci report
-          python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+          python3 ./tests/ci/finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+      - name: Check Workflow results
+        if: ${{ !cancelled() }}
+        run: |
+          export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
+          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          python3 ./tests/ci/ci_buddy.py --check-wf-status

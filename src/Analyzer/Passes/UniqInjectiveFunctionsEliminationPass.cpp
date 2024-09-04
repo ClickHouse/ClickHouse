@@ -7,6 +7,9 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
+
+#include <Core/Settings.h>
 
 
 namespace DB
