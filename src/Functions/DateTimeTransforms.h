@@ -786,7 +786,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
         if (origin == 0)
             return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
         else
-            return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, years * 12, time_zone, scale_multiplier, origin);z
+            return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, years * 12, time_zone, scale_multiplier, origin);
     }
 };
 
