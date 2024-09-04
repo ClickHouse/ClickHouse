@@ -1901,11 +1901,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                 /// We need to park ParallelFormating threads,
                 /// because they can use settings from global context
                 /// and it can lead to data race with `setSettings`
-                if (output_format)
-                {
-                    output_format->finalize();
-                    output_format.reset();
-                }
+                resetOutput();
             }
             catch (...)
             {
