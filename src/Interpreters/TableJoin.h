@@ -151,6 +151,7 @@ private:
     const size_t output_by_rowlist_perkey_rows_threshold = 0;
     const size_t sort_right_perkey_rows_threshold = 0;
     const size_t sort_right_table_rows_threshold = 0;
+    const bool allow_join_sorting = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -301,6 +302,7 @@ public:
     size_t outputByRowListPerkeyRowsThreshold() const { return output_by_rowlist_perkey_rows_threshold; }
     size_t sortRightPerkeyRowsThreshold() const { return sort_right_perkey_rows_threshold; }
     size_t sortRightTableRowsThreshold() const { return sort_right_table_rows_threshold; }
+    bool allowJoinSorting() const { return allow_join_sorting; }
     size_t defaultMaxBytes() const { return default_max_bytes; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
