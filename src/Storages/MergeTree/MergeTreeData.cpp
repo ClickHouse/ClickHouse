@@ -8665,8 +8665,11 @@ void MergeTreeData::loadPrimaryKeys()
     // Thread pool to process loading in parallel
     auto & thread_pool = DB::getActivePartsLoadingThreadPool().get();
 
-    // Mutex to protect shared data access
-    std::mutex mutex;
+    // Limit the number of tasks to avoid overloading the thread pool
+    size_t max_parallel_tasks = std::min(thread_pool.maxConcurrency(), getDataParts(affordable_states).size());
+
+    // Keep track of scheduled tasks
+    size_t scheduled_tasks = 0;
 
     for (const auto & data_part : getDataParts(affordable_states))
     {
@@ -8677,16 +8680,24 @@ void MergeTreeData::loadPrimaryKeys()
         // Check if the index is already loaded to avoid redundant loading
         if (!data_part->isIndexLoaded())
         {
-            // Use thread pool to parallelize the work
-            thread_pool.scheduleOrThrowOnError([&mutex, data_part] {
-                // Lock the mutex before loading index to prevent data races
-                std::lock_guard<std::mutex> lock(mutex);
-                const_cast<IMergeTreeDataPart &>(*data_part).loadIndexWithLock();
-            });
+            // Use thread pool to parallelize the work, limiting to max_parallel_tasks
+            if (scheduled_tasks < max_parallel_tasks)
+            {
+                thread_pool.scheduleOrThrowOnError([data_part] {
+                    const_cast<IMergeTreeDataPart &>(*data_part).loadIndexWithLock();
+                });
+                scheduled_tasks++;
+            }
+            else
+            {
+                // If task limit is reached, wait for the current batch to finish
+                thread_pool.wait();
+                scheduled_tasks = 0; // Reset the task counter for the next batch
+            }
         }
     }
 
-    // Wait for all tasks to finish
+    // Ensure all remaining tasks finish
     thread_pool.wait();
 }
 

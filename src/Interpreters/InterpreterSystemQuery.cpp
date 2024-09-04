@@ -1177,39 +1177,69 @@ void InterpreterSystemQuery::loadPrimaryKeys()
         if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
         {
             LOG_TRACE(log, "Loading primary keys for table {}", table_id.getFullTableName());
-            merge_tree->loadPrimaryKeys();
+            try
+            {
+                merge_tree->loadPrimaryKeys();
+            }
+            catch (const Exception & ex)
+            {
+                LOG_ERROR(log, "Failed to load primary keys for table {}: {}", table_id.getFullTableName(), ex.message());
+            }
         }
         else
         {
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Command LOAD PRIMARY KEY is supported only for MergeTree table, but got: {}", table->getName());
+                ErrorCodes::BAD_ARGUMENTS, "Command LOAD PRIMARY KEY is supported only for MergeTree tables, but got: {}", table->getName());
         }
     }
     else
     {
         getContext()->checkAccess(AccessType::SYSTEM_LOAD_PRIMARY_KEY);
 
+        // Define a thread pool for parallel processing
+        auto & thread_pool = DB::getActivePartsLoadingThreadPool().get();
 
+        // Cap the number of concurrent tasks based on thread pool availability
+        size_t max_tasks = std::min(thread_pool.maxConcurrency(), DatabaseCatalog::instance().getDatabases().size());
+
+        // Process databases and tables in parallel
+        size_t tasks_scheduled = 0;
         for (auto & database : DatabaseCatalog::instance().getDatabases())
         {
             for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
             {
                 if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
                 {
-                    try
+                    // Schedule task for thread pool
+                    if (tasks_scheduled < max_tasks)
                     {
-                        // Directly load the primary keys without thread pool
-                        merge_tree->loadPrimaryKeys();
+                        thread_pool.scheduleOrThrowOnError([merge_tree, log=log] {
+                            try
+                            {
+                                merge_tree->loadPrimaryKeys(); // Calls the improved loadPrimaryKeys in MergeTreeData
+                            }
+                            catch (const Exception & ex)
+                            {
+                                LOG_ERROR(log, "Failed to load primary keys for table {}: {}", merge_tree->getStorageID().getFullTableName(), ex.message());
+                            }
+                        });
+                        tasks_scheduled++;
                     }
-                    catch (const Exception & ex)
+                    else
                     {
-                        LOG_ERROR(log, "Failed to load primary keys for table {}: {}", merge_tree->getStorageID().getFullTableName(), ex.message());
+                        // Wait for current tasks to finish before scheduling more
+                        thread_pool.wait();
+                        tasks_scheduled = 0; // Reset task counter
                     }
                 }
             }
         }
+
+        // Wait for all tasks to complete
+        thread_pool.wait();
     }
 }
+
 
 void InterpreterSystemQuery::unloadPrimaryKeys()
 {
