@@ -32,6 +32,8 @@ namespace ProfileEvents
     extern const Event ReadTaskRequestsReceived;
     extern const Event MergeTreeReadTaskRequestsReceived;
     extern const Event ParallelReplicasAvailableCount;
+    extern const int SOCKET_TIMEOUT;
+    extern const int NETWORK_ERROR;
 }
 
 namespace DB
