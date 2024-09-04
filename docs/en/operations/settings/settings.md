@@ -5637,7 +5637,6 @@ Select the side of the join to be the inner table in the query plan. Possible va
 ## use_json_alias_for_old_object_type
 
 When enabled, `JSON` data type alias will be used to create an old [Object('json')](../../sql-reference/data-types/json.md) type instead of the new [JSON](../../sql-reference/data-types/newjson.md) type.
-This setting requires server restart to take effect when changed.
 
 Default value: `false`.
 

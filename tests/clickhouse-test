@@ -30,6 +30,7 @@ import subprocess
 import sys
 import traceback
 import urllib.parse
+import io
 
 # for crc32
 import zlib
@@ -39,7 +40,9 @@ from errno import ESRCH
 from subprocess import PIPE, Popen
 from time import sleep, time
 from typing import Dict, List, Optional, Set, Tuple, Union
+from contextlib import redirect_stdout
 from ast import literal_eval as make_tuple
+
 
 try:
     import termcolor  # type: ignore
@@ -1346,9 +1349,13 @@ class TestCase:
         return None
 
     def process_result_impl(self, proc, total_time: float):
+        kill_output = ""
         if proc:
             if proc.returncode is None:
-                kill_process_group(os.getpgid(proc.pid))
+                f = io.StringIO()
+                with redirect_stdout(f):
+                    kill_process_group(os.getpgid(proc.pid))
+                kill_output = f.getvalue()
 
         description = ""
 
@@ -1364,7 +1371,7 @@ class TestCase:
             with open(self.stdout_file, "rb") as stdfd:
                 stdout = str(stdfd.read(), errors="replace", encoding="utf-8")
 
-        stderr = ""
+        stderr = kill_output
         if os.path.exists(self.stderr_file):
             with open(self.stderr_file, "rb") as stdfd:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
@@ -1634,6 +1641,19 @@ class TestCase:
         if args.client_log:
             log_opt = " --client_logs_file=" + args.client_log + " "
             client_options += log_opt
+
+            for env_name in [
+                "TSAN_OPTIONS",
+                "ASAN_OPTIONS",
+                "MSAN_OPTIONS",
+                "UBSAN_OPTIONS",
+            ]:
+                current_options = os.environ.get(env_name, None)
+                if current_options is None:
+                    os.environ[env_name] = f"log_path={args.client_log}"
+                elif "log_path=" not in current_options:
+                    os.environ[env_name] += f":log_path={args.client_log}"
+
             os.environ["CLICKHOUSE_CLIENT_OPT"] = (
                 os.environ["CLICKHOUSE_CLIENT_OPT"]
                 if "CLICKHOUSE_CLIENT_OPT" in os.environ
@@ -3105,13 +3125,15 @@ def main(args):
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
 
     if args.client_log:
-        if os.path.exists(args.client_log):
-            with open(args.client_log, "rb") as stream:
+        for log_file in [args.client_log, *glob.glob(f"{args.client_log}.*")]:
+            if not os.path.exists(log_file):
+                continue
+            with open(log_file, "rb") as stream:
                 content = stream.read().decode()
                 if len(content):
-                    print("Has fatal logs from client:\n")
+                    print(f"Has fatal logs from client in '{log_file}':\n")
                     print(content)
-            os.remove(args.client_log)
+            os.remove(log_file)
 
     if len(restarted_tests) > 0:
         print("\nSome tests were restarted:\n")
