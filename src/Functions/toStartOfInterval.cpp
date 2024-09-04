@@ -10,7 +10,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <cmath>
 #include <algorithm>
 
 
@@ -118,16 +117,18 @@ public:
                         "A timezone argument of function {} with interval type {} is allowed only when the 1st argument has the type DateTime or DateTime64",
                         getName(), interval_type->getKind().toString());
             }
-            else if (isDate(type_arg3) || isDateTime(type_arg3) || isDateTime64(type_arg3))
+            else if (isDateOrDate32OrDateTimeOrDateTime64(type_arg3))
             {
                 overload = Overload::Origin;
                 const DataTypePtr & type_arg1 = arguments[0].type;
-                if (isDateTime64(type_arg1) && isDateTime64(type_arg3))
-                    result_type = ResultType::DateTime64;
+                if (isDate(type_arg1) && isDate(type_arg3))
+                    result_type = ResultType::Date;
+                else if (isDate32(type_arg1) && isDate32(type_arg3))
+                    result_type = ResultType::Date32;
                 else if (isDateTime(type_arg1) && isDateTime(type_arg3))
                     result_type = ResultType::DateTime;
-                else if (isDate(type_arg1) && isDate(type_arg3))
-                    result_type = ResultType::Date;
+                else if (isDateTime64(type_arg1) && isDateTime64(type_arg3))
+                    result_type = ResultType::DateTime64;
                 else
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Datetime argument and origin argument for function {} must have the same type", getName());
             }
@@ -230,6 +231,8 @@ public:
         ColumnPtr result_column;
         if (isDate(result_type))
             result_column = dispatchForTimeColumn<DataTypeDate>(time_column, interval_column, origin_column, result_type, time_zone);
+        else if (isDate32(result_type))
+            result_column = dispatchForTimeColumn<DataTypeDate32>(time_column, interval_column, origin_column, result_type, time_zone);
         else if (isDateTime(result_type))
             result_column = dispatchForTimeColumn<DataTypeDateTime>(time_column, interval_column, origin_column, result_type, time_zone);
         else if (isDateTime64(result_type))
@@ -357,7 +360,7 @@ private:
         if (origin_column.column) // Overload: Origin
         {
             const bool is_small_interval = (unit == IntervalKind::Kind::Nanosecond || unit == IntervalKind::Kind::Microsecond || unit == IntervalKind::Kind::Millisecond);
-            const bool is_result_date = isDate(result_type);
+            const bool is_result_date = isDateOrDate32(result_type);
 
             Int64 result_scale = scale_multiplier;
             Int64 origin_scale = 1;
