@@ -78,6 +78,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"distributed_query_retries", 0, 3, "Maximum number of retries for distributed queries"},
             {"output_format_always_quote_identifiers", false, false, "Always quote identifiers"},
             {"output_format_identifier_quoting_style", "Backticks", "Backticks", "Set the quoting style for identifiers"}
+            {"output_format_always_quote_identifiers", false, false, "New setting."},
+            {"output_format_identifier_quoting_style", "Backticks", "Backticks", "New setting."}
         }
     },
     {"24.8",

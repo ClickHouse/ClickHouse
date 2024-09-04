@@ -1281,7 +1281,7 @@ class IColumn;
     M(Bool, output_format_sql_insert_include_column_names, true, "Include column names in INSERT query", 0) \
     M(Bool, output_format_sql_insert_use_replace, false, "Use REPLACE statement instead of INSERT", 0) \
     M(Bool, output_format_sql_insert_quote_names, true, "Quote column names with '`' characters", 0) \
-    \
+
     M(Bool, output_format_values_escape_quote_with_quote, false, "If true escape ' with '', otherwise quoted with \\'", 0) \
     \
     M(Bool, output_format_bson_string_as_string, false, "Use BSON String type instead of Binary for String columns.", 0) \
@@ -1301,6 +1301,10 @@ class IColumn;
     M(UInt64, distributed_query_retries, 3, "Maximum number of retries for distributed queries.", 0) \
     M(UInt64, distributed_query_retry_interval_ms, 1000, "Interval between retries for distributed queries in milliseconds.", 0) \
     M(UInt64, distributed_query_timeout_ms, 30000, "Timeout for each retry attempt in distributed queries in milliseconds.", 0) \
+    \
+    M(Bool, output_format_always_quote_identifiers, false, "Always quote identifiers", 0) \
+    M(IdentifierQuotingStyle, output_format_identifier_quoting_style, IdentifierQuotingStyle::Backticks, "Set the quoting style for identifiers", 0) \
+
 
 // End of FORMAT_FACTORY_SETTINGS
 // Please add settings non-related to formats into the COMMON_SETTINGS above.
