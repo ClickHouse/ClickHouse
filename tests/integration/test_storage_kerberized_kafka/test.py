@@ -139,7 +139,7 @@ def test_kafka_json_as_string_request_new_ticket_after_expiration(kafka_cluster)
 
     kafka_produce(
         kafka_cluster,
-        "kafka_json_as_string",
+        "kafka_json_as_string_after_expiration",
         [
             '{"t": 123, "e": {"x": "woof"} }',
             "",
@@ -153,9 +153,9 @@ def test_kafka_json_as_string_request_new_ticket_after_expiration(kafka_cluster)
         CREATE TABLE test.kafka (field String)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kerberized_kafka1:19092',
-                     kafka_topic_list = 'kafka_json_as_string',
+                     kafka_topic_list = 'kafka_json_as_string_after_expiration',
                      kafka_commit_on_select = 1,
-                     kafka_group_name = 'kafka_json_as_string',
+                     kafka_group_name = 'kafka_json_as_string_after_expiration',
                      kafka_format = 'JSONAsString',
                      kafka_flush_interval_ms=1000;
         """
@@ -248,7 +248,7 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
 def test_kafka_config_from_sql_named_collection(kafka_cluster):
     kafka_produce(
         kafka_cluster,
-        "kafka_json_as_string",
+        "kafka_json_as_string_named_collection",
         [
             '{"t": 123, "e": {"x": "woof"} }',
             "",
@@ -259,7 +259,7 @@ def test_kafka_config_from_sql_named_collection(kafka_cluster):
 
     instance.query(
         """
-        DROP NAMED COLLECTION IF EXISTS kafka_config
+        DROP NAMED COLLECTION IF EXISTS kafka_config;
         CREATE NAMED COLLECTION kafka_config AS
             kafka.security_protocol = 'SASL_PLAINTEXT',
             kafka.sasl_mechanism = 'GSSAPI',
@@ -270,9 +270,9 @@ def test_kafka_config_from_sql_named_collection(kafka_cluster):
             kafka.api_version_request = 'false',
 
             kafka_broker_list = 'kerberized_kafka1:19092',
-            kafka_topic_list = 'kafka_json_as_string',
+            kafka_topic_list = 'kafka_json_as_string_named_collection',
             kafka_commit_on_select = 1,
-            kafka_group_name = 'kafka_json_as_string',
+            kafka_group_name = 'kafka_json_as_string_named_collection',
             kafka_format = 'JSONAsString',
             kafka_flush_interval_ms=1000;
         """
