@@ -437,11 +437,11 @@ JSONExtractUInt
 JSONHas
 JSONLength
 JSONObjectEachRow
+JSONSharedDataPaths
+JSONSharedDataPathsWithTypes
 JSONStrings
 JSONStringsEachRow
 JSONStringsEachRowWithProgress
-JSONSharedDataPaths
-JSONSharedDataPathsWithTypes
 JSONType
 JSONs
 Jaeger
@@ -506,6 +506,7 @@ LogQL
 Logstash
 LookML
 LoongArch
+Lossy
 LowCardinality
 LpDistance
 LpNorm
@@ -1563,12 +1564,12 @@ disjunction
 disjunctions
 displayName
 displaySecretsInShowAndSelect
-distro
-distinctdynamictypes
 distinctDynamicTypes
-distinctjsonpaths
 distinctJSONPaths
 distinctJSONPathsAndTypes
+distinctdynamictypes
+distinctjsonpaths
+distro
 divideDecimal
 dmesg
 doesnt
@@ -2003,6 +2004,7 @@ loghouse
 london
 lookups
 loongarch
+lossy
 lowCardinalityIndices
 lowCardinalityKeys
 lowcardinality
