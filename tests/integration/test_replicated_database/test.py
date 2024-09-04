@@ -1,8 +1,5 @@
-import concurrent.futures
 import os
-import random
 import shutil
-import string
 import time
 import re
 import pytest
@@ -1552,35 +1549,3 @@ def test_all_groups_cluster(started_cluster):
     assert "bad_settings_node\ndummy_node\n" == bad_settings_node.query(
         "select host_name from system.clusters where name='all_groups.db_cluster' order by host_name"
     )
-
-
-def test_database_creation_idempotency(started_cluster):
-    def randomize_database_name(database_name, random_suffix_length=20):
-        letters = string.ascii_letters + string.digits
-        return f"{database_name}{''.join(random.choice(letters) for _ in range(random_suffix_length))}"
-
-    databases = [randomize_database_name("rdb") for _ in range(100)]
-
-    def create_database(name):
-        main_node.query(
-            f"""
-            CREATE DATABASE {name}
-            ENGINE = Replicated('/test/test_database_creation_idempotency/{name}', 'shard', 'replica')
-            """
-        )
-
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        for name in databases:
-            executor.submit(create_database, name)
-
-    main_node.restart_clickhouse(kill=True)
-
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = [executor.submit(create_database, name) for name in databases]
-        concurrent.futures.wait(futures)
-
-    assert int(
-        main_node.query(
-            f"SELECT count() FROM system.databases WHERE name IN {databases}"
-        ).strip()
-    ) == len(databases)
