@@ -20,6 +20,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -967,6 +968,33 @@ std::vector<String> ColumnsDescription::getAllRegisteredNames() const
             names.push_back(column.name);
     }
     return names;
+}
+
+void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info)
+{
+    if (!col_decl.default_expression)
+        return;
+
+    /** For columns with explicitly-specified type create two expressions:
+    * 1. default_expression aliased as column name with _tmp suffix
+    * 2. conversion of expression (1) to explicitly-specified type alias as column name
+    */
+    if (col_decl.type)
+    {
+        const auto & final_column_name = col_decl.name;
+        const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
+        const auto * data_type_ptr = data_type.get();
+
+        info.expr_list->children.emplace_back(setAlias(
+            addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
+
+        info.expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
+    }
+    else
+    {
+        info.has_columns_with_default_without_type = true;
+        info.expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
+    }
 }
 
 namespace

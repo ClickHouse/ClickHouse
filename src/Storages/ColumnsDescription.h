@@ -268,6 +268,16 @@ private:
     void removeSubcolumns(const String & name_in_storage);
 };
 
+class ASTColumnDeclaration;
+
+struct DefaultExpressionsInfo
+{
+    ASTPtr expr_list = nullptr;
+    bool has_columns_with_default_without_type = false;
+};
+
+void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info);
+
 /// Validate default expressions and corresponding types compatibility, i.e.
 /// default expression result can be casted to column_type. Also checks, that we
 /// don't have strange constructions in default expression like SELECT query or

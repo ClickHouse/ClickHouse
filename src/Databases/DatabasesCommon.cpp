@@ -8,10 +8,12 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
@@ -60,6 +62,18 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     /// SECONDARY_CREATE should check most of the important things.
     const auto columns_desc
         = InterpreterCreateQuery::getColumnsDescription(*columns.columns, context, LoadingStrictnessLevel::SECONDARY_CREATE, false);
+
+    /// Default expressions are only validated in level CREATE, so let's check them now
+    DefaultExpressionsInfo default_expr_info{std::make_shared<ASTExpressionList>()};
+
+    for (const auto & ast : columns.columns->children)
+    {
+        const auto & col_decl = ast->as<ASTColumnDeclaration &>();
+        getDefaultExpressionInfoInto(col_decl, columns_desc.get(col_decl.name).type, default_expr_info);
+    }
+
+    if (default_expr_info.expr_list)
+        validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, columns_desc.getAll(), context);
 
     if (columns.indices)
     {

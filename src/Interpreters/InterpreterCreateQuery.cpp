@@ -531,6 +531,47 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
     return res;
 }
 
+DataTypePtr InterpreterCreateQuery::getColumnType(
+    const ASTColumnDeclaration & col_decl, const LoadingStrictnessLevel mode, const bool make_columns_nullable)
+{
+    if (!col_decl.type)
+    {
+        /// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    DataTypePtr column_type = DataTypeFactory::instance().get(col_decl.type);
+
+    if (LoadingStrictnessLevel::ATTACH <= mode)
+        setVersionToAggregateFunctions(column_type, true);
+
+    if (col_decl.null_modifier)
+    {
+        if (column_type->isNullable())
+            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE, "Can't use [NOT] NULL modifier with Nullable type");
+        if (*col_decl.null_modifier)
+            column_type = makeNullable(column_type);
+    }
+    else if (make_columns_nullable)
+    {
+        column_type = makeNullable(column_type);
+    }
+    else if (
+        !hasNullable(column_type) && col_decl.default_specifier == "DEFAULT" && col_decl.default_expression
+        && col_decl.default_expression->as<ASTLiteral>() && col_decl.default_expression->as<ASTLiteral>()->value.isNull())
+    {
+        if (column_type->lowCardinality())
+        {
+            const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(column_type.get());
+            assert(low_cardinality_type);
+            column_type = std::make_shared<DataTypeLowCardinality>(makeNullable(low_cardinality_type->getDictionaryType()));
+        }
+        else
+            column_type = makeNullable(column_type);
+    }
+    return column_type;
+}
+
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup)
 {
@@ -539,10 +580,10 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     /** all default_expressions as a single expression list,
      *  mixed with conversion-columns for each explicitly specified type */
 
-    ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
+    DefaultExpressionsInfo default_expr_info{std::make_shared<ASTExpressionList>()};
     NamesAndTypesList column_names_and_types;
-    bool make_columns_nullable = mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup && context_->getSettingsRef().data_type_default_nullable;
-    bool has_columns_with_default_without_type = false;
+    bool make_columns_nullable = mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup
+        && context_->getSettingsRef().data_type_default_nullable;
 
     for (const auto & ast : columns_ast.children)
     {
@@ -550,78 +591,15 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (col_decl.collation && !context_->getSettingsRef().compatibility_ignore_collation_in_create_table)
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot support collation, please set compatibility_ignore_collation_in_create_table=true");
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED, "Cannot support collation, please set compatibility_ignore_collation_in_create_table=true");
         }
 
-        DataTypePtr column_type = nullptr;
-        if (col_decl.type)
-        {
-            column_type = DataTypeFactory::instance().get(col_decl.type);
 
-            if (LoadingStrictnessLevel::ATTACH <= mode)
-                setVersionToAggregateFunctions(column_type, true);
-
-            if (col_decl.null_modifier)
-            {
-                if (column_type->isNullable())
-                    throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE, "Can't use [NOT] NULL modifier with Nullable type");
-                if (*col_decl.null_modifier)
-                    column_type = makeNullable(column_type);
-            }
-            else if (make_columns_nullable)
-            {
-                column_type = makeNullable(column_type);
-            }
-            else if (!hasNullable(column_type) &&
-                     col_decl.default_specifier == "DEFAULT" &&
-                     col_decl.default_expression &&
-                     col_decl.default_expression->as<ASTLiteral>() &&
-                     col_decl.default_expression->as<ASTLiteral>()->value.isNull())
-            {
-                if (column_type->lowCardinality())
-                {
-                    const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(column_type.get());
-                    assert(low_cardinality_type);
-                    column_type = std::make_shared<DataTypeLowCardinality>(makeNullable(low_cardinality_type->getDictionaryType()));
-                }
-                else
-                    column_type = makeNullable(column_type);
-            }
-
-            column_names_and_types.emplace_back(col_decl.name, column_type);
-        }
-        else
-        {
-            /// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
-            column_names_and_types.emplace_back(col_decl.name, std::make_shared<DataTypeUInt8>());
-        }
+        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, mode, make_columns_nullable));
 
         /// add column to postprocessing if there is a default_expression specified
-        if (col_decl.default_expression)
-        {
-            /** For columns with explicitly-specified type create two expressions:
-              * 1. default_expression aliased as column name with _tmp suffix
-              * 2. conversion of expression (1) to explicitly-specified type alias as column name
-              */
-            if (col_decl.type)
-            {
-                const auto & final_column_name = col_decl.name;
-                const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
-                const auto * data_type_ptr = column_names_and_types.back().type.get();
-
-                default_expr_list->children.emplace_back(
-                    setAlias(addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()),
-                        final_column_name));
-
-                default_expr_list->children.emplace_back(
-                    setAlias(col_decl.default_expression->clone(), tmp_column_name));
-            }
-            else
-            {
-                has_columns_with_default_without_type = true;
-                default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
-            }
-        }
+        getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);
     }
 
     Block defaults_sample_block;
@@ -629,12 +607,10 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     /// We try to avoid that validation while restoring from a backup because it might be slow or troublesome
     /// (for example, a default expression can contain dictGet() and that dictionary can access remote servers or
     /// require different users to authenticate).
-    if (!default_expr_list->children.empty())
+    if (!default_expr_info.expr_list->children.empty()
+        && (default_expr_info.has_columns_with_default_without_type || (mode <= LoadingStrictnessLevel::CREATE)))
     {
-        if (has_columns_with_default_without_type || (mode <= LoadingStrictnessLevel::CREATE))
-            defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_list, column_names_and_types, context_);
-        else
-            validateColumnsDefaults(default_expr_list, column_names_and_types, context_);
+        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, column_names_and_types, context_);
     }
 
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
