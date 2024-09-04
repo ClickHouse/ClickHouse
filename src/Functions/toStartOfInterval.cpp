@@ -313,27 +313,27 @@ private:
         switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
         {
             case IntervalKind::Kind::Nanosecond:
-                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Nanosecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Nanosecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Microsecond:
-                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Microsecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Microsecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Millisecond:
-                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Millisecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Millisecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Second:
-                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Second>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Second>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Minute:
-                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Minute>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Minute>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Hour:
-                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Hour>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Hour>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Day:
-                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Day>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Day>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Week:
-                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Week>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Week>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Month:
-                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Month>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Month>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Quarter:
-                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Quarter>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Quarter>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Year:
-                return execute<TimeDataType, ReturnType, IntervalKind::Kind::Year>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Year>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
         }
 
         std::unreachable();
