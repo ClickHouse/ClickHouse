@@ -1070,11 +1070,15 @@ namespace
 
     void setNullTableEngine(ASTStorage & storage)
     {
+        storage.forEachPointerToChild([](void ** ptr) mutable
+        {
+            *ptr = nullptr;
+        });
+
         auto engine_ast = std::make_shared<ASTFunction>();
         engine_ast->name = "Null";
         engine_ast->no_empty_args = true;
         storage.set(storage.engine, engine_ast);
-        storage.settings = nullptr;
     }
 
 }
