@@ -20,6 +20,6 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE async_insert_infile_data (id UInt32, 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO async_insert_infile_data FROM INFILE '${CLICKHOUSE_TMP}/test_infile.csv' SETTINGS async_insert=1;"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM async_insert_infile_data ORDER BY id;"
 
-${CLICKHOUSE_CLIENT} --query "INSERT INTO async_insert_infile_data FROM INFILE '${CLICKHOUSE_TMP}/test_infile.csv' FORMAT NotExists SETTINGS async_insert=1;" 2>&1 | grep -q "UNKOWN_FORMAT"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO async_insert_infile_data FROM INFILE '${CLICKHOUSE_TMP}/test_infile.csv' FORMAT NotExists SETTINGS async_insert=1;" 2>&1 | grep -q "UNKNOWN_FORMAT" && echo OK || echo FAIL
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE async_insert_infile_data SYNC;"
