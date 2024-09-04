@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
@@ -1058,136 +1059,6 @@ struct MutationContext
 using MutationContextPtr = std::shared_ptr<MutationContext>;
 
 
-class MergeProjectionPartsTask : public IExecutableTask
-{
-public:
-
-    MergeProjectionPartsTask(
-        String name_,
-        MergeTreeData::MutableDataPartsVector && parts_,
-        const ProjectionDescription & projection_,
-        size_t & block_num_,
-        MutationContextPtr ctx_)
-        : name(std::move(name_))
-        , parts(std::move(parts_))
-        , projection(projection_)
-        , block_num(block_num_)
-        , ctx(ctx_)
-        , log(getLogger("MergeProjectionPartsTask"))
-        {
-            LOG_DEBUG(log, "Selected {} projection_parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
-            level_parts[current_level] = std::move(parts);
-        }
-
-    void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-
-    bool executeStep() override
-    {
-        auto & current_level_parts = level_parts[current_level];
-        auto & next_level_parts = level_parts[next_level];
-
-        MergeTreeData::MutableDataPartsVector selected_parts;
-        while (selected_parts.size() < max_parts_to_merge_in_one_level && !current_level_parts.empty())
-        {
-            selected_parts.push_back(std::move(current_level_parts.back()));
-            current_level_parts.pop_back();
-        }
-
-        if (selected_parts.empty())
-        {
-            if (next_level_parts.empty())
-            {
-                LOG_WARNING(log, "There is no projection parts merged");
-
-                /// Task is finished
-                return false;
-            }
-            current_level = next_level;
-            ++next_level;
-        }
-        else if (selected_parts.size() == 1)
-        {
-            if (next_level_parts.empty())
-            {
-                LOG_DEBUG(log, "Merged a projection part in level {}", current_level);
-                selected_parts[0]->renameTo(projection.name + ".proj", true);
-                selected_parts[0]->setName(projection.name);
-                selected_parts[0]->is_temp = false;
-                ctx->new_data_part->addProjectionPart(name, std::move(selected_parts[0]));
-
-                /// Task is finished
-                return false;
-            }
-            else
-            {
-                LOG_DEBUG(log, "Forwarded part {} in level {} to next level", selected_parts[0]->name, current_level);
-                next_level_parts.push_back(std::move(selected_parts[0]));
-            }
-        }
-        else if (selected_parts.size() > 1)
-        {
-            // Generate a unique part name
-            ++block_num;
-            auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
-            MergeTreeData::DataPartsVector const_selected_parts(
-                std::make_move_iterator(selected_parts.begin()), std::make_move_iterator(selected_parts.end()));
-            projection_future_part->assign(std::move(const_selected_parts));
-            projection_future_part->name = fmt::format("{}_{}", projection.name, ++block_num);
-            projection_future_part->part_info = {"all", 0, 0, 0};
-
-            MergeTreeData::MergingParams projection_merging_params;
-            projection_merging_params.mode = MergeTreeData::MergingParams::Ordinary;
-            if (projection.type == ProjectionDescription::Type::Aggregate)
-                projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
-
-            LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part->name);
-            auto tmp_part_merge_task = ctx->mutator->mergePartsToTemporaryPart(
-                projection_future_part,
-                projection.metadata,
-                ctx->mutate_entry,
-                std::make_unique<MergeListElement>((*ctx->mutate_entry)->table_id, projection_future_part, ctx->context),
-                *ctx->holder,
-                ctx->time_of_mutation,
-                ctx->context,
-                ctx->space_reservation,
-                false, // TODO Do we need deduplicate for projections
-                {},
-                false, // no cleanup
-                projection_merging_params,
-                NO_TRANSACTION_PTR,
-                /* need_prefix */ true,
-                ctx->new_data_part.get(),
-                ".tmp_proj");
-
-            next_level_parts.push_back(executeHere(tmp_part_merge_task));
-            next_level_parts.back()->is_temp = true;
-        }
-
-        /// Need execute again
-        return true;
-    }
-
-private:
-    String name;
-    MergeTreeData::MutableDataPartsVector parts;
-    const ProjectionDescription & projection;
-    size_t & block_num;
-    MutationContextPtr ctx;
-
-    LoggerPtr log;
-
-    std::map<size_t, MergeTreeData::MutableDataPartsVector> level_parts;
-    size_t current_level = 0;
-    size_t next_level = 1;
-
-    /// TODO(nikitamikhaylov): make this constant a setting
-    static constexpr size_t max_parts_to_merge_in_one_level = 10;
-};
-
-
 // This class is responsible for:
 // 1. get projection pipeline and a sink to write parts
 // 2. build an executor that can write block to the input stream (actually we can write through it to generate as many parts as possible)
@@ -1406,7 +1277,13 @@ void PartMergerWriter::constructTaskForProjectionPartsMerge()
         std::move(parts),
         projection,
         block_num,
-        ctx
+        ctx->context,
+        ctx->holder,
+        ctx->mutator,
+        ctx->mutate_entry,
+        ctx->time_of_mutation,
+        ctx->new_data_part,
+        ctx->space_reservation
     );
 }
 
