@@ -272,6 +272,7 @@ private:
 /// default expression result can be casted to column_type. Also checks, that we
 /// don't have strange constructions in default expression like SELECT query or
 /// arrayJoin function.
+void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);
 Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);
 
 }

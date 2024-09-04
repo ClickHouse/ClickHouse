@@ -1,36 +1,41 @@
 #include <Storages/ColumnsDescription.h>
 
+#include <memory>
+#include <Compression/CompressionFactory.h>
+#include <Core/Defines.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/NestedUtils.h>
+#include <IO/ReadBuffer.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/addTypeConversionToAST.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSetQuery.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/ReadBufferFromString.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeNested.h>
-#include <Common/Exception.h>
-#include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
+#include <Common/Exception.h>
+#include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
-#include <Core/Defines.h>
-#include <Compression/CompressionFactory.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/FunctionNameNormalizer.h>
 
 
 namespace DB
@@ -964,7 +969,9 @@ std::vector<String> ColumnsDescription::getAllRegisteredNames() const
     return names;
 }
 
-Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)
+namespace
+{
+std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, bool get_sample_block)
 {
     for (const auto & child : default_expr_list->children)
         if (child->as<ASTSelectQuery>() || child->as<ASTSelectWithUnionQuery>() || child->as<ASTSubquery>())
@@ -978,6 +985,9 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
             if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
                 throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Unsupported default value that requires ARRAY JOIN action");
 
+        if (!get_sample_block)
+            return {};
+
         return actions->getSampleBlock();
     }
     catch (Exception & ex)
@@ -985,6 +995,20 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
         ex.addMessage("default expression and column type are incompatible.");
         throw;
     }
+}
+}
+
+void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)
+{
+    /// Do not execute the default expressions as they might be heavy, e.g.: access remote servers, etc.
+    validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, all_columns, context, /*get_sample_block=*/false);
+}
+
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)
+{
+    auto result = validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, all_columns, context, /*get_sample_block=*/true);
+    chassert(result.has_value());
+    return std::move(*result);
 }
 
 }

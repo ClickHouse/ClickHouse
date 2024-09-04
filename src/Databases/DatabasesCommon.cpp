@@ -56,9 +56,10 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
         return;
 
     const auto & columns = *new_query.columns_list;
-    /// Do some basic sanity checks. Let's enforce strict rules, just like on CREATE, because otherwise the default expressions might not be checked
+    /// Do some basic sanity checks. We cannot do the same strict checks as on create, because context might not have the same settings if it is not called directly from an alter query.
+    /// SECONDARY_CREATE should check most of the important things.
     const auto columns_desc
-        = InterpreterCreateQuery::getColumnsDescription(*columns.columns, context, LoadingStrictnessLevel::CREATE, false);
+        = InterpreterCreateQuery::getColumnsDescription(*columns.columns, context, LoadingStrictnessLevel::SECONDARY_CREATE, false);
 
     if (columns.indices)
     {

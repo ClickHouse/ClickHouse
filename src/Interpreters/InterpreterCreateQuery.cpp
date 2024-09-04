@@ -629,9 +629,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     /// We try to avoid that validation while restoring from a backup because it might be slow or troublesome
     /// (for example, a default expression can contain dictGet() and that dictionary can access remote servers or
     /// require different users to authenticate).
-    if (!default_expr_list->children.empty() && (has_columns_with_default_without_type || (mode <= LoadingStrictnessLevel::CREATE)))
+    if (!default_expr_list->children.empty())
     {
-        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_list, column_names_and_types, context_);
+        if (has_columns_with_default_without_type || (mode <= LoadingStrictnessLevel::CREATE))
+            defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_list, column_names_and_types, context_);
+        else
+            validateColumnsDefaults(default_expr_list, column_names_and_types, context_);
     }
 
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
