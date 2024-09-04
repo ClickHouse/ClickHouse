@@ -15,13 +15,13 @@ echo "DROP TABLE IF EXISTS tab_00738 SYNC;
 DROP TABLE IF EXISTS mv SYNC;
 CREATE TABLE tab_00738(a Int) ENGINE = MergeTree() ORDER BY a SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 -- The matview will take at least 2 seconds to be finished (10000000 * 0.0000002)
-CREATE MATERIALIZED VIEW mv UUID '$uuid' ENGINE = Log AS SELECT sleepEachRow(0.0000002) FROM tab_00738;" | ${CLICKHOUSE_CLIENT} -n
+CREATE MATERIALIZED VIEW mv UUID '$uuid' ENGINE = Log AS SELECT sleepEachRow(0.0000002) FROM tab_00738;" | ${CLICKHOUSE_CLIENT}
 
 ${CLICKHOUSE_CLIENT} --query_id insert_$CLICKHOUSE_DATABASE --query "INSERT INTO tab_00738 SELECT number FROM numbers(10000000)" &
 
 function drop_inner_id()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE \`.inner_id.$uuid\`" -n
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE \`.inner_id.$uuid\`"
 }
 
 function wait_for_query_to_start()
@@ -42,7 +42,7 @@ function wait_for_query_to_start()
 function drop_at_exit()
 {
     echo "DROP TABLE IF EXISTS tab_00738;
-DROP TABLE IF EXISTS mv;" | ${CLICKHOUSE_CLIENT} -n
+DROP TABLE IF EXISTS mv;" | ${CLICKHOUSE_CLIENT}
 }
 
 ret_code=0
