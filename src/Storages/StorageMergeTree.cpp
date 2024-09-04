@@ -391,7 +391,6 @@ void StorageMergeTree::alter(
             {
                 LOG_ERROR(log, "Failed to alter table in database, reverting changes");
                 changeSettings(old_metadata.settings_changes, table_lock_holder);
-                checkTTLExpressions(old_metadata, new_metadata);
                 setProperties(old_metadata, new_metadata, false, local_context);
                 throw;
             }
