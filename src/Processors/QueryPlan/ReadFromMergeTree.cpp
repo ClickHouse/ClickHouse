@@ -354,8 +354,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
 
     /// We have a special logic for local replica. It has to read less data, because in some cases it should
     /// merge states of aggregate functions or do some other important stuff other than reading from Disk.
-    auto & settings = context->getSettingsRef();
-    auto multiplier = settings.parallel_replicas_single_task_marks_count_multiplier;
+    auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
     const auto min_marks_for_concurrent_read_limit = std::numeric_limits<Int64>::max() >> 1;
     if (pool_settings.min_marks_for_concurrent_read > min_marks_for_concurrent_read_limit)
     {
@@ -522,8 +521,6 @@ Pipe ReadFromMergeTree::readInOrder(
     bool has_limit_below_one_block = read_type != ReadType::Default && read_limit && read_limit < block_size.max_block_size_rows;
     MergeTreeReadPoolPtr pool;
 
-    auto & settings = context->getSettingsRef();
-
     if (is_parallel_reading_from_replicas)
     {
         const auto & client_info = context->getClientInfo();
@@ -534,7 +531,7 @@ Pipe ReadFromMergeTree::readInOrder(
             .number_of_current_replica = client_info.number_of_current_replica,
         };
 
-        auto multiplier = settings.parallel_replicas_single_task_marks_count_multiplier;
+        auto multiplier = context->getSettingsRef().parallel_replicas_single_task_marks_count_multiplier;
         const auto min_marks_for_concurrent_read_limit = std::numeric_limits<Int64>::max() >> 1;
         if (pool_settings.min_marks_for_concurrent_read > min_marks_for_concurrent_read_limit)
         {

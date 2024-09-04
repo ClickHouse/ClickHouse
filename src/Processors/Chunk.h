@@ -179,6 +179,7 @@ private:
 
 class IMergeTreeDataPart;
 
+/// The query condition cache needs to know the mark ranges of which part the chunk data comes from.
 class MarkRangesInfo : public ChunkInfoCloneable<MarkRangesInfo>
 {
 public:

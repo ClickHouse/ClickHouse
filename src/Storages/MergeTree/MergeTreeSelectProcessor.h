@@ -11,7 +11,6 @@ namespace DB
 {
 
 struct PrewhereExprInfo;
-class QueryConditionCache;
 
 struct ChunkAndProgress
 {

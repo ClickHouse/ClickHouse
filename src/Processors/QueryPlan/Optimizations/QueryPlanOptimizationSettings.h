@@ -75,7 +75,8 @@ struct QueryPlanOptimizationSettings
     String force_projection_name;
     bool optimize_use_implicit_projections = false;
 
-    bool enable_writes_to_query_condition_cache = true;
+    /// If query condition cache is enabled, the query condition cache needs to be updated in the WHERE stage.
+    bool enable_writes_to_query_condition_cache = false;
 
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);
