@@ -869,7 +869,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     return parts_with_ranges;
 }
 
-void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(const ContextPtr & context, RangesInDataParts & parts_with_ranges, const SelectQueryInfo & query_info_, LoggerPtr log)
+void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(RangesInDataParts & parts_with_ranges, const SelectQueryInfo & query_info_, const ContextPtr & context, LoggerPtr log)
 {
     auto & settings = context->getSettingsRef();
     if (!settings.use_query_condition_cache || !settings.enable_reads_to_query_condition_cache ||
@@ -932,24 +932,23 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(const Context
                 part_with_ranges.ranges = ranges;
                 ++it;
             }
-
         }
 
         return stat;
     };
 
-    if (query_info_.prewhere_info)
+    if (auto prewhere_info = query_info_.prewhere_info)
     {
-        String & condition = query_info_.prewhere_info->prewhere_column_name;
-        auto stat = dropMarkRanges(query_info_.prewhere_info->prewhere_column_name);
-        LOG_DEBUG(log, "PREWHERE contition {} by mark filter cache has dropped {}/{} granules.", condition, stat.granules_dropped, stat.total_granules);
+        String & condition = prewhere_info->prewhere_column_name;
+        auto stat = dropMarkRanges(condition);
+        LOG_DEBUG(log, "PREWHERE contition {} by query condition cache has dropped {}/{} granules.", condition, stat.granules_dropped, stat.total_granules);
     }
 
-    if (query_info_.filter_actions_dag)
+    if (auto filter_dag = query_info_.filter_actions_dag)
     {
-        String condition = query_info_.filter_actions_dag->getOutputs()[0]->result_name;
+        String condition = filter_dag->getOutputs().front()->result_name;
         auto stat = dropMarkRanges(condition);
-        LOG_DEBUG(log, "WHERE condition {} by mark filter cache has dropped {}/{} granules.", condition, stat.granules_dropped, stat.total_granules);
+        LOG_DEBUG(log, "WHERE condition {} by query condition cache has dropped {}/{} granules.", condition, stat.granules_dropped, stat.total_granules);
     }
 }
 

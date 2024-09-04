@@ -215,7 +215,7 @@ public:
         Columns columns;
         size_t num_rows = 0;
 
-        /// All read marks, including partially read mark.
+        /// All read marks.
         MarkRanges read_mark_ranges;
 
         /// The number of rows were added to block as a result of reading chain.

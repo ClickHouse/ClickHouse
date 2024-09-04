@@ -1,48 +1,38 @@
-SET use_query_condition_cache = true;
+-- Tags: no-parallel
+-- Tag no-parallel: Messes with internal cache
 
-DROP TABLE IF EXISTS t1;
-CREATE TABLE t1 (`a` Int64, `b` Int64) ENGINE = MergeTree ORDER BY a;
-INSERT INTO t1 SELECT number, number FROM numbers(1000000);
+SYSTEM DROP QUERY CONDITION CACHE;
+DROP TABLE IF EXISTS system.query_log SYNC;
 
-SELECT a FROM t1 WHERE b = 10000;
-SELECT b FROM t1 WHERE b = 10000;
-SELECT b FROM t1 WHERE b = 10000;
-SELECT * FROM t1 WHERE b = 10000;
+DROP TABLE IF EXISTS tab SYNC;
+CREATE TABLE tab (`a` Int64, `b` Int64) ENGINE = MergeTree ORDER BY a;
+INSERT INTO tab SELECT number, number FROM numbers(1000000);
 
-SELECT a FROM t1 WHERE b > 1000 AND b < 10003 ORDER BY ALL LIMIT 5;
-SELECT b FROM t1 WHERE b > 1000 AND b < 10003 ORDER BY ALL LIMIT 5;
-SELECT b FROM t1 WHERE b > 1000 AND b < 10003 ORDER BY ALL LIMIT 5;
-SELECT * FROM t1 WHERE b > 1000 AND b < 10003 ORDER BY ALL LIMIT 5;
+SELECT count(*) FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true;
+SELECT * FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true;
+
+-- PREWHERE condition will hit the query condition cache.
+SYSTEM FLUSH LOGS;
+SELECT ProfileEvents['QueryConditionCacheHits'], ProfileEvents['QueryConditionCacheMisses'], toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND query IN ('SELECT count(*) FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true;',
+                'SELECT * FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true;')
+order by event_time_microseconds;
 
 SELECT 'Test optimize_move_to_prewhere=false';
-DROP TABLE IF EXISTS t1;
-CREATE TABLE t1 (`a` Int64, `b` Int64) ENGINE = MergeTree ORDER BY a;
-INSERT INTO t1 SELECT number, number FROM numbers(1000000);
+SYSTEM DROP QUERY CONDITION CACHE;
 
-SELECT a FROM t1 WHERE b = 10000 SETTINGS optimize_move_to_prewhere=false;
-SELECT b FROM t1 WHERE b = 10000 SETTINGS optimize_move_to_prewhere=false;
-SELECT * FROM t1 WHERE b = 10000 SETTINGS optimize_move_to_prewhere=false;
+SELECT count(*) FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere=false;
+SELECT * FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere=false;
 
-SELECT a FROM t1 WHERE b > 1000 AND b < 10003 ORDER BY ALL LIMIT 5 SETTINGS optimize_move_to_prewhere=false;
-SELECT b FROM t1 WHERE b > 1000 AND b < 10003 ORDER BY ALL LIMIT 5 SETTINGS optimize_move_to_prewhere=false;
-SELECT * FROM t1 WHERE b > 1000 AND b < 10003 ORDER BY ALL LIMIT 5 SETTINGS optimize_move_to_prewhere=false;
+-- WHERE condition will hit the query condition cache.
+SYSTEM FLUSH LOGS;
+SELECT ProfileEvents['QueryConditionCacheHits'], ProfileEvents['QueryConditionCacheMisses'], toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND query IN ('SELECT count(*) FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere=false;',
+               'SELECT * FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere=false;');
 
-SELECT 'Test drop partition';
-ALTER TABLE t1 DROP PARTITION tuple();
-INSERT INTO t1 SELECT number * 10, number FROM numbers(1000000);
+DROP TABLE IF EXISTS tab;
 
-SELECT a FROM t1 WHERE b = 10000;
-SELECT b FROM t1 WHERE b = 10000;
-SELECT * FROM t1 WHERE b = 10000;
-
-SELECT 'Test drop table';
-DROP TABLE IF EXISTS t1;
-CREATE TABLE t1 (`a` Int64, `b` Int64) ENGINE = MergeTree ORDER BY a;
-INSERT INTO t1 SELECT number * 100, number FROM numbers(1000000);
-
-SELECT a FROM t1 WHERE b = 10000;
-SELECT b FROM t1 WHERE b = 10000;
-SELECT * FROM t1 WHERE b = 10000;
-
-
-DROP TABLE IF EXISTS t1;

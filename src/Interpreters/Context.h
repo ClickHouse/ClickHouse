@@ -1073,6 +1073,8 @@ public:
 
     void setQueryConditionCache(size_t max_entries);
     std::shared_ptr<QueryConditionCache> getQueryConditionCache() const;
+    void updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    void clearQueryConditionCache() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.

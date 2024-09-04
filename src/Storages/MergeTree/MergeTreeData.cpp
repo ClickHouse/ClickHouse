@@ -4109,9 +4109,6 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
 
     if (removed_active_part)
         resetObjectColumnsFromActiveParts(acquired_lock);
-
-    if (auto query_condition_cache = getContext()->getQueryConditionCache())
-        query_condition_cache->removeParts(remove);
 }
 
 void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove)

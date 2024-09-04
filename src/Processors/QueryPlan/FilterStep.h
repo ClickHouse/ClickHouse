@@ -26,7 +26,7 @@ public:
     ActionsDAG & getExpression() { return actions_dag; }
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
-    void setQueryConditionCacheAndKey(QueryConditionCachePtr query_condition_cache_, String & condition);
+    void setQueryConditionCacheAndKey(QueryConditionCachePtr query_condition_cache_, String & where_condition_);
 
 private:
     void updateOutputStream() override;
@@ -36,7 +36,7 @@ private:
     bool remove_filter_column;
 
     QueryConditionCachePtr query_condition_cache;
-    String condition;
+    std::optional<String> where_condition;
 };
 
 }
