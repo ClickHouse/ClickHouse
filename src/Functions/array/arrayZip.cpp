@@ -112,20 +112,25 @@ public:
                     ColumnTuple::create(std::move(tuple_columns)), static_cast<const ColumnArray &>(*holders[0]).getOffsetsPtr());
         }
         else
-            return executeUnaligned(holders, tuple_columns, input_rows_count);
+            return executeUnaligned(holders, tuple_columns, input_rows_count, has_unaligned);
     }
 
 private:
-    ColumnPtr executeUnaligned(const Columns & holders, Columns & tuple_columns, size_t input_rows_count) const
+    ColumnPtr executeUnaligned(const Columns & holders, Columns & tuple_columns, size_t input_rows_count, bool has_unaligned) const
     {
         std::vector<const ColumnArray *> array_columns(holders.size());
         for (size_t i = 0; i < holders.size(); ++i)
             array_columns[i] = checkAndGetColumn<ColumnArray>(holders[i].get());
 
+        for (auto & tuple_column : tuple_columns)
+            tuple_column = makeNullable(tuple_column);
+
+        if (!has_unaligned)
+            return ColumnArray::create(ColumnTuple::create(std::move(tuple_columns)), array_columns[0]->getOffsetsPtr());
+
         MutableColumns res_tuple_columns(tuple_columns.size());
         for (size_t i = 0; i < tuple_columns.size(); ++i)
         {
-            tuple_columns[i] = makeNullable(tuple_columns[i]);
             res_tuple_columns[i] = tuple_columns[i]->cloneEmpty();
             res_tuple_columns[i]->reserve(tuple_columns[i]->size());
         }
