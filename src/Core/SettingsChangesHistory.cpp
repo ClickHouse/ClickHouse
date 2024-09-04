@@ -76,6 +76,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"create_if_not_exists", false, false, "New setting."},
             {"allow_materialized_view_with_bad_select", true, true, "Support (but not enable yet) stricter validation in CREATE MATERIALIZED VIEW"},
             {"distributed_query_retries", 0, 3, "Maximum number of retries for distributed queries"},
+            {"output_format_always_quote_identifiers", false, false, "Always quote identifiers"},
+            {"output_format_identifier_quoting_style", "Backticks", "Backticks", "Set the quoting style for identifiers"}
         }
     },
     {"24.8",
