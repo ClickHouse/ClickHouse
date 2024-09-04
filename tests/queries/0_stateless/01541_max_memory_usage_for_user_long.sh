@@ -13,7 +13,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # - one users' query in background (to avoid reseting max_memory_usage_for_user)
 
 # We have to create a separate user to run this tests isolated from other tests.
-${CLICKHOUSE_CLIENT} -n --allow_introspection_functions 1 --query "DROP USER IF EXISTS test_01541; CREATE USER test_01541; GRANT ALL ON *.* TO test_01541;";
+${CLICKHOUSE_CLIENT} --allow_introspection_functions 1 --query "DROP USER IF EXISTS test_01541; CREATE USER test_01541; GRANT ALL ON *.* TO test_01541;";
 
 
 query="SELECT groupArray(repeat('a', 1000)) FROM numbers(10000) GROUP BY number % 10 FORMAT JSON"
@@ -35,7 +35,7 @@ function execute_tcp_one_session()
 {
     for _ in {1..30}; do
         echo "$query;"
-    done | ${CLICKHOUSE_CLIENT} --user=test_01541 -nm --max_memory_usage_for_user=100Mi --max_threads=1 | grep -F DB::Exception:
+    done | ${CLICKHOUSE_CLIENT} --user=test_01541 -m --max_memory_usage_for_user=100Mi --max_threads=1 | grep -F DB::Exception:
 }
 
 
