@@ -1013,6 +1013,7 @@ private:
         DataPartsVector::const_iterator it;
     };
 
+    Int32 tryFixMetadataVersionInZooKeeper();
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);

@@ -6155,6 +6155,8 @@ void StorageReplicatedMergeTree::alter(
         mutation_znode.reset();
 
         auto current_metadata = getInMemoryMetadataPtr();
+        // update metadata's metadata_version
+        // fixReplicaMetadataVersionIfNeeded(current_metadata->metadata_version);
 
         StorageInMemoryMetadata future_metadata = *current_metadata;
         commands.apply(future_metadata, query_context);
@@ -6200,7 +6202,8 @@ void StorageReplicatedMergeTree::alter(
         size_t mutation_path_idx = std::numeric_limits<size_t>::max();
 
         String new_metadata_str = future_metadata_in_zk.toString();
-        ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "metadata", new_metadata_str, current_metadata->getMetadataVersion()));
+        Int32 metadata_version = fixMetadataVersionInZooKeeper();
+        ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "metadata", new_metadata_str, metadata_version));
 
         String new_columns_str = future_metadata.columns.toString();
         ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "columns", new_columns_str, -1));
@@ -10640,5 +10643,50 @@ template std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::all
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     const std::vector<String> & zookeeper_block_id_path,
     const String & zookeeper_path_prefix) const;
+
+Int32 StorageReplicatedMergeTree::tryFixMetadataVersionInZooKeeper()
+{
+    const Int32 metadata_version = getInMemoryMetadataPtr()->getMetadataVersion();
+    if (metadata_version != 0)
+    {
+        /// No need to fix anything
+        return metadata_version;
+    }
+
+    auto zookeeper = getZooKeeper();
+
+    Coordination::Stat stat;
+    zookeeper->get(fs::path(zookeeper_path) / "metadata", &stat);
+    if (stat.version == 0)
+    {
+        /// No need to fix anything
+        return metadata_version;
+    }
+
+    queue.pullLogsToQueue(zookeeper);
+    if (queue.getStatus().metadata_alters_in_queue != 0)
+    {
+        LOG_DEBUG(log, "No need to update metadata_version as there are ALTER_METADATA entries in the queue");
+        return metadata_version;
+    }
+
+    const Coordination::Requests ops = {
+        zkutil::makeSetRequest(fs::path(replica_path) / "metadata_version", std::to_string(stat.version), 0),
+        zkutil::makeCheckRequest(fs::path(zookeeper_path) / "metadata", stat.version),
+    };
+    Coordination::Responses ops_responses;
+    const auto code = current_zookeeper->tryMulti(ops, ops_responses);
+    if (code == Coordination::Error::ZOK)
+    {
+        LOG_DEBUG(log, "Successfully fixed metadata_version");
+        return stat.version;
+    }
+    if (code == Coordination::Error::ZBADVERSION)
+    {
+        LOG_DEBUG(log, "No need to update metadata_version because table metadata has been updated on a different replica");
+        return metadata_version;
+    }
+    throw zkutil::KeeperException(code);
+}
 
 }
