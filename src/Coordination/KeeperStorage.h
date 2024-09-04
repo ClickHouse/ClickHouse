@@ -609,7 +609,18 @@ public:
             using is_transparent = void; // required to make find() work with different type than key_type
         };
 
-        mutable std::unordered_map<std::string, UncommittedNode, Hash, Equal> nodes;
+        struct PathCmp
+        {
+            using is_transparent = std::true_type;
+
+            auto operator()(const std::string_view a,
+                            const std::string_view b) const
+            {
+                return a.size() < b.size() || (a.size() == b.size() && a < b);
+            }
+        };
+
+        mutable std::map<std::string, UncommittedNode, PathCmp> nodes;
         std::unordered_map<std::string, std::list<const Delta *>, Hash, Equal> deltas_for_path;
 
         std::list<Delta> deltas;
