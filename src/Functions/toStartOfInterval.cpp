@@ -18,11 +18,11 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -275,7 +275,7 @@ private:
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for 1st argument of function {}, expected a Date, Date32, DateTime or DateTime64", getName());
     }
 
-    template <typename ReturnType, typename TimeColumnType, typename TimeDataType>
+    template <typename ReturnType, typename TimeDataType, typename TimeColumnType>
     ColumnPtr dispatchForIntervalColumn(
         const TimeDataType & time_data_type, const TimeColumnType & time_column, const ColumnWithTypeAndName & interval_column, const ColumnWithTypeAndName & origin_column,
         const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale = 1) const
@@ -339,8 +339,8 @@ private:
         std::unreachable();
     }
 
-    template <typename TimeDataType, typename ResultDataType, IntervalKind::Kind unit, typename ColumnType>
-    ColumnPtr execute(const TimeDataType &, const ColumnType & time_column_type, Int64 num_units, const ColumnWithTypeAndName & origin_column, const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale) const
+    template <typename ResultDataType, typename TimeDataType, typename TimeColumnType, IntervalKind::Kind unit>
+    ColumnPtr execute(const TimeDataType &, const TimeColumnType & time_column_type, Int64 num_units, const ColumnWithTypeAndName & origin_column, const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale) const
     {
         using ResultColumnType = typename ResultDataType::ColumnType;
 
