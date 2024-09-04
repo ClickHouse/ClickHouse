@@ -47,7 +47,7 @@ void StorageSystemViewRefreshes::fillData(
     auto valid_access = AccessType::SHOW_TABLES;
     bool check_access_for_tables = !access->isGranted(valid_access);
 
-    for (RefreshTaskPtr task : context->getRefreshSet().getTasks())
+    for (const RefreshTaskPtr & task : context->getRefreshSet().getTasks())
     {
         RefreshTask::Info refresh = task->getInfo();
 

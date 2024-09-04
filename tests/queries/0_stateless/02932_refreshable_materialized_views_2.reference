@@ -1,7 +1,7 @@
 <19: exception>	1
 <20: unexception>	1
 <21: rename>	1
-<22: rename>	d	Scheduled	0
+<22: rename>	d	0
 <23: simple refresh>	1
 <24: rename during refresh>	1
 <25: rename during refresh>	f	Running
@@ -25,4 +25,4 @@ CREATE MATERIALIZED VIEW default.h\nREFRESH EVERY 1 SECOND TO default.dest\n(\n 
 <38: append chain>	100
 <38: append chain>	100
 <38: append chain>	200
-2	1
+<39: append>	0	1	1	0

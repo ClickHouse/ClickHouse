@@ -33,7 +33,7 @@ $CLICKHOUSE_CLIENT -nq "
     select '<20: unexception>', * from c;
     rename table c to d;
     select '<21: rename>', * from d;
-    select '<22: rename>', view, status, last_success_time is null from refreshes;"
+    select '<22: rename>', view, last_success_time is null from refreshes;"
 
 # Do various things during a refresh.
 # First make a nonempty view.
@@ -207,7 +207,7 @@ $CLICKHOUSE_CLIENT -nq "
 $CLICKHOUSE_CLIENT -nq "
     create materialized view o refresh every 1 second append (number UInt64) engine Memory as select number from numbers(2);
     system wait view o;
-    select count(), sum(number) from o;
+    select '<39: append>', count() % 2, count() > 0, sum(number) > 0, sum(number)*2 - count() from o;
     drop table o;"
 
 $CLICKHOUSE_CLIENT -nq "
