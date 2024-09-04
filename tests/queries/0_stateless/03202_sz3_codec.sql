@@ -42,7 +42,7 @@ SELECT
 FROM
     codecTest as c1, codecTest as c2
 WHERE
-    ABS(1 - dF64 / c1.ref_valueF64) < 0.01
+    abs(1 - dF64 / c1.ref_valueF64) < 0.01
 AND
     c2.key = c1.key - 1
 LIMIT 10;
@@ -57,7 +57,7 @@ SELECT
 FROM
     codecTest as c1, codecTest as c2
 WHERE
-    ABS(1 - dF32 / c1.ref_valueF32) < 0.01
+    abs(1 - dF32 / c1.ref_valueF32) < 0.01
 AND
     c2.key = c1.key - 1
 LIMIT 10;
@@ -101,7 +101,7 @@ SELECT
 FROM
     codecTest as c1, codecTest as c2
 WHERE
-    ABS(1 - dF64 / c1.ref_valueF64) < 0.01
+    abs(1 - dF64 / c1.ref_valueF64) < 0.01
 AND
     c2.key = c1.key - 1
 LIMIT 10;
@@ -116,7 +116,7 @@ SELECT
 FROM
     codecTest as c1, codecTest as c2
 WHERE
-    ABS(1 - dF32 / c1.ref_valueF32) < 0.01
+    abs(1 - dF32 / c1.ref_valueF32) < 0.01
 AND
     c2.key = c1.key - 1
 LIMIT 10;
