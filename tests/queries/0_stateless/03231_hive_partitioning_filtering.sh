@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT --query_id="test_03231_1_$CLICKHOUSE_TEST_UNIQUE_NAME" --quer
 "
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id='test_03231_1' AND current_database = currentDatabase() and type='QueryFinish';
+    SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id='test_03231_1_$CLICKHOUSE_TEST_UNIQUE_NAME' AND current_database = currentDatabase() and type='QueryFinish';
 "
 
 $CLICKHOUSE_CLIENT --query_id="test_03231_2_$CLICKHOUSE_TEST_UNIQUE_NAME" --query "
@@ -24,7 +24,7 @@ $CLICKHOUSE_CLIENT --query_id="test_03231_2_$CLICKHOUSE_TEST_UNIQUE_NAME" --quer
 "
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id='test_03231_2' AND current_database = currentDatabase() and type='QueryFinish';
+    SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id='test_03231_2_$CLICKHOUSE_TEST_UNIQUE_NAME' AND current_database = currentDatabase() and type='QueryFinish';
 "
 
 $CLICKHOUSE_CLIENT --query_id="test_03231_3_$CLICKHOUSE_TEST_UNIQUE_NAME" --query "
@@ -33,6 +33,6 @@ $CLICKHOUSE_CLIENT --query_id="test_03231_3_$CLICKHOUSE_TEST_UNIQUE_NAME" --quer
 "
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id='test_03231_3' AND current_database = currentDatabase() and type='QueryFinish';
+    SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id='test_03231_3_$CLICKHOUSE_TEST_UNIQUE_NAME' AND current_database = currentDatabase() and type='QueryFinish';
 "
 rm -rf $DATA_DIR
