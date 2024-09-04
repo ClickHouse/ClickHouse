@@ -40,7 +40,7 @@ void extractReferenceVectorFromLiteral(std::vector<Float64> & reference_vector, 
     }
 }
 
-VectorSimilarityCondition::Info::DistanceFunction stringToDistanceFunction(std::string_view distance_function)
+VectorSimilarityCondition::Info::DistanceFunction stringToDistanceFunction(const String & distance_function)
 {
     if (distance_function == "L2Distance")
         return VectorSimilarityCondition::Info::DistanceFunction::L2;
@@ -59,7 +59,7 @@ VectorSimilarityCondition::VectorSimilarityCondition(const SelectQueryInfo & que
     , index_is_useful(checkQueryStructure(query_info))
 {}
 
-bool VectorSimilarityCondition::alwaysUnknownOrTrue(String distance_function) const
+bool VectorSimilarityCondition::alwaysUnknownOrTrue(const String & distance_function) const
 {
     if (!index_is_useful)
         return true; /// query isn't supported

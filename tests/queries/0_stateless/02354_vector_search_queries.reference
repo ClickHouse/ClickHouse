@@ -41,6 +41,21 @@ Special cases
 6	[1,9.3]	0.005731362878640178
 1	[2,3.2]	0.15200169244542905
 7	[5.5,4.7]	0.3503476876550442
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 4/4
+          Skip
+            Name: idx
+            Description: vector_similarity GRANULARITY 2
+            Parts: 1/1
+            Granules: 2/4
 -- Setting "max_limit_for_ann_queries"
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))

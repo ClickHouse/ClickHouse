@@ -69,7 +69,7 @@ public:
     };
 
     /// Returns false if query can be speeded up by an ANN index, true otherwise.
-    bool alwaysUnknownOrTrue(String distance_function) const;
+    bool alwaysUnknownOrTrue(const String & distance_function) const;
 
     std::vector<Float64> getReferenceVector() const;
     size_t getDimensions() const;
@@ -141,10 +141,6 @@ private:
     bool tryCastToConstType(const ASTPtr & node, RPNElement & out);
     /// Traverses the AST of ORDERBY section
     void traverseOrderByAST(const ASTPtr & node, RPN & rpn);
-
-    /// Returns true and stores ANNExpr if the query has valid WHERE section
-    /// TODO NOT implemented, WHERE does not supported.
-    static bool matchRPNWhere(RPN & rpn, Info & info);
 
     /// Returns true and stores ANNExpr if the query has valid ORDERBY section
     static bool matchRPNOrderBy(RPN & rpn, Info & info);
