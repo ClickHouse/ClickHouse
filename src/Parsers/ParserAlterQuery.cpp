@@ -733,9 +733,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 auto check_no_type = [&](const std::string_view keyword)
                 {
-                    if (!command_col_decl)
-                        return;
-
                     const auto & column_decl = command_col_decl->as<const ASTColumnDeclaration &>();
 
                     if (!column_decl.children.empty() || column_decl.null_modifier.has_value() || !column_decl.default_specifier.empty()
