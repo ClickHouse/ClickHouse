@@ -311,14 +311,12 @@ public:
     constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
 
     /// Step of QueryPlan from which processor was created.
-    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0)
-    {
-        query_plan_step = step;
-        query_plan_step_group = group;
-    }
+    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0);
 
     IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
+    const String & getPlanStepName() const { return plan_step_name; }
+    const String & getPlanStepDescription() const { return plan_step_description; }
 
     uint64_t getElapsedNs() const { return elapsed_ns; }
     uint64_t getInputWaitElapsedNs() const { return input_wait_elapsed_ns; }
@@ -410,6 +408,8 @@ private:
 
     IQueryPlanStep * query_plan_step = nullptr;
     size_t query_plan_step_group = 0;
+    String plan_step_name;
+    String plan_step_description;
 };
 
 
