@@ -8781,7 +8781,7 @@ void incrementMutationsCounters(
     Int64 & num_metadata_mutations_to_apply,
     const MutationCommands & commands)
 {
-    return updateMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands, 1);
+    updateMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands, 1);
 }
 
 void decrementMutationsCounters(
@@ -8789,7 +8789,7 @@ void decrementMutationsCounters(
     Int64 & num_metadata_mutations_to_apply,
     const MutationCommands & commands)
 {
-    return updateMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands, -1);
+    updateMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, commands, -1);
 }
 
 }

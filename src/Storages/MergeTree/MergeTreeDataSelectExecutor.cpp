@@ -1550,9 +1550,9 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     MergeTreeData::DataPartsVector prev_parts;
     std::swap(prev_parts, parts);
 
-    for (size_t i = 0; i < prev_parts.size(); ++i)
+    for (const auto & part_or_projection : prev_parts)
     {
-        const auto * part = prev_parts[i]->isProjectionPart() ? prev_parts[i]->getParentPart() : prev_parts[i].get();
+        const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
         if (part_values && part_values->find(part->name) == part_values->end())
             continue;
 
@@ -1589,7 +1589,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_parts_after_partition_pruner += 1;
         counters.num_granules_after_partition_pruner += num_granules;
 
-        parts.push_back(prev_parts[i]);
+        parts.push_back(part_or_projection);
     }
 }
 
@@ -1615,9 +1615,9 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
         MergeTreeData::DataPartsVector prev_parts;
         std::swap(prev_parts, selected_parts);
 
-        for (size_t i = 0; i < prev_parts.size(); ++i)
+        for (const auto & part_or_projection : prev_parts)
         {
-            const auto * part = prev_parts[i]->isProjectionPart() ? prev_parts[i]->getParentPart() : prev_parts[i].get();
+            const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
             if (part_values && part_values->find(part->name) == part_values->end())
                 continue;
 
@@ -1667,7 +1667,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Found a part with the same UUID on the same replica.");
             }
 
-            selected_parts.push_back(prev_parts[i]);
+            selected_parts.push_back(part_or_projection);
         }
 
         if (!temp_part_uuids.empty())
