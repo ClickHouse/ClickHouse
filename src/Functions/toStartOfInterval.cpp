@@ -250,19 +250,19 @@ private:
             const auto * time_column_vec = checkAndGetColumn<ColumnDate>(&time_column_col);
 
             if (time_column_vec)
-                return dispatchForIntervalColumn<ReturnType>(assert_cast<const DataTypeDate &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone);
+                return dispatchForIntervalColumn<ReturnType, DataTypeDate, ColumnDate>(assert_cast<const DataTypeDate &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone);
         }
         else if (isDate32(time_column_type))
         {
             const auto * time_column_vec = checkAndGetColumn<ColumnDate32>(&time_column_col);
             if (time_column_vec)
-                return dispatchForIntervalColumn<ReturnType>(assert_cast<const DataTypeDate32 &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone);
+                return dispatchForIntervalColumn<ReturnType, DataTypeDate32, ColumnDate32>(assert_cast<const DataTypeDate32 &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone);
         }
         else if (isDateTime(time_column_type))
         {
             const auto * time_column_vec = checkAndGetColumn<ColumnDateTime>(&time_column_col);
             if (time_column_vec)
-                return dispatchForIntervalColumn<ReturnType>(assert_cast<const DataTypeDateTime &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone);
+                return dispatchForIntervalColumn<ReturnType, DataTypeDateTime, ColumnDateTime>(assert_cast<const DataTypeDateTime &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone);
         }
         else if (isDateTime64(time_column_type))
         {
@@ -270,7 +270,7 @@ private:
             auto scale = assert_cast<const DataTypeDateTime64 &>(time_column_type).getScale();
 
             if (time_column_vec)
-                return dispatchForIntervalColumn<ReturnType>(assert_cast<const DataTypeDateTime64 &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone, scale);
+                return dispatchForIntervalColumn<ReturnType, DataTypeDateTime64, ColumnDateTime64>(assert_cast<const DataTypeDateTime64 &>(time_column_type), *time_column_vec, interval_column, origin_column, result_type, time_zone, scale);
         }
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for 1st argument of function {}, expected a Date, Date32, DateTime or DateTime64", getName());
     }
@@ -313,27 +313,27 @@ private:
         switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
         {
             case IntervalKind::Kind::Nanosecond:
-                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Nanosecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, TimeColumnType, IntervalKind::Kind::Nanosecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Microsecond:
-                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Microsecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, TimeColumnType, IntervalKind::Kind::Microsecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Millisecond:
-                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Millisecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, TimeColumnType, IntervalKind::Kind::Millisecond>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Second:
-                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Second>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, TimeColumnType, IntervalKind::Kind::Second>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Minute:
-                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Minute>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, TimeColumnType, IntervalKind::Kind::Minute>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Hour:
-                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Hour>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, TimeColumnType, IntervalKind::Kind::Hour>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Day:
-                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Day>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, TimeColumnType, IntervalKind::Kind::Day>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Week:
-                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Week>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, TimeColumnType, IntervalKind::Kind::Week>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Month:
-                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Month>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, TimeColumnType, IntervalKind::Kind::Month>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Quarter:
-                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Quarter>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, TimeColumnType, IntervalKind::Kind::Quarter>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
             case IntervalKind::Kind::Year:
-                return execute<ReturnType, TimeDataType, IntervalKind::Kind::Year>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
+                return execute<ReturnType, TimeDataType, TimeColumnType, IntervalKind::Kind::Year>(time_data_type, time_column, num_units, origin_column, result_type, time_zone, scale);
         }
 
         std::unreachable();
