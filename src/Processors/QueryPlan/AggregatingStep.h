@@ -77,6 +77,11 @@ public:
     /// Argument input_stream would be the second input (from projection).
     std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const DataStream & input_stream) const;
 
+    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serialize(WriteBuffer & out) const override;
+
+    static std::unique_ptr<IQueryPlanStep> deserialize(ReadBuffer & in, const DataStreams & input_streams_, const DataStream *, QueryPlanSerializationSettings & settings);
+
 private:
     void updateOutputStream() override;
 
@@ -101,7 +106,7 @@ private:
 
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
     const bool should_produce_results_in_order_of_bucket_number;
-    bool memory_bound_merging_of_aggregation_results_enabled;
+    const bool memory_bound_merging_of_aggregation_results_enabled;
     bool explicit_sorting_required_for_aggregation_in_order;
 
     Processors aggregating_in_order;
@@ -123,7 +128,7 @@ public:
     );
 
     String getName() const override { return "AggregatingProjection"; }
-    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
+    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
 private:
     Aggregator::Params params;

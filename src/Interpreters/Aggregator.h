@@ -127,7 +127,7 @@ public:
 
         bool optimize_group_by_constant_keys;
 
-        const double min_hit_rate_to_use_consecutive_keys_optimization;
+        const float min_hit_rate_to_use_consecutive_keys_optimization;
 
         StatsCollectingParams stats_collecting_params;
 
@@ -150,7 +150,7 @@ public:
             bool enable_prefetch_,
             bool only_merge_, // true for projections
             bool optimize_group_by_constant_keys_,
-            double min_hit_rate_to_use_consecutive_keys_optimization_,
+            float min_hit_rate_to_use_consecutive_keys_optimization_,
             const StatsCollectingParams & stats_collecting_params_)
             : keys(keys_)
             , aggregates(aggregates_)
@@ -178,7 +178,7 @@ public:
         }
 
         /// Only parameters that matter during merge.
-        Params(const Names & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_, size_t max_block_size_, double min_hit_rate_to_use_consecutive_keys_optimization_)
+        Params(const Names & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_, size_t max_block_size_, float min_hit_rate_to_use_consecutive_keys_optimization_)
             : Params(
                 keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, max_block_size_, false, true, false, min_hit_rate_to_use_consecutive_keys_optimization_, {})
         {

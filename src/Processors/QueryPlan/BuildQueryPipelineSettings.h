@@ -19,6 +19,9 @@ struct BuildQueryPipelineSettings
     QueryStatusPtr process_list_element;
     ProgressCallback progress_callback = nullptr;
 
+    size_t max_threads;
+    size_t aggregation_memory_efficient_merge_threads;
+
     const ExpressionActionsSettings & getActionsSettings() const { return actions_settings; }
     static BuildQueryPipelineSettings fromContext(ContextPtr from);
 };

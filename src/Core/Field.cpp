@@ -186,11 +186,7 @@ void readBinary(Tuple & x, ReadBuffer & buf)
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
-    {
-        UInt8 type;
-        readBinary(type, buf);
-        x.push_back(getBinaryValue(type, buf));
-    }
+        x.push_back(readFieldBinary(buf));
 }
 
 void writeBinary(const Tuple & x, WriteBuffer & buf)
@@ -199,11 +195,7 @@ void writeBinary(const Tuple & x, WriteBuffer & buf)
     writeBinary(size, buf);
 
     for (const auto & elem : x)
-    {
-        const UInt8 type = elem.getType();
-        writeBinary(type, buf);
-        Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, elem);
-    }
+        writeFieldBinary(elem, buf);
 }
 
 void writeText(const Tuple & x, WriteBuffer & buf)
@@ -217,11 +209,7 @@ void readBinary(Map & x, ReadBuffer & buf)
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
-    {
-        UInt8 type;
-        readBinary(type, buf);
-        x.push_back(getBinaryValue(type, buf));
-    }
+        x.push_back(readFieldBinary(buf));
 }
 
 void writeBinary(const Map & x, WriteBuffer & buf)
@@ -230,11 +218,7 @@ void writeBinary(const Map & x, WriteBuffer & buf)
     writeBinary(size, buf);
 
     for (const auto & elem : x)
-    {
-        const UInt8 type = elem.getType();
-        writeBinary(type, buf);
-        Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, elem);
-    }
+        writeFieldBinary(elem, buf);
 }
 
 void writeText(const Map & x, WriteBuffer & buf)
@@ -317,6 +301,20 @@ void writeFieldText(const Field & x, WriteBuffer & buf)
 {
     String res = Field::dispatch(FieldVisitorToString(), x);
     buf.write(res.data(), res.size());
+}
+
+void writeFieldBinary(const Field & x, WriteBuffer & buf)
+{
+    const UInt8 type = x.getType();
+    writeBinary(type, buf);
+    Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, x);
+}
+
+Field readFieldBinary(ReadBuffer & buf)
+{
+    UInt8 type;
+    readBinary(type, buf);
+    return getBinaryValue(type, buf);
 }
 
 

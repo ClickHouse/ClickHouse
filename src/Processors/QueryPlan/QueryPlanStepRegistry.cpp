@@ -43,6 +43,7 @@ void registerExpressionStep(QueryPlanStepRegistry & registry);
 void registerUnionStep(QueryPlanStepRegistry & registry);
 void registerDistinctStep(QueryPlanStepRegistry & registry);
 void registerSortingStep(QueryPlanStepRegistry & registry);
+void registerAggregatingStep(QueryPlanStepRegistry & registry);
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
 
@@ -54,6 +55,7 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerUnionStep(registry);
     registerDistinctStep(registry);
     registerSortingStep(registry);
+    registerAggregatingStep(registry);
 
     registerReadFromTableStep(registry);
 }

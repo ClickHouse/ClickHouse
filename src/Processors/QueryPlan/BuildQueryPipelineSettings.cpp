@@ -12,6 +12,10 @@ BuildQueryPipelineSettings BuildQueryPipelineSettings::fromContext(ContextPtr fr
     settings.actions_settings = ExpressionActionsSettings::fromSettings(from->getSettingsRef(), CompileExpressions::yes);
     settings.process_list_element = from->getProcessListElement();
     settings.progress_callback = from->getProgressCallback();
+
+    settings.max_threads = from->getSettingsRef().max_threads;
+    settings.aggregation_memory_efficient_merge_threads = from->getSettingsRef().aggregation_memory_efficient_merge_threads;
+
     return settings;
 }
 
