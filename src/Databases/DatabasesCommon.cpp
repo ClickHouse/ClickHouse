@@ -69,7 +69,16 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     for (const auto & ast : columns.columns->children)
     {
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
-        getDefaultExpressionInfoInto(col_decl, columns_desc.get(col_decl.name).type, default_expr_info);
+        /// There might be some special columns for which `columns_desc.get` would throw, e.g. Nested column when flatten_nested is enabled.
+        /// At the time of writing I am not aware of anything else, but my knowledge is limited and new types might be added, so let's be safe.
+        if (!col_decl.default_expression)
+            continue;
+
+        /// If no column description for the name, let's skip the validation of default expressions, but let's log the fact that something went wrong
+        if (const auto * maybe_column_desc = columns_desc.tryGet(col_decl.name); maybe_column_desc)
+            getDefaultExpressionInfoInto(col_decl, maybe_column_desc->type, default_expr_info);
+        else
+            LOG_WARNING(getLogger("validateCreateQuery"), "Couldn't get column description for column {}", col_decl.name);
     }
 
     if (default_expr_info.expr_list)
