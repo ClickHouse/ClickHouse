@@ -58,8 +58,9 @@ set(ICUUC_SOURCES
 "${ICU_SOURCE_DIR}/common/locresdata.cpp"
 "${ICU_SOURCE_DIR}/common/locutil.cpp"
 "${ICU_SOURCE_DIR}/common/lsr.cpp"
-"${ICU_SOURCE_DIR}/common/lstmbe.cpp")
+"${ICU_SOURCE_DIR}/common/lstmbe.cpp"
 "${ICU_SOURCE_DIR}/common/messagepattern.cpp"
+"${ICU_SOURCE_DIR}/common/mlbe.cpp"
 "${ICU_SOURCE_DIR}/common/normalizer2.cpp"
 "${ICU_SOURCE_DIR}/common/normalizer2impl.cpp"
 "${ICU_SOURCE_DIR}/common/normlzr.cpp"
@@ -155,6 +156,8 @@ set(ICUUC_SOURCES
 "${ICU_SOURCE_DIR}/common/uloc.cpp"
 "${ICU_SOURCE_DIR}/common/uloc_keytype.cpp"
 "${ICU_SOURCE_DIR}/common/uloc_tag.cpp"
+"${ICU_SOURCE_DIR}/common/ulocale.cpp"
+"${ICU_SOURCE_DIR}/common/ulocbuilder.cpp"
 "${ICU_SOURCE_DIR}/common/umapfile.cpp"
 "${ICU_SOURCE_DIR}/common/umath.cpp"
 "${ICU_SOURCE_DIR}/common/umutablecptrie.cpp"
@@ -212,7 +215,7 @@ set(ICUUC_SOURCES
 "${ICU_SOURCE_DIR}/common/uvector.cpp"
 "${ICU_SOURCE_DIR}/common/uvectr32.cpp"
 "${ICU_SOURCE_DIR}/common/uvectr64.cpp"
-"${ICU_SOURCE_DIR}/common/wintz.cpp"
+"${ICU_SOURCE_DIR}/common/wintz.cpp")
 
 set(ICUI18N_SOURCES
 "${ICU_SOURCE_DIR}/i18n/ucln_in.cpp"
