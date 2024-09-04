@@ -1602,7 +1602,7 @@ KeeperStorageBase::ResponsesForSessions processWatches(
     KeeperStorageBase::Watches & watches,
     KeeperStorageBase::Watches & list_watches)
 {
-    return processWatchesImpl(zk_request.getPath(), watches, list_watches, Coordination::Event::CREATED);
+    return processWatchesImpl(zk_request.getPath(), watches, list_watches, Coordination::Event::DELETED);
 }
 
 template <typename Storage>
