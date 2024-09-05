@@ -274,4 +274,13 @@ bool MutationCommands::containBarrierCommand() const
     return false;
 }
 
+NameSet MutationCommands::getAllUpdatedColumns() const
+{
+    NameSet res;
+    for (const auto & command : *this)
+        for (const auto & [column_name, _] : command.column_to_update_expression)
+            res.insert(column_name);
+    return res;
+}
+
 }

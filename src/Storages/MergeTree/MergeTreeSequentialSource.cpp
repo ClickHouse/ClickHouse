@@ -34,6 +34,7 @@ public:
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         MergeTreeData::DataPartPtr data_part_,
+        AlterConversionsPtr alter_conversions_,
         Names columns_to_read_,
         std::optional<MarkRanges> mark_ranges_,
         bool apply_deleted_mask,
@@ -57,6 +58,9 @@ private:
 
     /// Data part will not be removed if the pointer owns it
     MergeTreeData::DataPartPtr data_part;
+
+    /// Alter and mutation commands that are required to be applied to the part on-fly.
+    AlterConversionsPtr alter_conversions;
 
     /// Columns we have to read (each Block from read will contain them)
     Names columns_to_read;
@@ -87,6 +91,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
     MergeTreeData::DataPartPtr data_part_,
+    AlterConversionsPtr alter_conversions_,
     Names columns_to_read_,
     std::optional<MarkRanges> mark_ranges_,
     bool apply_deleted_mask,
@@ -96,6 +101,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , data_part(std::move(data_part_))
+    , alter_conversions(std::move(alter_conversions_))
     , columns_to_read(std::move(columns_to_read_))
     , read_with_direct_io(read_with_direct_io_)
     , mark_ranges(std::move(mark_ranges_))
@@ -108,8 +114,6 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     else
         LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part",
             data_part->getMarksCount(), data_part->name, data_part->rows_count);
-
-    auto alter_conversions = storage.getAlterConversionsForPart(data_part);
 
     /// Note, that we don't check setting collaborate_with_coordinator presence, because this source
     /// is only used in background merges.
@@ -299,6 +303,7 @@ Pipe createMergeTreeSequentialSource(
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
     MergeTreeData::DataPartPtr data_part,
+    AlterConversionsPtr alter_conversions,
     Names columns_to_read,
     std::optional<MarkRanges> mark_ranges,
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
@@ -315,7 +320,8 @@ Pipe createMergeTreeSequentialSource(
         columns_to_read.emplace_back(RowExistsColumn::name);
 
     auto column_part_source = std::make_shared<MergeTreeSequentialSource>(type,
-        storage, storage_snapshot, data_part, columns_to_read, std::move(mark_ranges),
+        storage, storage_snapshot, data_part, alter_conversions,
+        columns_to_read, std::move(mark_ranges),
         /*apply_deleted_mask=*/ false, read_with_direct_io, prefetch);
 
     Pipe pipe(std::move(column_part_source));
@@ -346,6 +352,7 @@ public:
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         MergeTreeData::DataPartPtr data_part_,
+        AlterConversionsPtr alter_conversions_,
         Names columns_to_read_,
         bool apply_deleted_mask_,
         std::optional<ActionsDAG> filter_,
@@ -356,6 +363,7 @@ public:
         , storage(storage_)
         , storage_snapshot(storage_snapshot_)
         , data_part(std::move(data_part_))
+        , alter_conversions(std::move(alter_conversions_))
         , columns_to_read(std::move(columns_to_read_))
         , apply_deleted_mask(apply_deleted_mask_)
         , filter(std::move(filter_))
@@ -399,6 +407,7 @@ public:
             storage,
             storage_snapshot,
             data_part,
+            alter_conversions,
             columns_to_read,
             std::move(mark_ranges),
             /*filtered_rows_count=*/ nullptr,
@@ -414,6 +423,7 @@ private:
     const MergeTreeData & storage;
     StorageSnapshotPtr storage_snapshot;
     MergeTreeData::DataPartPtr data_part;
+    AlterConversionsPtr alter_conversions;
     Names columns_to_read;
     bool apply_deleted_mask;
     std::optional<ActionsDAG> filter;
@@ -427,6 +437,7 @@ void createReadFromPartStep(
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
     MergeTreeData::DataPartPtr data_part,
+    AlterConversionsPtr alter_conversions,
     Names columns_to_read,
     bool apply_deleted_mask,
     std::optional<ActionsDAG> filter,
@@ -434,7 +445,8 @@ void createReadFromPartStep(
     LoggerPtr log)
 {
     auto reading = std::make_unique<ReadFromPart>(type,
-        storage, storage_snapshot, std::move(data_part),
+        storage, storage_snapshot,
+        std::move(data_part), std::move(alter_conversions),
         std::move(columns_to_read), apply_deleted_mask,
         std::move(filter), std::move(context), log);
 

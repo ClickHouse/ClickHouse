@@ -443,14 +443,53 @@ public:
 
     bool areAsynchronousInsertsEnabled() const override;
 
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override;
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
+
+    /// A snapshot of pending mutations that weren't applied to some of the parts yet
+    /// and should be applied on the fly (i.e. when reading from the part).
+    /// Mutations not supported by AlterConversions (supportsMutationCommandType()) can be omitted.
+    struct IMutationsSnapshot
+    {
+        /// Contains info that doesn't depend on state of mutations.
+        struct Params
+        {
+            Int64 metadata_version = -1;
+            Int64 min_part_metadata_version = -1;
+            bool need_data_mutations = false;
+        };
+
+        /// Contains info that depends on state of mutations.
+        struct Info
+        {
+            Int64 num_data_mutations = 0;
+            Int64 num_metadata_mutations = 0;
+        };
+
+        Params params;
+        Info info;
+
+        IMutationsSnapshot() = default;
+        IMutationsSnapshot(Params params_, Info info_): params(std::move(params_)), info(std::move(info_)) {}
+
+        /// Returns mutation commands that are required to be applied to the `part`.
+        /// @return list of mutation commands, in *reverse* order (newest to oldest)
+        virtual MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
+        virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
+        virtual NameSet getAllUpdatedColumns() const = 0;
+
+        bool hasDataMutations() const { return params.need_data_mutations && info.num_data_mutations > 0; }
+
+        virtual ~IMutationsSnapshot() = default;
+    };
+
+    using MutationsSnapshotPtr = std::shared_ptr<const IMutationsSnapshot>;
 
     /// Snapshot for MergeTree contains the current set of data parts
-    /// at the moment of the start of query.
+    /// and mutations required to be applied at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
     {
         DataPartsVector parts;
-        std::vector<AlterConversionsPtr> alter_conversions;
+        MutationsSnapshotPtr mutations_snapshot;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -929,8 +968,18 @@ public:
 
     Disks getDisks() const { return getStoragePolicy()->getDisks(); }
 
+    /// Returns a snapshot of mutations that probably will be applied on the fly to parts during reading.
+    virtual MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const = 0;
+
+    /// Returns the minimum version of metadata among parts.
+    static Int64 getMinMetadataVersion(const DataPartsVector & parts);
+
     /// Return alter conversions for part which must be applied on fly.
-    AlterConversionsPtr getAlterConversionsForPart(MergeTreeDataPartPtr part) const;
+    static AlterConversionsPtr getAlterConversionsForPart(
+        const MergeTreeDataPartPtr & part,
+        const MutationsSnapshotPtr & mutations,
+        const StorageMetadataPtr & metadata,
+        const ContextPtr & query_context);
 
     /// Returns destination disk or volume for the TTL rule according to current storage policy.
     SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl) const;
@@ -1450,13 +1499,6 @@ protected:
     /// mechanisms for parts locking
     virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 
-    /// Return pending mutations that weren't applied to `part` yet and should be applied on the fly
-    /// (i.e. when reading from the part). Mutations not supported by AlterConversions
-    /// (supportsMutationCommandType()) can be omitted.
-    ///
-    /// @return list of mutations, in *reverse* order (newest to oldest)
-    virtual MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
-
     struct PartBackupEntries
     {
         String part_name;
@@ -1731,7 +1773,14 @@ struct CurrentlySubmergingEmergingTagger
 };
 
 /// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
-/// Return true if the counter had been updated
-bool updateAlterConversionsMutations(const MutationCommands & commands, std::atomic<ssize_t> & alter_conversions_mutations, bool remove);
+void incrementMutationsCounters(
+    Int64 & num_data_mutations_to_apply,
+    Int64 & num_metadata_mutations_to_apply,
+    const MutationCommands & commands);
+
+void decrementMutationsCounters(
+    Int64 & num_data_mutations_to_apply,
+    Int64 & num_metadata_mutations_to_apply,
+    const MutationCommands & commands);
 
 }
